@@ -37,9 +37,6 @@ from app.transcription.diarizer import SpeakerDiarizer
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.transcription.engine import stages as stages_mod
 from app.transcription.engine.backends import VALID_DIARIZER_BACKENDS
-from app.transcription.engine.backends import get_diarizer_backend
-from app.transcription.engine.backends.diarizers.native_backend import NativeBackend
-from app.transcription.engine.backends.diarizers.pyannote_backend import PyAnnoteBackend
 from app.transcription.model_manager import ModelManager
 
 
@@ -142,17 +139,11 @@ class TestDiarizerBackendRegistry:
     def test_native_and_pyannote_are_the_only_registered_backends(self):
         assert set(VALID_DIARIZER_BACKENDS) == {"native", "pyannote"}
 
-    def test_get_diarizer_backend_native_returns_native_backend(self):
-        backend = get_diarizer_backend("native")
-        assert isinstance(backend, NativeBackend)
-
-    def test_get_diarizer_backend_pyannote_returns_pyannote_backend(self):
-        backend = get_diarizer_backend("pyannote")
-        assert isinstance(backend, PyAnnoteBackend)
-
-    def test_get_diarizer_backend_unknown_raises(self):
-        with pytest.raises(ValueError, match="Unknown diarizer backend"):
-            get_diarizer_backend("nemo-not-registered")
+    # `get_diarizer_backend()` and its three tests are gone (issue #672). It was dotted-path
+    # importlib dispatch with no production caller — construction happens in
+    # `ModelManager._build_diarizer` — so the tests exercised a resolver nothing resolved
+    # through. `VALID_DIARIZER_BACKENDS`, which IS production (config._resolve_diarizer_backend
+    # and engine_settings validation), keeps its coverage above.
 
 
 # ---------------------------------------------------------------------------
@@ -200,20 +191,89 @@ class TestDiarizerBackendResolution:
 
 
 class TestOverlapDiarizationEnabled:
-    def test_disabled_for_pyannote_backend(self, monkeypatch: pytest.MonkeyPatch):
+    """The gate must ask whether the sidecar is REACHABLE, not whether it is configured.
+
+    Overlapping only makes sense when diarization is another process's work. Keyed off
+    configuration alone (the pre-#665 behaviour), a native-configured deployment with a
+    dead sidecar reported True, `_collect_diarization` skipped
+    `_make_room_for_local_diarizer`, and since that helper holds the ONLY
+    `release_transcriber()` call site, Whisper and the in-process PyAnnote fallback ran
+    co-resident on one GPU — precisely what it exists to prevent.
+    """
+
+    @staticmethod
+    def _record_probe(monkeypatch: pytest.MonkeyPatch, answer: bool) -> list[bool]:
+        """Patch the readiness probe at its source, recording each call.
+
+        The probe itself is covered against real HTTP servers in
+        `test_diar_native_readiness_gate.py`; what matters here is *whether the gate asks
+        it at all*, and how often, which the call log is the only way to observe.
+        """
+        probed: list[bool] = []
+
+        def _fake_ready(base_url=None):
+            probed.append(True)
+            return answer
+
+        monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", _fake_ready)
+        return probed
+
+    def test_disabled_for_pyannote_backend_without_probing(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        probed = self._record_probe(monkeypatch, True)
         tc = TranscriptionConfig(diarizer_backend="pyannote")
-        assert stages_mod._overlap_diarization_enabled(tc) is False
 
-    def test_enabled_for_native_backend_by_default(self, monkeypatch: pytest.MonkeyPatch):
+        assert stages_mod._overlap_diarization_enabled(tc) is False
+        # A pinned-pyannote deployment must not pay a 5 s network timeout per job to be
+        # told something its configuration already settled.
+        assert probed == []
+
+    def test_enabled_for_native_when_the_sidecar_is_ready(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        probed = self._record_probe(monkeypatch, True)
         tc = TranscriptionConfig(diarizer_backend="native")
-        assert stages_mod._overlap_diarization_enabled(tc) is True
 
-    def test_disabled_when_diar_overlap_env_is_zero(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("DIAR_OVERLAP", "0")
+        assert stages_mod._overlap_diarization_enabled(tc) is True
+        assert len(probed) == 1, "the gate must probe exactly once per evaluation"
+
+    def test_disabled_for_native_when_the_sidecar_is_not_ready(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The #665 regression. Before the fix this returned True."""
+        monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        self._record_probe(monkeypatch, False)
         tc = TranscriptionConfig(diarizer_backend="native")
+
         assert stages_mod._overlap_diarization_enabled(tc) is False
+
+    def test_disabled_for_native_against_a_genuinely_unreachable_sidecar(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Same as above with the probe unpatched — a real closed port, real ECONNREFUSED.
+
+        Keeps this class from being satisfiable by a mock that agrees with itself.
+        ``_DEFAULT_URL`` is read from the environment once at import, so setting
+        ``DIAR_NATIVE_URL`` here would do nothing and the test would pass because the
+        compose hostname does not resolve off the network — right answer, wrong reason.
+        """
+        monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        monkeypatch.setattr(
+            "app.transcription.diarizer_native._DEFAULT_URL",
+            f"http://127.0.0.1:{_free_port()}",
+        )
+        tc = TranscriptionConfig(diarizer_backend="native")
+
+        assert stages_mod._overlap_diarization_enabled(tc) is False
+
+    def test_disabled_when_diar_overlap_env_is_zero_without_probing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("DIAR_OVERLAP", "0")
+        probed = self._record_probe(monkeypatch, True)
+        tc = TranscriptionConfig(diarizer_backend="native")
+
+        assert stages_mod._overlap_diarization_enabled(tc) is False
+        assert probed == [], "the debug escape hatch must short-circuit before the probe"
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,11 @@ Contract parity notes (vs diarizer.py):
   semantics). With the app defaults (min=1, max=20) the constraint path never binds; if
   config.num_speakers is set we log a warning and proceed (constraint port is tracked in
   diar-native PLAN.md M1).
+- diarize() takes an EXTRA optional ``wav_path`` kwarg diarizer.py's diarize(audio) does not
+  have (issue #661) — reuses an already-materialized shared-volume WAV instead of re-encoding
+  ``audio`` a second time. It is additive-only (default None reproduces the old behaviour
+  exactly) and native-only: callers must isinstance-check before passing it, never widen the
+  shared call signature to accommodate it. See the docstring on diarize() itself.
 
 This file is standalone/additive: no existing module is modified. Wiring lives in
 ModelManager behind ``TranscriptionConfig.diarizer_backend`` (see diar-native
@@ -30,6 +35,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -54,6 +60,37 @@ _SHARED_DIR = os.environ.get("DIAR_NATIVE_SHARED_DIR", "/tmp/diar-native")  # no
 _TIMEOUT_S = float(os.environ.get("DIAR_NATIVE_TIMEOUT_S", "3600"))
 # Ask the sidecar for gender alongside diarization. Off leaves the app's own CPU task in charge.
 _GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0", "false", "no")
+# The engine's Stage-1 shared-volume WAV mount, as seen from THIS container (the worker, not
+# the sidecar) — same env var EngineConfig reads for shared_volume_path, so the two can never
+# disagree about where that WAV lives. Deliberately not a new/second knob: issue #661 is about
+# reusing that WAV, and a diverging default would silently stop the reuse from ever triggering.
+_ENGINE_SHARED_DIR = os.environ.get("ENGINE_SHARED_VOLUME_PATH", "/tmp/transcription")  # noqa: S108  # nosec B108
+_ENGINE_SHARED_PREFIX = _ENGINE_SHARED_DIR.rstrip("/") + "/"
+
+# sidecar_ready() TTL cache (issue #661 probe-cost fix). A bare live GET cost a full 5s connect
+# timeout whenever the sidecar was unreachable, and #665 added a SECOND per-job call site
+# (engine/stages._overlap_diarization_enabled) beside ModelManager's existing one — an
+# unreachable sidecar was up to three serial 5s timeouts per job. The TTL is deliberately SHORT:
+# TranscriptionConfig._resolve_diarizer_backend documents a no-pinning contract (an admin
+# toggling engine.diarizer_backend, or a sidecar recovering mid-queue, must both be picked up
+# without a worker restart) and a long-lived cache here would silently defeat the readiness half
+# of that same guarantee. Negative results are cached too — they are the expensive case this
+# exists to avoid re-paying — but never for longer than the TTL.
+_READY_CACHE_TTL_S = float(os.environ.get("DIAR_NATIVE_READY_CACHE_TTL_S", "3"))
+_ready_cache: dict[str, tuple[float, bool]] = {}
+_ready_cache_lock = threading.Lock()
+
+
+def reset_readiness_cache() -> None:
+    """Clear the sidecar_ready() TTL cache.
+
+    Test-only hook. test_diar_native_readiness_gate.py stands up a real HTTP server and flips
+    it between states within a single test — without clearing the cache between phases, a
+    verdict cached before the flip would mask the new state until the TTL lapsed. Production
+    code has no reason to call this; the TTL is what keeps it honest there.
+    """
+    with _ready_cache_lock:
+        _ready_cache.clear()
 
 
 def post_json(url: str, payload: dict, timeout: float) -> dict:
@@ -139,8 +176,28 @@ def sidecar_ready(base_url: str | None = None) -> bool:
     404. That is not "not ready" — it is "cannot say", so we fall back to liveness and
     preserve the previous behaviour rather than disabling the native engine outright for
     anyone still pinned to a pre-0.3.0 image.
+
+    Result is cached per ``base_url`` for :data:`_READY_CACHE_TTL_S` seconds — see the
+    comment above that constant for why the window is short rather than absent.
     """
     url = (base_url or _DEFAULT_URL).rstrip("/")
+    now = time.monotonic()
+    with _ready_cache_lock:
+        cached = _ready_cache.get(url)
+        if cached is not None and now - cached[0] < _READY_CACHE_TTL_S:
+            return cached[1]
+
+    ready = _sidecar_ready_uncached(url)
+
+    with _ready_cache_lock:
+        _ready_cache[url] = (now, ready)
+    return ready
+
+
+def _sidecar_ready_uncached(url: str) -> bool:
+    """The live ``/readyz`` probe. Always call :func:`sidecar_ready` instead — this exists
+    only so the TTL cache above has something to wrap without duplicating the probe logic.
+    """
     try:
         with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
             f"{url}/readyz", timeout=5
@@ -149,8 +206,8 @@ def sidecar_ready(base_url: str | None = None) -> bool:
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             logger.debug("diar-native sidecar has no /readyz (pre-0.3.0); falling back to /healthz")
-            return sidecar_healthy(base_url)
-        status = sidecar_status(base_url)
+            return sidecar_healthy(url)
+        status = sidecar_status(url)
         logger.warning(
             "diar-native sidecar is up but not ready (HTTP %s, models_state=%s): %s",
             exc.code,
@@ -234,8 +291,26 @@ class NativeSpeakerDiarizer:
     # -- main entry points -------------------------------------------------
 
     def diarize(
-        self, audio: np.ndarray
+        self, audio: np.ndarray, wav_path: str | None = None
     ) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None]:
+        """Run diarization, optionally against a WAV the caller already wrote to disk.
+
+        Args:
+            audio: 16kHz mono float32 waveform — the same shape ``SpeakerDiarizer.diarize``
+                takes, and still what is used for the PyAnnote fallback if this call degrades.
+            wav_path: An already-materialized 16kHz mono WAV of the same audio (issue #661),
+                e.g. Stage 1's shared-volume WAV in the 3-stage Celery pipeline. Only honored
+                when it lives under ``_ENGINE_SHARED_DIR`` — the mount this sidecar shares
+                with the engine — since that is the only case where the path this container
+                sees also resolves inside the sidecar's container. Anything else (including
+                the single-process ``run()`` path, which never has a shared-volume WAV at
+                all) falls through to writing our own copy, exactly as before.
+
+                NATIVE-ONLY, deliberately not on ``SpeakerDiarizer.diarize``: the two engines
+                are a duck-typed drop-in for each other, and callers that only hold ``Any``
+                (``ModelManager.get_diarizer``'s return) must isinstance-check before ever
+                passing this — see ``engine/stages.py``'s ``_run_diarize``.
+        """
         if not self.is_loaded:
             raise RuntimeError("Diarizer not loaded. Call load_model() first.")
         if getattr(self.config, "num_speakers", None) is not None:
@@ -246,8 +321,16 @@ class NativeSpeakerDiarizer:
             )
 
         step_start = time.perf_counter()
-        os.makedirs(_SHARED_DIR, exist_ok=True)
-        wav_path = os.path.join(_SHARED_DIR, f"diar_{uuid.uuid4().hex}.wav")
+        if wav_path and wav_path.startswith(_ENGINE_SHARED_PREFIX) and os.path.isfile(wav_path):
+            # Reuse Stage 1's WAV instead of re-encoding the same audio a second time — the
+            # whole point of issue #661. wrote_wav=False is what tells the finally block below
+            # not to delete a file a later pipeline stage still needs.
+            diar_wav_path = wav_path
+            wrote_wav = False
+        else:
+            os.makedirs(_SHARED_DIR, exist_ok=True)
+            diar_wav_path = os.path.join(_SHARED_DIR, f"diar_{uuid.uuid4().hex}.wav")
+            wrote_wav = True
         try:
             # The WAV write shares the sidecar-loss fallback, not just the HTTP call:
             # a permission or disk-space failure on the shared scratch volume (e.g.
@@ -255,21 +338,24 @@ class NativeSpeakerDiarizer:
             # as recoverable as an unreachable sidecar — both mean "this job cannot
             # use diar-native right now" — and previously only the HTTP call was
             # covered, so a write failure propagated out of diarize() uncaught and
-            # hard-failed the whole transcription instead of degrading to PyAnnote.
+            # hard-failed the whole transcription instead of degrading to PyAnnote. When
+            # wrote_wav is False there is nothing to write, so this reduces to covering the
+            # HTTP call only — which is exactly the coverage a reused WAV needs.
             try:
-                clip = np.clip(np.asarray(audio, dtype=np.float32), -1.0, 1.0)
-                pcm = (clip * 32767.0).astype("<i2")
-                with wave.open(wav_path, "wb") as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2)
-                    wf.setframerate(16000)
-                    wf.writeframes(pcm.tobytes())
+                if wrote_wav:
+                    clip = np.clip(np.asarray(audio, dtype=np.float32), -1.0, 1.0)
+                    pcm = (clip * 32767.0).astype("<i2")
+                    with wave.open(diar_wav_path, "wb") as wf:
+                        wf.setnchannels(1)
+                        wf.setsampwidth(2)
+                        wf.setframerate(16000)
+                        wf.writeframes(pcm.tobytes())
 
                 out = post_json(
                     f"{self.base_url}/diarize",
                     # Gender rides this call: the sidecar has the decoded audio and the
                     # speaker turns in hand, so classifying costs no second fetch or decode.
-                    {"wav_path": wav_path, "file_id": "job", "gender": _GENDER_ENABLED},
+                    {"wav_path": diar_wav_path, "file_id": "job", "gender": _GENDER_ENABLED},
                     timeout=_TIMEOUT_S,
                 )
             except Exception as exc:  # noqa: BLE001 — a sidecar/scratch-volume loss must not fail the job
@@ -278,8 +364,13 @@ class NativeSpeakerDiarizer:
                 )
                 return self._fallback_engine().diarize(audio)
         finally:
-            with contextlib.suppress(OSError):
-                os.unlink(wav_path)
+            # Only ever unlink a file THIS call created. A reused Stage-1 WAV is still owned
+            # by the pipeline stage that wrote it (cleaned up later via
+            # audio_loader.cleanup_shared_volume_wav) — deleting it here would pull it out
+            # from under whichever stage runs next.
+            if wrote_wav:
+                with contextlib.suppress(OSError):
+                    os.unlink(diar_wav_path)
 
         exclusive = out.get("exclusive_segments", [])
         full = out.get("segments", [])

@@ -427,17 +427,27 @@ def get_models_info() -> dict[str, dict[str, str]]:
     # Whisper model: directly from settings (accurate)
     whisper_name = settings.WHISPER_MODEL
 
-    # Diarization: use actual constants from diarizer.py
+    # Diarization: report the engine that is actually configured to serve, not a
+    # constant (issue #672). This is the panel an operator reads to answer "what is my
+    # install running", and it claimed PyAnnote on every deployment — including the
+    # default one, where diarizer_backend resolves to the native diar-server sidecar.
+    #
+    # The weights are the same either way (both engines serve community-1), so the model
+    # name is not what distinguishes them; the engine is. Resolution is
+    # TranscriptionConfig's, reused rather than re-derived, so this panel and the
+    # pipeline can never disagree about which engine is selected.
+    diarization_name = "pyannote/speaker-diarization-community-1"
     try:
-        from app.transcription.diarizer import PYANNOTE_V3_FALLBACK
-        from app.transcription.diarizer import PYANNOTE_V4_MODEL
+        from app.transcription.config import TranscriptionConfig
 
-        diarization_name = PYANNOTE_V4_MODEL
-        diarization_desc = f"PyAnnote v4 (fallback: {PYANNOTE_V3_FALLBACK})"
-    except ImportError:
-        # torch not available in backend container — use known constants
-        diarization_name = "pyannote/speaker-diarization-community-1"
-        diarization_desc = "PyAnnote v4 (fallback: pyannote/speaker-diarization-3.1)"
+        backend = TranscriptionConfig._resolve_diarizer_backend()
+    except Exception:  # noqa: BLE001 — a stats panel never fails over a display value
+        backend = "unknown"
+
+    diarization_desc = {
+        "native": "diar-native sidecar (Rust/ONNX) — primary engine",
+        "pyannote": "PyAnnote fork (in-process) — explicit or failover engine",
+    }.get(backend, f"{backend} diarization engine")
 
     models: dict[str, dict[str, str]] = {
         "whisper": {

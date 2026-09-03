@@ -748,7 +748,17 @@ async def get_admin_stats(
         recent = get_recent_tasks(db, limit=10)
 
         # Get AI model configuration
+        from app.api.endpoints.engine_settings import _resolve_setting
         from app.core.config import settings
+
+        # Reuse the engine-settings resolution (DB -> env -> default) instead of a second
+        # copy of it here — a hardcoded "PyAnnote 3.1" claimed that engine on every install
+        # even when diarizer_backend resolved to native, the coded default (issue #672).
+        diarizer_backend = _resolve_setting(db, "diarizer_backend")["value"]
+        diarizer_engine_descriptions = {
+            "native": "diar-native (Rust/speakrs sidecar) — primary diarization engine",
+            "pyannote": "PyAnnote fork — explicit/failover diarization engine",
+        }
 
         models_info = {
             "whisper": {
@@ -757,8 +767,12 @@ async def get_admin_stats(
                 "purpose": "Speech Recognition & Transcription",
             },
             "diarization": {
-                "name": settings.PYANNOTE_MODEL,
-                "description": "PyAnnote Speaker Diarization 3.1",
+                # Weights are shared by both engines (local_provider.py); the engine
+                # actually serving is what varies, so that's what belongs in the description.
+                "name": "pyannote/speaker-diarization-community-1",
+                "description": diarizer_engine_descriptions.get(
+                    diarizer_backend, f"{diarizer_backend} diarization engine"
+                ),
                 "purpose": "Speaker Identification & Segmentation",
             },
         }

@@ -62,13 +62,3 @@ def get_transcriber_backend(name: str):
         )
     cls = _import_class(_TRANSCRIBER_REGISTRY[name])
     return cls()
-
-
-def get_diarizer_backend(name: str):
-    """Instantiate and return the named diarizer backend."""
-    if name not in _DIARIZER_REGISTRY:
-        raise ValueError(
-            f"Unknown diarizer backend '{name}'. Available: {list(_DIARIZER_REGISTRY)}"
-        )
-    cls = _import_class(_DIARIZER_REGISTRY[name])
-    return cls()

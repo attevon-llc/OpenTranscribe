@@ -856,7 +856,6 @@ class Settings(BaseSettings):
     # large-v2: Legacy model, ~10GB VRAM, good balance
     # Note: large-v3-turbo cannot translate - use large-v3 if translation is needed
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "large-v3-turbo")
-    PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
     HUGGINGFACE_TOKEN: str | None = os.getenv("HUGGINGFACE_TOKEN", None)
 
     # Speaker diarization settings

@@ -56,19 +56,36 @@ nothing.
 **The sidecar** (`docker-compose.diar-native.yml`, service `diar-native`): the *shared* backend
 image with its CMD replaced by `diar-server`, listening on `:8701`, reading ONNX/PLDA artifacts
 exported from `pyannote/speaker-diarization-community-1` out of `DIAR_NATIVE_MODELS_DIR`. It
-holds **~4.1 GB of warm ORT arena** on `DIAR_NATIVE_GPU` (defaulting to `GPU_DEVICE_ID`, never a
-bare 0) for as long as the container is up — that is a separate process's footprint, not the
-worker's. `opentr.sh` auto-loads the overlay when the backend resolves to `native` and the export
-directory exists; `--no-diar-native` suppresses it.
+holds **~2.2 GB of warm ORT arena** on `DIAR_NATIVE_GPU` (defaulting to `GPU_DEVICE_ID`, never a
+bare 0) once it has served a request — a separate process's footprint, not the worker's.
+⚠️ That figure was **~4.1 GB** everywhere in this repo until it was measured: `diar-server 0.3.1`
+holds 2,248 MiB idle where the pre-0.3.1 binary held 4,762 MiB, both with
+`SPEAKRS_LAZY_SESSIONS=1`, so the halving is the binary, not the flag. Re-measure with
+`nvidia-smi --query-compute-apps` rather than trusting any number written here.
+
+`docker-compose.diar-native.yml` is **CPU-safe on its own** — no device reservation, `DIAR_MODE`
+defaults to `cpu`. The nvidia reservation and the `cuda` override live in
+`docker-compose.diar-native-gpu.yml`, loaded alongside the GPU overlay, so a CPU-only or `--lite`
+host can run the sidecar (#660). One binary serves both devices (`/healthz` advertises
+`supported_devices: ["cuda","cpu"]`).
+
+**Provisioning.** The ONNX/PLDA set is exported by the backend's FastAPI lifespan
+(`native_provision.ensure_native_models`, called from `main.py`), because those graphs are gated
+and non-redistributable. It is idempotent behind `diar-provision.json` — a valid marker makes
+startup a `stat` pass; a marker-less directory (what every pre-0.3.0 install looks like) is
+simply invalid, so the same call re-exports it. Measured cold: 483,882,939 bytes in 137 s. The
+sidecar waits on `depends_on: backend: service_healthy`, which is what stops it starting against
+an empty `/models` and crash-looping on exit 8. A failure here is never fatal — `/readyz` returns
+503 and diarization falls back to PyAnnote.
 
 > ⚠️ **"Configured native" is not "running native."** The fallback is silent by design, so a
 > deployment can spend its whole life on PyAnnote while every setting says `native`. Verify by
-> checking **which container served the diarization**, not by looking for an error. Known live
-> gaps: **#654** (nothing in this repo produces `${MODEL_CACHE_DIR}/diar-native`), **#655** (the
-> overlay patches only `celery-worker` — gpu-scale, gpu-split, lite, offline, Windows, `--fresh`
-> and CPU-only never get `DIAR_NATIVE_URL`), **#665** (`_overlap_diarization_enabled` keys off
-> the *configured* backend, so the PyAnnote fallback runs co-resident with Whisper and
-> `release_transcriber()` never fires), **#672** (the admin panel misreports the engine).
+> checking **which container served the diarization**, not by looking for an error. This was the
+> normal case until #654/#655/#665/#672 were fixed together: nothing produced the models
+> directory, and the overlay wired only `celery-worker`, so under gpu-scale and gpu-split
+> PyAnnote was the *de-facto* engine. Still-open relatives: **#656** (no retry policy before the
+> fallback is removed), **#703** (`celery-worker-gpu-transcribe` consumes a queue nothing
+> publishes to).
 
 ### PyAnnote fallback specifics
 
@@ -140,10 +157,14 @@ Docs: `docs-site/docs/features/boundary-correction.md`,
 
 - `EngineConfig` is deliberately **DB-free** — settings are resolved and passed in, not read
   from the DB inside the engine. Keep it that way so the engine stays unit-testable.
-- **Overlapped diarization requires the sidecar.** `engine/stages._overlap_diarization_enabled`
-  runs diarization concurrently with transcription only for `diarizer_backend == "native"`
-  (`DIAR_OVERLAP=0` disables). When it is on, `_collect_diarization` skips
-  `_make_room_for_local_diarizer` — which is where `release_transcriber()` lives. See #665.
+- **Overlapped diarization requires a REACHABLE sidecar**, not merely a configured one.
+  `engine/stages._overlap_diarization_enabled` gates on `diarizer_native.sidecar_ready()`
+  (`DIAR_OVERLAP=0` still forces the sequential order). This matters because when overlap is on,
+  `_collect_diarization` skips `_make_room_for_local_diarizer` — the **only**
+  `release_transcriber()` call site — so keying it off configuration alone left Whisper and the
+  in-process PyAnnote fallback co-resident on one GPU (#665, fixed). The probe is TTL-cached in
+  `diarizer_native.py`; the cache is deliberately short so an admin toggle and a recovered
+  sidecar are still picked up without a worker restart.
 - Changing `EMBEDDING_BATCH_SIZE` changes VRAM predictability, not accuracy. Don't "optimize"
   it back to auto-scaling without re-running the VRAM profile.
 - `DiarizationProviderFactory` (`app/services/diarization/`) is a **different axis** from

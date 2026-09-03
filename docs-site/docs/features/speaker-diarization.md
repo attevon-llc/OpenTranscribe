@@ -322,21 +322,43 @@ local ASR with cloud diarization, or any other combination.
 - **Running it**: the sidecar ships as an additive Docker Compose overlay,
   `docker-compose.diar-native.yml`. It shares the backend image rather than shipping a separate
   one — the `diar-server` binary is already inside `davidamacey/opentranscribe-backend`, so
-  there is nothing extra to pull.
-  - **Self-hosted install**: export the weights once
-    (`./opentranscribe.sh download-models diar-native`) and restart. There is no separate
-    on/off switch — the sidecar starts when its weights are present, and is skipped when they
-    are not, because starting it weightless would crash-loop and take stack startup with it.
-    They land in `${MODEL_CACHE_DIR}/diar-native`, a sibling of the `huggingface/` and `torch/`
+  there is nothing extra to pull. That overlay is **CPU-safe on its own** (no GPU device
+  reservation, `DIAR_MODE` defaults to `cpu`); a second overlay,
+  `docker-compose.diar-native-gpu.yml`, adds the nvidia device reservation and flips `DIAR_MODE`
+  to `cuda`. Both `opentr.sh` (dev) and `opentranscribe.sh` (self-hosted) load that second
+  overlay automatically whenever they've already detected an nvidia runtime for the rest of the
+  stack — there is no separate CPU/GPU switch to set. Idle GPU footprint is ~2.2 GB of warm
+  ONNX Runtime arena once the sidecar has served a request (measured on `diar-server` 0.3.1;
+  earlier 0.3.x builds held roughly double that).
+- **Provisioning the weights is automatic** — there is nothing to run by hand on a normal
+  install. The backend exports the ONNX/PLDA model set itself, on its own first startup
+  (`backend/app/transcription/native_provision.py`, called from the FastAPI lifespan), given
+  `HUGGINGFACE_TOKEN` in `.env` and that same account having accepted the terms at
+  [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
+  (the gate is per-account and auto-approved — a valid token whose account never accepted it
+  fails identically to having no token at all). Measured cold: 483,882,939 bytes in 137 seconds
+  on a warm HuggingFace cache. It's idempotent behind a `diar-provision.json` marker, so every
+  startup after the first is a `stat` pass, and the `diar-native` compose service waits on
+  `depends_on: backend: condition: service_healthy` so it never starts against an empty
+  `/models` and crash-loops.
+  - **No token configured, or the export otherwise fails**: never fatal to startup.
+    Diarization runs on the in-process PyAnnote engine instead — logged, not silent, and (see
+    below) a fully supported configuration, not a broken one.
+  - **Manual escape hatch**: `./opentranscribe.sh download-models diar-native` runs the same
+    export outside the backend's lifespan. Use it to pre-provision before first start (so the
+    first request doesn't wait on the export), to force a re-export, or on a multi-replica
+    deployment where `DIAR_NATIVE_AUTO_PROVISION=false` hands the export to a dedicated job
+    instead of racing several backend replicas against the same files.
+  - They land in `${MODEL_CACHE_DIR}/diar-native`, a sibling of the `huggingface/` and `torch/`
     caches the PyAnnote path already uses.
-  - **This repo's dev checkout**: `./opentr.sh start dev --with-diar-native`, auto-loaded when
-    the models directory is present (`--no-diar-native` suppresses that).
+  - **This repo's dev checkout**: `./opentr.sh start dev` auto-loads the sidecar the same way
+    — when the export already exists, or when `HUGGINGFACE_TOKEN` is set so the backend can
+    produce it on this startup. `--with-diar-native` / `--no-diar-native` force it on or off
+    explicitly.
 - **Where the weights come from**: the same place PyAnnote's do. The sidecar runs ONNX/PLDA
   artifacts exported from the very same gated `pyannote/speaker-diarization-community-1`
   pipeline the in-process engine loads — it is a Rust/ONNX reimplementation of that pipeline,
-  not a different model. They are exported locally from your own HuggingFace access
-  (`HUGGINGFACE_TOKEN`, plus accepting the model's conditions), exactly as the PyAnnote weights
-  are obtained today. Nothing about this engine is redistributed by OpenTranscribe.
+  not a different model. Nothing about this engine is redistributed by OpenTranscribe.
 - **If the sidecar is not running**, diarization falls back to the in-process PyAnnote engine
   and everything keeps working — slower, and slightly worse on AMI, but correct. That fallback
   is a supported configuration, not a degraded one; see issue #572 for why PyAnnote stays.

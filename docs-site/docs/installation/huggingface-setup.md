@@ -20,6 +20,17 @@ OpenTranscribe uses PyAnnote.audio for speaker diarization (identifying "who spo
 
 This is a one-time setup process. Once configured, models are cached locally and don't require internet access.
 
+:::note[This same token also provisions the native diarization engine]
+As of v0.5.0, `local` diarization defaults to a **native `diar-native` sidecar**
+rather than the in-process PyAnnote pipeline described on this page (see
+[Speaker Diarization](../features/speaker-diarization.md#native-diarization-engine-new-in-v050)).
+It reuses the identical `HUGGINGFACE_TOKEN` you configure here to export its own ONNX/PLDA
+model set automatically on the backend's first startup — there is nothing extra to set up. If
+that export fails for any reason (missing token, gate not accepted), diarization falls back to
+the PyAnnote path this page walks through, so following the steps below keeps you covered
+either way.
+:::
+
 ## Step 1: Create HuggingFace Account
 
 If you don't already have a HuggingFace account:

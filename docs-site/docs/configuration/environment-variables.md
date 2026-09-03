@@ -126,6 +126,85 @@ Enabling `WARM_CACHE_ENABLED=true` pre-loads PyAnnote models on startup:
 - **Trade-off**: ~500MB additional memory usage at startup
 - **Recommended for**: High-throughput systems with continuous transcription
 
+## Native Diarization Engine (diar-native)
+
+`ENGINE_DIARIZER_BACKEND` selects which diarizer serves `local` (on-box) diarization —
+`native` (the coded default) routes to the `diar-native` sidecar, `pyannote` routes to the
+in-process PyAnnote fork. This is a **different axis** from `ASR_PROVIDER`/diarization-source
+above: it only decides which *engine* runs once diarization is already happening locally. See
+[Speaker Diarization → Native Diarization Engine](../features/speaker-diarization.md#native-diarization-engine-new-in-v050)
+for what the sidecar does and how its weights get provisioned; this section is only the
+variable reference. Defaults below come from `.env.example`'s "GPU AND TRANSCRIPTION" block and
+`docker-compose.diar-native.yml` — not invented here.
+
+```bash
+# Engine selection. SystemSettings `engine.diarizer_backend` (Settings -> Engine) wins over
+# this; both are re-read on every diarization call, so neither needs a worker restart.
+ENGINE_DIARIZER_BACKEND=native   # native (default) | pyannote
+
+# Worker -> sidecar HTTP client (backend/app/transcription/diarizer_native.py)
+DIAR_NATIVE_URL=http://diar-native:8701
+DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
+DIAR_NATIVE_TIMEOUT_S=3600
+DIAR_NATIVE_GENDER=1             # ask the sidecar for gender in the same pass
+
+# The diar-server process itself (docker-compose.diar-native.yml / -gpu.yml)
+#DIAR_NATIVE_MODE=               # cuda | mps | cpu -- leave unset; the compose overlay decides
+DIAR_NATIVE_MAX_INFLIGHT=2
+DIAR_NATIVE_LAZY_SESSIONS=1
+#DIAR_NATIVE_GPU=                # defaults to GPU_DEVICE_ID -- never a bare 0
+#DIAR_NATIVE_LOG_LEVEL=info
+#DIAR_NATIVE_LOG_FORMAT=text     # text | json
+
+# Model export (backend/app/transcription/native_provision.py, FastAPI lifespan)
+#DIAR_NATIVE_MODELS_DIR=./models/diar-native   # default: ${MODEL_CACHE_DIR}/diar-native
+#DIAR_NATIVE_AUTO_PROVISION=true
+#DIAR_NATIVE_MODEL_SET=fast      # fast (default) | small (laptop tier)
+#DIAR_NATIVE_PROVISION_TIMEOUT_S=1800
+```
+
+### Where each variable is read, and what changing it needs
+
+| Variable | Read by | Takes effect after |
+|---|---|---|
+| `ENGINE_DIARIZER_BACKEND` | `TranscriptionConfig._resolve_diarizer_backend()`, resolved fresh on every diarization call | nothing to restart — live immediately, and a DB `engine.diarizer_backend` setting overrides it anyway |
+| `DIAR_NATIVE_URL`, `DIAR_NATIVE_SHARED_DIR`, `DIAR_NATIVE_TIMEOUT_S`, `DIAR_NATIVE_GENDER` | module-level constants in `diarizer_native.py`, read once when the **celery worker** process imports it | restarting/recreating the celery worker container(s) |
+| `DIAR_NATIVE_MODE`, `DIAR_NATIVE_MAX_INFLIGHT`, `DIAR_NATIVE_LAZY_SESSIONS`, `DIAR_NATIVE_GPU`, `DIAR_NATIVE_LOG_LEVEL`, `DIAR_NATIVE_LOG_FORMAT` | the `diar-server` Rust binary, at its own process start | recreating the `diar-native` container only |
+| `DIAR_NATIVE_MODELS_DIR` | the compose bind-mount source for both `backend` and `diar-native`, and `native_provision.ensure_native_models` | recreating **both** the `backend` and `diar-native` containers |
+| `DIAR_NATIVE_AUTO_PROVISION`, `DIAR_NATIVE_MODEL_SET`, `DIAR_NATIVE_PROVISION_TIMEOUT_S` | `native_provision.py`, read once from the **backend's** FastAPI lifespan at startup | restarting the backend |
+
+### Provisioning is automatic
+
+The backend exports the ONNX/PLDA model set itself on first startup — nothing to run by hand
+on a normal install. It needs `HUGGINGFACE_TOKEN` (above) from an account that has also
+accepted the terms at
+[pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
+(the gate is per-account and auto-approved; a valid token whose account never accepted the
+terms fails identically — HTTP 403). Measured cold: 483,882,939 bytes in 137 seconds on a warm
+HuggingFace cache. It's idempotent behind a `diar-provision.json` marker in
+`DIAR_NATIVE_MODELS_DIR`, so every startup after the first is a `stat` pass, and the
+`diar-native` compose service waits on `depends_on: backend: condition: service_healthy` so it
+never starts against an empty `/models` and crash-loops.
+
+A failure here is never fatal to startup — diarization falls back to the in-process PyAnnote
+engine, logged, and that is a supported configuration. `./opentranscribe.sh download-models
+diar-native` runs the same export outside the backend's lifespan: use it to pre-provision
+before first start, to force a re-export, or on a multi-replica deployment where
+`DIAR_NATIVE_AUTO_PROVISION=false` hands the export to a dedicated job instead of racing
+several backend replicas against the same files.
+
+### CPU vs GPU
+
+`docker-compose.diar-native.yml` is CPU-safe on its own — no GPU device reservation,
+`DIAR_MODE` defaults to `cpu`. A second overlay, `docker-compose.diar-native-gpu.yml`, adds the
+nvidia device reservation (pinned to `DIAR_NATIVE_GPU`, falling back to `GPU_DEVICE_ID`) and
+flips `DIAR_MODE` to `cuda`. Both `opentr.sh` and `opentranscribe.sh` add that second overlay
+automatically whenever they've already detected an nvidia runtime for the rest of the stack —
+there is no separate flag to set. Idle GPU footprint is ~2.2 GB of warm ONNX Runtime arena once
+the sidecar has served a request (measured on `diar-server` 0.3.1; pre-0.3.1 builds held
+roughly double that, so re-measure with `nvidia-smi --query-compute-apps` rather than trusting
+a fixed number here).
+
 ## OpenSearch Neural Search
 
 Configure neural search capabilities for semantic search across transcriptions.

@@ -28,7 +28,17 @@ class LocalDiarizationProvider(DiarizationProvider):
         return "local"
 
     def supports_speaker_count(self) -> bool:
-        return True
+        """Whether the engine actually serving local diarization honors speaker-count hints.
+
+        Only the in-process PyAnnote fork does: it passes num_speakers/min_speakers/
+        max_speakers into the pipeline. The native sidecar runs community-1 auto speaker
+        counting — ``NativeSpeakerDiarizer.diarize`` (``diarizer_native.py``) logs a warning
+        and ignores an explicit ``num_speakers``, and silently drops min/max entirely — so
+        answering True unconditionally overstated what a caller could rely on.
+        """
+        from app.transcription.config import TranscriptionConfig
+
+        return TranscriptionConfig._resolve_diarizer_backend() != "native"
 
     def validate_connection(self) -> tuple[bool, str, float]:
         """Check CUDA availability as a proxy for local diarization readiness."""

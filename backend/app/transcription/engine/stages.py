@@ -40,17 +40,32 @@ logger = logging.getLogger(__name__)
 def _overlap_diarization_enabled(tc) -> bool:
     """True when diarization should run alongside transcription instead of after it.
 
-    Requires the sidecar engine (``tc.diarizer_backend == "native"``): only then is
-    diarization another process's work, so the two genuinely run at once rather than
-    contending for this worker's VRAM and GIL. Set ``DIAR_OVERLAP=0`` to force the sequential
-    order back (an escape hatch for debugging, and the control used to prove the two orders
-    produce identical output).
+    Requires the sidecar to actually be REACHABLE, not merely configured
+    (``tc.diarizer_backend == "native"``). A deployment configured "native" whose sidecar is
+    down still runs diarization in-process on the PyAnnote fallback, and overlapping that
+    with transcription would leave both models co-resident on this worker's GPU — exactly
+    what ``_make_room_for_local_diarizer`` exists to prevent, and it is skipped whenever this
+    returns True (see the ``async_diarization is None`` check at each call site). Set
+    ``DIAR_OVERLAP=0`` to force the sequential order back regardless of reachability (an
+    escape hatch for debugging, and the control used to prove the two orders produce
+    identical output).
+
+    ``sidecar_ready()`` carries its own short TTL cache (``diarizer_native.py``, issue #661
+    probe-cost fix) rather than one here — it is the single home for that cache because
+    ``ModelManager._diarizer_current`` calls the same function per task, and one cache keyed
+    on base_url serves both call sites. The cheap config/env checks here still run first so
+    the probe fires only when it can actually change the answer.
     """
     import os
 
     if tc.diarizer_backend.lower() != "native":
         return False
-    return os.environ.get("DIAR_OVERLAP", "1").lower() not in ("0", "false", "no")
+    if os.environ.get("DIAR_OVERLAP", "1").lower() in ("0", "false", "no"):
+        return False
+
+    from app.transcription.diarizer_native import sidecar_ready
+
+    return sidecar_ready()
 
 
 def _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb: int) -> None:
@@ -75,11 +90,34 @@ def _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb: int)
         _wait_for_vram(2000, "diarization")
 
 
-def _collect_diarization(audio, tc, manager, hw, profiler, callback, async_diarization):
+def _run_diarize(diarizer, audio, wav_path: str | None):
+    """Call diarizer.diarize(), handing NativeSpeakerDiarizer a pre-existing WAV when we have one.
+
+    NativeSpeakerDiarizer.diarize() accepts an optional wav_path to skip re-encoding audio it
+    can already reach on the shared volume (issue #661) — Stage 1's WAV in the 3-stage Celery
+    pipeline. The in-process PyAnnote fork's diarize(audio) has no such argument and never will
+    (the two engines are a duck-typed drop-in for each other; diarizer.py is not touched for
+    this), so the isinstance check below is what keeps the extra kwarg from ever reaching a
+    diarizer that doesn't accept it — callers here only ever hold ``SpeakerDiarizer`` typed as
+    the common interface, never knowing which concrete engine ``manager.get_diarizer`` handed
+    back.
+    """
+    from app.transcription.diarizer_native import NativeSpeakerDiarizer
+
+    if wav_path and isinstance(diarizer, NativeSpeakerDiarizer):
+        return diarizer.diarize(audio, wav_path=wav_path)
+    return diarizer.diarize(audio)
+
+
+def _collect_diarization(
+    audio, tc, manager, hw, profiler, callback, async_diarization, wav_path: str | None = None
+):
     """Diarize, taking the overlapped result when one is in flight.
 
     Returns the diarizer's ``(diarize_df, overlap_info, native_embeddings)``. An overlapped
     attempt that failed falls back to a plain inline run, so the outcome is the same either way.
+    ``wav_path``, when given, is Stage 1's already-materialized shared-volume WAV — passed
+    through to the diarizer so it can skip re-encoding ``audio`` a second time (issue #661).
     """
     from app.transcription.engine.progress import emit
 
@@ -97,7 +135,11 @@ def _collect_diarization(audio, tc, manager, hw, profiler, callback, async_diari
     with profiler.step("diarization"):
         if async_diarization is not None:
             overlapped = async_diarization.result()
-        result = overlapped if overlapped is not None else manager.get_diarizer(tc).diarize(audio)
+        result = (
+            overlapped
+            if overlapped is not None
+            else _run_diarize(manager.get_diarizer(tc), audio, wav_path)
+        )
     logger.info(
         "TIMING: diarization step completed in %.3fs%s",
         time.perf_counter() - step_start,
@@ -115,7 +157,7 @@ class _AsyncDiarization:
     working job into a failed one.
     """
 
-    def __init__(self, audio, tc, manager, task_id: str | None):
+    def __init__(self, audio, tc, manager, task_id: str | None, wav_path: str | None = None):
         from app.utils.benchmark_timing import mark
 
         self._value: tuple | None = None
@@ -125,7 +167,7 @@ class _AsyncDiarization:
 
         def _run() -> None:
             try:
-                self._value = manager.get_diarizer(tc).diarize(audio)
+                self._value = _run_diarize(manager.get_diarizer(tc), audio, wav_path)
             except BaseException as exc:  # noqa: BLE001 — handed to the caller, not swallowed
                 self._error = exc
 
@@ -485,7 +527,9 @@ class _GpuRawStage:
         # transcription, so the GPU stage costs max(transcribe, diarize) rather than the sum.
         async_diarization: _AsyncDiarization | None = None
         if tc.enable_diarization and _overlap_diarization_enabled(tc):
-            async_diarization = _AsyncDiarization(audio, tc, manager, pre.task_id)
+            async_diarization = _AsyncDiarization(
+                audio, tc, manager, pre.task_id, wav_path=pre.local_wav_path
+            )
 
         diarizer_preload_thread: threading.Thread | None = None
         if tc.enable_diarization and tc.concurrent_requests <= 1 and async_diarization is None:
@@ -534,7 +578,14 @@ class _GpuRawStage:
 
         if tc.enable_diarization:
             diarize_df, overlap_info, native_embeddings = _collect_diarization(
-                audio, tc, manager, hw, profiler, callback, async_diarization
+                audio,
+                tc,
+                manager,
+                hw,
+                profiler,
+                callback,
+                async_diarization,
+                wav_path=pre.local_wav_path,
             )
             diarize_records = diarize_df.to_records()
             speaker_gender = getattr(diarize_df, "speaker_gender", None)
@@ -773,7 +824,9 @@ class _DiarizerOnlyStage:
             step_start = time.perf_counter()
             with profiler.step("diarization"):
                 diarizer = manager.get_diarizer(tc)
-                diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
+                diarize_df, overlap_info, native_embeddings = _run_diarize(
+                    diarizer, audio, transcript.local_wav_path
+                )
             logger.info(
                 f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
             )

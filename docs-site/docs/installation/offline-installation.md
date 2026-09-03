@@ -10,7 +10,12 @@ OpenTranscribe supports complete offline deployment for airgapped environments, 
 
 In offline mode, OpenTranscribe operates without any internet connectivity:
 - ✅ Transcription works fully offline
-- ✅ Speaker diarization works offline
+- ✅ Speaker diarization works offline — **only if the diarizer's weights were included in the
+  package you built**. Neither engine can provision itself air-gapped: the native `diar-native`
+  sidecar's ONNX/PLDA export and the in-process PyAnnote fork's weights both come from
+  HuggingFace, and an offline machine has no route there. See
+  [Including the native diarizer (diar-native)](#including-the-native-diarizer-diar-native)
+  below.
 - ✅ All AI models cached locally — **when fetched with `scripts/download-models.sh`**.
   The hand-rolled recipe below omits the NLTK corpora; see the warning there.
 - ✅ No external API calls
@@ -95,6 +100,37 @@ python3 scripts/download-models.py --only nltk
 
 Issue #491 tracked this gap.
 :::
+
+### Including the native diarizer (diar-native)
+
+The hand-rolled recipe above has the same gap for the **native diarization engine**
+(`diar-native`, the default `local` diarizer as of v0.5.0 — see
+[Speaker Diarization](../features/speaker-diarization.md#native-diarization-engine-new-in-v050)):
+it fetches PyAnnote's `.bin` weights but never runs the ONNX/PLDA export `diar-server` needs, so
+a package built by hand this way ships no `diar-native` model set at all. That is not fatal —
+without it, diarization falls back to the in-process PyAnnote engine — but it means an
+air-gapped install with no native sidecar unless you provision one before disconnecting.
+
+The maintained way to build a complete offline package is `scripts/build-offline-package.sh`
+(not the manual `docker save`/`tar` steps below, which predate it and remain useful for
+understanding what a package contains). It already handles `diar-native`:
+- `download_models()` mounts a `diar-native` model-cache directory into the backend container
+  and runs `scripts/download-models.py` with no filter, which includes the `diar-native` group
+  — this shells out to `diar-server provision-models` with the **same** `HUGGINGFACE_TOKEN` used
+  for every other model, producing the export on the build machine (which has internet access).
+- The export is copied into the package at `models/diar-native/`, and
+  `docker-compose.diar-native.yml` is copied into `config/` so the offline install can load the
+  sidecar with nothing else to fetch.
+- `scripts/opentr-offline.sh` (the offline stack's equivalent of `opentr.sh`) auto-loads that
+  overlay whenever `models/diar-native/` is non-empty on the target machine — there is no
+  network route for it to check `HUGGINGFACE_TOKEN` and provision on the fly the way the
+  connected install's lifespan hook does, so a populated export is the **only** signal it can
+  act on.
+- If `HUGGINGFACE_TOKEN` lacks access to
+  [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
+  when you run the build script, it copies nothing and prints a warning rather than failing the
+  whole build — the resulting package still works, just on the PyAnnote fallback instead of the
+  native engine.
 
 ### Download Installation Files
 
@@ -237,8 +273,13 @@ docker compose logs | grep -i "connect\|download"
 - Cannot download YouTube videos
 - Cannot use cloud LLM providers (OpenAI, Claude, etc.)
 - Cannot auto-update models
+- Cannot provision (or re-provision) the native diarizer's weights on the air-gapped machine —
+  build the package with `scripts/build-offline-package.sh` and a valid `HUGGINGFACE_TOKEN` so
+  `models/diar-native/` ships already populated (see above), or accept the automatic fallback
+  to the in-process PyAnnote engine
 - ✅ All transcription features work
-- ✅ Speaker diarization works
+- ✅ Speaker diarization works (native engine if its weights shipped with the package, PyAnnote
+  fallback otherwise)
 - ✅ Local LLM works (if configured)
 
 ## Next Steps

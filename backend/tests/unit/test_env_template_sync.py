@@ -79,11 +79,6 @@ _ALLOWLIST: dict[str, str] = {
         "Internal container path default (/app/models). Base compose sets a differently-"
         "named MODELS_DIRECTORY instead, which nothing reads — not wired to any override."
     ),
-    "PYANNOTE_MODEL": (
-        "Legacy field for a 'pyannote' cloud-ASR provider entry, default mismatched against "
-        "the actual call site (services/asr/factory.py uses a separate os.getenv). Not the "
-        "diarization model — that's DIARIZATION_MODEL, read by scripts/download-models.py."
-    ),
     "TEMP_DIR": (
         "Hardcoded to /app/temp by every service's `environment:` block in base compose — "
         "not sourced from host env, so a .env value would be silently ignored."

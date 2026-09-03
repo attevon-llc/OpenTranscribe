@@ -1,0 +1,32 @@
+OpenTranscribe
+==============
+
+OpenTranscribe is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+See the LICENSE file for the full license text.
+
+Third-party model attribution
+------------------------------
+
+Both diarization engines OpenTranscribe ships (the native `diar-native` sidecar and the
+in-process PyAnnote fork used as its failover) run model weights exported from
+`pyannote/speaker-diarization-community-1` (https://huggingface.co/pyannote/speaker-diarization-community-1),
+released by the pyannote.audio project under the Creative Commons Attribution 4.0
+International license (CC-BY-4.0): https://creativecommons.org/licenses/by/4.0/
+
+The pipeline and the models it wraps require attribution via the following citations:
+
+- pyannote.audio (the diarization pipeline):
+  Bredin, H. (2023). "pyannote.audio 2.1 speaker diarization pipeline: principle,
+  benchmark, and recipe." INTERSPEECH 2023.
+
+- Speaker segmentation:
+  Plaquet, A. and Bredin, H. (2023). "Powerset multi-class cross entropy loss for
+  neural speaker diarization." INTERSPEECH 2023.
+
+- Speaker embedding (WeSpeaker ResNet34-LM):
+  Wang, H. et al. (2023). "Wespeaker: A research and production oriented speaker
+  embedding learning toolkit." ICASSP 2023.
+
+CC-BY-4.0 requires attribution, not open-sourcing of code that merely uses the model; it
+does not otherwise affect the AGPL-3.0 license under which OpenTranscribe's own source
+code is distributed.

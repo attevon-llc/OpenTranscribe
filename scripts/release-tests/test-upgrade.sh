@@ -1540,12 +1540,24 @@ phase_11_new_data_post_upgrade() {
     # log-fallback branches below exist only as a defensive net, not the
     # expected path here (see ac_diar_engine_verdict's header for why the
     # FROM side is never checked this way at all).
+    # This is the TO (post-upgrade) side, which — per ac_diar_engine_verdict's own
+    # header and the phase-11 comment above — always ships #706's
+    # diarization_provider column. The genuine old-stack case the function's log
+    # fallback exists for is the FROM side, which this check deliberately never
+    # runs against. So on THIS side a `:log` verdict is never the legitimate
+    # old-schema case either, and `native:log` must not get an unqualified PASS —
+    # an unscoped 30-minute log grep can report PASS from an unrelated earlier
+    # job/phase, which is exactly the false-pass hole #706 closed (issue #707).
     local diar_verdict diar_verdict_source
     diar_verdict=$(ac_diar_engine_verdict "$fid" "opentranscribe-celery-worker" "30m")
     diar_verdict_source="${diar_verdict#*:}"
     case "$diar_verdict" in
-        native:db|native:log)
+        native:db)
             as_record PASS "native diarizer served the post-upgrade file ($fid, source=$diar_verdict_source)"
+            ;;
+        native:log)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "verdict=native:log — an unscoped legacy worker-log grep, not the per-file diarization_provider column. The upgraded (TO) stack should always carry that column; a :log result here means the DB-backed check was unavailable, not that diarization succeeded, and may reflect an unrelated job from an earlier phase of this same run. Never trusted as a pass (issue #707)"
             ;;
         pyannote:db)
             as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
@@ -1558,6 +1570,10 @@ phase_11_new_data_post_upgrade() {
         none:db)
             as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
                 "media_file.diarization_provider is NULL after completion on the upgraded stack — diarization never resolved a provider"
+            ;;
+        error:request)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "ac_diar_engine_verdict's request to /api/files/$fid failed or returned unparseable JSON (verdict=error:request) on the upgraded stack — this is a request failure, not evidence the diarization_provider column is absent, and is never silently downgraded to the log fallback"
             ;;
         absent:none)
             as_record FAIL "native diarizer served the post-upgrade file ($fid)" \

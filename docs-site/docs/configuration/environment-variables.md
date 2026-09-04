@@ -136,8 +136,8 @@ ENGINE_DIARIZER_BACKEND=native   # native (default) | pyannote
 
 # Worker -> sidecar HTTP client (backend/app/transcription/diarizer_native.py)
 DIAR_NATIVE_URL=http://diar-native:8701
-DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
-DIAR_NATIVE_TIMEOUT_S=3600
+DIAR_NATIVE_SHARED_DIR=/scratch/opentranscribe/diar
+DIAR_NATIVE_TIMEOUT_S=1800
 DIAR_NATIVE_GENDER=1             # ask the sidecar for gender in the same pass
 
 # The diar-server process itself (docker-compose.diar-native.yml / -gpu.yml)

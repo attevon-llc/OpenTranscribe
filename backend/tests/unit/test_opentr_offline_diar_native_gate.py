@@ -139,6 +139,29 @@ def test_default_engine_backend_is_native(tmp_path: Path):
     assert "docker-compose.diar-native.yml" in result
 
 
+def test_lite_with_native_backend_and_preseeded_weights_loads_the_sidecar(tmp_path: Path):
+    """Issue #654: lite lacks the export TOOLCHAIN, not the diar-server BINARY
+    (backend/Dockerfile.lite ships it, #660), and an offline install never
+    provisions weights at install time regardless of mode -- they only ever
+    arrive pre-seeded in the package. So a lite install with weights already
+    on disk and an explicit native backend must load the sidecar, not skip it
+    just because DEPLOYMENT_MODE=lite."""
+    result = _build(
+        tmp_path, engine_diarizer_backend="native", deployment_mode="lite", models_populated=True
+    )
+    assert "docker-compose.diar-native.yml" in result
+
+
+def test_lite_with_no_preseeded_weights_still_skips_the_sidecar(tmp_path: Path):
+    """Control: lite with NO pre-seeded weights has no way to ever provision
+    them (no export toolchain, no network route to HuggingFace in an offline
+    install) and must still skip."""
+    result = _build(
+        tmp_path, engine_diarizer_backend="native", deployment_mode="lite", models_populated=False
+    )
+    assert "docker-compose.diar-native.yml" not in result
+
+
 def test_no_weights_still_skips_the_sidecar_regardless_of_engine(tmp_path: Path):
     """Control: the pre-existing weights-presence gate must still function."""
     result = _build(

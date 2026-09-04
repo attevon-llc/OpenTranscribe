@@ -27,7 +27,7 @@ These are two distinct multi-GPU features with different goals, enabled independ
 | | `--gpu-scale` (this page) | `--with-gpu-split` |
 |---|---|---|
 | What it does | Runs **N parallel Celery workers in one container** against a dedicated GPU, for higher **throughput** (more files transcribed concurrently) | Runs transcription and diarization on **separate** GPUs for higher **per-file** performance |
-| Enabled by | The `--gpu-scale` CLI flag on `./opentr.sh start dev` / `start prod` -- **not** `GPU_SCALE_ENABLED` (see Step 1 below) | The `--with-gpu-split` CLI flag **and** `ENGINE_GPU_SPLIT=true` |
+| Enabled by | The `--gpu-scale` CLI flag on `./opentr.sh start dev` / `start prod` -- **not** `GPU_SCALE_ENABLED` (see Step 1 below) | The `--with-gpu-split` CLI flag on `./opentr.sh` (dev), **or** `ENGINE_GPU_SPLIT=true` in `.env` alone on the shipped `./opentranscribe.sh` (no `--with-*` flags there) |
 | Compose overlay | `docker-compose.gpu-scale.yml` (`COMPOSE_PROFILES=gpu-scale`) | `docker-compose.gpu-split.yml` (`gpu-split` profile) |
 | Tuning | `GPU_SCALE_WORKERS`, `GPU_SCALE_DEVICE_ID`, `GPU_SCALE_DEFAULT_WORKER` | `GPU_TRANSCRIBE_DEVICE_ID`, `GPU_DIARIZE_DEVICE_ID` |
 

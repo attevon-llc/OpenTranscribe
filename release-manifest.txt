@@ -42,6 +42,16 @@ docker-compose.yml
 docker-compose.prod.yml
 docker-compose.gpu.yml
 docker-compose.gpu-scale.yml
+# Optional overlay for multi-GPU SPLIT: transcription and diarization on separate host
+# GPUs, gated on ENGINE_GPU_SPLIT=true (opentranscribe.sh's gpu_split_active(), issue
+# #708). `optional` because it only benefits a 2+ GPU host and most installs never set
+# the gating var — unlike docker-compose.gpu-scale.yml above, which every single-GPU
+# install can benefit from and is therefore required. Before this entry, a self-hosted
+# install could never download this file at all: get_compose_files() had no reference
+# to gpu-split, so setting ENGINE_GPU_SPLIT=true routed dispatch onto queues nothing
+# consumed (issues #703/#705 fix what happens there; this is what makes their fix
+# reachable outside `opentr.sh` dev).
+docker-compose.gpu-split.yml	optional
 docker-compose.blackwell.yml	optional
 docker-compose.nginx.yml
 docker-compose.backup.yml	optional

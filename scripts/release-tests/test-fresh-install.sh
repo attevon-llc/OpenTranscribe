@@ -673,12 +673,23 @@ phase_06_api_smoke() {
             # uploaded file id stands in for "the file(s) that just
             # completed": a fresh install here uploads at most a couple of
             # small clips, so verifying one is representative of the batch.
+            # This scenario always installs the CURRENT release, whose API always ships
+            # #706's diarization_provider column (see ac_diar_engine_verdict's header) —
+            # so a `:log` verdict here is never the legitimate old-stack case, only a
+            # signal something is wrong. `native:log` therefore does NOT get an
+            # unqualified PASS: an unscoped 30-minute log grep can report PASS from an
+            # unrelated earlier job, which is exactly the false-pass hole #706 was
+            # written to close (issue #707).
             local diar_verdict diar_verdict_source
             diar_verdict=$(ac_diar_engine_verdict "$fid" "opentranscribe-celery-worker" "30m")
             diar_verdict_source="${diar_verdict#*:}"
             case "$diar_verdict" in
-                native:db|native:log)
+                native:db)
                     as_record PASS "native diarizer served the completed file ($fid, source=$diar_verdict_source)"
+                    ;;
+                native:log)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "verdict=native:log — an unscoped legacy worker-log grep, not the per-file diarization_provider column. A fresh install of the current release should always carry that column; a :log result here means the DB-backed check was unavailable, not that diarization succeeded. Never trusted as a pass (issue #707)"
                     ;;
                 pyannote:db)
                     as_record FAIL "native diarizer served the completed file ($fid)" \
@@ -691,6 +702,10 @@ phase_06_api_smoke() {
                 none:db)
                     as_record FAIL "native diarizer served the completed file ($fid)" \
                         "media_file.diarization_provider is NULL after completion — diarization never resolved a provider"
+                    ;;
+                error:request)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "ac_diar_engine_verdict's request to /api/files/$fid failed or returned unparseable JSON (verdict=error:request) — this is a request failure, not evidence the diarization_provider column is absent, and is never silently downgraded to the log fallback"
                     ;;
                 absent:none)
                     as_record FAIL "native diarizer served the completed file ($fid)" \

@@ -91,6 +91,7 @@ DEPLOYMENTS=(
     "prod|start prod"
     "prod-pki|start prod --with-pki"
     "prod-nginx-pki|start prod --with-pki --no-nas"
+    "prod-gpu-split|start prod --with-gpu-split"
 )
 
 # Documented deployments that cannot be validated through `opentr.sh start`, with

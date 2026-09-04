@@ -157,8 +157,10 @@ COPY --chown=appuser:appuser . .
 
 # Reserve the pipeline's shared-volume mount point so a freshly created named volume
 # inherits appuser rather than root — see Dockerfile.prod for the full note (issue #661 E2:
-# one volume, pipeline_scratch, three namespaces — diar-native-tmp was a dead reservation
-# here anyway, since this image has no diar-server binary at all).
+# one volume, pipeline_scratch, three namespaces). This image DOES ship the diar-server
+# binary (see the COPY block above, issue #660), so this reservation is live here too —
+# what lite still lacks is the export TOOLCHAIN (torch/onnx/onnxscript/etc, #654), not the
+# binary or its scratch dir.
 RUN mkdir -p /scratch/opentranscribe && \
     chown appuser:appuser /scratch/opentranscribe
 RUN mkdir -p /scratch/opentranscribe/engine /scratch/opentranscribe/diar && \

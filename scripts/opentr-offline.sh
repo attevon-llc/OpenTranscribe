@@ -139,13 +139,16 @@ build_compose_files() {
     # false promise that the sidecar is about to start working.
     #
     # Issue #655 fix item 5 / the feat/diar-native-e2e follow-up: this was previously
-    # gated on weights-present ALONE, with no engine gate and no lite gate — so an
-    # operator who deliberately set ENGINE_DIARIZER_BACKEND=pyannote (or ships a
-    # DEPLOYMENT_MODE=lite offline package, which has no diar-native provisioning
-    # toolchain to begin with) still got the sidecar loaded, defeating that
-    # configuration outright. Mirrors opentr.sh's add_diar_native_overlay predicate
-    # (lite excluded, engine must resolve to native) minus the token/auto-provision
-    # half, which cannot apply here.
+    # gated on weights-present ALONE, with no engine gate — so an operator who
+    # deliberately set ENGINE_DIARIZER_BACKEND=pyannote still got the sidecar loaded,
+    # defeating that configuration outright. Mirrors opentr.sh's add_diar_native_overlay
+    # predicate (engine must resolve to native) minus the token/auto-provision half,
+    # which cannot apply here. DEPLOYMENT_MODE=lite is NOT an unconditional exclusion
+    # (#654): lite lacks the export toolchain to provision weights itself, but an
+    # offline install never provisions at install time regardless of mode -- weights
+    # only ever arrive pre-seeded in the package -- and backend/Dockerfile.lite ships
+    # the diar-server binary (#660), so a lite install skips only when weights are
+    # ALSO absent.
     #
     # DIAR_NATIVE_IMAGE / Blackwell: deliberately NOT wired here. opentr.sh pins
     # DIAR_NATIVE_IMAGE to match docker-compose.blackwell.yml's celery-worker tag
@@ -166,11 +169,21 @@ build_compose_files() {
         local diar_models_dir="${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-$INSTALL_DIR/models}/diar-native}"
         local deployment_mode_lc
         deployment_mode_lc=$(printf '%s' "${DEPLOYMENT_MODE:-}" | tr '[:upper:]' '[:lower:]')
-        if [ "$deployment_mode_lc" = "lite" ]; then
-            print_info "Native diarization sidecar skipped (DEPLOYMENT_MODE=lite has no provisioning toolchain)"
+        local diar_weights_present="false"
+        if [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
+            diar_weights_present="true"
+        fi
+        # DEPLOYMENT_MODE=lite lacks the export TOOLCHAIN (torch/onnx/onnxscript/etc, #654) to
+        # provision these weights itself -- but an offline install never provisions anything at
+        # install time anyway (see the block comment above: weights only ever arrive pre-seeded
+        # in the package). backend/Dockerfile.lite ships the diar-server binary itself (#660), so
+        # a lite install with weights already pre-seeded can run the sidecar; only a lite install
+        # with NO pre-seeded weights has no way to ever get them and must skip.
+        if [ "$deployment_mode_lc" = "lite" ] && [ "$diar_weights_present" = "false" ]; then
+            print_info "Native diarization sidecar skipped (DEPLOYMENT_MODE=lite has no export toolchain to provision weights, and none are pre-seeded at $diar_models_dir)"
         elif [ "${ENGINE_DIARIZER_BACKEND:-native}" != "native" ]; then
             print_info "Native diarization sidecar skipped (ENGINE_DIARIZER_BACKEND=${ENGINE_DIARIZER_BACKEND})"
-        elif [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
+        elif [ "$diar_weights_present" = "true" ]; then
             COMPOSE_FILES="$COMPOSE_FILES -f $DIAR_NATIVE_COMPOSE_FILE"
             print_info "Native diarization sidecar enabled (weights present at $diar_models_dir)"
             # The base overlay is CPU-safe by construction; the device reservation lives

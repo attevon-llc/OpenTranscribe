@@ -79,6 +79,7 @@ def test_get_engine_settings_exposes_all_keys(client, super_admin_token_headers)
     expected = {
         "transcriber_backend",
         "diarizer_backend",
+        "diarizer_require_sidecar",
         "boundary_smoothing_enabled",
         "boundary_acoustic_recheck_enabled",
         "boundary_acoustic_cosine_margin",
@@ -141,6 +142,27 @@ def test_set_acoustic_recheck_bool_persists(client, super_admin_token_headers, d
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["boundary_acoustic_recheck_enabled"]["value"] is True
     assert get_setting(db_session, "engine.boundary_acoustic_recheck_enabled") == "true"
+
+
+def test_set_diarizer_require_sidecar_bool_persists(client, super_admin_token_headers, db_session):
+    """Issue #656 Step 6: the fail-hard policy switch is DB-backed, admin-UI-editable, no
+    restart needed — same round-trip shape as the other boolean toggles in this file."""
+    resp = client.post(
+        f"{_BASE}/update",
+        json={"diarizer_require_sidecar": True},
+        headers=super_admin_token_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["diarizer_require_sidecar"]["value"] is True
+    assert get_setting(db_session, "engine.diarizer_require_sidecar") == "true"
+
+
+def test_diarizer_require_sidecar_defaults_to_false(client, super_admin_token_headers):
+    resp = client.get(_BASE, headers=super_admin_token_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    entry = resp.json()["diarizer_require_sidecar"]
+    assert entry["value"] is False
+    assert entry["source"] == "default"
 
 
 def test_cosine_margin_above_max_is_422(client, super_admin_token_headers):

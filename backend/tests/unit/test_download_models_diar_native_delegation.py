@@ -20,6 +20,7 @@ backend container when this test was added.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -140,18 +141,48 @@ def test_diar_native_does_not_redefine_native_provisions_constants():
 
 
 def test_diar_native_lite_comment_is_not_false():
-    """The old comment claimed the lite image lacks the diar-server binary. It does not.
+    """Lite has neither a missing binary NOR a `DEPLOYMENT_MODE=lite` skip any more.
 
-    `backend/Dockerfile.lite` copies the binary in explicitly (issue #660) so lite can serve
-    diarization on the CPU provider; what it lacks is the export TOOLCHAIN (torch, onnx,
-    onnxscript, onnxslim, onnxconverter-common), which is why `ensure_native_models` skips on
-    `DEPLOYMENT_MODE=lite` rather than on a missing binary. download-models.py must not carry
-    its own, now-false, "no diar-server binary ... e.g. the lite image" claim.
+    Two claims used to be made about lite here, and both are now false:
+
+    1. "the lite image has no diar-server binary" -- `backend/Dockerfile.lite` copies the
+       binary in explicitly (issue #660) so lite can serve diarization on the CPU provider.
+    2. "provisioning skips on `DEPLOYMENT_MODE=lite`" -- issue #654 removed that skip from
+       `native_provision.ensure_native_models` entirely: `requirements-lite.txt` now installs
+       the export toolchain (`pyannote.audio`, `onnx`, `onnxscript`, `onnxslim`,
+       `onnxconverter-common`) too, so a lite install provisions its own weights exactly like
+       the full image, on first boot. There is nothing left for `download-models.py` to skip
+       "identically" to, since nothing skips.
+
+    A bare substring check for the old binary-absence wording would pass even if this file
+    picked up a NEW false claim shaped like #2 (e.g. reintroducing "the lite skip" prose) or a
+    reworded version of #1, so this also windows around every "lite"+"skip" co-occurrence and
+    fails unless it reads as a NEGATION of the skip ("no ... skip", "removed", "no longer") --
+    the correct, present-tense framing (issue #654) -- rather than an assertion that lite
+    skips something.
     """
     source = DOWNLOADER_PY.read_text()
-    assert "no diar-server binary in this image" not in source.lower(), (
+    lowered = source.lower()
+    assert "no diar-server binary" not in lowered, (
         "download-models.py still claims the lite image lacks the diar-server binary -- "
-        "backend/Dockerfile.lite ships it (issue #660). That claim belongs nowhere now that "
-        "provisioning delegates to ensure_native_models, which correctly skips on "
-        "DEPLOYMENT_MODE=lite for the real reason (no export toolchain), not a missing binary."
+        "backend/Dockerfile.lite ships it (issue #660)."
     )
+
+    # Deliberately narrow to phrases where a negator directly modifies "skip" itself --
+    # a bare "not "/"removed" anywhere in the surrounding window is too generic (an early
+    # draft matched on an unrelated "this is a caller of it, not a fork of it" two lines
+    # away and reported a false negative).
+    negation_re = re.compile(r"(?:\bno\b|\bnot\b|\bremoved\b|\bno longer\b)[^.]{0,40}\bskip")
+    lines = lowered.splitlines()
+    window = 3
+    for i, line in enumerate(lines):
+        if "lite" not in line or "skip" not in line:
+            continue
+        lo, hi = max(0, i - window), min(len(lines), i + window + 1)
+        context = "\n".join(lines[lo:hi])
+        assert negation_re.search(context), (
+            f"download-models.py line {i + 1} mentions 'lite' and 'skip' without a negation "
+            "nearby -- issue #654 removed the DEPLOYMENT_MODE=lite skip from "
+            "native_provision.ensure_native_models entirely, so any surviving mention must "
+            f"read as 'lite no longer skips', not 'lite skips'. Line: {line!r}"
+        )

@@ -694,6 +694,35 @@ DEFAULT_DIAR_NATIVE_MODEL_SET = "fast"
 # it exists to bound a hang, not to pace a healthy run.
 DEFAULT_DIAR_NATIVE_PROVISION_TIMEOUT_S = 1800
 
+# Per-request /diarize timeout, DURATION-SCALED (issue #656 Step 4). A flat bound is wrong in
+# both directions: DIAR_NATIVE_TIMEOUT_S (env, ceiling only) is meaningless for a 30-second
+# memo and would fail a genuine multi-hour recording if raised naively. The real per-request
+# budget is derived from audio already in hand (`len(audio)/16000`, no new plumbing needed):
+#
+#   budget(d) = min(DIAR_NATIVE_TIMEOUT_S, DIAR_SIDECAR_TIMEOUT_FLOOR_S + d / DIAR_SIDECAR_MIN_RTF)
+#
+# Derivation (docs/BENCHMARK_RESULTS.md): PyAnnote diarization measured 80.2x/79.1x realtime
+# solo, 26x at concurrency=3 (the slowest figure in the tree, "queue-load est."); largest file
+# ever benchmarked is 4.7h = 17,059s. DIAR_SIDECAR_MIN_RTF=3.0 leaves 8.7x margin on the worst
+# figure and 26x on the only directly-measured one. DIAR_SIDECAR_TIMEOUT_FLOOR_S=300 covers
+# connect + first-request ORT session load (SPEAKRS_LAZY_SESSIONS=1) + a short admission queue.
+# Above ~1.25h audio the ceiling binds at 1800s, still 2.7x the slowest number ever recorded for
+# the largest supported file. CPU-mode sidecar throughput is UNMEASURED here — that is why the
+# ceiling stays the env var DIAR_NATIVE_TIMEOUT_S rather than being folded into this constant.
+DIAR_SIDECAR_TIMEOUT_FLOOR_S = 300
+DIAR_SIDECAR_MIN_RTF = 3.0
+
+# =============================================================================
+# diar-native sidecar-unavailable retry policy (issue #656 Step 5)
+# =============================================================================
+# Mirrors CLOUD_ASR_* above: a retry ladder is policy, not an operator knob, so there are
+# deliberately no matching .env entries. 30+60+120+240 ~= 7.5 min total, sized to span a
+# container recreate plus a lazy model (re)load — the sidecar healthcheck itself needs
+# 15s x 3 failures to mark the container unhealthy, so the first retry must clear that.
+DIAR_SIDECAR_RETRY_BASE = 30  # seconds — first retry delay when the sidecar gave no Retry-After
+DIAR_SIDECAR_RETRY_MAX = 600  # seconds — backoff ceiling (10 min)
+DIAR_SIDECAR_MAX_RETRIES = 4  # attempts
+
 # =============================================================================
 # Language Settings (Multilingual Support)
 # =============================================================================

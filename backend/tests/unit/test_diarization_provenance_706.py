@@ -95,7 +95,7 @@ class TestNativeSpeakerDiarizerIdentity:
         native = NativeSpeakerDiarizer(config, base_url="http://127.0.0.1:1")
         native.is_loaded = True
 
-        def _fake_post_own_copy(audio):
+        def _fake_post_own_copy(audio, timeout):
             return (
                 {
                     "exclusive_segments": [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}],
@@ -146,7 +146,7 @@ class TestNativeSpeakerDiarizerIdentity:
         native.last_provider = "pyannote"
         native.last_model = "pyannote/speaker-diarization-community-1"
 
-        def _fake_post_own_copy(audio):
+        def _fake_post_own_copy(audio, timeout):
             return (
                 {
                     "exclusive_segments": [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}],

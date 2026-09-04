@@ -48,8 +48,11 @@ from typing import cast
 import numpy as np
 
 from app.core.constants import DIAR_NATIVE_SHARED_DIR_DEFAULT
+from app.core.constants import DIAR_SIDECAR_MIN_RTF
+from app.core.constants import DIAR_SIDECAR_TIMEOUT_FLOOR_S
 from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
 from app.core.constants import PIPELINE_SCRATCH_DEFAULT
+from app.services.asr.errors import retry_after_from_headers
 from app.transcription.diarize_result import DiarizeResult
 
 if TYPE_CHECKING:
@@ -70,7 +73,52 @@ _DEFAULT_URL = os.environ.get("DIAR_NATIVE_URL", "http://diar-native:8701")
 # own-copy fallback namespace inside pipeline_scratch (issue #661 E2). Still a documented,
 # independently overridable env var; only the default changed.
 _SHARED_DIR = os.environ.get("DIAR_NATIVE_SHARED_DIR", DIAR_NATIVE_SHARED_DIR_DEFAULT)
-_TIMEOUT_S = float(os.environ.get("DIAR_NATIVE_TIMEOUT_S", "3600"))
+# CEILING on one /diarize request (issue #656 Step 4) — the real per-request budget is
+# duration-scaled, see _diarize_budget_s() and core/constants.py's DIAR_SIDECAR_* comment.
+# Default lowered 3600 -> 1800: at 1800 the worst case (a wedged sidecar plus the own-copy
+# retry) holds a Celery slot for 3600s, comfortably under 25% of the default 21600s
+# CELERY_VISIBILITY_TIMEOUT (see _warn_if_timeout_risks_redelivery below). Raise on a
+# CPU-mode sidecar — CPU throughput is unmeasured in this repo.
+_TIMEOUT_S = float(os.environ.get("DIAR_NATIVE_TIMEOUT_S", "1800"))
+
+
+def _diarize_budget_s(audio: np.ndarray) -> float:
+    """Per-request timeout for THIS audio, duration-scaled (issue #656 Step 4).
+
+    ``urlopen``'s timeout is per-socket-operation and diar-server sends nothing until the
+    job is done, so time-to-first-byte IS total processing time — a flat bound would give a
+    30-second memo and a 4.7-hour recording the same hour-long budget. See the DIAR_SIDECAR_*
+    comment in core/constants.py for the derivation and the CPU-mode caveat.
+    """
+    duration_s = len(audio) / 16000.0
+    return min(_TIMEOUT_S, DIAR_SIDECAR_TIMEOUT_FLOOR_S + duration_s / DIAR_SIDECAR_MIN_RTF)
+
+
+def _warn_if_timeout_risks_redelivery(timeout_s: float, visibility_timeout_s: float) -> None:
+    """Loud, one-line warning when the ceiling could trigger acks_late redelivery.
+
+    The only place these two independently-configured values are related. Two attempts (the
+    own-copy retry after a reused-WAV 4xx) can each hold a Celery slot for up to `timeout_s`;
+    if that total exceeds a quarter of CELERY_VISIBILITY_TIMEOUT, a wedged sidecar risks the
+    task being redelivered to a second worker while the first is still running (core/celery.py's
+    visibility_timeout comment). Silent at the new default (2*1800=3600 < 0.25*21600=5400); an
+    operator who restores the old 3600s default gets 7200 > 5400 and this fires.
+    """
+    if 2 * timeout_s > 0.25 * visibility_timeout_s:
+        logger.warning(
+            "DIAR_NATIVE_TIMEOUT_S=%.0f: two attempts at the sidecar could hold a Celery "
+            "slot for up to %.0fs, over 25%% of CELERY_VISIBILITY_TIMEOUT=%.0fs — risking "
+            "acks_late redelivery of a still-running job. Lower DIAR_NATIVE_TIMEOUT_S or "
+            "raise CELERY_VISIBILITY_TIMEOUT.",
+            timeout_s,
+            2 * timeout_s,
+            visibility_timeout_s,
+        )
+
+
+_warn_if_timeout_risks_redelivery(
+    _TIMEOUT_S, float(os.environ.get("CELERY_VISIBILITY_TIMEOUT", "21600"))
+)
 # Ask the sidecar for gender alongside diarization. Off leaves the app's own CPU task in charge.
 _GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0", "false", "no")
 # The engine's Stage-1 shared-volume WAV mount, as seen from THIS container (the worker, not
@@ -254,7 +302,7 @@ def sidecar_status(base_url: str | None = None) -> dict:
 
 
 def sidecar_supports_cpu_device(base_url: str | None = None) -> bool:
-    """True when the sidecar's ``/healthz`` advertises ``"cpu"`` in ``supported_devices``.
+    """True when the sidecar has the CPU provider ``devices``-LOADED and can serve it now.
 
     Gates issue #679's per-request device routing. The sidecar's request structs do NOT use
     ``deny_unknown_fields``, so an OLD diar-server (pre this field) silently IGNORES an
@@ -271,13 +319,37 @@ def sidecar_supports_cpu_device(base_url: str | None = None) -> bool:
 
 
 def _sidecar_supports_cpu_uncached(url: str) -> bool:
-    """The live capability check backing :func:`sidecar_supports_cpu_device`.
+    """The live check backing :func:`sidecar_supports_cpu_device`.
 
     Reads the same ``/healthz`` body ``sidecar_status`` already fetches for its "reason"
     string — a second endpoint would be a second round trip for information the sidecar
     already puts on the endpoint we probe for liveness anyway.
+
+    ⚠️ Reads ``devices``, NOT ``supported_devices``. They are different questions and
+    conflating them is a live outage. ``/healthz`` returns both::
+
+        "devices":           ["cuda"]           <- LOADED, and therefore servable now
+        "supported_devices": ["cuda", "cpu"]    <- what this BINARY is able to load
+
+    ``supported_devices`` is a build-time capability advertisement; the set actually
+    loaded is chosen at start-up by ``DIAR_DEVICES``. Keying on the capability made this
+    return True on every ordinary GPU deployment, so ``/embed_window`` was sent
+    ``device: "cpu"`` and answered::
+
+        400  device 'cpu' is not loaded; this server is serving [cuda]
+             (add it to DIAR_DEVICES to load it)
+
+    which ``embed_waveform`` turns into ``None`` — i.e. **every speaker embedding
+    silently fell back to the in-process PyAnnote model**, on a sidecar reporting
+    healthy with models verified. Measured against the live sidecar, not reasoned about.
+
+    Absence still reads as False, which keeps the original guard intact: an old
+    diar-server predating these fields has no ``devices`` key either, and its request
+    struct does not use ``deny_unknown_fields``, so it would silently IGNORE a ``device``
+    key and run on CUDA anyway — success-shaped, while burning the GPU slot the routing
+    exists to spare.
     """
-    devices = sidecar_status(url).get("supported_devices") or []
+    devices = sidecar_status(url).get("devices") or []
     return "cpu" in devices
 
 
@@ -399,6 +471,38 @@ def describe_diarizer_status() -> dict[str, Any]:
     }
 
 
+def sidecar_diagnostics(base_url: str | None = None) -> dict[str, Any]:
+    """Live sidecar diagnostics for the admin stats surface (issue #656 Step 9).
+
+    Answers "can the sidecar serve RIGHT NOW" — a live, deployment-wide probe. This is
+    deliberately a DIFFERENT question from #706's ``media_file.diarization_provider``
+    ("which engine served THIS FILE", per-row, historical) — do not derive one from the
+    other, and do not fold this into :func:`describe_diarizer_status`, which answers
+    configured-vs-effective for the CONFIGURED backend and is consulted regardless of which
+    engine is configured.
+
+    ``models_state``/``models_reason`` come from the same ``/healthz`` body
+    :func:`sidecar_status` already exposes for a readiness-failure log line; ``max_inflight``
+    is read directly from the env var the sidecar's own admission gate is configured with
+    (``DIAR_NATIVE_MAX_INFLIGHT``) since the sidecar exposes no endpoint for its own
+    configuration. Queue depth / in-flight count are DELIBERATELY NOT surfaced here — the
+    sidecar exposes no such endpoint, and inferring it client-side would be a guess presented
+    as fact (see the diar-native upstream asks in issue #656).
+    """
+    url = (base_url or _DEFAULT_URL).rstrip("/")
+    live = sidecar_healthy(url)
+    ready = sidecar_ready(url)
+    status = sidecar_status(url)
+    return {
+        "url": url,
+        "live": live,
+        "ready": ready,
+        "models_state": status.get("models_state"),
+        "models_reason": status.get("models_reason"),
+        "max_inflight": int(os.environ.get("DIAR_NATIVE_MAX_INFLIGHT", "2")),
+    }
+
+
 def _overlap_regions(full_segments: list[dict], min_duration: float) -> list[dict]:
     """Sweep-line: regions where >=2 speakers are simultaneously active (start/end dicts)."""
     events: list[tuple[float, int]] = []
@@ -444,6 +548,85 @@ def _log_reuse_decision(wav_path: str | None, reused: bool) -> None:
             )
     elif reused:
         logger.info("diar-native reusing staged WAV at %s", wav_path)
+
+
+class DiarSidecarUnavailableError(RuntimeError):
+    """The sidecar could not serve this request for a reachability/capacity reason.
+
+    Subclasses ``RuntimeError`` deliberately (issue #656 Step 3) — mirrors
+    ``app.services.asr.errors.ASRProviderError``'s reasoning: every existing ``except
+    Exception`` site keeps working unmodified for anything not positively classified.
+
+    ``reason`` is one of ``"unreachable"`` (connection refused/reset — the sidecar process is
+    gone), ``"timeout"`` (the sidecar answered ``/readyz`` but ``/diarize`` never returned
+    inside the budget — typically a saturated admission gate), or ``"backpressure"`` (HTTP
+    429/503 — the sidecar explicitly asked to be retried later). Only ``"backpressure"``
+    carries a meaningful ``retry_after``.
+
+    Deliberately NOT raised for a 4xx on a path the sidecar could not open (422 etc, still
+    retried once with a fresh copy) or a genuine engine error (5xx/malformed JSON — that is
+    deterministic and a retry would only reproduce it): both of those stay plain exceptions so
+    they are never retried by a Celery task's ``except DiarSidecarUnavailableError`` handler.
+    """
+
+    def __init__(self, message: str, *, reason: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.retry_after = retry_after
+
+
+def _classify_sidecar_failure(exc: BaseException) -> BaseException:
+    """Turn a raw urllib failure into a :class:`DiarSidecarUnavailableError` when it represents a
+    reachability/capacity problem, else return ``exc`` unchanged — see that class's docstring
+    for exactly which failures are, and are not, classified.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        if exc.code in (429, 503):
+            return DiarSidecarUnavailableError(
+                f"diar-native backpressure (HTTP {exc.code})",
+                reason="backpressure",
+                retry_after=retry_after_from_headers(exc.headers),
+            )
+        return exc
+    # TimeoutError (socket.timeout is an alias since Python 3.10) means the sidecar answered
+    # /readyz fast but /diarize never returned inside the budget — a saturated admission gate,
+    # not a dead process. urllib.error.URLError (connection refused/reset) means the process
+    # itself is unreachable. Order matters: TimeoutError does NOT subclass URLError.
+    if isinstance(exc, TimeoutError):
+        return DiarSidecarUnavailableError(f"diar-native timed out: {exc}", reason="timeout")
+    if isinstance(exc, urllib.error.URLError):
+        return DiarSidecarUnavailableError(f"diar-native unreachable: {exc}", reason="unreachable")
+    return exc
+
+
+def diarizer_require_sidecar() -> bool:
+    """Resolve ``engine.diarizer_require_sidecar``: SystemSettings -> env -> default False.
+
+    Issue #656 Step 6. Mirrors ``TranscriptionConfig._resolve_diarizer_backend``'s DB > env >
+    default order, re-read on every call (no pinning) for the same reason — an admin flipping
+    this must take effect without a worker restart. **Default false** reproduces today's
+    silent-fallback behaviour exactly; when true, :meth:`NativeSpeakerDiarizer.diarize` raises
+    :class:`DiarSidecarUnavailableError` instead of building the in-process PyAnnote fallback,
+    making the fail-hard policy #572 will eventually make the ONLY policy exercisable in
+    production before that fallback is deleted.
+    """
+    raw = os.getenv("ENGINE_DIARIZER_REQUIRE_SIDECAR", "false")
+    try:
+        from app.db.session_utils import session_scope
+        from app.models.system_settings import SystemSettings
+
+        with session_scope() as db:
+            setting = (
+                db.query(SystemSettings)
+                .filter(SystemSettings.key == "engine.diarizer_require_sidecar")
+                .first()
+            )
+            if setting and setting.value is not None:
+                raw = str(setting.value)
+    except Exception:  # noqa: S110  # nosec B110
+        # DB not available (e.g. during testing, worker startup race) — fall back to env.
+        logger.debug("Could not read engine.diarizer_require_sidecar from DB, using env var")
+    return str(raw).strip().lower() in ("true", "1", "yes", "on")
 
 
 class NativeSpeakerDiarizer:
@@ -507,7 +690,7 @@ class NativeSpeakerDiarizer:
 
     # -- main entry points -------------------------------------------------
 
-    def _post_own_copy(self, audio: np.ndarray) -> tuple[dict, str]:
+    def _post_own_copy(self, audio: np.ndarray, timeout: float) -> tuple[dict, str]:
         """Write our own WAV copy of *audio* and POST it. Returns ``(response, path)``.
 
         Split out of ``diarize()`` to keep that method's cyclomatic complexity in check, and
@@ -535,57 +718,120 @@ class NativeSpeakerDiarizer:
             wf.setframerate(16000)
             wf.writeframes(pcm.tobytes())
         try:
-            return self._post_diarize(own_wav), own_wav
-        except BaseException:
+            return self._post_diarize(own_wav, timeout), own_wav
+        except BaseException as exc:
             # BaseException, not Exception: a timeout arriving as a KeyboardInterrupt/
             # SystemExit during shutdown must not leak either, and we re-raise unchanged.
             with contextlib.suppress(OSError):
                 os.unlink(own_wav)
+            # Classify the same way as the reused-WAV path (issue #656 Step 3) — the
+            # overlapped-diarization thread can hit this branch too (no wav_path is ever
+            # passed on that path today, but nothing guarantees it stays that way), and
+            # _AsyncDiarization.failed_unavailable must see a consistent classification
+            # regardless of which branch actually ran.
+            if isinstance(exc, Exception):
+                classified = _classify_sidecar_failure(exc)
+                if classified is not exc:
+                    raise classified from exc
             raise
 
-    def _try_reused_wav(self, wav_path: str) -> dict | None:
+    def _try_reused_wav(self, wav_path: str, timeout: float) -> dict | None:
         """Attempt the staged-WAV POST. Returns the response on success, or ``None`` when
-        the caller should retry with its own freshly-written copy (an HTTP 4xx, typically
-        422 — the sidecar is reachable and answered, it just could not open THIS path).
+        the caller should retry with its own freshly-written copy (an HTTP 4xx — 400/404/422
+        — the sidecar is reachable and answered, it just could not open THIS path).
 
-        Raises for anything else (timeout, connection loss): that means the sidecar itself
-        is unreachable or wedged, and a second attempt at the same ``_TIMEOUT_S`` ceiling
-        cannot recover from it — it would only double the worst-case hang before the
-        fallback runs (measured: 2x timeout with a staged WAV vs 1x without one, since
-        retrying-on-any-exception used to re-POST a freshly written copy at the same
-        sidecar). Split out of ``diarize()`` to keep its cyclomatic complexity in check.
+        Raises for anything else (timeout, connection loss, 429/503 backpressure): a second
+        attempt at the same sidecar cannot recover from any of those — it would only double
+        the worst-case hang (timeout/unreachable) or waste a write against a sidecar that just
+        said back off (backpressure). Those three are raised as :class:`DiarSidecarUnavailableError`
+        (issue #656 Step 3) so the caller/task can classify and retry appropriately; a genuine
+        engine error (5xx other than 503, malformed JSON) is re-raised unclassified — it is
+        deterministic and a retry would only reproduce it. Split out of ``diarize()`` to keep
+        its cyclomatic complexity in check.
         """
         try:
-            return self._post_diarize(wav_path)
+            return self._post_diarize(wav_path, timeout)
         except urllib.error.HTTPError as exc:
+            if exc.code in (400, 404, 422):
+                logger.warning(
+                    "diar-native could not use the staged WAV at %s (HTTP %s); re-sending "
+                    "our own copy. If this repeats, the sidecar is missing the %s mount — "
+                    "recreate that container rather than restarting it.",
+                    wav_path,
+                    exc.code,
+                    _ENGINE_SHARED_DIR,
+                )
+                return None
+            classified = _classify_sidecar_failure(exc)
             logger.warning(
-                "diar-native could not use the staged WAV at %s (HTTP %s); re-sending "
-                "our own copy. If this repeats, the sidecar is missing the %s mount — "
-                "recreate that container rather than restarting it.",
-                wav_path,
+                "diar-native /diarize responded HTTP %s for the staged WAV at %s; NOT "
+                "retrying with a fresh copy — %s",
                 exc.code,
-                _ENGINE_SHARED_DIR,
+                wav_path,
+                "the sidecar asked to be retried later"
+                if isinstance(classified, DiarSidecarUnavailableError)
+                else "this is a deterministic engine error, a retry would only reproduce it",
             )
-            return None
+            if classified is exc:
+                raise
+            raise classified from exc
         except Exception as exc:  # noqa: BLE001 — timeout/connection loss: don't retry, re-raise
+            classified = _classify_sidecar_failure(exc)
             logger.warning(
                 "diar-native /diarize timed out or the connection was lost (%s); NOT "
                 "retrying — falling back to PyAnnote",
                 exc,
             )
-            raise
+            if classified is exc:
+                raise
+            raise classified from exc
 
-    def _post_diarize(self, path: str) -> dict:
+    def _post_diarize(self, path: str, timeout: float) -> dict:
         """POST one /diarize request for a WAV the sidecar is expected to be able to open.
 
         Gender rides this call: the sidecar already has the decoded audio and the speaker
-        turns in hand, so classifying costs no second fetch or decode.
+        turns in hand, so classifying costs no second fetch or decode. ``timeout`` is the
+        duration-scaled per-request budget from :func:`_diarize_budget_s` (issue #656 Step 4),
+        not the flat ``_TIMEOUT_S`` ceiling directly.
         """
         return post_json(
             f"{self.base_url}/diarize",
             {"wav_path": path, "file_id": "job", "gender": _GENDER_ENABLED},
-            timeout=_TIMEOUT_S,
+            timeout=timeout,
         )
+
+    def _refuse_or_fallback_impl(
+        self, exc: BaseException, audio: np.ndarray, allow_local_fallback: bool
+    ) -> tuple[DiarizeResult, dict, dict | None]:
+        """Degrade a sidecar failure to the PyAnnote fallback, or refuse to.
+
+        Extracted out of :meth:`diarize` (rather than kept as a nested closure) purely to
+        keep that method's cyclomatic complexity under the repo's C901 gate — not for reuse.
+        """
+        if not allow_local_fallback:
+            raise RuntimeError(
+                "diar-native failed while overlapped with transcription; refusing the "
+                "in-process PyAnnote fallback on this thread (unsafe to load/release GPU "
+                "models while transcription may still be running) — the caller must retry "
+                f"sequentially: {exc}"
+            ) from exc
+        if diarizer_require_sidecar():
+            # Issue #656 Step 6: makes the fail-hard policy exercisable in production BEFORE
+            # #572 deletes the fallback outright. Re-raise the classified exception unchanged
+            # so a Celery task's `except DiarSidecarUnavailableError` handler (Step 5) sees
+            # it; wrap anything else (a plain HTTPError/OSError) the same way so the policy is
+            # uniform regardless of which failure path triggered it.
+            if isinstance(exc, DiarSidecarUnavailableError):
+                raise exc
+            raise DiarSidecarUnavailableError(
+                f"diar-native failed and engine.diarizer_require_sidecar is set, refusing "
+                f"the PyAnnote fallback: {exc}",
+                reason="unreachable",
+            ) from exc
+        fallback_result = self._fallback_engine().diarize(audio)
+        self.last_provider = "pyannote"
+        self.last_model = getattr(self._fallback, "_model_name", None)
+        return fallback_result
 
     def diarize(
         self,
@@ -593,6 +839,7 @@ class NativeSpeakerDiarizer:
         wav_path: str | None = None,
         *,
         allow_local_fallback: bool = True,
+        skip_sidecar: bool = False,
     ) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None]:
         """Run diarization, optionally against a WAV the caller already wrote to disk.
 
@@ -620,6 +867,16 @@ class NativeSpeakerDiarizer:
                 exactly as unsafe (it could tear down weights the main thread is using). The
                 caller catches the raise and retries sequentially, after transcription is
                 known to have finished, where both are safe.
+            skip_sidecar: When True, skip the HTTP attempt(s) entirely and go straight to
+                :func:`_refuse_or_fallback` (issue #656 Step 2). Set by ``_collect_diarization``
+                for the inline retry that follows a failed OVERLAPPED attempt, but only when
+                that attempt's failure was classified :class:`DiarSidecarUnavailableError` (sidecar
+                unreachable/wedged/backpressured) — never for a 422 or a genuine engine error,
+                which a fresh sidecar attempt can still recover from. Without this, a SATURATED
+                sidecar (readyz green, diarize gated) pays the full budget TWICE: once on the
+                overlapped thread, once again on the inline retry against the identical
+                permit-starved gate — measured worst case 2 x 3600s = 2h, each holding a Celery
+                slot, a GPU thread and the decoded ndarray.
         """
         if not self.is_loaded:
             raise RuntimeError("Diarizer not loaded. Call load_model() first.")
@@ -631,19 +888,18 @@ class NativeSpeakerDiarizer:
             )
 
         def _refuse_or_fallback(exc: BaseException) -> tuple[DiarizeResult, dict, dict | None]:
-            if not allow_local_fallback:
-                raise RuntimeError(
-                    "diar-native failed while overlapped with transcription; refusing the "
-                    "in-process PyAnnote fallback on this thread (unsafe to load/release GPU "
-                    "models while transcription may still be running) — the caller must retry "
-                    f"sequentially: {exc}"
-                ) from exc
-            fallback_result = self._fallback_engine().diarize(audio)
-            self.last_provider = "pyannote"
-            self.last_model = getattr(self._fallback, "_model_name", None)
-            return fallback_result
+            return self._refuse_or_fallback_impl(exc, audio, allow_local_fallback)
+
+        if skip_sidecar:
+            return _refuse_or_fallback(
+                RuntimeError(
+                    "skip_sidecar=True: a previous overlapped attempt already reported the "
+                    "sidecar unreachable/wedged/backpressured; not attempting it again"
+                )
+            )
 
         step_start = time.perf_counter()
+        timeout = _diarize_budget_s(audio)
         # Reusing Stage 1's WAV (issue #661) saves a full write and read of the recording,
         # but it is only an OPTIMISATION and must never cost us the engine. A sidecar that
         # cannot open the path answers 422 and, before this retry existed, that degraded the
@@ -660,7 +916,7 @@ class NativeSpeakerDiarizer:
             out = None
             if reused:
                 try:
-                    out = self._try_reused_wav(str(wav_path))
+                    out = self._try_reused_wav(str(wav_path), timeout)
                 except Exception as exc:  # noqa: BLE001 — timeout/connection loss, see above
                     return _refuse_or_fallback(exc)
 
@@ -672,7 +928,7 @@ class NativeSpeakerDiarizer:
                 # diar-native right now" — and previously a write failure propagated out
                 # of diarize() uncaught and hard-failed the whole transcription.
                 try:
-                    out, own_wav = self._post_own_copy(audio)
+                    out, own_wav = self._post_own_copy(audio, timeout)
                 except Exception as exc:  # noqa: BLE001 — a sidecar loss must not fail the job
                     logger.warning(
                         "diar-native /diarize failed mid-job (%s); falling back to PyAnnote",

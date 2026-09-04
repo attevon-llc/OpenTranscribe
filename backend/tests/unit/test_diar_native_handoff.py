@@ -338,6 +338,205 @@ class TestRetryPolicy:
             assert accepted["count"] == 1
 
 
+_429_hits = {"count": 0}
+
+
+class _429Handler(http.server.BaseHTTPRequestHandler):
+    """Every /diarize POST answers 429 with a Retry-After header — a live backpressure signal."""
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+        _429_hits["count"] += 1
+        self.send_response(429)
+        self.send_header("Retry-After", "30")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+
+class TestSidecarFailureClassification:
+    """Issue #656 Step 3: backpressure (429/503) must be classified separately from a "bad
+    path" 4xx, must NOT cost a wasted own-copy write, and must carry Retry-After through.
+    """
+
+    def test_a_429_is_not_retried_with_a_fresh_copy(self, tmp_path, monkeypatch):
+        _429_hits["count"] = 0
+        httpd = http.server.HTTPServer(("127.0.0.1", 0), _429Handler)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            engine_shared = tmp_path / "engine-shared"
+            engine_shared.mkdir()
+            diar_scratch = tmp_path / "diar-scratch"
+            monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(diar_scratch))
+
+            pre_wav = engine_shared / "task-429.wav"
+            pre_wav.write_bytes(b"staged wav; the sidecar answers 429 without reading it")
+
+            diarizer = NativeSpeakerDiarizer(_Config(), base_url=f"http://127.0.0.1:{port}")
+            diarizer.is_loaded = True
+            audio = np.zeros(16_000, dtype=np.float32)
+
+            from app.transcription.diarizer_native import DiarSidecarUnavailableError
+
+            # allow_local_fallback=False (the overlap thread) always wraps in a plain
+            # RuntimeError regardless of classification — see that flag's docstring — so the
+            # classified exception is the wrapper's __cause__, exactly what
+            # _AsyncDiarization.failed_unavailable (engine/stages.py) inspects.
+            with pytest.raises(RuntimeError) as excinfo:
+                diarizer.diarize(audio, wav_path=str(pre_wav), allow_local_fallback=False)
+
+            assert _429_hits["count"] == 1, (
+                "a 429 must NOT be retried with a freshly written copy — the sidecar just "
+                "said back off, wasting a full WAV write plus a second admission attempt "
+                "against the thing that told us to wait would be exactly wrong"
+            )
+            assert not diar_scratch.exists(), "no own-copy WAV should ever have been written"
+            cause = excinfo.value.__cause__
+            assert isinstance(cause, DiarSidecarUnavailableError)
+            assert cause.reason == "backpressure"
+            assert cause.retry_after == 30.0
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_a_saturated_sidecar_raises_timeout_reason_not_unreachable(self, tmp_path, monkeypatch):
+        """A wedged (not dead) sidecar must classify as "timeout", never "unreachable" —
+        an operator debugging the two needs different fixes (restart vs. recreate)."""
+        monkeypatch.setattr(diarizer_native, "_TIMEOUT_S", 0.3)
+        with _accept_and_hang_server() as (base_url, accepted):
+            engine_shared = tmp_path / "engine-shared"
+            engine_shared.mkdir()
+            monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
+
+            pre_wav = engine_shared / "task-saturated.wav"
+            pre_wav.write_bytes(b"staged wav; the sidecar never answers")
+
+            diarizer = NativeSpeakerDiarizer(_Config(), base_url=base_url)
+            diarizer.is_loaded = True
+            audio = np.zeros(16_000, dtype=np.float32)
+
+            from app.transcription.diarizer_native import DiarSidecarUnavailableError
+
+            with pytest.raises(RuntimeError) as excinfo:
+                diarizer.diarize(audio, wav_path=str(pre_wav), allow_local_fallback=False)
+
+            cause = excinfo.value.__cause__
+            assert isinstance(cause, DiarSidecarUnavailableError)
+            assert cause.reason == "timeout"
+            assert accepted["count"] == 1
+
+    def test_connection_refused_raises_unreachable_reason(self, tmp_path, monkeypatch):
+        """A genuinely closed port — process gone — must classify as "unreachable"."""
+        monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        port = srv.getsockname()[1]
+        srv.close()  # bound-then-released: guaranteed ECONNREFUSED
+
+        diarizer = NativeSpeakerDiarizer(_Config(), base_url=f"http://127.0.0.1:{port}")
+        diarizer.is_loaded = True
+        audio = np.zeros(16_000, dtype=np.float32)
+
+        from app.transcription.diarizer_native import DiarSidecarUnavailableError
+
+        with pytest.raises(RuntimeError) as excinfo:
+            diarizer.diarize(audio, allow_local_fallback=False)
+
+        cause = excinfo.value.__cause__
+        assert isinstance(cause, DiarSidecarUnavailableError)
+        assert cause.reason == "unreachable"
+
+    def test_a_422_is_still_not_classified_as_sidecar_unavailable(self, tmp_path, monkeypatch):
+        """A 422 stays a plain retry-with-fresh-copy path — it must never be classified as
+        DiarSidecarUnavailableError, or a Celery task would retry it (Step 5) when a fresh copy
+        already fixes it in-process."""
+        _422_then_ok_hits["count"] = 0
+        httpd = http.server.HTTPServer(("127.0.0.1", 0), _Counting422ThenOKHandler)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            engine_shared = tmp_path / "engine-shared"
+            engine_shared.mkdir()
+            monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
+
+            pre_wav = engine_shared / "task-422b.wav"
+            pre_wav.write_bytes(b"staged wav")
+
+            diarizer = NativeSpeakerDiarizer(_Config(), base_url=f"http://127.0.0.1:{port}")
+            diarizer.is_loaded = True
+            audio = np.zeros(16_000, dtype=np.float32)
+
+            result, _, _ = diarizer.diarize(
+                audio, wav_path=str(pre_wav), allow_local_fallback=False
+            )
+            assert len(result) == 1
+            assert _422_then_ok_hits["count"] == 2
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+
+def _db_unavailable_for_require_sidecar() -> None:
+    raise RuntimeError("db unavailable in test")
+
+
+class TestRequireSidecarPolicy:
+    """Issue #656 Step 6: engine.diarizer_require_sidecar makes the fail-hard policy
+    exercisable before #572 deletes the fallback outright."""
+
+    def test_default_off_reproduces_todays_fallback(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("ENGINE_DIARIZER_REQUIRE_SIDECAR", raising=False)
+        monkeypatch.setattr(
+            "app.db.session_utils.session_scope", _db_unavailable_for_require_sidecar
+        )
+        monkeypatch.setattr(diarizer_native, "_TIMEOUT_S", 0.3)
+        monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", _FakeFallback)
+        with _accept_and_hang_server() as (base_url, _accepted):
+            diarizer = NativeSpeakerDiarizer(_Config(), base_url=base_url)
+            diarizer.is_loaded = True
+            audio = np.zeros(16_000, dtype=np.float32)
+
+            result, _, _ = diarizer.diarize(audio)
+            assert len(result) == 1
+            assert diarizer.last_provider == "pyannote"
+
+    def test_enabled_raises_instead_of_falling_back(self, monkeypatch):
+        monkeypatch.setenv("ENGINE_DIARIZER_REQUIRE_SIDECAR", "true")
+        monkeypatch.setattr(
+            "app.db.session_utils.session_scope", _db_unavailable_for_require_sidecar
+        )
+        monkeypatch.setattr(diarizer_native, "_TIMEOUT_S", 0.3)
+        built: list[object] = []
+
+        class _CountingFake(_FakeFallback):
+            def __init__(self, config):
+                super().__init__(config)
+                built.append(self)
+
+        monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", _CountingFake)
+        with _accept_and_hang_server() as (base_url, _accepted):
+            diarizer = NativeSpeakerDiarizer(_Config(), base_url=base_url)
+            diarizer.is_loaded = True
+            audio = np.zeros(16_000, dtype=np.float32)
+
+            from app.transcription.diarizer_native import DiarSidecarUnavailableError
+
+            with pytest.raises(DiarSidecarUnavailableError):
+                diarizer.diarize(audio)
+
+            assert built == [], (
+                "engine.diarizer_require_sidecar=true must never build the PyAnnote "
+                "fallback — that is the whole point of the setting"
+            )
+
+
 class _FakeFallback:
     """Minimal PyAnnote-shaped stand-in, local to the retry-policy tests."""
 
@@ -589,3 +788,56 @@ class TestSidecarReadyTTLCache:
             assert sidecar_ready(url) is False, "after reset the new state must be visible at once"
             assert state["hits"] == 2
         reset_readiness_cache()
+
+
+class TestSidecarDiagnostics:
+    """Issue #656 Step 9: sidecar_diagnostics() is the live "can it serve right now" probe
+    behind the admin stats `diarization.sidecar` sub-object — a DIFFERENT question from
+    #706's per-file `diarization_provider` column, and must never be derived from it."""
+
+    def test_reports_live_and_ready_against_a_real_healthy_server(self, monkeypatch):
+        reset_readiness_cache()
+        monkeypatch.setenv("DIAR_NATIVE_MAX_INFLIGHT", "3")
+        srv = http.server.HTTPServer(("127.0.0.1", 0), _HealthzAndReadyzHandler)
+        port = srv.server_address[1]
+        thread = threading.Thread(target=srv.serve_forever, daemon=True)
+        thread.start()
+        try:
+            info = diarizer_native.sidecar_diagnostics(f"http://127.0.0.1:{port}")
+            assert info["live"] is True
+            assert info["ready"] is True
+            assert info["max_inflight"] == 3
+            assert info["url"] == f"http://127.0.0.1:{port}"
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            reset_readiness_cache()
+
+    def test_reports_dead_against_a_real_closed_port(self, monkeypatch):
+        reset_readiness_cache()
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        port = srv.getsockname()[1]
+        srv.close()
+
+        info = diarizer_native.sidecar_diagnostics(f"http://127.0.0.1:{port}")
+        assert info["live"] is False
+        assert info["ready"] is False
+        reset_readiness_cache()
+
+
+class _HealthzAndReadyzHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+        if self.path in ("/healthz", "/readyz"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            body = b'{"models_state": "ready"}'
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass

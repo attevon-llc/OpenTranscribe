@@ -465,6 +465,13 @@ Passes the local path in the chain context. GPU worker reads from the shared pat
 Prerequisite: GPU worker and CPU worker containers must share a `/tmp/transcription/`
 volume mount. Verify in `docker-compose.yml` before implementing.
 
+> **2026-09-04 correction:** this "Option A" prerequisite shipped, in consolidated form, as
+> issue #661's `pipeline_scratch` volume (mounted at `/scratch/opentranscribe` on every
+> pipeline-touching worker, replacing the separate `transcription-temp` and `diar-native-tmp`
+> volumes this plan predates). The path named above is stale; see `docs/combined-engine-design.md`
+> and `docs/ARCHITECTURE.md` for the current layout. Left as-is otherwise — this document
+> records a point-in-time plan, not live behavior.
+
 **Option B — Async download on task receipt:**
 GPU worker starts a background `ThreadPoolExecutor` thread to download the WAV the
 moment the task is received (during Celery task setup, before the function body runs).

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 _KEYS = {
     "transcriber_backend": "engine.transcriber_backend",
     "diarizer_backend": "engine.diarizer_backend",
+    "diarizer_require_sidecar": "engine.diarizer_require_sidecar",
     "boundary_smoothing_enabled": "engine.boundary_smoothing_enabled",
     "boundary_acoustic_recheck_enabled": "engine.boundary_acoustic_recheck_enabled",
     "boundary_acoustic_cosine_margin": "engine.boundary_acoustic_cosine_margin",
@@ -42,6 +43,7 @@ _KEYS = {
 _ENV_DEFAULTS: dict[str, Any] = {
     "transcriber_backend": ("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper"),
     "diarizer_backend": ("ENGINE_DIARIZER_BACKEND", "native"),
+    "diarizer_require_sidecar": ("ENGINE_DIARIZER_REQUIRE_SIDECAR", "false"),
     "boundary_smoothing_enabled": ("ENGINE_BOUNDARY_SMOOTHING_ENABLED", "true"),
     "boundary_acoustic_recheck_enabled": ("ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "false"),
     "boundary_acoustic_cosine_margin": ("ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN", "0.05"),
@@ -49,6 +51,7 @@ _ENV_DEFAULTS: dict[str, Any] = {
 }
 
 _BOOL_KEYS = {
+    "diarizer_require_sidecar",
     "boundary_smoothing_enabled",
     "boundary_acoustic_recheck_enabled",
 }
@@ -75,6 +78,11 @@ _DESCRIPTIONS = {
     ),
     "boundary_acoustic_max_word_dur": (
         "Only re-check words at or below this duration in seconds (backchannel length)"
+    ),
+    "diarizer_require_sidecar": (
+        "Fail (and retry, issue #656) instead of silently falling back to PyAnnote when the "
+        "diar-native sidecar cannot serve. Default off reproduces today's silent fallback; "
+        "only meaningful when diarizer_backend=native."
     ),
 }
 
@@ -119,6 +127,7 @@ def get_engine_settings(
 class _EngineSettingsUpdate(BaseModel):
     transcriber_backend: str | None = None
     diarizer_backend: str | None = None
+    diarizer_require_sidecar: bool | None = None
     boundary_smoothing_enabled: bool | None = None
     boundary_acoustic_recheck_enabled: bool | None = None
     boundary_acoustic_cosine_margin: float | None = Field(default=None, ge=0.0, le=1.0)

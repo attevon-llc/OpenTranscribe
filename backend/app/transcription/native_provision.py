@@ -86,9 +86,9 @@ _REMEDY: dict[int, str] = {
     EXIT_NO_EXPORTER_ENV: (
         "The export needs python3 with torch, pyannote.audio, onnx, onnxscript, "
         "onnxslim and onnxconverter-common. They are pinned in backend/requirements.txt "
-        "— rebuild the backend image (./opentr.sh rebuild-backend). On a --lite "
-        "deployment they are deliberately absent; point DIAR_NATIVE_MODELS_DIR at an "
-        "export produced by a full image instead."
+        "(and, since #654, backend/requirements-lite.txt too) — rebuild the backend "
+        "image (./opentr.sh rebuild-backend). If they are still missing, point "
+        "DIAR_NATIVE_MODELS_DIR at an export produced by another image instead."
     ),
     EXIT_NOT_WRITABLE: (
         "The models directory must be read-write for this step. Check the backend "

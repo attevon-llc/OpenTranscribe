@@ -389,6 +389,47 @@ pin_diar_native_image_for_blackwell() {
     fi
 }
 
+# Whether this deployment should run GPU split — celery-worker-gpu-transcribe /
+# celery-worker-gpu-diarize on separate host GPUs (issue #708).
+#
+# Gated on the SAME variable app/core/constants.py's gpu_split_enabled() reads to route
+# dispatch onto those two queues. One operator-facing switch for both halves: set
+# ENGINE_GPU_SPLIT=true in .env and the app routes to the split queues AND this script
+# loads the overlay that gives those queues a consumer at all. Before this function
+# existed, opentranscribe.sh had no reference to gpu-split whatsoever — an operator who
+# set ENGINE_GPU_SPLIT=true got the app-side routing with nothing to receive it (the
+# exact silent-misconfiguration issue #703's live-consumer check now falls back safely
+# from, but the fallback is "process on the shared gpu queue", not "actually split").
+#
+# Also requires an nvidia runtime and no FORCE_CPU_MODE opt-out — same probe
+# get_compose_files() uses for the plain GPU overlay — since a GPU-reservation overlay
+# cannot load on a host that decided not to use its GPU at all.
+gpu_split_active() {
+    [ -f docker-compose.gpu-split.yml ] || return 1
+    local split_enabled
+    split_enabled=$(read_env_value ENGINE_GPU_SPLIT | tr '[:upper:]' '[:lower:]')
+    [ "$split_enabled" = "true" ] || return 1
+    force_cpu_mode_requested && return 1
+    [ "$(detect_nvidia_runtime)" = "nvidia" ] || return 1
+    return 0
+}
+
+# Companion to pin_diar_native_image_for_blackwell, same calling contract: MUST be
+# called as a plain statement, before `compose_files=$(get_compose_files)`, never
+# through `$(...)`. An `export COMPOSE_PROFILES=...` made inside a function invoked via
+# command substitution dies with that subshell before the `docker compose` command that
+# needs it ever runs — the identical reasoning documented on that function above.
+#
+# docker-compose.yml gates celery-worker-gpu-transcribe / celery-worker-gpu-diarize
+# behind `profiles: [gpu-split]`, so appending docker-compose.gpu-split.yml to the `-f`
+# chain (in get_compose_files(), below) is not enough on its own to bring them up —
+# COMPOSE_PROFILES has to name that profile too.
+pin_gpu_split_profile() {
+    if gpu_split_active; then
+        export COMPOSE_PROFILES="gpu-split"
+    fi
+}
+
 # Resolve where the diar-native ONNX/PLDA export lives (or will land), from .env alone.
 #
 # This is the shipped, standalone script, so — unlike opentr.sh's dev-only same-named
@@ -596,6 +637,17 @@ get_compose_files() {
         fi
     fi
 
+    # GPU split overlay (issue #708): separate GPUs for transcription vs diarization.
+    # gpu_split_active() is the single gate; pin_gpu_split_profile() (called earlier, as
+    # a plain statement, by every arm that reaches here) already exported
+    # COMPOSE_PROFILES=gpu-split so the profile-gated services in docker-compose.yml
+    # actually come up alongside this overlay's GPU reservations for them.
+    if gpu_split_active; then
+        compose_files="$compose_files -f docker-compose.gpu-split.yml"
+        echo -e "${BLUE}🔀 GPU split overlay enabled (ENGINE_GPU_SPLIT=true) — transcription and diarization run on separate GPUs${NC}" >&2
+        echo -e "${BLUE}   GPU_TRANSCRIBE_DEVICE_ID / GPU_DIARIZE_DEVICE_ID default to 0/1 — set both in .env if that is wrong for this host.${NC}" >&2
+    fi
+
     echo "$compose_files"
 }
 
@@ -650,17 +702,18 @@ preflight_upgrade_env() {
     # this script cannot see the SystemSettings value, only the ENGINE_DIARIZER_BACKEND
     # .env fallback read below.
     #
-    # The HARD refusal below is only genuinely actionable on a FULL (non-lite) deployment:
-    # the printed remedy is "run download-models diar-native, or set HUGGINGFACE_TOKEN",
-    # and both actually work there. On DEPLOYMENT_MODE=lite neither does —
-    # native_provision.py's own EXIT_NO_EXPORTER_ENV remedy says the lite image ships no
-    # Python exporter toolchain at all — yet .env.example gives every install, lite
-    # included, the same ENGINE_DIARIZER_BACKEND=native default and an empty
-    # HUGGINGFACE_TOKEN. Blocking the upgrade there was refusing an install that cannot
-    # satisfy the refusal's own remedy, for a fallback that already works: lite's
-    # requirements-lite.txt ships pyannote.audio (CPU) specifically so the in-process
-    # PyAnnote engine is fully supported when the sidecar isn't. So: warn, don't block, on
-    # lite; keep the hard refusal everywhere else — same case issue #670 was written for.
+    # The HARD refusal below prints an actionable remedy ("run download-models diar-native,
+    # or set HUGGINGFACE_TOKEN"), and since #654 restored the export toolchain to
+    # requirements-lite.txt that remedy now works on lite too — lite provisions itself on
+    # first boot exactly like a full install. (This comment previously said the opposite,
+    # citing native_provision.py's EXIT_NO_EXPORTER_ENV remedy; that remedy has since been
+    # updated and the claim is dead.)
+    #
+    # Lite is nonetheless kept on warn-don't-block, now for a different and narrower reason:
+    # an UPGRADE is the wrong moment to start hard-refusing a deployment shape that has been
+    # running fine, and lite's requirements-lite.txt ships pyannote.audio (CPU) so the
+    # in-process engine remains a working fallback while the operator sorts out a token.
+    # The hard refusal stays everywhere else — same case issue #670 was written for.
     local deployment_mode
     deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
 
@@ -1079,6 +1132,7 @@ case "${1:-help}" in
         fi
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files up -d
         echo -e "${GREEN}✅ OpenTranscribe started!${NC}"
@@ -1088,6 +1142,7 @@ case "${1:-help}" in
         check_environment
         echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files down
         echo -e "${GREEN}✅ OpenTranscribe stopped${NC}"
@@ -1100,6 +1155,7 @@ case "${1:-help}" in
         fix_model_cache_permissions || true
         echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files down
         docker compose $compose_files up -d
@@ -1110,6 +1166,7 @@ case "${1:-help}" in
         check_environment
         echo -e "${BLUE}📊 Container Status:${NC}"
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files ps
         ;;
@@ -1133,6 +1190,7 @@ case "${1:-help}" in
         #   docker compose $(./opentranscribe.sh compose-files 2>/dev/null) ps
         check_environment
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         get_compose_files
         ;;
     download-models)
@@ -1163,6 +1221,7 @@ case "${1:-help}" in
         check_environment
         service=${2:-}
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         compose_files=$(get_compose_files)
 
         if [ -z "$service" ]; then
@@ -1259,6 +1318,7 @@ case "${1:-help}" in
             # `docker compose exec postgres` can reach it.
             if [ "$do_rollback" = true ] && [ "$force_downgrade" = false ]; then
                 pin_diar_native_image_for_blackwell
+                pin_gpu_split_profile
                 rollback_compose_files=$(get_compose_files)
                 # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
                 rollback_live_head=$(docker compose $rollback_compose_files exec -T postgres psql -tA \
@@ -1288,6 +1348,7 @@ case "${1:-help}" in
         fi
 
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         compose_files=$(get_compose_files)
 
         preflight_upgrade_env || exit 1
@@ -1420,6 +1481,7 @@ case "${1:-help}" in
         # `docker compose` step runs and reports its own, more specific error.
         fix_model_cache_permissions || true
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         compose_files=$(get_compose_files)
         # Same gate as `update`: refuse while the old stack is still running
         # rather than after it is torn down (#410).
@@ -1480,6 +1542,7 @@ case "${1:-help}" in
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}🗑️  Removing all data...${NC}"
             pin_diar_native_image_for_blackwell
+            pin_gpu_split_profile
             compose_files=$(get_compose_files)
             docker compose $compose_files down -v
             echo -e "${GREEN}✅ All data removed${NC}"
@@ -1492,6 +1555,7 @@ case "${1:-help}" in
         service=${2:-backend}
         echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
         ;;
@@ -1551,6 +1615,7 @@ case "${1:-help}" in
         # Check container status
         echo "Container Status:"
         pin_diar_native_image_for_blackwell
+        pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
 

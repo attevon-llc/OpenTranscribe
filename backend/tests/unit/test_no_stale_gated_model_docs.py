@@ -70,6 +70,9 @@ OPERATOR_FACING_FILES = (
     "README.md",
     "setup-opentranscribe.sh",
     "scripts/download-models.py",
+    "scripts/download-models.sh",
+    "backend/app/transcription/diarizer.py",
+    "windows-installer/INSTALL-WINDOWS.md",
 )
 
 

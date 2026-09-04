@@ -429,7 +429,7 @@ GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
 # Configure in .env
 GPU_TRANSCRIBE_DEVICE_ID=0   # GPU for WhisperX (transcription)
 GPU_DIARIZE_DEVICE_ID=1      # GPU for PyAnnote (diarization)
-ENGINE_SHARED_VOLUME_PATH=/tmp/transcription  # shared volume mount path
+ENGINE_SHARED_VOLUME_PATH=/scratch/opentranscribe/engine  # per-task handoff dir on the pipeline_scratch volume
 
 # Start with GPU split
 ./opentr.sh start dev --with-gpu-split

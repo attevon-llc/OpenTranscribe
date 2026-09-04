@@ -676,3 +676,92 @@ class TestOverlapMidJobFailureDegradesSafely:
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+
+# ---------------------------------------------------------------------------
+# issue #656 Step 2: a SATURATED sidecar (readyz green, diarize gated) must not pay the
+# full budget twice — once overlapped, once again on the inline retry against the identical
+# permit-starved gate.
+# ---------------------------------------------------------------------------
+
+
+class _SaturatedSidecarHandler(http.server.BaseHTTPRequestHandler):
+    """A real server: /healthz and /readyz answer fast; /diarize accepts then stalls past
+    whatever budget the client was given — reproducing B8's saturated-admission-gate shape
+    (the gate blocks /diarize only; /readyz keeps answering 200 fast)."""
+
+    post_count = {"count": 0}
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+        if self.path in ("/healthz", "/readyz"):
+            self.send_response(200)
+        else:
+            self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+        _SaturatedSidecarHandler.post_count["count"] += 1
+        import time as _time
+
+        _time.sleep(2.0)  # far longer than the test's tiny per-request budget
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'{"exclusive_segments": [], "segments": []}')
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+
+class TestSaturatedSidecarSkipsSecondAttempt:
+    def test_the_inline_retry_does_not_re_attempt_a_wedged_sidecar(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ):
+        """Before issue #656 Step 2, an overlapped attempt against a saturated sidecar failed
+        with a bare TimeoutError, and the inline retry re-attempted the SAME wedged sidecar —
+        doubling the worst-case hold. Now the overlapped failure is classified
+        DiarSidecarUnavailableError(reason="timeout") and the inline retry skips straight to the
+        PyAnnote fallback: exactly one POST /diarize, not two.
+        """
+        _SaturatedSidecarHandler.post_count["count"] = 0
+        monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        port = _free_port()
+        httpd = http.server.HTTPServer(("127.0.0.1", port), _SaturatedSidecarHandler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", FakeSpeakerDiarizer)
+            monkeypatch.setattr("app.transcription.diarizer_native._SHARED_DIR", str(tmp_path))
+            monkeypatch.setattr(
+                "app.transcription.diarizer_native._DEFAULT_URL", f"http://127.0.0.1:{port}"
+            )
+            # A tiny per-request budget so the test doesn't wait out a real _TIMEOUT_S.
+            monkeypatch.setattr(
+                "app.transcription.diarizer_native._diarize_budget_s", lambda audio: 0.2
+            )
+            monkeypatch.setattr(stages_mod, "_get_total_vram_mb", lambda: 0)
+
+            config = TranscriptionConfig(diarizer_backend="native")
+            native = NativeSpeakerDiarizer(config, base_url=f"http://127.0.0.1:{port}")
+            native.load_model()
+            assert stages_mod._overlap_diarization_enabled(config) is True
+
+            manager = _FakeManagerOneNativeDiarizer(native)
+            audio = np.zeros(16000, dtype=np.float32)
+
+            async_diar = stages_mod._AsyncDiarization(audio, config, manager, "task-656")
+            diarize_df, _overlap_info, _embeddings, provider, _model = (
+                stages_mod._collect_diarization(
+                    audio, config, manager, _FakeHW(), _FakeProfiler(), None, async_diar
+                )
+            )
+
+            assert _SaturatedSidecarHandler.post_count["count"] == 1, (
+                "the inline retry must NOT re-attempt the same wedged sidecar — today it "
+                "was 2, doubling the worst-case hold on a Celery slot, a GPU thread and the "
+                "decoded ndarray"
+            )
+            assert provider == "pyannote"
+            assert len(diarize_df) == 1
+        finally:
+            httpd.shutdown()
+            httpd.server_close()

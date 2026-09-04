@@ -90,7 +90,14 @@ def _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb: int)
         _wait_for_vram(2000, "diarization")
 
 
-def _run_diarize(diarizer, audio, wav_path: str | None, *, allow_local_fallback: bool = True):
+def _run_diarize(
+    diarizer,
+    audio,
+    wav_path: str | None,
+    *,
+    allow_local_fallback: bool = True,
+    skip_sidecar: bool = False,
+):
     """Call diarizer.diarize(), handing NativeSpeakerDiarizer a pre-existing WAV when we have one.
 
     NativeSpeakerDiarizer.diarize() accepts an optional wav_path to skip re-encoding audio it
@@ -110,7 +117,12 @@ def _run_diarize(diarizer, audio, wav_path: str | None, *, allow_local_fallback:
     from app.transcription.diarizer_native import NativeSpeakerDiarizer
 
     if isinstance(diarizer, NativeSpeakerDiarizer):
-        return diarizer.diarize(audio, wav_path=wav_path, allow_local_fallback=allow_local_fallback)
+        return diarizer.diarize(
+            audio,
+            wav_path=wav_path,
+            allow_local_fallback=allow_local_fallback,
+            skip_sidecar=skip_sidecar,
+        )
     return diarizer.diarize(audio)
 
 
@@ -164,7 +176,11 @@ def _collect_diarization(
             # even when async_diarization is not None.
             _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb)
             diarizer = manager.get_diarizer(tc)
-            result = _run_diarize(diarizer, audio, wav_path)
+            # issue #656 Step 2: an overlapped attempt that failed because the sidecar was
+            # unreachable/wedged/backpressured (DiarSidecarUnavailableError) must not be retried
+            # at the sidecar a second time here — see _run_diarize's skip_sidecar docstring.
+            skip_sidecar = async_diarization is not None and async_diarization.failed_unavailable
+            result = _run_diarize(diarizer, audio, wav_path, skip_sidecar=skip_sidecar)
             provider, model = diarizer.last_provider, diarizer.last_model
     logger.info(
         "TIMING: diarization step completed in %.3fs%s",
@@ -234,6 +250,24 @@ class _AsyncDiarization:
             logger.warning("Overlapped diarization failed (%s); retrying inline", self._error)
             return None
         return self._value
+
+    @property
+    def failed_unavailable(self) -> bool:
+        """True when the overlapped attempt failed because the sidecar itself could not be
+        reached/served in time (issue #656 Step 2) — never for a 422 or a genuine engine
+        error, which a fresh sidecar attempt can still recover from.
+
+        Only meaningful after ``result()`` has been called (it joins the thread first).
+        ``allow_local_fallback=False`` (always the case on this thread) makes
+        NativeSpeakerDiarizer.diarize() wrap the classified exception in a plain
+        ``RuntimeError`` (``... from exc``) rather than raising it directly — so this checks
+        ``__cause__`` too, not just the outer exception's own type.
+        """
+        from app.transcription.diarizer_native import DiarSidecarUnavailableError
+
+        return isinstance(self._error, DiarSidecarUnavailableError) or isinstance(
+            getattr(self._error, "__cause__", None), DiarSidecarUnavailableError
+        )
 
     @property
     def served_by(self) -> tuple[str | None, str | None]:

@@ -20,9 +20,6 @@ import time
 from celery import chain
 
 from app.core.celery import celery_app
-from app.core.constants import CLOUD_ASR_MAX_RETRIES
-from app.core.constants import CLOUD_ASR_RETRY_BASE
-from app.core.constants import CLOUD_ASR_RETRY_MAX
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
@@ -32,6 +29,7 @@ from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.asr.errors import ASRRateLimitedError
+from app.transcription.diarizer_native import DiarSidecarUnavailableError
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 
@@ -40,6 +38,7 @@ from .context import TranscriptionContext
 from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import retry_transcribe_gpu_exception
 from .cpu_task import transcribe_cpu_task
 from .diarize_task import diarize_gpu_task
 from .downstream import trigger_automatic_summarization
@@ -527,27 +526,19 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
 
             return gpu_result
 
-    except ASRRateLimitedError as exc:
-        # Vendor throttle/quota response — retry with the vendor's own Retry-After when
-        # given, else a bounded exponential backoff. Deliberately a SEPARATE policy from
-        # the task's autoretry_for=(ConnectionError, TimeoutError): that one's
-        # retry_backoff_max=30/max_retries=1 are tuned for a GPU-path connection blip, far
-        # too short for a vendor throttle, and autoretry_for cannot honor Retry-After.
-        # self.retry() raises celery.exceptions.Retry, which Celery's task machinery
+    except (ASRRateLimitedError, DiarSidecarUnavailableError) as exc:
+        # Both raise celery.exceptions.Retry via self.retry(), which Celery's task machinery
         # handles as a scheduled retry (not a task failure) — dispatch.py's on_pipeline_error
         # link_error callback does not fire for it, so the file is not marked FAILED here.
-        countdown = exc.retry_after or min(
-            CLOUD_ASR_RETRY_BASE * 2**self.request.retries, CLOUD_ASR_RETRY_MAX
-        )
-        logger.warning(
-            "Cloud ASR rate-limited for file %s (attempt %d/%d), retrying in %.0fs: %s",
-            file_uuid,
-            self.request.retries + 1,
-            CLOUD_ASR_MAX_RETRIES,
-            countdown,
-            exc,
-        )
-        raise self.retry(exc=exc, countdown=countdown, max_retries=CLOUD_ASR_MAX_RETRIES) from exc
+        # Combined into one except clause, dispatching in context.py's
+        # retry_transcribe_gpu_exception (rather than inline isinstance-branching here), to
+        # keep this function's cyclomatic complexity under the repo's C901 gate.
+        # issue #656 Step 5: this MUST sit before `except Exception` below — raised from
+        # inside that generic handler instead, `_handle_transcription_failure` would already
+        # have marked the file ERROR and sent an error notification on every attempt,
+        # including ones that go on to succeed (a real, pre-existing defect in the existing
+        # `autoretry_for` policy below — worth this comment, not a fix here).
+        retry_transcribe_gpu_exception(self, exc, file_uuid)
     except Exception as e:
         # Best-effort cleanup of shared-volume WAV on failure
         _wav = locals().get("local_wav_path", "")

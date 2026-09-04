@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Consolidated pipeline scratch volumes** (issue #661): the per-file MinIO-replacement copy,
+  the Stage 1→Stage 2 engine handoff WAV, and the diar-native sidecar's own-copy fallback
+  previously lived on three separate Docker volumes (`pipeline_scratch`, `transcription-temp`,
+  and `diar-native-tmp`) with a fourth in-container overlayfs copy. They now share a single
+  `pipeline_scratch` volume mounted at `/scratch/opentranscribe`, split into three namespaces
+  (`<file_uuid>/audio.wav`, `engine/<task_id>.wav`, `diar/diar_<hex>.wav`); the engine handoff
+  copy is an `os.link` of the per-file copy, so it costs an inode, not a copy. The volume now
+  reaches all 8 pipeline-touching workers, including three (`celery-cloud-asr-worker`,
+  `celery-embedding-worker`, `backend`) that previously had no mount at all.
+  ⚠️ **Upgrade note:** this removes the `transcription-temp` and `diar-native-tmp` volumes and
+  changes the diar-native sidecar's mount set. A plain restart is **not** sufficient — an
+  already-running `diar-native` container keeps its old mounts and will silently degrade to the
+  PyAnnote failover on every request (handoff WAV not found → own-copy write into a directory it
+  also can't see → PyAnnote fallback), with no error surfaced. Run
+  `docker compose up -d --force-recreate diar-native` (or `./opentr.sh start dev` for the full
+  dev stack) after pulling this change.
+
 ## [0.5.0] - 2026-08-29
 
 ### Overview

@@ -48,12 +48,15 @@
 #
 # Since issue #660, this chain also hand-builds -f docker-compose.diar-native.yml: lite's
 # speaker embeddings come from the diar-native CPU-EP sidecar's /embed_window, not an
-# in-process PyAnnote model (requirements-lite.txt no longer ships pyannote.audio or
-# torchaudio at all). The sidecar is pinned to the SAME locally-built lite image as the
-# other lite workers (DIAR_NATIVE_IMAGE in phase_03), and its weights come from
-# DIAR_NATIVE_MODELS_DIR — the lite image has no Python exporter toolchain to provision
-# its own, same reason lite is excluded from opentr.sh's diar-native auto-load. This does
-# NOT make lite shippable; it is still reachable only from here and from opentr.sh.
+# in-process PyAnnote model. Its weights come from DIAR_NATIVE_MODELS_DIR, pre-seeded
+# here from the shared model cache — since issue #654, `requirements-lite.txt` DOES ship
+# the export toolchain (pyannote.audio, onnx, onnxscript, onnxslim, onnxconverter-common),
+# so a lite deployment can provision its own weights on first boot exactly like the full
+# image; this rehearsal pre-seeds them anyway so the run is deterministic rather than
+# depending on network access to HuggingFace mid-rehearsal. The sidecar is pinned to the
+# SAME locally-built lite image as the other lite workers (DIAR_NATIVE_IMAGE in phase_03).
+# This does NOT make lite shippable; it is still reachable only from here and from
+# opentr.sh.
 #
 # Idempotent: phases are tracked under $TEST_ROOT/.phase/<phase>.done so
 # re-running picks up where it left off. Pass --force to clear them.
@@ -342,14 +345,14 @@ phase_03_pin_and_layer_overlays() {
     # in lib/model-cache.sh; hardlinked nltk corpus files fail nltk>=3.10's
     # pathsec check and silently break every downstream job that touches it).
     # diar-native (issue #660): the CPU-EP sidecar's own export, ~484 MB of
-    # ONNX/PLDA weights. Step 0 of the #660 plan: the lite image ships no Python
-    # exporter toolchain (native_provision.py skips provisioning entirely under
-    # DEPLOYMENT_MODE=lite — see opentr.sh's add_diar_native_overlay comment), so
-    # this rehearsal must source an export produced elsewhere via
-    # DIAR_NATIVE_MODELS_DIR, exactly as documented in .env.example. Seeded from
-    # the shared cache below if present; otherwise the sidecar will exit 8
-    # against an empty --models-dir and phase_06b will report it, not silently
-    # pass.
+    # ONNX/PLDA weights. Since issue #654, `requirements-lite.txt` ships the export
+    # toolchain (pyannote.audio, onnx, onnxscript, onnxslim, onnxconverter-common), so a
+    # lite deployment CAN provision its own weights on first boot -- this rehearsal
+    # pre-seeds them anyway via DIAR_NATIVE_MODELS_DIR (exactly as documented in
+    # .env.example) so the run is deterministic rather than depending on network access
+    # to HuggingFace mid-rehearsal. Seeded from the shared cache below if present;
+    # otherwise the sidecar will exit 8 against an empty --models-dir and phase_06b will
+    # report it, not silently pass.
     local model_cache_dir
     model_cache_dir=$(awk -F= '/^MODEL_CACHE_DIR=/{print $2; exit}' "$target/.env")
     [[ -z "$model_cache_dir" || "$model_cache_dir" == "./models" ]] && model_cache_dir="$target/models"

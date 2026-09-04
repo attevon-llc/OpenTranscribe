@@ -22,6 +22,21 @@ Cases, matching the new "<verdict>:<source>" contract:
 Case 4/5 are also what proves the log-fallback path still exists and is distinguishable from
 a DB-backed verdict — a caller must never be able to confuse "the column said pyannote" with
 "an old stack's logs said fallback".
+
+Issue #707 fixes two defects in the ORIGINAL implementation of this function (the one that
+shipped with #706) and this file pins the fix:
+
+  Defect 1 (a REQUEST FAILURE must never be treated as "column absent"): before #707, ANY
+  curl failure or unparseable JSON body fell into the same `has_column="no"` branch as a
+  genuinely old pre-#706 schema, so a single connection blip on a CURRENT stack silently
+  downgraded a per-file DB verdict into an unscoped 30-minute log grep. Cases 6-8 below pin
+  the fix: a failed curl (case 6) and unparseable JSON (case 7) must both produce the new,
+  distinct `error:request` verdict — never `*:log` — while a genuinely old stack (valid JSON,
+  key simply absent — case 8, a stronger version of case 4) still reaches the log fallback.
+
+  Defect 2 (a `:log` verdict must never be an unqualified pass on a stack that should carry
+  the column) lives in the CALLERS (test-fresh-install.sh / test-upgrade.sh), not in this
+  function, and is out of scope for this file — see those scripts' updated `case` blocks.
 """
 
 from __future__ import annotations
@@ -175,14 +190,49 @@ def test_absent_column_and_no_worker_container_is_absent_none(tmp_path: Path) ->
     assert verdict == "absent:none"
 
 
-def test_unreachable_api_falls_back_to_log_grep_native(tmp_path: Path) -> None:
-    # curl fails outright (empty body, non-zero exit) -- same "no column available" path as an
-    # old stack, must not be reported as a DB verdict of any kind.
+def test_failed_request_is_error_request_not_log_fallback(tmp_path: Path) -> None:
+    # issue #707 defect 1: curl fails outright (empty body, non-zero exit) on what could be a
+    # CURRENT stack -- this must be reported as a distinct, non-silent "error:request" verdict,
+    # never routed into the unscoped log-grep fallback (which is legitimate only for a
+    # genuinely old, column-absent schema). The worker log below deliberately contains a
+    # "native diarization done" line to prove the fix isn't reading it at all here -- the old,
+    # buggy implementation would have reported "native:log" from this exact fixture.
     verdict = _run_verdict(
         tmp_path,
         "file-uuid-6",
         curl_body="",
         curl_exit=1,
+        docker_ps_output="opentranscribe-celery-worker\n",
+        docker_logs_output="2026-09-04 worker: native diarization done in 4.2s: 3 segments, 2 speakers\n",
+    )
+    assert verdict == "error:request"
+
+
+def test_unparseable_json_body_is_error_request_not_log_fallback(tmp_path: Path) -> None:
+    # issue #707 defect 1: curl SUCCEEDS (exit 0, non-empty body) but the body is not valid
+    # JSON -- e.g. an nginx/gateway error page returned with a 200. This is a request/response
+    # failure, not a genuinely old schema, and must not fall back to the log grep either.
+    verdict = _run_verdict(
+        tmp_path,
+        "file-uuid-7",
+        curl_body="<html>502 Bad Gateway</html>",
+        curl_exit=0,
+        docker_ps_output="opentranscribe-celery-worker\n",
+        docker_logs_output="2026-09-04 worker: native diarization done in 4.2s: 3 segments, 2 speakers\n",
+    )
+    assert verdict == "error:request"
+
+
+def test_genuinely_old_schema_with_valid_json_still_falls_back_to_log(tmp_path: Path) -> None:
+    # issue #707: the ONLY legitimate trigger for the log fallback is a successfully-parsed
+    # response whose object genuinely has no diarization_provider key -- the real old
+    # FROM-release case test-upgrade.sh's header documents. This must keep working after the
+    # defect-1 fix separates it from a plain request failure.
+    verdict = _run_verdict(
+        tmp_path,
+        "file-uuid-8",
+        curl_body='{"uuid": "file-uuid-8", "status": "completed"}',
+        curl_exit=0,
         docker_ps_output="opentranscribe-celery-worker\n",
         docker_logs_output="2026-09-04 worker: native diarization done in 4.2s: 3 segments, 2 speakers\n",
     )

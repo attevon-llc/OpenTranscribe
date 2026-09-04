@@ -104,6 +104,39 @@ GATED_FILES=(tests/test_pki_auth.py tests/test_mfa_security.py
              tests/test_auth_config_service.py tests/test_admin_security.py
              tests/test_admin_endpoints.py)
 
+# --- diar-native "sidecar expected" predicate --------------------------------
+#
+# Mirrors opentr.sh's add_diar_native_overlay() start-mode ("CONFIGURATION") predicate:
+# engine.diarizer_backend resolves to native AND (an export already exists at
+# DIAR_NATIVE_MODELS_DIR OR a HUGGINGFACE_TOKEN is configured to produce one on
+# startup). That is the exact gate opentr.sh/opentranscribe.sh use to decide whether a
+# deployment SHOULD have the sidecar running at all — reused here rather than
+# reinvented, because a second copy of "is native diarization configured?" is how this
+# repo's env-var drift usually starts. Not literally sourced: opentr.sh is a stateful
+# CLI dispatcher (it mutates COMPOSE_FILES, exports globals, etc.), not an importable
+# library, so this mirrors its logic by hand. If opentr.sh's predicate changes, update
+# this one in the same commit — see opentr.sh's add_diar_native_overlay() comment block
+# (around "start   - CONFIGURATION.").
+read_env_var() {
+    [ -f "$PROJECT_ROOT/.env" ] || return 0
+    python3 "$SCRIPT_DIR/lib/env_reader.py" "$PROJECT_ROOT/.env" "$1"
+}
+
+diar_native_sidecar_expected() {
+    local backend models_dir token
+    backend="${ENGINE_DIARIZER_BACKEND:-$(read_env_var ENGINE_DIARIZER_BACKEND)}"
+    backend="${backend:-native}"
+    [ "$backend" = "native" ] || return 1
+
+    models_dir="${DIAR_NATIVE_MODELS_DIR:-$(read_env_var DIAR_NATIVE_MODELS_DIR)}"
+    if [ -n "$models_dir" ] && [ -d "$models_dir" ] && [ -n "$(ls -A "$models_dir" 2>/dev/null)" ]; then
+        return 0
+    fi
+
+    token="${HUGGINGFACE_TOKEN:-$(read_env_var HUGGINGFACE_TOKEN)}"
+    [ -n "$token" ]
+}
+
 FAILED_PHASES=()
 SKIPPED_PHASES=()   # phases that exited 4 = NOT MEASURED (verified nothing, but did not fail)
 run_phase() {
@@ -276,9 +309,39 @@ if $RUN_GPU; then
     # The diar-native sidecar is a separate container running a Rust binary, so no
     # pytest module can inspect it — its execution provider is only observable from
     # outside, via device-memory residency (issue #520). Exits 4 when the sidecar is
-    # not running, which run_phase reports as NOT MEASURED rather than as a pass.
-    run_phase "diar-native CUDA execution provider" \
-        bash "$PROJECT_ROOT/scripts/diar-native-smoke.sh"
+    # not running.
+    #
+    # issue #669: this used to go through run_phase like every other phase, which maps
+    # exit 4 to NOT MEASURED unconditionally — so this, the pre-merge gate, was green on
+    # a stack whose diarizer never ran, on EVERY machine, including ones where the
+    # sidecar was fully configured and simply not started. That is too strict to fix by
+    # making exit 4 fatal everywhere (a frontend dev's laptop with no sidecar configured
+    # would fail a gate it has no way to satisfy) and too lax to leave as a silent skip
+    # (a machine where native diarization IS configured deserves a real gate). So: fail
+    # only when diar_native_sidecar_expected() says the sidecar should be running on
+    # THIS deployment; otherwise report it — loudly, by name, same as every other NOT
+    # MEASURED phase — but do not fail the gate over it.
+    diar_native_rc=0
+    bash "$PROJECT_ROOT/scripts/diar-native-smoke.sh" || diar_native_rc=$?
+    echo -e "${BLUE}--- diar-native CUDA execution provider ---${NC}"
+    if (( diar_native_rc == 0 )); then
+        echo -e "${GREEN}✓ diar-native CUDA execution provider passed${NC}\n"
+    elif (( diar_native_rc == 4 )); then
+        if diar_native_sidecar_expected; then
+            echo -e "${RED}✗ diar-native CUDA execution provider NOT MEASURED, but engine.diarizer_backend"
+            echo -e "  resolves to native and an export or HUGGINGFACE_TOKEN is configured — this"
+            echo -e "  deployment was expected to be running the sidecar. Treating as a FAILURE.${NC}\n"
+            FAILED_PHASES+=("diar-native CUDA execution provider (expected, NOT MEASURED)")
+        else
+            echo -e "${YELLOW}⊘ diar-native CUDA execution provider NOT MEASURED — sidecar not expected on"
+            echo -e "  this deployment (backend is not native, or no export/HUGGINGFACE_TOKEN is"
+            echo -e "  configured to produce one)${NC}\n"
+            SKIPPED_PHASES+=("diar-native CUDA execution provider (not expected on this deployment)")
+        fi
+    else
+        echo -e "${RED}✗ diar-native CUDA execution provider FAILED${NC}\n"
+        FAILED_PHASES+=("diar-native CUDA execution provider")
+    fi
 else
     echo -e "${YELLOW}Skipping GPU-marked tests (--skip-gpu).${NC}"
 fi

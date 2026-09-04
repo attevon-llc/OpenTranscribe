@@ -107,12 +107,12 @@ Creates a single container with multiple Celery worker threads sharing one GPU (
 # .env configuration
 GPU_TRANSCRIBE_DEVICE_ID=0   # GPU for WhisperX (Whisper model)
 GPU_DIARIZE_DEVICE_ID=1      # GPU for PyAnnote (diarization model)
-ENGINE_SHARED_VOLUME_PATH=/tmp/transcription
+ENGINE_SHARED_VOLUME_PATH=/scratch/opentranscribe/engine
 
 ./opentr.sh start dev --with-gpu-split
 ```
 
-Starts two dedicated workers: `celery-worker-gpu-transcribe` (queue `gpu-transcribe`) and `celery-worker-gpu-diarize` (queue `gpu-diarize`). A single file's pipeline flows: CPU preprocess → GPU A (Whisper) → GPU B (PyAnnote) → CPU finalize. The shared `transcription-temp` volume carries the decoded WAV between containers. Workers are defined in `docker-compose.yml` under the `gpu-split` profile — no extra overlay file needed.
+Starts two dedicated workers: `celery-worker-gpu-transcribe` (queue `gpu-transcribe`) and `celery-worker-gpu-diarize` (queue `gpu-diarize`). A single file's pipeline flows: CPU preprocess → GPU A (Whisper) → GPU B (diarization; native engine primary, PyAnnote failover) → CPU finalize. The shared `pipeline_scratch` volume (mounted at `/scratch/opentranscribe`) carries the decoded WAV between containers via its `engine/` namespace. Workers are defined in `docker-compose.yml` under the `gpu-split` profile — no extra overlay file needed.
 
 ### Task Flow Example
 

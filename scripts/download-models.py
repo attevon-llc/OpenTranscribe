@@ -941,19 +941,21 @@ def download_diar_native_models():
 
     Delegates entirely to `app.transcription.native_provision.ensure_native_models` — the
     SAME function `main.py`'s FastAPI lifespan calls at backend startup — rather than
-    re-implementing the model set, timeout, exit-code table, remedies, the blank-`HF_ENDPOINT`
-    scrub, and the `--lite` skip a second time here. There is exactly one implementation of
+    re-implementing the model set, timeout, exit-code table, remedies, and the
+    blank-`HF_ENDPOINT` scrub a second time here. There is exactly one implementation of
     diar-native provisioning; this is a caller of it, not a fork of it. See that module's
     docstring for why the export logic itself lives in `diar-server`, not in either Python
-    caller.
+    caller. Note there is deliberately no `DEPLOYMENT_MODE=lite` skip anywhere in that chain
+    (issue #654) — `requirements-lite.txt` now installs the export toolchain too, so a lite
+    install provisions itself exactly like the full image.
 
     This works because this script runs INSIDE the backend container:
     `download-models.sh`'s `docker run` mounts this file at `/app/download-models.py` and
     runs it against `davidamacey/opentranscribe-backend` (the full image, not `-lite` — see
     `resolve_downloader_image()`), so `app.transcription.native_provision` is importable
     here exactly as it is from the FastAPI process. It also means the target directory,
-    model set, timeout, and the `DEPLOYMENT_MODE=lite` skip all resolve identically to a
-    real backend boot, with no separate config surface for this script to drift from.
+    model set, and timeout all resolve identically to a real backend boot, with no separate
+    config surface for this script to drift from.
     """
     print_header('Provisioning Native Diarization Models (diar-server)')
 

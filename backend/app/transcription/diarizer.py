@@ -87,10 +87,12 @@ class SpeakerDiarizer:
                     msg = (
                         f"PyAnnote model '{PYANNOTE_V4_MODEL}' returned None. "
                         "Ensure: 1) HUGGINGFACE_TOKEN is set in .env, "
-                        "2) You accepted BOTH agreements: segmentation-3.0 "
-                        "(https://huggingface.co/pyannote/segmentation-3.0) AND "
+                        "2) You accepted the gated model agreement for "
                         "speaker-diarization-community-1 "
-                        "(https://huggingface.co/pyannote/speaker-diarization-community-1), "
+                        "(https://huggingface.co/pyannote/speaker-diarization-community-1) "
+                        "— that is the only repo this app is gated on; accepting the older "
+                        "segmentation-3.0/speaker-diarization-3.1 agreements only helps the "
+                        "internal last-resort fallback below, not this model, "
                         "3) Restart the containers."
                     )
                 raise PermissionError(msg)

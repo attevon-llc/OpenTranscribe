@@ -45,9 +45,10 @@ BLACKWELL = "docker-compose.blackwell.yml"
 NGINX = "docker-compose.nginx.yml"
 BACKUP = "docker-compose.backup.yml"
 DIAR = "docker-compose.diar-native.yml"
+GPU_SPLIT = "docker-compose.gpu-split.yml"
 
 DIAR_GPU = "docker-compose.diar-native-gpu.yml"
-ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR, DIAR_GPU)
+ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR, DIAR_GPU, GPU_SPLIT)
 
 
 def _make_deployment(
@@ -397,6 +398,109 @@ def test_base_compose_always_comes_first_and_prod_second(tmp_path: Path):
 def test_a_deployment_without_the_prod_overlay_still_resolves(tmp_path: Path):
     chain, _ = _resolve(tmp_path, nvidia_runtime=False, compute_cap="", overlays=(BASE,))
     assert _files(chain) == [BASE], chain
+
+
+# --------------------------------------------------------------------------- #
+# GPU split overlay (issue #708): opentranscribe.sh had ZERO references to
+# gpu-split before this — `rg 'gpu-split|GPU_SPLIT' opentranscribe.sh` returned
+# nothing, so a self-hosted install had no way to select the overlay even once
+# it was added to release-manifest.txt. gpu_split_active() is the single gate,
+# keyed on the SAME ENGINE_GPU_SPLIT variable dispatch.py's gpu_split_enabled()
+# reads to route work onto the split queues — one operator-facing switch for
+# both halves.
+# --------------------------------------------------------------------------- #
+
+
+def test_gpu_split_overlay_is_not_selected_by_default(tmp_path: Path):
+    """.env.example ships ENGINE_GPU_SPLIT=false, so a plain install must not load it."""
+    chain, _ = _resolve(tmp_path, nvidia_runtime=True, compute_cap="8.6")
+    assert GPU_SPLIT not in _files(chain), chain
+
+
+def test_gpu_split_overlay_needs_the_dedicated_toggle_not_just_device_ids(tmp_path: Path):
+    """GPU_TRANSCRIBE_DEVICE_ID / GPU_DIARIZE_DEVICE_ID ship set in .env.example too
+    (0 and 1) — keying selection off their presence would enable the overlay for
+    every install, the same trap issue #616 already caught for the backup overlay."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("GPU_TRANSCRIBE_DEVICE_ID=0", "GPU_DIARIZE_DEVICE_ID=1"),
+    )
+    assert GPU_SPLIT not in _files(chain), chain
+
+
+def test_gpu_split_overlay_loads_when_engine_gpu_split_is_true(tmp_path: Path):
+    chain, stderr = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("ENGINE_GPU_SPLIT=true",),
+    )
+    assert _files(chain) == [BASE, PROD, GPU, GPU_SPLIT], chain
+    assert "GPU split overlay enabled" in stderr, stderr
+
+
+def test_gpu_split_overlay_is_case_insensitive_on_the_toggle(tmp_path: Path):
+    """The app-side gpu_split_enabled() normalises case; this script's gate must match
+    it exactly, or the two halves of the single switch can disagree."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("ENGINE_GPU_SPLIT=True",),
+    )
+    assert GPU_SPLIT in _files(chain), chain
+
+
+def test_gpu_split_overlay_is_skipped_without_an_nvidia_runtime(tmp_path: Path):
+    """A GPU-reservation overlay cannot load on a host with no GPU at all."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=False,
+        compute_cap="",
+        env_lines=("ENGINE_GPU_SPLIT=true",),
+    )
+    assert GPU_SPLIT not in _files(chain), chain
+
+
+def test_gpu_split_overlay_is_skipped_under_force_cpu_mode(tmp_path: Path):
+    """FORCE_CPU_MODE is the authoritative opt-out even with an nvidia runtime present
+    (WSL2 can advertise the runtime with no working adapter passthrough)."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("ENGINE_GPU_SPLIT=true", "FORCE_CPU_MODE=true"),
+    )
+    assert GPU_SPLIT not in _files(chain), chain
+
+
+def test_gpu_split_toggle_without_the_overlay_file_falls_back_silently(tmp_path: Path):
+    """Same `[ -f ... ]` fallthrough shape as the Blackwell overlay: an install predating
+    the manifest entry, or one whose download 404'd, must not crash — it just runs
+    without the split (i.e. every job stays on the shared 'gpu' queue)."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        overlays=(BASE, PROD, GPU, NGINX, BACKUP),  # no GPU_SPLIT on disk
+        env_lines=("ENGINE_GPU_SPLIT=true",),
+    )
+    assert _files(chain) == [BASE, PROD, GPU], chain
+
+
+def test_gpu_split_combines_with_the_native_diarization_sidecar(tmp_path: Path):
+    """The two overlays are independent selections; nothing about gpu-split should
+    suppress diar-native or vice versa."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("ENGINE_GPU_SPLIT=true",),
+        diar_weights=True,
+    )
+    assert _files(chain) == [BASE, PROD, GPU, DIAR, DIAR_GPU, GPU_SPLIT], chain
 
 
 # --------------------------------------------------------------------------- #

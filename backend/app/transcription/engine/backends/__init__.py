@@ -27,9 +27,10 @@ _TRANSCRIBER_REGISTRY: dict[str, str] = {
 #: (issue #672 removed it) — the real runtime dispatch is ``ModelManager._build_diarizer``,
 #: which constructs ``NativeSpeakerDiarizer`` / the in-process ``SpeakerDiarizer`` fork
 #: directly to preserve their warm-cache lifecycle (see ``app/transcription/CLAUDE.md``), not
-#: through this registry. So ``NativeBackend.diarize()`` / ``PyAnnoteBackend.diarize()`` are
-#: NOT reachable from anywhere, by any path — more thoroughly dead than a merely-uncalled
-#: dispatcher. Re-verified for #672 and kept anyway, for a narrower reason than
+#: through this registry. ``NativeBackend``/``PyAnnoteBackend`` used to carry a ``diarize()``
+#: method that was unreachable from anywhere, by any path — more thoroughly dead than a
+#: merely-uncalled dispatcher — so it was deleted (#672); only ``warmup()`` remains on each.
+#: The classes themselves are kept anyway, for a narrower reason than
 #: ``_TRANSCRIBER_REGISTRY``'s: the dict's KEYS are load-bearing production code
 #: (``VALID_DIARIZER_BACKENDS`` below feeds ``TranscriptionConfig._resolve_diarizer_backend``
 #: and the admin engine-settings validator), and the two classes are that vocabulary's only

@@ -272,6 +272,63 @@ Launches 8 uploads in parallel, waits for all to finish, then reads the DB for p
 
 Record a baseline run with the pre-change code, then after each PR rerun the same fixture and diff the two reports. Changes should move the targeted stage and leave every other stage within 10%.
 
+### A/B one change without building two stacks — `scripts/diar-native-handoff-ab.py`
+
+The recipes above compare two *builds*, which is the honest way to measure a whole release but
+a poor way to attribute one change: every unrelated difference between the builds lands in the
+delta. Where a change can be selected at runtime, prefer a controlled A/B in **one process, on
+one GPU, over one decoded waveform**.
+
+`scripts/diar-native-handoff-ab.py` does this for issue #661's E2 path handoff, because
+`NativeSpeakerDiarizer.diarize` picks the path from its argument:
+
+```bash
+W=opentranscribe-celery-worker
+docker cp scripts/diar-native-handoff-ab.py $W:/tmp/
+docker cp benchmark/diarization-boundary/karpathy/karpathy_kwSVtQ7dziU/karpathy_10m.wav $W:/tmp/
+docker exec $W python3 /tmp/diar-native-handoff-ab.py --audio /tmp/karpathy_10m.wav --reps 5
+```
+
+- `wav_path=<WAV on the shared volume>` → path handoff (post-E2)
+- `wav_path=None` → `_post_own_copy` (pre-E2 behaviour)
+
+`None` cannot satisfy `reused`'s first clause, so the arms are *structurally* different — they
+cannot silently converge the way a misread feature flag can.
+
+Three things it does that a naive timing loop does not, each because the naive version is
+wrong:
+
+- **Arms ALTERNATE (ABAB…), never AAA-then-BBB.** The GPU clocks down as it heats and the
+  sidecar's ORT arena warms, so a blocked design charges one arm's drift to the other's
+  difference.
+- **A warm-up per arm is discarded** — the first call pays ORT session init and CUDA context
+  setup, which would otherwise land entirely on whichever arm ran first.
+- **It refuses to run rather than measure nothing.** If the WAV fails the engine's own
+  `_path_is_on_shared_volume` predicate, arm A takes the own-copy path *too*, both arms become
+  the same code, and the delta is ~0 — which reads exactly like "the optimisation does
+  nothing". That is checked and made fatal *before* any timing, not inferred from the numbers
+  afterwards. It also compares segment counts across arms and warns if they differ, since a
+  different result means something other than the handoff changed.
+
+Measured 2026-09-04 (RTX 3080 Ti, diar-server 0.3.1, 600 s / 88 segments, n=5 per arm):
+
+| arm | median | p95 | min | max |
+|---|---|---|---|---|
+| reused (post-E2) | 3.743 s | 3.761 s | 3.582 s | 3.949 s |
+| own_copy (pre-E2) | 3.845 s | 3.848 s | 3.747 s | 4.038 s |
+
+**E2 saves ~0.10 s per diarization (2.7%)**, with the fast path ahead in 5 of 5 paired reps and
+identical segment counts in both arms.
+
+⚠️ **Read that number for what it is.** It is E2's contribution *to the diarization call*, not
+the E0–E5 chain's effect on `user_perceived_duration_ms`: E3 (decode once) and E4 (the lazy
+scaled reader) act in preprocessing and transcription, which this harness does not exercise. And
+#661's larger claim was never primarily about wall clock — it was about not writing and reading
+the whole signal again. That I/O saving is one full write plus one full read of the 16 kHz mono
+WAV per job (19.2 MB for this 600 s clip) and scales linearly with duration; 2.7% is what that
+is worth in *time* on a fast NVMe host, and would be worth more on slower or contended storage.
+Quote the command, not the table — a figure transcribed into prose rots.
+
 ## Interpretation notes
 
 - **`user_perceived_duration_ms` is the headline number.** It's what the browser user experiences.

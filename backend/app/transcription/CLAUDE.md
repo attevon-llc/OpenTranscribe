@@ -47,9 +47,11 @@ nothing.
 - `ModelManager._build_diarizer` constructs `NativeSpeakerDiarizer` (`diarizer_native.py`) for
   `native` and falls back to the in-process `SpeakerDiarizer` on **any** exception, logging
   `Native diarizer unavailable (...); falling back to PyAnnote`.
-- `ModelManager._diarizer_current` re-probes `diarizer_native.sidecar_healthy()` per task and
+- `ModelManager._diarizer_current` re-probes `diarizer_native.sidecar_ready()` per task and
   rebuilds in **both** directions — losing the sidecar mid-queue drops to PyAnnote, and a
-  recovered sidecar is picked back up.
+  recovered sidecar is picked back up. (This was documented here as `sidecar_healthy()` — that
+  is the liveness probe, not the readiness one the routing decision actually gates on; fixed
+  per issue #672's audit.)
 - The native client is a duck-typed drop-in: same `diarize()` / `embed_window()` /
   `unload_model()` surface, and `embed_window` never raises into the caller.
 
@@ -68,6 +70,31 @@ defaults to `cpu`. The nvidia reservation and the `cuda` override live in
 `docker-compose.diar-native-gpu.yml`, loaded alongside the GPU overlay, so a CPU-only or `--lite`
 host can run the sidecar (#660). One binary serves both devices (`/healthz` advertises
 `supported_devices: ["cuda","cpu"]`).
+
+**Per-request device routing (issue #679).** `/diarize` and `/embed_window` both accept an
+optional `"device": "cpu"|"cuda"` field, but the sidecar's request structs have no
+`deny_unknown_fields` — an OLD sidecar (pre this field) silently ignores an unrecognised
+`device` key and answers 200 having run on CUDA anyway, indistinguishable from success. So
+**nothing may send it without first checking `diarizer_native.sidecar_supports_cpu_device()`**
+(reads `/healthz`'s `supported_devices`, TTL-cached the same way as `sidecar_ready`/
+`sidecar_healthy` — one cache, not a second one per capability). Implemented for the
+embedding-only path only: `services/native_embedding_client.py`'s `_embed_window` routes to
+CPU when advertised, since every call there is a lightweight 256-d ONNX forward pass and
+never a full diarize job — freeing the sidecar's GPU slot for the diarize jobs sharing it.
+
+⚠️ **CPU and CUDA are NOT bit-identical for everything, and that is exactly why only the
+embedding path is routed.** Measured on the diar-native 0.3.0 release image (2026-09-01):
+speaker centroids/embeddings are **bit-identical between devices** — max delta 0.0 across
+every clip tested — so routing `/embed_window` to CPU is a strict win, never a tradeoff.
+Full `/diarize` output is NOT bit-identical: device choice can shift a segment boundary by
+up to one segmentation frame (measured 0.016875 s on a 30 s clip), because a posterior
+sitting on the binarisation threshold can land on either side depending on CPU vs CUDA
+float arithmetic. That is below anything a transcript renders, but **never assert
+byte-equality between a CPU-diarized and a CUDA-diarized run of the same file** — not in a
+test fixture, a cache key, or a "did this change?" comparison; compare with a
+≥one-frame tolerance, or pin the device. This is also why `/diarize` itself is NOT routed to
+CPU by anything in this codebase: it is the heavy job CPU routing exists to protect *other*
+work from, not a candidate to move there itself.
 
 **Provisioning.** The ONNX/PLDA set is exported by the backend's FastAPI lifespan
 (`native_provision.ensure_native_models`, called from `main.py`), because those graphs are gated

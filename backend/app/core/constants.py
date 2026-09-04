@@ -1334,3 +1334,21 @@ DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = False  # chat.rag.context_expansion_ena
 DEFAULT_CHAT_OVERVIEW_CITABLE = False  # chat.rag.overview_citable
 DEFAULT_CHAT_OVERVIEW_BLOCK_RULE = False  # chat.rag.overview_block_rule
 DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS = False  # chat.rag.overview_after_excerpts
+
+# =============================================================================
+# Engine shared-volume WAV handoff (issue #661 E0)
+# =============================================================================
+# ``ENGINE_SHARED_VOLUME_PATH`` names the container path of the ``transcription-temp``
+# volume, mounted at this exact path by every compose service that reads or writes the
+# handoff WAV (docker-compose.yml's celery-worker*/gpu-transcribe*/gpu-diarize* services,
+# docker-compose.diar-native.yml's diar-native sidecar) and set to the same value in
+# .env.example. This is the ONE default all readers/writers must agree on — it was
+# previously THREE independent literals ("/tmp" in preprocess.py's write side and
+# engine/config.py's EngineConfig twice, "/tmp/transcription" in diarizer_native.py's read
+# side), so an install whose .env predated the variable wrote into the writer's
+# container-local /tmp, the reader looked in the real mount, found nothing, and silently
+# fell back to MinIO with no log distinguishing the two cases — the exact per-job
+# re-serialization cost this shared-volume path exists to avoid. A bare "/tmp" default is
+# never correct here: on any install it either points nowhere shared (unmounted) or, worse,
+# collides with a container-local temp file of the same name.
+ENGINE_SHARED_VOLUME_DEFAULT = "/tmp/transcription"  # noqa: S108  # nosec B108 — compose-declared mount point, not a host temp file

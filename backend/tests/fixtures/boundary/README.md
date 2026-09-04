@@ -49,7 +49,22 @@ opposite of the "it may no longer be needed" concern #520 was opened with.
 
 ## Regenerate (after an intentional algorithm change)
 
-Stage the clip + reference into the GPU worker (see the corpus README), then:
+⚠️ **Do this FIRST, every time — the env var below is not trustworthy on its own.**
+Backend resolution is **DB → env → coded default**, so an `engine.diarizer_backend` row in
+`system_settings` silently overrides `ENGINE_DIARIZER_BACKEND` in the commands that follow.
+Check it before you run anything:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d opentranscribe -tAc \
+    "SELECT value FROM system_settings WHERE key = 'engine.diarizer_backend';"
+# empty row (or no row) -> the env var below will actually take effect.
+# any other value -> that value wins regardless of ENGINE_DIARIZER_BACKEND; either
+# clear it first or be aware which backend you are really about to run.
+```
+
+Stage the clip + reference into the GPU worker (see the corpus README), then regenerate
+**one trio at a time**, verifying each artifact immediately — do not run both commands and
+verify afterward, and do not trust the invocation over the artifact:
 
 ```bash
 docker compose cp benchmark/diarization-boundary/karpathy/karpathy_kwSVtQ7dziU/karpathy_10m.wav \
@@ -57,28 +72,33 @@ docker compose cp benchmark/diarization-boundary/karpathy/karpathy_kwSVtQ7dziU/k
 docker compose cp benchmark/diarization-boundary/karpathy/karpathy_kwSVtQ7dziU/reference.rttm \
     celery-worker:/tmp/karpathy_ref.rttm
 
-# the DEFAULT (speakrs) trio — needs the diar-native sidecar up
+# 1. the DEFAULT (speakrs) trio — needs the diar-native sidecar up
 docker compose exec -T celery-worker bash -lc 'cd /app && ENGINE_DIARIZER_BACKEND=native \
     python -m scripts.build_regression_fixture --audio /tmp/karpathy_10m.wav \
     --ref-rttm /tmp/karpathy_ref.rttm --name karpathy_10m_native --out /tmp/fixtures'
 
-# the FAILOVER (PyAnnote) trio
+# verify the ARTIFACT, not the invocation, before trusting it:
+python3 -c "import json;print(json.load(open('karpathy_10m_native.rawinfer.json'))['config_snapshot']['diarizer_backend'])"
+# must print: native  -- if it prints "pyannote", the DB row above overrode the env var
+# and this run is a silent PyAnnote fallback, not a native trio. Fix the DB row and rerun.
+
+# 2. the FAILOVER (PyAnnote) trio — remains committed on this branch: PyAnnote is not
+#    being removed here, it is still the documented failover, so this trio is still live
+#    (issue #669; contrast issue #572, the post-removal plan, which is not this branch)
 docker compose exec -T celery-worker bash -lc 'cd /app && ENGINE_DIARIZER_BACKEND=pyannote \
     python -m scripts.build_regression_fixture --audio /tmp/karpathy_10m.wav \
     --ref-rttm /tmp/karpathy_ref.rttm --name karpathy_10m --out /tmp/fixtures'
+
+# verify THIS artifact too — the DB row overrides in both directions:
+python3 -c "import json;print(json.load(open('karpathy_10m.rawinfer.json'))['config_snapshot']['diarizer_backend'])"
+# must print: pyannote  -- if it prints "native", the DB row forced native and this run
+# is a silent native fixture mislabeled as the PyAnnote failover trio.
 ```
 
-⚠️ **Backend resolution is DB → env → coded default.** A `engine.diarizer_backend` row in
-`system_settings` **overrides** the env var above, so check it is unset before you trust which
-engine ran. Then verify the artifact rather than the invocation:
-
-```bash
-python3 -c "import json;print(json.load(open('karpathy_10m_native.rawinfer.json'))['config_snapshot']['diarizer_backend'])"
-# must print: native
-```
-
-That check is the whole point — without it a run that silently fell back to PyAnnote produces a
-"speakrs twin" that is nothing of the kind, and the gate then guards the wrong path again.
+Verifying `config_snapshot.diarizer_backend` in the produced artifact is the whole point —
+without it a run that silently used the wrong backend produces a same-named "twin" that is
+nothing of the kind, and the gate then guards the wrong path (or the wrong path's absence)
+under the right file name.
 
 Regenerating resets the baseline to the new behavior — do it only when a change to
 `smooth_word_speakers` / `assign_speakers` is deliberate, and review the WSER delta first.

@@ -29,6 +29,22 @@ over the whole signal in one pass, but the divergence is two orders of magnitude
 smaller than the same-speaker/different-speaker gap it has to survive (measured
 0.9977–0.9996 for 20–60 s clips, against a same-speaker mean of 0.85 and a
 different-speaker mean of 0.09).
+
+⚠️ **Device routing (issue #679).** Every call in this module is embedding-only — it never
+runs a full diarization — which is exactly the case measured safe for CPU routing: on the
+diar-native 0.3.0 release image, speaker centroids/embeddings are **bit-identical between
+CUDA and CPU** (max delta 0.0 across every clip measured), unlike full ``/diarize``, where
+device choice can shift a segment boundary by up to one segmentation frame (measured 0.016875 s
+on a 30 s clip) — that CPU/CUDA divergence is real but belongs to `/diarize`, not to this
+module, and is exactly why `/diarize` is never routed to CPU by anything in this codebase.
+So `_embed_window` sends `"device": "cpu"` gated on
+``diarizer_native.sidecar_supports_cpu_device()`` (reads `/healthz`'s `supported_devices`)
+— NEVER unconditionally, because the sidecar's request structs have no
+`deny_unknown_fields` and a pre-#679 sidecar silently ignores an unknown `device` key and
+answers 200 on CUDA regardless, which would look identical to success. The measured
+bit-identity is what makes this a strict win rather than a tradeoff: moving the call off the
+sidecar's GPU frees that slot for the diarize jobs sharing it, at no cost to the vectors this
+module returns.
 """
 
 from __future__ import annotations
@@ -39,6 +55,7 @@ import numpy as np
 
 from app.transcription.diarizer_native import post_json
 from app.transcription.diarizer_native import sidecar_ready
+from app.transcription.diarizer_native import sidecar_supports_cpu_device
 
 logger = logging.getLogger(__name__)
 
@@ -109,10 +126,25 @@ def fit_to_window(samples: np.ndarray) -> list[np.ndarray]:
 
 
 def _embed_window(window: np.ndarray, base_url: str) -> np.ndarray:
-    """One sidecar round trip. ``window`` must already be the model width."""
+    """One sidecar round trip. ``window`` must already be the model width.
+
+    Sends ``"device": "cpu"`` (issue #679) ONLY when the sidecar's own ``/healthz``
+    advertises ``"cpu"`` in ``supported_devices`` — never blind. An older sidecar has no
+    such field, ignores an unrecognised key, and answers 200 on CUDA regardless, so
+    sending it unconditionally would look identical to success while still occupying the
+    GPU slot this exists to spare. Embedding-only work (this whole module never runs a
+    full diarization) is the case the issue names: a 256-d ONNX forward pass over one
+    10 s window is cheap enough that moving it off the sidecar's GPU is very likely a net
+    win when that GPU is also serving concurrent diarize jobs, but that has not been
+    measured against a live sidecar in this environment (none was running) — this
+    trades a plausible, reasoned win for headroom on the diarize GPU slot, not a proven
+    speedup on the embedding call itself.
+    """
     import base64
 
-    payload = {"samples_b64": base64.b64encode(window.astype("<f4").tobytes()).decode()}
+    payload: dict = {"samples_b64": base64.b64encode(window.astype("<f4").tobytes()).decode()}
+    if sidecar_supports_cpu_device(base_url):
+        payload["device"] = "cpu"
     out = post_json(f"{base_url}/embed_window", payload, timeout=_EMBED_TIMEOUT_S)
     return np.asarray(out["embedding"], dtype=np.float32).reshape(-1)
 

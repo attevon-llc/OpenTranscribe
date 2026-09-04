@@ -38,6 +38,12 @@ EXEMPT: dict[str, str] = {
         "docker-compose.backup.yml binds live host directories, same as watch, "
         "and likewise declares no container_name or ports."
     ),
+    "WITH_SCRATCH_TMPFS_FLAG": (
+        "docker-compose.scratch-tmpfs.yml declares no container_name or ports — it only "
+        "overrides the driver of the already-existing, already project-namespaced "
+        "pipeline_scratch named volume (docker compose auto-prefixes named volumes with "
+        "COMPOSE_PROJECT_NAME), so there is nothing left for --fresh to re-pin."
+    ),
 }
 
 

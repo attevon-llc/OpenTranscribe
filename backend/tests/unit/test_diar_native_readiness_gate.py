@@ -189,3 +189,130 @@ class TestRoutingUsesReadiness:
             assert native_embedding_available(url) is False
         with _sidecar(readyz=200, health_body=_READY) as url:
             assert native_embedding_available(url) is True
+
+
+# ---------------------------------------------------------------------------
+# Per-request device routing (issue #679): "device" must be sent ONLY when the
+# sidecar's own /healthz advertises it — never blind, since the sidecar's request
+# structs have no deny_unknown_fields and an old sidecar would silently ignore an
+# unrecognised "device" key and answer 200 having run on CUDA anyway.
+# ---------------------------------------------------------------------------
+
+
+def _make_embed_handler(health_body: dict, embed_requests: list[dict]):
+    """A real sidecar stand-in serving /healthz and /embed_window.
+
+    Records every /embed_window request body into *embed_requests* so a test can assert
+    on exactly what was sent, rather than trusting a mock to agree with itself.
+    """
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+            if self.path == "/healthz":
+                payload = json.dumps(health_body).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            elif self.path == "/readyz":
+                self.send_response(200)
+                self.end_headers()
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length) or b"{}")
+            if self.path == "/embed_window":
+                embed_requests.append(body)
+                payload = json.dumps({"embedding": [0.1] * 256}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+            pass
+
+    return _Handler
+
+
+@contextlib.contextmanager
+def _embed_sidecar(health_body: dict, embed_requests: list[dict]) -> Iterator[str]:
+    port = _free_port()
+    httpd = http.server.HTTPServer(
+        ("127.0.0.1", port), _make_embed_handler(health_body, embed_requests)
+    )
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        with contextlib.suppress(Exception):
+            httpd.shutdown()
+            httpd.server_close()
+
+
+class TestDeviceRoutingGate:
+    def test_capability_probe_true_when_cpu_is_advertised(self):
+        from app.transcription.diarizer_native import sidecar_supports_cpu_device
+
+        with _sidecar(
+            readyz=200, health_body={**_READY, "supported_devices": ["cuda", "cpu"]}
+        ) as url:
+            assert sidecar_supports_cpu_device(url) is True
+
+    def test_capability_probe_false_when_the_field_is_absent(self):
+        """The pre-#679 shape: /healthz answers, but says nothing about devices."""
+        from app.transcription.diarizer_native import sidecar_supports_cpu_device
+
+        with _sidecar(readyz=200, health_body=_READY) as url:
+            assert sidecar_supports_cpu_device(url) is False
+
+    def test_capability_probe_false_when_only_cuda_is_advertised(self):
+        from app.transcription.diarizer_native import sidecar_supports_cpu_device
+
+        with _sidecar(readyz=200, health_body={**_READY, "supported_devices": ["cuda"]}) as url:
+            assert sidecar_supports_cpu_device(url) is False
+
+    def test_embed_window_sends_device_cpu_when_advertised(self):
+        """The positive case: a sidecar that CAN run CPU embedding is asked to."""
+        from app.services.native_embedding_client import embed_waveform
+
+        requests: list[dict] = []
+        with _embed_sidecar({**_READY, "supported_devices": ["cuda", "cpu"]}, requests) as url:
+            audio = _ramp_local(160_000)
+            out = embed_waveform(audio, base_url=url)
+        assert out is not None
+        assert len(requests) == 1
+        assert requests[0].get("device") == "cpu"
+
+    def test_embed_window_never_sends_device_to_a_sidecar_that_does_not_advertise_it(self):
+        """The gate itself: an OLD sidecar must never receive an unrecognised key.
+
+        diar-server's request structs have no deny_unknown_fields, so a sidecar that
+        cannot honour "device" would silently ignore it and run on CUDA anyway,
+        answering 200 — indistinguishable from success. The only safe behaviour is to
+        never send the key at all when it was not advertised.
+        """
+        from app.services.native_embedding_client import embed_waveform
+
+        requests: list[dict] = []
+        with _embed_sidecar(_READY, requests) as url:  # no supported_devices field at all
+            audio = _ramp_local(160_000)
+            out = embed_waveform(audio, base_url=url)
+        assert out is not None
+        assert len(requests) == 1
+        assert "device" not in requests[0]
+
+
+def _ramp_local(n: int):
+    import numpy as np
+
+    return np.linspace(-1.0, 1.0, n, dtype=np.float32)

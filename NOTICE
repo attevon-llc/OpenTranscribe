@@ -4,14 +4,19 @@ OpenTranscribe
 OpenTranscribe is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 See the LICENSE file for the full license text.
 
-Third-party model attribution
-------------------------------
+This NOTICE file is required attribution for third-party components OpenTranscribe ships
+or runs at inference time. It does not replace those components' own license texts, which
+are the authoritative terms.
 
-Both diarization engines OpenTranscribe ships (the native `diar-native` sidecar and the
-in-process PyAnnote fork used as its failover) run model weights exported from
-`pyannote/speaker-diarization-community-1` (https://huggingface.co/pyannote/speaker-diarization-community-1),
-released by the pyannote.audio project under the Creative Commons Attribution 4.0
-International license (CC-BY-4.0): https://creativecommons.org/licenses/by/4.0/
+Third-party model attribution (CC-BY-4.0)
+------------------------------------------
+
+Both diarization engines OpenTranscribe ships (the native `diar-native`/`speakrs` sidecar,
+the default engine, and the in-process PyAnnote fork used as its failover) run model weights
+exported from `pyannote/speaker-diarization-community-1`
+(https://huggingface.co/pyannote/speaker-diarization-community-1), released by the
+pyannote.audio project under the Creative Commons Attribution 4.0 International license
+(CC-BY-4.0): https://creativecommons.org/licenses/by/4.0/
 
 The pipeline and the models it wraps require attribution via the following citations:
 
@@ -30,3 +35,46 @@ The pipeline and the models it wraps require attribution via the following citat
 CC-BY-4.0 requires attribution, not open-sourcing of code that merely uses the model; it
 does not otherwise affect the AGPL-3.0 license under which OpenTranscribe's own source
 code is distributed.
+
+Third-party software attribution (Apache-2.0)
+-----------------------------------------------
+
+- speakrs — the Rust/ONNX diarization engine vendored (with local patches) inside
+  `diar-native`, the sidecar that runs OpenTranscribe's default diarization engine.
+  Upstream: https://github.com/avencera/speakrs (fork used here:
+  https://github.com/attevon-llc/speakrs). Licensed under the Apache License, Version 2.0:
+  https://www.apache.org/licenses/LICENSE-2.0
+
+  Apache License
+  Version 2.0, January 2004
+  http://www.apache.org/licenses/
+
+  Copyright the speakrs contributors and Avencera.
+
+  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this
+  file except in compliance with the License. You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software distributed under
+  the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied. See the License for the specific language governing
+  permissions and limitations under the License.
+
+- diar-native — the Rust sidecar itself (the harness around `speakrs` and the ONNX/PLDA
+  model export tooling) is also licensed under the Apache License, Version 2.0.
+
+Third-party software attribution (permissive: MIT / BSD-2-Clause)
+---------------------------------------------------------------------
+
+The following components are used under permissive licenses that do not require source
+redistribution but are credited here for completeness (verified against each package's
+installed metadata: `pip show <package>`):
+
+- WhisperX — https://github.com/m-bain/whisperX — BSD-2-Clause license.
+- faster-whisper — https://github.com/SYSTRAN/faster-whisper — MIT license.
+- CTranslate2 — https://github.com/OpenNMT/CTranslate2 — MIT license.
+- ONNX Runtime — https://github.com/microsoft/onnxruntime — MIT license.
+
+None of the above requires attribution as a condition of use, but crediting them here keeps
+this NOTICE an accurate map of what OpenTranscribe runs.

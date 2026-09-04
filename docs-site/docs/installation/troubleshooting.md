@@ -216,9 +216,7 @@ nvidia-smi | grep "CUDA Version"
 
 **Solution**:
 
-1. **Accept BOTH model agreements**:
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+1. **Accept the model agreement** for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — the only repo OpenTranscribe actually gates on. (Older docs mentioned `pyannote/segmentation-3.0` and `pyannote/speaker-diarization-3.1` — that pair is optional and only helps the in-process PyAnnote engine's internal last-resort fallback; it is never a substitute for accepting `community-1`.)
 
 2. **Verify token in `.env`**:
    ```bash

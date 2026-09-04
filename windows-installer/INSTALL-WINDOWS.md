@@ -488,6 +488,16 @@ The first time you run OpenTranscribe:
    - Settings → API Keys
    - Add HuggingFace token
    - Save
+   - ⚠️ **The Windows installer only ships PyAnnote diarization — the native
+     `diar-native` sidecar is not part of this package.** `run_opentranscribe.bat`
+     starts a fixed `docker-compose.yml` + `docker-compose.offline.yml` chain with
+     no `--with-diar-native` overlay hook, and the installer build
+     (`scripts/build-windows-installer.sh`) never packages the sidecar image. The
+     HuggingFace token above must have access to the **gated** PyAnnote model
+     repos (`pyannote/speaker-diarization-3.1` and friends) — without both the
+     token and that access, diarization fails outright, it does not silently fall
+     back to something else. Native diarization on Windows is tracked as a
+     follow-up (see the repo's `#655` for the compose overlay work).
 
 3. **Configure LLM provider** (optional, for AI summarization)
    - Settings → LLM Configuration

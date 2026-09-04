@@ -15,6 +15,7 @@ import tempfile
 import time
 
 from app.core.celery import celery_app
+from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
 from app.core.constants import CPUPriority
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
@@ -134,7 +135,7 @@ def preprocess_for_transcription(
             try:
                 _shared_vol = os.environ.get(
                     "ENGINE_SHARED_VOLUME_PATH",
-                    "/tmp",  # noqa: S108  # nosec B108
+                    ENGINE_SHARED_VOLUME_DEFAULT,
                 )
                 os.makedirs(_shared_vol, exist_ok=True)
                 _safe_task_id = re.sub(r"[^a-zA-Z0-9\-]", "_", task_id)

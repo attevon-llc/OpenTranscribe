@@ -74,9 +74,7 @@ AMD GPUs are not currently supported (ROCm support planned for future).
 1. Create free account at [huggingface.co](https://huggingface.co)
 2. Go to [Settings → Access Tokens](https://huggingface.co/settings/tokens)
 3. Click "New token", select "Read" access
-4. Accept agreements for:
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+4. Accept the agreement for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — this is the only repo OpenTranscribe actually gates on (auto-approved, CC-BY-4.0)
 5. Copy token to your `.env` file
 
 See [HuggingFace Setup](./installation/huggingface-setup.md) for detailed instructions.

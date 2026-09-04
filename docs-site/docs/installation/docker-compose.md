@@ -170,9 +170,7 @@ See [Authentication Overview](../authentication/overview.md) for setup guides.
 **This step is CRITICAL for speaker diarization**
 
 1. **Get a token** at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-2. **Accept model agreements** for:
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+2. **Accept the model agreement** for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — the only repo OpenTranscribe actually gates on
 3. **Add to .env**: `HUGGINGFACE_TOKEN=hf_xxxxxxxxxxxx`
 
 See [HuggingFace Setup](./huggingface-setup.md) for detailed instructions.

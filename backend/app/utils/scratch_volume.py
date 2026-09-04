@@ -90,12 +90,31 @@ def scratch_audio_path(file_uuid: str) -> Path:
 
 
 def write_audio(file_uuid: str, src_path: str) -> Path | None:
-    """Move/copy ``src_path`` into the scratch volume as the canonical WAV.
+    """Hard-link (or copy) ``src_path`` into the scratch volume as the canonical WAV.
 
     Returns the destination path on success, None when scratch is not
-    available or the write fails. Uses ``os.replace`` when the source
-    sits on the same filesystem (atomic, no copy); falls back to a copy
-    + unlink otherwise.
+    available or the write fails. ``src_path`` is left intact on every
+    success path — callers (``minio_service.upload_temp_audio``'s caller,
+    ``tasks/transcription/preprocess.py``) read it again afterward to stage
+    the engine shared-volume WAV, so this must never remove the source.
+
+    Uses ``os.link`` when the source sits on the same filesystem (same
+    inode, zero data copy, and — unlike ``os.replace`` — the source's
+    directory entry is untouched); falls back to a full copy on ``EXDEV``
+    (cross-filesystem) or when the source already has another hard link at
+    the destination.
+
+    This used to try ``os.replace`` first, which is a MOVE: it deletes the
+    source's directory entry as its whole mechanism, contradicting this
+    docstring's older "copy + unlink" description (there was no unlink —
+    ``os.replace`` needs none, having already removed the source itself)
+    and silently breaking every caller that reads ``src_path`` again after
+    the call. It only ever worked because the two paths passed in practice
+    (a container-local ``/tmp`` temp dir and the ``pipeline_scratch`` named
+    volume) sit on different filesystems, so the rename always hit
+    ``EXDEV`` and fell through to the (source-preserving) copy branch —
+    putting them on one filesystem would have made the rename succeed and
+    silently emptied ``local_wav_path`` on every job (issue #661 E1).
     """
     if not is_scratch_available():
         return None
@@ -106,11 +125,13 @@ def write_audio(file_uuid: str, src_path: str) -> Path | None:
     dest = scratch_audio_path(file_uuid)
     try:
         dest_dir.mkdir(parents=True, exist_ok=True)
-        # Try an atomic rename first (fastest, no data copy).
+        if os.path.exists(dest):
+            os.unlink(dest)
+        # Try a hard link first (same inode, zero copy) — never removes the source.
         try:
-            os.replace(src_path, dest)
+            os.link(src_path, dest)
         except OSError:
-            # Cross-filesystem rename fails with EXDEV — fall back to copy.
+            # Cross-filesystem, or some other reason linking isn't possible — copy instead.
             shutil.copy2(src_path, dest)
         logger.debug(f"staged WAV to scratch: {dest}")
         return dest

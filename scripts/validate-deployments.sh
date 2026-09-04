@@ -77,6 +77,7 @@ DEPLOYMENTS=(
     "dev-no-nas|start dev --no-nas"
     "dev-gpu-scale|start dev --gpu-scale"
     "dev-gpu-split|start dev --with-gpu-split"
+    "dev-diar-native|start dev --with-diar-native"
     "dev-monitoring|start dev --with-monitoring"
     "dev-watch|start dev --with-watch"
     "dev-backup|start dev --with-backup"

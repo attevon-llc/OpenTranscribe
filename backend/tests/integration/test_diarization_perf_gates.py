@@ -13,6 +13,36 @@ excludes ``gpu``:
         tests/integration/test_diarization_perf_gates.py -v -o addopts= -m gpu
 
 Refs: plan i-need-a-full-stateful-origami.md D.4, D.5, D.6.
+
+⚠️ **Issue #669 — this module measures ONLY the PyAnnote engine, not diar-native.**
+``pipeline`` (below) is literally ``pyannote.audio.Pipeline.from_pretrained(...)``, and
+``PERF_GATES_S`` was measured against the fork on an A6000 (see the comment on that dict).
+diar-native (speakrs) is a different binary with a different runtime profile — carrying
+these thresholds over to it would silently apply "how fast PyAnnote is on an A6000" as a
+pass/fail bar for a Rust/ONNX pipeline nobody has ever timed here, which is worse than no
+gate: it can widen by construction (native happens to come in under a PyAnnote number for
+unrelated reasons) or fail by construction (native has a different, legitimate profile)
+with neither outcome meaning anything.
+
+**No native perf gate exists in this module.** Per repo policy (root CLAUDE.md: GPU 1 is
+shared and a benchmark must never be run unasked), the native thresholds are NOT measured
+here. To add them for real:
+
+    1. Build the same benchmark inputs this module already reads:
+       ``/app/benchmark/test_audio/{0.5h_1899s.wav,2.2h_7998s.wav}`` (see
+       ``docs/diarization-vram-profile/README.md`` for provenance).
+    2. In a GPU window on this project's GPU (slot 1, RTX 3080 Ti — NOT the A6000s
+       reserved for other work), run diar-native's own timing harness (or the same
+       wall-clock pattern as ``test_wall_time_regression`` below, but calling the sidecar's
+       ``/diarize`` instead of the pyannote ``pipeline``) against both files, several times,
+       and record median + spread.
+    3. Set a new ``NATIVE_PERF_GATES_S`` dict from that measurement (headroom factor
+       chosen the same way as the PyAnnote gates: ~1.3-1.5x median), in its own test
+       function — do not fold it into ``PERF_GATES_S``/``test_wall_time_regression``, which
+       stay PyAnnote-only so the docstring-vs-code claim never drifts again.
+    4. Until step 3 lands, any native-path perf test must be ``xfail(strict=False,
+       reason=...)`` or a named ``skip`` pointing at this comment — never a carried-over
+       PyAnnote number, and never a threshold widened to pass by construction.
 """
 
 from __future__ import annotations

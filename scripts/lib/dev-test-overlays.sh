@@ -74,6 +74,7 @@ declare -A EXEMPT_WITH_FLAGS=(
     [llm-test]="reserves a real GPU for minutes at a time, so it is handled by run-dev-tests.sh's own --with-pipeline-smoke block directly (bring-up/health-wait/teardown), not by this table's generic auto-detected tiers — opt-in only, never auto-started under --full/--all-overlays"
     [monitoring]="Prometheus/Grafana; no test selector this script drives needs it"
     [pki]="needs the prod+nginx overlay (PKI/mTLS), not the dev stack this script targets — test_pki.py is out of scope here"
+    [scratch-tmpfs]="declares no services, container_name or ports at all — it only re-drivers the existing pipeline_scratch named volume to tmpfs, so there is nothing for this script to start, health-check or tear down. Deliberately opt-in per host RAM (issue #661 E5); no test selector this script drives depends on the handoff being RAM-backed rather than disk-backed"
     [smb-test]="no test selector this script drives needs it; test_watch_sources_e2e.py only needs the local-folder mount from --with-watch"
 )
 

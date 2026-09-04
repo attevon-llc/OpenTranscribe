@@ -68,6 +68,12 @@ docker-compose.diar-native.yml
 # safe to load on a CPU-only or --lite host with no nvidia runtime. Loaded alongside
 # docker-compose.gpu.yml; it also flips DIAR_MODE from the CPU-safe default to `cuda`.
 docker-compose.diar-native-gpu.yml
+# Opt-in RAM-backed override for the `pipeline_scratch` cross-worker WAV handoff volume
+# (issue #661 E5; see backend/app/utils/scratch_volume.py). `optional` — this is a
+# performance knob for RAM-rich hosts, never required, and the base compose file already
+# references it by name so a fresh install that skips it just keeps the disk-backed
+# default. Load with `./opentr.sh start dev --with-scratch-tmpfs`.
+docker-compose.scratch-tmpfs.yml	optional
 
 # --- Reverse proxy -------------------------------------------------------------
 nginx/site.conf.template
@@ -86,3 +92,12 @@ opentranscribe.sh	exec
 # Downloaded so `update-full` can diff it against the user's .env and report new
 # keys. The user's own .env is NEVER touched.
 .env.example
+
+# --- Legal ------------------------------------------------------------------
+# CC-BY-4.0 (pyannote model weights, both diarization engines) and Apache-2.0
+# (speakrs / diar-native) both carry attribution obligations. Neither backend
+# Dockerfile's build context includes this repo-root file (context is ./backend),
+# so this manifest entry is the ONLY mechanism that gets it to a self-hosted
+# deployment (issue #663). Not `optional` -- a NOTICE nobody receives is not
+# attribution.
+NOTICE

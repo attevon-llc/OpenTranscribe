@@ -47,6 +47,7 @@ from typing import cast
 
 import numpy as np
 
+from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
 from app.transcription.diarize_result import DiarizeResult
 
 if TYPE_CHECKING:
@@ -66,22 +67,20 @@ _GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0",
 # the sidecar). Same env var EngineConfig reads for shared_volume_path — deliberately not a
 # second knob, since issue #661 is precisely about reusing the WAV that variable locates.
 #
-# ⚠️ The DEFAULT here (/tmp/transcription) is intentionally NOT EngineConfig's (/tmp), and
-# that asymmetry is load-bearing rather than drift. The compose files mount the shared volume
-# at /tmp/transcription and .env.example sets the variable to match; when it is unset the
-# writer falls back to a container-LOCAL /tmp, which the sidecar cannot see at all. Defaulting
-# to a bare /tmp here would make the prefix match those local paths and hand the sidecar files
-# it cannot open — so on an install whose .env predates the variable, the correct behaviour is
-# for the reuse to simply not fire, which this default gives us.
-#
-# This is judged correct, not just asserted: no compose file sets ENGINE_SHARED_VOLUME_PATH
-# directly (every service reads it from `.env` via `env_file:`, which is the right place for
-# it), and .env.example DOES already carry the matching value — so a FRESH install gets the
-# optimisation for free. The only install this default protects is one whose `.env` predates
-# the variable being added there. Since "reuse silently never fires" is itself a failure mode
+# The default is `ENGINE_SHARED_VOLUME_DEFAULT` (app.core.constants) — the SAME constant
+# `engine/config.py` and `tasks/transcription/preprocess.py` fall back to. Before issue #661's
+# E0 fix this file alone defaulted to "/tmp/transcription" while the write side
+# (preprocess.py) and EngineConfig both defaulted to a bare "/tmp": an install whose `.env`
+# predated `ENGINE_SHARED_VOLUME_PATH` wrote the WAV into the writer's container-LOCAL /tmp,
+# this reader looked in the real mount, found nothing, and silently fell back to MinIO — the
+# exact per-job re-serialization cost this shared-volume path exists to avoid. Unifying all
+# three sites on the mount path (not a bare /tmp) fixes that for exactly the install this
+# mattered for, with no prefix-collision risk: the writer now targets the same mounted
+# directory the sidecar reads, so there is no local-/tmp file for the prefix check below to
+# mistake for a shared one. Since "reuse silently never fires" is itself a failure mode
 # nothing else would surface, diarize() below logs which case fired on every call — see the
 # "reuse-WAV optimisation" log lines.
-_ENGINE_SHARED_DIR = os.environ.get("ENGINE_SHARED_VOLUME_PATH", "/tmp/transcription")  # noqa: S108  # nosec B108
+_ENGINE_SHARED_DIR = os.environ.get("ENGINE_SHARED_VOLUME_PATH", ENGINE_SHARED_VOLUME_DEFAULT)
 _ENGINE_SHARED_PREFIX = _ENGINE_SHARED_DIR.rstrip("/") + "/"
 
 # Probe TTL cache (issue #661 probe-cost fix). A bare live GET costs the full connect timeout
@@ -214,6 +213,34 @@ def sidecar_status(base_url: str | None = None) -> dict:
             return body if isinstance(body, dict) else {}
     except Exception:  # noqa: BLE001 — a missing reason must never fail the caller
         return {}
+
+
+def sidecar_supports_cpu_device(base_url: str | None = None) -> bool:
+    """True when the sidecar's ``/healthz`` advertises ``"cpu"`` in ``supported_devices``.
+
+    Gates issue #679's per-request device routing. The sidecar's request structs do NOT use
+    ``deny_unknown_fields``, so an OLD diar-server (pre this field) silently IGNORES an
+    unrecognised ``"device"`` key and just runs on CUDA, returning 200 — indistinguishable
+    from success. Sending ``device`` blind would look like it worked while burning the exact
+    GPU slot it was meant to spare. This must be checked before every such request.
+
+    Shares :func:`_cached_probe`'s TTL cache/window with :func:`sidecar_ready` /
+    :func:`sidecar_healthy` — same cost profile, no second cache to keep in sync.
+    """
+    return _cached_probe(
+        "cpu_device", (base_url or _DEFAULT_URL).rstrip("/"), _sidecar_supports_cpu_uncached
+    )
+
+
+def _sidecar_supports_cpu_uncached(url: str) -> bool:
+    """The live capability check backing :func:`sidecar_supports_cpu_device`.
+
+    Reads the same ``/healthz`` body ``sidecar_status`` already fetches for its "reason"
+    string — a second endpoint would be a second round trip for information the sidecar
+    already puts on the endpoint we probe for liveness anyway.
+    """
+    devices = sidecar_status(url).get("supported_devices") or []
+    return "cpu" in devices
 
 
 def sidecar_ready(base_url: str | None = None) -> bool:

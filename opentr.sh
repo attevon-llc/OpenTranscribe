@@ -165,6 +165,9 @@ show_help() {
   echo "  --with-monitoring    - Start Prometheus (:5186) + Grafana (:5185) observability stack"
   echo "                         (all four --with-* test overlays are isolated + port-offset by --fresh)"
   echo "  --with-backup        - Mount BACKUP_HOST_PATH (default ./backups) for in-app scheduled backups"
+  echo "  --with-scratch-tmpfs - Put the pipeline_scratch WAV handoff volume on RAM-backed tmpfs"
+  echo "                         (default 2g, override SCRATCH_TMPFS_SIZE). Sized off"
+  echo "                         DIAR_NATIVE_MAX_INFLIGHT x largest in-flight file."
   echo ""
   echo "Reset & Database Commands:"
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
@@ -1595,6 +1598,7 @@ start_app() {
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
   WITH_MOCK_ASR_FLAG=""
+  WITH_SCRATCH_TMPFS_FLAG=""
   WITH_DIAR_NATIVE_FLAG=""
   NO_DIAR_NATIVE_FLAG=""
   WITH_LLM_TEST_FLAG=""
@@ -1703,6 +1707,10 @@ start_app() {
         ;;
       --with-mock-asr)
         WITH_MOCK_ASR_FLAG="--with-mock-asr"
+        shift
+        ;;
+      --with-scratch-tmpfs)
+        WITH_SCRATCH_TMPFS_FLAG="--with-scratch-tmpfs"
         shift
         ;;
       --with-diar-native)
@@ -2205,6 +2213,21 @@ start_app() {
     fi
   fi
 
+  # Add the opt-in tmpfs override for the pipeline_scratch handoff volume if requested
+  # (issue #661 E5). No isolation dispatch needed: the overlay declares neither `ports:`
+  # nor `container_name:`, only a driver override for the already project-namespaced
+  # `pipeline_scratch` volume — see the --fresh aux-isolation exemption comment in
+  # backend/tests/unit/test_opentr_fresh_aux_isolation.py.
+  if [ -n "$WITH_SCRATCH_TMPFS_FLAG" ]; then
+    if [ -f "docker-compose.scratch-tmpfs.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.scratch-tmpfs.yml"
+      echo "🧠 Adding RAM-backed scratch volume override (docker-compose.scratch-tmpfs.yml)"
+      echo "   pipeline_scratch is now tmpfs, size=${SCRATCH_TMPFS_SIZE:-2g}"
+    else
+      echo "⚠️  --with-scratch-tmpfs specified but docker-compose.scratch-tmpfs.yml not found"
+    fi
+  fi
+
   # Native diarization sidecar. Shared with rebuild-backend so a rebuild can never
   # drop celery-worker's /tmp/diar-native handoff mount — see add_diar_native_overlay.
   add_diar_native_overlay start
@@ -2518,6 +2541,7 @@ reset_and_init() {
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
   WITH_MOCK_ASR_FLAG=""
+  WITH_SCRATCH_TMPFS_FLAG=""
   WITH_DIAR_NATIVE_FLAG=""
   NO_DIAR_NATIVE_FLAG=""
   WITH_LLM_TEST_FLAG=""
@@ -2614,6 +2638,10 @@ reset_and_init() {
         ;;
       --with-mock-asr)
         WITH_MOCK_ASR_FLAG="--with-mock-asr"
+        shift
+        ;;
+      --with-scratch-tmpfs)
+        WITH_SCRATCH_TMPFS_FLAG="--with-scratch-tmpfs"
         shift
         ;;
       --with-diar-native)
@@ -2869,6 +2897,21 @@ reset_and_init() {
       echo "   Scenarios: ok (default) error malformed upload-reject"
     else
       echo "⚠️  --with-mock-asr specified but docker-compose.mock-asr.yml not found"
+    fi
+  fi
+
+  # Add the opt-in tmpfs override for the pipeline_scratch handoff volume if requested
+  # (issue #661 E5). No isolation dispatch needed: the overlay declares neither `ports:`
+  # nor `container_name:`, only a driver override for the already project-namespaced
+  # `pipeline_scratch` volume — see the --fresh aux-isolation exemption comment in
+  # backend/tests/unit/test_opentr_fresh_aux_isolation.py.
+  if [ -n "$WITH_SCRATCH_TMPFS_FLAG" ]; then
+    if [ -f "docker-compose.scratch-tmpfs.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.scratch-tmpfs.yml"
+      echo "🧠 Adding RAM-backed scratch volume override (docker-compose.scratch-tmpfs.yml)"
+      echo "   pipeline_scratch is now tmpfs, size=${SCRATCH_TMPFS_SIZE:-2g}"
+    else
+      echo "⚠️  --with-scratch-tmpfs specified but docker-compose.scratch-tmpfs.yml not found"
     fi
   fi
 

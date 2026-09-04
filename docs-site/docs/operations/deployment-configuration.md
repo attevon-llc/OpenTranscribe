@@ -30,6 +30,7 @@ workers that silently re-download every file. See
 | **Lite (cloud ASR)** | `./opentr.sh start dev --lite` | No GPU; transcription via a configured cloud ASR provider. |
 | **GPU scale (dual-GPU)** | `./opentr.sh start dev --gpu-scale` | N parallel workers on `GPU_SCALE_DEVICE_ID`; keeps the default worker too when `GPU_SCALE_DEFAULT_WORKER=1`. |
 | **GPU split** | `./opentr.sh start dev --with-gpu-split` | Transcription and diarization on **separate** GPUs. Needs `ENGINE_GPU_SPLIT=true`. |
+| **Native diarization sidecar** | `./opentr.sh start dev --with-diar-native` | Runs `diar-server` (Rust/ONNX) alongside `celery-worker` instead of in-process PyAnnote. **Windows installer excluded** — see `windows-installer/INSTALL-WINDOWS.md`. |
 | **NAS / NVMe storage** | `./opentr.sh start dev --nas` | Bind-mounts custom host paths for media/DB/search. Auto-detected from `.env`; `--no-nas` suppresses it. |
 | **Fresh / isolated** | `./opentr.sh start dev --fresh <name>` | Throwaway stack, own project + volumes, NAS overlay never loaded. See [Fresh Deployments](./fresh-deployments.md). |
 | **Monitoring** | `./opentr.sh start dev --with-monitoring` | Prometheus (:5186) + Grafana (:5185). See [Monitoring](./monitoring.md). |

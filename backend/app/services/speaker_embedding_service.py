@@ -447,6 +447,17 @@ class SpeakerEmbeddingService:
 
         Returns:
             Dictionary mapping speaker IDs to lists of embeddings
+
+        Note:
+            The audio file is decoded exactly ONCE up front (previously
+            ``extract_embedding_from_file`` decoded the entire file again for
+            every selected segment — up to 30 full-file decodes per job for
+            5 segments x 6 speakers). Each segment is then sliced from that
+            single in-memory waveform via ``extract_embedding_from_waveform``,
+            which applies the identical start/end sample slicing and ``_embed``
+            call ``extract_embedding_from_file`` used, so the resulting
+            embeddings are byte-for-byte the same — only the number of
+            decodes changes (issue #661 E3.2).
         """
         from app.services.audio_segment_utils import group_segments_by_speaker
         from app.services.audio_segment_utils import merge_adjacent_segments
@@ -454,6 +465,14 @@ class SpeakerEmbeddingService:
 
         speaker_embeddings: dict[int, list[np.ndarray]] = {}
         grouped = group_segments_by_speaker(segments, speaker_mapping)
+        if not grouped:
+            return speaker_embeddings
+
+        try:
+            waveform, sample_rate = self._load_audio(audio_path)
+        except Exception as e:
+            logger.error(f"Error loading audio {audio_path} for segment embeddings: {e}")
+            return speaker_embeddings
 
         for speaker_id, speaker_segs in grouped.items():
             merged = merge_adjacent_segments(speaker_segs)
@@ -463,8 +482,8 @@ class SpeakerEmbeddingService:
 
             embeddings = []
             for segment in selected:
-                embedding = self.extract_embedding_from_file(
-                    audio_path, {"start": segment["start"], "end": segment["end"]}
+                embedding = self.extract_embedding_from_waveform(
+                    waveform, sample_rate, {"start": segment["start"], "end": segment["end"]}
                 )
 
                 if embedding is not None:

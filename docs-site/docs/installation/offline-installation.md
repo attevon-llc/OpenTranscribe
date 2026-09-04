@@ -72,9 +72,8 @@ import torch
 WhisperForConditionalGeneration.from_pretrained("Systran/faster-whisper-large-v2")
 WhisperProcessor.from_pretrained("Systran/faster-whisper-large-v2")
 
-# PyAnnote models
-Model.from_pretrained("pyannote/segmentation-3.0")
-Model.from_pretrained("pyannote/speaker-diarization-3.1")
+# PyAnnote model (the only repo OpenTranscribe actually gates on)
+Model.from_pretrained("pyannote/speaker-diarization-community-1")
 EOF
 
 # Package model cache

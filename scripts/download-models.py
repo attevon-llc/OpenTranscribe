@@ -116,9 +116,14 @@ def validate_gated_model_access():
         if not hf_token:
             return False, 'No HuggingFace token provided'
 
-        # List of REQUIRED gated models (community-1 is not gated)
+        # List of REQUIRED gated models. community-1 IS gated (auto-approved, but the
+        # agreement must still be accepted) and is the ONLY repo the app actually
+        # downloads via whisperx's DiarizationPipeline (whisperx>=3.7 defaults to
+        # "pyannote/speaker-diarization-community-1", see backend/app/transcription/
+        # diarizer.py PYANNOTE_V4_MODEL and native_provision.py). segmentation-3.0 /
+        # speaker-diarization-3.1 are NOT what either download group needs.
         gated_models = [
-            'pyannote/segmentation-3.0',
+            'pyannote/speaker-diarization-community-1',
         ]
 
         api = HfApi()
@@ -245,27 +250,22 @@ def download_pyannote_models():
             print_error('❌ GATED MODEL ACCESS DENIED - DOWNLOAD CANNOT PROCEED')
             print_error('=' * 80)
             print_error('')
-            print_error('⚠️  YOUR TOKEN DOES NOT HAVE ACCESS TO REQUIRED PYANNOTE MODELS')
+            print_error('⚠️  YOUR TOKEN DOES NOT HAVE ACCESS TO THE REQUIRED PYANNOTE MODEL')
             print_error('')
-            print_error('This means you have NOT accepted the model user agreements.')
+            print_error('This means you have NOT accepted the model user agreement.')
             print_error('')
             print_error('╔════════════════════════════════════════════════════════════════════╗')
-            print_error('║  REQUIRED ACTION: Accept BOTH model agreements on HuggingFace      ║')
+            print_error('║  REQUIRED ACTION: Accept the model agreement on HuggingFace         ║')
             print_error('╚════════════════════════════════════════════════════════════════════╝')
             print_error('')
-            print_error('Step 1: Visit the Segmentation Model page')
-            print_error('   URL: https://huggingface.co/pyannote/segmentation-3.0')
-            print_error("   → Look for the 'Agree and access repository' button")
-            print_error('   → Click it to accept the terms')
-            print_error('')
-            print_error('Step 2: Visit the Speaker Diarization Model page')
+            print_error('Step 1: Visit the Speaker Diarization Model page')
             print_error('   URL: https://huggingface.co/pyannote/speaker-diarization-community-1')
             print_error("   → Look for the 'Agree and access repository' button")
             print_error('   → Click it to accept the terms')
             print_error('')
-            print_error('Step 3: Wait 1-2 minutes for permissions to propagate')
+            print_error('Step 2: Wait 1-2 minutes for permissions to propagate')
             print_error('')
-            print_error('Step 4: Run this script again:')
+            print_error('Step 3: Run this script again:')
             print_error('   bash scripts/download-models.sh models')
             print_error('')
             print_error('=' * 80)
@@ -319,7 +319,10 @@ def download_pyannote_models():
 
         # Step 3: Diarize (same as backend - downloads PyAnnote models)
         print_info('Step 3/3: Running speaker diarization (downloads PyAnnote models)...')
-        print_info('  This downloads: segmentation-3.0, embedding, wespeaker-voxceleb...')
+        print_info(
+            '  This downloads: speaker-diarization-community-1 '
+            '(bundles segmentation, embedding, wespeaker-voxceleb)...'
+        )
 
         try:
             diarize_model = whisperx.diarize.DiarizationPipeline(
@@ -367,19 +370,15 @@ def download_pyannote_models():
             print_error('⚠️  THIS LOOKS LIKE A GATED MODEL ACCESS ERROR!')
             print_error('=' * 70)
             print_error('')
-            print_error("This error usually means you haven't accepted the model agreements.")
+            print_error("This error usually means you haven't accepted the model agreement.")
             print_error('')
-            print_error('You MUST accept BOTH PyAnnote gated model agreements:')
+            print_error('You MUST accept the PyAnnote gated model agreement:')
             print_error('')
-            print_error('  1. Segmentation Model:')
-            print_error('     https://huggingface.co/pyannote/segmentation-3.0')
-            print_error("     → Click 'Agree and access repository'")
-            print_error('')
-            print_error('  2. Speaker Diarization Model:')
+            print_error('  Speaker Diarization Model:')
             print_error('     https://huggingface.co/pyannote/speaker-diarization-community-1')
             print_error("     → Click 'Agree and access repository' (if prompted)")
             print_error('')
-            print_error('After accepting BOTH agreements:')
+            print_error('After accepting the agreement:')
             print_error('  • Wait 1-2 minutes for permissions to propagate')
             print_error('  • Run this script again: bash scripts/download-models.sh models')
             print_error('')

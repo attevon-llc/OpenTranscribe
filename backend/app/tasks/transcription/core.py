@@ -17,10 +17,14 @@ import os
 import tempfile
 import time
 
+from celery import chain
+
 from app.core.celery import celery_app
 from app.core.constants import CLOUD_ASR_MAX_RETRIES
 from app.core.constants import CLOUD_ASR_RETRY_BASE
 from app.core.constants import CLOUD_ASR_RETRY_MAX
+from app.core.constants import CeleryQueues
+from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
@@ -73,6 +77,80 @@ __all__ = [
 ]
 
 
+def _claim_gpu_split_diarize_dispatch(task_id: str) -> bool:
+    """Best-effort once-only claim for dispatching the diarize leg of a gpu-split run.
+
+    ``transcribe_gpu_task`` is ``acks_late=True`` (backend/app/tasks/CLAUDE.md): if the
+    worker dies after this function's caller has already fired the diarize_gpu_task ->
+    finalize_transcription chain but before Celery records the ack, the broker's
+    ``visibility_timeout`` redelivers the ENTIRE transcribe_gpu_task to another worker,
+    which would otherwise dispatch a second, duplicate diarize chain over the same
+    file/segments. The claim key's TTL matches that redelivery window (plus margin) so
+    the guard outlives every window in which a duplicate could still occur.
+
+    Fails OPEN (returns True, "go ahead and dispatch") on a Redis error: a lost dedup
+    guard risks a rare double-dispatch, but failing closed here would silently drop
+    diarization for every gpu-split file whenever Redis hiccups — worse.
+    """
+    from app.core.redis import get_redis
+
+    ttl_s = int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600")) + 3600
+    key = f"gpu_split_diarize_dispatched:{task_id}"
+    try:
+        return bool(get_redis().set(key, "1", nx=True, ex=ttl_s))
+    except Exception as e:
+        logger.warning(f"gpu-split diarize dispatch claim failed for task {task_id}: {e}")
+        return True
+
+
+def _dispatch_gpu_split_diarize_chain(
+    task_id: str, file_uuid: str, transcript_data: dict, preprocess_context: dict
+) -> bool:
+    """Dispatch the SECOND leg of a gpu-split run: diarize_gpu_task -> finalize_transcription.
+
+    Issue #703-followup: the outer pipeline chain built by dispatch.py is
+    ``preprocess -> transcribe_gpu_task -> finalize_transcription``, and that third link is
+    UNCONDITIONAL — it always runs against whatever ``transcribe_gpu_task`` returns. A split
+    run's real completion depends on ``diarize_gpu_task``, which hasn't executed yet, so the
+    outer chain's finalize stage cannot do real work here (it short-circuits on a
+    ``status: split_forwarded`` result — see ``postprocess.finalize_transcription``). This
+    builds a SEPARATE two-link chain, with its own ``link_error``, so finalize actually runs
+    against ``diarize_gpu_task``'s result (segments + speaker mapping), and a genuine failure
+    anywhere in this second leg still marks the file ERROR exactly once.
+
+    Guarded by :func:`_claim_gpu_split_diarize_dispatch` so a redelivered
+    ``transcribe_gpu_task`` (``acks_late=True``, backend/app/tasks/CLAUDE.md's
+    visibility_timeout note) cannot dispatch a second, duplicate diarize chain over the same
+    file/segments.
+
+    Returns:
+        True if the chain was dispatched, False if skipped as a duplicate.
+    """
+    if not _claim_gpu_split_diarize_dispatch(task_id):
+        logger.warning(
+            "gpu-split diarize dispatch already claimed for task %s "
+            "(redelivered transcribe_gpu_task) — not dispatching a duplicate diarize_gpu_task",
+            task_id,
+        )
+        return False
+
+    from .dispatch import on_pipeline_error
+    from .postprocess import finalize_transcription
+
+    diarize_chain = chain(
+        diarize_gpu_task.s(transcript_data, preprocess_context).set(
+            queue=CeleryQueues.GPU_DIARIZE, priority=GPUPriority.USER_IMPORT
+        ),
+        finalize_transcription.s().set(
+            queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL
+        ),
+    )
+    diarize_chain.apply_async(
+        link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue=CeleryQueues.UTILITY)],
+    )
+    return True
+
+
 def _resolve_asr_provider_or_none(user_id: int):
     """Resolve the user's ASR provider, or ``None`` on a config-loading failure.
 
@@ -94,6 +172,39 @@ def _resolve_asr_provider_or_none(user_id: int):
         raise
     except Exception:
         return None
+
+
+def _log_shared_wav_fallback_reason(local_wav_path: str | None, file_id: int) -> None:
+    """Say WHY the GPU task fell back to a MinIO download instead of the shared-volume WAV.
+
+    Extracted from ``transcribe_gpu_task`` to keep it under the complexity gate, but the
+    three-way split is the point: before this, every fallback logged identically, so a
+    misconfigured shared volume — a path written by preprocess but not resolvable on the GPU
+    worker, which is the ``ENGINE_SHARED_VOLUME_PATH`` mismatch issue #661 E0 fixes — was
+    indistinguishable from the two entirely expected reasons. That silence is what let the
+    fast path stay off on real installs without anyone noticing.
+    """
+    if not local_wav_path:
+        logger.info(
+            "GPU task: no shared-volume WAV recorded by preprocess for file %d — "
+            "falling back to MinIO download",
+            file_id,
+        )
+    elif not os.path.exists(local_wav_path):
+        logger.warning(
+            "GPU task: shared-volume WAV path '%s' recorded by preprocess but NOT FOUND "
+            "on this container for file %d — falling back to MinIO download. Check that "
+            "ENGINE_SHARED_VOLUME_PATH resolves to the same mounted volume on every "
+            "worker (see .env.example).",
+            local_wav_path,
+            file_id,
+        )
+    else:
+        logger.info(
+            "GPU task: shared-volume WAV found but ASR provider is not local for file "
+            "%d — falling back to MinIO download",
+            file_id,
+        )
 
 
 @celery_app.task(
@@ -190,11 +301,14 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                 transcript_data = _run_transcribe_only_stage(
                     ctx, local_wav_path, preprocess_context
                 )
-                # Forward to diarize worker — that task will handle finalization
-                diarize_gpu_task.apply_async(
-                    args=[transcript_data, preprocess_context],
-                    queue="gpu-diarize",
+
+                # Dispatch the real completion chain — see
+                # _dispatch_gpu_split_diarize_chain's docstring (issue #703-followup) for why
+                # this can't just be another apply_async of diarize_gpu_task alone.
+                _dispatch_gpu_split_diarize_chain(
+                    task_id, file_uuid, transcript_data, preprocess_context
                 )
+
                 benchmark_timing.mark(task_id, "gpu_end")
                 return {
                     "status": "split_forwarded",
@@ -242,6 +356,12 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             return gpu_result
 
         # ── Fallback / cloud path: download from MinIO ────────────────────────
+        # Reaching here means `has_shared_wav` was False — log WHICH condition failed so a
+        # misconfigured shared volume (path written but not found — the ENGINE_SHARED_VOLUME_PATH
+        # mismatch issue #661 E0 fixes) is distinguishable from the expected reasons (no local
+        # ASR provider, or preprocess never wrote a shared WAV at all). Before this, every
+        # fallback logged identically, so a broken shared-volume mount was invisible.
+        _log_shared_wav_fallback_reason(local_wav_path, file_id)
         with tempfile.TemporaryDirectory() as temp_dir:
             # Download preprocessed audio from MinIO temp
             step_start = time.perf_counter()

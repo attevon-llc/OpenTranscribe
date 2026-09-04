@@ -77,6 +77,88 @@ __all__ = [
 ]
 
 
+# TTL cache for "is anything actually consuming gpu-diarize" — same rationale as
+# dispatch.py's _GPU_TRANSCRIBE_CONSUMER_CACHE_TTL_S: only consulted when a gpu-split
+# run has already produced a transcribe-only result, so this never adds a broker
+# round-trip to the non-split default path. Module-level and lock-free: a benign race
+# just means two dispatches in the same few-hundred-ms window might independently
+# re-probe — never incorrect.
+_GPU_DIARIZE_CONSUMER_CACHE_TTL_S = 15.0
+_gpu_diarize_consumer_cache: dict[str, float | bool] = {"checked_at": 0.0, "present": False}
+
+
+def _gpu_diarize_consumer_present() -> bool:
+    """Whether a live Celery worker is actually bound to CeleryQueues.GPU_DIARIZE.
+
+    Mirrors ``dispatch.py::_gpu_transcribe_consumer_present`` for the diarize leg
+    (issue #705): ``ENGINE_GPU_SPLIT`` reaches every container via ``.env``
+    regardless of whether ``celery-worker-gpu-diarize`` (the gpu-split Compose
+    profile) was actually started, so routing on the env var alone reproduces the
+    dead-queue hazard issue #703 fixed for the transcribe leg. This is the
+    corroborating check for the diarize leg.
+
+    Uses a live ``inspect().active_queues()`` broadcast, NOT Flower's cached
+    ``/api/workers`` endpoint — that endpoint is a boot-time snapshot with known
+    staleness (backend/app/tasks/CLAUDE.md, issue #609).
+
+    Fails CLOSED toward the safe direction, same as the transcribe-leg check: any
+    error, timeout, or empty reply is treated as "no consumer" so the caller falls
+    back to the always-staffed 'gpu' queue rather than risk publishing into a queue
+    nothing drains.
+    """
+    now = time.monotonic()
+    if now - float(_gpu_diarize_consumer_cache["checked_at"]) < _GPU_DIARIZE_CONSUMER_CACHE_TTL_S:
+        return bool(_gpu_diarize_consumer_cache["present"])
+
+    present = False
+    try:
+        active = celery_app.control.inspect(timeout=2.0).active_queues()
+        if active:
+            for queues in active.values():
+                if any(q.get("name") == CeleryQueues.GPU_DIARIZE for q in queues or []):
+                    present = True
+                    break
+    except Exception as e:
+        logger.warning(
+            f"Failed to verify a live '{CeleryQueues.GPU_DIARIZE}' consumer "
+            f"(falling back to '{CeleryQueues.GPU}'): {e}"
+        )
+        present = False
+
+    _gpu_diarize_consumer_cache["checked_at"] = now
+    _gpu_diarize_consumer_cache["present"] = present
+    return present
+
+
+def _resolve_gpu_diarize_queue() -> str:
+    """Resolve the queue for the diarize leg of a gpu-split run.
+
+    Fail-closed decision (issue #705): unlike the transcribe leg, there is no
+    "skip and retry later" option here — the transcribe-only result already
+    exists and MUST be diarized and finalized, or the file is stuck forever.
+    Refusing outright would just recreate issue #703's failure one hop later
+    (file wedged in ``processing``), and there is no different worker with the
+    diarize sidecar wiring to fall back to — the SAME task code
+    (``diarize_gpu_task``) is registered on the always-staffed 'gpu' queue too,
+    because the main 'gpu' worker imports the full app (this module's ``__all__``
+    re-export list includes ``diarize_gpu_task``). So the correct fallback,
+    exactly like the transcribe leg, is to route to 'gpu' rather than refuse:
+    the work still lands on a worker that actually runs the code, just without
+    the dedicated gpu-diarize sidecar's isolation/GPU-affinity benefits.
+    """
+    if _gpu_diarize_consumer_present():
+        return CeleryQueues.GPU_DIARIZE
+    logger.warning(
+        "gpu-split diarize leg: no worker is consuming '%s' — routing to '%s' "
+        "instead of a queue nothing would drain. Start the stack with "
+        "--with-gpu-split, or unset ENGINE_GPU_SPLIT if split topology isn't "
+        "intended here.",
+        CeleryQueues.GPU_DIARIZE,
+        CeleryQueues.GPU,
+    )
+    return CeleryQueues.GPU
+
+
 def _claim_gpu_split_diarize_dispatch(task_id: str) -> bool:
     """Best-effort once-only claim for dispatching the diarize leg of a gpu-split run.
 
@@ -123,6 +205,15 @@ def _dispatch_gpu_split_diarize_chain(
     visibility_timeout note) cannot dispatch a second, duplicate diarize chain over the same
     file/segments.
 
+    Issue #705: the diarize leg's queue is resolved by :func:`_resolve_gpu_diarize_queue`,
+    which verifies a live consumer on ``CeleryQueues.GPU_DIARIZE`` and falls back to the
+    always-staffed ``CeleryQueues.GPU`` queue otherwise — the same fail-closed shape as the
+    transcribe leg's ``dispatch.py::_resolve_gpu_queue`` (issue #703). The consumer check
+    runs AFTER the dedup claim above on purpose: this call only fires once per
+    ``transcribe_gpu_task`` execution (the claim already prevented a duplicate), so there is
+    no double-check-then-burn-the-claim hazard — a "no consumer" result here still dispatches
+    (to 'gpu' instead), it never skips dispatching.
+
     Returns:
         True if the chain was dispatched, False if skipped as a duplicate.
     """
@@ -139,7 +230,7 @@ def _dispatch_gpu_split_diarize_chain(
 
     diarize_chain = chain(
         diarize_gpu_task.s(transcript_data, preprocess_context).set(
-            queue=CeleryQueues.GPU_DIARIZE, priority=GPUPriority.USER_IMPORT
+            queue=_resolve_gpu_diarize_queue(), priority=GPUPriority.USER_IMPORT
         ),
         finalize_transcription.s().set(
             queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL

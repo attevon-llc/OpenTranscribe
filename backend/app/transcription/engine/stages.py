@@ -119,8 +119,13 @@ def _collect_diarization(
 ):
     """Diarize, taking the overlapped result when one is in flight.
 
-    Returns the diarizer's ``(diarize_df, overlap_info, native_embeddings)``. An overlapped
-    attempt that failed falls back to a plain inline run, so the outcome is the same either way.
+    Returns ``(diarize_df, overlap_info, native_embeddings, provider, model)``, where
+    ``provider``/``model`` name the engine that ACTUALLY served the request — resolved after
+    any in-process fallback (issue #706), read off the diarizer instance's ``last_provider`` /
+    ``last_model`` attributes (both ``NativeSpeakerDiarizer`` and ``SpeakerDiarizer`` expose
+    them, set at the point each ``diarize()`` call returns — never derived from
+    ``tc.diarizer_backend``, which only names what was *configured*). An overlapped attempt
+    that failed falls back to a plain inline run, so the outcome is the same either way.
     ``wav_path``, when given, is Stage 1's already-materialized shared-volume WAV — passed
     through to the diarizer so it can skip re-encoding ``audio`` a second time (issue #661).
 
@@ -144,25 +149,30 @@ def _collect_diarization(
     emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
     step_start = time.perf_counter()
     overlapped = None
+    provider: str | None = None
+    model: str | None = None
     with profiler.step("diarization"):
         if async_diarization is not None:
             overlapped = async_diarization.result()
         if overlapped is not None:
             result = overlapped
+            provider, model = async_diarization.served_by
         else:
             # Either overlap was never attempted, or it was and failed — either way we are
             # about to diarize on this (already-past-transcription) thread, so make room for
             # an in-process diarizer first. See the docstring above for why this is safe here
             # even when async_diarization is not None.
             _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb)
-            result = _run_diarize(manager.get_diarizer(tc), audio, wav_path)
+            diarizer = manager.get_diarizer(tc)
+            result = _run_diarize(diarizer, audio, wav_path)
+            provider, model = diarizer.last_provider, diarizer.last_model
     logger.info(
         "TIMING: diarization step completed in %.3fs%s",
         time.perf_counter() - step_start,
         " (overlapped with transcription)" if overlapped is not None else "",
     )
     profiler.snapshot("after_diarization")
-    return result
+    return (*result, provider, model)
 
 
 class _AsyncDiarization:
@@ -179,6 +189,11 @@ class _AsyncDiarization:
         self._value: tuple | None = None
         self._error: BaseException | None = None
         self._task_id = task_id
+        # Captured once, up front, rather than re-fetched from `manager` later: a re-probe in
+        # ModelManager._diarizer_current can swap engines between this thread starting and the
+        # caller reading served_by, which would attribute this call's result to the WRONG
+        # instance's (freshly-reset) last_provider/last_model (issue #706).
+        self._diarizer = manager.get_diarizer(tc)
         mark(task_id, "diarize_request_sent")
 
         def _run() -> None:
@@ -190,7 +205,7 @@ class _AsyncDiarization:
                 # treats that exactly like any other overlapped failure: log, return None, and
                 # let the caller retry sequentially once transcription is known to be done.
                 self._value = _run_diarize(
-                    manager.get_diarizer(tc), audio, wav_path, allow_local_fallback=False
+                    self._diarizer, audio, wav_path, allow_local_fallback=False
                 )
             except BaseException as exc:  # noqa: BLE001 — handed to the caller, not swallowed
                 self._error = exc
@@ -207,6 +222,18 @@ class _AsyncDiarization:
             logger.warning("Overlapped diarization failed (%s); retrying inline", self._error)
             return None
         return self._value
+
+    @property
+    def served_by(self) -> tuple[str | None, str | None]:
+        """``(provider, model)`` for a successful overlapped call, else ``(None, None)``.
+
+        Only meaningful after ``result()`` has returned non-``None`` — a failed overlapped
+        attempt never updates ``self._diarizer``'s ``last_provider``/``last_model``, so reading
+        this after a failure would report whatever the diarizer's PREVIOUS call left behind.
+        """
+        if self._value is None:
+            return None, None
+        return self._diarizer.last_provider, self._diarizer.last_model
 
 
 class _GpuStage:
@@ -362,6 +389,8 @@ class _GpuStage:
             native_speaker_embeddings=result_dict.get("native_speaker_embeddings"),
             speaker_gender=result_dict.get("speaker_gender"),
             stage_timings={"total": elapsed},
+            diarization_provider=result_dict.get("diarization_provider"),
+            diarization_model=result_dict.get("diarization_model"),
         )
 
     def _run_diarization(
@@ -379,8 +408,10 @@ class _GpuStage:
         from app.transcription.engine.progress import emit
 
         emit(progress_callback, 0.52, "Preparing speaker analysis", "diarize")
-        diarize_df, overlap_info, native_embeddings = _collect_diarization(
-            audio, tc, manager, hw, profiler, progress_callback, async_diarization
+        diarize_df, overlap_info, native_embeddings, diar_provider, diar_model = (
+            _collect_diarization(
+                audio, tc, manager, hw, profiler, progress_callback, async_diarization
+            )
         )
 
         # Step 5: Segment dedup BEFORE speaker assignment
@@ -414,6 +445,9 @@ class _GpuStage:
         # Carried on the DiarizeResult so the engine contract stayed unchanged.
         if getattr(diarize_df, "speaker_gender", None):
             result["speaker_gender"] = diarize_df.speaker_gender
+        # Resolved AFTER any fallback (issue #706) — never the configured backend.
+        result["diarization_provider"] = diar_provider
+        result["diarization_model"] = diar_model
 
         # Phase 3 (issue #193): acoustic re-check of short disputed/overlap words while
         # audio + speaker centroids are still in memory. Off by default; DB-controlled via
@@ -599,17 +633,21 @@ class _GpuRawStage:
         overlap_info: dict = {}
         speaker_gender: dict | None = None
         native_embs_serialized: dict[str, list[float]] | None = None
+        diar_provider: str | None = None
+        diar_model: str | None = None
 
         if tc.enable_diarization:
-            diarize_df, overlap_info, native_embeddings = _collect_diarization(
-                audio,
-                tc,
-                manager,
-                hw,
-                profiler,
-                callback,
-                async_diarization,
-                wav_path=pre.local_wav_path,
+            diarize_df, overlap_info, native_embeddings, diar_provider, diar_model = (
+                _collect_diarization(
+                    audio,
+                    tc,
+                    manager,
+                    hw,
+                    profiler,
+                    callback,
+                    async_diarization,
+                    wav_path=pre.local_wav_path,
+                )
             )
             diarize_records = diarize_df.to_records()
             speaker_gender = getattr(diarize_df, "speaker_gender", None)
@@ -651,6 +689,8 @@ class _GpuRawStage:
             speaker_gender=speaker_gender,
             config_snapshot=pre.config_snapshot,
             stage_timings={"gpu_total": elapsed},
+            diarization_provider=diar_provider,
+            diarization_model=diar_model,
         )
 
 
@@ -717,6 +757,8 @@ class _FinalizeStage:
             native_speaker_embeddings=result.get("native_speaker_embeddings"),
             speaker_gender=result.get("speaker_gender"),
             stage_timings={**raw.stage_timings, "finalize": time.perf_counter() - t0},
+            diarization_provider=raw.diarization_provider,
+            diarization_model=raw.diarization_model,
         )
 
 
@@ -839,6 +881,8 @@ class _DiarizerOnlyStage:
         diarize_records: list[dict] = []
         overlap_info: dict = {}
         native_embs_serialized: dict[str, list[float]] | None = None
+        diar_provider: str | None = None
+        diar_model: str | None = None
 
         if tc.enable_diarization:
             if tc.concurrent_requests > 1:
@@ -851,6 +895,7 @@ class _DiarizerOnlyStage:
                 diarize_df, overlap_info, native_embeddings = _run_diarize(
                     diarizer, audio, transcript.local_wav_path
                 )
+                diar_provider, diar_model = diarizer.last_provider, diarizer.last_model
             logger.info(
                 f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
             )
@@ -898,6 +943,8 @@ class _DiarizerOnlyStage:
             native_speaker_embeddings=native_embs_serialized,
             config_snapshot=transcript.config_snapshot,
             stage_timings=merged_timings,
+            diarization_provider=diar_provider,
+            diarization_model=diar_model,
         )
 
 

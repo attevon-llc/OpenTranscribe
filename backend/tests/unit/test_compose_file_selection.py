@@ -422,7 +422,10 @@ _HAND_BUILT_BRINGUP_EXEMPTIONS = {
         "docker-compose.lite.yml is NOT in release-manifest.txt and get_compose_files() "
         "has no lite branch, so no shipped command can select it — see "
         "test_lite_mode_is_not_reachable_by_a_shipped_deployment below. The moment that "
-        "changes, that test fails and this exemption must be removed."
+        "changes, that test fails and this exemption must be removed. Since issue #660 "
+        "the hand-built chain also adds docker-compose.diar-native.yml (the CPU-EP "
+        "speaker-embedding sidecar); that addition is reachable only from this script "
+        "and from opentr.sh (dev-only), and does not make lite shippable."
     ),
 }
 

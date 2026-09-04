@@ -487,9 +487,17 @@ def test_rebuild_backend_still_honours_the_nas_overlay(tmp_path: Path):
 #: `nvidia-smi --query-compute-apps`: diar-server 0.3.1 holds 2,248 MiB idle where the
 #: pre-0.3.1 binary held 4,762 MiB, both under SPEAKRS_LAZY_SESSIONS=1 — so the halving is
 #: the binary, not the flag. The old figure was repeated in four places and measured in none.
+#:
+#: ⚠️ The CPU line no longer says "identical output". That claim was RETRACTED upstream
+#: (#679): speaker embeddings ARE bit-identical across devices (max centroid delta 0.0 on
+#: every clip tested), but diarization segment boundaries can differ by up to one
+#: segmentation frame (0.016875 s) when a posterior lands on the binarisation threshold.
+#: The wording matters enough to pin because an operator told "identical output" would be
+#: entitled to diff a CPU run against a GPU run and expect a match.
 START_BANNER = (
     "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)",
-    "   diar-server on CPU (no nvidia runtime detected) — slower, identical output.",
+    "   diar-server on CPU (no nvidia runtime detected) — slower; embeddings identical, "
+    "diarization boundaries may differ by up to 0.016875s (#679).",
     "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);",
     "   without the sidecar that config falls back to the in-process PyAnnote fork.",
 )

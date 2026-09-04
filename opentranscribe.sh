@@ -571,7 +571,16 @@ get_compose_files() {
                 compose_files="$compose_files -f docker-compose.diar-native-gpu.yml"
                 echo -e "${BLUE}   Holds ~2.2 GB of GPU memory on device ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} while up.${NC}" >&2
             else
-                echo -e "${BLUE}   Running on CPU — slower than the GPU path, identical output.${NC}" >&2
+                # "identical output" was RETRACTED upstream (#679). Speaker embeddings are
+                # bit-identical across devices (max centroid delta 0.0, every clip tested),
+                # which is what makes CPU routing safe for the embedding path — but
+                # diarization segment boundaries can differ by up to one segmentation frame
+                # (0.016875 s) when a posterior lands on the binarisation threshold. Below
+                # anything a transcript renders, but it must never be stated as identical:
+                # an operator reading that would be entitled to diff two runs and expect a
+                # match. Kept in parity with opentr.sh's wording.
+                echo -e "${BLUE}   Running on CPU — slower; embeddings identical, diarization${NC}" >&2
+                echo -e "${BLUE}   boundaries may differ by up to 0.016875s (#679).${NC}" >&2
             fi
         else
             # Loud, unlike the GPU overlays' silent `[ -f ]` fallthrough: the operator

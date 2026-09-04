@@ -120,6 +120,7 @@ def update_media_file_transcription_status(
     language: str | None = "en",
     whisper_model: str | None = None,
     diarization_model: str | None = None,
+    diarization_provider: str | None = None,
     embedding_mode: str | None = None,
     asr_provider: str | None = None,
     asr_model: str | None = None,
@@ -135,6 +136,9 @@ def update_media_file_transcription_status(
         language: Detected language
         whisper_model: Whisper model used for transcription
         diarization_model: Diarization model used
+        diarization_provider: Diarization engine that ACTUALLY served the request
+            ("native" or "pyannote"), resolved after any fallback (issue #706) —
+            not the configured backend.
         embedding_mode: Speaker embedding mode ("v3" or "v4")
         asr_provider: Name of the ASR provider that ran the transcription (e.g. "deepgram")
         asr_model: Model name used by the ASR provider (e.g. "nova-3")
@@ -180,6 +184,8 @@ def update_media_file_transcription_status(
         media_file.whisper_model = whisper_model
     if diarization_model:
         media_file.diarization_model = diarization_model
+    if diarization_provider is not None and hasattr(media_file, "diarization_provider"):
+        media_file.diarization_provider = diarization_provider
     if embedding_mode:
         media_file.embedding_mode = embedding_mode
 

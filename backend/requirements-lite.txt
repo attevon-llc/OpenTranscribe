@@ -53,18 +53,27 @@ qrcode[pil]==8.2
 # NumPy 2.x compatible
 numpy==2.5.2
 
-# PyTorch CPU-only (for speaker embeddings — no CUDA build)
+# PyTorch CPU-only. NOT dropped by issue #660: sentence-transformers==6.0.0 below
+# declares `torch>=1.11.0` in its own installed metadata (used at
+# opensearch_service/client.py and chat/reranker.py for semantic search), so torch
+# is a hard transitive dependency of this file even with pyannote.audio gone.
 # Use --extra-index-url so PyPI remains available for all other packages.
-# --index-url would replace PyPI entirely, breaking pyannote.audio and other deps.
+# --index-url would replace PyPI entirely, breaking other deps.
+# The explicit `+cpu` pin is REQUIRED, not cosmetic: without it, pip resolves
+# torch as an ordinary transitive dependency of sentence-transformers from the
+# default PyPI index, which serves the CUDA-linked build — making this
+# CPU-only image LARGER, with nvidia wheels, on a host that never has a GPU.
+# Guarded by test_requirements_lite_torch_guard.py.
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.11.0+cpu
-# Explicit CPU pin - without it, pyannote.audio>=4.0.7's own torchaudio>=2.8.0
-# floor lets pip resolve whatever it wants, including a CUDA-linked PyPI build
-# into what's supposed to be a CPU-only image.
-torchaudio==2.11.0+cpu
 
-# PyAnnote (CPU-only, for speaker embedding extraction and cross-file speaker matching)
-pyannote.audio==4.0.7
+# torchaudio and pyannote.audio are GONE as of issue #660: speaker embeddings in
+# lite are served by the diar-native CPU-EP sidecar (`/embed_window`), which
+# needs neither in this process. See speaker_embedding_service.py's degrade
+# paths (_load_audio's torchaudio fallback, _load_fallback_model,
+# construction-time refusal under DEPLOYMENT_MODE=lite) for what happens if the
+# sidecar becomes unavailable — a shaped error naming DIAR_NATIVE_URL, not a
+# raw ModuleNotFoundError.
 
 # Supporting libraries
 omegaconf==2.3.1

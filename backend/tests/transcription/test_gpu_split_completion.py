@@ -91,6 +91,137 @@ class TestClaimGpuSplitDiarizeDispatch:
         assert _claim_gpu_split_diarize_dispatch("task-redis-down") is True
 
 
+class TestGpuDiarizeConsumerPresent:
+    """``_gpu_diarize_consumer_present`` / ``_resolve_gpu_diarize_queue`` — issue #705's
+    consumer-liveness guard for the diarize leg, mirroring
+    ``dispatch.py::_gpu_transcribe_consumer_present`` for the transcribe leg."""
+
+    def _reset_cache(self):
+        """The TTL cache is module-level; force a fresh probe for each test."""
+        from app.tasks.transcription import core
+
+        core._gpu_diarize_consumer_cache["checked_at"] = 0.0
+        core._gpu_diarize_consumer_cache["present"] = False
+
+    def test_consumer_present_routes_to_gpu_diarize(self, monkeypatch):
+        self._reset_cache()
+        from app.core.constants import CeleryQueues
+        from app.tasks.transcription.core import _resolve_gpu_diarize_queue
+
+        class _FakeInspect:
+            def active_queues(self):
+                return {"worker1@host": [{"name": CeleryQueues.GPU_DIARIZE}]}
+
+        monkeypatch.setattr(
+            "app.tasks.transcription.core.celery_app.control.inspect",
+            lambda timeout=2.0: _FakeInspect(),
+        )
+
+        assert _resolve_gpu_diarize_queue() == CeleryQueues.GPU_DIARIZE
+
+    def test_consumer_absent_fails_closed_to_gpu_queue(self, monkeypatch):
+        """No live consumer on gpu-diarize must NOT dispatch into a dead queue — the
+        exact issue #705 hazard. Falls back to the always-staffed 'gpu' queue, the same
+        fail-closed direction the transcribe leg uses (diarize_gpu_task is registered
+        there too, since the main 'gpu' worker imports the full app)."""
+        self._reset_cache()
+        from app.core.constants import CeleryQueues
+        from app.tasks.transcription.core import _resolve_gpu_diarize_queue
+
+        class _FakeInspect:
+            def active_queues(self):
+                return {"worker1@host": [{"name": "some-other-queue"}]}
+
+        monkeypatch.setattr(
+            "app.tasks.transcription.core.celery_app.control.inspect",
+            lambda timeout=2.0: _FakeInspect(),
+        )
+
+        assert _resolve_gpu_diarize_queue() == CeleryQueues.GPU
+
+    def test_broker_error_fails_closed_to_gpu_queue(self, monkeypatch):
+        """A broker error probing consumer liveness must fail CLOSED (route to the
+        always-staffed 'gpu' queue) — the opposite tradeoff from the Redis dedup claim
+        above, and deliberately so: an error here risks silently dropping every
+        gpu-split diarize job into a dead queue, whereas failing closed just costs the
+        dedicated worker's isolation/affinity benefits for this one dispatch."""
+        self._reset_cache()
+        from app.core.constants import CeleryQueues
+        from app.tasks.transcription.core import _resolve_gpu_diarize_queue
+
+        def _boom(timeout=2.0):
+            raise ConnectionError("broker unreachable")
+
+        monkeypatch.setattr(
+            "app.tasks.transcription.core.celery_app.control.inspect",
+            _boom,
+        )
+
+        assert _resolve_gpu_diarize_queue() == CeleryQueues.GPU
+
+    def test_cache_short_circuits_a_second_probe_within_ttl(self, monkeypatch):
+        """The TTL cache must not re-probe on every call — only once per window."""
+        self._reset_cache()
+        from app.core.constants import CeleryQueues
+        from app.tasks.transcription.core import _gpu_diarize_consumer_present
+
+        call_count = {"n": 0}
+
+        class _FakeInspect:
+            def active_queues(self):
+                call_count["n"] += 1
+                return {"worker1@host": [{"name": CeleryQueues.GPU_DIARIZE}]}
+
+        monkeypatch.setattr(
+            "app.tasks.transcription.core.celery_app.control.inspect",
+            lambda timeout=2.0: _FakeInspect(),
+        )
+
+        assert _gpu_diarize_consumer_present() is True
+        assert _gpu_diarize_consumer_present() is True
+        assert call_count["n"] == 1
+
+
+class TestDispatchGpuSplitDiarizeChainQueueSelection:
+    """``_dispatch_gpu_split_diarize_chain`` must route the diarize leg through the
+    consumer-liveness guard rather than hardcoding ``CeleryQueues.GPU_DIARIZE`` —
+    otherwise the whole point of #705's guard is dead code that nothing calls."""
+
+    @patch(f"{_CORE}._claim_gpu_split_diarize_dispatch", return_value=True)
+    def test_dispatch_uses_the_resolved_queue_not_a_hardcoded_one(self, mock_claim, monkeypatch):
+        """Proves dispatch actually calls the guard rather than hardcoding
+        ``CeleryQueues.GPU_DIARIZE`` — otherwise the guard is dead code nothing calls.
+        Patches ``chain`` itself (not just ``apply_async``) so the first signature's
+        ``.options['queue']`` — set via ``.set()`` before ``chain()`` is even called —
+        can be inspected directly, rather than fighting unbound-method patching on
+        ``celery.canvas._chain.apply_async``.
+        """
+        from app.core.constants import CeleryQueues
+        from app.tasks.transcription.core import _dispatch_gpu_split_diarize_chain
+
+        monkeypatch.setattr(f"{_CORE}._resolve_gpu_diarize_queue", lambda: CeleryQueues.GPU)
+
+        captured_signatures = {}
+
+        def _fake_chain(*sigs):
+            captured_signatures["sigs"] = sigs
+            fake = type("FakeChain", (), {"apply_async": lambda self, **kw: None})()
+            return fake
+
+        monkeypatch.setattr(f"{_CORE}.chain", _fake_chain)
+
+        result = _dispatch_gpu_split_diarize_chain(
+            task_id="task-queue-check",
+            file_uuid="file-uuid-1",
+            transcript_data={"raw_segments": []},
+            preprocess_context={"task_id": "task-queue-check", "file_id": 1, "user_id": 7},
+        )
+
+        assert result is True
+        diarize_signature = captured_signatures["sigs"][0]
+        assert diarize_signature.options["queue"] == CeleryQueues.GPU
+
+
 class TestDispatchGpuSplitDiarizeChain:
     """``_dispatch_gpu_split_diarize_chain`` builds and dispatches the real completion
     chain: diarize_gpu_task -> finalize_transcription, with its own link_error."""

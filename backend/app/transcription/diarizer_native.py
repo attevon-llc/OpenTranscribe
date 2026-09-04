@@ -57,6 +57,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# The model family the sidecar exports its ONNX/PLDA graphs from (issue #706) — recorded
+# alongside "native" as the resolved diarization_model whenever the sidecar actually served
+# the request. Not a live query of the sidecar (no endpoint reports it); this mirrors the
+# same community-1 export documented in app/transcription/CLAUDE.md's provisioning section.
+NATIVE_MODEL_NAME = "pyannote/speaker-diarization-community-1"
+
 _DEFAULT_URL = os.environ.get("DIAR_NATIVE_URL", "http://diar-native:8701")
 # Directory shared (bind/volume) between this worker and the sidecar container.
 _SHARED_DIR = os.environ.get("DIAR_NATIVE_SHARED_DIR", "/tmp/diar-native")  # noqa: S108  # nosec B108 — container volume mount point, not a host temp file
@@ -416,6 +422,17 @@ class NativeSpeakerDiarizer:
         self.base_url = (base_url or _DEFAULT_URL).rstrip("/")
         self.is_loaded = False
         self._fallback: SpeakerDiarizer | None = None
+        # Which engine actually served the MOST RECENT diarize() call (issue #706) — set at
+        # every return point in diarize(), including the internal fallback branch, so a caller
+        # that only holds this object (typed as the duck-typed common interface) can still
+        # learn what ran without re-deriving it from log lines. Defaults optimistically to
+        # "native" before any call completes; callers should read these only after diarize()
+        # returns.
+        # `last_model` is Optional on purpose: the PyAnnote fallback branch reads its model
+        # name off the fallback engine, which may not expose one. Declaring that here keeps
+        # every read of the attribute checked, rather than widening the fallback assignment.
+        self.last_provider: str = "native"
+        self.last_model: str | None = NATIVE_MODEL_NAME
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -466,6 +483,15 @@ class NativeSpeakerDiarizer:
         one write op followed by one POST, both degrading the same way to the caller.
         Raises on any failure (disk-full, unwritable scratch volume, HTTP failure); the
         caller decides how to degrade.
+
+        ⚠️ This method owns the file it writes until it hands the path back. ``return
+        self._post_diarize(own_wav), own_wav`` evaluates the POST *first*, so on any failure
+        the tuple is never constructed and the caller's ``own_wav`` stays ``None`` — making
+        its ``finally``'s ``if own_wav:`` cleanup a no-op and orphaning the WAV. Nothing
+        sweeps ``_SHARED_DIR``, so at 32 KB per audio-second that leaked ~460 MB per failed
+        4-hour job onto the ``diar-native-tmp`` volume. This was a regression introduced when
+        the method was split out of ``diarize()``: the assignment used to precede the POST
+        inside the caller's ``try``, so the ``finally`` fired. Hence the explicit unlink here.
         """
         os.makedirs(_SHARED_DIR, exist_ok=True)
         own_wav = os.path.join(_SHARED_DIR, f"diar_{uuid.uuid4().hex}.wav")
@@ -476,7 +502,14 @@ class NativeSpeakerDiarizer:
             wf.setsampwidth(2)
             wf.setframerate(16000)
             wf.writeframes(pcm.tobytes())
-        return self._post_diarize(own_wav), own_wav
+        try:
+            return self._post_diarize(own_wav), own_wav
+        except BaseException:
+            # BaseException, not Exception: a timeout arriving as a KeyboardInterrupt/
+            # SystemExit during shutdown must not leak either, and we re-raise unchanged.
+            with contextlib.suppress(OSError):
+                os.unlink(own_wav)
+            raise
 
     def _try_reused_wav(self, wav_path: str) -> dict | None:
         """Attempt the staged-WAV POST. Returns the response on success, or ``None`` when
@@ -573,7 +606,10 @@ class NativeSpeakerDiarizer:
                     "models while transcription may still be running) — the caller must retry "
                     f"sequentially: {exc}"
                 ) from exc
-            return self._fallback_engine().diarize(audio)
+            fallback_result = self._fallback_engine().diarize(audio)
+            self.last_provider = "pyannote"
+            self.last_model = getattr(self._fallback, "_model_name", None)
+            return fallback_result
 
         step_start = time.perf_counter()
         # Reusing Stage 1's WAV (issue #661) saves a full write and read of the recording,
@@ -665,6 +701,8 @@ class NativeSpeakerDiarizer:
             len(diarize_df),
             out.get("num_speakers", len(native_embeddings)),
         )
+        self.last_provider = "native"
+        self.last_model = NATIVE_MODEL_NAME
         return diarize_df, overlap_info, native_embeddings
 
     def embed_window(self, audio: np.ndarray, start: float, end: float) -> np.ndarray | None:

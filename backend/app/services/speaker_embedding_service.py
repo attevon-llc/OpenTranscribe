@@ -28,6 +28,13 @@ from app.utils.hardware_detection import detect_hardware
 
 logger = logging.getLogger(__name__)
 
+_NO_BACKEND_AVAILABLE_MESSAGE = (
+    "No speaker-embedding backend available: the diar-native sidecar did not answer "
+    "and the in-process PyAnnote model is not installed in this image. Check "
+    "DIAR_NATIVE_URL and that the sidecar is reachable, or run against a full image "
+    "that ships pyannote.audio."
+)
+
 
 class SpeakerEmbeddingService:
     """Service for extracting speaker embeddings.
@@ -93,6 +100,21 @@ class SpeakerEmbeddingService:
                 self.model_name,
             )
             return
+
+        if settings.DEPLOYMENT_MODE.lower() == "lite":
+            # Lite ships no in-process embedding model (issue #660) — pyannote.audio is
+            # not installed in requirements-lite.txt. Refuse here with a shaped error
+            # naming the sidecar, rather than letting the pyannote import below raise a
+            # raw ModuleNotFoundError deep inside a Celery task. v3 mode reaches here too
+            # (`_native_backend_usable` excludes it by design), so name that explicitly.
+            hint = (
+                " This install is on embedding mode v3 (512-d), which the sidecar "
+                "does not serve — migrate to v4 before running lite. See "
+                "docs-site/docs/configuration/embedding-migration.md."
+                if self.mode != MODE_V4
+                else ""
+            )
+            raise RuntimeError(_NO_BACKEND_AVAILABLE_MESSAGE + hint)
 
         import torch
 
@@ -168,10 +190,7 @@ class SpeakerEmbeddingService:
             # Only reachable if _load_fallback_model left no model loaded, which means
             # the in-process model could not be loaded either. Say so, rather than
             # dying on "'NoneType' object is not callable" two lines down.
-            raise RuntimeError(
-                "No speaker-embedding backend available: the diar-native sidecar did not "
-                "answer and the in-process PyAnnote model is not loaded."
-            )
+            raise RuntimeError(_NO_BACKEND_AVAILABLE_MESSAGE)
 
         audio_input = {"waveform": waveform, "sample_rate": sample_rate}
         # Inference(window="whole") returns a single np.ndarray embedding
@@ -195,9 +214,14 @@ class SpeakerEmbeddingService:
         """Initialize the pyannote embedding model."""
         try:
             # Lazy import: pyannote is GPU-worker-only; keeping it out of the
-            # module top level spares the API server (and CI) the import cost.
-            from pyannote.audio import Inference
-            from pyannote.audio import Model
+            # module top level spares the API server (and CI) the import cost. It is
+            # also ABSENT from lite (issue #660) — caught explicitly below so that case
+            # gets the shaped sidecar-pointing error instead of a raw import traceback.
+            try:
+                from pyannote.audio import Inference
+                from pyannote.audio import Model
+            except (ImportError, ModuleNotFoundError) as import_err:
+                raise RuntimeError(_NO_BACKEND_AVAILABLE_MESSAGE) from import_err
 
             # Check if we have a Hugging Face token
             hf_token = settings.HUGGINGFACE_TOKEN
@@ -283,12 +307,16 @@ class SpeakerEmbeddingService:
         except Exception as ffmpeg_err:
             logger.debug(f"FFmpeg failed ({ffmpeg_err}), trying torchaudio")
 
-        # 2. torchaudio (when backends are available)
+        # 2. torchaudio (when backends are available). Absent entirely in lite since
+        # issue #660 — ImportError/ModuleNotFoundError falls through to scipy below
+        # exactly like the "no backend" torchaudio failure it already tolerated.
         try:
             import torchaudio
 
             waveform, sr = torchaudio.load(audio_path)
             return waveform, int(sr)
+        except (ImportError, ModuleNotFoundError) as ta_missing:
+            logger.debug(f"torchaudio not installed ({ta_missing}), trying scipy")
         except Exception as ta_err:
             if "backend" not in str(ta_err).lower() and "already_closed" not in str(ta_err).lower():
                 raise

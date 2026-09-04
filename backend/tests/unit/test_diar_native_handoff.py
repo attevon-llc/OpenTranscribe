@@ -283,6 +283,38 @@ class TestRetryPolicy:
             )
             assert len(result) == 1, "must still degrade to the PyAnnote fallback, not raise"
 
+    def test_a_failed_own_copy_post_leaves_no_wav_behind(self, tmp_path, monkeypatch):
+        """A failed own-copy POST must not orphan the WAV it wrote.
+
+        ``_post_own_copy`` ends ``return self._post_diarize(own_wav), own_wav``. Python
+        evaluates the POST first, so when it raises, the tuple is never constructed and the
+        caller's ``own_wav`` stays ``None`` — making its ``finally``'s ``if own_wav:``
+        cleanup a no-op. Nothing sweeps ``_SHARED_DIR``, so at 32 KB per audio-second this
+        orphaned ~460 MB per failed 4-hour job onto the ``diar-native-tmp`` volume.
+
+        No ``wav_path`` is passed, so the reuse branch is skipped entirely and the own-copy
+        path is the only one exercised — the file under test is one this call created.
+        """
+        monkeypatch.setattr(diarizer_native, "_TIMEOUT_S", 0.3)
+        with _accept_and_hang_server() as (base_url, accepted):
+            diar_scratch = tmp_path / "diar-scratch"
+            monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(diar_scratch))
+            monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", _FakeFallback)
+
+            diarizer = NativeSpeakerDiarizer(_Config(), base_url=base_url)
+            diarizer.is_loaded = True
+
+            result, _, _ = diarizer.diarize(np.zeros(16_000, dtype=np.float32))
+
+            assert accepted["count"] == 1, "the own-copy POST should have been attempted once"
+            assert len(result) == 1, "must still degrade to the PyAnnote fallback, not raise"
+            orphans = sorted(diar_scratch.glob("diar_*.wav"))
+            assert orphans == [], (
+                f"a failed own-copy POST orphaned {len(orphans)} WAV(s) in the sidecar "
+                f"scratch dir: {[p.name for p in orphans]}. Nothing sweeps that directory, "
+                "so every failed job leaks its full decoded audio onto the volume."
+            )
+
     def test_a_timeout_while_overlapped_raises_instead_of_retrying_or_falling_back(
         self, tmp_path, monkeypatch
     ):

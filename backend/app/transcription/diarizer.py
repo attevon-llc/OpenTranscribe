@@ -38,10 +38,19 @@ _PIPELINE_LOAD_TIMEOUT_S = 60.0
 class SpeakerDiarizer:
     """PyAnnote v4 speaker diarization."""
 
+    #: Fixed identity for the in-process engine (issue #706) — unlike NativeSpeakerDiarizer
+    #: there is no internal failover here, so the provider never changes call to call.
+    last_provider = "pyannote"
+
     def __init__(self, config: TranscriptionConfig):
         self.config = config
         self._pipeline: Any = None
         self._model_name: str | None = None
+
+    @property
+    def last_model(self) -> str | None:
+        """The model actually loaded (community-1, or the v3.1 fallback) — set by load_model()."""
+        return self._model_name
 
     @property
     def is_loaded(self) -> bool:

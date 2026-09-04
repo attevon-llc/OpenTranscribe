@@ -602,9 +602,14 @@ class TestOverlapMidJobFailureDegradesSafely:
 
             async_diar = stages_mod._AsyncDiarization(audio, config, manager, "task-665")
             caplog.set_level(logging.WARNING)
-            diarize_df, overlap_info, embeddings = stages_mod._collect_diarization(
+            diarize_df, overlap_info, embeddings, provider, model = stages_mod._collect_diarization(
                 audio, config, manager, _FakeHW(), _FakeProfiler(), None, async_diar
             )
+            assert provider == "pyannote", (
+                "the in-process fallback served this call — the resolved provider must say "
+                "so, not merely that native was CONFIGURED (issue #706)"
+            )
+            assert model == getattr(native._fallback, "_model_name", None)
 
             assert manager.release_calls == 1, (
                 "transcriber must be released exactly once, even though async_diarization "

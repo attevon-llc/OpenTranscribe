@@ -27,7 +27,7 @@ workers that silently re-download every file. See
 | **Dev (default)** | `./opentr.sh start dev` | Vite hot-reload, relaxed auth limits, auto-loads `docker-compose.override.yml`. |
 | **Production** | `./opentr.sh start prod --build` | Pre-built/local images, nginx, strict auth. |
 | **CPU-only** | `./opentr.sh start dev --cpu` | Local transcription on CPU; skips the GPU overlay. |
-| **Lite (cloud ASR)** | `./opentr.sh start dev --lite` | No GPU; transcription via a configured cloud ASR provider. |
+| **Lite (cloud ASR)** | `./opentr.sh start dev --lite` | No GPU; transcription via a configured cloud ASR provider. Speaker embeddings (v4/256-d) come from the diar-native CPU-EP sidecar, not an in-process PyAnnote model — the lite image ships neither `pyannote.audio` nor `torchaudio` (issue #660). Add `--with-diar-native` and export `DIAR_NATIVE_MODELS_DIR` at a weights export produced elsewhere (the lite image has no Python exporter toolchain to provision its own); v3 (512-d) speaker data is unserviceable under lite until migrated to v4. |
 | **GPU scale (dual-GPU)** | `./opentr.sh start dev --gpu-scale` | N parallel workers on `GPU_SCALE_DEVICE_ID`; keeps the default worker too when `GPU_SCALE_DEFAULT_WORKER=1`. |
 | **GPU split** | `./opentr.sh start dev --with-gpu-split` | Transcription and diarization on **separate** GPUs. Needs `ENGINE_GPU_SPLIT=true`. |
 | **Native diarization sidecar** | `./opentr.sh start dev --with-diar-native` | Runs `diar-server` (Rust/ONNX) alongside `celery-worker` instead of in-process PyAnnote. **Windows installer excluded** — see `windows-installer/INSTALL-WINDOWS.md`. |

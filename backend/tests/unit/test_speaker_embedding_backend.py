@@ -207,6 +207,152 @@ class TestExistingV3DataKeepsItsOwnBackend:
         assert service.get_embedding_dimension() == len(vec) == 256
 
 
+class TestDegradePathsWithoutPyannoteOrTorchaudio:
+    """Issue #660: lite drops `pyannote.audio` and `torchaudio` from the image.
+
+    Three degrade paths used to funnel through an unguarded `import pyannote.audio`
+    or `import torchaudio` and would have turned into a raw `ModuleNotFoundError` the
+    moment those packages left `requirements-lite.txt`. This locks in the fix at each
+    site *before* Step 7 removes the packages, so removing them cannot silently
+    reintroduce a bare traceback.
+    """
+
+    def test_load_audio_falls_through_to_scipy_when_torchaudio_is_absent(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """`_load_audio`'s ffmpeg branch must fail first so the torchaudio branch runs."""
+        import numpy as np
+        from scipy.io import wavfile
+
+        from app.services.speaker_embedding_service import SpeakerEmbeddingService
+
+        wav_path = tmp_path / "sample.wav"
+        samples = np.zeros(1600, dtype=np.int16)
+        samples[0] = 1234
+        wavfile.write(str(wav_path), 16000, samples)
+
+        # Force the ffmpeg branch to fail so execution reaches the torchaudio branch.
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("no ffmpeg")),
+        )
+
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "torchaudio":
+                raise ModuleNotFoundError("No module named 'torchaudio'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        waveform, sr = SpeakerEmbeddingService._load_audio(str(wav_path))
+        assert sr == 16000
+        assert waveform.shape[-1] == 1600
+        assert float(waveform.reshape(-1)[0]) == pytest.approx(1234 / 32767, abs=1e-3)
+
+    def test_fallback_model_load_raises_a_shaped_error_when_pyannote_is_absent(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """A sidecar loss mid-run must not surface a raw ModuleNotFoundError."""
+        from app.services.speaker_embedding_service import SpeakerEmbeddingService
+
+        service = SpeakerEmbeddingService.__new__(SpeakerEmbeddingService)
+        service.model_name = "pyannote/wespeaker-voxceleb-resnet34-LM"
+        service.mode = "v4"
+        service.inference = None
+        service.hardware_config = type(
+            "HW",
+            (),
+            {"get_pyannote_config": lambda self: {"device": "cpu"}, "__init__": lambda self: None},
+        )()
+        monkeypatch.setattr(
+            "app.utils.hardware_detection.detect_hardware", lambda: service.hardware_config
+        )
+
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "pyannote.audio" or name.startswith("pyannote.audio."):
+                raise ModuleNotFoundError("No module named 'pyannote'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            service._load_fallback_model()
+
+        message = str(exc_info.value)
+        assert "diar-native" in message
+        assert "DIAR_NATIVE_URL" in message
+
+    def test_construction_refuses_with_a_shaped_error_under_lite_with_no_sidecar(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """DEPLOYMENT_MODE=lite + an unavailable sidecar must not reach the pyannote import."""
+        from app.core.config import settings
+        from app.services.speaker_embedding_service import SpeakerEmbeddingService
+
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+        monkeypatch.setattr(
+            "app.services.native_embedding_client.native_embedding_available",
+            lambda base_url=None: False,
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            SpeakerEmbeddingService(mode="v4", models_dir=str(tmp_path))
+
+        message = str(exc_info.value)
+        assert "diar-native" in message
+        assert "DIAR_NATIVE_URL" in message
+
+    def test_construction_still_loads_in_process_under_full_deployment_mode(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Control: the same unavailable-sidecar condition under DEPLOYMENT_MODE=full
+        must still attempt the in-process load, proving the refusal is lite-only."""
+        from app.core.config import settings
+        from app.services.speaker_embedding_service import SpeakerEmbeddingService
+
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
+        monkeypatch.setattr(
+            "app.services.native_embedding_client.native_embedding_available",
+            lambda base_url=None: False,
+        )
+        loaded: list[str] = []
+        _stub_in_process_model(monkeypatch, loaded)
+        monkeypatch.setattr(
+            "app.utils.hardware_detection.detect_hardware",
+            lambda: type(
+                "HW", (), {"get_pyannote_config": lambda self: {"device": "cpu"}, "__init__": None}
+            )(),
+        )
+
+        service = SpeakerEmbeddingService(mode="v4", models_dir=str(tmp_path))
+        assert service.backend == "pyannote"
+        assert loaded == ["pyannote/wespeaker-voxceleb-resnet34-LM"]
+
+    def test_construction_refusal_under_lite_names_v3_migration_when_relevant(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """v3 under lite is caught by the same guard; the message should say so (#660 Step 5d)."""
+        from app.core.config import settings
+        from app.services.speaker_embedding_service import SpeakerEmbeddingService
+
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            SpeakerEmbeddingService(mode="v3", models_dir=str(tmp_path))
+
+        message = str(exc_info.value)
+        assert "v3" in message
+        assert "migrate" in message.lower()
+
+
 class TestCleanup:
     def test_cleanup_on_the_native_backend_is_a_no_op(self, service_factory) -> None:
         """There is no in-process model to free; cleanup must not explode reaching for one."""

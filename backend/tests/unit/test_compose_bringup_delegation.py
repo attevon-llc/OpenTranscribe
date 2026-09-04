@@ -64,7 +64,10 @@ HAND_BUILT_EXEMPTIONS = {
         "has no lite branch, so NO shipped command can select it — lite is a repo/dev-only "
         "deployment shape today. Pinned by "
         "test_compose_file_selection.py::test_lite_mode_is_not_reachable_by_a_shipped_deployment, "
-        "which fails the moment that changes."
+        "which fails the moment that changes. Since issue #660 this script also layers "
+        "docker-compose.diar-native.yml to pair the CPU-EP speaker-embedding sidecar "
+        "with the lite workers — still only reachable from here and opentr.sh, still "
+        "not shippable."
     ),
 }
 

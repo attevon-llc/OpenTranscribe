@@ -704,6 +704,21 @@ add_diar_native_overlay() {
   # Add the native diarization sidecar if requested
   if [ -n "${WITH_DIAR_NATIVE_FLAG:-}" ]; then
     if [ -f "docker-compose.diar-native.yml" ]; then
+      # Lite pairing (issue #660): under --lite the workers that use this sidecar
+      # (backend, celery-cpu-worker — the latter serves extract_speaker_embeddings,
+      # NOT celery-embedding-worker, which is search indexing) run
+      # opentranscribe-backend-lite. The overlay's own default is the FULL backend
+      # image, so resolving docker-compose.yml + lite + diar-native without this
+      # produces the exact mismatched image pair described in B4: lite workers on
+      # one image, the sidecar on another. This must be exported before the
+      # dev-mode default below, which only fires when this is unset. Model source
+      # for lite is a separate decision (opentranscribe.sh has no Python exporter
+      # toolchain in the lite image) — see resolve_diar_native_models_dir and
+      # DIAR_NATIVE_MODELS_DIR in .env.example; lite's speaker embeddings are still
+      # PyAnnote-free-at-runtime even though the sidecar can't provision its own
+      # models on this image.
+      [ -n "${LITE_FLAG:-}" ] && export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}}"
+
       # The overlay defaults to the PUBLISHED backend image, which is correct for a
       # self-hosted deployment but wrong in this checkout — dev builds the image
       # locally as opentranscribe-backend:latest and never pushes it. Point the
@@ -719,13 +734,16 @@ add_diar_native_overlay() {
       # GPU-less host without `up` failing on "could not select device driver" (#660).
       # The nvidia reservation and the `cuda` override live in this second file, gated on
       # the same runtime probe add_gpu_overlay uses — without it a GPU host would silently
-      # run the sidecar on CPU, which is slower but produces identical output, so nothing
-      # would ever surface the mistake.
+      # run the sidecar on CPU, which is slower; embeddings are identical (#679: max
+      # centroid delta 0.0) but diarization segment boundaries may differ by up to one
+      # segmentation frame (0.016875 s) between CPU and GPU, so nothing would ever
+      # surface the mistake.
       if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.diar-native-gpu.yml" ]; then
         COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native-gpu.yml"
         echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~2.2 GB warm ORT arena while up."
       else
-        echo "   diar-server on CPU (no nvidia runtime detected) — slower, identical output."
+        echo "   diar-server on CPU (no nvidia runtime detected) — slower; embeddings identical," \
+             "diarization boundaries may differ by up to 0.016875s (#679)."
       fi
       echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
       echo "   without the sidecar that config falls back to the in-process PyAnnote fork."

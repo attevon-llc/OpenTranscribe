@@ -303,8 +303,28 @@ setup_overlays() {
     done
 
     if [[ ${#OVERLAYS_TO_START[@]} -gt 0 ]]; then
+        # ⚠️ Flags for EVERY needed overlay, not just the missing ones — including those
+        # already up.
+        #
+        # `opentr.sh start dev` recreates the app services, and an overlay's compose file is
+        # only in that chain if its flag is passed. Several overlays do not merely ADD a
+        # container, they PATCH existing services: mock-asr sets GLADIA_API_BASE_URL and
+        # ASR_ALLOW_PRIVATE_ENDPOINTS on backend and celery-cloud-asr-worker, and watch sets
+        # WATCH_FOLDER_PATH on four. Omitting an already-up overlay's flag therefore recreates
+        # those services WITHOUT its env, silently un-configuring it while its container keeps
+        # running and every container-based check keeps reporting it healthy.
+        #
+        # Measured: a run that needed mock-asr (already up) plus keycloak/ldap (not) issued
+        # `start dev --with-keycloak-test --with-ldap-test`; GLADIA_API_BASE_URL came back
+        # <UNSET> on both services, the app stopped routing ASR to the mock, and all 6
+        # lite-mode tests failed with `status=error` — 40 minutes after the same 6 passed.
+        # The mock-asr container was up and healthy throughout, which is exactly why
+        # "container running => overlay effective" is the wrong test.
+        #
+        # OVERLAYS_STARTED_BY_US still records only the ones that were actually missing, so
+        # teardown never stops a container this run did not start.
         local with_flags=() f
-        for f in "${OVERLAYS_TO_START[@]}"; do with_flags+=("--with-$f"); done
+        for f in "${OVERLAYS_NEEDED[@]}"; do with_flags+=("--with-$f"); done
         echo -e "${YELLOW}==>${NC} bringing up overlays in one batched call: ${with_flags[*]}"
         if ! "$REPO_ROOT/opentr.sh" start dev "${with_flags[@]}" >/dev/null 2>&1; then
             echo -e "${RED}error:${NC} failed to bring up overlays (${with_flags[*]}) — run" \

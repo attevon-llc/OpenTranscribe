@@ -50,6 +50,9 @@ import numpy as np
 from app.transcription.diarize_result import DiarizeResult
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+if TYPE_CHECKING:
     from app.transcription.diarizer import SpeakerDiarizer
 
 logger = logging.getLogger(__name__)
@@ -61,24 +64,62 @@ _TIMEOUT_S = float(os.environ.get("DIAR_NATIVE_TIMEOUT_S", "3600"))
 # Ask the sidecar for gender alongside diarization. Off leaves the app's own CPU task in charge.
 _GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0", "false", "no")
 # The engine's Stage-1 shared-volume WAV mount, as seen from THIS container (the worker, not
-# the sidecar) — same env var EngineConfig reads for shared_volume_path, so the two can never
-# disagree about where that WAV lives. Deliberately not a new/second knob: issue #661 is about
-# reusing that WAV, and a diverging default would silently stop the reuse from ever triggering.
+# the sidecar). Same env var EngineConfig reads for shared_volume_path — deliberately not a
+# second knob, since issue #661 is precisely about reusing the WAV that variable locates.
+#
+# ⚠️ The DEFAULT here (/tmp/transcription) is intentionally NOT EngineConfig's (/tmp), and
+# that asymmetry is load-bearing rather than drift. The compose files mount the shared volume
+# at /tmp/transcription and .env.example sets the variable to match; when it is unset the
+# writer falls back to a container-LOCAL /tmp, which the sidecar cannot see at all. Defaulting
+# to a bare /tmp here would make the prefix match those local paths and hand the sidecar files
+# it cannot open — so on an install whose .env predates the variable, the correct behaviour is
+# for the reuse to simply not fire, which this default gives us.
 _ENGINE_SHARED_DIR = os.environ.get("ENGINE_SHARED_VOLUME_PATH", "/tmp/transcription")  # noqa: S108  # nosec B108
 _ENGINE_SHARED_PREFIX = _ENGINE_SHARED_DIR.rstrip("/") + "/"
 
-# sidecar_ready() TTL cache (issue #661 probe-cost fix). A bare live GET cost a full 5s connect
-# timeout whenever the sidecar was unreachable, and #665 added a SECOND per-job call site
-# (engine/stages._overlap_diarization_enabled) beside ModelManager's existing one — an
-# unreachable sidecar was up to three serial 5s timeouts per job. The TTL is deliberately SHORT:
-# TranscriptionConfig._resolve_diarizer_backend documents a no-pinning contract (an admin
-# toggling engine.diarizer_backend, or a sidecar recovering mid-queue, must both be picked up
-# without a worker restart) and a long-lived cache here would silently defeat the readiness half
-# of that same guarantee. Negative results are cached too — they are the expensive case this
-# exists to avoid re-paying — but never for longer than the TTL.
-_READY_CACHE_TTL_S = float(os.environ.get("DIAR_NATIVE_READY_CACHE_TTL_S", "3"))
-_ready_cache: dict[str, tuple[float, bool]] = {}
+# Probe TTL cache (issue #661 probe-cost fix). A bare live GET costs the full connect timeout
+# whenever the sidecar is unreachable, and the readiness gate is consulted several times per
+# job: ModelManager._diarizer_current asks readiness then liveness (to tell "unreachable" from
+# "up but unprovisioned"), load_model() asks liveness again, and #665 added
+# engine/stages._overlap_diarization_enabled. Unmitigated that is four serial timeouts.
+#
+# The window is kept short because TranscriptionConfig._resolve_diarizer_backend documents a
+# no-pinning contract — an admin toggling engine.diarizer_backend, and a sidecar recovering
+# mid-queue, must both be picked up without a worker restart — and a long cache would defeat
+# the readiness half of that guarantee. Negative results are cached too; they are the
+# expensive case this exists for.
+#
+# ⚠️ The TTL MUST exceed the probe timeout, which is why the floor below is not advisory. An
+# unreachable sidecar's probe takes the whole timeout, so an entry stamped after it is already
+# that old; with a TTL shorter than the probe, every entry is born expired and the cache
+# serves nothing. Measured in exactly that state: three consecutive calls each paid the full
+# 5 s behind a nominally 3 s cache — the cache was a no-op in its only real use case.
+_PROBE_TIMEOUT_S = 5.0
+_READY_CACHE_TTL_S = max(
+    float(os.environ.get("DIAR_NATIVE_READY_CACHE_TTL_S", "8")), _PROBE_TIMEOUT_S + 1.0
+)
+#: Keyed by (endpoint, url) so readiness and liveness cache independently. Liveness is
+#: cached too: _diarizer_current calls sidecar_ready() then sidecar_healthy() to tell
+#: "unreachable" from "up but unprovisioned", and load_model() probes liveness again — so
+#: the failure path pays the timeout three times over without this.
+_ready_cache: dict[tuple[str, str], tuple[float, bool]] = {}
 _ready_cache_lock = threading.Lock()
+
+
+def _cached_probe(kind: str, url: str, probe: Callable[[str], bool]) -> bool:
+    """Run *probe* for (kind, url), reusing a result younger than the TTL."""
+    key = (kind, url)
+    with _ready_cache_lock:
+        cached = _ready_cache.get(key)
+        if cached is not None and time.monotonic() - cached[0] < _READY_CACHE_TTL_S:
+            return cached[1]
+
+    result = probe(url)
+
+    # Stamp AFTER the probe, never before — see the timeout note above.
+    with _ready_cache_lock:
+        _ready_cache[key] = (time.monotonic(), result)
+    return result
 
 
 def reset_readiness_cache() -> None:
@@ -127,11 +168,19 @@ def sidecar_healthy(base_url: str | None = None) -> bool:
 
     The consequence is that "answers /healthz" does not imply "can diarize". To decide
     whether to route work at the sidecar, use :func:`sidecar_ready`.
+
+    TTL-cached on the same window as readiness — this is probed twice per failing job.
     """
-    url = (base_url or _DEFAULT_URL).rstrip("/")
+    return _cached_probe(
+        "healthz", (base_url or _DEFAULT_URL).rstrip("/"), _sidecar_healthy_uncached
+    )
+
+
+def _sidecar_healthy_uncached(url: str) -> bool:
+    """The live ``/healthz`` probe. Always call :func:`sidecar_healthy` instead."""
     try:
         with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
-            f"{url}/healthz", timeout=5
+            f"{url}/healthz", timeout=_PROBE_TIMEOUT_S
         ) as resp:
             return bool(resp.status == 200)
     except Exception:  # noqa: BLE001 — unreachable for any reason means "not healthy"
@@ -180,18 +229,7 @@ def sidecar_ready(base_url: str | None = None) -> bool:
     Result is cached per ``base_url`` for :data:`_READY_CACHE_TTL_S` seconds — see the
     comment above that constant for why the window is short rather than absent.
     """
-    url = (base_url or _DEFAULT_URL).rstrip("/")
-    now = time.monotonic()
-    with _ready_cache_lock:
-        cached = _ready_cache.get(url)
-        if cached is not None and now - cached[0] < _READY_CACHE_TTL_S:
-            return cached[1]
-
-    ready = _sidecar_ready_uncached(url)
-
-    with _ready_cache_lock:
-        _ready_cache[url] = (now, ready)
-    return ready
+    return _cached_probe("readyz", (base_url or _DEFAULT_URL).rstrip("/"), _sidecar_ready_uncached)
 
 
 def _sidecar_ready_uncached(url: str) -> bool:
@@ -290,6 +328,18 @@ class NativeSpeakerDiarizer:
 
     # -- main entry points -------------------------------------------------
 
+    def _post_diarize(self, path: str) -> dict:
+        """POST one /diarize request for a WAV the sidecar is expected to be able to open.
+
+        Gender rides this call: the sidecar already has the decoded audio and the speaker
+        turns in hand, so classifying costs no second fetch or decode.
+        """
+        return post_json(
+            f"{self.base_url}/diarize",
+            {"wav_path": path, "file_id": "job", "gender": _GENDER_ENABLED},
+            timeout=_TIMEOUT_S,
+        )
+
     def diarize(
         self, audio: np.ndarray, wav_path: str | None = None
     ) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None]:
@@ -321,56 +371,66 @@ class NativeSpeakerDiarizer:
             )
 
         step_start = time.perf_counter()
-        if wav_path and wav_path.startswith(_ENGINE_SHARED_PREFIX) and os.path.isfile(wav_path):
-            # Reuse Stage 1's WAV instead of re-encoding the same audio a second time — the
-            # whole point of issue #661. wrote_wav=False is what tells the finally block below
-            # not to delete a file a later pipeline stage still needs.
-            diar_wav_path = wav_path
-            wrote_wav = False
-        else:
-            os.makedirs(_SHARED_DIR, exist_ok=True)
-            diar_wav_path = os.path.join(_SHARED_DIR, f"diar_{uuid.uuid4().hex}.wav")
-            wrote_wav = True
+        # Reusing Stage 1's WAV (issue #661) saves a full write and read of the recording,
+        # but it is only an OPTIMISATION and must never cost us the engine. A sidecar that
+        # cannot open the path answers 422 and, before this retry existed, that degraded the
+        # job to PyAnnote — silently, since the fallback works. The commonest cause is
+        # mundane and affects every upgrading install: a sidecar container created before
+        # the transcription-temp mount existed keeps its old mount set until it is
+        # RECREATED, not merely restarted. Reproduced live, and it made every diarization on
+        # the box fall back while every health check stayed green.
+        reused = bool(
+            wav_path and wav_path.startswith(_ENGINE_SHARED_PREFIX) and os.path.isfile(wav_path)
+        )
+        own_wav: str | None = None
         try:
-            # The WAV write shares the sidecar-loss fallback, not just the HTTP call:
-            # a permission or disk-space failure on the shared scratch volume (e.g.
-            # the volume landing root-owned on first creation, see PR history) is exactly
-            # as recoverable as an unreachable sidecar — both mean "this job cannot
-            # use diar-native right now" — and previously only the HTTP call was
-            # covered, so a write failure propagated out of diarize() uncaught and
-            # hard-failed the whole transcription instead of degrading to PyAnnote. When
-            # wrote_wav is False there is nothing to write, so this reduces to covering the
-            # HTTP call only — which is exactly the coverage a reused WAV needs.
-            try:
-                if wrote_wav:
+            out = None
+            if reused:
+                try:
+                    out = self._post_diarize(str(wav_path))
+                except Exception as exc:  # noqa: BLE001 — degrade the shortcut, not the engine
+                    logger.warning(
+                        "diar-native could not use the staged WAV at %s (%s); re-sending our "
+                        "own copy. If this repeats, the sidecar is missing the %s mount — "
+                        "recreate that container rather than restarting it.",
+                        wav_path,
+                        exc,
+                        _ENGINE_SHARED_DIR,
+                    )
+
+            if out is None:
+                # The WAV write shares the sidecar-loss fallback, not just the HTTP call:
+                # a permission or disk-space failure on the shared scratch volume (e.g.
+                # the volume landing root-owned on first creation) is exactly as
+                # recoverable as an unreachable sidecar — both mean "this job cannot use
+                # diar-native right now" — and previously a write failure propagated out
+                # of diarize() uncaught and hard-failed the whole transcription.
+                try:
+                    os.makedirs(_SHARED_DIR, exist_ok=True)
+                    own_wav = os.path.join(_SHARED_DIR, f"diar_{uuid.uuid4().hex}.wav")
                     clip = np.clip(np.asarray(audio, dtype=np.float32), -1.0, 1.0)
                     pcm = (clip * 32767.0).astype("<i2")
-                    with wave.open(diar_wav_path, "wb") as wf:
+                    with wave.open(own_wav, "wb") as wf:
                         wf.setnchannels(1)
                         wf.setsampwidth(2)
                         wf.setframerate(16000)
                         wf.writeframes(pcm.tobytes())
 
-                out = post_json(
-                    f"{self.base_url}/diarize",
-                    # Gender rides this call: the sidecar has the decoded audio and the
-                    # speaker turns in hand, so classifying costs no second fetch or decode.
-                    {"wav_path": diar_wav_path, "file_id": "job", "gender": _GENDER_ENABLED},
-                    timeout=_TIMEOUT_S,
-                )
-            except Exception as exc:  # noqa: BLE001 — a sidecar/scratch-volume loss must not fail the job
-                logger.warning(
-                    "diar-native /diarize failed mid-job (%s); falling back to PyAnnote", exc
-                )
-                return self._fallback_engine().diarize(audio)
+                    out = self._post_diarize(own_wav)
+                except Exception as exc:  # noqa: BLE001 — a sidecar loss must not fail the job
+                    logger.warning(
+                        "diar-native /diarize failed mid-job (%s); falling back to PyAnnote",
+                        exc,
+                    )
+                    return self._fallback_engine().diarize(audio)
         finally:
             # Only ever unlink a file THIS call created. A reused Stage-1 WAV is still owned
             # by the pipeline stage that wrote it (cleaned up later via
             # audio_loader.cleanup_shared_volume_wav) — deleting it here would pull it out
             # from under whichever stage runs next.
-            if wrote_wav:
+            if own_wav:
                 with contextlib.suppress(OSError):
-                    os.unlink(diar_wav_path)
+                    os.unlink(own_wav)
 
         exclusive = out.get("exclusive_segments", [])
         full = out.get("segments", [])

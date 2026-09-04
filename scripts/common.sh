@@ -203,8 +203,17 @@ fix_model_cache_permissions() {
     mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers"
   fi
 
-  # Ensure all required subdirectories exist
-  mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers" "$MODEL_CACHE_DIR/opensearch-ml" 2>/dev/null
+  # Ensure all required subdirectories exist.
+  #
+  # ⚠️ diar-native MUST be created here, before `compose up`, even though nothing has
+  # written to it yet. It is a bind-mount source: if it does not exist when the container
+  # starts, dockerd creates it **root-owned**, and the backend — which runs as appuser and
+  # is the process that exports the model set into it — then fails with
+  # `provision-models` exit 7 (NOT_WRITABLE) on every fresh install. Reproduced live: a
+  # fresh-install rehearsal left a root:root empty models/diar-native and the sidecar
+  # silently served nothing. The ownership loop below only repairs directories that
+  # exist, so creating it is what lets the repair reach it.
+  mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers" "$MODEL_CACHE_DIR/opensearch-ml" "$MODEL_CACHE_DIR/diar-native" 2>/dev/null
 
   # Check ownership of parent AND all subdirectories (subdirs may be root-owned
   # even if the parent is correctly owned by UID 1000)

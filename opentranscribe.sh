@@ -298,6 +298,32 @@ force_cpu_mode_requested() {
     return 1
 }
 
+# Pin DIAR_NATIVE_IMAGE to the Blackwell tag when this deployment will load
+# docker-compose.blackwell.yml, so docker-compose.diar-native.yml's own
+# `${DIAR_NATIVE_IMAGE:-...}` interpolation resolves to it instead of falling through to
+# the plain `${OT_IMAGE_TAG:-latest}` tag — the exact `celery-worker -> :blackwell` /
+# `diar-native -> :latest` mismatch docker-compose.blackwell.yml's own comment documents.
+# A retag inside that compose file cannot fix it: get_compose_files() always appends
+# docker-compose.blackwell.yml BEFORE docker-compose.diar-native.yml, and compose's
+# last-file-wins merge means diar-native.yml's `image:` key always overrides whatever the
+# earlier file set, regardless of what that file's `image:` line says.
+#
+# MUST be called as a plain statement, never through `$(...)`: every call site below
+# resolves the compose chain with `compose_files=$(get_compose_files)`, which forks a
+# subshell for the whole command substitution — an `export` from inside get_compose_files
+# itself (or any wrapper invoked the same way) would vanish the instant that subshell
+# exits, before the `docker compose` command that actually needs it ever runs. Calling
+# this separately, first, keeps the export in THIS shell.
+pin_diar_native_image_for_blackwell() {
+    force_cpu_mode_requested && return 0
+    [ "$(detect_nvidia_runtime)" = "nvidia" ] || return 0
+    is_blackwell_gpu || return 0
+    [ -f docker-compose.blackwell.yml ] || return 0
+    local tag
+    tag=$(read_env_value OT_BLACKWELL_IMAGE_TAG)
+    export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-davidamacey/opentranscribe-backend:${tag:-blackwell}}"
+}
+
 # Resolve where the diar-native ONNX/PLDA export lives (or will land), from .env alone.
 #
 # This is the shipped, standalone script, so — unlike opentr.sh's dev-only same-named
@@ -433,7 +459,29 @@ get_compose_files() {
     local diar_hf_token=""
     diar_hf_token=$(read_env_value HUGGINGFACE_TOKEN)
 
-    if [ "$diar_weights_present" = "1" ] || [ -n "$diar_hf_token" ]; then
+    # This gate used to ignore ENGINE_DIARIZER_BACKEND entirely, so
+    # docker-compose.diar-native.yml's own documented rollback ("set
+    # ENGINE_DIARIZER_BACKEND=pyannote and stop this service") was defeated the moment the
+    # operator next ran `start`/`update`: weights-or-token was still true, so the overlay
+    # reloaded regardless of the variable — even though preflight_upgrade_env below reads
+    # this exact same variable for the exact same feature. Same read here, same default.
+    local diar_backend=""
+    diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND)
+
+    # Lite deployments are excluded outright: native_provision.py deliberately SKIPS
+    # provisioning under DEPLOYMENT_MODE=lite (the lite image ships no Python exporter
+    # toolchain), so /models can never fill itself in there and loading this overlay would
+    # leave diar-server crash-looping against an empty --models-dir under `restart:
+    # unless-stopped` (verified: `diar-server serve` against an empty DIAR_MODELS_DIR exits
+    # 8). This script has no lite overlay of its own to gate on
+    # (test_lite_mode_is_not_reachable_by_a_shipped_deployment pins that), but
+    # DEPLOYMENT_MODE is a plain .env value — .env.example ships DEPLOYMENT_MODE=full — that
+    # an operator can set directly, and the backend honors it however it got there.
+    local deployment_mode=""
+    deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
+
+    if [ "$deployment_mode" != "lite" ] && [ "${diar_backend:-native}" = "native" ] \
+       && { [ "$diar_weights_present" = "1" ] || [ -n "$diar_hf_token" ]; }; then
         if [ -f docker-compose.diar-native.yml ]; then
             compose_files="$compose_files -f docker-compose.diar-native.yml"
             if [ "$diar_weights_present" = "1" ]; then
@@ -519,6 +567,21 @@ preflight_upgrade_env() {
     # torn down and the outcome is already decided. Same DB-blindness as get_compose_files:
     # this script cannot see the SystemSettings value, only the ENGINE_DIARIZER_BACKEND
     # .env fallback read below.
+    #
+    # The HARD refusal below is only genuinely actionable on a FULL (non-lite) deployment:
+    # the printed remedy is "run download-models diar-native, or set HUGGINGFACE_TOKEN",
+    # and both actually work there. On DEPLOYMENT_MODE=lite neither does —
+    # native_provision.py's own EXIT_NO_EXPORTER_ENV remedy says the lite image ships no
+    # Python exporter toolchain at all — yet .env.example gives every install, lite
+    # included, the same ENGINE_DIARIZER_BACKEND=native default and an empty
+    # HUGGINGFACE_TOKEN. Blocking the upgrade there was refusing an install that cannot
+    # satisfy the refusal's own remedy, for a fallback that already works: lite's
+    # requirements-lite.txt ships pyannote.audio (CPU) specifically so the in-process
+    # PyAnnote engine is fully supported when the sidecar isn't. So: warn, don't block, on
+    # lite; keep the hard refusal everywhere else — same case issue #670 was written for.
+    local deployment_mode
+    deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
+
     local diar_backend
     diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND)
     if [ "${diar_backend:-native}" = "native" ]; then
@@ -526,7 +589,14 @@ preflight_upgrade_env() {
         diar_dir=$(resolve_diar_native_models_dir)
         diar_token=$(read_env_value HUGGINGFACE_TOKEN)
         if ! diar_native_marker_present "$diar_dir" && [ -z "$diar_token" ]; then
-            problems+=("engine.diarizer_backend resolves to native, but $diar_dir has never been provisioned and no HUGGINGFACE_TOKEN is set to provision it on next startup — run './opentranscribe.sh download-models diar-native' first, or set HUGGINGFACE_TOKEN in .env")
+            if [ "$deployment_mode" = "lite" ]; then
+                echo -e "${YELLOW}⚠️  engine.diarizer_backend resolves to native, but this is a lite deployment${NC}"
+                echo -e "${YELLOW}   (DEPLOYMENT_MODE=lite): $diar_dir has never been provisioned and no${NC}"
+                echo -e "${YELLOW}   HUGGINGFACE_TOKEN is set — a lite image cannot export it locally.${NC}"
+                echo -e "${YELLOW}   Diarization will use the in-process PyAnnote engine; not blocking the upgrade.${NC}"
+            else
+                problems+=("engine.diarizer_backend resolves to native, but $diar_dir has never been provisioned and no HUGGINGFACE_TOKEN is set to provision it on next startup — run './opentranscribe.sh download-models diar-native' first, or set HUGGINGFACE_TOKEN in .env")
+            fi
         fi
     fi
 
@@ -785,7 +855,13 @@ download_models_diar_native() {
     echo -e "${BLUE}   (diar-server provision-models — several hundred MB, a couple of minutes)${NC}"
     echo ""
 
-    if docker run --rm \
+    # Captured via `|| rc=$?`, not `if docker run ...; then ... fi; rc=$?` — under this
+    # script's `set -e`, a bare `if CMD; then ...; fi` with no `else` leaves $? reset to
+    # the `if` statement's own (zero) status once control falls past the `fi`, so a later
+    # `rc=$?` always read 0 regardless of what docker run actually exited with. That made
+    # every case arm below (5 token-denied, 7 not-writable, 6 no-exporter, etc.) dead code.
+    local rc=0
+    docker run --rm \
         -e HUGGINGFACE_TOKEN="$token" \
         -v "$(realpath "$models_dir"):/models" \
         -v "$(realpath "$cache_dir/huggingface"):/home/appuser/.cache/huggingface" \
@@ -795,7 +871,9 @@ download_models_diar_native() {
             --set fast \
             --mode cpu \
             --smoke-clip /usr/local/share/diar-native/smoke.wav \
-            --json; then
+            --json || rc=$?
+
+    if [ "$rc" -eq 0 ]; then
         echo ""
         echo -e "${GREEN}✅ diar-native models provisioned at ${models_dir}${NC}"
         echo "   Run './opentranscribe.sh restart' (or 'start') to pick up the native sidecar."
@@ -805,7 +883,6 @@ download_models_diar_native() {
     # Stable exit codes from crates/diar-core/src/provision/mod.rs::exit — branched on
     # rather than parsed out of diar-server's own message text, which it also prints
     # above this. 0/2/3/4/5/6/7/9 are the whole contract; anything else is unexpected.
-    local rc=$?
     echo ""
     echo -e "${RED}❌ diar-native provisioning failed (exit ${rc}).${NC}"
     case "$rc" in
@@ -854,6 +931,7 @@ case "${1:-help}" in
             ensure_minio_kms_secret ".env"
         fi
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
+        pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
         docker compose $compose_files up -d
         echo -e "${GREEN}✅ OpenTranscribe started!${NC}"
@@ -862,6 +940,7 @@ case "${1:-help}" in
     stop)
         check_environment
         echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
+        pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
         docker compose $compose_files down
         echo -e "${GREEN}✅ OpenTranscribe stopped${NC}"
@@ -870,6 +949,7 @@ case "${1:-help}" in
         check_environment
         fix_model_cache_permissions
         echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
+        pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
         docker compose $compose_files down
         docker compose $compose_files up -d
@@ -879,6 +959,7 @@ case "${1:-help}" in
     status)
         check_environment
         echo -e "${BLUE}📊 Container Status:${NC}"
+        pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
         docker compose $compose_files ps
         ;;
@@ -901,6 +982,7 @@ case "${1:-help}" in
         # is exactly the chain and stays composable:
         #   docker compose $(./opentranscribe.sh compose-files 2>/dev/null) ps
         check_environment
+        pin_diar_native_image_for_blackwell
         get_compose_files
         ;;
     download-models)
@@ -930,6 +1012,7 @@ case "${1:-help}" in
     logs)
         check_environment
         service=${2:-}
+        pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
 
         if [ -z "$service" ]; then
@@ -1022,6 +1105,7 @@ case "${1:-help}" in
             # down, postgres included, so this is the last point a plain
             # `docker compose exec postgres` can reach it.
             if [ "$do_rollback" = true ] && [ "$force_downgrade" = false ]; then
+                pin_diar_native_image_for_blackwell
                 rollback_compose_files=$(get_compose_files)
                 # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
                 rollback_live_head=$(docker compose $rollback_compose_files exec -T postgres psql -tA \
@@ -1050,6 +1134,7 @@ case "${1:-help}" in
             echo -e "${YELLOW}📥 Updating to the newest images for tag '${current_tag}'...${NC}"
         fi
 
+        pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
 
         preflight_upgrade_env || exit 1
@@ -1178,6 +1263,7 @@ case "${1:-help}" in
         echo ""
         echo -e "${BLUE}🐳 Updating Docker images...${NC}"
         fix_model_cache_permissions
+        pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
         # Same gate as `update`: refuse while the old stack is still running
         # rather than after it is torn down (#410).
@@ -1237,6 +1323,7 @@ case "${1:-help}" in
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}🗑️  Removing all data...${NC}"
+            pin_diar_native_image_for_blackwell
             compose_files=$(get_compose_files)
             docker compose $compose_files down -v
             echo -e "${GREEN}✅ All data removed${NC}"
@@ -1248,12 +1335,17 @@ case "${1:-help}" in
         check_environment
         service=${2:-backend}
         echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
+        pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
         docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
         ;;
     backup|restore)
         check_environment
         require_db_helpers
+        # No pin_diar_native_image_for_blackwell here, deliberately: this arm never starts
+        # or pulls the diar-native sidecar — backup_database/restore_database only `docker
+        # compose exec` into containers that are already running — so DIAR_NATIVE_IMAGE is
+        # not read by anything this arm does.
         compose_files=$(get_compose_files)
 
         # opentr.sh gets these from its prologue `set -a; source ./.env`; this script
@@ -1302,6 +1394,7 @@ case "${1:-help}" in
 
         # Check container status
         echo "Container Status:"
+        pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
         docker compose $compose_files ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
 

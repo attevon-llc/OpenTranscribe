@@ -22,6 +22,7 @@ from app.core.constants import CLOUD_ASR_MAX_RETRIES
 from app.core.constants import CLOUD_ASR_RETRY_BASE
 from app.core.constants import CLOUD_ASR_RETRY_MAX
 from app.core.constants import GPUPriority
+from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
@@ -185,8 +186,7 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             # on the gpu-diarize queue.  The current task returns the serialized
             # RawTranscriptResult so Celery records it; the finalize chain runs
             # after diarize_gpu_task completes.
-            gpu_split_enabled = os.getenv("ENGINE_GPU_SPLIT", "false").lower() == "true"
-            if gpu_split_enabled:
+            if gpu_split_enabled():
                 transcript_data = _run_transcribe_only_stage(
                     ctx, local_wav_path, preprocess_context
                 )

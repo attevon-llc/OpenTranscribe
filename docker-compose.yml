@@ -759,6 +759,15 @@ services:
   # GPU device assignment is controlled via GPU_TRANSCRIBE_DEVICE_ID /
   # GPU_DIARIZE_DEVICE_ID.  GPU reservation (deploy.resources.reservations)
   # must be added via an overlay file (see docker-compose.gpu.yml pattern).
+  #
+  # celery-worker-gpu-transcribe only receives work because
+  # transcription/dispatch.py:_resolve_gpu_queue() routes the initial GPU stage
+  # to the 'gpu-transcribe' queue when app.core.constants.gpu_split_enabled()
+  # is true. Before issue #703's fix, nothing ever published to that queue —
+  # this worker held its GPU reservation and sat idle under --with-gpu-split.
+  # ENGINE_GPU_SPLIT propagation to the dispatching containers (backend,
+  # celery-worker, celery-cpu-worker, celery-download-worker) is handled in
+  # docker-compose.gpu-split.yml, not here — see that file's header comment.
 
   celery-worker-gpu-transcribe:
     container_name: ${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-transcribe

@@ -40,7 +40,10 @@ class CeleryQueues:
     UTILITY = "utility"
     CLOUD_ASR = "cloud-asr"  # Dynamic: cloud ASR providers (CPU worker consumes)
     CPU_TRANSCRIBE = "cpu-transcribe"  # Dynamic: lightweight CPU transcription
-    GPU_TRANSCRIBE = "gpu-transcribe"  # Phase 4: transcription-only GPU worker
+    # Phase 4: transcription-only GPU worker (celery-worker-gpu-transcribe, gpu-split
+    # profile). dispatch.py's _resolve_gpu_queue() routes here only when
+    # gpu_split_enabled() is true (issue #703 — this queue previously had no publisher).
+    GPU_TRANSCRIBE = "gpu-transcribe"
     GPU_DIARIZE = "gpu-diarize"  # Phase 4: diarization-only GPU worker
     REDACTION = "redaction"  # Content redaction detection (dedicated CPU service)
     DEFAULT = "celery"  # Celery default queue (NLP worker consumes as fallback)
@@ -59,6 +62,25 @@ class CeleryQueues:
         REDACTION,
         DEFAULT,
     ]
+
+
+def gpu_split_enabled() -> bool:
+    """Whether THIS process's environment has the gpu-split topology active.
+
+    Read at call time (never cached) so a test can flip ``ENGINE_GPU_SPLIT`` per-case,
+    and because Celery worker processes never re-import this module after startup.
+
+    ``ENGINE_GPU_SPLIT=true`` is set only by docker-compose.gpu-split.yml's environment
+    override, on every service whose code can reach transcription dispatch or the GPU
+    task itself (backend, celery-worker, celery-cpu-worker, celery-download-worker,
+    celery-worker-gpu-transcribe, celery-worker-gpu-diarize) — that overlay is loaded
+    if and only if the stack was started with ``--with-gpu-split``, the same flag that
+    brings up the two dedicated queue consumers. A caller container this override was
+    not wired to reads the coded default 'false' and falls back to the always-staffed
+    'gpu' queue — the failure direction is "no split", never "queued on a dead queue"
+    (issue #703).
+    """
+    return _os.environ.get("ENGINE_GPU_SPLIT", "false").lower() == "true"
 
 
 class GPUPriority:

@@ -124,13 +124,15 @@ For internal deployments, generate self-signed certificates:
 
 ### HuggingFace Token
 
-A HuggingFace token is required for downloading PyAnnote speaker diarization models. You must accept the model license agreements on the HuggingFace website before the token will work.
+A HuggingFace token is required for downloading the PyAnnote speaker diarization pipeline. You
+must accept its model license agreement — **from the same account that issues the token** — or
+the token will fail with HTTP 403 as if it were invalid. The gate is per-account, not just
+per-repo.
 
 1. Create an account at [huggingface.co](https://huggingface.co)
-2. Accept the license for [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-3. Accept the license for [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-4. Generate an access token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-5. Add to your `.env` file: `HF_TOKEN=hf_your_token_here`
+2. Accept the license for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — it's CC-BY-4.0 and auto-approved (no waiting list). This is the only gated model either diarization engine loads; see [HuggingFace Token Setup](../installation/huggingface-setup.md) for the older `speaker-diarization-3.1` / `segmentation-3.0` pair this replaced.
+3. Generate an access token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+4. Add to your `.env` file: `HUGGINGFACE_TOKEN=hf_your_token_here`
 
 ### Pre-Download AI Models
 
@@ -691,7 +693,7 @@ Generate strong, unique values for each of these:
 | Redis Password | `REDIS_PASSWORD` | `openssl rand -base64 24` |
 | Flower Password | `FLOWER_PASSWORD` | `openssl rand -base64 16` |
 | MinIO Encryption Key | `MINIO_KMS_SECRET_KEY` | `echo "key:$(openssl rand -base64 32)"` |
-| HuggingFace Token | `HF_TOKEN` | _(from huggingface.co)_ |
+| HuggingFace Token | `HUGGINGFACE_TOKEN` | _(from huggingface.co)_ |
 
 ### Credential Rotation
 
@@ -751,7 +753,7 @@ docker inspect --format='{{.Name}}: {{.State.Health.Status}}' \
 
 ```bash
 # 1. Verify environment file
-cat .env | grep -E "^(POSTGRES_PASSWORD|SECRET_KEY|MINIO_ROOT_PASSWORD|REDIS_PASSWORD|HF_TOKEN)" \
+cat .env | grep -E "^(POSTGRES_PASSWORD|SECRET_KEY|MINIO_ROOT_PASSWORD|REDIS_PASSWORD|HUGGINGFACE_TOKEN)" \
   | sed 's/=.*/=***/' # Confirm secrets are set without revealing them
 
 # 2. Fix model cache permissions
@@ -810,7 +812,7 @@ POSTGRES_DB=opentranscribe
 MINIO_ROOT_USER=opentranscribe-admin
 MINIO_ROOT_PASSWORD=<openssl rand -base64 24>
 REDIS_PASSWORD=<openssl rand -base64 24>
-HF_TOKEN=hf_your_token_here
+HUGGINGFACE_TOKEN=hf_your_token_here
 
 # === NGINX ===
 NGINX_SERVER_NAME=transcribe.example.com

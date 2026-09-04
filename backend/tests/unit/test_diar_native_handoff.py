@@ -211,6 +211,61 @@ class TestSidecarReadyTTLCache:
             assert state["hits"] == 1
         reset_readiness_cache()
 
+    def test_an_entry_is_stamped_after_the_probe_not_before(self, monkeypatch):
+        """A SLOW probe must still yield a cache hit — the born-expired regression.
+
+        Stamping the entry with a clock read taken *before* the probe makes it as old as
+        the probe took. Against an unreachable sidecar the probe runs the full connect
+        timeout, so with a TTL shorter than that every entry is born expired and the cache
+        serves nothing — in the one situation it exists for. This drives a probe that takes
+        longer than the TTL and asserts the second caller is still served from cache; with
+        the pre-fix ordering it issues a second request.
+        """
+        clock = {"now": 1000.0}
+        monkeypatch.setattr(diarizer_native.time, "monotonic", lambda: clock["now"])
+        # The TTL must be SHORTER than the probe for this to discriminate. With a longer
+        # one both orderings produce a hit — the first draft of this test used TTL 6 against
+        # a 5 s probe and passed against the bug it was written to catch.
+        monkeypatch.setattr(diarizer_native, "_READY_CACHE_TTL_S", 3.0)
+        reset_readiness_cache()
+
+        calls: list[str] = []
+
+        def _slow_probe(url: str) -> bool:
+            calls.append(url)
+            clock["now"] += 5.0  # an unreachable sidecar burns the whole connect timeout
+            return False
+
+        monkeypatch.setattr(diarizer_native, "_sidecar_ready_uncached", _slow_probe)
+        assert diarizer_native.sidecar_ready("http://example.invalid") is False
+        assert diarizer_native.sidecar_ready("http://example.invalid") is False
+        assert len(calls) == 1, (
+            "the second call re-probed: the entry was stamped with a pre-probe clock read, "
+            "so it was born 5s old against a 3s TTL — the cache serves nothing in the exact "
+            "case it exists for"
+        )
+        reset_readiness_cache()
+
+    def test_liveness_is_cached_independently_of_readiness(self, monkeypatch):
+        """`/healthz` is probed twice per failing job and used to be uncached entirely."""
+        monkeypatch.setattr(diarizer_native, "_READY_CACHE_TTL_S", 60.0)
+        reset_readiness_cache()
+        health: list[str] = []
+
+        def _probe(url: str) -> bool:
+            health.append(url)
+            return True
+
+        monkeypatch.setattr(diarizer_native, "_sidecar_healthy_uncached", _probe)
+        assert diarizer_native.sidecar_healthy("http://example.invalid") is True
+        assert diarizer_native.sidecar_healthy("http://example.invalid") is True
+        assert len(health) == 1, "liveness must be cached too, not just readiness"
+        reset_readiness_cache()
+
+    def test_the_ttl_can_never_be_configured_below_the_probe_timeout(self):
+        """A TTL under the probe timeout makes every entry born expired, so it is floored."""
+        assert diarizer_native._READY_CACHE_TTL_S > diarizer_native._PROBE_TIMEOUT_S
+
     def test_a_call_after_the_ttl_lapses_issues_a_fresh_request(self, monkeypatch):
         """Advance the clock rather than sleeping on it.
 

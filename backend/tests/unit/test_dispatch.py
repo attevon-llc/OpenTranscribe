@@ -38,9 +38,12 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.constants import CeleryQueues
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.models.prompt import UserSetting
+from app.models.user_asr_settings import UserASRSettings
 
 _DISPATCH = "app.tasks.transcription.dispatch"
 _SESSION_SCOPE = f"{_DISPATCH}.session_scope"
@@ -84,6 +87,116 @@ class TestGetPipelineErrorMessage:
         # Error text mentions OOM but flag is False — flag is what matters
         result = _get_pipeline_error_message("CUDA out of memory", is_oom=False)
         assert result == _GENERIC_ERROR
+
+
+class TestGpuSplitEnabled:
+    """``app.core.constants.gpu_split_enabled()`` — the one signal both
+    ``dispatch.py`` and ``transcription/core.py``'s forward-to-diarize check read
+    (issue #703). Both call sites must observe the identical value for a given
+    environment, which is the whole point of centralizing it.
+    """
+
+    def test_default_is_false(self, monkeypatch):
+        from app.core.constants import gpu_split_enabled
+
+        monkeypatch.delenv("ENGINE_GPU_SPLIT", raising=False)
+
+        assert gpu_split_enabled() is False
+
+    def test_true_when_set(self, monkeypatch):
+        from app.core.constants import gpu_split_enabled
+
+        monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
+
+        assert gpu_split_enabled() is True
+
+    def test_is_case_insensitive(self, monkeypatch):
+        from app.core.constants import gpu_split_enabled
+
+        monkeypatch.setenv("ENGINE_GPU_SPLIT", "TRUE")
+
+        assert gpu_split_enabled() is True
+
+    def test_any_other_value_is_false(self, monkeypatch):
+        """Only the literal 'true' (any case) enables it — a typo like 'yes' or '1'
+        must fail closed toward the always-staffed queue, not toward the split one."""
+        from app.core.constants import gpu_split_enabled
+
+        monkeypatch.setenv("ENGINE_GPU_SPLIT", "yes")
+
+        assert gpu_split_enabled() is False
+
+
+class TestResolveGpuQueue:
+    """``_resolve_gpu_queue()`` — the routing decision issue #703 is about.
+
+    ``celery-worker`` always consumes the shared 'gpu' queue, split or not;
+    ``celery-worker-gpu-transcribe`` consumes 'gpu-transcribe' ONLY when the
+    gpu-split Compose profile is active. Routing there when it is not means a
+    transcription queues forever behind a consumer that was never started, so
+    the default-environment case (no ENGINE_GPU_SPLIT) must be pinned to 'gpu'
+    exactly as strictly as the split-enabled case is pinned to 'gpu-transcribe'.
+    """
+
+    @staticmethod
+    def _resolve(user_id: int, db) -> str:
+        from app.tasks.transcription.dispatch import _resolve_gpu_queue
+
+        return _resolve_gpu_queue(user_id, db)
+
+    def test_local_provider_default_env_routes_to_the_always_staffed_queue(
+        self, db_session, normal_user, monkeypatch
+    ):
+        """No ENGINE_GPU_SPLIT set at all (the state of every container that was not
+        started with --with-gpu-split) must resolve to 'gpu', never 'gpu-transcribe' —
+        this is the queue-nothing-drains case issue #703 exists to prevent."""
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+        monkeypatch.delenv("ENGINE_GPU_SPLIT", raising=False)
+
+        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
+
+    def test_local_provider_with_split_explicitly_disabled(
+        self, db_session, normal_user, monkeypatch
+    ):
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+        monkeypatch.setenv("ENGINE_GPU_SPLIT", "false")
+
+        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
+
+    def test_local_provider_with_split_enabled_routes_to_the_dedicated_worker(
+        self, db_session, normal_user, monkeypatch
+    ):
+        """The positive case: with the signal that ONLY docker-compose.gpu-split.yml sets,
+        traffic goes to the queue celery-worker-gpu-transcribe actually consumes."""
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+        monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
+
+        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU_TRANSCRIBE
+
+    def test_cloud_provider_wins_over_split(self, db_session, normal_user, monkeypatch):
+        """A cloud ASR provider never touches the local GPU stage at all — split being
+        active must not override that routing."""
+        monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
+        cfg = UserASRSettings(
+            user_id=normal_user.id,
+            name="cloud-test",
+            provider="deepgram",
+            model_name="nova-2",
+            is_active=True,
+        )
+        db_session.add(cfg)
+        db_session.commit()
+        db_session.refresh(cfg)
+        db_session.add(
+            UserSetting(
+                user_id=normal_user.id,
+                setting_key="active_asr_config_id",
+                setting_value=str(cfg.id),
+            )
+        )
+        db_session.commit()
+
+        assert self._resolve(normal_user.id, db_session) == CeleryQueues.CLOUD_ASR
 
 
 @contextmanager

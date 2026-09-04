@@ -155,7 +155,7 @@ show_help() {
   echo "  --with-diar-native   - Start the native diarization sidecar (diar-server), the"
   echo "                         PRIMARY engine when engine.diarizer_backend=native."
   echo "                         GPU: DIAR_NATIVE_GPU, else GPU_DEVICE_ID; the sidecar"
-  echo "                         holds ~4.1 GB of warm ORT arena on that card while up."
+  echo "                         holds ~2.2 GB of warm ORT arena on that card while up."
   echo "                         Without this flag a native-configured stack silently"
   echo "                         falls back to the in-process PyAnnote fork per file."
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
@@ -404,6 +404,20 @@ add_gpu_overlay() {
     # for docker-compose.gpu.yml on top.
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.blackwell.yml"
     echo "🎯 Adding Blackwell GPU overlay (SM_12x detected)"
+
+    # Pin the diar-native sidecar to the SAME Blackwell tag as celery-worker above.
+    # docker-compose.blackwell.yml deliberately carries no `diar-native` entry of its own
+    # (see its comment): this overlay is always appended BEFORE docker-compose.diar-native.yml
+    # (add_diar_native_overlay runs after add_gpu_overlay at every call site), and compose's
+    # last-file-wins merge means diar-native.yml's `image:` key always overrides whatever a
+    # compose-side retag here would set — verified: resolving the full chain gave
+    # celery-worker -> :blackwell but diar-native -> :latest. DIAR_NATIVE_IMAGE is the
+    # variable docker-compose.diar-native.yml itself interpolates, so setting it here, in the
+    # shell, before compose ever reads either file, wins regardless of `-f` order. `:-`
+    # respects an operator's own override (e.g. a hand-set custom export location); safe to
+    # call unconditionally since add_diar_native_overlay's own dev-mode default a few lines
+    # later uses the same `:-` form and therefore never clobbers this.
+    export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}}"
   elif [ -f "docker-compose.gpu.yml" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
     echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
@@ -642,7 +656,23 @@ add_diar_native_overlay() {
       # path to its own export; now the same lifespan provisioning runs there too, so a
       # `--fresh` stack with a token configured is precisely the fresh-install rehearsal
       # this auto-load exists to cover, not a case to skip.
-      if [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ]; then
+      #
+      # Lite is excluded outright, checked before the engine gate. `--lite` (LITE_FLAG)
+      # loads docker-compose.lite.yml, which sets DEPLOYMENT_MODE=lite on every backend
+      # container; DEPLOYMENT_MODE=lite is also checked directly for a .env that already
+      # carries it without the flag on this particular invocation. native_provision.py
+      # deliberately SKIPS provisioning under DEPLOYMENT_MODE=lite — the lite image has no
+      # Python exporter toolchain — so /models can never fill itself in, and loading this
+      # overlay would leave diar-server crash-looping against an empty --models-dir under
+      # `restart: unless-stopped` (verified: `diar-server serve` with an empty
+      # DIAR_MODELS_DIR exits 8). --with-diar-native still overrides this, unchanged above
+      # — an operator who has provisioned models out-of-band may deliberately want the
+      # sidecar even on a lite stack.
+      local deployment_mode_lc=""
+      deployment_mode_lc=$(printf '%s' "${DEPLOYMENT_MODE:-}" | tr '[:upper:]' '[:lower:]')
+      if [ -n "${LITE_FLAG:-}" ] || [ "$deployment_mode_lc" = "lite" ]; then
+        :  # no auto-load on lite — see comment above
+      elif [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ]; then
         if [ -d "$DIAR_NATIVE_MODELS_DIR" ] && [ -n "$(ls -A "$DIAR_NATIVE_MODELS_DIR" 2>/dev/null)" ]; then
           WITH_DIAR_NATIVE_FLAG="auto"
           echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
@@ -3310,7 +3340,7 @@ case "$1" in
     #
     # `diar-native` is deliberately NOT in this list even when its overlay is
     # loaded: it runs a Rust binary out of the same image, so a Python-side change
-    # cannot affect it, and recreating it costs a fresh ~4.1 GB ORT warm-up on the
+    # cannot affect it, and recreating it costs a fresh ~2.2 GB ORT warm-up on the
     # GPU. Restart it explicitly when the image's diar-server binary itself changed.
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES up -d --build --no-deps \

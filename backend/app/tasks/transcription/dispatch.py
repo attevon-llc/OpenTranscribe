@@ -25,6 +25,7 @@ from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
+from app.core.constants import gpu_split_enabled
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -39,7 +40,16 @@ logger = logging.getLogger(__name__)
 def _resolve_gpu_queue(user_id: int, db) -> str:
     """Resolve the correct queue based on the user's active ASR provider.
 
-    Returns 'cloud-asr' for cloud providers, 'gpu' for local.
+    Returns 'cloud-asr' for cloud providers. For local ASR, returns
+    'gpu-transcribe' when this deployment is running the gpu-split topology
+    (see :func:`gpu_split_enabled`) — celery-worker-gpu-transcribe picks it up,
+    runs the transcribe-only stage, and forwards to diarize_gpu_task on
+    'gpu-diarize' (transcription/core.py). Otherwise returns the shared 'gpu'
+    queue, which celery-worker always staffs regardless of split mode.
+
+    Issue #703: before this branch existed, nothing ever published to
+    'gpu-transcribe', so celery-worker-gpu-transcribe held a GPU reservation
+    and did no work under --with-gpu-split.
     """
     try:
         from app.services.asr.factory import ASRProviderFactory
@@ -53,6 +63,9 @@ def _resolve_gpu_queue(user_id: int, db) -> str:
             return CeleryQueues.CLOUD_ASR
     except Exception as e:
         logger.debug(f"ASR provider resolution failed, defaulting to 'gpu': {e}")
+
+    if gpu_split_enabled():
+        return CeleryQueues.GPU_TRANSCRIBE
     return CeleryQueues.GPU
 
 

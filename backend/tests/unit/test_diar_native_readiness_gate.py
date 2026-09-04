@@ -35,6 +35,7 @@ import pytest
 
 from app.services.native_embedding_client import native_embedding_available
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
+from app.transcription.diarizer_native import reset_readiness_cache
 from app.transcription.diarizer_native import sidecar_healthy
 from app.transcription.diarizer_native import sidecar_ready
 
@@ -54,6 +55,22 @@ _UNPROVISIONED = {
     "models_reason": "No provisioning marker (diar-provision.json) in /models.",
 }
 _READY = {"status": "ok", "models_verified": True, "models_state": "verified"}
+
+
+@pytest.fixture(autouse=True)
+def _clear_probe_cache():
+    """Drop the TTL-cached probe verdicts around every test in this module.
+
+    ``sidecar_ready``/``sidecar_healthy`` memoise per (endpoint, url) for several seconds.
+    Every test here stands up its own server on an ephemeral port, so today the keys happen
+    to differ — but that is the OS's port allocation protecting the suite, not the suite
+    protecting itself: pin ``_free_port`` to one value and
+    ``test_embedding_path_agrees_with_the_diarization_path`` fails on a stale verdict.
+    Clearing explicitly makes the isolation the module's own property.
+    """
+    reset_readiness_cache()
+    yield
+    reset_readiness_cache()
 
 
 def _make_handler(readyz: int | None, health_body: dict):

@@ -28,20 +28,14 @@ Configure AI models, caching behavior, and model discovery.
 # Whisper Transcription Models
 WHISPER_MODEL=large-v3-turbo  # or: large-v3, large-v2, medium, small, base, tiny
 
-# PyAnnote Speaker Diarization
-PYANNOTE_VERSION=auto  # or: v3, v4 (auto-detect installed version)
-EMBEDDING_MODE=auto  # or: v3, v4 (embedding model version)
+# PyAnnote Speaker Diarization — DIARIZATION_MODEL is fixed; there is no runtime version toggle
+DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
 MIN_SPEAKERS=1
 MAX_SPEAKERS=20
 
 # Model Caching & Storage
 MODEL_CACHE_DIR=./models
-HUGGINGFACE_CACHE=${MODEL_CACHE_DIR}/huggingface
-TORCH_CACHE=${MODEL_CACHE_DIR}/torch
 HUGGINGFACE_TOKEN=hf_your_token_here
-
-# Warm Cache (Pre-load Models on Startup)
-WARM_CACHE_ENABLED=false
 ```
 
 ### Transcription Performance Options
@@ -79,20 +73,21 @@ WHISPER_COMPUTE_TYPE=float16
 | `large-v3` | ~10GB | ~20GB | ~30GB |
 | `large-v2` | ~10GB | ~20GB | ~30GB |
 
-## PyAnnote v4 Configuration
+## Speaker Diarization & Voiceprint Embeddings
 
 Configure speaker diarization and voice fingerprinting for speaker identification and tracking.
+There is no `PYANNOTE_VERSION` or `EMBEDDING_MODE` variable in the code — the diarization
+pipeline is fixed to `DIARIZATION_MODEL=pyannote/speaker-diarization-community-1` (see
+[Model & Caching](#model--caching) above). "v4" below refers to the `pyannote.audio` 4.x
+model/API generation the app uses, not a selectable value. See
+[HuggingFace Token Setup](../installation/huggingface-setup.md) for what to accept on
+HuggingFace, and [Native Diarization Engine](#native-diarization-engine-diar-native) below for
+which process actually runs the pipeline.
 
 ```bash
-# Speaker Diarization Version
-PYANNOTE_VERSION=auto  # or: v3, v4 (auto-detect installed version)
-
 # Speaker Detection Ranges
 MIN_SPEAKERS=1         # Minimum speakers to detect
 MAX_SPEAKERS=20        # Maximum speakers to detect (no hard limit, can increase for large events)
-
-# Embedding & Fingerprinting
-EMBEDDING_MODE=auto    # or: v3, v4 (which embedding model to use)
 
 # Where v4 (256-dim) voiceprints are computed. Default true: they come from the
 # diarizer's own centroids, or from the diar-native sidecar when a separate
@@ -104,8 +99,6 @@ EMBEDDING_MODE=auto    # or: v3, v4 (which embedding model to use)
 # sidecar does not serve.
 USE_NATIVE_SPEAKER_EMBEDDINGS=true
 
-# Model Caching & Warmup
-WARM_CACHE_ENABLED=false  # Pre-load speaker models on startup for faster first transcription
 MODEL_CACHE_DIR=./models
 ```
 
@@ -118,13 +111,12 @@ MODEL_CACHE_DIR=./models
 | Large conferences | 15-30 | 30-40 | Increase MAX_SPEAKERS |
 | Very large events | 30-50+ | 50-100 | No hard limit |
 
-### Warm Cache Benefits
+### Model preloading
 
-Enabling `WARM_CACHE_ENABLED=true` pre-loads PyAnnote models on startup:
-- **First transcription**: 15-20 seconds faster (models already loaded)
-- **Subsequent transcriptions**: No performance change
-- **Trade-off**: ~500MB additional memory usage at startup
-- **Recommended for**: High-throughput systems with continuous transcription
+There is no `WARM_CACHE_ENABLED` variable — that was never implemented. The real mechanism is
+`PRELOAD_GPU_MODELS` (see [GPU Concurrent Processing](#gpu-concurrent-processing) below): set it
+`true` on a GPU worker's compose service to load its model at container start instead of on the
+first task.
 
 ## Native Diarization Engine (diar-native)
 

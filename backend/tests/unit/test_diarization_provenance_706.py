@@ -105,6 +105,15 @@ class TestNativeSpeakerDiarizerIdentity:
         native = NativeSpeakerDiarizer(config, base_url="http://127.0.0.1:1")
         native.is_loaded = True
 
+        # Force a non-native starting state before the call. NativeSpeakerDiarizer's
+        # constructor ALSO sets last_provider="native"/last_model=NATIVE_MODEL_NAME
+        # (diarizer_native.py:681-682), so calling diarize() and then asserting those same
+        # values cannot distinguish "the success path recorded it" from "nobody touched the
+        # constructor defaults" — deleting the success-path assignment left this test green.
+        # Starting from a deliberately wrong state pins the assignment itself.
+        native.last_provider = "pyannote"
+        native.last_model = "pyannote/speaker-diarization-community-1"
+
         def _fake_post_own_copy(audio, timeout):
             return (
                 {

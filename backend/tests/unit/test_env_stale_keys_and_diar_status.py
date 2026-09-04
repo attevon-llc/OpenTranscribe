@@ -343,28 +343,59 @@ def test_status_block_does_not_derive_which_engine_served_a_file():
     assert "diarization_provider" not in fn
 
 
-def test_workers_warning_predicate_matches_the_gpu_scale_derivation_test():
+def _workers_predicate_block() -> str:
+    """The REAL workers-vs-permits if/else block, spliced out of the real
+    ``print_diar_native_status()`` body — not a hand-reimplementation.
+
+    A hand-copied bash reimplementation of this predicate previously lived in this test: it
+    could invert `-gt` to `-lt` in the real function and stay green, because it never ran the
+    real function's source at all — only a lookalike the test author typed. Per this repo's
+    established pattern (``test_run_integration_tests_diar_native_gate.py``'s
+    ``_predicate_block``/``_decision_block``), extract and execute the actual bash instead.
+    """
+    fn = _extract_function(MANAGER, "print_diar_native_status")
+    match = re.search(
+        r"local gpu_scale_workers effective_workers\n.*?\n    fi\n",
+        fn,
+        re.DOTALL,
+    )
+    assert match, (
+        "the workers-vs-permits predicate block was not found in print_diar_native_status() — "
+        "if it was renamed or restructured, update this extraction rather than deleting the "
+        "test: it guards the shared #656/env-example-derivation predicate from silently "
+        "diverging"
+    )
+    block = match.group(0)
+    assert '"$effective_workers" -gt "$max_inflight"' in block, (
+        "sanity: expected the real -gt comparison inline in the extracted block"
+    )
+    return block
+
+
+def test_workers_warning_predicate_matches_the_gpu_scale_derivation_test(tmp_path: Path):
     """Same rule as backend/tests/unit/test_env_example_gpu_scale_derivation.py: effective
     workers (GPU_SCALE_WORKERS, or DIAR_NATIVE_MAX_INFLIGHT if unset) must never exceed
-    DIAR_NATIVE_MAX_INFLIGHT. Exercise the shared predicate directly with both inputs used by
-    that other test file's own scenarios, at the shell level (not a duplicated copy).
+    DIAR_NATIVE_MAX_INFLIGHT. Exercises the REAL predicate block spliced out of
+    print_diar_native_status() itself — not a duplicated copy — so an inverted comparison in
+    the real function (e.g. `-gt` flipped to `-lt`) fails this test, the way it previously did
+    not.
     """
+    block = _workers_predicate_block()
 
     def effective_exceeds(workers: str, max_inflight: str) -> bool:
-        out = _run_shell(
-            f"""
-gpu_scale_workers="{workers}"
+        env_file = tmp_path / ".env"
+        lines = [f"DIAR_NATIVE_MAX_INFLIGHT={max_inflight}\n"]
+        if workers:
+            lines.append(f"GPU_SCALE_WORKERS={workers}\n")
+        env_file.write_text("".join(lines))
+        snippet = f"""
+cd {tmp_path}
+source {COMMON}
 max_inflight="{max_inflight}"
-effective_workers="${{gpu_scale_workers:-$max_inflight}}"
-if echo "$effective_workers" | grep -qE '^[0-9]+$' && echo "$max_inflight" | grep -qE '^[0-9]+$' \\
-   && [ "$effective_workers" -gt "$max_inflight" ]; then
-    echo EXCEEDS
-else
-    echo OK
-fi
+{block}
 """
-        )
-        return out == "EXCEEDS"
+        out = _run_shell(snippet, cwd=tmp_path)
+        return "exceeds the sidecar's permits" in out
 
     assert effective_exceeds("4", "2") is True
     assert effective_exceeds("", "2") is False

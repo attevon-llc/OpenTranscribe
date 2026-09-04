@@ -13,10 +13,12 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
 from app.transcription.diarizer_native import DiarSidecarUnavailableError
+from app.transcription.diarizer_native import NativeSpeakerDiarizer
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.
@@ -202,3 +204,78 @@ class TestDiarizeGpuTaskRetryWiring:
         assert isinstance(sentinel.exc, DiarSidecarUnavailableError)
         assert sentinel.max_retries == DIAR_SIDECAR_MAX_RETRIES
         mock_handle_failure.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Reachability: on the DEFAULT config, can DiarSidecarUnavailableError even get here?
+# ---------------------------------------------------------------------------
+#
+# Adversarial-audit finding: the two test classes above drive `transcribe_gpu_task` and
+# `diarize_gpu_task` correctly, injecting `DiarSidecarUnavailableError` straight into the
+# task body and asserting the retry ladder fires. But nothing pins whether a REAL sidecar
+# failure can ever reach that point. `_run_diarize` (app/transcription/engine/stages.py) calls
+# `diarizer.diarize(..., allow_local_fallback=True)` by default on the synchronous path, and
+# `NativeSpeakerDiarizer._refuse_or_fallback_impl` only re-raises `DiarSidecarUnavailableError`
+# when BOTH `allow_local_fallback` is False (the overlapped-diarization thread only) AND/OR
+# `diarizer_require_sidecar()` is True (`ENGINE_DIARIZER_REQUIRE_SIDECAR`, default "false").
+# On the default synchronous path with the default env, a sidecar failure is silently absorbed
+# into the in-process PyAnnote fallback and never becomes a `DiarSidecarUnavailableError` at
+# all — so the retry ladder above is live only under a non-default flag. A change that always
+# swallows the error (e.g. deleting the `diarizer_require_sidecar()` check, or the ladder
+# becoming permanently dead some other way) would leave every test above still green, since
+# they never call the real `diarize()` / `_refuse_or_fallback_impl` path.
+class TestSidecarFailureReachesTheLadderOnlyUnderRequireSidecar:
+    def _diarizer(self, monkeypatch) -> tuple[NativeSpeakerDiarizer, MagicMock]:
+        diarizer = NativeSpeakerDiarizer(config=object())
+        fake_fallback = MagicMock()
+        fake_fallback.diarize.return_value = ("fallback-result", {}, None)
+        monkeypatch.setattr(diarizer, "_fallback_engine", lambda: fake_fallback)
+        return diarizer, fake_fallback
+
+    def test_default_config_absorbs_the_failure_into_the_pyannote_fallback(self, monkeypatch):
+        """The reachability condition, negative case: `ENGINE_DIARIZER_REQUIRE_SIDECAR` unset
+        (this repo's shipped default) plus the default `allow_local_fallback=True` synchronous
+        call — the shape every ordinary transcription job takes — must NOT raise
+        `DiarSidecarUnavailableError`. If this ever starts raising, the ladder tested above
+        would fire on every ordinary sidecar hiccup, not just the intentionally fail-hard
+        deployments.
+        """
+        monkeypatch.delenv("ENGINE_DIARIZER_REQUIRE_SIDECAR", raising=False)
+        diarizer, fake_fallback = self._diarizer(monkeypatch)
+        unavailable = DiarSidecarUnavailableError("wedged", reason="timeout")
+        audio = np.zeros(16_000, dtype=np.float32)
+
+        result = diarizer._refuse_or_fallback_impl(
+            unavailable, audio=audio, allow_local_fallback=True
+        )
+
+        # Identity, not equality: this is the very object the fallback engine returned,
+        # so a future implementation that rebuilt an equal-looking tuple would not pass.
+        assert result is fake_fallback.diarize.return_value
+        # And the fallback must be handed the SAME waveform the failed sidecar call had —
+        # `assert_called_once()` alone would not notice it being passed something else.
+        fake_fallback.diarize.assert_called_once_with(audio)
+        assert diarizer.last_provider == "pyannote"
+
+    def test_require_sidecar_true_is_the_only_default_synchronous_path_that_reaches_the_ladder(
+        self, monkeypatch
+    ):
+        """The reachability condition, positive case: with `ENGINE_DIARIZER_REQUIRE_SIDECAR=true`
+        (the only lever that makes the ladder live on the synchronous path — the overlapped
+        thread aside), the same failure must propagate unchanged instead of being absorbed.
+        This is the precondition the retry-wiring tests above implicitly assume; pinning it
+        here means a change that quietly makes the ladder unreachable (e.g. the
+        `diarizer_require_sidecar()` check being deleted or short-circuited) fails a test
+        even though those tests keep passing.
+        """
+        monkeypatch.setenv("ENGINE_DIARIZER_REQUIRE_SIDECAR", "true")
+        diarizer, fake_fallback = self._diarizer(monkeypatch)
+        unavailable = DiarSidecarUnavailableError("wedged", reason="timeout")
+
+        audio = np.zeros(16_000, dtype=np.float32)
+
+        with pytest.raises(DiarSidecarUnavailableError) as excinfo:
+            diarizer._refuse_or_fallback_impl(unavailable, audio=audio, allow_local_fallback=True)
+
+        assert excinfo.value is unavailable
+        fake_fallback.diarize.assert_not_called()

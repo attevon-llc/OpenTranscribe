@@ -38,6 +38,8 @@ import subprocess
 
 import pytest
 
+from tests.compose_project import compose_service_container
+
 pytestmark = pytest.mark.integration
 
 COMPOSE_SERVICE = "celery-worker"
@@ -61,6 +63,15 @@ cfg = TranscriptionConfig.from_environment()
 diarizer = NativeSpeakerDiarizer(cfg)
 diarizer.load_model()
 
+# Force a non-native starting state before the call. The constructor ALSO sets
+# last_provider="native"/last_model=NATIVE_MODEL_NAME (diarizer_native.py:681-682), so
+# printing those values straight after construction cannot distinguish "diarize() resolved
+# it" from "nobody touched the constructor defaults" -- deleting the success-path assignment
+# at diarizer_native.py:1021-1022 would leave this probe printing the right answer for the
+# wrong reason. Starting from a deliberately wrong pair pins the assignment itself.
+diarizer.last_provider = "pyannote"
+diarizer.last_model = "pyannote/speaker-diarization-community-1"
+
 # 10 s of 16 kHz mono. Content is irrelevant: the claim is which ENGINE ran, not how well it
 # separated speakers (that is diar-native-der-parity.py's job, against ground truth).
 audio = np.zeros(16000 * 10, dtype=np.float32)
@@ -70,39 +81,17 @@ print("MODEL=" + str(diarizer.last_model))
 """
 
 
-def _docker_ps(*filters: str) -> list[str]:
-    args = ["docker", "ps", "--filter", "status=running"]
-    for f in filters[:-1]:
-        args += ["--filter", f]
-    args += ["--format", filters[-1]]
-    try:
-        out = subprocess.run(args, capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return []
-    return [ln for ln in out.stdout.strip().splitlines() if ln]
-
-
 def _container() -> str:
     """The worker in THIS compose project, or '' — never an unscoped name filter.
 
-    A bare `--filter name=celery-worker` matches whatever stack happens to be up on the host;
-    this machine runs unrelated compose projects sharing name prefixes, and an unscoped filter
-    in opentr.sh once destroyed an unrelated container. The project is resolved the same way
-    scripts/lib/compose-project.sh does it — from a running postgres container's own label,
-    never from a directory name, which is wrong from a git worktree.
+    Delegates to ``tests/compose_project.py::compose_service_container``, which resolves the
+    project from the ``postgres`` container publishing THIS pytest process's ``POSTGRES_PORT``
+    — unambiguous even with several stacks up. The hand-rolled version this replaced took
+    ``project[0]`` from a bare "any postgres container" filter, which on a host running two
+    compose projects (this one routinely does) matches two and picks whichever was restarted
+    more recently — silently resolving to the WRONG stack's worker rather than this repo's.
     """
-    project = _docker_ps(
-        "label=com.docker.compose.service=postgres",
-        '{{.Label "com.docker.compose.project"}}',
-    )
-    if not project:
-        return ""
-    names = _docker_ps(
-        f"label=com.docker.compose.project={project[0]}",
-        f"label=com.docker.compose.service={COMPOSE_SERVICE}",
-        "{{.Names}}",
-    )
-    return names[0] if names else ""
+    return compose_service_container(COMPOSE_SERVICE) or ""
 
 
 def test_the_application_path_actually_reaches_the_sidecar():

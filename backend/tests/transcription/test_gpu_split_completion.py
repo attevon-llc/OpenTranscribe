@@ -24,11 +24,18 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
+from typing import cast
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.transcription.engine.job import RawTranscriptResult
+
+if TYPE_CHECKING:
+    from app.transcription.engine.config import EngineConfig
 
 _CORE = "app.tasks.transcription.core"
 _POSTPROCESS = "app.tasks.transcription.postprocess"
@@ -463,3 +470,142 @@ class TestSplitPathReachesCompletedExactlyOnce:
         assert task.status == "completed"
         assert task.completed_at is not None
         mock_completion.assert_called_once_with(normal_user.id, media_file.id)
+
+
+def _make_raw_transcript_result() -> RawTranscriptResult:
+    return RawTranscriptResult(
+        task_id="task-diar-only",
+        audio_path="",
+        audio_duration_s=1.0,
+        language="en",
+        raw_segments=[{"start": 0.0, "end": 1.0, "text": "hi"}],
+        local_wav_path="/scratch/opentranscribe/engine/task-diar-only.wav",
+        config_snapshot={},
+        stage_timings={},
+    )
+
+
+class _StubEngineConfigDiarOnly:
+    class _TC:
+        enable_diarization = True
+        concurrent_requests = 1
+        device = "cpu"
+        diarizer_backend = "native"
+
+    transcription_config = _TC()
+
+
+class _FakeDiarizeDF:
+    """Stand-in for a real ``DiarizeResult``: ``_DiarizerOnlyStage.run`` only calls
+    ``.to_records()`` on it before handing the records off unchanged."""
+
+    def to_records(self):
+        return [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}]
+
+
+class TestDiarizerOnlyStagePersistsResolvedProvenance:
+    """Issue #706 audit finding 1 (P0): Stage 2b of the GPU-split path (``_DiarizerOnlyStage``,
+    ``stages.py:991``) must read ``diarizer.last_provider``/``last_model`` off the diarizer
+    instance it actually ran, not silently drop them.
+
+    Proven by using a diarizer double whose ``last_provider``/``last_model`` are set to values
+    that could only have come from THIS diarizer instance (not a default, not the configured
+    backend name) — so injecting ``diar_provider, diar_model = None, None`` (or reading
+    ``tc.diarizer_backend`` instead of the instance) turns this red.
+    """
+
+    def test_run_threads_the_diarizer_s_resolved_provenance_into_the_result(self):
+        from app.transcription.engine import stages as stages_mod
+
+        class _FakeDiarizer:
+            last_provider = "SENTINEL-PROVIDER-706"
+            last_model = "SENTINEL-MODEL-706"
+
+            def diarize(self, audio):
+                return (_FakeDiarizeDF(), {}, {})
+
+        manager = MagicMock()
+        manager.get_diarizer.return_value = _FakeDiarizer()
+
+        with (
+            patch(
+                "app.transcription.model_manager.ModelManager.get_instance",
+                return_value=manager,
+            ),
+            patch(
+                "app.transcription.engine.audio_loader.load_from_shared_volume",
+                return_value=MagicMock(__len__=lambda self: 16000),
+            ),
+            patch(
+                "app.utils.hardware_detection.detect_hardware",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "app.utils.vram_profiler.VRAMProfiler",
+                return_value=MagicMock(),
+            ),
+        ):
+            stage = stages_mod._DiarizerOnlyStage()
+            transcript = _make_raw_transcript_result()
+            config = cast("EngineConfig", _StubEngineConfigDiarOnly())
+
+            result = stage.run(transcript, config)
+
+        assert result.diarization_provider == "SENTINEL-PROVIDER-706", (
+            "Stage 2b did not read the diarizer's own resolved last_provider — this is "
+            "issue #706's original symptom (native ran, the column recorded NULL) "
+            "reproduced on the GPU-split leg"
+        )
+        assert result.diarization_model == "SENTINEL-MODEL-706"
+
+
+class TestAsyncDiarizationServedByReflectsTheRunningDiarizer:
+    """Issue #706 audit finding 2: ``_AsyncDiarization.served_by`` (``stages.py:273``) must
+    read ``self._diarizer.last_provider``/``last_model`` — the instance that actually ran on
+    the overlap thread — not a hardcoded or stale pair.
+
+    Drives a REAL ``_AsyncDiarization`` (real background thread, real ``_run_diarize`` call)
+    with a diarizer double that only assigns its ``last_provider``/``last_model`` as a SIDE
+    EFFECT of ``diarize()`` running — mirroring the real diarizer classes — so reading
+    ``served_by`` before/without that call would observe the diarizer's untouched defaults
+    instead, and a hardcoded ``return "native", "INJECTED"`` turns this red.
+    """
+
+    def test_served_by_reports_the_diarizer_s_post_call_state(self):
+        from app.transcription.engine.stages import _AsyncDiarization
+
+        class _FakeDiarizer:
+            def __init__(self):
+                self.last_provider = "unset"
+                self.last_model = "unset"
+
+            def diarize(self, audio):
+                # Simulates a real diarizer resolving its identity only once diarize()
+                # actually runs (issue #706's whole point).
+                self.last_provider = "native"
+                self.last_model = "SENTINEL-MODEL-served-by"
+                return (_FakeDiarizeDF(), {}, {})
+
+        fake_diarizer = _FakeDiarizer()
+        manager = MagicMock()
+        manager.get_diarizer.return_value = fake_diarizer
+
+        class _StubTC:
+            diarizer_backend = "native"
+
+        async_diarization = _AsyncDiarization(
+            audio=MagicMock(),
+            tc=_StubTC(),
+            manager=manager,
+            task_id="task-served-by",
+        )
+
+        value = async_diarization.result()
+
+        assert value is not None, "the overlapped diarize() call must have succeeded"
+        provider, model = async_diarization.served_by
+        assert provider == "native"
+        assert model == "SENTINEL-MODEL-served-by", (
+            "served_by did not reflect the diarizer instance that actually ran — a "
+            "hardcoded or stale provenance pair would pass here otherwise"
+        )

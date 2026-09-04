@@ -21,17 +21,22 @@ fails a test instead of changing behaviour unnoticed.
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 import logging
 import os
 import stat
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
+from app.transcription.native_provision import DEFAULT_MODELS_DIR
 from app.transcription.native_provision import MARKER_FILENAME
 from app.transcription.native_provision import ProvisionResult
 from app.transcription.native_provision import ensure_native_models
+from app.transcription.native_provision import models_dir
 from app.transcription.native_provision import read_marker
 
 #: What a real export writes. Trimmed to the fields this module reads.
@@ -170,10 +175,19 @@ class TestSkipPaths:
         workaround (point ``DIAR_NATIVE_MODELS_DIR`` at a full image's export) meant
         pulling a 15.2 GB image to produce 484 MB.
 
-        ``requirements-lite.txt`` now installs the four packages the shipped binary's own
-        preflight names — verified by grepping the binary inside the built lite image:
-        ``pyannote.audio``, ``onnxscript``, ``onnxslim``, ``onnxconverter_common``. Measured
-        cost: 2.57 GB -> 2.62 GB, i.e. ~50 MB over pre-shrink lite.
+        ``requirements-lite.txt`` now installs the packages the shipped binary's embedded
+        export scripts actually import. ⚠️ This docstring used to say "the four packages …
+        named exactly these: pyannote.audio, onnxscript, onnxslim, onnxconverter_common" —
+        that number was WRONG (the real, grep-derived list is eleven; see
+        ``EXPORTER_IMPORTS`` in ``tests/integration/test_export_toolchain_in_shipped_images.py``)
+        and no such grep existed anywhere in this repo to back the claim, which is exactly
+        how ``onnxruntime`` went missing from this file once. The real, automated check —
+        that every direct-required entry of ``EXPORTER_IMPORTS`` is actually pinned in
+        ``requirements-lite.txt`` — lives in
+        ``tests/unit/test_lite_export_requirements_declared.py``, not here: this test
+        below only proves the shimmed subprocess is REACHED under
+        ``DEPLOYMENT_MODE=lite``, never that the real packages are present. Measured cost
+        of restoring the toolchain: 2.57 GB -> 2.62 GB, i.e. ~50 MB over pre-shrink lite.
 
         So lite must now reach the subprocess exactly like a full deployment does.
         """
@@ -427,3 +441,124 @@ class TestReadMarker:
         """A bare JSON scalar parses but is not a marker."""
         (tmp_path / MARKER_FILENAME).write_text("42", encoding="utf-8")
         assert read_marker(str(tmp_path)) is None
+
+
+class TestModelsDir:
+    """Pins the resolution ``app.main`` actually relies on (issue audit, 2026-09-04).
+
+    Everything above this class drives ``ensure_native_models`` with an EXPLICIT
+    ``directory`` argument. The lifespan's real call — ``ensure_native_models()``, zero
+    arguments — depends entirely on ``models_dir()`` resolving to somewhere real, and
+    nothing exercised that resolution: an audit injection that made ``models_dir()``
+    return ``/nonexistent/audit-injection`` passed the whole suite unchanged.
+    """
+
+    def test_default_is_the_documented_container_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("DIAR_MODELS_DIR", raising=False)
+        assert models_dir() == DEFAULT_MODELS_DIR == "/models"
+
+    def test_env_override_wins(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("DIAR_MODELS_DIR", str(tmp_path))
+        assert models_dir() == str(tmp_path)
+
+
+class TestZeroArgProductionForm:
+    """Exercises the exact call shape ``main._provision_native_diarizer`` makes.
+
+    ``ensure_native_models()`` with no ``directory`` is what every real deployment runs;
+    every other test in this module supplies an explicit ``tmp_path``-derived directory,
+    which is a different code path (the ``directory or models_dir()`` branch is never
+    taken there). This class drives the zero-arg form for real, through a real shim
+    subprocess, and separately pins that ``app.main`` wires it up at all.
+    """
+
+    def test_ensure_native_models_with_no_directory_targets_models_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "models"
+        target.mkdir()
+        monkeypatch.setenv("DIAR_MODELS_DIR", str(target))
+        bindir = _write_shim(tmp_path, exit_code=0, marker=_GOOD_MARKER)
+        monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+
+        result = ensure_native_models()  # no directory argument — the production form
+
+        assert result.status == "ok"
+        assert result.models_dir == str(target)
+        # The marker must have landed in the DIAR_MODELS_DIR-resolved directory, not
+        # some other default -- proves the zero-arg call actually reached models_dir().
+        assert read_marker(str(target)) is not None
+
+    def test_provision_native_diarizer_calls_ensure_native_models_with_no_arguments(
+        self,
+    ) -> None:
+        """Pins the wiring ``rg _provision_native_diarizer backend/tests/`` found NOTHING for.
+
+        ``app.main._provision_native_diarizer`` must call the zero-argument production
+        form -- passing an explicit directory here would silently stop honouring
+        ``DIAR_MODELS_DIR``/the container's real mount, and nothing else in this module
+        would notice because every other test calls ``ensure_native_models`` directly.
+
+        Wraps the REAL ``ensure_native_models`` rather than replacing it outright, and
+        captures what it returned: this asserts both the call shape (no arguments) AND
+        that the real function ran to completion and produced its normal, non-raising
+        ``ProvisionResult`` -- not just that a mock recorded being called, which is
+        bookkeeping about the test double rather than evidence about production
+        behaviour. ``_provision_native_diarizer`` itself discards the return value (it
+        only logs on failure), so the real result is captured via ``side_effect``.
+        """
+        import app.main as main
+        from app.transcription.native_provision import ProvisionResult
+        from app.transcription.native_provision import ensure_native_models as real_fn
+
+        captured: list[ProvisionResult] = []
+
+        # Mirrors ensure_native_models' real signature rather than taking an untyped
+        # `*args`/`**kwargs` pass-through, so mypy checks this forwarding call and an
+        # upstream signature change surfaces here instead of being forwarded blindly.
+        def _record(directory: str | None = None, *, force: bool = False) -> ProvisionResult:
+            result = real_fn(directory, force=force)
+            captured.append(result)
+            return result
+
+        with mock.patch(
+            "app.transcription.native_provision.ensure_native_models",
+            side_effect=_record,
+        ) as mocked:
+            main._provision_native_diarizer()
+
+        mocked.assert_called_once_with()
+        # If _provision_native_diarizer's try/except ever swallowed a TypeError from a
+        # wrong call signature before the real function ran, `assert_called_once_with()`
+        # alone would still pass (the call was attempted) while `captured` stayed empty
+        # -- so this checks the real call actually completed and returned normally.
+        assert len(captured) == 1
+        assert isinstance(captured[0], ProvisionResult)
+
+    def test_lifespan_source_actually_calls_provision_native_diarizer(self) -> None:
+        """Pins the WIRING, not just the wrapper -- the half the audit found missing.
+
+        The audit's injection deleted the ``_provision_native_diarizer()`` call from
+        ``lifespan`` while leaving the function itself intact, and the suite did not
+        move. Driving the real ``lifespan()`` context manager here would require a live
+        DB, MinIO, and Redis (it runs migrations and seeds initial data), which is out of
+        scope for this module -- so this asserts the call exists in the function's own
+        source, the same source-inspection shape already used elsewhere in this suite
+        (e.g. ``test_route_privilege_tiers.py``) for wiring that cannot cheaply be driven
+        end-to-end.
+        """
+        import app.main as main
+
+        source = inspect.getsource(main.lifespan)
+        tree = ast.parse(source)
+        called_names = {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        assert "_provision_native_diarizer" in called_names, (
+            "app.main.lifespan no longer calls _provision_native_diarizer() -- a fresh "
+            "install's native-model export would silently never run"
+        )

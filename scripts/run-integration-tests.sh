@@ -19,6 +19,7 @@
 #   ./scripts/run-integration-tests.sh --search-quality  # + corpus relevance harness
 #   ./scripts/run-integration-tests.sh --cleanup      # + orphaned test-user dry run
 #   ./scripts/run-integration-tests.sh --skip-gpu     # drop the GPU phase
+#   ./scripts/run-integration-tests.sh --export-capability  # + real diar-native model export (~150s, needs HUGGINGFACE_TOKEN)
 
 set -euo pipefail
 
@@ -37,6 +38,7 @@ E2E_SMOKE=false
 SEARCH_QUALITY=false
 CLEANUP=false
 RUN_GPU=true
+EXPORT_CAPABILITY=false
 for arg in "$@"; do
     case "$arg" in
         --coverage) COVERAGE=true ;;
@@ -44,6 +46,7 @@ for arg in "$@"; do
         --search-quality) SEARCH_QUALITY=true ;;
         --cleanup) CLEANUP=true ;;
         --skip-gpu) RUN_GPU=false ;;
+        --export-capability) EXPORT_CAPABILITY=true ;;
         -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo -e "${RED}Unknown option: $arg${NC}"; exit 2 ;;
     esac
@@ -247,8 +250,25 @@ if [ ${#STACK_INCOMPLETE[@]} -gt 0 ]; then
     echo -e "  the phase would still exit 0. Start the full stack: ${YELLOW}./opentr.sh start dev${NC}\n"
     SKIPPED_PHASES+=("Integration-marked tests")
 else
+    # test_export_toolchain_in_shipped_images.py::test_the_running_backend_actually_completes_a_real_export
+    # lives in tests/integration/ and is therefore already COLLECTED here — but it
+    # self-gates on RUN_EXPORT_CAPABILITY_TEST and, unset, always skips ("NOT MEASURED",
+    # never a pass). Nothing else in this repo set that variable, so the real ~150s,
+    # gated-weights export it drives had never actually run in any automated path
+    # (issue: the headline "provision on first boot" capability was covered by nothing).
+    # --export-capability is deliberately opt-in here (a 150s download is too heavy for
+    # the everyday inner loop) but IS unconditionally wired into the release pipeline —
+    # scripts/release/60-test.sh always passes it — so the real check still runs
+    # somewhere automated rather than depending on an operator remembering the flag. A
+    # HUGGINGFACE_TOKEN with the pyannote/speaker-diarization-community-1 gate accepted
+    # is required for a real verdict; without one the test skips loudly, distinguishably
+    # from a pass (see that test's own skip message).
+    EXPORT_ENV=()
+    if $EXPORT_CAPABILITY; then
+        EXPORT_ENV=(env RUN_EXPORT_CAPABILITY_TEST=1)
+    fi
     run_phase_watching_skips "Integration-marked tests" \
-        "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
+        "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         -o addopts="" -m integration -q --tb=short --timeout="${INTEGRATION_TEST_TIMEOUT:-900}"
 fi
 

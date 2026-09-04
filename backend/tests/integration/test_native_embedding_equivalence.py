@@ -240,15 +240,48 @@ def test_the_sidecar_agrees_with_the_frozen_vector_on_a_sub_window_clip(sidecar_
     )
 
 
+def _three_genuinely_different_tiles(audio: np.ndarray, width: int) -> np.ndarray:
+    """Build a >1-window clip out of three tiles that actually differ from each other.
+
+    Issue: the original fixture concatenated ``[audio, audio[::-1], audio]``. Time-reversal
+    does not change a speaker-embedding model's answer much (it is not sensitive to phoneme
+    order the way an ASR model is), so all three tiles embedded as near-duplicates and *any*
+    pooling strategy agreed with any other — measured 0.98885 cosine even with tiling and
+    mean-pooling deleted entirely from ``fit_to_window``. A threshold cannot fix a fixture
+    that can't distinguish correct pooling from broken pooling.
+
+    Instead this splits the single 10 s sample into three non-overlapping thirds — genuinely
+    different spoken content, same speaker and recording — and repeats each third to fill one
+    full model window, exactly the way ``fit_to_window`` fills a short clip. Measured pairwise
+    cosine between the three raw tile embeddings: 0.25 / 0.25 / 0.77 (frozen-vector generation
+    note in ``pyannote_v4_reference_vectors.json``) — genuinely distinct, not near-duplicates.
+    """
+    third = audio.size // 3
+    segments = [audio[:third], audio[third : 2 * third], audio[2 * third :]]
+
+    def _fill(segment: np.ndarray) -> np.ndarray:
+        repeats = int(np.ceil(width / segment.size))
+        return np.ascontiguousarray(np.tile(segment, repeats)[:width]).astype(np.float32)
+
+    return np.concatenate([_fill(s) for s in segments])
+
+
 def test_the_sidecar_agrees_with_the_frozen_vector_on_a_clip_longer_than_one_window(
     sidecar_url, audio
 ) -> None:
     """Long clips are tiled and mean-pooled; the legacy path pools the whole signal once.
 
-    Not identical by construction — measured min 0.9977 over 20-60 s AMI regions when
-    both sides were live — but far inside the same-speaker distribution, which is what
-    has to hold for the two backends' vectors to coexist in one index. Compared against
+    Not identical by construction, but far inside the same-speaker distribution, which is
+    what has to hold for the two backends' vectors to coexist in one index. Compared against
     the frozen reference vector, not a live PyAnnote load.
+
+    Measured against a real sidecar with the *correct* tiling/mean-pooling logic and this
+    fixture: cosine 0.9818 against the frozen vector. A regression that deletes tiling
+    entirely (falls back to embedding only the first window) measures 0.520; one that
+    naively decimates the whole clip down to one window measures 0.007. Both are far below
+    0.95, so this threshold discriminates the fix from the two most plausible breakages —
+    unlike the fixture this replaced, which could not tell a wrong pooling strategy from a
+    right one at all.
     """
     from app.services.native_embedding_client import NATIVE_EMBEDDING_WINDOW_SAMPLES
 
@@ -256,7 +289,7 @@ def test_the_sidecar_agrees_with_the_frozen_vector_on_a_clip_longer_than_one_win
         # Build a longer signal from the fixture so this runs on the committed 10 s WAV.
         # Must match exactly how the frozen reference vector's clip was constructed
         # (see the fixture generation note) or the two sides are not comparable.
-        clip = np.concatenate([audio, audio[::-1], audio])
+        clip = _three_genuinely_different_tiles(audio, NATIVE_EMBEDDING_WINDOW_SAMPLES)
     else:
         clip = audio
     assert clip.size > NATIVE_EMBEDDING_WINDOW_SAMPLES

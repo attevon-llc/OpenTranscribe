@@ -26,7 +26,14 @@ fi
 
 echo -e "${BLUE}Running the canonical pre-merge gate${NC}" >&2
 rc=0
-./scripts/run-integration-tests.sh --coverage --e2e-smoke || rc=$?
+# --export-capability drives a REAL diar-native model export (~150s, downloads the gated
+# pyannote/speaker-diarization-community-1 weights) against the live backend container.
+# It is opt-in in run-integration-tests.sh (too heavy for the everyday dev loop), but a
+# release must never ship on the strength of a test that has never actually run — so the
+# release gate always asks for it here. 10-preflight.sh already warns when no
+# HUGGINGFACE_TOKEN is configured; without one this phase skips loudly (never silently,
+# never counted as a pass) rather than failing the release outright.
+./scripts/run-integration-tests.sh --coverage --e2e-smoke --export-capability || rc=$?
 
 if [[ "$JSON_OUT" == "true" ]]; then
     printf '{"stage":"test","version":"%s","status":"%s","next":%s}\n' \

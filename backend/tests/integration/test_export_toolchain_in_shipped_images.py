@@ -30,11 +30,17 @@ what this asserts.
 
 WHAT IT ASSERTS
 ----------------
-``provision-models`` with **no token** must reach **EXIT_TOKEN_DENIED (5)** — "everything is
-ready, I just have no credentials" — and specifically NOT ``EXIT_NO_EXPORTER_ENV (6)``, which
-is the binary's own verdict that the Python export environment is incomplete. That single
-distinction is the whole capability, it costs no download, and it is the check that was
-missing.
+⚠️ This section used to claim that a token-less run reaching ``EXIT_TOKEN_DENIED (5)``
+rather than ``EXIT_NO_EXPORTER_ENV (6)`` was "the whole capability" and cost no download.
+That is exactly the un-failable shortcut ``test_the_running_backend_actually_completes_a_real_export``'s
+own docstring documents as REMOVED: the binary validates the token BEFORE it preflights the
+export environment, so a token-less run returns 5 even with ``python3`` replaced by
+``exit 1`` — measured by putting a stub ``python3`` first on PATH. There is no cheap, honest
+substitute for a real export; the gated 157 s run below IS the capability check.
+
+The import probe (``test_the_running_backend_image_has_every_exporter_dependency``) is the
+fast, always-on, falsifiable guard: a missing package makes it red at zero cost. It proves the
+environment is present, not that an export succeeds — for that, see the gated test.
 """
 
 from __future__ import annotations
@@ -44,6 +50,8 @@ import os
 import subprocess
 
 import pytest
+
+from tests.compose_project import compose_service_container
 
 pytestmark = pytest.mark.integration
 
@@ -129,50 +137,17 @@ def _verdict(stdout: str) -> dict | None:
 
 
 def _running_backend() -> str:
-    """The backend container of THIS compose project, or '' — scoped by label, never by name."""
-    project = (
-        subprocess.run(
-            [
-                "docker",
-                "ps",
-                "--filter",
-                "label=com.docker.compose.service=postgres",
-                "--filter",
-                "status=running",
-                "--format",
-                '{{.Label "com.docker.compose.project"}}',
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        .stdout.strip()
-        .splitlines()
-    )
-    if not project:
-        return ""
-    names = (
-        subprocess.run(
-            [
-                "docker",
-                "ps",
-                "--filter",
-                f"label=com.docker.compose.project={project[0]}",
-                "--filter",
-                "label=com.docker.compose.service=backend",
-                "--filter",
-                "status=running",
-                "--format",
-                "{{.Names}}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        .stdout.strip()
-        .splitlines()
-    )
-    return names[0] if names else ""
+    """The backend container of the compose project THIS PROCESS is pointed at, or ''.
+
+    Delegates to ``compose_service_container``, which resolves the project via the
+    ``POSTGRES_PORT`` this pytest process is configured for — never ``[0]`` off an
+    unordered ``docker ps`` list. This module used to take that first element itself:
+    with two OpenTranscribe projects running on one host (the ordinary case — the dev
+    stack plus any ``--fresh`` deployment), ``project[0]`` is decided by ``docker ps``
+    ordering (creation time, newest first), so this could silently probe a stack nobody
+    pointed it at and report a pass having verified nothing about the stack under test.
+    """
+    return compose_service_container("backend") or ""
 
 
 def test_the_running_backend_image_has_every_exporter_dependency():
@@ -260,8 +235,11 @@ def test_the_running_backend_actually_completes_a_real_export():
     )
     if code == EXIT_TOKEN_DENIED:
         pytest.skip(
-            "HUGGINGFACE_TOKEN is unset, or its account has not accepted the "
-            "pyannote/speaker-diarization-community-1 gate — no real export is possible"
+            "NOT MEASURED — TOKEN_DENIED: HUGGINGFACE_TOKEN is unset, or its account has "
+            "not accepted the pyannote/speaker-diarization-community-1 gate, so NO REAL "
+            "EXPORT RAN. This is 'no credentials configured', never 'export verified' — do "
+            "not read this skip as evidence the image can export; set a HUGGINGFACE_TOKEN "
+            "with the gate accepted and re-run to get a real verdict."
         )
     assert code == 0, f"export failed with exit {code}: {payload.get('message')!r}"
     assert payload.get("gender_precision") == "fp16", (

@@ -288,6 +288,48 @@ teardown_overlays() {
 }
 trap teardown_overlays EXIT
 
+# LLDAP ships one bootstrap account (`admin`). The e2e suite authenticates as `ldap-admin`
+# and `ldap-user`, which EXIST in the seed data but whose passwords must be set after the
+# server starts — backend/tests/AUTH_TEST_SETUP.md documents the two commands, and until now
+# nothing ran them. So `--full` enabled LDAP, exported RUN_AUTH_E2E, ran the tests, and they
+# failed on a bind the fixture had never been prepared for.
+#
+# That is worse than a plain failure. `LDAP password verification failed for user:
+# ldap-admin` then falls through to local auth, which increments the lockout counter on the
+# resolved account — observed at `attempt 3/5` after three gate runs. Two more and
+# `ldap-admin` is locked for 15 minutes, poisoning every later test that authenticates as it,
+# which is exactly the escalation backend/tests/CLAUDE.md warns about.
+#
+# Idempotent (lldap_set_password just sets), so it runs whenever the overlay is needed
+# rather than only when this run started the container. Non-fatal: a failure here should
+# leave the LDAP tests to report their own problem, not abort the whole gate.
+seed_ldap_fixture_users() {
+    local container
+    container="$(overlay_container_name lldap)"
+    if [[ -z "$container" ]]; then
+        echo -e "${YELLOW}==>${NC} lldap container not found — skipping LDAP fixture seeding" >&2
+        return 0
+    fi
+    local user pass ok=true
+    for user_pass in "ldap-admin:admin_password" "ldap-user:user_password"; do
+        user="${user_pass%%:*}"
+        pass="${user_pass##*:}"
+        if ! docker exec "$container" /app/lldap_set_password \
+                --base-url "http://localhost:17170" \
+                --admin-username admin --admin-password admin_password \
+                --username "$user" --password "$pass" >/dev/null 2>&1; then
+            ok=false
+        fi
+    done
+    if $ok; then
+        echo -e "${YELLOW}==>${NC} seeded LDAP fixture passwords (ldap-admin, ldap-user)"
+    else
+        echo -e "${YELLOW}==>${NC} could not seed LDAP fixture passwords in $container —" \
+             "test_auth_buttons.py's LDAP cases will fail on the bind; see" \
+             "backend/tests/AUTH_TEST_SETUP.md" >&2
+    fi
+}
+
 setup_overlays() {
     if $NO_OVERLAYS; then
         echo -e "${YELLOW}==>${NC} --no-overlays: assuming the stack is already configured, skipping auto-detection"
@@ -358,6 +400,13 @@ setup_overlays() {
             "$VENV_PY" "$AUTH_CONFIG_CLI" set "$key" true >/dev/null
             AUTH_KEYS_TOUCHED[$key]=1
         fi
+    done
+
+    # Fixture seeding — same "needed, not merely started by us" rule as the DB reconciliation
+    # above, and for the same reason: an already-running container can be missing the seeding
+    # just as easily as a fresh one.
+    for flag in "${OVERLAYS_NEEDED[@]}"; do
+        [[ "$flag" == "ldap-test" ]] && seed_ldap_fixture_users
     done
 
     # RUN_AUTH_E2E gate (B3.3) — needed by test_ldap_oidc.py and the LDAP half of

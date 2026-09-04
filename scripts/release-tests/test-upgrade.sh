@@ -303,17 +303,32 @@ ensure_secrets_file() {
 
 ensure_clean_test_state() {
     # Refuse if any live opentranscribe-* container is currently running.
-    local running
+    #
+    # `diar-native` is the only project service with no `container_name`, so compose gives
+    # it its DEFAULT name (`<project>-diar-native-<n>`) instead — which matches this
+    # `^opentranscribe-` regex only when the compose project is actually named
+    # `opentranscribe` (true for this rehearsal, which pins COMPOSE_PROJECT_NAME=opentranscribe
+    # below, but not for a real install whose directory is named something else). Also catch
+    # it by compose project label so this stays correct if that pin ever changes.
+    local running running_diar
     running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
-    if [[ -n "$running" ]]; then
+    running_diar=$(docker ps --format '{{.Names}}' \
+        --filter 'label=com.docker.compose.project=opentranscribe' \
+        --filter 'label=com.docker.compose.service=diar-native' || true)
+    if [[ -n "$running" || -n "$running_diar" ]]; then
         gr_die "live opentranscribe-* containers are running:
 $running
+$running_diar
 
 Stop them with: ./opentr.sh stop  (preserves all data)"
     fi
     # Remove stopped opentranscribe-* containers (would collide on container_name)
-    local stopped
+    local stopped stopped_diar
     stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    stopped_diar=$(docker ps -a --format '{{.Names}}' \
+        --filter 'label=com.docker.compose.project=opentranscribe' \
+        --filter 'label=com.docker.compose.service=diar-native' || true)
+    stopped="$(printf '%s\n%s' "$stopped" "$stopped_diar" | sed '/^$/d' | sort -u)"
     if [[ -n "$stopped" ]]; then
         gr_log "removing stopped opentranscribe-* containers from previous runs"
         docker rm $stopped >/dev/null 2>&1 || true
@@ -2012,7 +2027,18 @@ phase_16_rollback_and_assert() {
                 ;;
             *) ;; # third-party infra image, not app-versioned — see comment above
         esac
-    done < <(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-')
+    done < <(printf '%s\n%s\n' \
+        "$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-')" \
+        "$(docker ps --format '{{.Names}}' \
+            --filter 'label=com.docker.compose.project=opentranscribe' \
+            --filter 'label=com.docker.compose.service=diar-native')" \
+        | sed '/^$/d' | sort -u)
+    # `diar-native` has no `container_name`, so its default compose name
+    # (`opentranscribe-diar-native-<n>`, since this rehearsal pins
+    # COMPOSE_PROJECT_NAME=opentranscribe) already matches the name filter above in THIS
+    # rehearsal — the extra project-label filter is defense-in-depth against that pin ever
+    # changing, since diar-native runs `davidamacey/opentranscribe-backend` (the shared
+    # image) and is exactly the kind of app-versioned container this loop must not miss.
 
     # #619's own root cause, guarded against here: with ZERO app containers running,
     # `mismatched` is trivially empty and the assertion below PASSES having checked

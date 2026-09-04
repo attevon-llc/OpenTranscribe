@@ -24,12 +24,18 @@ share/python-wheels/
 MANIFEST
 
 # Virtual environments
-venv/
+#
+# ⚠️ GLOB, not a list of known names. `venv/` alone missed `venv-eval/` — which is not a
+# stray developer directory but one this repo's own docs tell you to create
+# (docs-site/docs/developer-guide/rag-evaluation.md: "python3.12 -m venv backend/venv-eval").
+# It is gitignored, so nothing flagged it, and at 5.6 GB it more than TRIPLED a locally built
+# lite image (2.6 GB -> 8.4 GB) by landing in /app via the `COPY . .` layer. Measured, while
+# trying to measure something else. A published image built on such a host would ship it.
+venv*/
+.venv*/
 env/
 ENV/
 env.bak/
-venv.bak/
-.venv/
 
 # IDE and editors
 .vscode/

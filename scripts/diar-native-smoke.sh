@@ -64,10 +64,15 @@ fail() {
 
 command -v nvidia-smi >/dev/null 2>&1 || fail "nvidia-smi not available — cannot verify GPU residency" 4
 
+# shellcheck source=lib/compose-project.sh
+source "$REPO_ROOT/scripts/lib/compose-project.sh"
+
 # The container name is not fixed: compose derives it from the project name, which
-# --fresh deployments change. Resolve it by image+command rather than hardcoding.
-CONTAINER="$(docker ps --filter "name=diar-native" --format '{{.Names}}' | head -1)"
-[[ -n "$CONTAINER" ]] || fail "no running diar-native container (start it with ./opentr.sh start dev --with-diar-native)" 4
+# --fresh deployments change. Resolve it by compose PROJECT+SERVICE label, never a bare
+# name filter — an unscoped `name=diar-native` reads whatever stack happens to be up on
+# this host (e.g. the live dev one) instead of the one this check is meant to examine.
+CONTAINER="$(overlay_container_name diar-native)"
+[[ -n "$CONTAINER" ]] || fail "no running diar-native container in compose project $(compose_project_name) (start it with ./opentr.sh start dev --with-diar-native)" 4
 
 read -r RESTARTING RESTART_COUNT PID < <(
     docker inspect --format '{{.State.Restarting}} {{.RestartCount}} {{.State.Pid}}' "$CONTAINER"

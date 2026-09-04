@@ -36,11 +36,11 @@ def _function_body(text: str, name: str) -> str:
     return text[start : end + len("\n}\n")]
 
 
-def _run(tmp_path: Path, *, env: dict[str, str]) -> str:
+def _run_raw(tmp_path: Path, *, env: dict[str, str]) -> subprocess.CompletedProcess:
     """Run the real `add_diar_native_overlay` body, mode=start, and print the
-    resulting DIAR_NATIVE_IMAGE. `resolve_diar_native_models_dir` and
-    `diar_native_container_present` are stubbed no-ops — this test is only about
-    the image-pairing export, not model resolution (covered elsewhere)."""
+    resulting DIAR_NATIVE_IMAGE plus the function's own banner. `resolve_diar_native_
+    models_dir` and `diar_native_container_present` are stubbed no-ops — this test is
+    only about the image-pairing export, not model resolution (covered elsewhere)."""
     body = _function_body(OPENTR.read_text(encoding="utf-8"), "add_diar_native_overlay")
     (tmp_path / "docker-compose.diar-native.yml").write_text("services: {}\n")
 
@@ -52,7 +52,7 @@ def _run(tmp_path: Path, *, env: dict[str, str]) -> str:
         'echo "DIAR_NATIVE_IMAGE=${DIAR_NATIVE_IMAGE:-<unset>}"\n'
     )
     full_env = {"PATH": "/usr/bin:/bin", **env}
-    result = subprocess.run(
+    return subprocess.run(
         ["bash", "-c", script],
         cwd=tmp_path,
         env=full_env,
@@ -60,10 +60,17 @@ def _run(tmp_path: Path, *, env: dict[str, str]) -> str:
         text=True,
         check=True,
     )
-    for line in result.stdout.splitlines():
+
+
+def _extract_image(stdout: str) -> str:
+    for line in stdout.splitlines():
         if line.startswith("DIAR_NATIVE_IMAGE="):
             return line.split("=", 1)[1]
-    raise AssertionError(f"DIAR_NATIVE_IMAGE line not found in stdout:\n{result.stdout}")
+    raise AssertionError(f"DIAR_NATIVE_IMAGE line not found in stdout:\n{stdout}")
+
+
+def _run(tmp_path: Path, *, env: dict[str, str]) -> str:
+    return _extract_image(_run_raw(tmp_path, env=env).stdout)
 
 
 def test_lite_plus_with_diar_native_pins_the_sidecar_to_the_lite_image(tmp_path: Path):
@@ -79,8 +86,15 @@ def test_lite_plus_with_diar_native_pins_the_sidecar_to_the_lite_image(tmp_path:
 
 
 def test_control_without_lite_flag_the_pairing_export_does_not_fire(tmp_path: Path):
-    """Must-stay-clean: no --lite means no lite-specific pin from this code path."""
-    image = _run(
+    """Must-stay-clean: no --lite means no lite-specific pin from this code path.
+
+    Checking only `"-lite" not in image` is not a real control: with
+    `add_diar_native_overlay`'s entire body deleted, `DIAR_NATIVE_IMAGE` is never set
+    at all (the harness prints `<unset>`), which also contains no `"-lite"` substring
+    and would pass for the wrong reason. Require proof the function actually ran —
+    its own overlay banner — in addition to the negative image check.
+    """
+    result = _run_raw(
         tmp_path,
         env={
             "LITE_FLAG": "",
@@ -88,6 +102,12 @@ def test_control_without_lite_flag_the_pairing_export_does_not_fire(tmp_path: Pa
             "ENVIRONMENT": "prod",
         },
     )
+    assert "Adding native diarization sidecar" in result.stdout, (
+        "add_diar_native_overlay's own banner never printed — the function did not "
+        "run at all, which would also satisfy the '-lite not in image' check below "
+        "for the wrong reason (a deleted function body leaves DIAR_NATIVE_IMAGE unset)"
+    )
+    image = _extract_image(result.stdout)
     assert "-lite" not in image, f"lite pin fired without --lite: {image!r}"
 
 

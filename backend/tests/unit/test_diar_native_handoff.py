@@ -734,9 +734,29 @@ class TestSidecarReadyTTLCache:
         assert len(health) == 1, "liveness must be cached too, not just readiness"
         reset_readiness_cache()
 
-    def test_the_ttl_can_never_be_configured_below_the_probe_timeout(self):
-        """A TTL under the probe timeout makes every entry born expired, so it is floored."""
-        assert diarizer_native._READY_CACHE_TTL_S > diarizer_native._PROBE_TIMEOUT_S
+    def test_the_ttl_can_never_be_configured_below_the_probe_timeout(self, monkeypatch):
+        """A TTL under the probe timeout makes every entry born expired, so it is floored.
+
+        This exercises the REAL module-level resolution (``max(env value, floor)`` in
+        ``diarizer_native.py``) by configuring a too-small value and reloading the module,
+        rather than comparing the two already-floored module constants against each other
+        (which passes even with the flooring logic deleted outright).
+        """
+        import importlib
+
+        monkeypatch.setenv("DIAR_NATIVE_READY_CACHE_TTL_S", "1")
+        reloaded = importlib.reload(diarizer_native)
+        try:
+            assert reloaded._READY_CACHE_TTL_S > reloaded._PROBE_TIMEOUT_S, (
+                "a configured TTL (1s) below the probe timeout was not floored"
+            )
+            assert reloaded._READY_CACHE_TTL_S == reloaded._PROBE_TIMEOUT_S + 1.0, (
+                "expected the floor value (_PROBE_TIMEOUT_S + 1.0), got "
+                f"{reloaded._READY_CACHE_TTL_S}"
+            )
+        finally:
+            monkeypatch.delenv("DIAR_NATIVE_READY_CACHE_TTL_S", raising=False)
+            importlib.reload(diarizer_native)
 
     def test_a_call_after_the_ttl_lapses_issues_a_fresh_request(self, monkeypatch):
         """Advance the clock rather than sleeping on it.

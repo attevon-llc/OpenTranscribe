@@ -173,14 +173,17 @@ build_compose_files() {
         if [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
             diar_weights_present="true"
         fi
-        # DEPLOYMENT_MODE=lite lacks the export TOOLCHAIN (torch/onnx/onnxscript/etc, #654) to
-        # provision these weights itself -- but an offline install never provisions anything at
-        # install time anyway (see the block comment above: weights only ever arrive pre-seeded
-        # in the package). backend/Dockerfile.lite ships the diar-server binary itself (#660), so
-        # a lite install with weights already pre-seeded can run the sidecar; only a lite install
-        # with NO pre-seeded weights has no way to ever get them and must skip.
+        # Since #654 restored the export toolchain (torch/onnx/onnxscript/etc) to
+        # requirements-lite.txt, DEPLOYMENT_MODE=lite is no longer unable to export these
+        # weights itself -- "a lite image cannot export it locally" is a dead claim. What
+        # actually gates this is that an OFFLINE install never provisions anything at
+        # install time, lite or full (see the block comment above: weights only ever arrive
+        # pre-seeded in the package, since there is no network to export against).
+        # backend/Dockerfile.lite ships the diar-server binary itself (#660), so a lite
+        # install with weights already pre-seeded can run the sidecar; only a lite install
+        # with NO pre-seeded weights has no way to get them in this offline flow and must skip.
         if [ "$deployment_mode_lc" = "lite" ] && [ "$diar_weights_present" = "false" ]; then
-            print_info "Native diarization sidecar skipped (DEPLOYMENT_MODE=lite has no export toolchain to provision weights, and none are pre-seeded at $diar_models_dir)"
+            print_info "Native diarization sidecar skipped (offline lite install has no pre-seeded weights at $diar_models_dir, and this offline flow cannot provision them)"
         elif [ "${ENGINE_DIARIZER_BACKEND:-native}" != "native" ]; then
             print_info "Native diarization sidecar skipped (ENGINE_DIARIZER_BACKEND=${ENGINE_DIARIZER_BACKEND})"
         elif [ "$diar_weights_present" = "true" ]; then

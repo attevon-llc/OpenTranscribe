@@ -77,6 +77,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # ─── Tunables (overridable via env) ─────────────────────────────────────────
 TEST_SCENARIO="lite-mode"
 TEST_PROJECT_NAME="${TEST_PROJECT_NAME:-ot-reltest-lite}"
+# Also the compose project (env-template.sh writes it as COMPOSE_PROJECT_NAME into the
+# generated .env) — export it here too so compose-project.sh's compose_project_name()
+# scopes every `docker ps` lookup below to THIS rehearsal's stack, never whatever
+# unrelated stack (e.g. the live dev one) happens to be running on the same host.
+export COMPOSE_PROJECT_NAME="$TEST_PROJECT_NAME"
 TEST_ROOT="${TEST_ROOT:-/mnt/nvm/opentranscribe-test-runs/${TEST_PROJECT_NAME}-$(date +%Y%m%d-%H%M%S)}"
 TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 
@@ -155,6 +160,8 @@ source "$LIB_DIR/assertions.sh"
 source "$LIB_DIR/versions.sh"
 # shellcheck source=lib/model-cache.sh
 source "$LIB_DIR/model-cache.sh"
+# shellcheck source=../lib/compose-project.sh
+source "$REPO_ROOT/scripts/lib/compose-project.sh"
 
 if [[ -z "$LOCAL_IMAGE_TAG" ]]; then
     LOCAL_IMAGE_TAG="$(ver_to_version)"
@@ -234,7 +241,7 @@ phase_01_build_lite_images() {
     if docker image inspect "davidamacey/opentranscribe-backend-lite:${LOCAL_IMAGE_TAG}" >/dev/null 2>&1; then
         gr_ok "backend-lite image already present"
     else
-        gr_log "building lite backend image (~2 GB, no CUDA/faster-whisper)"
+        gr_log "building lite backend image (no CUDA/faster-whisper; carries the ONNX export toolchain)"
         docker build \
             -t "davidamacey/opentranscribe-backend-lite:${LOCAL_IMAGE_TAG}" \
             -f "$REPO_ROOT/backend/Dockerfile.lite" \
@@ -436,7 +443,9 @@ phase_06_topology_check() {
     echo "backend image: $backend_image" | tee -a "$report"
 
     local gpu_worker
-    gpu_worker=$(docker ps --format '{{.Names}}' --filter 'name=celery-worker-gpu' || true)
+    gpu_worker=$(docker ps --format '{{.Names}}' \
+        --filter "label=com.docker.compose.project=$(compose_project_name)" \
+        --filter 'name=celery-worker-gpu' || true)
     [[ -z "$gpu_worker" ]] || gr_die "GPU worker container present ($gpu_worker) in a lite-mode rehearsal"
     echo "no GPU worker container: confirmed" | tee -a "$report"
 }
@@ -448,8 +457,8 @@ phase_06b_sidecar_check() {
     local report="$TEST_ROOT/topology.txt"
 
     local sidecar_name
-    sidecar_name=$(docker ps --format '{{.Names}}' --filter 'name=diar-native' | head -1)
-    [[ -n "$sidecar_name" ]] || gr_die "no diar-native sidecar container found — --with-diar-native overlay did not start it"
+    sidecar_name="$(overlay_container_name diar-native)"
+    [[ -n "$sidecar_name" ]] || gr_die "no diar-native sidecar container found in project $(compose_project_name) — --with-diar-native overlay did not start it"
 
     local sidecar_image
     sidecar_image=$(docker inspect "$sidecar_name" --format '{{.Config.Image}}' 2>/dev/null || echo "")
@@ -459,11 +468,15 @@ phase_06b_sidecar_check() {
     local healthz
     healthz=$(docker exec "$sidecar_name" curl -fsS http://localhost:8701/healthz 2>/dev/null || echo "")
     [[ -n "$healthz" ]] || gr_die "diar-native /healthz did not respond"
-    echo "$healthz" | grep -q '"cpu"' || gr_die "diar-native /healthz does not report cpu in supported_devices: $healthz"
-    echo "diar-native /healthz reports cpu: confirmed" | tee -a "$report"
+    # Assert the LOADED `devices`, never `supported_devices` — the latter is a build-time
+    # capability list a CUDA-only sidecar also reports, which cannot distinguish a lite
+    # CPU sidecar from a full CUDA one (the exact failure this check exists to catch;
+    # see native_embedding_client.py's devices-vs-supported_devices note).
+    echo "$healthz" | grep -q '"devices":\["cpu"\]' || gr_die "diar-native /healthz does not report cpu as a LOADED device: $healthz"
+    echo "diar-native /healthz reports cpu loaded: confirmed" | tee -a "$report"
 
     local cpu_worker_name
-    cpu_worker_name=$(docker ps --format '{{.Names}}' --filter 'name=celery-cpu-worker' | head -1)
+    cpu_worker_name=$(overlay_container_name celery-cpu-worker)
     if [[ -n "$cpu_worker_name" ]]; then
         if docker logs "$cpu_worker_name" 2>&1 | grep -q "Speaker embeddings served by the diar-native sidecar"; then
             echo "celery-cpu-worker logged the sidecar-served message: confirmed" | tee -a "$report"

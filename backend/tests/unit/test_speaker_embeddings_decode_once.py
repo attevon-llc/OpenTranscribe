@@ -150,6 +150,10 @@ class TestNumericalEquivalenceWithTheOldPerSegmentPath:
         from app.services.audio_segment_utils import select_top_segments
 
         grouped = group_segments_by_speaker(segments, speaker_mapping)
+        assert grouped, (
+            "no speaker groups were built from the fixture segments — the equality "
+            "loop below would iterate zero times and pass vacuously"
+        )
         old_result: dict[int, list[np.ndarray]] = {}
         for speaker_id, speaker_segs in grouped.items():
             merged = merge_adjacent_segments(speaker_segs)
@@ -166,6 +170,10 @@ class TestNumericalEquivalenceWithTheOldPerSegmentPath:
             if embeddings:
                 old_result[speaker_id] = embeddings
 
+        assert new_result, (
+            "extract_embeddings_for_segments returned no speakers at all — the "
+            "equality comparison below would iterate zero times and pass vacuously"
+        )
         assert set(new_result.keys()) == set(old_result.keys())
         for speaker_id in new_result:
             assert len(new_result[speaker_id]) == len(old_result[speaker_id])

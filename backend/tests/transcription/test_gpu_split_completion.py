@@ -228,9 +228,31 @@ class TestDispatchGpuSplitDiarizeChain:
 
     @patch(f"{_CORE}._claim_gpu_split_diarize_dispatch", return_value=True)
     def test_dispatches_a_two_link_chain_with_link_error(self, mock_claim):
-        from app.tasks.transcription.core import _dispatch_gpu_split_diarize_chain
+        """Proves the chain built here is diarize_gpu_task -> finalize_transcription,
+        not just "some chain got apply_async'd once with a link_error".
 
-        with patch("celery.canvas._chain.apply_async") as mock_apply_async:
+        Patching only `celery.canvas._chain.apply_async` (as this test used to) leaves
+        `chain(...)`'s own arguments unobserved, so dropping the finalize_transcription
+        link entirely — e.g. `chain(diarize_gpu_task.s(...))`, a single-link "chain" —
+        still calls `.apply_async(link_error=...)` exactly once and stayed green. Patch
+        `chain` itself (mirrors TestDispatchGpuSplitDiarizeChainQueueSelection above) so
+        the actual signatures passed to it can be inspected.
+        """
+        from app.tasks.transcription.core import _dispatch_gpu_split_diarize_chain
+        from app.tasks.transcription.postprocess import finalize_transcription
+
+        captured_signatures = {}
+        mock_apply_async_calls: list[dict] = []
+
+        class _FakeChainInstance:
+            def apply_async(self, **kwargs):
+                mock_apply_async_calls.append(kwargs)
+
+        def _fake_chain_factory(*sigs):
+            captured_signatures["sigs"] = sigs
+            return _FakeChainInstance()
+
+        with patch(f"{_CORE}.chain", _fake_chain_factory):
             result = _dispatch_gpu_split_diarize_chain(
                 task_id="task-1",
                 file_uuid="file-uuid-1",
@@ -239,10 +261,21 @@ class TestDispatchGpuSplitDiarizeChain:
             )
 
         assert result is True
-        mock_apply_async.assert_called_once()
+        assert len(mock_apply_async_calls) == 1
         # link_error must be wired so a genuine failure anywhere in this second leg
         # still marks the file ERROR — not silently swallowed.
-        assert mock_apply_async.call_args.kwargs["link_error"]
+        assert mock_apply_async_calls[0]["link_error"]
+
+        sigs = captured_signatures["sigs"]
+        assert len(sigs) == 2, (
+            f"expected a two-link chain (diarize_gpu_task -> finalize_transcription), "
+            f"got {len(sigs)} link(s) — dropping the finalize_transcription link must "
+            f"turn this test red"
+        )
+        assert sigs[1].task == finalize_transcription.name, (
+            f"second chain link is {sigs[1].task!r}, not finalize_transcription — "
+            f"the completion link the gpu-split second leg depends on is missing"
+        )
 
     @patch(f"{_CORE}._claim_gpu_split_diarize_dispatch", return_value=False)
     def test_skips_dispatch_when_claim_already_taken(self, mock_claim):

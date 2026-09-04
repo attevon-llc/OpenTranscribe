@@ -84,21 +84,55 @@ def to_annotation(result):
     return ann
 
 
+#: ``TranscriptionConfig.config_hash()`` deliberately omits ``diarizer_backend`` (it hashes
+#: model/compute/device only), so ``ModelManager.get_diarizer`` cannot tell a 'native' request
+#: apart from a 'pyannote' one for an otherwise-identical config — it just returns whatever it
+#: has cached. Without ``release_all()`` between the two calls below, a dead sidecar makes the
+#: 'native' iteration cache an in-process ``SpeakerDiarizer`` (the fallback), and the singleton
+#: then hands that SAME instance back for the 'pyannote' iteration — a perfect-parity report
+#: that never ran the native engine at all. ``expected_engine_class`` is the second, independent
+#: guard: even if the cache were ever trusted again, a requested backend that comes back as the
+#: wrong class is a silent fallback, not parity, and must fail loudly rather than print a note.
+EXPECTED_ENGINE_CLASS = {'native': 'NativeSpeakerDiarizer', 'pyannote': 'SpeakerDiarizer'}
+
+
+class EngineMismatchError(RuntimeError):
+    """Raised when a requested diarizer_backend did not produce the engine it named."""
+
+
 def run_engine(backend: str, audio) -> dict:
-    """Diarize with one backend through the real ModelManager path."""
+    """Diarize with one backend through the real ModelManager path.
+
+    Forces a fresh build (never a cache hit) so 'native' and 'pyannote' cannot be silently
+    served from the same cached instance, then asserts the engine that actually ran matches
+    the one requested — see ``EXPECTED_ENGINE_CLASS`` above for why both are necessary.
+    """
     from app.transcription.config import TranscriptionConfig
     from app.transcription.model_manager import ModelManager
 
     config = dataclasses.replace(TranscriptionConfig.from_environment(), diarizer_backend=backend)
-    diarizer = ModelManager.get_instance().get_diarizer(config)
+    manager = ModelManager.get_instance()
+    manager.release_all()  # never trust the cache across a backend switch — see note above
+    diarizer = manager.get_diarizer(config)
+
+    # The class name is the ONLY honest answer to "which engine ran": asking for `native`
+    # and silently receiving SpeakerDiarizer is the documented failure mode.
+    engine_class = type(diarizer).__name__
+    expected = EXPECTED_ENGINE_CLASS[backend]
+    if engine_class != expected:
+        raise EngineMismatchError(
+            f'requested backend={backend!r} but ModelManager built {engine_class!r} '
+            f'(expected {expected!r}) — this is a silent engine fallback, not parity. '
+            'Fix the sidecar/config before trusting any DER number from this run.'
+        )
+
     started = time.perf_counter()
     result, _overlap, _embeddings = diarizer.diarize(audio)
     elapsed = time.perf_counter() - started
     return {
         'requested_backend': backend,
-        # The class name is the ONLY honest answer to "which engine ran": asking for
-        # `native` and silently receiving SpeakerDiarizer is the documented failure mode.
-        'engine_class': type(diarizer).__name__,
+        'engine_class': engine_class,
+        'engine_instance_id': id(diarizer),
         'segments': len(result),
         'speakers': sorted({str(s) for s in result.speaker}),
         'elapsed_s': round(elapsed, 2),
@@ -118,6 +152,20 @@ def main() -> int:
         help='Crop the reference to this many seconds — see the module docstring.',
     )
     parser.add_argument('--app-root', default=DEFAULT_APP_ROOT)
+    parser.add_argument(
+        '--max-der',
+        type=float,
+        default=0.15,
+        help='Fail if either engine\'s DER(collar=0.25) exceeds this. "Parity" is meaningless '
+        'if both engines are simply bad.',
+    )
+    parser.add_argument(
+        '--max-der-delta',
+        type=float,
+        default=0.03,
+        help='Fail if |native - pyannote| DER(collar=0.25) exceeds this — makes "parity" a '
+        'decision, not just a printed number.',
+    )
     args = parser.parse_args()
 
     sys.path.insert(0, args.app_root)
@@ -169,14 +217,60 @@ def main() -> int:
         )
 
     native, pyannote = results.get('native', {}), results.get('pyannote', {})
-    if 'der_collar250ms' in native and 'der_collar250ms' in pyannote:
-        delta = native['der_collar250ms'] - pyannote['der_collar250ms']
-        faster = pyannote['elapsed_s'] / max(native['elapsed_s'], 1e-9)
-        print(f'\nnative - pyannote DER delta: {delta:+.4f}  |  native is {faster:.1f}x the speed')
+
+    if 'error' in native and 'error' in pyannote:
+        print('\nFATAL: BOTH engines failed to run — there is no parity to report.')
+        return 1
+
+    if 'error' in native or 'error' in pyannote:
+        failed = 'native' if 'error' in native else 'pyannote'
+        print(f'\nFATAL: {failed} failed to run — a one-sided result is not a parity report.')
+        return 1
+
+    # Defense in depth: two "different" engines that resolved to the same object would be an
+    # engine compared to itself. Checked on the CLASS, not on id().
+    #
+    # ⚠️ id() is unusable here and the reason is not obvious. run_engine calls
+    # release_all() before each build, so the first diarizer is dropped and may be collected
+    # before the second is allocated — and CPython reuses the address, so two genuinely
+    # distinct, sequentially-created objects can share an id(). Only a *live* reference makes
+    # id() unique, and holding one here would pin a released GPU model in memory for the
+    # duration of the second run: the check would corrupt the measurement it guards. So this
+    # asserts the distinct class names run_engine already verified against the requested
+    # backend, which is the actual invariant and has no lifetime hazard.
+    if native['engine_class'] == pyannote['engine_class']:
+        print(
+            f'\nFATAL: both runs used {native["engine_class"]} — this is an engine compared '
+            'to itself, not a parity measurement.'
+        )
+        return 1
+    for record in (native, pyannote):
+        record.pop('engine_instance_id', None)
+
+    delta = native['der_collar250ms'] - pyannote['der_collar250ms']
+    faster = pyannote['elapsed_s'] / max(native['elapsed_s'], 1e-9)
+    print(f'\nnative - pyannote DER delta: {delta:+.4f}  |  native is {faster:.1f}x the speed')
 
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(results, indent=2), encoding='utf-8')
-    return 0
+
+    rc = 0
+    if abs(delta) > args.max_der_delta:
+        print(
+            f'FAIL: |DER delta|={abs(delta):.4f} exceeds --max-der-delta={args.max_der_delta} '
+            '— parity does not hold.'
+        )
+        rc = 1
+    for backend, record in (('native', native), ('pyannote', pyannote)):
+        if record['der_collar250ms'] > args.max_der:
+            print(
+                f'FAIL: {backend} DER={record["der_collar250ms"]:.4f} exceeds '
+                f'--max-der={args.max_der}.'
+            )
+            rc = 1
+    if rc == 0:
+        print('PASS: engines differ, both ran, both within threshold.')
+    return rc
 
 
 if __name__ == '__main__':

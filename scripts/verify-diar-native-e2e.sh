@@ -5,6 +5,14 @@
 # evidence of anything. Every check here answers "which engine actually served this job?"
 # rather than "did the request succeed?".
 #
+# ⚠️ MANUAL ONLY, deliberately: this script has no caller in test-matrix.sh,
+# run-integration-tests.sh, release-tests/, or CI. The `fresh`/`upgrade` scenarios mutate the
+# host's live models directory (see the incident note below) and `current`'s "current"
+# restart hits whatever compose project `compose_project_name()` resolves to on THIS host at
+# the moment it runs — neither is safe to fire unattended from an automated gate the way the
+# release-tests/ scenarios (which own their own isolated stack end to end) are. It stays a
+# human-run diagnostic; if that changes, wire it in explicitly rather than assuming coverage.
+#
 # Scenarios:
 #   fresh    - no models directory at all. What a `git clone` + `start` looks like.
 #   upgrade  - a populated models directory with NO diar-provision.json marker. What every
@@ -33,15 +41,22 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT" || exit 1
 
+# shellcheck source=lib/compose-project.sh
+source "$REPO_ROOT/scripts/lib/compose-project.sh"
+
 SCENARIO="${1:-current}"
 LIVE_MODELS_DIR="$REPO_ROOT/models/diar-native"
 MODELS_DIR="${MODELS_DIR:-$LIVE_MODELS_DIR}"
 # Anchor the stash beside the target, not beside the live tree — a stash written into
 # models/ while MODELS_DIR points elsewhere is how an "isolated" run still litters live data.
 STASH_DIR="$(dirname "$MODELS_DIR")/.$(basename "$MODELS_DIR")-stashed-by-verify"
-SIDECAR="$(docker ps --filter "label=com.docker.compose.service=diar-native" \
-                     --format '{{.Names}}' | head -1)"
-BACKEND="opentranscribe-backend"
+# Both resolved from the SAME compose project (issue: previously SIDECAR was found by an
+# unscoped service-label filter while BACKEND was a hardcoded live-stack name, so under
+# the --fresh recipe documented above the three checks in this script could each read a
+# different stack and still print "all checks passed").
+PROJECT="$(compose_project_name)"
+SIDECAR="$(overlay_container_name diar-native)"
+BACKEND="$(overlay_container_name backend)"
 
 # Read the backend's diar-native log lines ONCE, into a variable.
 #
@@ -156,7 +171,8 @@ if [ -f "$MODELS_DIR/diar-provision.json" ]; then
     [ "$PRECISION" = "fp16" ] && pass "gender_precision=fp16" \
                              || fail "gender_precision=$PRECISION (expected fp16)"
     SETNAME=$(python3 -c "import json;print(json.load(open('$MODELS_DIR/diar-provision.json'))['model_set'])" 2>/dev/null)
-    pass "model_set=$SETNAME, $(du -sh "$MODELS_DIR" | cut -f1) on disk"
+    [ -n "$SETNAME" ] && pass "model_set=$SETNAME, $(du -sh "$MODELS_DIR" | cut -f1) on disk" \
+                      || fail "could not read model_set from $MODELS_DIR/diar-provision.json"
 else
     fail "no diar-provision.json at $MODELS_DIR"
 fi
@@ -164,7 +180,7 @@ fi
 # --- 3. readiness -----------------------------------------------------------------
 printf '\n\033[1m3. Sidecar readiness\033[0m\n'
 if [ -z "$SIDECAR" ]; then
-    fail "no diar-native container in this compose project"
+    fail "no diar-native container in compose project $PROJECT"
 else
     HEALTH=$(docker exec "$SIDECAR" curl -s -o /dev/null -w '%{http_code}' http://localhost:8701/healthz 2>/dev/null)
     READY=$(docker exec "$SIDECAR" curl -s -o /dev/null -w '%{http_code}' http://localhost:8701/readyz 2>/dev/null)

@@ -883,8 +883,10 @@ preflight_upgrade_env() {
             if [ "$deployment_mode" = "lite" ]; then
                 echo -e "${YELLOW}⚠️  engine.diarizer_backend resolves to native, but this is a lite deployment${NC}"
                 echo -e "${YELLOW}   (DEPLOYMENT_MODE=lite): $diar_dir has never been provisioned and no${NC}"
-                echo -e "${YELLOW}   HUGGINGFACE_TOKEN is set — a lite image cannot export it locally.${NC}"
-                echo -e "${YELLOW}   Diarization will use the in-process PyAnnote engine; not blocking the upgrade.${NC}"
+                echo -e "${YELLOW}   HUGGINGFACE_TOKEN is set to provision it. Since #654, lite ships the same export${NC}"
+                echo -e "${YELLOW}   toolchain as a full install, so this is NOT a lite limitation — set${NC}"
+                echo -e "${YELLOW}   HUGGINGFACE_TOKEN and it will export on next startup, same as a full install.${NC}"
+                echo -e "${YELLOW}   Diarization will use the in-process PyAnnote engine until then; not blocking the upgrade.${NC}"
             else
                 problems+=("engine.diarizer_backend resolves to native, but $diar_dir has never been provisioned and no HUGGINGFACE_TOKEN is set to provision it on next startup — run './opentranscribe.sh download-models diar-native' first, or set HUGGINGFACE_TOKEN in .env")
             fi
@@ -978,8 +980,21 @@ compose_down_for_upgrade() {
         return 0
     fi
 
-    local remaining
-    remaining=$(docker ps -aq --filter "name=^opentranscribe-" | wc -l)
+    # A `name=^opentranscribe-` filter alone misses `diar-native`: it is the only project
+    # service with no `container_name`, so compose gives it its DEFAULT name
+    # (`<project>-diar-native-<n>`), which does not start with `opentranscribe-` unless the
+    # compose project itself happens to be named that. Prefer counting by the compose
+    # project label instead (read off whatever project container is still around, so this
+    # still works after a partial teardown) — that covers every service including
+    # diar-native in one pass with no double-count risk. Fall back to the name regex only
+    # when no project label can be found (e.g. every container is already gone).
+    local project remaining
+    project=$(docker ps -a --filter "name=^opentranscribe-" --format '{{.Label "com.docker.compose.project"}}' | head -1)
+    if [ -n "$project" ]; then
+        remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$project" | wc -l)
+    else
+        remaining=$(docker ps -aq --filter "name=^opentranscribe-" | wc -l)
+    fi
     if [ "$remaining" -ne 0 ]; then
         echo -e "${RED}❌ Teardown failed and $remaining container(s) remain${NC}"
         return 1
@@ -1146,6 +1161,17 @@ resolve_diar_native_downloader_image() {
     fi
     local tag
     tag=$(read_env_value OT_IMAGE_TAG)
+    # DEPLOYMENT_MODE=lite must produce the export from the LITE image, mirroring
+    # opentr.sh's `[ -n "${LITE_FLAG:-}" ] && export DIAR_NATIVE_IMAGE=...backend-lite...`.
+    # Without this branch, `download-models diar-native` on a lite install pulled the
+    # 15.2 GB full image to produce a 484 MB export — breaking this function's own header
+    # contract that the export must come from the image the deployment actually runs.
+    local deployment_mode
+    deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
+    if [ "$deployment_mode" = "lite" ]; then
+        echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend-lite:${tag:-latest}"
+        return 0
+    fi
     echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${tag:-latest}"
 }
 

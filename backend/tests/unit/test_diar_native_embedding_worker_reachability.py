@@ -129,13 +129,32 @@ def test_the_embedding_path_needs_no_shared_volume_on_the_lite_worker():
         "no shared path, and mounting one would incorrectly imply lite diarizes"
     )
 
+    base_doc = _load_compose(REPO_ROOT / "docker-compose.yml")
     lite_doc = _load_compose(REPO_ROOT / "docker-compose.lite.yml")
-    cpu_worker_lite = (lite_doc.get("services") or {}).get("celery-cpu-worker") or {}
-    volumes = cpu_worker_lite.get("volumes") or []
-    volume_text = "\n".join(volumes) if isinstance(volumes, list) else str(volumes)
+    lite_cpu_worker = (lite_doc.get("services") or {}).get("celery-cpu-worker") or {}
+
+    # docker-compose.lite.yml does not declare a `volumes:` key for celery-cpu-worker
+    # at all, so under compose's file-merge semantics the BASE service's `volumes:`
+    # list stays in effect once `--lite` is layered on. Checking lite's own (absent)
+    # `volumes:` key — as this test used to — compares against "", which makes the
+    # forbidden-mount assertion below pass vacuously regardless of what's mounted.
+    # Guard that assumption explicitly, then check the list that's ACTUALLY effective.
+    assert "volumes" not in lite_cpu_worker, (
+        "docker-compose.lite.yml now declares its own `volumes:` for celery-cpu-worker "
+        "— under compose merge semantics that list REPLACES (not appends to) the base "
+        "service's, so this test must check lite's list directly, not base's"
+    )
+    effective_volumes = (base_doc.get("services") or {}).get("celery-cpu-worker", {}).get(
+        "volumes"
+    ) or []
+    assert effective_volumes, (
+        "celery-cpu-worker has no volumes at all in docker-compose.yml — the "
+        "forbidden-mount check below would vacuously pass against an empty list"
+    )
+    volume_text = "\n".join(effective_volumes)
     for forbidden in ("diar-native-tmp", "transcription-temp"):
         assert forbidden not in volume_text, (
-            f"docker-compose.lite.yml mounts '{forbidden}' onto celery-cpu-worker — "
-            f"the embedding path needs no shared volume; this implies (incorrectly) "
-            f"that lite diarizes"
+            f"celery-cpu-worker mounts '{forbidden}' (effective under --lite, since "
+            f"lite adds no volumes of its own) — the embedding path needs no shared "
+            f"volume; this implies (incorrectly) that lite diarizes"
         )

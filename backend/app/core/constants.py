@@ -1400,9 +1400,13 @@ def resolve_engine_shared_volume_path() -> str:
 
     So: if the configured directory does not exist but the coded default does, the configured
     value is stale — prefer the default and say so loudly. On a correctly configured install
-    the configured path exists (the image pre-creates it and the volume mounts over it), so
-    this check is inert. It deliberately does NOT rewrite ``.env``; this repo never edits an
-    operator's ``.env`` without confirmation.
+    the configured path exists (the image pre-creates it and the volume mounts over it) —
+    **but existing is NOT sufficient proof it is the real mount.** ``preprocess.py`` used to do
+    ``os.makedirs(os.environ.get("ENGINE_SHARED_VOLUME_PATH", "/tmp"))`` unconditionally, which
+    recreates a stale configured path *inside the writer's own writable layer* the moment
+    anything tries to use it — so a present-but-stale directory is exactly the failure mode
+    this function exists to catch, not a case where the check is inert. It deliberately does
+    NOT rewrite ``.env``; this repo never edits an operator's ``.env`` without confirmation.
     """
     import logging
     import os
@@ -1410,21 +1414,68 @@ def resolve_engine_shared_volume_path() -> str:
     configured = os.environ.get("ENGINE_SHARED_VOLUME_PATH")
     if not configured or configured == ENGINE_SHARED_VOLUME_DEFAULT:
         return ENGINE_SHARED_VOLUME_DEFAULT
-    if os.path.isdir(configured):
+
+    configured_exists = os.path.isdir(configured)
+    default_exists = os.path.isdir(ENGINE_SHARED_VOLUME_DEFAULT)
+
+    if not configured_exists:
+        if not default_exists:
+            # Neither exists. Honour the operator's value rather than inventing one — the
+            # caller's own mkdir//not-found logging is then the accurate signal.
+            return configured
+        logging.getLogger(__name__).warning(
+            "ENGINE_SHARED_VOLUME_PATH=%s does not exist in this container, but %s does — "
+            "using the latter. This usually means .env predates the pipeline_scratch volume "
+            "consolidation (issue #661 E2), which removed the transcription-temp volume that "
+            "path named. Update ENGINE_SHARED_VOLUME_PATH in .env to silence this.",
+            configured,
+            ENGINE_SHARED_VOLUME_DEFAULT,
+        )
+        return ENGINE_SHARED_VOLUME_DEFAULT
+
+    if not default_exists:
+        # This container never got the shared mount at all (e.g. a reader that predates it)
+        # — nothing to compare against, so honour the operator's value.
         return configured
-    if not os.path.isdir(ENGINE_SHARED_VOLUME_DEFAULT):
-        # Neither exists. Honour the operator's value rather than inventing one — the
-        # caller's own mkdir//not-found logging is then the accurate signal.
+
+    # Both paths "exist" — but a directory recreated by a stale os.makedirs call in this
+    # container's writable layer also passes os.path.isdir. Discriminate by filesystem
+    # device: the real shared mount and the coded default live on the same mounted volume,
+    # a stale local directory does not.
+    configured_dev = _stat_dev(configured)
+    default_dev = _stat_dev(ENGINE_SHARED_VOLUME_DEFAULT)
+    if configured_dev is not None and configured_dev == default_dev:
         return configured
+
     logging.getLogger(__name__).warning(
-        "ENGINE_SHARED_VOLUME_PATH=%s does not exist in this container, but %s does — "
-        "using the latter. This usually means .env predates the pipeline_scratch volume "
+        "ENGINE_SHARED_VOLUME_PATH=%s exists but is not on the same filesystem as the "
+        "shared %s mount — treating it as a stale directory left behind in this "
+        "container's writable layer (os.makedirs recreates a missing configured path "
+        "there silently) rather than the real shared volume, and using the default "
+        "instead. This usually means .env predates the pipeline_scratch volume "
         "consolidation (issue #661 E2), which removed the transcription-temp volume that "
         "path named. Update ENGINE_SHARED_VOLUME_PATH in .env to silence this.",
         configured,
         ENGINE_SHARED_VOLUME_DEFAULT,
     )
     return ENGINE_SHARED_VOLUME_DEFAULT
+
+
+def _stat_dev(path: str) -> int | None:
+    """``os.stat(path).st_dev``, or ``None`` if it cannot be stat'd.
+
+    Broken out so tests can simulate two directories that exist but live on different
+    filesystems — every real container does (a bind-mounted named volume vs. the image's
+    writable layer), but a pytest ``tmp_path`` fixture puts everything on one device, so a
+    filesystem-only test can't exercise the real comparison. Tests monkeypatch this function
+    directly instead.
+    """
+    import os
+
+    try:
+        return os.stat(path).st_dev
+    except OSError:
+        return None
 
 
 # Root of the consolidated pipeline scratch volume (issue #661 E2) — one named volume,

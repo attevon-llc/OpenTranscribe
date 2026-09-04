@@ -340,6 +340,30 @@ detect_and_configure_hardware() {
   export BACKEND_DOCKERFILE="Dockerfile.prod"
   export BUILD_ENV="development"
 
+  # FORCE_CPU_MODE=true in .env is an explicit opt-out of GPU usage even on a GPU host —
+  # opentranscribe.sh has honoured this since it was added; opentr.sh silently ignored it,
+  # so `./opentr.sh start dev` loaded the nvidia GPU reservation (and the diar-native GPU
+  # overlay, gated on the same $DOCKER_RUNTIME below) anyway. `--cpu`/`--lite` already clear
+  # DOCKER_RUNTIME themselves; this only covers the .env-only opt-out those flags don't set.
+  if [ "${FORCE_CPU_MODE:-}" = "true" ]; then
+    echo "🧮 CPU-only mode (FORCE_CPU_MODE=true in .env) — skipping GPU detection"
+    export TORCH_DEVICE="cpu"
+    export COMPUTE_TYPE="int8"
+    export USE_GPU="false"
+    export DOCKER_RUNTIME=""
+    export BACKEND_DOCKERFILE="Dockerfile.prod"
+    export BUILD_ENV="development"
+    TARGETPLATFORM="linux/$([[ "$ARCH" == "arm64" ]] && echo "arm64" || echo "amd64")"
+    export TARGETPLATFORM
+    echo "📋 Hardware Configuration:"
+    echo "  Platform: $PLATFORM"
+    echo "  Architecture: $ARCH"
+    echo "  Device: $TORCH_DEVICE"
+    echo "  Compute Type: $COMPUTE_TYPE"
+    echo "  Docker Runtime: default"
+    return
+  fi
+
   # Check for NVIDIA GPU
   if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
     echo "✅ NVIDIA GPU detected"
@@ -720,11 +744,11 @@ add_diar_native_overlay() {
       # produces the exact mismatched image pair described in B4: lite workers on
       # one image, the sidecar on another. This must be exported before the
       # dev-mode default below, which only fires when this is unset. Model source
-      # for lite is a separate decision (opentranscribe.sh has no Python exporter
-      # toolchain in the lite image) — see resolve_diar_native_models_dir and
-      # DIAR_NATIVE_MODELS_DIR in .env.example; lite's speaker embeddings are still
-      # PyAnnote-free-at-runtime even though the sidecar can't provision its own
-      # models on this image.
+      # for lite used to be a separate decision on the premise that the lite image had no
+      # Python exporter toolchain — since #654 restored it to requirements-lite.txt, that
+      # premise is dead: lite provisions its own ONNX/PLDA export on first boot exactly
+      # like a full install (see resolve_diar_native_models_dir and DIAR_NATIVE_MODELS_DIR
+      # in .env.example). Lite's speaker embeddings stay PyAnnote-free-at-runtime either way.
       [ -n "${LITE_FLAG:-}" ] && export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}}"
 
       # The overlay defaults to the PUBLISHED backend image, which is correct for a

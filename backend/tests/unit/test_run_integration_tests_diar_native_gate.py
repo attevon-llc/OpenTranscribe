@@ -32,9 +32,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "scripts" / "run-integration-tests.sh"
+PREDICATE_LIB = REPO_ROOT / "scripts" / "lib" / "diar-native-expected.sh"
 
 pytestmark = pytest.mark.skipif(
-    not SCRIPT.exists(), reason="scripts/run-integration-tests.sh not present in this checkout"
+    not (SCRIPT.exists() and PREDICATE_LIB.exists()),
+    reason="run-integration-tests.sh / lib/diar-native-expected.sh not present in this checkout",
 )
 
 
@@ -43,19 +45,28 @@ def _source() -> str:
 
 
 def _predicate_block() -> str:
-    """The `read_env_var` + `diar_native_sidecar_expected` function definitions, verbatim."""
-    source = _source()
-    match = re.search(
-        r"^read_env_var\(\) \{\n.*?^diar_native_sidecar_expected\(\) \{\n.*?^\}$",
-        source,
-        re.DOTALL | re.MULTILINE,
+    """A `source` of the REAL predicate library.
+
+    This used to splice the `read_env_var` + `diar_native_sidecar_expected` function bodies
+    out of run-integration-tests.sh by regex. Both moved to scripts/lib/diar-native-expected.sh
+    when run-dev-tests.sh needed the same predicate (a second copy of "is native diarization
+    configured?" is how this repo's env-var drift starts), and the regex then matched nothing —
+    9 tests failed at once.
+
+    Sourcing the library is strictly better than re-splicing text from its new home: the tests
+    exercise the same file the gate itself sources, so the two cannot diverge, and a future move
+    breaks one line here instead of a regex. The library takes no caller globals by design.
+    """
+    assert "diar_native_sidecar_expected()" in PREDICATE_LIB.read_text(encoding="utf-8"), (
+        f"{PREDICATE_LIB.name} no longer defines diar_native_sidecar_expected() — if it moved "
+        f"again, repoint this test rather than deleting it: it guards the #669 "
+        f"weights-or-token predicate reuse"
     )
-    assert match, (
-        "diar_native_sidecar_expected()/read_env_var() were not found in "
-        "run-integration-tests.sh — if they were renamed, update this test rather than "
-        "deleting it: it guards the #669 weights-or-token predicate reuse"
+    assert "diar-native-expected.sh" in _source(), (
+        "run-integration-tests.sh no longer sources the shared predicate library, so these "
+        "tests would be exercising a predicate the gate does not actually use"
     )
-    return match.group(0)
+    return f'source "{PREDICATE_LIB}"'
 
 
 def _decision_block() -> str:
@@ -76,8 +87,9 @@ def _decision_block() -> str:
 
 
 def test_the_predicate_and_decision_blocks_are_present():
-    """Vacuity guard for the two regexes above."""
-    assert "diar_native_sidecar_expected" in _predicate_block()
+    """Vacuity guard: the predicate library and the decision regex both really resolve."""
+    assert "diar-native-expected.sh" in _predicate_block()
+    assert "diar_native_sidecar_expected()" in PREDICATE_LIB.read_text(encoding="utf-8")
     assert "FAILED_PHASES+=" in _decision_block()
     assert "SKIPPED_PHASES+=" in _decision_block()
 
@@ -98,9 +110,16 @@ def _run(
     backend: str = "native",
     models_dir_has_export: bool = False,
     hf_token: str = "",
+    set_models_dir: bool = True,
+    model_cache_dir_has_export: bool = False,
 ) -> tuple[int, list[str], list[str]]:
     """Run the real predicate + decision block under bash, with a stubbed smoke script and
-    env inputs, and report (bash_exit, FAILED_PHASES, SKIPPED_PHASES)."""
+    env inputs, and report (bash_exit, FAILED_PHASES, SKIPPED_PHASES).
+
+    ``set_models_dir=False`` + ``model_cache_dir_has_export=True`` exercises the
+    MODEL_CACHE_DIR cascade, which is the ONLY shape an air-gapped install actually takes:
+    ``.env.example`` ships DIAR_NATIVE_MODELS_DIR commented out.
+    """
     project_root = _make_fake_smoke_script(tmp_path, smoke_rc)
 
     models_dir = tmp_path / "diar-models"
@@ -108,13 +127,31 @@ def _run(
         models_dir.mkdir(parents=True, exist_ok=True)
         (models_dir / "weights.onnx").write_text("x", encoding="utf-8")
 
+    cache_dir = tmp_path / "model-cache"
+    if model_cache_dir_has_export:
+        (cache_dir / "diar-native").mkdir(parents=True, exist_ok=True)
+        (cache_dir / "diar-native" / "weights.onnx").write_text("x", encoding="utf-8")
+
     snippet = (
         "set -uo pipefail\n"
         f'PROJECT_ROOT="{project_root}"\n'
+        # Point the predicate library's .env lookup at this test's tmp dir, which has no
+        # .env. Without it the library reads the REAL repo .env, and since the predicate
+        # resolves inputs as ${VAR:-$(read .env)} — where `:-` treats an EMPTY value as
+        # unset — passing hf_token="" would fall through to the developer's actual
+        # HUGGINGFACE_TOKEN and turn every "sidecar not expected" case into "expected".
+        # The test would then be reporting on the machine, not the scenario.
+        f'export DIAR_NATIVE_EXPECTED_REPO_ROOT="{project_root}"\n'
+        # Same reason: the cascade's legacy leg is a hardcoded workstation path that really
+        # exists on the maintainer's machine and nowhere else, so "no export anywhere" would
+        # resolve to "expected" there and "not expected" in CI — the test would report on the
+        # host rather than the scenario. Point it somewhere guaranteed absent.
+        f'export DIAR_NATIVE_EXPECTED_LEGACY_DIR="{tmp_path / "no-such-legacy-dir"}"\n'
         f'SCRIPT_DIR="{REPO_ROOT / "scripts"}"\n'
         "BLUE=''; GREEN=''; YELLOW=''; RED=''; NC=''\n"
         f'ENGINE_DIARIZER_BACKEND="{backend}"\n'
-        f'DIAR_NATIVE_MODELS_DIR="{models_dir}"\n'
+        + (f'DIAR_NATIVE_MODELS_DIR="{models_dir}"\n' if set_models_dir else "")
+        + f'MODEL_CACHE_DIR="{cache_dir}"\n'
         f'HUGGINGFACE_TOKEN="{hf_token}"\n'
         "FAILED_PHASES=()\n"
         "SKIPPED_PHASES=()\n"
@@ -213,3 +250,50 @@ def test_a_real_failure_keeps_its_own_verdict_never_downgraded_to_skip(
     )
     assert failed, f"a real failure (rc={real_failure_rc}) must never be downgraded to a skip"
     assert not skipped
+
+
+def test_an_export_reachable_only_via_the_model_cache_cascade_counts_as_expected(
+    tmp_path: Path,
+):
+    """The air-gapped shape: no DIAR_NATIVE_MODELS_DIR, no token, models under MODEL_CACHE_DIR.
+
+    `.env.example` ships DIAR_NATIVE_MODELS_DIR **commented out**, so on a real air-gapped
+    install the export is only reachable through `opentr.sh`'s resolve_diar_native_models_dir()
+    cascade (`${MODEL_CACHE_DIR}/diar-native`). Before that cascade was mirrored into the shared
+    predicate, this gate answered "sidecar not expected" while opentr.sh auto-loaded the sidecar
+    anyway — so a NOT-MEASURED leg on a **dead diarizer** exited 0 and read as green.
+
+    Every other test here sets DIAR_NATIVE_MODELS_DIR explicitly, which is precisely why none of
+    them could catch it.
+    """
+    _, failed, skipped = _run(
+        tmp_path,
+        smoke_rc=4,  # NOT MEASURED
+        backend="native",
+        set_models_dir=False,
+        model_cache_dir_has_export=True,
+        hf_token="",
+    )
+    assert failed, (
+        "an export found via the MODEL_CACHE_DIR cascade means the sidecar IS expected, so a "
+        "NOT-MEASURED leg must fail the gate rather than be filed as a skip"
+    )
+    assert not skipped
+
+
+def test_the_cascade_does_not_invent_an_export_that_is_not_there(tmp_path: Path):
+    """Control for the test above: same shape, cascade directory EMPTY.
+
+    Without this, the cascade could be reporting "expected" unconditionally and the test above
+    would still pass — which is the same false-green it was written to remove, one level up.
+    """
+    _, failed, skipped = _run(
+        tmp_path,
+        smoke_rc=4,
+        backend="native",
+        set_models_dir=False,
+        model_cache_dir_has_export=False,
+        hf_token="",
+    )
+    assert not failed, "no export and no token means the sidecar is genuinely not expected"
+    assert skipped, "an unexpected NOT-MEASURED leg must still be REPORTED, not silently dropped"

@@ -187,9 +187,17 @@ def _path_is_on_shared_volume(path: str) -> bool:
 # serves nothing. Measured in exactly that state: three consecutive calls each paid the full
 # 5 s behind a nominally 3 s cache — the cache was a no-op in its only real use case.
 _PROBE_TIMEOUT_S = 5.0
-_READY_CACHE_TTL_S = max(
-    float(os.environ.get("DIAR_NATIVE_READY_CACHE_TTL_S", "8")), _PROBE_TIMEOUT_S + 1.0
-)
+_READY_CACHE_TTL_S_CONFIGURED = float(os.environ.get("DIAR_NATIVE_READY_CACHE_TTL_S", "8"))
+_READY_CACHE_TTL_S = max(_READY_CACHE_TTL_S_CONFIGURED, _PROBE_TIMEOUT_S + 1.0)
+if _READY_CACHE_TTL_S != _READY_CACHE_TTL_S_CONFIGURED:
+    # Once, at import time — never per-call, this module has no per-call logging budget
+    # for a value that is fixed for the process lifetime.
+    logger.warning(
+        "DIAR_NATIVE_READY_CACHE_TTL_S=%s is below the probe-timeout floor; using %ss instead "
+        "(a shorter TTL makes the readiness cache a no-op, see the comment above)",
+        _READY_CACHE_TTL_S_CONFIGURED,
+        _READY_CACHE_TTL_S,
+    )
 #: Keyed by (endpoint, url) so readiness and liveness cache independently. Liveness is
 #: cached too: _diarizer_current calls sidecar_ready() then sidecar_healthy() to tell
 #: "unreachable" from "up but unprovisioned", and load_model() probes liveness again — so

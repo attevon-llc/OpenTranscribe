@@ -725,7 +725,15 @@ class TestSaturatedSidecarSkipsSecondAttempt:
         _SaturatedSidecarHandler.post_count["count"] = 0
         monkeypatch.delenv("DIAR_OVERLAP", raising=False)
         port = _free_port()
-        httpd = http.server.HTTPServer(("127.0.0.1", port), _SaturatedSidecarHandler)
+        # ⚠️ ThreadingHTTPServer, NOT HTTPServer — this is the whole falsifiability of the
+        # test. A single-threaded server handles one request at a time, and do_POST sleeps
+        # 2.0s against a 0.2s client budget, so a SECOND POST would sit unaccepted in the
+        # listen backlog and never increment post_count. `== 1` then holds because of the
+        # server's serialization rather than because skip_sidecar worked, and the assertion
+        # passes with the fix reverted. Measured in a `git archive HEAD` tree: reverting
+        # stages.py's `skip_sidecar = True` gave "1 passed" under HTTPServer, and
+        # "assert 2 == 1" (red, correctly) under ThreadingHTTPServer.
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), _SaturatedSidecarHandler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         try:

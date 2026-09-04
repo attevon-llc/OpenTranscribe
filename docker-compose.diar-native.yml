@@ -59,6 +59,23 @@ services:
       # copied the template unmodified, so a CPU-only host got a sidecar it could not
       # start. Uncommenting it there re-breaks that.
       - DIAR_MODE=${DIAR_NATIVE_MODE:-cpu}
+      # ⚠️ BARE ENTRY, NO `=` AND NO DEFAULT — same reasoning as SPEAKRS_ARENA_SHRINK below:
+      # it is not established whether diar-server treats an empty string the same as
+      # "unset", so `DIAR_DEVICES=${DIAR_NATIVE_DEVICES:-}` would risk always defining the
+      # key (empty) on every install, which is not provably identical to today's observed
+      # absence. The bare form only ever puts the key in the container when the operator
+      # has actually set DIAR_DEVICES in .env, which preserves today's behaviour exactly
+      # (verified: unset today -> key absent -> devices=["cuda"] only per DIAR_MODE=cuda).
+      #
+      # Controls which device(s) the sidecar LOADS at startup (plural — can load more than
+      # one, comma-separated, e.g. "cuda,cpu"). `/embed_window`'s CPU-offload routing
+      # (#679, native_embedding_client.py) gates on this: it reads /healthz's `devices`
+      # (loaded), never `supported_devices` (build capability), and only sends
+      # `device: "cpu"` once `devices` already contains "cpu". Before this was wired,
+      # nothing set DIAR_DEVICES anywhere in this repo, so that routing was permanently
+      # inert on every GPU deployment. Set DIAR_DEVICES=cuda,cpu in .env to also load the
+      # CPU provider and make the offload path reachable.
+      - DIAR_DEVICES
       - DIAR_MODELS_DIR=/models
       - DIAR_MAX_INFLIGHT=${DIAR_NATIVE_MAX_INFLIGHT:-2}
       - DIAR_BIND=0.0.0.0:8701

@@ -1,7 +1,7 @@
 # =============================================================================
 # OpenTranscribe Backend - Lite Dockerfile (API-only, no GPU required)
 # Multi-stage build for cloud-only ASR deployments. MEASURED 2026-09-04 on this host:
-# 2.62 GB, vs 15.2 GB for the full image. (The previous "~2 GB vs 8.9 GB" was stale on
+# 2.70 GB, vs 15.2 GB for the full image. (The previous "~2 GB vs 8.9 GB" was stale on
 # both halves — re-measure with `docker image ls` rather than trusting this line.)
 # No faster-whisper, no ctranslate2, no CUDA — uses cloud ASR providers instead.
 #
@@ -9,7 +9,23 @@
 # a "lite" image and is not: the diar-native sidecar reads ONNX/PLDA graphs that are
 # non-redistributable derivatives of gated weights, so there is nothing to download and a
 # lite deployment must EXPORT them for itself or have no speaker-voiceprint path at all.
-# That capability costs ~50 MB over a lite image without it (2.57 -> 2.62 GB measured).
+#
+# ⚠️ "Lite" means NO GPU/CUDA/faster-whisper — it does NOT mean "as small as possible".
+# Nothing in this repo gates on the size of this image (no test, no script, no CI job), and
+# #660's own title is "--lite adopts the diar-native CPU execution provider for speaker
+# embeddings" — a capability goal. If a tool is required for lite to work, it ships. Chasing
+# megabytes here has already cost real functionality once: the toolchain was removed as
+# "unused at runtime" (true) without noticing it was the only way to CREATE the models
+# (2.38 GB and no voiceprint path at all), and the restore then shipped without
+# `onnxruntime`, which the exporter imports unguarded — an image that still could not
+# provision, at 2.62 GB.
+#
+# So verify the CAPABILITY, never the size:
+#   docker run --rm --entrypoint diar-server <image> provision-models --models-dir /tmp/m \
+#     --mode cpu --json
+# must reach exit 5 (TOKEN_DENIED) with no token supplied. A dependency failure means the
+# toolchain is incomplete however small the image is. (For reference only, measured
+# 2026-09-04: 2.70 GB. Not a budget, not a target.)
 # =============================================================================
 
 # diar-native (T1 diarization sidecar) binary + ONNX Runtime CPU-provider libs, pinned
@@ -158,9 +174,10 @@ COPY --chown=appuser:appuser . .
 # Reserve the pipeline's shared-volume mount point so a freshly created named volume
 # inherits appuser rather than root — see Dockerfile.prod for the full note (issue #661 E2:
 # one volume, pipeline_scratch, three namespaces). This image DOES ship the diar-server
-# binary (see the COPY block above, issue #660), so this reservation is live here too —
-# what lite still lacks is the export TOOLCHAIN (torch/onnx/onnxscript/etc, #654), not the
-# binary or its scratch dir.
+# binary (see the COPY block above, issue #660), so this reservation is live here too.
+# Since #654, requirements-lite.txt also RESTORED the export toolchain (torch/torchaudio/
+# onnx/onnxscript/onnxslim/onnxconverter-common) — this image can export its own ONNX/PLDA
+# weights exactly like the full image, and "lite cannot export it locally" is a dead claim.
 RUN mkdir -p /scratch/opentranscribe && \
     chown appuser:appuser /scratch/opentranscribe
 RUN mkdir -p /scratch/opentranscribe/engine /scratch/opentranscribe/diar && \

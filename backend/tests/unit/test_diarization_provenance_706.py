@@ -167,7 +167,25 @@ class TestNativeSpeakerDiarizerIdentity:
 
 class TestSpeakerDiarizerIdentity:
     def test_last_provider_is_always_pyannote(self):
-        assert SpeakerDiarizer.last_provider == "pyannote"
+        """Read off a real INSTANCE the same way the real consumer does.
+
+        ``engine/stages.py::_collect_diarization`` resolves provenance as
+        ``provider, model = diarizer.last_provider, diarizer.last_model`` on an actual
+        ``SpeakerDiarizer`` instance. Comparing the class body's string literal to
+        itself (``SpeakerDiarizer.last_provider == "pyannote"``) tests that someone
+        typed the constant, not that instantiating the class and reading it the way
+        the engine does still resolves correctly — it would keep passing even if a
+        future change shadowed the attribute per-instance or turned it into a
+        property that only works for some instances.
+        """
+        config = TranscriptionConfig(diarizer_backend="pyannote")
+        diarizer = SpeakerDiarizer(config)
+        diarizer._model_name = "pyannote/speaker-diarization-community-1"
+
+        provider, model = diarizer.last_provider, diarizer.last_model
+
+        assert provider == "pyannote"
+        assert model == "pyannote/speaker-diarization-community-1"
 
     def test_last_model_reflects_whichever_model_load_model_actually_loaded(self):
         config = TranscriptionConfig(diarizer_backend="pyannote")

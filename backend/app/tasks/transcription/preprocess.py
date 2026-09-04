@@ -15,8 +15,8 @@ import tempfile
 import time
 
 from app.core.celery import celery_app
-from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
 from app.core.constants import CPUPriority
+from app.core.constants import resolve_engine_shared_volume_path
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -66,7 +66,10 @@ def stage_engine_shared_volume_wav(file_uuid: str, task_id: str, temp_audio_path
     Returns the destination path, or "" on any failure (caller falls back to MinIO).
     """
     try:
-        shared_vol = os.environ.get("ENGINE_SHARED_VOLUME_PATH", ENGINE_SHARED_VOLUME_DEFAULT)
+        # resolve_* not a bare env read: a stale .env value naming the removed
+        # transcription-temp volume would be recreated container-local here, silently
+        # degrading every job to the MinIO path (issue #661 E2 upgrade case).
+        shared_vol = resolve_engine_shared_volume_path()
         os.makedirs(shared_vol, exist_ok=True)
         safe_task_id = re.sub(r"[^a-zA-Z0-9\-]", "_", task_id)
         wav_dest = os.path.join(shared_vol, f"{safe_task_id}.wav")

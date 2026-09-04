@@ -1381,6 +1381,52 @@ DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS = False  # chat.rag.overview_after_excerpts
 # two cases — the exact per-job re-serialization cost this shared-volume path exists to avoid.
 ENGINE_SHARED_VOLUME_DEFAULT = "/scratch/opentranscribe/engine"
 
+
+def resolve_engine_shared_volume_path() -> str:
+    """The handoff directory, ignoring a configured path that no longer exists.
+
+    Every reader and writer of the engine handoff WAV must call this rather than reading
+    ``ENGINE_SHARED_VOLUME_PATH`` directly, because an explicit value silently outlives the
+    volume it named.
+
+    E2 folded ``transcription-temp`` into a namespace of ``pipeline_scratch`` and moved the
+    coded default here. But ``.env`` beats a coded default, and every install created before
+    that change carries ``ENGINE_SHARED_VOLUME_PATH=/tmp/transcription`` from the old
+    ``.env.example`` — a path that is no longer mounted anywhere. ``os.makedirs`` then
+    cheerfully recreates it *inside the writer's container*, the GPU worker looks in the real
+    mount, finds nothing, and falls back to MinIO. Measured on a live upgraded stack: the
+    handoff silently degraded on every job, which is precisely the regression E0 was written
+    to make visible.
+
+    So: if the configured directory does not exist but the coded default does, the configured
+    value is stale — prefer the default and say so loudly. On a correctly configured install
+    the configured path exists (the image pre-creates it and the volume mounts over it), so
+    this check is inert. It deliberately does NOT rewrite ``.env``; this repo never edits an
+    operator's ``.env`` without confirmation.
+    """
+    import logging
+    import os
+
+    configured = os.environ.get("ENGINE_SHARED_VOLUME_PATH")
+    if not configured or configured == ENGINE_SHARED_VOLUME_DEFAULT:
+        return ENGINE_SHARED_VOLUME_DEFAULT
+    if os.path.isdir(configured):
+        return configured
+    if not os.path.isdir(ENGINE_SHARED_VOLUME_DEFAULT):
+        # Neither exists. Honour the operator's value rather than inventing one — the
+        # caller's own mkdir//not-found logging is then the accurate signal.
+        return configured
+    logging.getLogger(__name__).warning(
+        "ENGINE_SHARED_VOLUME_PATH=%s does not exist in this container, but %s does — "
+        "using the latter. This usually means .env predates the pipeline_scratch volume "
+        "consolidation (issue #661 E2), which removed the transcription-temp volume that "
+        "path named. Update ENGINE_SHARED_VOLUME_PATH in .env to silence this.",
+        configured,
+        ENGINE_SHARED_VOLUME_DEFAULT,
+    )
+    return ENGINE_SHARED_VOLUME_DEFAULT
+
+
 # Root of the consolidated pipeline scratch volume (issue #661 E2) — one named volume,
 # ``pipeline_scratch``, three namespaces: ``<file_uuid>/`` (scratch_volume.py, per-file),
 # ``engine/`` (ENGINE_SHARED_VOLUME_DEFAULT above, per-task), and ``diar/``

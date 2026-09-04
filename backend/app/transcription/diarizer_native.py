@@ -50,8 +50,8 @@ import numpy as np
 from app.core.constants import DIAR_NATIVE_SHARED_DIR_DEFAULT
 from app.core.constants import DIAR_SIDECAR_MIN_RTF
 from app.core.constants import DIAR_SIDECAR_TIMEOUT_FLOOR_S
-from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
 from app.core.constants import PIPELINE_SCRATCH_DEFAULT
+from app.core.constants import resolve_engine_shared_volume_path
 from app.services.asr.errors import retry_after_from_headers
 from app.transcription.diarize_result import DiarizeResult
 
@@ -138,7 +138,7 @@ _GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0",
 # mistake for a shared one. Since "reuse silently never fires" is itself a failure mode
 # nothing else would surface, diarize() below logs which case fired on every call — see the
 # "reuse-WAV optimisation" log lines.
-_ENGINE_SHARED_DIR = os.environ.get("ENGINE_SHARED_VOLUME_PATH", ENGINE_SHARED_VOLUME_DEFAULT)
+_ENGINE_SHARED_DIR = resolve_engine_shared_volume_path()
 
 # Containment boundary for the reuse-WAV check, keyed on the pipeline_scratch VOLUME ROOT
 # (issue #661 E2 phase 1.3) — NOT `_ENGINE_SHARED_DIR`. `str.startswith` against a subdirectory

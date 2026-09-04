@@ -8,6 +8,7 @@ from dataclasses import field
 from typing import TYPE_CHECKING
 
 from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
+from app.core.constants import resolve_engine_shared_volume_path
 
 if TYPE_CHECKING:
     from app.transcription.config import TranscriptionConfig
@@ -127,9 +128,7 @@ class EngineConfig:
                 1.0,
             ),
             shared_volume_path=(
-                vals.get("engine.shared_volume_path")
-                or os.getenv("ENGINE_SHARED_VOLUME_PATH")
-                or ENGINE_SHARED_VOLUME_DEFAULT
+                vals.get("engine.shared_volume_path") or resolve_engine_shared_volume_path()
             ),
         )
 
@@ -165,7 +164,7 @@ class EngineConfig:
             boundary_acoustic_max_word_dur=cls._db_env_float(
                 None, "", "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR", 1.0
             ),
-            shared_volume_path=os.getenv("ENGINE_SHARED_VOLUME_PATH", ENGINE_SHARED_VOLUME_DEFAULT),
+            shared_volume_path=resolve_engine_shared_volume_path(),
         )
         for k, v in engine_overrides.items():
             if hasattr(engine, k):

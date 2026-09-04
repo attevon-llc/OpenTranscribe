@@ -137,16 +137,40 @@ build_compose_files() {
     # only ever have arrived pre-populated in the package (see build-offline-package.sh's
     # download_models()); a token here could never provision anything and would be a
     # false promise that the sidecar is about to start working.
+    #
+    # Issue #655 fix item 5 / the feat/diar-native-e2e follow-up: this was previously
+    # gated on weights-present ALONE, with no engine gate and no lite gate — so an
+    # operator who deliberately set ENGINE_DIARIZER_BACKEND=pyannote (or ships a
+    # DEPLOYMENT_MODE=lite offline package, which has no diar-native provisioning
+    # toolchain to begin with) still got the sidecar loaded, defeating that
+    # configuration outright. Mirrors opentr.sh's add_diar_native_overlay predicate
+    # (lite excluded, engine must resolve to native) minus the token/auto-provision
+    # half, which cannot apply here.
+    #
+    # DIAR_NATIVE_IMAGE / Blackwell: deliberately NOT wired here. opentr.sh pins
+    # DIAR_NATIVE_IMAGE to match docker-compose.blackwell.yml's celery-worker tag
+    # when it detects an SM_12x GPU, but this installer has no --blackwell overlay
+    # of any kind (build-offline-package.sh packages a single fixed image set, and
+    # nothing in this script ever loads docker-compose.blackwell.yml) — there is no
+    # existing Blackwell code path here for the sidecar's tag to disagree with.
+    # Adding one is a real offline-Blackwell-support gap, but a materially bigger
+    # scope than this fix; recorded as excluded rather than silently absent.
     if [ -f "$DIAR_NATIVE_COMPOSE_FILE" ]; then
         # .env is not guaranteed sourced yet -- cmd_stop()/cmd_restart() never call
         # check_env(), and cmd_start() calls it AFTER build_compose_files(). Source it
         # here directly rather than depending on caller order.
-        if [ -z "${MODEL_CACHE_DIR:-}${DIAR_NATIVE_MODELS_DIR:-}" ] && [ -f "$INSTALL_DIR/.env" ]; then
+        if [ -z "${MODEL_CACHE_DIR:-}${DIAR_NATIVE_MODELS_DIR:-}${ENGINE_DIARIZER_BACKEND:-}${DEPLOYMENT_MODE:-}" ] && [ -f "$INSTALL_DIR/.env" ]; then
             # shellcheck source=/dev/null  # Runtime .env file, not available during static analysis
             source "$INSTALL_DIR/.env"
         fi
         local diar_models_dir="${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-$INSTALL_DIR/models}/diar-native}"
-        if [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
+        local deployment_mode_lc
+        deployment_mode_lc=$(printf '%s' "${DEPLOYMENT_MODE:-}" | tr '[:upper:]' '[:lower:]')
+        if [ "$deployment_mode_lc" = "lite" ]; then
+            print_info "Native diarization sidecar skipped (DEPLOYMENT_MODE=lite has no provisioning toolchain)"
+        elif [ "${ENGINE_DIARIZER_BACKEND:-native}" != "native" ]; then
+            print_info "Native diarization sidecar skipped (ENGINE_DIARIZER_BACKEND=${ENGINE_DIARIZER_BACKEND})"
+        elif [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
             COMPOSE_FILES="$COMPOSE_FILES -f $DIAR_NATIVE_COMPOSE_FILE"
             print_info "Native diarization sidecar enabled (weights present at $diar_models_dir)"
             # The base overlay is CPU-safe by construction; the device reservation lives

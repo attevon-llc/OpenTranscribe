@@ -97,10 +97,20 @@ check_docker() {
 #   `|| true` is load-bearing: callers run under `set -e`, and an ABSENT optional key is the
 #   normal case (grep exits 1). Same reasoning as setup-opentranscribe.sh's `_env_val`.
 #   `-f2-` not `-f2`: a value may legitimately contain `=`.
+#
+#   Also honours the two spellings `docker compose` itself accepts in a `.env` file but this
+#   parser used to miss (verified with `docker compose config` against a real compose file):
+#   leading whitespace before the key (`  KEY=value`) and an `export ` prefix (`export
+#   KEY=value`). Missing either meant the CONTAINER got the value while this function read
+#   back empty — e.g. a leading-space `ENGINE_DIARIZER_BACKEND=pyannote` ran pyannote in the
+#   container while every gate here still saw "" and defaulted to native, starting/guarding
+#   for an engine nothing was using. Stripped ONCE up front so `^${key}=` keeps anchoring on
+#   the bare key, rather than growing a second regex per caller.
 read_env_value() {
   local key="$1" env_file="${2:-.env}"
   [ -f "$env_file" ] || { echo ""; return 0; }
-  grep -E "^${key}=" "$env_file" 2>/dev/null \
+  sed -E 's/^[[:space:]]+//; s/^export[[:space:]]+//' "$env_file" 2>/dev/null \
+    | grep -E "^${key}=" \
     | head -1 \
     | cut -d= -f2- \
     | sed -E 's/[[:space:]]+#.*$//' \

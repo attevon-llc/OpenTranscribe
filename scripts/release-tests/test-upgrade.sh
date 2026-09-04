@@ -475,22 +475,32 @@ phase_03_prepare_v033_compose() {
     local model_cache="$shared_cache"
     mkdir -p "$model_cache/huggingface" "$model_cache/torch" \
              "$model_cache/nltk_data" "$model_cache/sentence-transformers" \
-             "$model_cache/opensearch-ml" "$model_cache/pyannote"
+             "$model_cache/opensearch-ml" "$model_cache/pyannote" \
+             "$model_cache/diar-native"
+
+    local live_cache="/mnt/nvm/repos/transcribe-app/models"
 
     # One-time seed from live production cache if we haven't already. Check
     # for the sentinel file ".seeded-from-live" to avoid re-copying on every
     # run. mc_seed_cache hardlinks the big trees (cheap, no data duplication)
     # but makes a REAL copy of nltk_data — nltk >=3.10 pathsec refuses
     # multiply-linked files, and a hardlinked nltk_data fails every
-    # transcription in the run. See lib/model-cache.sh.
+    # transcription in the run — and of diar-native, whose export can be
+    # rewritten in place by an older FROM release's provisioning step, which
+    # would corrupt this host's LIVE diar-native weights through the
+    # hardlink (issue #670; see lib/model-cache.sh's MC_NO_HARDLINK_SUBDIRS
+    # header for the full reasoning).
     if [[ ! -f "$model_cache/.seeded-from-live" ]]; then
-        local live_cache="/mnt/nvm/repos/transcribe-app/models"
         if [[ -d "$live_cache/huggingface" ]]; then
             gr_log "seeding shared model cache from live cache (one-time)"
-            # Only the subdirs HF/PyAnnote/Whisper actually need.
+            # diar-native is included so this scenario proves the FAST path
+            # (weights already present, no live HuggingFace export at
+            # backend startup) rather than depending on that export
+            # succeeding every run. ac_diar_engine_verdict in phase 11 is
+            # what actually proves diarization worked, seeded or not.
             # Skip opensearch-ml (container-specific) and onnx (newer releases only).
             mc_seed_cache "$live_cache" "$model_cache" \
-                huggingface torch nltk_data sentence-transformers pyannote
+                huggingface torch nltk_data sentence-transformers pyannote diar-native
             touch "$model_cache/.seeded-from-live"
             gr_ok "shared model cache seeded from live cache"
         else
@@ -503,6 +513,22 @@ phase_03_prepare_v033_compose() {
         # hardlinked. The sentinel means "seeded", not "seeded correctly", so
         # re-assert the invariant on every reuse rather than trusting it.
         mc_break_hardlinks "$model_cache/nltk_data"
+
+        # diar-native did not exist as a seeded subdir before issue #670's fix,
+        # so a shared cache whose sentinel predates this change never gets it
+        # from the branch above (the sentinel means "seeded", not "seeded
+        # completely" either). Top it up incrementally rather than requiring
+        # an operator to blow away the whole multi-GB cache to pick up one
+        # new subdir.
+        if [[ -z "$(ls -A "$model_cache/diar-native" 2>/dev/null)" ]]; then
+            if [[ -d "$live_cache/diar-native" ]] && [[ -n "$(ls -A "$live_cache/diar-native" 2>/dev/null)" ]]; then
+                gr_log "shared cache predates diar-native seeding — topping it up from the live cache"
+                mc_seed_cache "$live_cache" "$model_cache" diar-native
+                gr_ok "diar-native seeded into the existing shared model cache"
+            else
+                gr_warn "no diar-native export in the live cache either — the backend will export its own on startup"
+            fi
+        fi
     fi
 
     # Gate: whichever branch ran above, the pathsec invariant must hold before
@@ -1470,6 +1496,62 @@ phase_11_new_data_post_upgrade() {
     local seg_count
     seg_count=$(ac_segment_count "$fid")
     as_assert_ge "NEW transcript has segments" "$seg_count" 1
+
+    # Which engine actually diarized this file? "completed" above proves
+    # nothing — the fallback to in-process PyAnnote is SILENT BY DESIGN, so an
+    # upgrade whose diarizer is dead can still pass every assertion above
+    # (issue #670: "test-upgrade.sh seeds diar-native and fails if
+    # diarization is dead"). This check is deliberately only on the UPGRADED
+    # (TO) side: phase 05's seed upload runs against the FROM release, which
+    # may predate diar-native entirely and would never log either the native
+    # or the fallback line — asserting there would fail on correct behaviour
+    # from an old release. The current codebase always ships diar-native
+    # support, so there is no equivalent excuse here.
+    #
+    # Two independent, non-redundant signals — see diar-native-smoke.sh's and
+    # ac_diar_engine_verdict's own headers for why neither is sufficient
+    # alone. GPU residency is only meaningful when this run actually asked
+    # for a GPU deployment (TEST_USE_GPU=false legitimately runs diar-native
+    # on CPU, holding zero device memory).
+    if [[ "$TEST_USE_GPU" == "true" ]]; then
+        # Wrapped in `if`, never called bare: diar-native-smoke.sh exits
+        # non-zero on both FAIL (1) and NOT MEASURED (4), and this script
+        # runs under `set -euo pipefail` — an unwrapped non-fatal-by-design
+        # helper call here would silently truncate every phase after it
+        # (issues #617/#618; see scripts/CLAUDE.md's "bare helper call"
+        # gotcha).
+        local diar_smoke_rc=0 diar_smoke_out=""
+        if diar_smoke_out=$("$REPO_ROOT/scripts/diar-native-smoke.sh" --json 2>&1); then
+            diar_smoke_rc=0
+        else
+            diar_smoke_rc=$?
+        fi
+        case "$diar_smoke_rc" in
+            0) as_record PASS "diar-native sidecar GPU residency on upgraded stack (diar-native-smoke.sh)" ;;
+            4) as_record SKIP "diar-native sidecar GPU residency on upgraded stack" "NOT MEASURED: $diar_smoke_out" ;;
+            *) as_record FAIL "diar-native sidecar GPU residency on upgraded stack" "$diar_smoke_out" ;;
+        esac
+    fi
+
+    local diar_verdict
+    diar_verdict=$(ac_diar_engine_verdict "opentranscribe-celery-worker" "30m")
+    case "$diar_verdict" in
+        native)
+            as_record PASS "native diarizer served the post-upgrade file"
+            ;;
+        fallback)
+            as_record FAIL "native diarizer served the post-upgrade file" \
+                "worker log shows a 'falling back to PyAnnote' line — the sidecar degraded silently after the upgrade"
+            ;;
+        absent)
+            as_record FAIL "native diarizer served the post-upgrade file" \
+                "opentranscribe-celery-worker is not running on the upgraded stack"
+            ;;
+        unknown)
+            as_record FAIL "native diarizer served the post-upgrade file" \
+                "neither a 'native diarization done' nor a fallback line appeared in the worker log"
+            ;;
+    esac
 
     # And the new content must be reachable through search — proving the
     # upgraded stack INDEXED it, not merely stored it.

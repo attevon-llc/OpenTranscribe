@@ -65,20 +65,29 @@ class CeleryQueues:
 
 
 def gpu_split_enabled() -> bool:
-    """Whether THIS process's environment has the gpu-split topology active.
+    """Whether THIS process's environment ASKS FOR the gpu-split topology.
 
     Read at call time (never cached) so a test can flip ``ENGINE_GPU_SPLIT`` per-case,
     and because Celery worker processes never re-import this module after startup.
 
-    ``ENGINE_GPU_SPLIT=true`` is set only by docker-compose.gpu-split.yml's environment
-    override, on every service whose code can reach transcription dispatch or the GPU
-    task itself (backend, celery-worker, celery-cpu-worker, celery-download-worker,
-    celery-worker-gpu-transcribe, celery-worker-gpu-diarize) — that overlay is loaded
-    if and only if the stack was started with ``--with-gpu-split``, the same flag that
-    brings up the two dedicated queue consumers. A caller container this override was
-    not wired to reads the coded default 'false' and falls back to the always-staffed
-    'gpu' queue — the failure direction is "no split", never "queued on a dead queue"
-    (issue #703).
+    ⚠️ This is a REQUEST, not a guarantee a consumer exists. ``ENGINE_GPU_SPLIT`` is
+    documented in ``.env.example`` as an ordinary operator knob and reaches every
+    container via ``env_file: .env`` regardless of which Compose overlay is loaded —
+    ``docker-compose.gpu-split.yml`` additionally hardcodes it to ``true`` on the
+    dispatching services, but that overlay is loaded only under ``--with-gpu-split``,
+    while ``env_file`` is not. So an operator who sets ``ENGINE_GPU_SPLIT=true`` in
+    ``.env`` directly (no ``--with-gpu-split``) makes this function return True with
+    ``celery-worker-gpu-transcribe`` never started to drain the queue it names.
+    Before this branch the flag was inert for dispatch, so that combination is a
+    regression, not a pre-existing risk.
+
+    Do NOT route on this value alone. ``dispatch.py::_resolve_gpu_queue`` also
+    verifies a live consumer is bound to ``CeleryQueues.GPU_TRANSCRIBE`` (via Celery
+    control ``inspect().active_queues()``) before honouring it, and falls back to the
+    always-staffed ``'gpu'`` queue otherwise — that check, not this function, is what
+    keeps the failure direction "no split", never "queued on a dead queue" (issue
+    #703, amended by the corroboration this docstring used to (wrongly) claim this
+    function alone provided).
     """
     return _os.environ.get("ENGINE_GPU_SPLIT", "false").lower() == "true"
 

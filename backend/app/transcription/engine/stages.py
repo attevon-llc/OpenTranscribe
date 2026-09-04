@@ -90,7 +90,7 @@ def _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb: int)
         _wait_for_vram(2000, "diarization")
 
 
-def _run_diarize(diarizer, audio, wav_path: str | None):
+def _run_diarize(diarizer, audio, wav_path: str | None, *, allow_local_fallback: bool = True):
     """Call diarizer.diarize(), handing NativeSpeakerDiarizer a pre-existing WAV when we have one.
 
     NativeSpeakerDiarizer.diarize() accepts an optional wav_path to skip re-encoding audio it
@@ -101,11 +101,16 @@ def _run_diarize(diarizer, audio, wav_path: str | None):
     diarizer that doesn't accept it — callers here only ever hold ``SpeakerDiarizer`` typed as
     the common interface, never knowing which concrete engine ``manager.get_diarizer`` handed
     back.
+
+    ``allow_local_fallback=False`` (only ever passed by ``_AsyncDiarization``, running on its
+    own thread concurrently with transcription) tells NativeSpeakerDiarizer to raise instead of
+    loading the in-process PyAnnote fallback on THIS thread — see its docstring for why that
+    matters (issue #665). Non-native diarizers ignore the flag; there is nothing for it to gate.
     """
     from app.transcription.diarizer_native import NativeSpeakerDiarizer
 
-    if wav_path and isinstance(diarizer, NativeSpeakerDiarizer):
-        return diarizer.diarize(audio, wav_path=wav_path)
+    if isinstance(diarizer, NativeSpeakerDiarizer):
+        return diarizer.diarize(audio, wav_path=wav_path, allow_local_fallback=allow_local_fallback)
     return diarizer.diarize(audio)
 
 
@@ -118,6 +123,17 @@ def _collect_diarization(
     attempt that failed falls back to a plain inline run, so the outcome is the same either way.
     ``wav_path``, when given, is Stage 1's already-materialized shared-volume WAV — passed
     through to the diarizer so it can skip re-encoding ``audio`` a second time (issue #661).
+
+    By the time this function runs, transcription has already completed on THIS (the calling)
+    thread — every caller invokes it only after ``transcriber.transcribe(audio)`` has returned.
+    That holds even when ``async_diarization`` is not None: its own diarize() call has been
+    running concurrently with transcription since it was constructed, but this function's own
+    call to ``async_diarization.result()`` joins that thread, which cannot happen before
+    transcription (on the main thread) is done. So it is always safe, here, to release the
+    transcriber for an in-process diarizer — whether the overlap never happened at all, or it
+    was attempted and failed mid-job (issue #665: previously ``_make_room_for_local_diarizer``
+    was skipped whenever ``async_diarization`` was merely non-None, even after its attempt
+    failed and fell through to an inline PyAnnote run that never freed the VRAM it needed).
     """
     from app.transcription.engine.progress import emit
 
@@ -125,21 +141,21 @@ def _collect_diarization(
     total_vram_mb = _get_total_vram_mb()
     profiler.snapshot("models_warm_no_inference")
 
-    # Making room for a diarizer only matters when it lives in this process.
-    if async_diarization is None:
-        _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb)
-
     emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
     step_start = time.perf_counter()
     overlapped = None
     with profiler.step("diarization"):
         if async_diarization is not None:
             overlapped = async_diarization.result()
-        result = (
-            overlapped
-            if overlapped is not None
-            else _run_diarize(manager.get_diarizer(tc), audio, wav_path)
-        )
+        if overlapped is not None:
+            result = overlapped
+        else:
+            # Either overlap was never attempted, or it was and failed — either way we are
+            # about to diarize on this (already-past-transcription) thread, so make room for
+            # an in-process diarizer first. See the docstring above for why this is safe here
+            # even when async_diarization is not None.
+            _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb)
+            result = _run_diarize(manager.get_diarizer(tc), audio, wav_path)
     logger.info(
         "TIMING: diarization step completed in %.3fs%s",
         time.perf_counter() - step_start,
@@ -167,7 +183,15 @@ class _AsyncDiarization:
 
         def _run() -> None:
             try:
-                self._value = _run_diarize(manager.get_diarizer(tc), audio, wav_path)
+                # allow_local_fallback=False: this runs on a daemon thread concurrently with
+                # transcription on the main thread. A sidecar failure here must NOT load the
+                # in-process PyAnnote fallback on this thread — see NativeSpeakerDiarizer
+                # .diarize()'s docstring (issue #665). It raises instead, and result() below
+                # treats that exactly like any other overlapped failure: log, return None, and
+                # let the caller retry sequentially once transcription is known to be done.
+                self._value = _run_diarize(
+                    manager.get_diarizer(tc), audio, wav_path, allow_local_fallback=False
+                )
             except BaseException as exc:  # noqa: BLE001 — handed to the caller, not swallowed
                 self._error = exc
 

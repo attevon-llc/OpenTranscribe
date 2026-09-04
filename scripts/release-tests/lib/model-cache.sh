@@ -49,6 +49,54 @@ mc_is_pathsec_subdir() {
     return 1
 }
 
+# Cache subdirectories that must be a REAL COPY for a DIFFERENT reason than
+# MC_PATHSEC_SUBDIRS above: not because the consumer refuses a hardlink, but
+# because the consumer is ALLOWED to rewrite the files in place, and a
+# hardlink would let that rewrite reach back through the shared cache to a
+# live source it must never touch.
+#
+# diar-native (issue #670): backend/app/transcription/native_provision.py
+# runs `diar-server provision-models` from the FastAPI lifespan on every
+# backend boot. It is idempotent — it short-circuits on a VALID
+# diar-provision.json marker and only re-exports when the marker is judged
+# stale — but "valid" is judged by whichever diar-server BINARY is running,
+# and test-upgrade.sh deliberately runs an OLDER release's binary against
+# these exact files (its FROM stage, phase 03/04). If that older binary's
+# own exporter_version/model_set expectations disagree with the marker on
+# disk, it re-exports, OVERWRITING the named .onnx/.npy files IN PLACE.
+# Unlike HuggingFace's content-addressed blob store (a changed model gets a
+# NEW blob under a new hash, so an old hardlinked blob is never touched),
+# diar-native's files are the same path every time — a rewrite is a rewrite
+# of whatever the path is linked to.
+#
+# This is not hypothetical for THIS harness specifically:
+# test-upgrade.sh's shared cache (lib.model-cache.sh callers, phase 03) is
+# mounted directly as MODEL_CACHE_DIR for the stacks under test — there is
+# no per-run copy, unlike test-fresh-install.sh — and that shared cache is
+# itself seeded by HARDLINK from this host's own live, currently-in-use
+# model cache. A hardlinked diar-native subtree means a re-export during a
+# rehearsal corrupts the live host's diarizer weights.
+#
+# Checked before assuming this belongs here, the same way nltk's inclusion
+# was checked: unlike nltk, nothing in diar-server / native_provision.py /
+# the `ort` crate refuses to open a multiply-linked file (no st_nlink /
+# CWE-59-style guard found anywhere in the export or serving path) — so this
+# is NOT a pathsec-shaped crash, it is a silent-corruption risk, and a real
+# copy is the same fix for a different reason. Deliberately NOT merged into
+# MC_PATHSEC_SUBDIRS: that list's own name, and every message
+# mc_assert_no_hardlinks/mc_break_hardlinks print, specifically claim "nltk
+# pathsec refuses" — folding a corruption concern in there would make those
+# messages lie about a directory that never refuses anything.
+MC_NO_HARDLINK_SUBDIRS=("diar-native")
+
+mc_is_no_hardlink_subdir() {
+    local candidate="$1" sub
+    for sub in "${MC_NO_HARDLINK_SUBDIRS[@]}"; do
+        [[ "$candidate" == "$sub" ]] && return 0
+    done
+    return 1
+}
+
 # Break every hardlink under a directory by replacing each multiply-linked
 # file with an independent copy of itself. Idempotent, and a no-op when the
 # tree is already clean.
@@ -71,7 +119,7 @@ mc_break_hardlinks() {
         gr_warn "could not break $failed hardlink(s) under $dir"
     fi
     if (( broken > 0 )); then
-        gr_ok "broke $broken hardlink(s) under $dir (nltk pathsec requires st_nlink=1)"
+        gr_ok "broke $broken hardlink(s) under $dir (this cache subdir must not be multiply-linked)"
     fi
     return 0
 }
@@ -100,8 +148,10 @@ mc_assert_no_hardlinks() {
 # Seed one cache subdirectory from a source tree.
 #
 # Hardlinks (cheap, no disk cost) for ordinary trees; a real copy for the
-# pathsec-sensitive ones. Falls back to a plain copy if rsync is unavailable
-# or fails, because a slow correct seed beats a fast broken one.
+# pathsec-sensitive ones (MC_PATHSEC_SUBDIRS) and the ones whose consumer can
+# rewrite files in place (MC_NO_HARDLINK_SUBDIRS). Falls back to a plain copy
+# if rsync is unavailable or fails, because a slow correct seed beats a fast
+# broken one.
 mc_seed_subdir() {
     local src_root="$1" dst_root="$2" sub="$3"
     local src="$src_root/$sub" dst="$dst_root/$sub"
@@ -109,9 +159,10 @@ mc_seed_subdir() {
     [[ -d "$src" ]] || return 0
     mkdir -p "$dst"
 
-    if mc_is_pathsec_subdir "$sub"; then
-        # Real copy — see the header. --no-links so a symlink in the source
-        # cannot smuggle a link into the copy either.
+    if mc_is_pathsec_subdir "$sub" || mc_is_no_hardlink_subdir "$sub"; then
+        # Real copy — see the header (nltk pathsec refusal, or a consumer
+        # that can rewrite in place, e.g. diar-native). --no-links so a
+        # symlink in the source cannot smuggle a link into the copy either.
         if command -v rsync >/dev/null 2>&1; then
             rsync -a --copy-links "$src/" "$dst/" 2>/dev/null || \
                 cp -rL "$src/." "$dst/" 2>/dev/null || \
@@ -145,7 +196,7 @@ mc_seed_cache() {
     local subs=("$@")
 
     if [[ ${#subs[@]} -eq 0 ]]; then
-        subs=(huggingface torch nltk_data sentence-transformers pyannote)
+        subs=(huggingface torch nltk_data sentence-transformers pyannote diar-native)
     fi
 
     local sub

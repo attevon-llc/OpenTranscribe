@@ -684,6 +684,20 @@ add_diar_native_overlay() {
     fi
   fi
 
+  # `predict` exists only for the --fresh aux-recording step (see the --fresh block in
+  # start_app), which has to know whether this decision will come out "load the sidecar"
+  # BEFORE $COMPOSE_FILES exists — fresh_write_aux/fresh_generate_overlay run long before
+  # the real caller reaches this same function later in start_app. It stops here on
+  # purpose: appending to $COMPOSE_FILES now would land the overlay before
+  # docker-compose.yml itself (COMPOSE_FILES is not yet initialized at that point), and
+  # that append gets clobbered anyway the moment start_app does
+  # `COMPOSE_FILES="-f docker-compose.yml"`. The decision made above (WITH_DIAR_NATIVE_FLAG
+  # plus the banner) is the only thing the caller needs, and it persists in the shell
+  # variable for the real call to pick up unchanged.
+  if [ "$mode" = "predict" ]; then
+    return 0
+  fi
+
   # Add the native diarization sidecar if requested
   if [ -n "${WITH_DIAR_NATIVE_FLAG:-}" ]; then
     if [ -f "docker-compose.diar-native.yml" ]; then
@@ -1522,8 +1536,47 @@ fresh_destroy() {
         "${FRESH_OVERLAY_DIR}/${name}.aux" \
         "${FRESH_OVERLAY_DIR}/${name}-ports.yml" \
         "${FRESH_OVERLAY_DIR}/${name}-baked.yml" 2>/dev/null || true
-  rm -rf "$diar_dir" 2>/dev/null || true
-  echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + generated files)."
+
+  # Reclaim the isolated diar-native export directory (see the listing comment above for
+  # why this is handled separately from the generated-files glob). A bare `rm -rf ... ||
+  # true` cannot remove a tree that `fresh_prepare_diar_native_models_dir` chowned to
+  # CONTAINER_UID_GID (root, on a host with no subuid mapping for that gid) — it fails
+  # AND leaves every byte in place, but the `|| true` swallowed that as if there had been
+  # nothing to do, so the ✅ line below printed success while up to 462MB stayed on disk.
+  # Adversarial-audit finding: reproduced with `BEFORE: 5.1M ... AFTER: 5.1M`, i.e. the
+  # very #347 leak this directory's isolation exists to close. Retry once with the same
+  # docker-busybox chown fix_model_cache_permissions uses for the identical ownership
+  # hazard on the main $MODEL_CACHE_DIR path, then report what is ACTUALLY true on disk —
+  # never a fixed success line regardless of outcome.
+  local diar_dir_left=""
+  if [ -d "$diar_dir" ]; then
+    rm -rf "$diar_dir" 2>/dev/null || true
+    if [ -d "$diar_dir" ] && command -v docker &>/dev/null; then
+      local diar_dir_abs
+      diar_dir_abs="$(cd "$diar_dir" && pwd)"
+      docker run --rm -v "${diar_dir_abs}:/reclaim" busybox:latest \
+        chown -R "$(id -u):$(id -g)" /reclaim >/dev/null 2>&1 || true
+      rm -rf "$diar_dir" 2>/dev/null || true
+    fi
+    if [ -d "$diar_dir" ]; then
+      diar_dir_left="$diar_dir"
+    else
+      # Drop the now-empty per-deployment parent (.fresh/<name>/) too. `rmdir` refuses a
+      # non-empty directory, so this is a silent no-op if anything else still lives there.
+      rmdir "$(dirname "$diar_dir")" 2>/dev/null || true
+    fi
+  fi
+
+  if [ -n "$diar_dir_left" ]; then
+    echo "⚠️  Fresh deployment '${name}' destroy INCOMPLETE: containers, volumes and generated"
+    echo "   files were removed, but the isolated diar-native models directory could not be"
+    echo "   reclaimed — even after a docker-based chown attempt (likely root-owned from a"
+    echo "   container that provisioned it, with no docker daemon access to fix it here):"
+    echo "     - $diar_dir_left"
+    echo "   Remove it by hand (e.g. 'sudo rm -rf ${diar_dir_left}') to reclaim the space."
+  else
+    echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + generated files)."
+  fi
 }
 
 # Function to start the environment
@@ -1757,10 +1810,9 @@ start_app() {
       _aux_services+=("${FRESH_MOCK_ASR_SERVICES[@]}")
       _aux_files+=("docker-compose.mock-asr.yml")
     fi
-    if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
-      _aux_services+=("${FRESH_DIAR_NATIVE_SERVICES[@]}")
-      _aux_files+=("docker-compose.diar-native.yml")
-    fi
+    # diar-native is handled separately, below, AFTER DIAR_NATIVE_MODELS_DIR is forced to
+    # this deployment's isolated export path — see that comment for why (issue: the
+    # aux-recording-vs-auto-load ordering finding on feat/diar-native-e2e).
     if [ -n "$WITH_SMB_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_SMB_PORT_VARS[@]}")
       _aux_services+=("${FRESH_SMB_SERVICES[@]}")
@@ -1833,6 +1885,33 @@ start_app() {
     # resolution tests (which never set FRESH_FLAG) are unaffected.
     export DIAR_NATIVE_MODELS_DIR
     DIAR_NATIVE_MODELS_DIR="$(fresh_diar_native_models_dir "$FRESH_NAME")"
+
+    # Decide, right now, whether the native diarization sidecar will load for THIS
+    # deployment — using add_diar_native_overlay's own predicate (engine.diarizer_backend
+    # defaults to native AND the isolated DIAR_NATIVE_MODELS_DIR just above already holds
+    # an export OR a HUGGINGFACE_TOKEN is configured to produce one on this startup) —
+    # and record it in the aux set below if so.
+    #
+    # This MUST happen here, not left to start_app's real call (mode "start") to the same
+    # function later on: that call runs after $COMPOSE_FILES is built, which is after
+    # fresh_write_aux/fresh_generate_overlay a few lines down have already run. An
+    # AUTO-LOADED sidecar decided after the .aux file is written is recorded nowhere, so
+    # stop/status/fresh-destroy address a different compose chain than the one actually
+    # brought up — exactly the #347 shape .aux exists to prevent. `predict` mode makes the
+    # identical decision (setting WITH_DIAR_NATIVE_FLAG and printing the same banner)
+    # without touching $COMPOSE_FILES, which does not exist yet at this point in
+    # start_app; the real call later sees WITH_DIAR_NATIVE_FLAG already set and just adds
+    # the overlay, so the banner does not print twice.
+    #
+    # An explicit --with-diar-native (WITH_DIAR_NATIVE_FLAG already non-empty from CLI
+    # parsing above) is unaffected — add_diar_native_overlay's own auto-detect is guarded
+    # on the flag being unset, so `predict` is a no-op for that case and this block still
+    # records it correctly.
+    add_diar_native_overlay predict
+    if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
+      _aux_services+=("${FRESH_DIAR_NATIVE_SERVICES[@]}")
+      _aux_files+=("docker-compose.diar-native.yml")
+    fi
 
     fresh_write_offset "$FRESH_NAME" "$_offset"
     fresh_write_aux "$FRESH_NAME" ${_aux_files[@]+"${_aux_files[@]}"}

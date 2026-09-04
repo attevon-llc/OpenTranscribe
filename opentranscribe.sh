@@ -26,6 +26,15 @@ CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"
 # this script's own definition means the local one still wins (bash: last definition wins),
 # preserving today's behaviour exactly. Pinned by a test — do not move this below the
 # fix_model_cache_permissions definition.
+#
+# ⚠️ Because the local one always wins, it must be kept behaviourally IDENTICAL to
+# common.sh's (subdirectory list, and looping the ownership check over every
+# subdirectory rather than just the parent) — this script has no way to fall back to
+# common.sh's version for this function even when common.sh is present and newer. A
+# real install ran for a release with these two silently diverged (missing diar-native
+# in the mkdir list, parent-only ownership check); both are pinned by
+# backend/tests/unit/test_fix_model_cache_permissions_parity.py so they cannot drift
+# apart again without a failing test.
 if [ -f ./scripts/common.sh ]; then
     # shellcheck source=scripts/common.sh
     . ./scripts/common.sh
@@ -39,7 +48,12 @@ if ! declare -F read_env_value >/dev/null 2>&1; then
     read_env_value() {
         local key="$1" env_file="${2:-.env}"
         [ -f "$env_file" ] || { echo ""; return 0; }
-        grep -E "^${key}=" "$env_file" 2>/dev/null \
+        # Kept in lockstep with scripts/common.sh's read_env_value (including the
+        # leading-whitespace / `export ` stripping — compose honours both, see that
+        # function's docstring) since this is the standalone fallback for an install
+        # predating release-manifest.txt:52.
+        sed -E 's/^[[:space:]]+//; s/^export[[:space:]]+//' "$env_file" 2>/dev/null \
+            | grep -E "^${key}=" \
             | head -1 \
             | cut -d= -f2- \
             | sed -E 's/[[:space:]]+#.*$//' \
@@ -217,23 +231,38 @@ fix_model_cache_permissions() {
     # Use default if not set
     MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"
 
-    # Check if model cache directory exists
     if [ ! -d "$MODEL_CACHE_DIR" ]; then
         echo -e "${BLUE}📁 Creating model cache directory: $MODEL_CACHE_DIR${NC}"
-        # diar-native is created (empty) here same as huggingface/torch. That is safe
-        # despite the documented crash-loop risk (an empty dir at the sidecar's bind-mount
-        # source): get_compose_files only loads docker-compose.diar-native.yml when the
-        # dir is non-empty OR HUGGINGFACE_TOKEN is set, and an empty dir with no token
-        # never satisfies either arm.
-        mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/diar-native"
     fi
 
-    # Check current ownership
-    local current_owner
-    current_owner=$(stat -c '%u' "$MODEL_CACHE_DIR" 2>/dev/null || stat -f '%u' "$MODEL_CACHE_DIR" 2>/dev/null || echo "unknown")
+    # Kept in lockstep with scripts/common.sh's subdirectory list — pinned by
+    # backend/tests/unit/test_fix_model_cache_permissions_parity.py, do not let these two
+    # lists diverge again. Unconditional (not gated behind "parent dir didn't exist"):
+    # an install whose MODEL_CACHE_DIR already existed before diar-native was added to
+    # this list never re-entered the old `if [ ! -d ... ]` branch, so diar-native was
+    # never created here, and dockerd then created it root-owned on `compose up` (the
+    # exact NOT_WRITABLE / exit-7 failure this function exists to prevent). `2>/dev/null`
+    # matches common.sh's version — the ownership loop below only repairs directories
+    # that exist, so creating this one is what lets the repair reach it.
+    mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" \
+        "$MODEL_CACHE_DIR/sentence-transformers" "$MODEL_CACHE_DIR/opensearch-ml" \
+        "$MODEL_CACHE_DIR/diar-native" 2>/dev/null
 
-    # If directory is owned by root (0) or doesn't match container user (1000), fix permissions
-    if [ "$current_owner" = "0" ] || [ "$current_owner" != "1000" ]; then
+    # Check ownership of parent AND all subdirectories — a subdirectory can be
+    # root-owned even when the parent is correctly owned by UID 1000 (e.g. dockerd
+    # creating a bind-mount source that predates this fix). A parent-only check missed
+    # exactly that case for diar-native.
+    local needs_fix=false current_owner
+    for dir in "$MODEL_CACHE_DIR" "$MODEL_CACHE_DIR"/*/; do
+        [ -d "$dir" ] || continue
+        current_owner=$(stat -c '%u' "$dir" 2>/dev/null || stat -f '%u' "$dir" 2>/dev/null || echo "unknown")
+        if [ "$current_owner" != "1000" ]; then
+            needs_fix=true
+            break
+        fi
+    done
+
+    if [ "$needs_fix" = true ]; then
         echo -e "${YELLOW}🔧 Fixing model cache permissions for non-root container (UID 1000)...${NC}"
 
         # Try using Docker to fix permissions (works without sudo)
@@ -314,14 +343,50 @@ force_cpu_mode_requested() {
 # itself (or any wrapper invoked the same way) would vanish the instant that subshell
 # exits, before the `docker compose` command that actually needs it ever runs. Calling
 # this separately, first, keeps the export in THIS shell.
+#
+# But an in-process `export` is not enough on its own, for a second reason: the
+# `compose-files` arm's own DOCUMENTED usage is
+# `docker compose $(./opentranscribe.sh compose-files 2>/dev/null) up` — the whole
+# script runs as a SEPARATE PROCESS there, so any export made inside it dies with that
+# process the instant `compose-files` finishes printing, before the caller's `docker
+# compose up` ever starts. `docker compose` re-reads `.env` off disk on every invocation
+# regardless of shell/process, so persisting the pin there (once, non-destructively) is
+# what makes it visible to that usage too — the in-process export below still matters for
+# every OTHER call site here, which builds `$compose_files` and runs `docker compose` in
+# the SAME process.
 pin_diar_native_image_for_blackwell() {
     force_cpu_mode_requested && return 0
     [ "$(detect_nvidia_runtime)" = "nvidia" ] || return 0
     is_blackwell_gpu || return 0
     [ -f docker-compose.blackwell.yml ] || return 0
-    local tag
+
+    # An operator's own .env pin (or a private-registry mirror) always wins. Reading it
+    # through read_env_value — not a bare `${DIAR_NATIVE_IMAGE:-...}` shell-env
+    # expansion — is what lets it win: a value an operator (or an earlier run of this
+    # same function, see the persistence below) put in .env is invisible to a bare shell
+    # expansion unless something already exported it into this process.
+    local existing
+    existing=$(read_env_value DIAR_NATIVE_IMAGE)
+    if [ -n "$existing" ]; then
+        export DIAR_NATIVE_IMAGE="$existing"
+        return 0
+    fi
+
+    local tag pinned
     tag=$(read_env_value OT_BLACKWELL_IMAGE_TAG)
-    export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-davidamacey/opentranscribe-backend:${tag:-blackwell}}"
+    pinned="${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${tag:-blackwell}"
+    export DIAR_NATIVE_IMAGE="$pinned"
+
+    # Persist so a later, separate `docker compose` invocation (including the
+    # compose-files subshell usage above, and `download-models diar-native` via
+    # resolve_diar_native_downloader_image's own DIAR_NATIVE_IMAGE read) resolves the
+    # same image without needing this function to have run first in that process. Only
+    # writes when the key is truly absent — re-checked with a raw grep rather than
+    # read_env_value's parsed form, so a key present-but-empty (an operator's deliberate
+    # "do not pin" choice) is never clobbered.
+    if [ -f .env ] && ! grep -qE '^[[:space:]]*(export[[:space:]]+)?DIAR_NATIVE_IMAGE=' .env 2>/dev/null; then
+        printf '\nDIAR_NATIVE_IMAGE=%s\n' "$pinned" >> .env
+    fi
 }
 
 # Resolve where the diar-native ONNX/PLDA export lives (or will land), from .env alone.
@@ -465,8 +530,12 @@ get_compose_files() {
     # operator next ran `start`/`update`: weights-or-token was still true, so the overlay
     # reloaded regardless of the variable — even though preflight_upgrade_env below reads
     # this exact same variable for the exact same feature. Same read here, same default.
+    # backend/app/transcription/config.py:357-366 resolves this value with
+    # .strip().lower() and fail-safes anything unrecognised to "native" — a
+    # case-sensitive compare here read 'Native'/'NATIVE' as "not native" and silently
+    # skipped the sidecar the backend was about to use anyway. Normalise the same way.
     local diar_backend=""
-    diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND)
+    diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND | tr '[:upper:]' '[:lower:]')
 
     # Lite deployments are excluded outright: native_provision.py deliberately SKIPS
     # provisioning under DEPLOYMENT_MODE=lite (the lite image ships no Python exporter
@@ -582,8 +651,12 @@ preflight_upgrade_env() {
     local deployment_mode
     deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
 
+    # Same case-fold as get_compose_files' identical gate above: the backend resolves
+    # this value case-insensitively (config.py:357-366) and fail-safes unknowns to
+    # "native", so a case-sensitive compare here ('Native', 'NATIVE') would silently
+    # skip the #670 preflight guard for a backend that is about to run native anyway.
     local diar_backend
-    diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND)
+    diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND | tr '[:upper:]' '[:lower:]')
     if [ "${diar_backend:-native}" = "native" ]; then
         local diar_dir diar_token
         diar_dir=$(resolve_diar_native_models_dir)
@@ -797,6 +870,16 @@ show_access_info() {
 # the one the sidecar will run from is not something either of them is contracted to
 # tolerate.
 resolve_diar_native_downloader_image() {
+    # A Blackwell pin (from .env, or written there by pin_diar_native_image_for_blackwell
+    # via the `download_models_diar_native` call below) must win here too — otherwise
+    # `start` runs the sidecar at `:blackwell` while this export runs at the plain
+    # release tag, violating the "export and serve agree" contract documented above.
+    local pinned
+    pinned=$(read_env_value DIAR_NATIVE_IMAGE)
+    if [ -n "$pinned" ]; then
+        echo "$pinned"
+        return 0
+    fi
     local tag
     tag=$(read_env_value OT_IMAGE_TAG)
     echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${tag:-latest}"
@@ -818,6 +901,11 @@ resolve_diar_native_downloader_image() {
 # the pinned deployment image via resolve_diar_native_downloader_image() above.
 download_models_diar_native() {
     check_environment
+    # Same Blackwell-tag pin `start`/`restart`/`status` apply, before resolving the
+    # downloader image below — without this call here, a Blackwell host's `start` used
+    # `:blackwell` while `download-models diar-native` used the plain release tag (#4 in
+    # the audit that found this).
+    pin_diar_native_image_for_blackwell
 
     local token
     token=$(read_env_value HUGGINGFACE_TOKEN)
@@ -847,7 +935,16 @@ download_models_diar_native() {
     # the directory in the same breath — not a code path that could leave an empty
     # diar-native dir sitting for `start` to auto-load against and crash-loop.
     mkdir -p "$models_dir" "$cache_dir/huggingface"
-    fix_model_cache_permissions
+    # `|| true`: this script runs under `set -e`, and fix_model_cache_permissions
+    # returns 1 (after printing its own warning) when it could not fix ownership —
+    # e.g. no docker and no chown permission. A bare call here aborted the WHOLE
+    # command right there, before `docker run provision-models` itself ever ran, which
+    # is exactly the scenario that produces the documented exit-7 NOT_WRITABLE remedy
+    # below. Let the fix attempt fail non-fatally and continue: either the directory was
+    # writable anyway (fix reported false-negative, e.g. `stat` unavailable), or it
+    # genuinely is not and `docker run` below fails with exit 7, whose remedy is what an
+    # operator actually needs to see.
+    fix_model_cache_permissions || true
 
     local image
     image=$(resolve_diar_native_downloader_image)
@@ -918,7 +1015,10 @@ download_models_diar_native() {
 case "${1:-help}" in
     start)
         check_environment
-        fix_model_cache_permissions
+        # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
+        # call above — a failed fix here must not abort this command before the actual
+        # `docker compose` step runs and reports its own, more specific error.
+        fix_model_cache_permissions || true
         # Same first-run fix as opentr.sh's start_app()/reset_and_init() (issue #614):
         # a genuinely fresh `cp .env.example .env` ships MINIO_KMS_SECRET_KEY as an
         # unusable placeholder, which crash-loops MinIO on its very first boot. #613
@@ -947,7 +1047,10 @@ case "${1:-help}" in
         ;;
     restart)
         check_environment
-        fix_model_cache_permissions
+        # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
+        # call above — a failed fix here must not abort this command before the actual
+        # `docker compose` step runs and reports its own, more specific error.
+        fix_model_cache_permissions || true
         echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
         pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
@@ -1025,7 +1128,10 @@ case "${1:-help}" in
         ;;
     update)
         check_environment
-        fix_model_cache_permissions
+        # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
+        # call above — a failed fix here must not abort this command before the actual
+        # `docker compose` step runs and reports its own, more specific error.
+        fix_model_cache_permissions || true
 
         # Optional target: `update --version vX.Y.Z` moves this install to a
         # specific release; `--rollback` returns it to the previous one. Both
@@ -1262,7 +1368,10 @@ case "${1:-help}" in
 
         echo ""
         echo -e "${BLUE}🐳 Updating Docker images...${NC}"
-        fix_model_cache_permissions
+        # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
+        # call above — a failed fix here must not abort this command before the actual
+        # `docker compose` step runs and reports its own, more specific error.
+        fix_model_cache_permissions || true
         pin_diar_native_image_for_blackwell
         compose_files=$(get_compose_files)
         # Same gate as `update`: refuse while the old stack is still running

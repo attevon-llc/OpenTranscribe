@@ -216,6 +216,57 @@ for k in sorted(interesting):
     ac_warn "──────── end diagnostics ────────"
 }
 
+# ac_diar_engine_verdict [WORKER_CONTAINER] [SINCE]
+#
+# Answers "which engine actually diarized the file(s) that just completed?" —
+# a question `ac_wait_for_file_status` returning "completed" cannot answer.
+# The fallback from the native sidecar to in-process PyAnnote is SILENT BY
+# DESIGN (diarizer_native.py / model_manager.py log one warning line and
+# carry on), so a rehearsal that only checks the upload's final status can
+# pass on a stack whose diarizer is dead (issue #670).
+#
+# diarizer_native.py logs exactly one of two mutually exclusive lines per
+# job:
+#   "native diarization done in %.1fs: %d segments, %d speakers"  (served)
+#   "falling back to PyAnnote"  (degraded — three call sites log this exact
+#   suffix: an unreachable sidecar, a mid-job /diarize failure, or the
+#   sidecar simply being absent from this deployment)
+#
+# Echoes exactly one of: native | fallback | unknown | absent
+#   native    a "native diarization done" line was seen and no fallback line
+#   fallback  at least one "falling back to PyAnnote" line was seen
+#   unknown   the worker container is up but neither line appeared in the
+#             window — e.g. no diarization job ran in it yet
+#   absent    the named worker container is not running at all
+#
+# Deliberately does NOT prove GPU residency — that is
+# scripts/diar-native-smoke.sh's job (device-memory residency via
+# nvidia-smi), and it proves the opposite half of this question: the sidecar
+# process is alive and pinned to the right GPU, not that any job was routed
+# to it. Callers that want both should run both.
+ac_diar_engine_verdict() {
+    local worker_container="${1:-opentranscribe-celery-worker}"
+    local since="${2:-30m}"
+
+    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$worker_container"; then
+        echo "absent"
+        return 0
+    fi
+
+    local logs native_hits fallback_hits
+    logs=$(docker logs --since "$since" "$worker_container" 2>&1 || true)
+    native_hits=$(grep -c 'native diarization done in' <<<"$logs" || true)
+    fallback_hits=$(grep -c 'falling back to PyAnnote' <<<"$logs" || true)
+
+    if (( fallback_hits > 0 )); then
+        echo "fallback"
+    elif (( native_hits > 0 )); then
+        echo "native"
+    else
+        echo "unknown"
+    fi
+}
+
 ac_wait_for_file_status() {
     # Poll /api/files/<uuid> until status == completed (or error/timeout).
     local file_uuid="$1"

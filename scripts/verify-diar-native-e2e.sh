@@ -13,19 +13,46 @@
 #              directory reads as not-ready.
 #   current  - whatever is on disk now. A cheap re-check after restoring.
 #
-# The models directory is MOVED, never deleted (462 MB, and it is the only copy on this
-# host). Restoration runs from a trap so an interrupted run still puts it back.
+# ⚠️ `fresh` and `upgrade` MUTATE the models directory, and this script has already cost
+# this repository a corrupted 1.4 GB model tree. Moving a directory that a RUNNING container
+# holds as a bind-mount source does not detach the container: the mount follows the inode, so
+# the sidecar carried on serving a directory no path pointed at any more, `docker inspect`
+# reported the original source, and a restart would silently have swapped the export. Three
+# distinct copies ended up on disk.
+#
+# So those two scenarios now REFUSE to touch the live export. Point MODELS_DIR at a throwaway
+# directory, or run them against an isolated stack:
+#
+#     ./opentr.sh start dev --fresh diarcheck --port-offset 100
+#     MODELS_DIR=.fresh/diarcheck/diar-native-models ./scripts/verify-diar-native-e2e.sh fresh
+#
+# `current` is read-only and always safe. Overriding with OK_TO_MUTATE_LIVE_MODELS=1 is
+# possible but deliberately ugly — the repo's rule is not to develop against live data.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT" || exit 1
 
 SCENARIO="${1:-current}"
-MODELS_DIR="${MODELS_DIR:-$REPO_ROOT/models/diar-native}"
-STASH_DIR="$REPO_ROOT/models/.diar-native-stashed-by-verify"
+LIVE_MODELS_DIR="$REPO_ROOT/models/diar-native"
+MODELS_DIR="${MODELS_DIR:-$LIVE_MODELS_DIR}"
+# Anchor the stash beside the target, not beside the live tree — a stash written into
+# models/ while MODELS_DIR points elsewhere is how an "isolated" run still litters live data.
+STASH_DIR="$(dirname "$MODELS_DIR")/.$(basename "$MODELS_DIR")-stashed-by-verify"
 SIDECAR="$(docker ps --filter "label=com.docker.compose.service=diar-native" \
                      --format '{{.Names}}' | head -1)"
 BACKEND="opentranscribe-backend"
+
+# Read the backend's diar-native log lines ONCE, into a variable.
+#
+# ⚠️ Never `docker logs ... | grep -q` here. This script runs under `set -o pipefail`, and
+# `grep -q` exits the instant it matches, so `docker logs` dies of SIGPIPE (141) and the
+# PIPELINE reports failure even though the pattern was found. That is not theoretical: it
+# is what made three separate runs report "no provisioning line in the backend log" and
+# then print the very line they claimed was absent, which was misdiagnosed as a race.
+backend_diar_log() {
+    docker logs "$BACKEND" --since 30m 2>&1 | grep -i 'diar-native' || true
+}
 
 pass() { printf '  \033[0;32mPASS\033[0m  %s\n' "$1"; }
 fail() { printf '  \033[0;31mFAIL\033[0m  %s\n' "$1"; FAILURES=$((FAILURES + 1)); }
@@ -57,6 +84,24 @@ restore_models() {
 }
 trap restore_models EXIT INT TERM
 
+# --- refuse to mutate the live export ---------------------------------------------
+# Compare resolved paths: a relative MODELS_DIR, a symlink or a trailing slash must not be
+# able to sneak the live tree past a string comparison.
+_resolved() { readlink -f "$1" 2>/dev/null || printf '%s' "$1"; }
+if [ "$SCENARIO" != "current" ] \
+   && [ "$(_resolved "$MODELS_DIR")" = "$(_resolved "$LIVE_MODELS_DIR")" ] \
+   && [ "${OK_TO_MUTATE_LIVE_MODELS:-0}" != "1" ]; then
+    printf '\033[0;31mREFUSING\033[0m: scenario "%s" mutates the models directory, and\n' "$SCENARIO"
+    printf '  %s\nis the LIVE export this deployment serves from.\n\n' "$(_resolved "$MODELS_DIR")"
+    printf 'Run it against an isolated stack instead:\n'
+    printf '  ./opentr.sh start dev --fresh diarcheck --port-offset 100\n'
+    printf '  MODELS_DIR=.fresh/diarcheck/diar-native-models %s %s\n\n' "$0" "$SCENARIO"
+    printf 'Or set OK_TO_MUTATE_LIVE_MODELS=1 if you genuinely mean the live one.\n'
+    printf '⚠️  A running container holding this path as a bind-mount source will keep\n'
+    printf '   serving the old inode after it is moved — recreate the sidecar afterwards.\n'
+    exit 2
+fi
+
 # --- scenario setup ---------------------------------------------------------------
 printf '\033[1mScenario: %s\033[0m\n' "$SCENARIO"
 case "$SCENARIO" in
@@ -83,22 +128,24 @@ if [ "$SCENARIO" != "current" ]; then
     # measured cold export lands at ~140s and the check reported "no provisioning line"
     # while the very next `docker logs` call showed it. Poll for the thing being asserted.
     for _ in $(seq 1 90); do
-        if docker logs "$BACKEND" --since 30m 2>&1 \
-             | grep -qE 'models exported|already provisioned|provisioning (failed|skipped)'; then
-            break
-        fi
+        case "$(backend_diar_log)" in
+            *"models exported"*|*"already provisioned"*|*"provisioning failed"*|*"provisioning skipped"*)
+                break ;;
+        esac
         sleep 5
     done
 fi
 
-if docker logs "$BACKEND" --since 30m 2>&1 | grep -q "diar-native models exported"; then
-    pass "the backend exported a model set"
-elif docker logs "$BACKEND" --since 30m 2>&1 | grep -q "already provisioned"; then
-    pass "a valid marker short-circuited the export (idempotent)"
-else
-    fail "no provisioning line in the backend log"
-    docker logs "$BACKEND" --since 30m 2>&1 | grep -i "diar-native" | tail -5
-fi
+DIAR_LOG="$(backend_diar_log)"
+case "$DIAR_LOG" in
+    *"diar-native models exported"*)
+        pass "the backend exported a model set" ;;
+    *"already provisioned"*)
+        pass "a valid marker short-circuited the export (idempotent)" ;;
+    *)
+        fail "no provisioning line in the backend log"
+        printf '%s\n' "$DIAR_LOG" | tail -5 ;;
+esac
 
 # --- 2. the marker ----------------------------------------------------------------
 printf '\n\033[1m2. Marker\033[0m\n'

@@ -30,6 +30,7 @@ import socket
 import threading
 
 import numpy as np
+import pytest
 
 import app.transcription.diarizer_native as diarizer_native
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
@@ -146,6 +147,253 @@ class TestWavHandoff:
             "a WAV this call created for itself must be cleaned up in the finally block"
         )
         assert len(result) == 1
+
+
+# -- retry policy: retry a 422 (sidecar couldn't open the path), never a timeout ------------
+
+
+_422_then_ok_hits = {"count": 0}
+
+
+class _Counting422ThenOKHandler(http.server.BaseHTTPRequestHandler):
+    """First /diarize POST answers 422 ("could not open the path"); every later one 200s."""
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+        _422_then_ok_hits["count"] += 1
+        if _422_then_ok_hits["count"] == 1:
+            self.send_response(422)
+            self.end_headers()
+            self.wfile.write(b"{}")
+            return
+        body = b'{"exclusive_segments": [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}], "segments": []}'
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+
+@contextlib.contextmanager
+def _accept_and_hang_server():
+    """A real listening socket that accepts a connection and never answers it.
+
+    Deliberately not http.server: a handler would parse the request and could reply fast.
+    This reproduces a genuinely WEDGED sidecar — TCP connects, then nothing — so the client
+    can only ever fail by hitting its own read timeout, exactly the case the retry-on-any-
+    exception bug doubled.
+    """
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0))
+    port = srv.getsockname()[1]
+    srv.listen(5)
+    accepted = {"count": 0}
+    stop = threading.Event()
+
+    def _serve() -> None:
+        srv.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = srv.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                # The listening socket was closed from the main thread as part of teardown
+                # (stop.set() + srv.close() race with a blocked accept()) — expected, not a
+                # real failure.
+                break
+            accepted["count"] += 1
+            # Never read/respond/close — the client's own timeout is what ends this.
+
+    thread = threading.Thread(target=_serve, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{port}", accepted
+    finally:
+        stop.set()
+        with contextlib.suppress(OSError):
+            srv.close()
+
+
+class TestRetryPolicy:
+    """Issue #656/#661 audit: a timeout must never be retried; a 422 must be."""
+
+    def test_a_422_is_retried_with_a_fresh_copy(self, tmp_path, monkeypatch):
+        _422_then_ok_hits["count"] = 0
+        httpd = http.server.HTTPServer(("127.0.0.1", 0), _Counting422ThenOKHandler)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            engine_shared = tmp_path / "engine-shared"
+            engine_shared.mkdir()
+            monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_DIR", str(engine_shared))
+            monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_PREFIX", str(engine_shared) + "/")
+            monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
+
+            pre_wav = engine_shared / "task-422.wav"
+            pre_wav.write_bytes(b"not a real wav; the sidecar is real but doesn't read it")
+
+            diarizer = NativeSpeakerDiarizer(_Config(), base_url=f"http://127.0.0.1:{port}")
+            diarizer.is_loaded = True
+            audio = np.zeros(16_000, dtype=np.float32)
+
+            result, _, _ = diarizer.diarize(audio, wav_path=str(pre_wav))
+
+            assert _422_then_ok_hits["count"] == 2, (
+                "a 422 (sidecar reachable but couldn't open THIS path) must be retried once "
+                "with a freshly written copy"
+            )
+            assert len(result) == 1
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_a_timeout_is_never_retried(self, tmp_path, monkeypatch):
+        """A wedged sidecar must fail over after exactly ONE request, not two.
+
+        Before this fix, any exception (including a timeout) on the staged-WAV attempt
+        triggered a second attempt — a fresh copy POSTed to the same wedged sidecar — which
+        doubles the worst-case hang from one _TIMEOUT_S to two before PyAnnote takes over.
+        """
+        monkeypatch.setattr(diarizer_native, "_TIMEOUT_S", 0.3)
+        with _accept_and_hang_server() as (base_url, accepted):
+            engine_shared = tmp_path / "engine-shared"
+            engine_shared.mkdir()
+            monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_DIR", str(engine_shared))
+            monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_PREFIX", str(engine_shared) + "/")
+            monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
+            monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", _FakeFallback)
+
+            pre_wav = engine_shared / "task-timeout.wav"
+            pre_wav.write_bytes(b"staged wav; the sidecar never reads it, it never answers")
+
+            diarizer = NativeSpeakerDiarizer(_Config(), base_url=base_url)
+            diarizer.is_loaded = True
+            audio = np.zeros(16_000, dtype=np.float32)
+
+            result, _, _ = diarizer.diarize(audio, wav_path=str(pre_wav))
+
+            assert accepted["count"] == 1, (
+                "a timeout must NOT be retried — a second attempt at the same sidecar and "
+                "the same _TIMEOUT_S ceiling can only double the worst-case hang before the "
+                "PyAnnote fallback takes over"
+            )
+            assert len(result) == 1, "must still degrade to the PyAnnote fallback, not raise"
+
+    def test_a_timeout_while_overlapped_raises_instead_of_retrying_or_falling_back(
+        self, tmp_path, monkeypatch
+    ):
+        """Same timeout, but allow_local_fallback=False (the overlapped-diarization thread,
+        issue #665): still exactly one request, and it must raise rather than build the
+        in-process fallback on this thread.
+        """
+        monkeypatch.setattr(diarizer_native, "_TIMEOUT_S", 0.3)
+        with _accept_and_hang_server() as (base_url, accepted):
+            engine_shared = tmp_path / "engine-shared"
+            engine_shared.mkdir()
+            monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_DIR", str(engine_shared))
+            monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_PREFIX", str(engine_shared) + "/")
+            monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
+
+            pre_wav = engine_shared / "task-timeout2.wav"
+            pre_wav.write_bytes(b"staged wav")
+
+            diarizer = NativeSpeakerDiarizer(_Config(), base_url=base_url)
+            diarizer.is_loaded = True
+            audio = np.zeros(16_000, dtype=np.float32)
+
+            with pytest.raises(RuntimeError):
+                diarizer.diarize(audio, wav_path=str(pre_wav), allow_local_fallback=False)
+
+            assert accepted["count"] == 1
+
+
+class _FakeFallback:
+    """Minimal PyAnnote-shaped stand-in, local to the retry-policy tests."""
+
+    def __init__(self, config):
+        self.config = config
+        self.is_loaded = False
+
+    def load_model(self) -> None:
+        self.is_loaded = True
+
+    def unload_model(self) -> None:
+        self.is_loaded = False
+
+    def diarize(self, audio):
+        from app.transcription.diarize_result import DiarizeResult
+
+        return (
+            DiarizeResult(
+                start=np.array([0.0]),
+                end=np.array([1.0]),
+                speaker=np.array(["SPEAKER_00"], dtype=object),
+            ),
+            {"count": 0, "duration": 0.0, "regions": []},
+            {},
+        )
+
+
+# -- E0 observability: log which case fired (reused / mismatched-prefix / missing-file) -----
+
+
+class TestReuseObservability:
+    def test_logs_when_the_staged_path_is_not_under_the_shared_prefix(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        import logging
+
+        engine_shared = tmp_path / "engine-shared"
+        engine_shared.mkdir()
+        monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_DIR", str(engine_shared))
+        monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_PREFIX", str(engine_shared) + "/")
+        monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
+        monkeypatch.setattr(diarizer_native, "post_json", _fake_diarize_reply)
+
+        # A path that exists but lives OUTSIDE the configured shared prefix — the E0 mismatch
+        # this stale-.env install shape produces.
+        elsewhere = tmp_path / "elsewhere.wav"
+        elsewhere.write_bytes(b"a wav not under the shared prefix")
+
+        diarizer = NativeSpeakerDiarizer(_Config(), base_url="http://fake-sidecar")
+        diarizer.is_loaded = True
+        audio = np.zeros(16_000, dtype=np.float32)
+
+        caplog.set_level(logging.INFO)
+        diarizer.diarize(audio, wav_path=str(elsewhere))
+
+        assert any(
+            "NOT used" in r.message and "not under the shared prefix" in r.message
+            for r in caplog.records
+        ), "a mismatched shared-volume prefix must be logged, not silently absorbed"
+
+    def test_logs_when_reuse_actually_fires(self, tmp_path, monkeypatch, caplog):
+        import logging
+
+        engine_shared = tmp_path / "engine-shared"
+        engine_shared.mkdir()
+        monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_DIR", str(engine_shared))
+        monkeypatch.setattr(diarizer_native, "_ENGINE_SHARED_PREFIX", str(engine_shared) + "/")
+        monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
+        monkeypatch.setattr(diarizer_native, "post_json", _fake_diarize_reply)
+
+        pre_wav = engine_shared / "task-ok.wav"
+        pre_wav.write_bytes(b"a properly staged wav")
+
+        diarizer = NativeSpeakerDiarizer(_Config(), base_url="http://fake-sidecar")
+        diarizer.is_loaded = True
+        audio = np.zeros(16_000, dtype=np.float32)
+
+        caplog.set_level(logging.DEBUG)
+        diarizer.diarize(audio, wav_path=str(pre_wav))
+
+        assert any("reusing staged WAV" in r.message for r in caplog.records), (
+            "a successful reuse must also be observable, not just its absence"
+        )
 
 
 # -- sidecar_ready() TTL cache -------------------------------------------------------------

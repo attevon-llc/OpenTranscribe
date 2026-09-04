@@ -73,6 +73,14 @@ _GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0",
 # to a bare /tmp here would make the prefix match those local paths and hand the sidecar files
 # it cannot open — so on an install whose .env predates the variable, the correct behaviour is
 # for the reuse to simply not fire, which this default gives us.
+#
+# This is judged correct, not just asserted: no compose file sets ENGINE_SHARED_VOLUME_PATH
+# directly (every service reads it from `.env` via `env_file:`, which is the right place for
+# it), and .env.example DOES already carry the matching value — so a FRESH install gets the
+# optimisation for free. The only install this default protects is one whose `.env` predates
+# the variable being added there. Since "reuse silently never fires" is itself a failure mode
+# nothing else would surface, diarize() below logs which case fired on every call — see the
+# "reuse-WAV optimisation" log lines.
 _ENGINE_SHARED_DIR = os.environ.get("ENGINE_SHARED_VOLUME_PATH", "/tmp/transcription")  # noqa: S108  # nosec B108
 _ENGINE_SHARED_PREFIX = _ENGINE_SHARED_DIR.rstrip("/") + "/"
 
@@ -347,6 +355,32 @@ def _overlap_regions(full_segments: list[dict], min_duration: float) -> list[dic
     return regions
 
 
+def _log_reuse_decision(wav_path: str | None, reused: bool) -> None:
+    """Observable signal for issue #661's E0 (make the fast path run, and PROVE it).
+
+    Silence here is exactly the failure mode that let the reuse optimisation never fire on
+    an install whose ``.env`` predates ``ENGINE_SHARED_VOLUME_PATH`` — every health check
+    stayed green while every diarization quietly took the slower re-encode path.
+    """
+    if wav_path and not reused:
+        if not wav_path.startswith(_ENGINE_SHARED_PREFIX):
+            logger.info(
+                "diar-native reuse-WAV optimisation NOT used: %s is not under the shared "
+                "prefix %s. If this worker and the sidecar should share a volume, set "
+                "ENGINE_SHARED_VOLUME_PATH the same way in both (see .env.example).",
+                wav_path,
+                _ENGINE_SHARED_PREFIX,
+            )
+        else:
+            logger.info(
+                "diar-native reuse-WAV optimisation NOT used: staged path %s does not "
+                "exist on disk.",
+                wav_path,
+            )
+    elif reused:
+        logger.debug("diar-native reusing staged WAV at %s", wav_path)
+
+
 class NativeSpeakerDiarizer:
     """SpeakerDiarizer-compatible client for the diar-native sidecar."""
 
@@ -397,6 +431,58 @@ class NativeSpeakerDiarizer:
 
     # -- main entry points -------------------------------------------------
 
+    def _post_own_copy(self, audio: np.ndarray) -> tuple[dict, str]:
+        """Write our own WAV copy of *audio* and POST it. Returns ``(response, path)``.
+
+        Split out of ``diarize()`` to keep that method's cyclomatic complexity in check, and
+        because it is exactly the unit the write-vs-HTTP-failure comment there talks about:
+        one write op followed by one POST, both degrading the same way to the caller.
+        Raises on any failure (disk-full, unwritable scratch volume, HTTP failure); the
+        caller decides how to degrade.
+        """
+        os.makedirs(_SHARED_DIR, exist_ok=True)
+        own_wav = os.path.join(_SHARED_DIR, f"diar_{uuid.uuid4().hex}.wav")
+        clip = np.clip(np.asarray(audio, dtype=np.float32), -1.0, 1.0)
+        pcm = (clip * 32767.0).astype("<i2")
+        with wave.open(own_wav, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(pcm.tobytes())
+        return self._post_diarize(own_wav), own_wav
+
+    def _try_reused_wav(self, wav_path: str) -> dict | None:
+        """Attempt the staged-WAV POST. Returns the response on success, or ``None`` when
+        the caller should retry with its own freshly-written copy (an HTTP 4xx, typically
+        422 — the sidecar is reachable and answered, it just could not open THIS path).
+
+        Raises for anything else (timeout, connection loss): that means the sidecar itself
+        is unreachable or wedged, and a second attempt at the same ``_TIMEOUT_S`` ceiling
+        cannot recover from it — it would only double the worst-case hang before the
+        fallback runs (measured: 2x timeout with a staged WAV vs 1x without one, since
+        retrying-on-any-exception used to re-POST a freshly written copy at the same
+        sidecar). Split out of ``diarize()`` to keep its cyclomatic complexity in check.
+        """
+        try:
+            return self._post_diarize(wav_path)
+        except urllib.error.HTTPError as exc:
+            logger.warning(
+                "diar-native could not use the staged WAV at %s (HTTP %s); re-sending "
+                "our own copy. If this repeats, the sidecar is missing the %s mount — "
+                "recreate that container rather than restarting it.",
+                wav_path,
+                exc.code,
+                _ENGINE_SHARED_DIR,
+            )
+            return None
+        except Exception as exc:  # noqa: BLE001 — timeout/connection loss: don't retry, re-raise
+            logger.warning(
+                "diar-native /diarize timed out or the connection was lost (%s); NOT "
+                "retrying — falling back to PyAnnote",
+                exc,
+            )
+            raise
+
     def _post_diarize(self, path: str) -> dict:
         """POST one /diarize request for a WAV the sidecar is expected to be able to open.
 
@@ -410,7 +496,11 @@ class NativeSpeakerDiarizer:
         )
 
     def diarize(
-        self, audio: np.ndarray, wav_path: str | None = None
+        self,
+        audio: np.ndarray,
+        wav_path: str | None = None,
+        *,
+        allow_local_fallback: bool = True,
     ) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None]:
         """Run diarization, optionally against a WAV the caller already wrote to disk.
 
@@ -429,6 +519,15 @@ class NativeSpeakerDiarizer:
                 are a duck-typed drop-in for each other, and callers that only hold ``Any``
                 (``ModelManager.get_diarizer``'s return) must isinstance-check before ever
                 passing this — see ``engine/stages.py``'s ``_run_diarize``.
+            allow_local_fallback: When False, a sidecar failure raises instead of loading the
+                in-process PyAnnote fallback here. Set False by ``engine/stages.py``'s
+                ``_AsyncDiarization`` — the overlapped-diarization thread that runs
+                concurrently with transcription on the main thread (issue #665). Loading
+                PyAnnote from THAT thread would put it on the GPU while Whisper may still be
+                mid-inference on the main thread, and freeing the transcriber to make room is
+                exactly as unsafe (it could tear down weights the main thread is using). The
+                caller catches the raise and retries sequentially, after transcription is
+                known to have finished, where both are safe.
         """
         if not self.is_loaded:
             raise RuntimeError("Diarizer not loaded. Call load_model() first.")
@@ -438,6 +537,16 @@ class NativeSpeakerDiarizer:
                 "runs auto speaker counting (constraint port pending); proceeding with auto.",
                 self.config.num_speakers,
             )
+
+        def _refuse_or_fallback(exc: BaseException) -> tuple[DiarizeResult, dict, dict | None]:
+            if not allow_local_fallback:
+                raise RuntimeError(
+                    "diar-native failed while overlapped with transcription; refusing the "
+                    "in-process PyAnnote fallback on this thread (unsafe to load/release GPU "
+                    "models while transcription may still be running) — the caller must retry "
+                    f"sequentially: {exc}"
+                ) from exc
+            return self._fallback_engine().diarize(audio)
 
         step_start = time.perf_counter()
         # Reusing Stage 1's WAV (issue #661) saves a full write and read of the recording,
@@ -451,21 +560,16 @@ class NativeSpeakerDiarizer:
         reused = bool(
             wav_path and wav_path.startswith(_ENGINE_SHARED_PREFIX) and os.path.isfile(wav_path)
         )
+        _log_reuse_decision(wav_path, reused)
+
         own_wav: str | None = None
         try:
             out = None
             if reused:
                 try:
-                    out = self._post_diarize(str(wav_path))
-                except Exception as exc:  # noqa: BLE001 — degrade the shortcut, not the engine
-                    logger.warning(
-                        "diar-native could not use the staged WAV at %s (%s); re-sending our "
-                        "own copy. If this repeats, the sidecar is missing the %s mount — "
-                        "recreate that container rather than restarting it.",
-                        wav_path,
-                        exc,
-                        _ENGINE_SHARED_DIR,
-                    )
+                    out = self._try_reused_wav(str(wav_path))
+                except Exception as exc:  # noqa: BLE001 — timeout/connection loss, see above
+                    return _refuse_or_fallback(exc)
 
             if out is None:
                 # The WAV write shares the sidecar-loss fallback, not just the HTTP call:
@@ -475,23 +579,13 @@ class NativeSpeakerDiarizer:
                 # diar-native right now" — and previously a write failure propagated out
                 # of diarize() uncaught and hard-failed the whole transcription.
                 try:
-                    os.makedirs(_SHARED_DIR, exist_ok=True)
-                    own_wav = os.path.join(_SHARED_DIR, f"diar_{uuid.uuid4().hex}.wav")
-                    clip = np.clip(np.asarray(audio, dtype=np.float32), -1.0, 1.0)
-                    pcm = (clip * 32767.0).astype("<i2")
-                    with wave.open(own_wav, "wb") as wf:
-                        wf.setnchannels(1)
-                        wf.setsampwidth(2)
-                        wf.setframerate(16000)
-                        wf.writeframes(pcm.tobytes())
-
-                    out = self._post_diarize(own_wav)
+                    out, own_wav = self._post_own_copy(audio)
                 except Exception as exc:  # noqa: BLE001 — a sidecar loss must not fail the job
                     logger.warning(
                         "diar-native /diarize failed mid-job (%s); falling back to PyAnnote",
                         exc,
                     )
-                    return self._fallback_engine().diarize(audio)
+                    return _refuse_or_fallback(exc)
         finally:
             # Only ever unlink a file THIS call created. A reused Stage-1 WAV is still owned
             # by the pipeline stage that wrote it (cleaned up later via

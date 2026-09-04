@@ -136,6 +136,16 @@ class TestResolveGpuQueue:
     transcription queues forever behind a consumer that was never started, so
     the default-environment case (no ENGINE_GPU_SPLIT) must be pinned to 'gpu'
     exactly as strictly as the split-enabled case is pinned to 'gpu-transcribe'.
+
+    ``ENGINE_GPU_SPLIT=true`` alone is NOT sufficient (regression found on this
+    branch): it is an ordinary ``.env`` knob reachable in every container via
+    ``env_file`` regardless of which Compose overlay is actually loaded, so an
+    operator can set it directly without ``--with-gpu-split`` and get no consumer
+    at all. ``_resolve_gpu_queue`` therefore also calls
+    ``_gpu_transcribe_consumer_present()`` (a live Celery ``inspect().active_queues()``
+    check) before honouring the flag; every test here patches that function directly
+    rather than a Celery broker, since the routing DECISION — not the inspect
+    mechanics — is what's under test.
     """
 
     @staticmethod
@@ -163,20 +173,44 @@ class TestResolveGpuQueue:
 
         assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
 
-    def test_local_provider_with_split_enabled_routes_to_the_dedicated_worker(
+    def test_split_flag_set_without_a_live_consumer_never_routes_to_gpu_transcribe(
         self, db_session, normal_user, monkeypatch
     ):
-        """The positive case: with the signal that ONLY docker-compose.gpu-split.yml sets,
-        traffic goes to the queue celery-worker-gpu-transcribe actually consumes."""
+        """THE REGRESSION TEST. This is exactly the dead-queue configuration: an operator
+        set ENGINE_GPU_SPLIT=true in .env (reaches every container via env_file) but never
+        passed --with-gpu-split, so celery-worker-gpu-transcribe was never started and
+        nothing consumes 'gpu-transcribe'. Routing there black-holes every upload with no
+        error, no timeout — files stuck 'processing' forever. Must resolve to the
+        always-staffed 'gpu' queue instead."""
         monkeypatch.delenv("ASR_PROVIDER", raising=False)
         monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
+        monkeypatch.setattr(f"{_DISPATCH}._gpu_transcribe_consumer_present", lambda: False)
+
+        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
+
+    def test_local_provider_with_split_enabled_and_a_live_consumer_routes_to_the_dedicated_worker(
+        self, db_session, normal_user, monkeypatch
+    ):
+        """The positive case: the flag is set AND a worker is verified to actually be
+        consuming 'gpu-transcribe' — traffic goes to the dedicated queue."""
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+        monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
+        monkeypatch.setattr(f"{_DISPATCH}._gpu_transcribe_consumer_present", lambda: True)
 
         assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU_TRANSCRIBE
 
     def test_cloud_provider_wins_over_split(self, db_session, normal_user, monkeypatch):
         """A cloud ASR provider never touches the local GPU stage at all — split being
-        active must not override that routing."""
+        active must not override that routing, and must not even reach the (expensive)
+        consumer-presence check."""
         monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
+
+        def _fail_if_called():
+            raise AssertionError(
+                "_gpu_transcribe_consumer_present must not be called for a cloud provider"
+            )
+
+        monkeypatch.setattr(f"{_DISPATCH}._gpu_transcribe_consumer_present", _fail_if_called)
         cfg = UserASRSettings(
             user_id=normal_user.id,
             name="cloud-test",
@@ -197,6 +231,63 @@ class TestResolveGpuQueue:
         db_session.commit()
 
         assert self._resolve(normal_user.id, db_session) == CeleryQueues.CLOUD_ASR
+
+
+class TestGpuTranscribeConsumerPresent:
+    """``_gpu_transcribe_consumer_present()`` — the live corroboration check itself.
+
+    Patches ``celery_app.control.inspect`` (the actual broker seam), not the function
+    under test, so these tests prove the parsing/fail-closed logic rather than each
+    other's mocks.
+    """
+
+    @staticmethod
+    def _check() -> bool:
+        from app.tasks.transcription.dispatch import _gpu_transcribe_consumer_cache
+        from app.tasks.transcription.dispatch import _gpu_transcribe_consumer_present
+
+        # Force a fresh probe — the module-level TTL cache would otherwise make later
+        # tests in the same process see an earlier test's cached verdict.
+        _gpu_transcribe_consumer_cache["checked_at"] = 0.0
+        return _gpu_transcribe_consumer_present()
+
+    def test_present_when_a_worker_lists_the_queue(self, monkeypatch):
+        fake_inspect = SimpleNamespace(
+            active_queues=lambda: {"gpu-transcribe@host": [{"name": "gpu-transcribe"}]}
+        )
+        monkeypatch.setattr(
+            f"{_DISPATCH}.celery_app.control.inspect", lambda timeout=None: fake_inspect
+        )
+
+        assert self._check() is True
+
+    def test_absent_when_no_worker_lists_the_queue(self, monkeypatch):
+        """The dead-queue case as celery itself would report it: workers respond, but
+        none of them names 'gpu-transcribe' among their active queues."""
+        fake_inspect = SimpleNamespace(active_queues=lambda: {"gpu@host": [{"name": "gpu"}]})
+        monkeypatch.setattr(
+            f"{_DISPATCH}.celery_app.control.inspect", lambda timeout=None: fake_inspect
+        )
+
+        assert self._check() is False
+
+    def test_fails_closed_on_empty_reply(self, monkeypatch):
+        """No workers reachable at all (e.g. broker hiccup) must never be read as
+        'consumer present' — that is the unsafe direction."""
+        fake_inspect = SimpleNamespace(active_queues=lambda: None)
+        monkeypatch.setattr(
+            f"{_DISPATCH}.celery_app.control.inspect", lambda timeout=None: fake_inspect
+        )
+
+        assert self._check() is False
+
+    def test_fails_closed_on_exception(self, monkeypatch):
+        def _boom(timeout=None):
+            raise RuntimeError("broker unreachable")
+
+        monkeypatch.setattr(f"{_DISPATCH}.celery_app.control.inspect", _boom)
+
+        assert self._check() is False
 
 
 @contextmanager

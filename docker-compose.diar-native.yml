@@ -63,6 +63,29 @@ services:
       - DIAR_MAX_INFLIGHT=${DIAR_NATIVE_MAX_INFLIGHT:-2}
       - DIAR_BIND=0.0.0.0:8701
       - SPEAKRS_LAZY_SESSIONS=${DIAR_NATIVE_LAZY_SESSIONS:-1}
+      # ⚠️ BARE ENTRY, NO `=` AND NO DEFAULT — this is load-bearing, do not "tidy" it into
+      # `SPEAKRS_ARENA_SHRINK=${DIAR_NATIVE_ARENA_SHRINK:-0}` to match the lines around it.
+      #
+      # Arena shrink releases the ORT memory arena between jobs: a lower idle VRAM floor at
+      # a per-job throughput cost. It must default OFF (owner's call), and it is the #511
+      # 4 GB-tier prerequisite.
+      #
+      # Compose has no conditional, so a `:-0` form would put the key in the merged config
+      # on EVERY install. It is not established whether diar-server parses this by VALUE or
+      # merely by PRESENCE (`env::var(...).is_ok()` is a common Rust shape) — and if it is
+      # presence, `:-0` would silently ENABLE the knob everywhere, the exact inverse of the
+      # intent. SPEAKRS_LAZY_SESSIONS above has the same shape but defaults to 1, so it has
+      # never exercised the 0 branch and proves nothing either way.
+      #
+      # The bare form removes the question entirely. Verified against real containers:
+      #   unset in .env and shell -> key ABSENT from the container -> off, whichever way
+      #                              diar-server parses it
+      #   SPEAKRS_ARENA_SHRINK=1 in .env -> passed through as "1" -> on
+      # (.env DOES feed a bare passthrough entry, not only ${VAR} interpolation — that was
+      # measured, not assumed, because the operator sets this in .env rather than the shell.)
+      #
+      # Pinned by test_diar_native_arena_shrink_wiring.py.
+      - SPEAKRS_ARENA_SHRINK
       # diar-server 0.3.x emits structured per-request logs (request id, stage timings,
       # device). Before 0.3.0 it installed no tracing subscriber at all and logged
       # nothing — these two are new as of this fix, not a pre-existing knob.

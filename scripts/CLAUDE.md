@@ -32,7 +32,20 @@ this file is for.
   auto-detection); `--list-overlays`/`--dry-run` print the resolved plan without starting
   anything. Every `opentr.sh --with-*` flag is either in the overlay table or explicitly
   exempted with a written reason there — `test_run_dev_tests_overlay_coverage.py` fails the
-  build on any flag that's neither. `compose_project_name()` in that file resolves the live
+  build on any flag that's neither. **`--with-diar-native` is managed CONDITIONALLY**, the only
+  overlay that is: `OVERLAY_NEED_PREDICATE` names a function that must return 0 before the
+  overlay is considered needed at all, and diar-native's is `diar_native_sidecar_expected`
+  (`scripts/lib/diar-native-expected.sh`) — the *same* predicate `run-integration-tests.sh`'s
+  diar-native phase gates on, sourced rather than copied, so the overlay starts exactly when
+  that phase would otherwise **fail** for its absence. It was previously exempt on the grounds
+  that "no test selector this script drives needs it", which stopped being true when that phase
+  landed. It is also the one managed overlay `teardown_overlays` must NOT stop
+  (`OVERLAY_TEARDOWN_EXEMPT`): unlike a mock provider it is part of a native deployment's normal
+  operating configuration, so stopping it leaves a *running* stack silently falling back to
+  in-process PyAnnote — worse than never starting it, because the fallback is by design silent
+  and the tests have already reported green. `test_dev_test_diar_native_overlay.py` drives the
+  real bash resolver with the predicate stubbed both ways; a table entry nothing consults looks
+  identical to one that works. `compose_project_name()` in that file resolves the live
   stack's actual compose project from a running `postgres` container's label, not
   `basename $REPO_ROOT` — the latter breaks when this script runs from a git worktree
   (`.claude/worktrees/<name>`), since `$REPO_ROOT` then resolves to the worktree's own

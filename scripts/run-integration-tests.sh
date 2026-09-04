@@ -106,36 +106,14 @@ GATED_FILES=(tests/test_pki_auth.py tests/test_mfa_security.py
 
 # --- diar-native "sidecar expected" predicate --------------------------------
 #
-# Mirrors opentr.sh's add_diar_native_overlay() start-mode ("CONFIGURATION") predicate:
-# engine.diarizer_backend resolves to native AND (an export already exists at
-# DIAR_NATIVE_MODELS_DIR OR a HUGGINGFACE_TOKEN is configured to produce one on
-# startup). That is the exact gate opentr.sh/opentranscribe.sh use to decide whether a
-# deployment SHOULD have the sidecar running at all — reused here rather than
-# reinvented, because a second copy of "is native diarization configured?" is how this
-# repo's env-var drift usually starts. Not literally sourced: opentr.sh is a stateful
-# CLI dispatcher (it mutates COMPOSE_FILES, exports globals, etc.), not an importable
-# library, so this mirrors its logic by hand. If opentr.sh's predicate changes, update
-# this one in the same commit — see opentr.sh's add_diar_native_overlay() comment block
-# (around "start   - CONFIGURATION.").
-read_env_var() {
-    [ -f "$PROJECT_ROOT/.env" ] || return 0
-    python3 "$SCRIPT_DIR/lib/env_reader.py" "$PROJECT_ROOT/.env" "$1"
-}
-
-diar_native_sidecar_expected() {
-    local backend models_dir token
-    backend="${ENGINE_DIARIZER_BACKEND:-$(read_env_var ENGINE_DIARIZER_BACKEND)}"
-    backend="${backend:-native}"
-    [ "$backend" = "native" ] || return 1
-
-    models_dir="${DIAR_NATIVE_MODELS_DIR:-$(read_env_var DIAR_NATIVE_MODELS_DIR)}"
-    if [ -n "$models_dir" ] && [ -d "$models_dir" ] && [ -n "$(ls -A "$models_dir" 2>/dev/null)" ]; then
-        return 0
-    fi
-
-    token="${HUGGINGFACE_TOKEN:-$(read_env_var HUGGINGFACE_TOKEN)}"
-    [ -n "$token" ]
-}
+# diar_native_sidecar_expected() used to be defined here. It moved to
+# scripts/lib/diar-native-expected.sh when run-dev-tests.sh needed the same question (to
+# decide whether --with-diar-native belongs in its auto-started overlay set) — see that
+# file's header. Sourced rather than copied, for the reason this block already gave: a
+# second copy of "is native diarization configured?" is how this repo's env-var drift
+# usually starts.
+# shellcheck source=lib/diar-native-expected.sh
+source "$SCRIPT_DIR/lib/diar-native-expected.sh"
 
 FAILED_PHASES=()
 SKIPPED_PHASES=()   # phases that exited 4 = NOT MEASURED (verified nothing, but did not fail)

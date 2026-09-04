@@ -27,6 +27,7 @@ declare -A OVERLAY_SERVICE=(
     [ldap-test]=lldap
     [watch]=""
     [mock-asr]=mock-asr
+    [diar-native]=diar-native
 )
 declare -A OVERLAY_AUTH_KEY=(
     [keycloak-test]=oidc_enabled
@@ -38,6 +39,7 @@ declare -A OVERLAY_TIER=(
     [ldap-test]=auto
     [watch]=all
     [mock-asr]=all
+    [diar-native]=auto
 )
 # Which RUN_* phase(s) gate each overlay — "either" (backend or e2e), "e2e", or "backend".
 # resolve_needed_overlays() below drives entirely off this + OVERLAY_TIER, in a fixed order,
@@ -48,16 +50,40 @@ declare -A OVERLAY_PHASE=(
     [ldap-test]=e2e
     [watch]=e2e
     [mock-asr]=backend
+    [diar-native]=backend
+)
+# Optional per-overlay CONDITIONAL-NEED predicate: a function name that must return 0 for the
+# overlay to be considered needed at all, evaluated AFTER phase and tier already matched. An
+# overlay with no entry here is unconditionally needed by its phase/tier, which is how all five
+# original overlays behave.
+#
+# Only diar-native has one, and it needs one: unlike a mock provider (always safe and always
+# useful), the sidecar is only wanted when this deployment is actually CONFIGURED for native
+# diarization. Starting it on a deployment configured for PyAnnote would reserve a GPU for a
+# service nothing will consult. The predicate is the same one run-integration-tests.sh's
+# diar-native phase gates on, so the overlay is started exactly when that phase would otherwise
+# fail for its absence — never more, never less.
+declare -A OVERLAY_NEED_PREDICATE=(
+    [diar-native]=diar_native_sidecar_expected
 )
 #: Fixed iteration order for resolve_needed_overlays/print_overlay_plan — associative-array key
 #: order is unspecified, and a stable order makes the printed plan/report reproducible.
-OVERLAY_ORDER=(mock-llm keycloak-test ldap-test watch mock-asr)
+OVERLAY_ORDER=(mock-llm keycloak-test ldap-test watch mock-asr diar-native)
 declare -A OVERLAY_DESC=(
     [mock-llm]="mock LLM — chat/summarization/topic-extraction suites (backend + e2e chat)"
     [keycloak-test]="Keycloak/OIDC — test_auth_buttons.py::TestOIDCLogin, test_ldap_oidc.py (~60-90s to healthy)"
     [ldap-test]="LDAP — test_auth_buttons.py::TestLDAPLogin, test_ldap_oidc.py (fast, no healthcheck)"
     [watch]="watch-sources host-folder mount — test_watch_sources_e2e.py (recreates app containers)"
     [mock-asr]="mock cloud ASR — backend/tests/integration/test_lite_mode_mocked_providers.py"
+    [diar-native]="native diarization sidecar — run-integration-tests.sh's diar-native CUDA EP phase, which FAILS (not skips) when the sidecar is configured but absent"
+)
+
+# Overlays teardown_overlays() must NOT stop even when this run started them, each with a
+# written reason. Replaces what used to be a hardcoded `watch` branch inside the loop, so a
+# second exemption is a table row rather than a second special case.
+declare -A OVERLAY_TEARDOWN_EXEMPT=(
+    [watch]="no dedicated container to stop; recreating backend/celery to drop the mount is out of proportion to a bind mount of ./watch"
+    [diar-native]="NOT a mock — when the engine is configured native, the sidecar is part of the deployment's normal operating configuration. Stopping it leaves a running stack that silently falls back to in-process PyAnnote, which is the exact failure this overlay exists to prevent. Leave it up; ./opentr.sh stop takes it down with everything else."
 )
 
 # --with-* flags opentr.sh dispatches that this script deliberately does NOT manage, each with a
@@ -69,7 +95,6 @@ declare -A OVERLAY_DESC=(
 declare -A EXEMPT_WITH_FLAGS=(
     [authentik-test]="verified (Opus investigation behind issue #630): no e2e test in this repo actually exercises the running Authentik container — only Authentik-shaped string fixtures against pure functions"
     [backup]="binds a live host directory, declares no container_name or port; nothing this script drives needs it"
-    [diar-native]="a separate GPU sidecar (Rust binary); no test selector this script drives needs it"
     [gpu-split]="a distinct GPU-worker-topology change like --gpu-scale, not a container overlay; no test selector this script drives needs it"
     [llm-test]="reserves a real GPU for minutes at a time, so it is handled by run-dev-tests.sh's own --with-pipeline-smoke block directly (bring-up/health-wait/teardown), not by this table's generic auto-detected tiers — opt-in only, never auto-started under --full/--all-overlays"
     [monitoring]="Prometheus/Grafana; no test selector this script drives needs it"
@@ -85,6 +110,12 @@ declare -A EXEMPT_WITH_FLAGS=(
 # guess has already caused. Sourced, not duplicated.
 # shellcheck source=compose-project.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/compose-project.sh"
+
+# diar_native_sidecar_expected — OVERLAY_NEED_PREDICATE[diar-native]. Shared with
+# run-integration-tests.sh's diar-native phase so the overlay is started exactly when that
+# phase would fail for its absence; see that lib's header for why it is not copied.
+# shellcheck source=diar-native-expected.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/diar-native-expected.sh"
 
 # The watch overlay has no dedicated container — it mounts the host watch folder into existing
 # app services (backend, celery-beat, celery-download-worker, celery-cpu-worker) and sets
@@ -121,6 +152,12 @@ resolve_needed_overlays() {
         # --all-overlays (recreates app containers / needs a dedicated mock provider — costlier,
         # not needed for a bare --full).
         if [[ "$tier" == "all" ]] && ! $ALL_OVERLAYS; then
+            continue
+        fi
+        # Conditional-need predicate, if this overlay declares one (see OVERLAY_NEED_PREDICATE).
+        local predicate="${OVERLAY_NEED_PREDICATE[$flag]:-}"
+        if [[ -n "$predicate" ]] && ! "$predicate"; then
+            echo -e "${YELLOW}==>${NC} --with-$flag not needed on this deployment ($predicate said no) — skipping"
             continue
         fi
         OVERLAYS_NEEDED+=("$flag")
@@ -223,9 +260,9 @@ teardown_overlays() {
         "$VENV_PY" "$AUTH_CONFIG_CLI" restore "$key" "${AUTH_PRIOR_VALUE[$key]}" >/dev/null 2>&1 || true
     done
     for flag in "${OVERLAYS_STARTED_BY_US[@]}"; do
-        if [[ "$flag" == "watch" ]]; then
-            echo -e "${YELLOW}==>${NC} leaving --with-watch mounted (no dedicated container to stop;" \
-                 "recreating backend/celery to drop the mount is out of proportion to a bind mount of ./watch)"
+        local exempt="${OVERLAY_TEARDOWN_EXEMPT[$flag]:-}"
+        if [[ -n "$exempt" ]]; then
+            echo -e "${YELLOW}==>${NC} leaving --with-$flag up: $exempt"
             continue
         fi
         local c="${OVERLAY_CONTAINER[$flag]:-}"

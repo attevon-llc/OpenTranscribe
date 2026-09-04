@@ -38,7 +38,21 @@ declare -A OVERLAY_TIER=(
     [keycloak-test]=auto
     [ldap-test]=auto
     [watch]=all
-    [mock-asr]=all
+    # `auto`, deliberately, despite being one of the two overlays that RECREATES app
+    # containers (it sets GLADIA_API_BASE_URL / ASR_ALLOW_PRIVATE_ENDPOINTS on backend and
+    # celery-cloud-asr-worker, so those two are recreated once at setup).
+    #
+    # It was `all`, which contradicted its own OVERLAY_PHASE=backend: the backend phase runs
+    # tests/integration/test_lite_mode_mocked_providers.py, so a plain --full ran those 6
+    # tests and every one of them SKIPPED, every time, for want of an overlay the same table
+    # said the backend phase needed. The whole --lite / cloud-ASR deployment shape was
+    # therefore never exercised by the default gate. Measured: with the overlay up all 6
+    # pass, in 5m44s.
+    #
+    # The cost is real (~6 min on a ~22 min run) and was weighed against it: this is the
+    # only automated coverage the lite path has, and a permanently-skipping test is the
+    # false confidence scripts/audit-tests.py exists to remove.
+    [mock-asr]=auto
     [diar-native]=auto
 )
 # Which RUN_* phase(s) gate each overlay — "either" (backend or e2e), "e2e", or "backend".

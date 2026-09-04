@@ -62,12 +62,48 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _wait_until_serving(port: int, deadline_s: float = 10.0) -> bool:
+def _serving_http(port: int, timeout: float = 1.0) -> bool:
+    """A real HTTP round-trip, not just an open socket.
+
+    ⚠️ TCP-reachable is NOT serving, and for a CONTAINER the difference is the whole bug.
+    Docker publishes (binds) the port the instant the container is created, so
+    ``_reachable`` succeeds while the Python server inside is still importing. Requests in
+    that window get ``ConnectionResetError(104, 'Connection reset by peer')`` or a truncated
+    stream — which surfaces as "expected token-by-token streaming, not one dump: assert 5 >
+    10" and "assert '<channel|>' in ''", i.e. three failures that read like real LLM-parsing
+    defects and are nothing of the kind. Observed exactly that in a full gate run whose
+    overlay step had just created the mock-llm container; the same three tests pass in
+    isolation and in any run where the container has been up a while.
+
+    ``/v1/models`` is the mock's own model-discovery endpoint (mock-llm-server.py's do_GET),
+    so a 200 with a JSON body proves the handler is actually running.
+    """
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(  # noqa: S310 - fixed loopback URL
+            f"http://127.0.0.1:{port}/v1/models", timeout=timeout
+        ) as resp:
+            if resp.status != 200:
+                return False
+            return isinstance(_json.loads(resp.read() or b"{}"), dict)
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
+def _wait_until_serving(port: int, deadline_s: float = 30.0) -> bool:
+    """Poll until the server ANSWERS, not merely until the port is bound.
+
+    30 s rather than 10 s: the 10 s budget was sized for a subprocess (which binds when it is
+    already importable), not for a container start.
+    """
     end = time.monotonic() + deadline_s
     while time.monotonic() < end:
-        if _reachable("127.0.0.1", port):
+        if _serving_http(port):
             return True
-        time.sleep(0.1)
+        time.sleep(0.2)
     return False
 
 
@@ -78,7 +114,18 @@ def mock_llm_url() -> Iterator[str]:
     Reuses the compose container when it is up, otherwise starts a subprocess
     for the session. Never skips: one of the two always works.
     """
+    # The container branch must wait for the server to ANSWER, exactly like the subprocess
+    # branch below always has. It previously took a bare `_reachable` TCP probe, which a
+    # freshly-created container passes before it serves anything — see _serving_http.
     if _reachable("127.0.0.1", CONTAINER_PORT):
+        if not _wait_until_serving(CONTAINER_PORT):
+            pytest.fail(
+                f"the mock-llm container has port {CONTAINER_PORT} bound but is not answering "
+                f"GET /v1/models. It is starting, wedged, or something else owns that port. "
+                f"This is a hard failure rather than a fall-through to the subprocess branch: "
+                f"binding a second server to a port the container already holds cannot work, "
+                f"and silently testing against the wrong one is worse than stopping."
+            )
         yield f"http://127.0.0.1:{CONTAINER_PORT}/v1"
         return
 

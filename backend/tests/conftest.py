@@ -208,6 +208,34 @@ def _clear_process_auth_cache():
     clear_process_auth_settings_cache()
 
 
+@pytest.fixture(autouse=True)
+def _clear_sidecar_readiness_cache():
+    """Isolate the diar-native readiness/liveness TTL caches between tests.
+
+    Same hazard as ``_clear_process_auth_cache`` above, for the same reason: ``_ready_cache``
+    and ``_status_cache`` in ``app.transcription.diarizer_native`` are module-level dicts with
+    a multi-second TTL, so a verdict cached by one test is visible to every later test in the
+    same xdist worker. ``reset_readiness_cache()`` already existed but was called only by the
+    handful of tests that flip a server's state mid-test — everything else inherited whatever
+    the previous test left behind.
+
+    That is not theoretical. `TestOverlapMidJobFailureDegradesSafely::
+    test_release_and_fallback_happen_on_the_main_thread_after_transcription` failed a full
+    gate run on `manager.release_calls == 1` while passing in isolation AND in a 13,019-test
+    suite run of the same command — the signature of order-dependent state, not of a defect in
+    the code under test. The caches are keyed by URL, and the tests in that module stand up
+    real servers on `_free_port()` values that the OS is free to hand out again.
+
+    Clearing costs two dict `.clear()` calls per test. Leaving it uncleared costs a failure
+    that reproduces only under a particular test ordering, which is the most expensive kind.
+    """
+    from app.transcription.diarizer_native import reset_readiness_cache
+
+    reset_readiness_cache()
+    yield
+    reset_readiness_cache()
+
+
 #: The DDL isolation lock is defined in `tests/db_locks.py` so that this fixture and the
 #: tests that open their own DB connection share ONE definition of the key. A second copy
 #: of the literal would stop protecting anything the moment either copy changed.

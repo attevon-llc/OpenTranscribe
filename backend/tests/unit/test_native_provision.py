@@ -152,14 +152,30 @@ class TestSkipPaths:
         assert result.status == "skipped"
         assert "diar-server" in result.reason
 
-    def test_lite_skips_before_running_the_binary_it_does_carry(
+    def test_lite_provisions_itself_like_any_other_deployment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Lite ships diar-server so it can serve, but not the export toolchain.
+        """Lite must EXPORT, not skip. This test asserts the opposite of what it used to.
 
-        Shelling out would exit 6 on every boot and advise a rebuild, which is the wrong
-        remedy there — so the skip has to happen before the subprocess, and the presence
-        of a working binary on PATH must not defeat it.
+        It previously pinned a ``DEPLOYMENT_MODE=lite`` skip, on the premise that the lite
+        image carried ``diar-server`` (so it could serve) but not the Python packages its
+        baked export scripts import — making a subprocess call exit 6 and advise a rebuild,
+        the wrong remedy there.
+
+        The premise removed the feature it was protecting. The ONNX/PLDA graphs are
+        NON-REDISTRIBUTABLE derivatives of gated weights — there is no ``.onnx`` to
+        download — so a deployment that cannot export cannot obtain them at all. Skipping
+        left a standalone lite install with no local voiceprint path whatsoever, which is
+        the one local model job a cloud-ASR deployment still has. The documented
+        workaround (point ``DIAR_NATIVE_MODELS_DIR`` at a full image's export) meant
+        pulling a 15.2 GB image to produce 484 MB.
+
+        ``requirements-lite.txt`` now installs the four packages the shipped binary's own
+        preflight names — verified by grepping the binary inside the built lite image:
+        ``pyannote.audio``, ``onnxscript``, ``onnxslim``, ``onnxconverter_common``. Measured
+        cost: 2.57 GB -> 2.62 GB, i.e. ~50 MB over pre-shrink lite.
+
+        So lite must now reach the subprocess exactly like a full deployment does.
         """
         bindir = _write_shim(tmp_path, exit_code=0, marker=_GOOD_MARKER)
         monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
@@ -167,9 +183,25 @@ class TestSkipPaths:
 
         result = ensure_native_models(str(tmp_path))
 
-        assert result.status == "skipped"
-        assert not (tmp_path / "record" / "argv").exists()
-        assert "DIAR_NATIVE_MODELS_DIR" in result.reason
+        # `== "ok"`, not `!= "skipped"`: ProvisionResult also has a "failed" status, so a
+        # negated assertion would go GREEN on a lite export that broke — which is the very
+        # outcome this test exists to catch.
+        assert result.status == "ok", (
+            f"lite must provision itself successfully — got {result.status!r}: {result.reason}"
+        )
+        argv_record = tmp_path / "record" / "argv"
+        assert argv_record.exists(), (
+            "the binary was never invoked under DEPLOYMENT_MODE=lite — a lite-specific "
+            "skip has been reintroduced, which leaves lite with no voiceprint path"
+        )
+        # And it must ask for the CPU export, since lite is CPU-only by definition.
+        # argv is recorded one argument per line, so match the pair positionally rather
+        # than as the string "--mode cpu", which never appears.
+        argv = argv_record.read_text(encoding="utf-8").split("\n")
+        assert "--mode" in argv, f"no --mode flag was passed: {argv}"
+        assert argv[argv.index("--mode") + 1] == "cpu", (
+            f"lite is CPU-only, so the export must be requested with --mode cpu: {argv}"
+        )
 
     def test_missing_smoke_clip_warns_rather_than_exporting_unverified(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog

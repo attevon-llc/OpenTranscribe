@@ -290,35 +290,39 @@ class TestDegradePathsWithoutPyannoteOrTorchaudio:
         assert "diar-native" in message
         assert "DIAR_NATIVE_URL" in message
 
-    def test_construction_refuses_with_a_shaped_error_under_lite_with_no_sidecar(
-        self, monkeypatch, tmp_path
+    @pytest.mark.parametrize("deployment_mode", ["lite", "full"])
+    @pytest.mark.parametrize(
+        ("mode", "expected_model"),
+        [
+            ("v4", "pyannote/wespeaker-voxceleb-resnet34-LM"),
+            ("v3", "pyannote/embedding"),
+        ],
+    )
+    def test_an_unreachable_sidecar_degrades_in_process_on_lite_and_full_alike(
+        self, monkeypatch, tmp_path, deployment_mode, mode, expected_model
     ) -> None:
-        """DEPLOYMENT_MODE=lite + an unavailable sidecar must not reach the pyannote import."""
+        """Lite must degrade like every other deployment. This inverts an earlier assertion.
+
+        Two tests here previously required construction to RAISE under
+        ``DEPLOYMENT_MODE=lite`` with no sidecar, because #660 had removed
+        ``pyannote.audio`` from ``requirements-lite.txt`` and the raise was better than a
+        raw ``ModuleNotFoundError`` from deep inside a Celery task.
+
+        That removal has been reverted, and the reason matters: the sidecar reads ONNX/PLDA
+        graphs that are NON-REDISTRIBUTABLE derivatives of gated weights, so lite has to
+        EXPORT them itself, and the exporter imports ``pyannote.audio``. Having it back
+        means the in-process engine is a working fallback on lite — so refusing would turn
+        a graceful degrade into a hard failure on the one local model job a cloud-ASR
+        deployment still has.
+
+        v3 is parametrized in deliberately: ``_native_backend_usable`` excludes it (the
+        sidecar serves 256-d v4 only), so in-process is the ONLY path for a v3 install, on
+        lite exactly as anywhere else.
+        """
         from app.core.config import settings
         from app.services.speaker_embedding_service import SpeakerEmbeddingService
 
-        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
-        monkeypatch.setattr(
-            "app.services.native_embedding_client.native_embedding_available",
-            lambda base_url=None: False,
-        )
-
-        with pytest.raises(RuntimeError) as exc_info:
-            SpeakerEmbeddingService(mode="v4", models_dir=str(tmp_path))
-
-        message = str(exc_info.value)
-        assert "diar-native" in message
-        assert "DIAR_NATIVE_URL" in message
-
-    def test_construction_still_loads_in_process_under_full_deployment_mode(
-        self, monkeypatch, tmp_path
-    ) -> None:
-        """Control: the same unavailable-sidecar condition under DEPLOYMENT_MODE=full
-        must still attempt the in-process load, proving the refusal is lite-only."""
-        from app.core.config import settings
-        from app.services.speaker_embedding_service import SpeakerEmbeddingService
-
-        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", deployment_mode)
         monkeypatch.setattr(
             "app.services.native_embedding_client.native_embedding_available",
             lambda base_url=None: False,
@@ -332,25 +336,13 @@ class TestDegradePathsWithoutPyannoteOrTorchaudio:
             )(),
         )
 
-        service = SpeakerEmbeddingService(mode="v4", models_dir=str(tmp_path))
-        assert service.backend == "pyannote"
-        assert loaded == ["pyannote/wespeaker-voxceleb-resnet34-LM"]
+        service = SpeakerEmbeddingService(mode=mode, models_dir=str(tmp_path))
 
-    def test_construction_refusal_under_lite_names_v3_migration_when_relevant(
-        self, monkeypatch, tmp_path
-    ) -> None:
-        """v3 under lite is caught by the same guard; the message should say so (#660 Step 5d)."""
-        from app.core.config import settings
-        from app.services.speaker_embedding_service import SpeakerEmbeddingService
-
-        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
-
-        with pytest.raises(RuntimeError) as exc_info:
-            SpeakerEmbeddingService(mode="v3", models_dir=str(tmp_path))
-
-        message = str(exc_info.value)
-        assert "v3" in message
-        assert "migrate" in message.lower()
+        assert service.backend == "pyannote", (
+            f"{deployment_mode}/{mode} did not fall back to the in-process engine — if a "
+            "lite-specific refusal has been reintroduced, lite has no voiceprint path"
+        )
+        assert loaded == [expected_model]
 
 
 class TestCleanup:

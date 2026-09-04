@@ -174,7 +174,15 @@
             {#if stats.models}
               <div class="detail-grid">
                 {#each Object.entries(stats.models) as [key, model]}
-                  {@const m = model as {name?: string; description?: string; purpose?: string}}
+                  {@const m = model as {
+                    name?: string;
+                    description?: string;
+                    purpose?: string;
+                    configured_backend?: string;
+                    configured_description?: string;
+                    effective_backend?: string;
+                    using_fallback?: boolean;
+                  }}
                   <div class="detail-row model-detail-row">
                     <div class="model-detail-info">
                       <span class="detail-label">{m.purpose || key}</span>
@@ -182,6 +190,27 @@
                     </div>
                     <span class="detail-value model-name">{m.name || $t('common.notAvailable')}</span>
                   </div>
+                  {#if m.configured_backend && m.effective_backend}
+                    <div class="detail-row model-engine-row">
+                      <span class="detail-label">{$t('settings.statistics.diarizationConfigured')}</span>
+                      <span class="detail-value model-name">{m.configured_description || m.configured_backend}</span>
+                    </div>
+                    <div class="detail-row model-engine-row">
+                      <span class="detail-label">{$t('settings.statistics.diarizationEffective')}</span>
+                      <span class="detail-value model-name">{m.description || m.effective_backend}</span>
+                    </div>
+                    {#if m.using_fallback}
+                      <div class="detail-row fallback-warning-row" role="alert">
+                        <span class="fallback-warning-icon" aria-hidden="true">⚠</span>
+                        <span class="fallback-warning-text">
+                          {$t('settings.statistics.diarizationFallbackWarning', {
+                            configured: m.configured_description || m.configured_backend,
+                            effective: m.description || m.effective_backend
+                          })}
+                        </span>
+                      </div>
+                    {/if}
+                  {/if}
                 {/each}
               </div>
             {/if}
@@ -293,6 +322,53 @@
     flex-direction: column;
     gap: 0.125rem;
     flex: 1;
+  }
+
+  .model-engine-row {
+    padding-left: 1rem;
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+  }
+
+  .model-engine-row .detail-label {
+    font-size: 0.75rem;
+  }
+
+  .model-engine-row .detail-value {
+    font-size: 0.75rem;
+  }
+
+  .fallback-warning-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.1);
+    border: 1px solid var(--warning-color, #f59e0b);
+    border-radius: 6px;
+    padding: 0.5rem 0.625rem;
+    margin: 0.375rem 0;
+  }
+
+  .fallback-warning-icon {
+    font-size: 0.9375rem;
+    line-height: 1.2;
+    color: var(--warning-color, #f59e0b);
+    flex-shrink: 0;
+  }
+
+  .fallback-warning-text {
+    font-size: 0.75rem;
+    color: var(--text-color);
+    font-weight: 500;
+  }
+
+  :global([data-theme='dark']) .fallback-warning-row {
+    background: rgba(251, 191, 36, 0.12);
+    border-color: #fbbf24;
+  }
+
+  :global([data-theme='dark']) .fallback-warning-icon {
+    color: #fbbf24;
   }
 
   .subsection-title {

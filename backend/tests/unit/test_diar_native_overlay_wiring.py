@@ -2,8 +2,10 @@
 the diar-native sidecar overlay, or explicitly exempt (issue #655).
 
 ``docker-compose.diar-native.yml`` patches specific services with
-``DIAR_NATIVE_URL``/``DIAR_NATIVE_SHARED_DIR`` and the ``diar-native-tmp``
-handoff volume. That list is a hand-maintained dispatch in a YAML overlay, and
+``DIAR_NATIVE_URL``/``DIAR_NATIVE_SHARED_DIR`` (the ``diar/`` namespace of the
+``pipeline_scratch`` volume as of issue #661 E2 — previously a dedicated
+``diar-native-tmp`` handoff volume). That list is a hand-maintained dispatch in a YAML
+overlay, and
 issue #655 found it silently missing three of the four workers that can run a
 GPU diarization task: under ``--gpu-scale`` the only patched worker
 (``celery-worker``) is scaled to 0 by default, so all GPU work actually runs

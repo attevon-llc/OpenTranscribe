@@ -1336,19 +1336,36 @@ DEFAULT_CHAT_OVERVIEW_BLOCK_RULE = False  # chat.rag.overview_block_rule
 DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS = False  # chat.rag.overview_after_excerpts
 
 # =============================================================================
-# Engine shared-volume WAV handoff (issue #661 E0)
+# Engine shared-volume WAV handoff (issue #661 E0, consolidated onto pipeline_scratch in E2)
 # =============================================================================
-# ``ENGINE_SHARED_VOLUME_PATH`` names the container path of the ``transcription-temp``
-# volume, mounted at this exact path by every compose service that reads or writes the
-# handoff WAV (docker-compose.yml's celery-worker*/gpu-transcribe*/gpu-diarize* services,
-# docker-compose.diar-native.yml's diar-native sidecar) and set to the same value in
-# .env.example. This is the ONE default all readers/writers must agree on — it was
-# previously THREE independent literals ("/tmp" in preprocess.py's write side and
-# engine/config.py's EngineConfig twice, "/tmp/transcription" in diarizer_native.py's read
-# side), so an install whose .env predated the variable wrote into the writer's
-# container-local /tmp, the reader looked in the real mount, found nothing, and silently
-# fell back to MinIO with no log distinguishing the two cases — the exact per-job
-# re-serialization cost this shared-volume path exists to avoid. A bare "/tmp" default is
-# never correct here: on any install it either points nowhere shared (unmounted) or, worse,
-# collides with a container-local temp file of the same name.
-ENGINE_SHARED_VOLUME_DEFAULT = "/tmp/transcription"  # noqa: S108  # nosec B108 — compose-declared mount point, not a host temp file
+# ``ENGINE_SHARED_VOLUME_PATH`` names the container path of the ``engine/`` namespace inside
+# the single ``pipeline_scratch`` volume (mounted at ``PIPELINE_SCRATCH_DEFAULT`` by every
+# compose service that reads or writes the handoff WAV: docker-compose.yml's
+# celery-worker*/gpu-transcribe*/gpu-diarize* services, docker-compose.diar-native.yml's
+# diar-native sidecar — read-only there) and set to the same value in .env.example. This is
+# the ONE default all readers/writers must agree on. E2 folded what used to be a SEPARATE
+# ``transcription-temp`` volume/filesystem into a namespace of ``pipeline_scratch`` so the
+# preprocess → engine handoff (``preprocess.py``) can ``os.link`` instead of cross-filesystem
+# copying — before that, a bare "/tmp" default (or a stale volume name) meant an install whose
+# .env predated the variable wrote into the writer's container-local /tmp, the reader looked in
+# the real mount, found nothing, and silently fell back to MinIO with no log distinguishing the
+# two cases — the exact per-job re-serialization cost this shared-volume path exists to avoid.
+ENGINE_SHARED_VOLUME_DEFAULT = "/scratch/opentranscribe/engine"
+
+# Root of the consolidated pipeline scratch volume (issue #661 E2) — one named volume,
+# ``pipeline_scratch``, three namespaces: ``<file_uuid>/`` (scratch_volume.py, per-file),
+# ``engine/`` (ENGINE_SHARED_VOLUME_DEFAULT above, per-task), and ``diar/``
+# (DIAR_NATIVE_SHARED_DIR_DEFAULT below, the sidecar's own-copy fallback). Same filesystem is
+# what makes the engine handoff an ``os.link`` instead of a cross-filesystem copy.
+PIPELINE_SCRATCH_DEFAULT = "/scratch/opentranscribe"
+
+# Sidecar's own-copy fallback directory when it cannot reuse a hard-linked WAV (diarizer_native.py).
+DIAR_NATIVE_SHARED_DIR_DEFAULT = "/scratch/opentranscribe/diar"
+
+# Top-level directory names inside PIPELINE_SCRATCH_DEFAULT that are NOT per-file UUID dirs.
+# The janitor (scratch_volume.sweep_expired) must sweep files INSIDE these by their own mtime
+# and never rmtree the namespace directory itself — unlike an ordinary <file_uuid>/ dir, these
+# directories' own mtime bumps on every file created inside them, so treating them like an
+# ordinary per-file dir would eventually rmtree an in-flight handoff WAV out from under a
+# running job (issue #661 E2 phase 1.2).
+RESERVED_SCRATCH_NAMESPACES = frozenset({"engine", "diar"})

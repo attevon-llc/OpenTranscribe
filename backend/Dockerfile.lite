@@ -1,7 +1,15 @@
 # =============================================================================
 # OpenTranscribe Backend - Lite Dockerfile (API-only, no GPU required)
-# Multi-stage build for cloud-only ASR deployments (~2 GB vs 8.9 GB full image)
-# No faster-whisper, no ctranslate2, no CUDA — uses cloud ASR providers instead
+# Multi-stage build for cloud-only ASR deployments. MEASURED 2026-09-04 on this host:
+# 2.62 GB, vs 15.2 GB for the full image. (The previous "~2 GB vs 8.9 GB" was stale on
+# both halves — re-measure with `docker image ls` rather than trusting this line.)
+# No faster-whisper, no ctranslate2, no CUDA — uses cloud ASR providers instead.
+#
+# It DOES carry pyannote.audio + the ONNX export toolchain, which looks contradictory for
+# a "lite" image and is not: the diar-native sidecar reads ONNX/PLDA graphs that are
+# non-redistributable derivatives of gated weights, so there is nothing to download and a
+# lite deployment must EXPORT them for itself or have no speaker-voiceprint path at all.
+# That capability costs ~50 MB over a lite image without it (2.57 -> 2.62 GB measured).
 # =============================================================================
 
 # diar-native (T1 diarization sidecar) binary + ONNX Runtime CPU-provider libs, pinned
@@ -147,10 +155,14 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-# Reserve the pipeline's shared-volume mount points so a freshly created named volume
-# inherits appuser rather than root — see Dockerfile.prod for the full note.
-RUN mkdir -p /scratch/opentranscribe /tmp/transcription /tmp/diar-native && \
-    chown appuser:appuser /scratch/opentranscribe /tmp/transcription /tmp/diar-native
+# Reserve the pipeline's shared-volume mount point so a freshly created named volume
+# inherits appuser rather than root — see Dockerfile.prod for the full note (issue #661 E2:
+# one volume, pipeline_scratch, three namespaces — diar-native-tmp was a dead reservation
+# here anyway, since this image has no diar-server binary at all).
+RUN mkdir -p /scratch/opentranscribe && \
+    chown appuser:appuser /scratch/opentranscribe
+RUN mkdir -p /scratch/opentranscribe/engine /scratch/opentranscribe/diar && \
+    chown appuser:appuser /scratch/opentranscribe/engine /scratch/opentranscribe/diar
 
 # Switch to non-root user
 USER appuser

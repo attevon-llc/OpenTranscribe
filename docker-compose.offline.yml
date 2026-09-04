@@ -149,10 +149,12 @@ services:
   # starting on every offline install regardless of whether diarization weights exist.
   # Adding the missing `command:` would not have made it correct standalone either: this
   # block also carried no volumes, so even running diar-server it would read an empty
-  # `/models` and crash-loop — the /models bind and the diar-native-tmp/transcription-temp
-  # handoff mounts are declared only in docker-compose.diar-native.yml. A block that can
-  # only ever work in combination with that overlay has no reason to exist independently
-  # of it, so it is removed rather than patched.
+  # `/models` and crash-loop — the /models bind and the pipeline_scratch handoff mount
+  # (issue #661 E2: one volume, engine/ and diar/ namespaces, formerly two separate
+  # diar-native-tmp/transcription-temp volumes) are declared only in
+  # docker-compose.diar-native.yml. A block that can only ever work in combination with
+  # that overlay has no reason to exist independently of it, so it is removed rather than
+  # patched.
   #
   # When docker-compose.diar-native.yml IS loaded (weights present), its own `image:`
   # already resolves to `davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}`,

@@ -207,7 +207,6 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
 
   celery-worker-gpu-diarize:
     image: davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}
@@ -222,4 +221,3 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff

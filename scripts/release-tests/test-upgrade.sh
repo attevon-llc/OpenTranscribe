@@ -1533,23 +1533,43 @@ phase_11_new_data_post_upgrade() {
         esac
     fi
 
-    local diar_verdict
-    diar_verdict=$(ac_diar_engine_verdict "opentranscribe-celery-worker" "30m")
+    # Verdict is per-file (issue #706's diarization_provider column) and
+    # keyed to THIS file's own uuid, not a whole-worker-log grep in a
+    # 30-minute window — this is the TO (post-upgrade) side, which always
+    # ships #706, so the DB path is expected to answer every time; the
+    # log-fallback branches below exist only as a defensive net, not the
+    # expected path here (see ac_diar_engine_verdict's header for why the
+    # FROM side is never checked this way at all).
+    local diar_verdict diar_verdict_source
+    diar_verdict=$(ac_diar_engine_verdict "$fid" "opentranscribe-celery-worker" "30m")
+    diar_verdict_source="${diar_verdict#*:}"
     case "$diar_verdict" in
-        native)
-            as_record PASS "native diarizer served the post-upgrade file"
+        native:db|native:log)
+            as_record PASS "native diarizer served the post-upgrade file ($fid, source=$diar_verdict_source)"
             ;;
-        fallback)
-            as_record FAIL "native diarizer served the post-upgrade file" \
-                "worker log shows a 'falling back to PyAnnote' line — the sidecar degraded silently after the upgrade"
+        pyannote:db)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "media_file.diarization_provider=pyannote — PyAnnote served this job (direct config or a silent native fallback) after the upgrade"
             ;;
-        absent)
-            as_record FAIL "native diarizer served the post-upgrade file" \
-                "opentranscribe-celery-worker is not running on the upgraded stack"
+        fallback:log)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "worker log shows a 'falling back to PyAnnote' line — the sidecar degraded silently after the upgrade (no diarization_provider column on this API; legacy log-based check)"
             ;;
-        unknown)
-            as_record FAIL "native diarizer served the post-upgrade file" \
-                "neither a 'native diarization done' nor a fallback line appeared in the worker log"
+        none:db)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "media_file.diarization_provider is NULL after completion on the upgraded stack — diarization never resolved a provider"
+            ;;
+        absent:none)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "file record unreachable and opentranscribe-celery-worker is not running on the upgraded stack"
+            ;;
+        unknown:db|unknown:log)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "could not determine which engine served this job on the upgraded stack (verdict=$diar_verdict)"
+            ;;
+        *)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "unrecognized verdict from ac_diar_engine_verdict: $diar_verdict"
             ;;
     esac
 

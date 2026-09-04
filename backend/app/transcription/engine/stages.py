@@ -213,10 +213,22 @@ class _AsyncDiarization:
         self._thread = threading.Thread(target=_run, name="diarize-async", daemon=True)
         self._thread.start()
 
+    def close(self) -> None:
+        """Join the diarization thread if it hasn't been joined yet, idempotently.
+
+        ``threading.Thread.join()`` is itself idempotent (joining an already-joined thread is a
+        no-op), so this is just a documented name for it. Callers wrap the whole span from
+        construction to their last use of this object in ``try/finally: async_diarization.close()``
+        so an early return (e.g. no transcript segments) can never leave this daemon thread
+        running past ``run()`` while holding a reference to a WAV another caller is about to
+        unlink (issue #661 phase 1.1).
+        """
+        self._thread.join()
+
     def result(self) -> tuple | None:
         from app.utils.benchmark_timing import mark
 
-        self._thread.join()
+        self.close()
         mark(self._task_id, "diarize_joined")
         if self._error is not None:
             logger.warning("Overlapped diarization failed (%s); retrying inline", self._error)
@@ -299,56 +311,91 @@ class _GpuStage:
         if tc.enable_diarization and _overlap_diarization_enabled(tc):
             async_diarization = _AsyncDiarization(audio, tc, manager, job.task_id)
 
-        # Overlap diarizer load with transcription when single-request mode. Pointless once
-        # diarization is already running — there are no local weights to warm.
-        diarizer_preload_thread: threading.Thread | None = None
-        if tc.enable_diarization and tc.concurrent_requests <= 1 and async_diarization is None:
+        # Everything below this point may reference `audio` (and, transitively, the shared-volume
+        # WAV `async_diarization`'s thread is reading) — including the two early returns further
+        # down. `close()` is idempotent, so wrapping the whole remainder guarantees the daemon
+        # thread is always joined before `run()` returns, on every exit path (issue #661 phase
+        # 1.1: an early return here previously left it running under a WAV a caller was about to
+        # unlink).
+        try:
+            # Overlap diarizer load with transcription when single-request mode. Pointless once
+            # diarization is already running — there are no local weights to warm.
+            diarizer_preload_thread: threading.Thread | None = None
+            if tc.enable_diarization and tc.concurrent_requests <= 1 and async_diarization is None:
 
-            def _preload_diarizer() -> None:
-                try:
-                    manager.get_diarizer(tc)
-                except Exception as preload_err:
-                    logger.debug(f"Diarizer preload (non-fatal, will retry inline): {preload_err}")
+                def _preload_diarizer() -> None:
+                    try:
+                        manager.get_diarizer(tc)
+                    except Exception as preload_err:
+                        logger.debug(
+                            f"Diarizer preload (non-fatal, will retry inline): {preload_err}"
+                        )
 
-            diarizer_preload_thread = threading.Thread(
-                target=_preload_diarizer, name="diarizer-preload", daemon=True
-            )
-            diarizer_preload_thread.start()
+                diarizer_preload_thread = threading.Thread(
+                    target=_preload_diarizer, name="diarizer-preload", daemon=True
+                )
+                diarizer_preload_thread.start()
 
-        # Transcribe
-        emit(progress_callback, 0.43, "Running AI transcription", "transcribe")
-        step_start = time.perf_counter()
-        with profiler.step("transcription"):
-            transcript = transcriber.transcribe(audio)
-        logger.info(
-            f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
-        )
-
-        if diarizer_preload_thread is not None:
-            diarizer_preload_thread.join()
-
-        if not transcript.get("segments"):
-            logger.warning("Transcription produced no segments")
-            return JobResult(
-                segments=[],
-                language=transcript.get("language", ""),
-                stage_timings={"transcription": time.perf_counter() - pipeline_start},
+            # Transcribe
+            emit(progress_callback, 0.43, "Running AI transcription", "transcribe")
+            step_start = time.perf_counter()
+            with profiler.step("transcription"):
+                transcript = transcriber.transcribe(audio)
+            logger.info(
+                f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
             )
 
-        if tc.enable_diarization:
-            result_dict, diarize_df = self._run_diarization(
-                audio,
-                transcript,
-                profiler,
-                hw,
-                tc,
-                manager,
-                progress_callback,
-                config,
-                async_diarization=async_diarization,
+            if diarizer_preload_thread is not None:
+                diarizer_preload_thread.join()
+
+            if not transcript.get("segments"):
+                logger.warning("Transcription produced no segments")
+                return JobResult(
+                    segments=[],
+                    language=transcript.get("language", ""),
+                    stage_timings={"transcription": time.perf_counter() - pipeline_start},
+                )
+
+            if tc.enable_diarization:
+                result_dict, diarize_df = self._run_diarization(
+                    audio,
+                    transcript,
+                    profiler,
+                    hw,
+                    tc,
+                    manager,
+                    progress_callback,
+                    config,
+                    async_diarization=async_diarization,
+                )
+            else:
+                result_dict, diarize_df = self._skip_diarization(transcript, tc)
+
+            return self._finalize_job_result(
+                result_dict, diarize_df, audio, hw, tc, profiler, job, pipeline_start
             )
-        else:
-            result_dict, diarize_df = self._skip_diarization(transcript, tc)
+        finally:
+            if async_diarization is not None:
+                async_diarization.close()
+
+    @staticmethod
+    def _finalize_job_result(
+        result_dict: dict,
+        diarize_df,
+        audio,
+        hw,
+        tc,
+        profiler,
+        job: JobSpec,
+        pipeline_start: float,
+    ) -> JobResult:
+        """Re-enable TF32, release audio/diarizer memory, log timing, build the JobResult.
+
+        Split out of ``run()`` (issue #661 phase 1.1) purely to keep that method's cyclomatic
+        complexity under the lint threshold after the try/finally wrap added there — no
+        behavior change from the inline version it replaces.
+        """
+        from app.transcription.engine.job import JobResult
 
         # Re-enable TF32 after diarization (PyAnnote's fix_reproducibility disables it)
         if tc.device == "cuda":
@@ -589,109 +636,121 @@ class _GpuRawStage:
                 audio, tc, manager, pre.task_id, wav_path=pre.local_wav_path
             )
 
-        diarizer_preload_thread: threading.Thread | None = None
-        if tc.enable_diarization and tc.concurrent_requests <= 1 and async_diarization is None:
+        # See the matching comment in `_GpuStage.run` — same reasoning, same fix (issue #661
+        # phase 1.1). `async_diarization` here also carries `wav_path=pre.local_wav_path`, the
+        # shared-volume WAV a caller's `cleanup_shared_volume_wav` may unlink once `run()`
+        # returns, which is exactly what made this early-return leak live rather than harmless.
+        try:
+            diarizer_preload_thread: threading.Thread | None = None
+            if tc.enable_diarization and tc.concurrent_requests <= 1 and async_diarization is None:
 
-            def _preload_diarizer() -> None:
-                try:
-                    manager.get_diarizer(tc)
-                except Exception as preload_err:
-                    logger.debug(f"Diarizer preload (non-fatal, will retry inline): {preload_err}")
+                def _preload_diarizer() -> None:
+                    try:
+                        manager.get_diarizer(tc)
+                    except Exception as preload_err:
+                        logger.debug(
+                            f"Diarizer preload (non-fatal, will retry inline): {preload_err}"
+                        )
 
-            diarizer_preload_thread = threading.Thread(
-                target=_preload_diarizer, name="diarizer-preload", daemon=True
+                diarizer_preload_thread = threading.Thread(
+                    target=_preload_diarizer, name="diarizer-preload", daemon=True
+                )
+                diarizer_preload_thread.start()
+
+            emit(callback, 0.43, "Running AI transcription", "transcribe")
+            step_start = time.perf_counter()
+            with profiler.step("transcription"):
+                transcript = transcriber.transcribe(audio)
+            logger.info(
+                f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
             )
-            diarizer_preload_thread.start()
 
-        emit(callback, 0.43, "Running AI transcription", "transcribe")
-        step_start = time.perf_counter()
-        with profiler.step("transcription"):
-            transcript = transcriber.transcribe(audio)
-        logger.info(
-            f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
-        )
+            if diarizer_preload_thread is not None:
+                diarizer_preload_thread.join()
 
-        if diarizer_preload_thread is not None:
-            diarizer_preload_thread.join()
+            if not transcript.get("segments"):
+                logger.warning("Transcription produced no segments")
+                return RawInferenceResult(
+                    task_id=pre.task_id,
+                    audio_path="",
+                    audio_duration_s=pre.audio_duration_s,
+                    language=transcript.get("language", ""),
+                    raw_segments=[],
+                    diarize_records=[],
+                    overlap_info={},
+                    native_speaker_embeddings=None,
+                    config_snapshot=pre.config_snapshot,
+                    stage_timings={"transcription": time.perf_counter() - pipeline_start},
+                )
 
-        if not transcript.get("segments"):
-            logger.warning("Transcription produced no segments")
+            diarize_records: list[dict] = []
+            overlap_info: dict = {}
+            speaker_gender: dict | None = None
+            native_embs_serialized: dict[str, list[float]] | None = None
+            diar_provider: str | None = None
+            diar_model: str | None = None
+
+            if tc.enable_diarization:
+                diarize_df, overlap_info, native_embeddings, diar_provider, diar_model = (
+                    _collect_diarization(
+                        audio,
+                        tc,
+                        manager,
+                        hw,
+                        profiler,
+                        callback,
+                        async_diarization,
+                        wav_path=pre.local_wav_path,
+                    )
+                )
+                diarize_records = diarize_df.to_records()
+                speaker_gender = getattr(diarize_df, "speaker_gender", None)
+                if native_embeddings:
+                    native_embs_serialized = {
+                        k: v.tolist() if hasattr(v, "tolist") else list(v)
+                        for k, v in native_embeddings.items()
+                    }
+
+            if tc.device == "cuda":
+                try:
+                    import torch
+
+                    torch.backends.cuda.matmul.allow_tf32 = True
+                    torch.backends.cudnn.allow_tf32 = True
+                except Exception as e:
+                    logger.debug(f"TF32 re-enable skipped: {e}")
+
+            hw.log_vram_usage("before final pipeline cleanup")
+            del audio
+            hw.optimize_memory_usage()
+            hw.log_vram_usage("after final pipeline cleanup")
+
+            elapsed = time.perf_counter() - pipeline_start
+            profiler.log_report()
+            if pre.task_id:
+                num_speakers = (
+                    len({r["speaker"] for r in diarize_records}) if diarize_records else 1
+                )
+                profiler.save_to_redis(pre.task_id, pre.audio_duration_s, num_speakers)
+
             return RawInferenceResult(
                 task_id=pre.task_id,
                 audio_path="",
                 audio_duration_s=pre.audio_duration_s,
                 language=transcript.get("language", ""),
-                raw_segments=[],
-                diarize_records=[],
-                overlap_info={},
-                native_speaker_embeddings=None,
+                raw_segments=transcript.get("segments", []),
+                diarize_records=diarize_records,
+                overlap_info=overlap_info,
+                native_speaker_embeddings=native_embs_serialized,
+                speaker_gender=speaker_gender,
                 config_snapshot=pre.config_snapshot,
-                stage_timings={"transcription": time.perf_counter() - pipeline_start},
+                stage_timings={"gpu_total": elapsed},
+                diarization_provider=diar_provider,
+                diarization_model=diar_model,
             )
-
-        diarize_records: list[dict] = []
-        overlap_info: dict = {}
-        speaker_gender: dict | None = None
-        native_embs_serialized: dict[str, list[float]] | None = None
-        diar_provider: str | None = None
-        diar_model: str | None = None
-
-        if tc.enable_diarization:
-            diarize_df, overlap_info, native_embeddings, diar_provider, diar_model = (
-                _collect_diarization(
-                    audio,
-                    tc,
-                    manager,
-                    hw,
-                    profiler,
-                    callback,
-                    async_diarization,
-                    wav_path=pre.local_wav_path,
-                )
-            )
-            diarize_records = diarize_df.to_records()
-            speaker_gender = getattr(diarize_df, "speaker_gender", None)
-            if native_embeddings:
-                native_embs_serialized = {
-                    k: v.tolist() if hasattr(v, "tolist") else list(v)
-                    for k, v in native_embeddings.items()
-                }
-
-        if tc.device == "cuda":
-            try:
-                import torch
-
-                torch.backends.cuda.matmul.allow_tf32 = True
-                torch.backends.cudnn.allow_tf32 = True
-            except Exception as e:
-                logger.debug(f"TF32 re-enable skipped: {e}")
-
-        hw.log_vram_usage("before final pipeline cleanup")
-        del audio
-        hw.optimize_memory_usage()
-        hw.log_vram_usage("after final pipeline cleanup")
-
-        elapsed = time.perf_counter() - pipeline_start
-        profiler.log_report()
-        if pre.task_id:
-            num_speakers = len({r["speaker"] for r in diarize_records}) if diarize_records else 1
-            profiler.save_to_redis(pre.task_id, pre.audio_duration_s, num_speakers)
-
-        return RawInferenceResult(
-            task_id=pre.task_id,
-            audio_path="",
-            audio_duration_s=pre.audio_duration_s,
-            language=transcript.get("language", ""),
-            raw_segments=transcript.get("segments", []),
-            diarize_records=diarize_records,
-            overlap_info=overlap_info,
-            native_speaker_embeddings=native_embs_serialized,
-            speaker_gender=speaker_gender,
-            config_snapshot=pre.config_snapshot,
-            stage_timings={"gpu_total": elapsed},
-            diarization_provider=diar_provider,
-            diarization_model=diar_model,
-        )
+        finally:
+            if async_diarization is not None:
+                async_diarization.close()
 
 
 class _FinalizeStage:

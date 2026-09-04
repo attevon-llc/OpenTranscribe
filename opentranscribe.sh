@@ -537,19 +537,23 @@ get_compose_files() {
     local diar_backend=""
     diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND | tr '[:upper:]' '[:lower:]')
 
-    # Lite deployments are excluded outright: native_provision.py deliberately SKIPS
-    # provisioning under DEPLOYMENT_MODE=lite (the lite image ships no Python exporter
-    # toolchain), so /models can never fill itself in there and loading this overlay would
-    # leave diar-server crash-looping against an empty --models-dir under `restart:
-    # unless-stopped` (verified: `diar-server serve` against an empty DIAR_MODELS_DIR exits
-    # 8). This script has no lite overlay of its own to gate on
-    # (test_lite_mode_is_not_reachable_by_a_shipped_deployment pins that), but
-    # DEPLOYMENT_MODE is a plain .env value — .env.example ships DEPLOYMENT_MODE=full — that
-    # an operator can set directly, and the backend honors it however it got there.
-    local deployment_mode=""
-    deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
-
-    if [ "$deployment_mode" != "lite" ] && [ "${diar_backend:-native}" = "native" ] \
+    # Lite is NOT excluded. It was, on the premise that native_provision.py skipped
+    # provisioning under DEPLOYMENT_MODE=lite because the lite image shipped no Python
+    # exporter toolchain — so /models could never fill itself in and the overlay would
+    # crash-loop diar-server against an empty --models-dir (`diar-server serve` with an
+    # empty DIAR_MODELS_DIR exits 8; that is still true, and is what the weights/token
+    # gate below protects against).
+    #
+    # The premise removed the feature it was protecting. The ONNX/PLDA graphs are
+    # non-redistributable derivatives of gated weights, so a deployment that cannot export
+    # cannot obtain them at all — excluding lite guaranteed it had no local voiceprint
+    # path, on the one local model job a cloud-ASR deployment still has. `diar-server`
+    # carries the export itself (its Python scripts are compiled into the binary, which
+    # Dockerfile.lite already copies in); only the packages those scripts import were
+    # missing, and requirements-lite.txt now installs them. Lite provisions itself on
+    # first boot like any other deployment, so it goes through the same gate: weights
+    # present, or a token configured to produce them.
+    if [ "${diar_backend:-native}" = "native" ] \
        && { [ "$diar_weights_present" = "1" ] || [ -n "$diar_hf_token" ]; }; then
         if [ -f docker-compose.diar-native.yml ]; then
             compose_files="$compose_files -f docker-compose.diar-native.yml"
@@ -680,6 +684,40 @@ preflight_upgrade_env() {
                 problems+=("engine.diarizer_backend resolves to native, but $diar_dir has never been provisioned and no HUGGINGFACE_TOKEN is set to provision it on next startup — run './opentranscribe.sh download-models diar-native' first, or set HUGGINGFACE_TOKEN in .env")
             fi
         fi
+    fi
+
+    # Issue #661 E2: production installs have NEVER had a pipeline_scratch chown.
+    # `fix_pipeline_scratch_permissions` (scripts/common.sh) is opentr.sh-only; this curl-style
+    # installer sources scripts/common.sh only conditionally (see the `if [ -f
+    # ./scripts/common.sh ]` guard near the top of this file), and a fresh curl install has no
+    # such file at all yet, so fall back to an inline chown using the same CONTAINER_UID_GID
+    # this script already uses for MODEL_CACHE_DIR above. Best-effort and non-blocking (never
+    # added to `problems`): a stale volume here degrades to the MinIO fallback, it doesn't
+    # break the upgrade.
+    if command -v fix_pipeline_scratch_permissions > /dev/null 2>&1; then
+        fix_pipeline_scratch_permissions
+    elif command -v docker > /dev/null 2>&1; then
+        local scratch_vol
+        scratch_vol=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E '_pipeline_scratch$' | head -1)
+        if [ -n "$scratch_vol" ]; then
+            docker run --rm -v "$scratch_vol:/scratch" alpine:3 \
+                sh -c "mkdir -p /scratch/engine /scratch/diar && chown -R $CONTAINER_UID_GID /scratch && chmod 775 /scratch/engine /scratch/diar" \
+                > /dev/null 2>&1 \
+                && echo -e "${BLUE}🔧 pipeline_scratch permissions checked/fixed${NC}" \
+                || echo -e "${YELLOW}⚠️  Could not fix pipeline_scratch permissions — scratch handoff may fall back to MinIO${NC}"
+        fi
+    fi
+
+    # A sidecar container created before this consolidation keeps its OLD mount set until it
+    # is RECREATED, not merely restarted (diarizer_native.py documents the identical failure
+    # in reverse for the original transcription-temp mount). A sidecar left on the old mounts
+    # degrades to PyAnnote SILENTLY, so tell the operator here rather than let them discover
+    # it via a slow-and-unexplained diarization.
+    if [ "${diar_backend:-native}" = "native" ]; then
+        echo -e "${YELLOW}ℹ️  This release consolidates the pipeline scratch volumes onto one${NC}"
+        echo -e "${YELLOW}   ('pipeline_scratch'). If you run the diar-native sidecar, RECREATE it${NC}"
+        echo -e "${YELLOW}   (not just restart) after this upgrade:${NC}"
+        echo "     docker compose ... up -d --force-recreate diar-native"
     fi
 
     [ ${#problems[@]} -eq 0 ] && return 0

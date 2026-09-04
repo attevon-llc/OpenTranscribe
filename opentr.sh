@@ -595,11 +595,14 @@ diar_native_container_present() {
 # about whether celery-worker gets the diar-native handoff volume.
 #
 # ⚠️ WHY THIS IS SHARED RATHER THAN INLINED. docker-compose.diar-native.yml is the
-# only file that mounts `diar-native-tmp` at /tmp/diar-native on celery-worker, and
-# that volume is how OpenTranscribe hands the WAV to the sidecar. `rebuild-backend`
-# used to omit the overlay, so it recreated celery-worker with NO mount at that path
-# at all; the worker wrote the WAV to its own filesystem, the sidecar could not see
-# it, and /diarize answered
+# only file that sets DIAR_NATIVE_URL on celery-worker and shares the pipeline_scratch
+# handoff volume with the sidecar (issue #661 E2: one volume, engine/ and diar/
+# namespaces — this used to be a dedicated `diar-native-tmp` volume at
+# /tmp/diar-native, which is the shape the reproduction below happened in; the
+# DEFECT this overlay prevents is unchanged, only the volume name moved).
+# `rebuild-backend` used to omit the overlay, so it recreated celery-worker with the
+# sidecar unreachable at all; the worker wrote the WAV to its own filesystem, the
+# sidecar could not see it, and /diarize answered
 #     HTTP 422  opening /tmp/diar-native/<job>.wav: No such file or directory
 # which the worker classified as "sidecar failed mid-job" and answered by falling
 # back to the in-process PyAnnote fork — slower, no speaker gender, and NOTHING
@@ -638,7 +641,7 @@ add_diar_native_overlay() {
     if [ "$mode" = "rebuild" ]; then
       if diar_native_container_present; then
         WITH_DIAR_NATIVE_FLAG="auto"
-        echo "🎙️  diar-native sidecar is part of this deployment — keeping its overlay so celery-worker keeps /tmp/diar-native."
+        echo "🎙️  diar-native sidecar is part of this deployment — keeping its overlay so celery-worker keeps DIAR_NATIVE_URL and the shared handoff namespace."
       fi
     else
       # Native diarization sidecar auto-load: `native` is the coded default engine, so a
@@ -660,22 +663,27 @@ add_diar_native_overlay() {
       # `--fresh` stack with a token configured is precisely the fresh-install rehearsal
       # this auto-load exists to cover, not a case to skip.
       #
-      # Lite is excluded outright, checked before the engine gate. `--lite` (LITE_FLAG)
-      # loads docker-compose.lite.yml, which sets DEPLOYMENT_MODE=lite on every backend
-      # container; DEPLOYMENT_MODE=lite is also checked directly for a .env that already
-      # carries it without the flag on this particular invocation. native_provision.py
-      # deliberately SKIPS provisioning under DEPLOYMENT_MODE=lite — the lite image has no
-      # Python exporter toolchain — so /models can never fill itself in, and loading this
-      # overlay would leave diar-server crash-looping against an empty --models-dir under
-      # `restart: unless-stopped` (verified: `diar-server serve` with an empty
-      # DIAR_MODELS_DIR exits 8). --with-diar-native still overrides this, unchanged above
-      # — an operator who has provisioned models out-of-band may deliberately want the
-      # sidecar even on a lite stack.
-      local deployment_mode_lc=""
-      deployment_mode_lc=$(printf '%s' "${DEPLOYMENT_MODE:-}" | tr '[:upper:]' '[:lower:]')
-      if [ -n "${LITE_FLAG:-}" ] || [ "$deployment_mode_lc" = "lite" ]; then
-        :  # no auto-load on lite — see comment above
-      elif [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ]; then
+      # Lite is NO LONGER excluded. It used to be, on the premise that the lite image had
+      # no Python exporter toolchain, so /models could never fill itself in and loading the
+      # overlay would crash-loop diar-server against an empty --models-dir under
+      # `restart: unless-stopped` (`diar-server serve` with an empty DIAR_MODELS_DIR exits
+      # 8 — that part is still true and still what the gate below protects against).
+      #
+      # The premise was wrong in a way that removed the feature it was protecting. The
+      # ONNX/PLDA graphs are non-redistributable derivatives of gated weights, so a
+      # deployment that cannot export cannot obtain them AT ALL — excluding lite did not
+      # avoid a broken sidecar, it guaranteed lite had no local voiceprint path whatsoever
+      # (SpeakerEmbeddingService refuses when the sidecar is unusable, and lite runs cloud
+      # ASR, so speaker embeddings are the ONE local model job it still has).
+      #
+      # `diar-server` carries the export itself — its five Python scripts are compiled into
+      # the binary, which Dockerfile.lite copies in and which runs there. Only the packages
+      # those scripts import were missing; requirements-lite.txt now installs the four the
+      # binary's own preflight names (pyannote.audio, onnxscript, onnxslim,
+      # onnxconverter-common). So lite provisions itself on first boot exactly as the full
+      # image does, and falls through to the same gate as every other deployment: models
+      # present, or a token configured to produce them.
+      if [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ]; then
         if [ -d "$DIAR_NATIVE_MODELS_DIR" ] && [ -n "$(ls -A "$DIAR_NATIVE_MODELS_DIR" 2>/dev/null)" ]; then
           WITH_DIAR_NATIVE_FLAG="auto"
           echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
@@ -2247,7 +2255,7 @@ start_app() {
   fi
 
   # Native diarization sidecar. Shared with rebuild-backend so a rebuild can never
-  # drop celery-worker's /tmp/diar-native handoff mount — see add_diar_native_overlay.
+  # drop celery-worker's DIAR_NATIVE_URL / shared pipeline_scratch diar/ handoff namespace — see add_diar_native_overlay.
   add_diar_native_overlay start
 
   # Add real GPU-backed LLM test provider if requested
@@ -2934,7 +2942,7 @@ reset_and_init() {
   fi
 
   # Native diarization sidecar. Shared with rebuild-backend so a rebuild can never
-  # drop celery-worker's /tmp/diar-native handoff mount — see add_diar_native_overlay.
+  # drop celery-worker's DIAR_NATIVE_URL / shared pipeline_scratch diar/ handoff namespace — see add_diar_native_overlay.
   add_diar_native_overlay start
 
   # Add real GPU-backed LLM test provider if requested
@@ -3549,14 +3557,16 @@ case "$1" in
     # appear missing even though it's still on disk.
     add_nas_overlay
 
-    # Keep the native diarization sidecar's handoff volume on celery-worker.
-    # Without this, a rebuilt worker has NO mount at /tmp/diar-native, the sidecar
-    # cannot see the WAV it is handed, /diarize answers 422, and diarization
-    # silently degrades to the in-process PyAnnote fork -- same "correct-looking
-    # container, wrong storage" failure as the NAS note above, but with no user
-    # -visible symptom at all. `rebuild` mode keys off the sidecar container this
-    # deployment already has, so it never starts one nobody asked for; see
-    # add_diar_native_overlay for why that predicate and not the config one.
+    # Keep the native diarization sidecar's handoff wiring on celery-worker.
+    # Without this, a rebuilt worker has no DIAR_NATIVE_URL and loses the shared
+    # pipeline_scratch/diar/ handoff namespace (issue #661 E2 -- was a dedicated
+    # /tmp/diar-native mount before the consolidation), the sidecar cannot see the WAV
+    # it is handed, /diarize answers 422, and diarization silently degrades to the
+    # in-process PyAnnote fork -- same "correct-looking container, wrong storage"
+    # failure as the NAS note above, but with no user-visible symptom at all. `rebuild`
+    # mode keys off the sidecar container this deployment already has, so it never
+    # starts one nobody asked for; see add_diar_native_overlay for why that predicate
+    # and not the config one.
     add_diar_native_overlay rebuild
 
     # --no-deps keeps postgres/minio/opensearch/redis containers exactly as

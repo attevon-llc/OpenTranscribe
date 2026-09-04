@@ -224,18 +224,23 @@ def ensure_native_models(  # noqa: PLR0911 - one branch per distinct operator ou
         logger.info("diar-native provisioning skipped: %s", reason)
         return ProvisionResult("skipped", None, reason, target)
 
-    if os.environ.get("DEPLOYMENT_MODE", "").strip().lower() == "lite":
-        # The lite image carries diar-server so it can SERVE on the CPU provider (#660),
-        # but deliberately not onnx/onnxruntime/onnxscript/onnxslim/onnxconverter-common
-        # — roughly 250 MB of export-only dependencies on an image whose whole purpose is
-        # to be small. Shelling out anyway would exit 6 on every boot and tell the
-        # operator to rebuild, which is the wrong advice here.
-        reason = (
-            "lite deployment — the export toolchain is intentionally absent. Point "
-            "DIAR_NATIVE_MODELS_DIR at a set exported by a full image to serve natively."
-        )
-        logger.info("diar-native provisioning skipped: %s", reason)
-        return ProvisionResult("skipped", None, reason, target)
+    # NOTE: there is deliberately NO `DEPLOYMENT_MODE == "lite"` skip here any more.
+    #
+    # One briefly existed, on the premise that lite carried diar-server (so it could
+    # SERVE) but not the export toolchain (so provisioning could only fail). That premise
+    # was wrong in a way that removed the feature it was protecting: the ONNX/PLDA graphs
+    # are non-redistributable derivatives of gated weights, so a deployment that cannot
+    # export cannot obtain them at all. Skipping here left a standalone lite install with
+    # NO voiceprint path — SpeakerEmbeddingService refuses when the sidecar is unusable,
+    # and the sidecar is unusable with no models — and the documented workaround ("point
+    # DIAR_NATIVE_MODELS_DIR at a set exported by a full image") meant pulling a 15.2 GB
+    # image to produce 484 MB, which is not a deployment path.
+    #
+    # `requirements-lite.txt` now installs the four packages the shipped binary's own
+    # preflight names (pyannote.audio, onnxscript, onnxslim, onnxconverter-common), so
+    # lite provisions itself on first boot exactly as the full image does — download the
+    # real weights, export in-container, then serve. Lite is CPU-only, and `--mode cpu`
+    # below is already unconditional, so nothing else needs to change for it.
 
     binary = shutil.which("diar-server")
     if binary is None:

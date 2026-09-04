@@ -1,19 +1,26 @@
 """``opentr.sh rebuild-backend`` must not drop the native-diarization overlay.
 
-``docker-compose.diar-native.yml`` is the ONLY file that mounts the ``diar-native-tmp``
-volume at ``/tmp/diar-native`` on ``celery-worker``, and that volume is how
-OpenTranscribe hands the WAV to the sidecar. ``rebuild-backend`` assembled its own
-compose chain (``docker-compose.yml`` + the dev override + GPU + NAS) and never
-included it, so a rebuild recreated the worker with **no mount at that path at all**.
+``docker-compose.diar-native.yml`` is the ONLY file that sets ``DIAR_NATIVE_URL`` on
+``celery-worker`` and shares the pipeline_scratch handoff mount with the sidecar
+(``pipeline_scratch:/scratch/opentranscribe`` — issue #661 E2 consolidated what used to
+be a dedicated ``diar-native-tmp`` volume at ``/tmp/diar-native`` into a namespace,
+``diar/``, of that one volume; this test is keyed on the SERVICE/behaviour the overlay
+wires, not on which volume name happens to carry it today, precisely because that name
+already changed once). ``rebuild-backend`` assembled its own compose chain
+(``docker-compose.yml`` + the dev override + GPU + NAS) and never included it, so a
+rebuild recreated the worker with the sidecar unreachable at all.
 
-Measured on the live stack: the worker wrote the handoff WAV to its own filesystem,
-the sidecar could not see it, and ``/diarize`` answered ::
+Measured on the live stack (pre-E2 shape, when the missing piece was the WAV mount
+rather than the URL): the worker wrote the handoff WAV to its own filesystem, the
+sidecar could not see it, and ``/diarize`` answered ::
 
     HTTP 422  opening /tmp/diar-native/probe.wav: No such file or directory
 
 which the worker classified as a mid-job sidecar failure and answered by falling back
 to the in-process PyAnnote fork. Diarization silently degraded — slower, and no
-speaker gender — with nothing surfaced to the user beyond one log line.
+speaker gender — with nothing surfaced to the user beyond one log line. The DEFECT this
+test guards (rebuild-backend dropping the overlay) is unchanged by E2; only the volume
+name in the reproduction narrative moved.
 
 Same shape as the NAS overlay bug the ``add_nas_overlay`` call site already documents:
 a rebuilt container that looks correct and is bound to the wrong storage.
@@ -239,14 +246,16 @@ def _dry_run_chain(stdout: str) -> list[str]:
 def test_rebuild_backend_keeps_the_diar_native_overlay_when_the_sidecar_is_deployed(
     tmp_path: Path,
 ):
-    """The bug. Without the overlay celery-worker loses /tmp/diar-native entirely."""
+    """The bug. Without the overlay celery-worker loses DIAR_NATIVE_URL (and the shared
+    pipeline_scratch/diar/ handoff namespace) entirely — it can no longer reach the sidecar
+    at all, let alone hand it a WAV."""
     stdout, docker_log = _run(tmp_path, ["rebuild-backend"], sidecar_deployed=True)
     command = _up_command(docker_log)
 
     assert DIAR in _chain(command), (
         f"rebuild-backend dropped {DIAR} from a deployment that HAS the sidecar. "
-        f"celery-worker comes back with no mount at /tmp/diar-native, /diarize "
-        f"answers 422, and diarization silently falls back to PyAnnote. Chain: "
+        f"celery-worker comes back with no DIAR_NATIVE_URL set, /diarize is never even "
+        f"attempted, and diarization silently falls back to PyAnnote. Chain: "
         f"{_chain(command)}"
     )
     assert "celery-worker" in command, command

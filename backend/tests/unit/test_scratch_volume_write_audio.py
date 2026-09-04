@@ -1,17 +1,24 @@
 """Pin the write_audio() source-survives invariant (issue #661 E1).
 
 ``scratch_volume.write_audio`` used to try ``os.replace(src, dest)`` first — a MOVE that
-deletes the source's directory entry as its mechanism. It only ever "worked" because the two
-paths passed in production (a container-local ``/tmp`` temp dir and the ``pipeline_scratch``
-named volume) sit on different filesystems, so the rename always hit ``EXDEV`` and fell
-through to a copy. Putting them on one filesystem — or running the unit test suite on a
-single-filesystem CI runner — makes the rename succeed and silently empties
-``local_wav_path`` for every caller that reads ``src_path`` again afterward
+deletes the source's directory entry as its mechanism. At the time E1 was fixed it only ever
+"worked" because the two paths passed in production (a container-local ``/tmp`` temp dir and
+the ``pipeline_scratch`` named volume) sat on DIFFERENT filesystems, so the rename always hit
+``EXDEV`` and fell through to a copy. Putting them on one filesystem — or running the unit
+test suite on a single-filesystem CI runner — made the rename succeed and would have silently
+emptied ``local_wav_path`` for every caller that reads ``src_path`` again afterward
 (``minio_service.upload_temp_audio``'s caller, ``tasks/transcription/preprocess.py``).
 
-This test forces the same-filesystem case directly (both source and destination under one
-``tmp_path``) so it does not depend on the host's mount topology, and asserts the source
-survives a successful write — the exact property the old ``os.replace``-first shape violated.
+⚠️ **Issue #661 E2 made the same-filesystem case PRODUCTION, on purpose.** The engine handoff
+(``preprocess.stage_engine_shared_volume_wav``) now deliberately links the ``engine/``
+namespace's WAV from the very same ``pipeline_scratch`` volume ``write_audio`` staged the
+``<file_uuid>/`` namespace's WAV onto — same filesystem, ``os.link`` always succeeds, zero
+bytes copied. So the below is no longer a hypothetical worst case being forced for test
+coverage; it is the ordinary path every job now takes. The fixture still forces it directly
+(both source and destination under one ``tmp_path``) so the test does not depend on the host's
+mount topology, and it still asserts the source survives a successful write — the same
+property the old ``os.replace``-first shape violated, now checked in what is the common case
+rather than an edge case.
 """
 
 from __future__ import annotations

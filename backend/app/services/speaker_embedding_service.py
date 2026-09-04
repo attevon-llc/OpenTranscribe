@@ -101,20 +101,19 @@ class SpeakerEmbeddingService:
             )
             return
 
-        if settings.DEPLOYMENT_MODE.lower() == "lite":
-            # Lite ships no in-process embedding model (issue #660) — pyannote.audio is
-            # not installed in requirements-lite.txt. Refuse here with a shaped error
-            # naming the sidecar, rather than letting the pyannote import below raise a
-            # raw ModuleNotFoundError deep inside a Celery task. v3 mode reaches here too
-            # (`_native_backend_usable` excludes it by design), so name that explicitly.
-            hint = (
-                " This install is on embedding mode v3 (512-d), which the sidecar "
-                "does not serve — migrate to v4 before running lite. See "
-                "docs-site/docs/configuration/embedding-migration.md."
-                if self.mode != MODE_V4
-                else ""
-            )
-            raise RuntimeError(_NO_BACKEND_AVAILABLE_MESSAGE + hint)
+        # NOTE: no lite-specific refusal here. One was added when #660 removed
+        # pyannote.audio from requirements-lite.txt, on the premise that lite had no
+        # in-process embedding model to fall back to. That premise no longer holds:
+        # pyannote.audio is back in lite, because the diar-native sidecar's ONNX/PLDA
+        # graphs are non-redistributable derivatives that lite must EXPORT for itself,
+        # and the exporter imports pyannote.audio. Having it installed means the
+        # in-process path is available on lite as the same graceful degrade every other
+        # deployment gets — refusing here would turn a working fallback into a hard
+        # failure, on the one local model job a cloud-ASR deployment still has.
+        #
+        # v3 (512-d) also falls through to here by design: `_native_backend_usable`
+        # excludes it because the sidecar serves 256-d v4 only, so in-process PyAnnote is
+        # the ONLY path for a v3 install — on lite as anywhere else.
 
         import torch
 

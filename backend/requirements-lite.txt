@@ -67,13 +67,38 @@ numpy==2.5.2
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.11.0+cpu
 
-# torchaudio and pyannote.audio are GONE as of issue #660: speaker embeddings in
-# lite are served by the diar-native CPU-EP sidecar (`/embed_window`), which
-# needs neither in this process. See speaker_embedding_service.py's degrade
-# paths (_load_audio's torchaudio fallback, _load_fallback_model,
-# construction-time refusal under DEPLOYMENT_MODE=lite) for what happens if the
-# sidecar becomes unavailable — a shaped error naming DIAR_NATIVE_URL, not a
-# raw ModuleNotFoundError.
+# torchaudio + pyannote.audio + the ONNX export toolchain: RESTORED, and the reason
+# matters because #660 briefly removed them.
+#
+# Lite serves speaker embeddings from the diar-native CPU-EP sidecar (`/embed_window`),
+# which needs none of this AT RUNTIME. But the sidecar cannot start from nothing: it
+# reads ONNX/PLDA graphs that are DERIVATIVES of the gated
+# pyannote/speaker-diarization-community-1 weights, and upstream ships only
+# `pytorch_model.bin` — there is no `.onnx` to download, and the derivatives are not
+# redistributable. They must be EXPORTED on the machine that will serve them.
+#
+# `diar-server` already carries the export: its five Python scripts are `include_str!`d
+# into the Rust binary, which `Dockerfile.lite` copies in and which runs here (verified:
+# `provision-models` reaches HF token validation in this image). What a Rust binary
+# cannot carry is the Python packages those scripts import. Grepping the shipped binary
+# names exactly these: `pyannote.audio`, `onnxscript`, `onnxslim`, `onnxconverter_common`.
+#
+# So removing them did not shrink a runtime dependency — it removed lite's ability to
+# provision itself, leaving a standalone lite install with NO voiceprint path at all
+# (SpeakerEmbeddingService raises when the sidecar is unusable, and the sidecar is
+# unusable with no models). Lite must download the real weights at setup and export them
+# in-container, exactly as the full image does.
+#
+# ⚠️ onnxconverter-common's absence is INVISIBLE, not an error: the export silently
+# falls back to a 379 MB fp32 gender model instead of the 189 MB fp16 one, costing
+# ~500 MiB of VRAM forever. The marker's `toolchain.gender_precision` is the only
+# falsifiable check. See native_provision.py.
+torchaudio==2.11.0+cpu
+pyannote.audio==4.0.7
+onnx==1.22.0
+onnxscript==0.7.1
+onnxslim==0.1.96
+onnxconverter-common==1.16.0
 
 # Supporting libraries
 omegaconf==2.3.1

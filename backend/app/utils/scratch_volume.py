@@ -36,11 +36,14 @@ import shutil
 import time
 from pathlib import Path
 
+from app.core.constants import PIPELINE_SCRATCH_DEFAULT
+from app.core.constants import RESERVED_SCRATCH_NAMESPACES
+
 logger = logging.getLogger(__name__)
 
 # Root of the shared volume inside any container that mounts it. Override
 # via ``PIPELINE_SCRATCH_DIR`` for non-standard deployments.
-SCRATCH_DIR = Path(os.environ.get("PIPELINE_SCRATCH_DIR", "/scratch/opentranscribe"))
+SCRATCH_DIR = Path(os.environ.get("PIPELINE_SCRATCH_DIR", PIPELINE_SCRATCH_DEFAULT))
 
 # Name of the audio artifact inside each per-file directory.
 AUDIO_FILENAME = "audio.wav"
@@ -203,6 +206,16 @@ def sweep_expired(ttl_seconds: int = DEFAULT_TTL_SECONDS) -> tuple[int, int]:
         try:
             if not entry.is_dir():
                 continue
+            if entry.name in RESERVED_SCRATCH_NAMESPACES:
+                # Reserved namespace (engine/, diar/) — its own mtime bumps on every file
+                # created inside it, so it would never look "expired" as a whole dir, and the
+                # one day it did the sweep would rmtree in-flight WAVs wholesale. Sweep the
+                # files inside it individually, by each file's own mtime; never remove the
+                # namespace directory itself.
+                r, e_count = _sweep_reserved_namespace(entry, cutoff)
+                removed += r
+                errors += e_count
+                continue
             if entry.stat().st_mtime > cutoff:
                 continue
             shutil.rmtree(entry, ignore_errors=True)
@@ -210,4 +223,27 @@ def sweep_expired(ttl_seconds: int = DEFAULT_TTL_SECONDS) -> tuple[int, int]:
         except OSError as e:
             errors += 1
             logger.debug(f"scratch sweep failed on {entry}: {e}")
+    return (removed, errors)
+
+
+def _sweep_reserved_namespace(namespace_dir: Path, cutoff: float) -> tuple[int, int]:
+    """Remove stale files (not subdirectories) inside a reserved namespace by their own mtime."""
+    removed = 0
+    errors = 0
+    try:
+        files = list(namespace_dir.iterdir())
+    except OSError as e:
+        logger.debug(f"scratch sweep failed to list reserved dir {namespace_dir}: {e}")
+        return (0, 1)
+    for f in files:
+        try:
+            if not f.is_file():
+                continue
+            if f.stat().st_mtime > cutoff:
+                continue
+            f.unlink()
+            removed += 1
+        except OSError as e:
+            errors += 1
+            logger.debug(f"scratch sweep failed on {f}: {e}")
     return (removed, errors)

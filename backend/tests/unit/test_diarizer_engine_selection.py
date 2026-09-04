@@ -455,9 +455,11 @@ class TestRealFailover:
         """NativeSpeakerDiarizer.diarize(): the shared scratch dir cannot be written to.
 
         A genuine `PermissionError` from a real unwritable directory (chmod 0o555), not
-        a patched exception — the same failure shape the `/tmp/diar-native` named-volume
-        ownership bug produced in production (the volume landed root-owned on first
-        creation, so the non-root worker's WAV write failed). Before this fix, only the
+        a patched exception — the same failure shape the pipeline_scratch `diar/`
+        namespace's ownership bug produced in production (the volume landed root-owned
+        on first creation, so the non-root worker's WAV write failed; issue #661 E2
+        folded what was a dedicated `/tmp/diar-native` named volume at the time this bug
+        was found into that namespace). Before this fix, only the
         `/diarize` HTTP call was wrapped in the fallback handler; a write failure
         propagated out of `diarize()` uncaught and hard-failed the whole transcription
         instead of degrading to PyAnnote the way an unreachable sidecar does.

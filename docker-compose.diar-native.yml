@@ -91,14 +91,19 @@ services:
       # could ever start this service (issue #639). Now it follows MODEL_CACHE_DIR like
       # every other model cache in docker-compose.yml.
       - ${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-./models}/diar-native}:/models:ro
-      - diar-native-tmp:/tmp/diar-native
-      # Same transcription-temp volume the celery-worker* services below mount, at the
+      # The SAME pipeline_scratch volume the celery-worker* services below mount, at the
       # IDENTICAL absolute path — that identity is what lets a worker hand this sidecar a
-      # path it wrote (Stage 1's shared-volume WAV) with no translation. Before this, the
-      # only volume this container shared with a worker was diar-native-tmp, so /diarize
-      # forced a second full re-encode of every recording purely to get past this gap
-      # (issue #661). Read-only: the sidecar only ever reads a WAV here, never writes one.
-      - transcription-temp:/tmp/transcription:ro
+      # path it wrote with no translation: Stage 1's shared-volume WAV under engine/, or the
+      # WORKER's own-copy fallback WAV under diar/ (``diarizer_native._post_own_copy`` runs
+      # in the WORKER container, not here — this sidecar only ever READS a path a worker
+      # already wrote, on either namespace). Before issue #661 E2 this was TWO separate
+      # volumes (diar-native-tmp for the own-copy namespace, transcription-temp for the
+      # engine handoff); before E1 the only volume this container shared with a worker was
+      # diar-native-tmp at all, so /diarize forced a second full re-encode of every
+      # recording purely to get past this gap. Read-only here is therefore correct and
+      # sufficient: this container has no legitimate reason to write into pipeline_scratch
+      # or to unlink a worker's in-flight handoff WAV.
+      - pipeline_scratch:/scratch/opentranscribe:ro
     # ⚠️ NO `deploy.resources.reservations.devices` block here — that used to be
     # hardcoded in this file (`driver: nvidia`, unconditionally), which meant EVERY host
     # loading this overlay was asking Docker to satisfy an nvidia device reservation, CPU-
@@ -157,9 +162,7 @@ services:
   celery-worker:
     environment:
       - DIAR_NATIVE_URL=http://diar-native:8701
-      - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
-    volumes:
-      - diar-native-tmp:/tmp/diar-native
+      - DIAR_NATIVE_SHARED_DIR=/scratch/opentranscribe/diar
 
   # celery-worker-gpu-scaled (docker-compose.gpu-scale.yml, profile gpu-scale, --gpu-scale
   # flag) consumes the same 'gpu' queue as celery-worker and runs the identical full
@@ -168,9 +171,7 @@ services:
   celery-worker-gpu-scaled:
     environment:
       - DIAR_NATIVE_URL=http://diar-native:8701
-      - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
-    volumes:
-      - diar-native-tmp:/tmp/diar-native
+      - DIAR_NATIVE_SHARED_DIR=/scratch/opentranscribe/diar
 
   # celery-worker-gpu-diarize (base docker-compose.yml, profile gpu-split, --gpu-split
   # flag) is the diarization half of the multi-GPU split pipeline — it consumes the
@@ -181,9 +182,7 @@ services:
   celery-worker-gpu-diarize:
     environment:
       - DIAR_NATIVE_URL=http://diar-native:8701
-      - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
-    volumes:
-      - diar-native-tmp:/tmp/diar-native
+      - DIAR_NATIVE_SHARED_DIR=/scratch/opentranscribe/diar
 
   # celery-worker-gpu-transcribe (base docker-compose.yml, profile gpu-split) consumes
   # the 'gpu-transcribe' queue. Under the shipped topology it hardcodes
@@ -198,9 +197,4 @@ services:
   celery-worker-gpu-transcribe:
     environment:
       - DIAR_NATIVE_URL=http://diar-native:8701
-      - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
-    volumes:
-      - diar-native-tmp:/tmp/diar-native
-
-volumes:
-  diar-native-tmp:
+      - DIAR_NATIVE_SHARED_DIR=/scratch/opentranscribe/diar

@@ -16,6 +16,15 @@
 # not off queue depth. The 2g default here covers 2 in-flight jobs with headroom; raise
 # SCRATCH_TMPFS_SIZE if DIAR_NATIVE_MAX_INFLIGHT is raised on a RAM-rich host.
 #
+# Issue #661 E2 makes this bound HONEST rather than aspirational: before the consolidation,
+# this tmpfs override only put the `<file_uuid>/` namespace's WAV in RAM — the engine
+# handoff WAV (`transcription-temp`, a separate volume this file never touched) and the
+# sidecar's own-copy fallback (`diar-native-tmp`, also untouched) stayed on disk
+# regardless, so a job's real peak footprint was never actually RAM-bound by this knob.
+# All three now live on this one volume, so the multiplier is `DIAR_NATIVE_MAX_INFLIGHT x
+# 2 x largest_file` — the `x2` is the own-copy fallback (``_post_own_copy``) transiently
+# holding BOTH the `engine/`-linked name and its own `diar/` copy at once, worst case.
+#
 # A FULL tmpfs fails the one job that overflows it with ENOSPC — loud, and scoped to that
 # job — rather than the host paging or the OOM killer picking a victim process, which is
 # why disk stays the default and this stays opt-in rather than becoming the default.

@@ -666,23 +666,43 @@ phase_06_api_smoke() {
                 esac
             fi
 
-            local diar_verdict
-            diar_verdict=$(ac_diar_engine_verdict "opentranscribe-celery-worker" "30m")
+            # Verdict is per-file (issue #706's diarization_provider column),
+            # not a whole-worker-log grep, so the check is against the
+            # specific file just proven "completed" — not whichever job
+            # last happened to log a line in a 30-minute window. The last
+            # uploaded file id stands in for "the file(s) that just
+            # completed": a fresh install here uploads at most a couple of
+            # small clips, so verifying one is representative of the batch.
+            local diar_verdict diar_verdict_source
+            diar_verdict=$(ac_diar_engine_verdict "$fid" "opentranscribe-celery-worker" "30m")
+            diar_verdict_source="${diar_verdict#*:}"
             case "$diar_verdict" in
-                native)
-                    as_record PASS "native diarizer served the completed file(s)"
+                native:db|native:log)
+                    as_record PASS "native diarizer served the completed file ($fid, source=$diar_verdict_source)"
                     ;;
-                fallback)
-                    as_record FAIL "native diarizer served the completed file(s)" \
-                        "worker log shows a 'falling back to PyAnnote' line — the sidecar degraded silently"
+                pyannote:db)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "media_file.diarization_provider=pyannote — PyAnnote served this job (direct config or a silent native fallback)"
                     ;;
-                absent)
-                    as_record FAIL "native diarizer served the completed file(s)" \
-                        "opentranscribe-celery-worker is not running"
+                fallback:log)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "worker log shows a 'falling back to PyAnnote' line — the sidecar degraded silently (no diarization_provider column on this API; legacy log-based check)"
                     ;;
-                unknown)
-                    as_record FAIL "native diarizer served the completed file(s)" \
-                        "neither a 'native diarization done' nor a fallback line appeared in the worker log"
+                none:db)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "media_file.diarization_provider is NULL after completion — diarization never resolved a provider"
+                    ;;
+                absent:none)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "file record unreachable and opentranscribe-celery-worker is not running"
+                    ;;
+                unknown:db|unknown:log)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "could not determine which engine served this job (verdict=$diar_verdict)"
+                    ;;
+                *)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "unrecognized verdict from ac_diar_engine_verdict: $diar_verdict"
                     ;;
             esac
 

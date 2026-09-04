@@ -216,28 +216,47 @@ for k in sorted(interesting):
     ac_warn "──────── end diagnostics ────────"
 }
 
-# ac_diar_engine_verdict [WORKER_CONTAINER] [SINCE]
+# ac_diar_engine_verdict FILE_UUID [WORKER_CONTAINER] [SINCE]
 #
-# Answers "which engine actually diarized the file(s) that just completed?" —
-# a question `ac_wait_for_file_status` returning "completed" cannot answer.
-# The fallback from the native sidecar to in-process PyAnnote is SILENT BY
+# Answers "which engine actually diarized THIS file?" — a question
+# `ac_wait_for_file_status` returning "completed" cannot answer. The
+# fallback from the native sidecar to in-process PyAnnote is SILENT BY
 # DESIGN (diarizer_native.py / model_manager.py log one warning line and
 # carry on), so a rehearsal that only checks the upload's final status can
 # pass on a stack whose diarizer is dead (issue #670).
 #
-# diarizer_native.py logs exactly one of two mutually exclusive lines per
-# job:
-#   "native diarization done in %.1fs: %d segments, %d speakers"  (served)
-#   "falling back to PyAnnote"  (degraded — three call sites log this exact
-#   suffix: an unreachable sidecar, a mid-job /diarize failure, or the
-#   sidecar simply being absent from this deployment)
+# Primary source (issue #706): `media_file.diarization_provider`, wired onto
+# the wire via GET /api/files/{uuid}. It is per-file and survives log
+# rotation/worker restarts — the two defects the old log-grep
+# implementation had no answer for. Vocabulary is `native` | `pyannote` |
+# NULL (see the column's own docs: `pyannote` deliberately covers BOTH a
+# directly-configured pyannote run and a native run that fell back — both
+# mean "PyAnnote served this job").
 #
-# Echoes exactly one of: native | fallback | unknown | absent
-#   native    a "native diarization done" line was seen and no fallback line
-#   fallback  at least one "falling back to PyAnnote" line was seen
-#   unknown   the worker container is up but neither line appeared in the
-#             window — e.g. no diarization job ran in it yet
-#   absent    the named worker container is not running at all
+# Falls back to the old worker-log grep ONLY when the column cannot be
+# read at all — an old FROM-release stack (test-upgrade.sh's pre-upgrade
+# side) predating #706 has neither the column nor the API field. That
+# fallback is NOT scoped to FILE_UUID and inherits every defect the
+# log-grep approach always had (unrelated hits in the time window, no
+# survival across log rotation/restart) — it exists purely so an
+# old-schema stack reads as "could not measure", never as a false pass or
+# false fail.
+#
+# Echoes "<verdict>:<source>" where source is "db" (the new, trustworthy
+# per-file signal) or "log" (the old, unscoped fallback):
+#   native:db      diarization_provider == "native" for this file
+#   pyannote:db    diarization_provider == "pyannote" — PyAnnote served it,
+#                  directly or via a native fallback
+#   none:db        the column exists on the wire and is NULL — diarization
+#                  never resolved a provider for this file
+#   unknown:db     the column held a value in neither vocabulary entry
+#   native:log     legacy fallback — a "native diarization done" line was
+#                  seen and no fallback line, somewhere in the window
+#   fallback:log   legacy fallback — at least one "falling back to
+#                  PyAnnote" line was seen somewhere in the window
+#   unknown:log    legacy fallback — worker container up but neither line
+#                  appeared in the window
+#   absent:none    neither the API nor the named worker container answered
 #
 # Deliberately does NOT prove GPU residency — that is
 # scripts/diar-native-smoke.sh's job (device-memory residency via
@@ -245,11 +264,55 @@ for k in sorted(interesting):
 # process is alive and pinned to the right GPU, not that any job was routed
 # to it. Callers that want both should run both.
 ac_diar_engine_verdict() {
-    local worker_container="${1:-opentranscribe-celery-worker}"
-    local since="${2:-30m}"
+    local file_uuid="${1:?ac_diar_engine_verdict requires a file uuid}"
+    local worker_container="${2:-opentranscribe-celery-worker}"
+    local since="${3:-30m}"
 
+    local body="" has_column="no"
+    body=$(ac_curl "$API_BASE/files/$file_uuid" 2>/dev/null || echo "")
+    if [[ -n "$body" ]]; then
+        # Presence of the KEY, not its value, is what distinguishes an
+        # old pre-#706 API (no key at all -> fall back to logs) from a
+        # current one reporting a real NULL (diarization never resolved,
+        # a legitimate DB verdict). A plain .get() collapses that
+        # distinction, so check membership explicitly.
+        has_column=$(python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("no"); sys.exit(0)
+if isinstance(d, dict) and "file" in d and isinstance(d["file"], dict):
+    d = d["file"]
+print("yes" if isinstance(d, dict) and "diarization_provider" in d else "no")
+' <<<"$body" 2>/dev/null || echo "no")
+    fi
+
+    if [[ "$has_column" == "yes" ]]; then
+        local provider
+        provider=$(python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if isinstance(d, dict) and "file" in d and isinstance(d["file"], dict):
+    d = d["file"]
+v = d.get("diarization_provider")
+print(v if v else "")
+' <<<"$body" 2>/dev/null || echo "")
+        case "$provider" in
+            native)   echo "native:db" ;;
+            pyannote) echo "pyannote:db" ;;
+            "")       echo "none:db" ;;
+            *)        echo "unknown:db" ;;
+        esac
+        return 0
+    fi
+
+    # No column on the wire (old FROM-release schema/API predating #706)
+    # or the file record could not be fetched at all — fall back to the
+    # unscoped log grep so an old-schema stack is measured as best-effort
+    # rather than reported as a hard failure.
     if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$worker_container"; then
-        echo "absent"
+        echo "absent:none"
         return 0
     fi
 
@@ -259,11 +322,11 @@ ac_diar_engine_verdict() {
     fallback_hits=$(grep -c 'falling back to PyAnnote' <<<"$logs" || true)
 
     if (( fallback_hits > 0 )); then
-        echo "fallback"
+        echo "fallback:log"
     elif (( native_hits > 0 )); then
-        echo "native"
+        echo "native:log"
     else
-        echo "unknown"
+        echo "unknown:log"
     fi
 }
 

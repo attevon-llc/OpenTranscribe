@@ -22,6 +22,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.utils import benchmark_timing
+from app.utils import scratch_volume
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -36,6 +37,60 @@ from .notifications import send_error_notification
 from .notifications import send_progress_notification
 
 logger = logging.getLogger(__name__)
+
+
+def stage_engine_shared_volume_wav(file_uuid: str, task_id: str, temp_audio_path: str) -> str:
+    """Hand the preprocessed WAV to the engine's shared-volume namespace.
+
+    Phase 1b Opt-3A: the GPU task mmap-loads this path (sub-second) instead of downloading
+    from MinIO (~2-5 s). Falls back to MinIO (empty return) if the write fails.
+
+    Issue #661 E2: ``upload_temp_audio`` (called by the caller just before this) already
+    staged this exact WAV onto pipeline_scratch's ``<file_uuid>/`` namespace
+    (``scratch_volume.write_audio``, itself ``os.link``-first). When that scratch copy exists,
+    link FROM IT rather than copying from ``temp_audio_path`` again — both destinations now
+    live on the same volume (``pipeline_scratch``), so ``os.link`` always succeeds and this
+    handoff costs zero bytes instead of one full WAV copy (previously always a copy, because
+    the two paths sat on different filesystems: a container-local /tmp and the
+    ``transcription-temp`` volume).
+
+    Two names, one inode. Blocks free only when BOTH names are gone:
+    - ``cleanup_shared_volume_wav`` (audio_loader.py) unlinks THIS name (the ``engine/`` one)
+      at the end of the GPU stage.
+    - ``cleanup_temp_audio`` -> ``scratch_volume.cleanup`` rmtree's the ``<file_uuid>/``
+      namespace only, once postprocess/rediarize are done with it — it cannot reach ``engine/``.
+    Nothing mutates either name in place (write_audio/read_audio/cleanup are the only
+    touchpoints), so the two lifetimes stay independent exactly as before this change; on
+    tmpfs the shared inode means the handoff costs one WAV, not two.
+
+    Returns the destination path, or "" on any failure (caller falls back to MinIO).
+    """
+    try:
+        shared_vol = os.environ.get("ENGINE_SHARED_VOLUME_PATH", ENGINE_SHARED_VOLUME_DEFAULT)
+        os.makedirs(shared_vol, exist_ok=True)
+        safe_task_id = re.sub(r"[^a-zA-Z0-9\-]", "_", task_id)
+        wav_dest = os.path.join(shared_vol, f"{safe_task_id}.wav")
+        if os.path.exists(wav_dest):
+            os.unlink(wav_dest)
+
+        scratch_src = scratch_volume.scratch_audio_path(file_uuid)
+        if scratch_volume.is_scratch_available() and scratch_src.exists():
+            try:
+                os.link(str(scratch_src), wav_dest)
+            except OSError:
+                # Cross-filesystem (PIPELINE_SCRATCH_SHARED=false / multi-host layouts where
+                # the scratch mount isn't actually shared with this dir) — copy instead.
+                shutil.copy2(str(scratch_src), wav_dest)
+        else:
+            # Scratch unavailable — preserve pre-#661-E2 behaviour exactly: copy from the
+            # container-local temp WAV.
+            shutil.copy2(temp_audio_path, wav_dest)
+
+        logger.info("Engine shared-volume WAV: %s (%d bytes)", wav_dest, os.path.getsize(wav_dest))
+        return wav_dest
+    except Exception as shv_err:
+        logger.warning("Shared-volume WAV write failed, GPU task will use MinIO: %s", shv_err)
+        return ""
 
 
 @celery_app.task(
@@ -129,28 +184,9 @@ def preprocess_for_transcription(
             with benchmark_timing.stage(task_id, "temp_upload"):
                 audio_temp_path = upload_temp_audio(file_uuid, temp_audio_path)
 
-            # Phase 1b Opt-3A: copy WAV to shared volume so GPU task can mmap-load (sub-second)
-            # instead of downloading from MinIO (~2–5 s). Falls back to MinIO if write fails.
-            local_wav_path = ""
-            try:
-                _shared_vol = os.environ.get(
-                    "ENGINE_SHARED_VOLUME_PATH",
-                    ENGINE_SHARED_VOLUME_DEFAULT,
-                )
-                os.makedirs(_shared_vol, exist_ok=True)
-                _safe_task_id = re.sub(r"[^a-zA-Z0-9\-]", "_", task_id)
-                _wav_dest = os.path.join(_shared_vol, f"{_safe_task_id}.wav")
-                shutil.copy2(temp_audio_path, _wav_dest)
-                local_wav_path = _wav_dest
-                logger.info(
-                    "Engine shared-volume WAV: %s (%d bytes)",
-                    _wav_dest,
-                    os.path.getsize(_wav_dest),
-                )
-            except Exception as _shv_err:
-                logger.warning(
-                    "Shared-volume WAV write failed, GPU task will use MinIO: %s", _shv_err
-                )
+            # See stage_engine_shared_volume_wav's docstring for the link-vs-copy decision and
+            # the two-names-one-inode lifetime contract (issue #661 E2).
+            local_wav_path = stage_engine_shared_volume_wav(file_uuid, task_id, temp_audio_path)
 
             # Dispatch waveform generation in parallel with the GPU task.
             # Previously fired from upload.py, which forced a full re-download

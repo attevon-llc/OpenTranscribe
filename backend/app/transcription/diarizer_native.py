@@ -47,7 +47,9 @@ from typing import cast
 
 import numpy as np
 
+from app.core.constants import DIAR_NATIVE_SHARED_DIR_DEFAULT
 from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
+from app.core.constants import PIPELINE_SCRATCH_DEFAULT
 from app.transcription.diarize_result import DiarizeResult
 
 if TYPE_CHECKING:
@@ -64,8 +66,10 @@ logger = logging.getLogger(__name__)
 NATIVE_MODEL_NAME = "pyannote/speaker-diarization-community-1"
 
 _DEFAULT_URL = os.environ.get("DIAR_NATIVE_URL", "http://diar-native:8701")
-# Directory shared (bind/volume) between this worker and the sidecar container.
-_SHARED_DIR = os.environ.get("DIAR_NATIVE_SHARED_DIR", "/tmp/diar-native")  # noqa: S108  # nosec B108 — container volume mount point, not a host temp file
+# Directory shared (bind/volume) between this worker and the sidecar container — the sidecar's
+# own-copy fallback namespace inside pipeline_scratch (issue #661 E2). Still a documented,
+# independently overridable env var; only the default changed.
+_SHARED_DIR = os.environ.get("DIAR_NATIVE_SHARED_DIR", DIAR_NATIVE_SHARED_DIR_DEFAULT)
 _TIMEOUT_S = float(os.environ.get("DIAR_NATIVE_TIMEOUT_S", "3600"))
 # Ask the sidecar for gender alongside diarization. Off leaves the app's own CPU task in charge.
 _GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0", "false", "no")
@@ -87,7 +91,35 @@ _GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0",
 # nothing else would surface, diarize() below logs which case fired on every call — see the
 # "reuse-WAV optimisation" log lines.
 _ENGINE_SHARED_DIR = os.environ.get("ENGINE_SHARED_VOLUME_PATH", ENGINE_SHARED_VOLUME_DEFAULT)
-_ENGINE_SHARED_PREFIX = _ENGINE_SHARED_DIR.rstrip("/") + "/"
+
+# Containment boundary for the reuse-WAV check, keyed on the pipeline_scratch VOLUME ROOT
+# (issue #661 E2 phase 1.3) — NOT `_ENGINE_SHARED_DIR`. `str.startswith` against a subdirectory
+# prefix has two independent problems: it is not real path containment (no `..` resolution, no
+# symlink resolution — "/scratch/opentranscribe-evil/x.wav" passes a naive prefix test because
+# the STRING happens to start with the prefix), and after E2 the engine WAV lives under
+# `.../engine/<task>.wav` while rediarize's WAV lives under `.../<uuid>/audio.wav` — both on the
+# same volume, but a prefix keyed on the `engine/` subdir would reject the second, silently
+# forcing `_post_own_copy` on every rediarize. `PIPELINE_SCRATCH_DIR` mirrors the same env var
+# `app.utils.scratch_volume` reads, so both sides of the reuse check agree on one root.
+_SHARED_VOLUME_ROOT = os.path.realpath(
+    os.environ.get("PIPELINE_SCRATCH_DIR", PIPELINE_SCRATCH_DEFAULT)
+)
+
+
+def _path_is_on_shared_volume(path: str) -> bool:
+    """True when ``path`` resolves to somewhere inside the pipeline_scratch volume root.
+
+    Uses ``os.path.realpath`` on both sides (resolves ``..`` and symlinks) plus
+    ``os.path.commonpath`` — never ``str.startswith``, which a sibling directory sharing the
+    same string prefix (e.g. ``/scratch/opentranscribe-evil``) would pass.
+    """
+    try:
+        real = os.path.realpath(path)
+        return os.path.commonpath([real, _SHARED_VOLUME_ROOT]) == _SHARED_VOLUME_ROOT
+    except (ValueError, OSError):
+        # ValueError: paths on different drives (Windows) or otherwise incomparable.
+        return False
+
 
 # Probe TTL cache (issue #661 probe-cost fix). A bare live GET costs the full connect timeout
 # whenever the sidecar is unreachable, and the readiness gate is consulted several times per
@@ -396,13 +428,13 @@ def _log_reuse_decision(wav_path: str | None, reused: bool) -> None:
     stayed green while every diarization quietly took the slower re-encode path.
     """
     if wav_path and not reused:
-        if not wav_path.startswith(_ENGINE_SHARED_PREFIX):
+        if not _path_is_on_shared_volume(wav_path):
             logger.info(
                 "diar-native reuse-WAV optimisation NOT used: %s is not under the shared "
-                "prefix %s. If this worker and the sidecar should share a volume, set "
-                "ENGINE_SHARED_VOLUME_PATH the same way in both (see .env.example).",
+                "volume root %s. If this worker and the sidecar should share a volume, set "
+                "PIPELINE_SCRATCH_DIR the same way in both (see .env.example).",
                 wav_path,
-                _ENGINE_SHARED_PREFIX,
+                _SHARED_VOLUME_ROOT,
             )
         else:
             logger.info(
@@ -411,7 +443,7 @@ def _log_reuse_decision(wav_path: str | None, reused: bool) -> None:
                 wav_path,
             )
     elif reused:
-        logger.debug("diar-native reusing staged WAV at %s", wav_path)
+        logger.info("diar-native reusing staged WAV at %s", wav_path)
 
 
 class NativeSpeakerDiarizer:
@@ -620,9 +652,7 @@ class NativeSpeakerDiarizer:
         # the transcription-temp mount existed keeps its old mount set until it is
         # RECREATED, not merely restarted. Reproduced live, and it made every diarization on
         # the box fall back while every health check stayed green.
-        reused = bool(
-            wav_path and wav_path.startswith(_ENGINE_SHARED_PREFIX) and os.path.isfile(wav_path)
-        )
+        reused = bool(wav_path and _path_is_on_shared_volume(wav_path) and os.path.isfile(wav_path))
         _log_reuse_decision(wav_path, reused)
 
         own_wav: str | None = None

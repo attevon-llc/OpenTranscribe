@@ -36,8 +36,8 @@ class EngineConfig:
     boundary_acoustic_cosine_margin: float = 0.05
     boundary_acoustic_max_word_dur: float = 1.0
 
-    # Shared-volume handoff path (Opt-3A) — /tmp is always world-writable in containers
-    shared_volume_path: str = "/tmp"  # noqa: S108  # nosec B108
+    # Shared-volume handoff path (Opt-3A) — the engine/ namespace of pipeline_scratch
+    shared_volume_path: str = ENGINE_SHARED_VOLUME_DEFAULT
 
     # Internal: wrapped TranscriptionConfig (set by from_environment)
     _transcription_config: TranscriptionConfig | None = field(default=None, repr=False)
@@ -252,7 +252,7 @@ class EngineConfig:
             ),
             boundary_acoustic_cosine_margin=snapshot.get("boundary_acoustic_cosine_margin", 0.05),
             boundary_acoustic_max_word_dur=snapshot.get("boundary_acoustic_max_word_dur", 1.0),
-            shared_volume_path=snapshot.get("shared_volume_path", "/tmp"),  # noqa: S108  # nosec B108
+            shared_volume_path=snapshot.get("shared_volume_path", ENGINE_SHARED_VOLUME_DEFAULT),
         )
         engine._transcription_config = tc
         return engine

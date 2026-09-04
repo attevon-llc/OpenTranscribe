@@ -52,7 +52,6 @@ from app.transcription.diarize_result import DiarizeResult
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-if TYPE_CHECKING:
     from app.transcription.diarizer import SpeakerDiarizer
 
 logger = logging.getLogger(__name__)
@@ -255,6 +254,76 @@ def _sidecar_ready_uncached(url: str) -> bool:
         return False
     except Exception:  # noqa: BLE001 — unreachable for any reason means "not ready"
         return False
+
+
+#: Human-readable description per diarization backend — the single table for admin/stats
+#: displays. Previously duplicated (issue #672's second half): ``admin.py`` and
+#: ``stats_helpers.py`` each hand-rolled their own copy of this table AND resolved the
+#: CONFIGURED backend through two different functions (one unvalidated), so the two panels
+#: could report different engines for the identical misconfiguration
+#: (``ENGINE_DIARIZER_BACKEND=typo`` read as ``"typo diarization engine"`` on one panel and
+#: ``"native"``'s description on the other). Keyed by ``engine.backends.VALID_DIARIZER_BACKENDS``.
+_ENGINE_DESCRIPTIONS: dict[str, str] = {
+    "native": "diar-native sidecar (Rust/ONNX) — primary diarization engine",
+    "pyannote": "PyAnnote fork (in-process) — explicit pin or automatic native-sidecar failover",
+}
+
+
+def describe_diarizer_status() -> dict[str, Any]:
+    """Configured vs EFFECTIVE diarization engine — the one resolver both stats panels use.
+
+    ``configured`` is whatever ``TranscriptionConfig._resolve_diarizer_backend()`` resolves
+    (SystemSettings -> env -> coded default "native", already validated against
+    ``VALID_DIARIZER_BACKENDS`` and fail-safe on a bad value) — the SAME call
+    ``ModelManager`` makes to pick the engine at runtime, so this display value can never
+    diverge from the pipeline's own decision the way the two duplicated resolvers used to.
+
+    ``effective`` answers the harder, and more important, question: which engine will
+    actually SERVE. ``ModelManager._build_diarizer`` falls back from native to the
+    in-process PyAnnote fork silently whenever the sidecar cannot serve — that is the whole
+    point of the fallback — so a deployment configured for native can spend its entire life
+    on PyAnnote while every setting still says "native". "pyannote" never falls back to
+    anything (there is no engine below it), so it is always its own effective engine;
+    "native" is effective only when :func:`sidecar_ready` agrees the sidecar can actually
+    diarize — the identical predicate ``ModelManager._diarizer_current`` gates the real
+    routing decision on.
+
+    Cost: at most ONE call to :func:`sidecar_ready`, made only when ``configured ==
+    "native"``. That call is itself TTL-cached (``_READY_CACHE_TTL_S``, ~8s) and shares its
+    cache with the transcription pipeline's own per-task probes, so in the common case
+    (cache warm) this function costs a dict lookup. Worst case — cache cold AND the sidecar
+    silently unreachable — is ONE bounded HTTP call at the ``_PROBE_TIMEOUT_S`` (5s)
+    ceiling, never unbounded and never chained into a second probe (a fast 404 from a
+    pre-0.3.0 sidecar falls through to :func:`sidecar_healthy`, but that response is by
+    definition fast — the sidecar just answered). Callers on an async request path must
+    NOT await this inline: offload it (e.g. ``asyncio.to_thread``), exactly as the psutil
+    calls beside it already are in ``admin.py``'s ``/admin/stats`` — a synchronous 5s probe
+    run directly inside an ``async def`` handler blocks that worker's whole event loop, not
+    just the one request.
+
+    Returns:
+        Dict with ``configured``, ``configured_description``, ``effective``,
+        ``effective_description``, and ``using_fallback`` (True exactly when the two
+        engines differ — the signal issue #672 exists to surface).
+    """
+    from app.transcription.config import TranscriptionConfig
+
+    configured = TranscriptionConfig._resolve_diarizer_backend()
+    effective = configured
+    if configured == "native" and not sidecar_ready():
+        effective = "pyannote"
+
+    return {
+        "configured": configured,
+        "configured_description": _ENGINE_DESCRIPTIONS.get(
+            configured, f"{configured} diarization engine"
+        ),
+        "effective": effective,
+        "effective_description": _ENGINE_DESCRIPTIONS.get(
+            effective, f"{effective} diarization engine"
+        ),
+        "using_fallback": effective != configured,
+    }
 
 
 def _overlap_regions(full_segments: list[dict], min_duration: float) -> list[dict]:

@@ -830,6 +830,56 @@ FRESH_MOCK_ASR_SERVICES=(mock-asr)
 # Native diarization sidecar (--with-diar-native). No published host port, but the
 # service still needs re-pinning into the fresh project so two stacks never share one.
 FRESH_DIAR_NATIVE_SERVICES=(diar-native)
+
+# Adversarial-audit finding: container names, ports and named volumes are all
+# namespaced by COMPOSE_PROJECT_NAME automatically, but a HOST BIND MOUNT is
+# not — it is a literal path on disk. docker-compose.yml mounts
+# DIAR_NATIVE_MODELS_DIR into `backend` READ-WRITE (the backend is what EXPORTS
+# the model set, native_provision.py), so a --fresh stack that inherited the
+# live value could re-export over, or corrupt, the 462MB export the main stack
+# is serving from. This is exactly the "own copy" resolution the --fresh
+# exclusion in add_diar_native_overlay was already removed to enable — a fresh
+# stack with a HUGGINGFACE_TOKEN provisions its OWN export here instead of
+# touching the live one, which is a real fresh-install rehearsal rather than a
+# read-only peek at somebody else's model set.
+#
+# Directory, not a bare path builder: kept as a function (not another
+# FRESH_*_PATH constant) because it has to derive from the already-sanitized
+# deployment name, same as fresh_project_name.
+fresh_diar_native_models_dir() {
+  echo "${FRESH_OVERLAY_DIR}/$(fresh_sanitize_name "$1")/diar-native-models"
+}
+
+# Create (idempotently) and correctly own a fresh deployment's isolated
+# diar-native export directory BEFORE `compose up` ever runs. Must happen
+# host-side, first: an absent bind-mount source is auto-created by dockerd as
+# root-owned the instant the container starts, and the backend (appuser, uid
+# 1000) then fails `provision-models` with exit 7 NOT_WRITABLE — the exact
+# ownership hazard scripts/common.sh's fix_model_cache_permissions was just
+# fixed to avoid for the main $MODEL_CACHE_DIR path. That fix does not cover
+# this directory: it is scoped to $MODEL_CACHE_DIR, and this one is
+# deliberately OUTSIDE it (see fresh_diar_native_models_dir above), so it
+# needs the same two-tier ownership fix (Docker helper container, then a
+# direct chown fallback) duplicated here rather than shared.
+fresh_prepare_diar_native_models_dir() {
+  local dir="$1"
+  mkdir -p "$dir"
+  local owner
+  owner=$(stat -c '%u' "$dir" 2>/dev/null || stat -f '%u' "$dir" 2>/dev/null || echo "unknown")
+  [ "$owner" = "1000" ] && return 0
+  if command -v docker &>/dev/null && \
+     docker run --rm -v "$dir:/models" busybox:latest \
+       sh -c "chown -R ${CONTAINER_UID_GID:-1000:999} /models && chmod -R 755 /models" \
+       >/dev/null 2>&1; then
+    return 0
+  fi
+  if chown -R "${CONTAINER_UID_GID:-1000:999}" "$dir" 2>/dev/null && chmod -R 755 "$dir" 2>/dev/null; then
+    return 0
+  fi
+  echo "⚠️  Warning: could not fix ownership of fresh diar-native models dir: $dir"
+  echo "   If provisioning fails with NOT_WRITABLE, chown it to ${CONTAINER_UID_GID:-1000:999} manually."
+  return 1
+}
 FRESH_SMB_SERVICES=(smb-test)
 FRESH_MONITORING_SERVICES=(prometheus grafana)
 # Real GPU-backed LLM (--with-llm-test). This was the ONE aux overlay #347 never
@@ -1441,8 +1491,20 @@ fresh_destroy() {
      "${FRESH_OVERLAY_DIR}/${name}.aux" \
      "${FRESH_OVERLAY_DIR}/${name}-ports.yml" \
      "${FRESH_OVERLAY_DIR}/${name}-baked.yml" 2>/dev/null | sed 's/^/     - /' || true
+  # The one host directory this deployment owns outright (fresh_diar_native_models_dir):
+  # its own diar-native export, not the live one. Listed separately from the
+  # generated-files glob above because it is a directory tree (up to ~462MB), not a
+  # small generated file, and deleting it is what stops a --fresh stack from leaking
+  # that export on every destroy the way llm-test's container used to leak a GPU (#347).
+  local diar_dir
+  diar_dir="$(fresh_diar_native_models_dir "$name")"
+  if [ -d "$diar_dir" ]; then
+    echo "   Isolated diar-native models directory to remove:"
+    echo "     - $diar_dir"
+  fi
   echo ""
-  echo "   This touches ONLY this isolated project — no bind paths, no other stack."
+  echo "   This touches ONLY this isolated project and its own directories — no LIVE"
+  echo "   bind paths, no other stack."
   printf "   Proceed? (y/N) "
   read -r confirm
   if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
@@ -1460,6 +1522,7 @@ fresh_destroy() {
         "${FRESH_OVERLAY_DIR}/${name}.aux" \
         "${FRESH_OVERLAY_DIR}/${name}-ports.yml" \
         "${FRESH_OVERLAY_DIR}/${name}-baked.yml" 2>/dev/null || true
+  rm -rf "$diar_dir" 2>/dev/null || true
   echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + generated files)."
 }
 
@@ -1756,6 +1819,21 @@ start_app() {
       echo "   as the main stack. Point them at a scratch dir before continuing if that matters."
     fi
 
+    # Redirect the native diarizer's model export to a directory owned by THIS
+    # fresh deployment, unconditionally — even over an explicit .env
+    # DIAR_NATIVE_MODELS_DIR, the same way NAS is forced off a few lines above
+    # regardless of .env. An explicit value in .env is set for the MAIN stack;
+    # left alone here it would apply just as ambiently to every fresh stack,
+    # which is precisely the live-data hazard this exists to close (see
+    # fresh_diar_native_models_dir's comment for the full finding).
+    # resolve_diar_native_models_dir (called from add_diar_native_overlay,
+    # later in this function) treats an already-exported DIAR_NATIVE_MODELS_DIR
+    # as an explicit override and returns it unexamined, so setting it here is
+    # sufficient — no change to that function is needed, and its own pinned
+    # resolution tests (which never set FRESH_FLAG) are unaffected.
+    export DIAR_NATIVE_MODELS_DIR
+    DIAR_NATIVE_MODELS_DIR="$(fresh_diar_native_models_dir "$FRESH_NAME")"
+
     fresh_write_offset "$FRESH_NAME" "$_offset"
     fresh_write_aux "$FRESH_NAME" ${_aux_files[@]+"${_aux_files[@]}"}
     FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" ${_aux_services[@]+"${_aux_services[@]}"})"
@@ -1770,6 +1848,7 @@ start_app() {
       echo "   Port offset: none — standard dev ports"
     fi
     echo "   Published ports:$(fresh_port_summary)"
+    echo "   diar-native models: ${DIAR_NATIVE_MODELS_DIR} (isolated copy, not the live export)"
     echo ""
 
     # Force NAS off in fresh mode regardless of .env.
@@ -1855,6 +1934,16 @@ start_app() {
 
     # Fix model cache permissions for non-root container
     fix_model_cache_permissions
+
+    # fix_model_cache_permissions only reaches $MODEL_CACHE_DIR. A --fresh
+    # deployment's diar-native export lives OUTSIDE it by design (see
+    # fresh_diar_native_models_dir), so it needs this same ownership fix
+    # applied to its own directory, BEFORE `compose up` — never after, per
+    # fresh_prepare_diar_native_models_dir's own comment on the NOT_WRITABLE
+    # hazard of letting dockerd create the bind-mount source itself.
+    if [ -n "$FRESH_FLAG" ]; then
+      fresh_prepare_diar_native_models_dir "$DIAR_NATIVE_MODELS_DIR"
+    fi
 
     # Generate a real MinIO KMS secret key if .env still has .env.example's
     # shipped placeholder, so a genuinely fresh `cp .env.example .env` boots

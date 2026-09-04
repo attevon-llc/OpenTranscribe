@@ -109,8 +109,27 @@ def test_startup_runs_the_helper_on_every_path():
 
     assert "ensure_nltk_data_unlinked" in COMMON_SH.read_text(), "helper is not defined"
 
-    calls = opentr.count("ensure_nltk_data_unlinked")
-    prep_calls = opentr.count("fix_model_cache_permissions")
+    # Count CALLS, not mentions. A bare `opentr.count(name)` also counts every comment that
+    # names the helper, and prose explaining why a nearby block mirrors
+    # fix_model_cache_permissions is exactly the sort of comment this file's own conventions
+    # encourage — it inflated prep_calls to 4 against 2 real calls and failed a balanced
+    # invariant. Same rule test_shell_expansion_guards applies: a name in a comment is not
+    # code. A call is the helper at the start of a statement.
+    def _calls(name: str) -> int:
+        return len(
+            [
+                line
+                for line in opentr.splitlines()
+                if line.lstrip().startswith(name) and not line.lstrip().startswith("#")
+            ]
+        )
+
+    calls = _calls("ensure_nltk_data_unlinked")
+    prep_calls = _calls("fix_model_cache_permissions")
+    assert prep_calls >= 2, (
+        f"expected at least the two startup prep paths, found {prep_calls} — the counter "
+        "may have stopped matching the real call shape"
+    )
 
     assert calls == prep_calls, (
         f"opentr.sh calls fix_model_cache_permissions {prep_calls}x but "

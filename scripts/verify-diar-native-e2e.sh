@@ -77,9 +77,15 @@ printf '\n\033[1m1. Provisioning\033[0m\n'
 if [ "$SCENARIO" != "current" ]; then
     info "restarting the backend so the lifespan runs (this can take ~140s on a cold export)"
     ./opentr.sh restart-backend >/dev/null 2>&1
-    for _ in $(seq 1 60); do
-        docker exec "$BACKEND" curl -sf -o /dev/null --max-time 3 \
-            http://localhost:8080/health 2>/dev/null && break
+    # Wait for the PROVISIONING LINE, not for /health. Health returns the moment the
+    # lifespan completes, and the grep below then races the log becoming visible — a
+    # measured cold export lands at ~140s and the check reported "no provisioning line"
+    # while the very next `docker logs` call showed it. Poll for the thing being asserted.
+    for _ in $(seq 1 90); do
+        if docker logs "$BACKEND" --since 30m 2>&1 \
+             | grep -qE 'models exported|already provisioned|provisioning (failed|skipped)'; then
+            break
+        fi
         sleep 5
     done
 fi

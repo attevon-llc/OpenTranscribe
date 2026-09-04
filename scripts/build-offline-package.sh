@@ -347,10 +347,12 @@ copy_configuration() {
     # The GPU half is a separate file so the base overlay stays loadable on a CPU-only
     # host (#660). Both must ship: with only the first, an air-gapped GPU install gets a
     # CPU-bound sidecar that produces identical output, so the mistake never surfaces.
-    if [ -f docker-compose.diar-native-gpu.yml ]; then
-        print_info "Copying docker-compose.diar-native-gpu.yml (sidecar GPU reservation)..."
-        cp docker-compose.diar-native-gpu.yml "${PACKAGE_DIR}/config/docker-compose.diar-native-gpu.yml"
-    fi
+    # Copied unconditionally like every other overlay above — it is non-optional in
+    # release-manifest.txt, and an `[ -f ]` guard here reads as hand-built chain
+    # selection to test_compose_bringup_delegation, which is a real distinction worth
+    # keeping sharp: this function COPIES files into a package, it never selects a chain.
+    print_info "Copying docker-compose.diar-native-gpu.yml (sidecar GPU reservation)..."
+    cp docker-compose.diar-native-gpu.yml "${PACKAGE_DIR}/config/docker-compose.diar-native-gpu.yml"
 
     # Sync infrastructure image versions from docker-compose.yml to docker-compose.offline.yml
     print_info "Syncing infrastructure image versions to docker-compose.offline.yml..."

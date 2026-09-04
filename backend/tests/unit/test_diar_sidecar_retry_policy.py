@@ -18,6 +18,18 @@ import pytest
 from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
 from app.transcription.diarizer_native import DiarSidecarUnavailableError
 
+#: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
+#: module-level state, run on ONE xdist worker.
+#:
+#: `_free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
+#: between that close and the caller's `HTTPServer((host, port))` bind, another worker can be
+#: handed the same ephemeral port. Seven modules use that helper and none were grouped, which
+#: is why a DIFFERENT diar test failed on each full-suite run while every one of them passed in
+#: isolation. Same remedy the repo already uses for tests sharing mutable global state
+#: (backend/tests/CLAUDE.md's `--dist loadgroup` note); here the shared state is the machine's
+#: ephemeral-port pool plus diarizer_native's readiness caches.
+pytestmark = pytest.mark.xdist_group("diar_native_state")
+
 
 class _RetrySentinelError(Exception):
     def __init__(self, *, exc, countdown, max_retries):

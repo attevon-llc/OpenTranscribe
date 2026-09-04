@@ -84,10 +84,11 @@ _REMEDY: dict[int, str] = {
         "fails identically."
     ),
     EXIT_NO_EXPORTER_ENV: (
-        "The export needs python3 with torch, pyannote.audio, onnx, onnxscript, "
-        "onnxslim and onnxconverter-common. They are pinned in backend/requirements.txt "
-        "(and, since #654, backend/requirements-lite.txt too) — rebuild the backend "
-        "image (./opentr.sh rebuild-backend). If they are still missing, point "
+        "The export needs python3 with torch, torchaudio, pyannote.audio, transformers, "
+        "huggingface_hub, numpy, onnx, onnxruntime, onnxscript, onnxslim and "
+        "onnxconverter-common. They are pinned in backend/requirements.txt (and, since "
+        "#654, backend/requirements-lite.txt too) — rebuild the backend image "
+        "(./opentr.sh rebuild-backend). If they are still missing, point "
         "DIAR_NATIVE_MODELS_DIR at an export produced by another image instead."
     ),
     EXIT_NOT_WRITABLE: (

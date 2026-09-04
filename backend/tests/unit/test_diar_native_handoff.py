@@ -37,6 +37,18 @@ from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.transcription.diarizer_native import reset_readiness_cache
 from app.transcription.diarizer_native import sidecar_ready
 
+#: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
+#: module-level state, run on ONE xdist worker.
+#:
+#: `_free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
+#: between that close and the caller's `HTTPServer((host, port))` bind, another worker can be
+#: handed the same ephemeral port. Seven modules use that helper and none were grouped, which
+#: is why a DIFFERENT diar test failed on each full-suite run while every one of them passed in
+#: isolation. Same remedy the repo already uses for tests sharing mutable global state
+#: (backend/tests/CLAUDE.md's `--dist loadgroup` note); here the shared state is the machine's
+#: ephemeral-port pool plus diarizer_native's readiness caches.
+pytestmark = pytest.mark.xdist_group("diar_native_state")
+
 
 class _Config:
     num_speakers = None
@@ -734,29 +746,38 @@ class TestSidecarReadyTTLCache:
         assert len(health) == 1, "liveness must be cached too, not just readiness"
         reset_readiness_cache()
 
-    def test_the_ttl_can_never_be_configured_below_the_probe_timeout(self, monkeypatch):
+    def test_the_ttl_can_never_be_configured_below_the_probe_timeout(self, run_in_clean_process):
         """A TTL under the probe timeout makes every entry born expired, so it is floored.
 
-        This exercises the REAL module-level resolution (``max(env value, floor)`` in
-        ``diarizer_native.py``) by configuring a too-small value and reloading the module,
-        rather than comparing the two already-floored module constants against each other
-        (which passes even with the flooring logic deleted outright).
-        """
-        import importlib
+        Exercises the REAL module-level resolution (``max(env value, floor)`` in
+        ``diarizer_native.py``) by configuring a too-small value in a fresh interpreter,
+        rather than comparing the two already-floored module constants against each other —
+        which passes even with the flooring logic deleted outright.
 
-        monkeypatch.setenv("DIAR_NATIVE_READY_CACHE_TTL_S", "1")
-        reloaded = importlib.reload(diarizer_native)
-        try:
-            assert reloaded._READY_CACHE_TTL_S > reloaded._PROBE_TIMEOUT_S, (
-                "a configured TTL (1s) below the probe timeout was not floored"
-            )
-            assert reloaded._READY_CACHE_TTL_S == reloaded._PROBE_TIMEOUT_S + 1.0, (
-                "expected the floor value (_PROBE_TIMEOUT_S + 1.0), got "
-                f"{reloaded._READY_CACHE_TTL_S}"
-            )
-        finally:
-            monkeypatch.delenv("DIAR_NATIVE_READY_CACHE_TTL_S", raising=False)
-            importlib.reload(diarizer_native)
+        ⚠️ IN A CHILD PROCESS, never ``importlib.reload`` in this one. Reloading
+        ``diarizer_native`` rebinds its classes and module-level caches, while every other
+        module that did ``from app.transcription.diarizer_native import X`` keeps the ORIGINAL
+        object — so ``isinstance`` checks and identity comparisons across the boundary quietly
+        stop matching. Reloading a second time to "restore" does not help; it makes a third
+        set of objects.
+
+        Measured: an earlier version of this test reloaded in-process and broke
+        ``test_diarizer_engine_selection.py::TestOverlapMidJobFailureDegradesSafely::
+        test_release_and_fallback_happen_on_the_main_thread_after_transcription`` — but only
+        when the two modules landed on the same xdist worker, so it presented as a different
+        diar test failing on each full-suite run while all of them passed in isolation.
+        Bisected to this reload by running the grouped modules pairwise.
+        """
+        out = run_in_clean_process(
+            "from app.transcription import diarizer_native as d;"
+            "print(f'{d._READY_CACHE_TTL_S},{d._PROBE_TIMEOUT_S}')",
+            DIAR_NATIVE_READY_CACHE_TTL_S="1",
+        )
+        ttl, probe = (float(x) for x in out.strip().split(","))
+        assert ttl > probe, (
+            f"a configured TTL (1s) below the probe timeout was not floored: {ttl} <= {probe}"
+        )
+        assert ttl == probe + 1.0, f"expected the floor value ({probe + 1.0}), got {ttl}"
 
     def test_a_call_after_the_ttl_lapses_issues_a_fresh_request(self, monkeypatch):
         """Advance the clock rather than sleeping on it.

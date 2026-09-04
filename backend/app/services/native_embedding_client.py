@@ -31,20 +31,52 @@ smaller than the same-speaker/different-speaker gap it has to survive (measured
 different-speaker mean of 0.09).
 
 ⚠️ **Device routing (issue #679).** Every call in this module is embedding-only — it never
-runs a full diarization — which is exactly the case measured safe for CPU routing: on the
-diar-native 0.3.0 release image, speaker centroids/embeddings are **bit-identical between
-CUDA and CPU** (max delta 0.0 across every clip measured), unlike full ``/diarize``, where
-device choice can shift a segment boundary by up to one segmentation frame (measured 0.016875 s
-on a 30 s clip) — that CPU/CUDA divergence is real but belongs to `/diarize`, not to this
-module, and is exactly why `/diarize` is never routed to CPU by anything in this codebase.
+runs a full diarization — which is the case measured safe for CPU routing.
+
+⚠️ **"Bit-identical between devices" is FALSE. Do not restore that claim.** It was asserted
+upstream (max centroid delta 0.0) and repeated in five places in this repo until it was
+measured here against two real sidecars — one ``DIAR_MODE=cuda``, one ``DIAR_MODE=cpu``,
+same binary digest, same ``/models`` export, same 10 s clip::
+
+    CUDA vs CUDA (same sidecar, same input, twice) : max delta 2.86e-04
+    CPU  vs CPU  (same sidecar, same input, twice) : max delta 0.0
+    CUDA vs CPU                                    : max delta 4.11e-04
+                                                     cosine   0.999999816
+
+**CUDA is not deterministic with itself** — cuDNN picks algorithms whose reductions vary
+run to run — so the cross-device gap is barely larger than CUDA's own variance, and
+byte-equality was never achievable on ANY device pair, same-device included. CPU is the
+bit-reproducible one.
+
+What IS true, and what the routing actually rests on: the vectors are equivalent *for
+speaker matching*, which compares by cosine. 0.99999982 sits far above the same-speaker
+mean of 0.85 and the different-speaker mean of 0.09 quoted above, so a voiceprint embedded
+on CPU matches identically to one embedded on CUDA.
+
+**Never write a byte-equality assertion between two embeddings** — not across devices, and
+not across two runs on the same CUDA device. Compare with a cosine threshold.
+
+Full ``/diarize`` additionally shifts segment boundaries by up to one segmentation frame
+(measured 0.016875 s on a 30 s clip) because a posterior on the binarisation threshold can
+land either side; that is a separate, larger effect and is why `/diarize` is never routed
+to CPU by anything in this codebase.
 So `_embed_window` sends `"device": "cpu"` gated on
-``diarizer_native.sidecar_supports_cpu_device()`` (reads `/healthz`'s `supported_devices`)
-— NEVER unconditionally, because the sidecar's request structs have no
-`deny_unknown_fields` and a pre-#679 sidecar silently ignores an unknown `device` key and
-answers 200 on CUDA regardless, which would look identical to success. The measured
-bit-identity is what makes this a strict win rather than a tradeoff: moving the call off the
-sidecar's GPU frees that slot for the diarize jobs sharing it, at no cost to the vectors this
-module returns.
+``diarizer_native.sidecar_supports_cpu_device()``, which reads `/healthz`'s **``devices``**
+(the providers actually LOADED, chosen at start-up by ``DIAR_DEVICES``) — never
+``supported_devices``, which is a build-time capability list. Keying on the capability made
+the gate true on every GPU deployment, so `/embed_window` was sent ``device: "cpu"``,
+answered ``400 device 'cpu' is not loaded; this server is serving [cuda]``, and every
+embedding silently fell back to the in-process model on a sidecar reporting healthy.
+
+It is also never sent unconditionally: the sidecar's request structs have no
+`deny_unknown_fields`, so a pre-#679 sidecar silently ignores an unknown `device` key and
+answers 200 on CUDA regardless — indistinguishable from success while still occupying the
+GPU slot this exists to spare.
+
+The cosine equivalence above is what makes this a win rather than a tradeoff: moving the
+call off the sidecar's GPU frees that slot for the diarize jobs sharing it, at no cost to
+speaker matching. It is not a *bit-identical* win — see the measurement above — but nothing
+in this codebase compares embeddings by anything other than cosine.
 """
 
 from __future__ import annotations

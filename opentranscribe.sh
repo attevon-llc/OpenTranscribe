@@ -616,9 +616,12 @@ get_compose_files() {
                 compose_files="$compose_files -f docker-compose.diar-native-gpu.yml"
                 echo -e "${BLUE}   Holds ~2.2 GB of GPU memory on device ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} while up.${NC}" >&2
             else
-                # "identical output" was RETRACTED upstream (#679). Speaker embeddings are
-                # bit-identical across devices (max centroid delta 0.0, every clip tested),
-                # which is what makes CPU routing safe for the embedding path — but
+                # "identical output" was RETRACTED upstream (#679), and the replacement
+                # claim of bit-identity did not survive measurement either: 2026-09-04,
+                # two real sidecars, CPU-vs-CUDA max delta 4.11e-04 (cosine 0.999999816),
+                # with CUDA differing from ITSELF by 2.86e-04 run to run. Embeddings are
+                # EQUIVALENT for speaker matching, which is what makes CPU routing safe
+                # for the embedding path — but
                 # diarization segment boundaries can differ by up to one segmentation frame
                 # (0.016875 s) when a posterior lands on the binarisation threshold. Below
                 # anything a transcript renders, but it must never be stated as identical:

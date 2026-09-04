@@ -498,9 +498,13 @@ def test_rebuild_backend_still_honours_the_nas_overlay(tmp_path: Path):
 #: the binary, not the flag. The old figure was repeated in four places and measured in none.
 #:
 #: ⚠️ The CPU line no longer says "identical output". That claim was RETRACTED upstream
-#: (#679): speaker embeddings ARE bit-identical across devices (max centroid delta 0.0 on
-#: every clip tested), but diarization segment boundaries can differ by up to one
-#: segmentation frame (0.016875 s) when a posterior lands on the binarisation threshold.
+#: (#679), and its replacement — that embeddings are bit-identical across devices — did
+#: not survive measurement either. Measured 2026-09-04 against two real sidecars:
+#: CPU-vs-CUDA max delta 4.11e-04 (cosine 0.999999816), and CUDA differs from ITSELF by
+#: 2.86e-04 run to run, so byte-equality was never achievable on any device pair.
+#: Embeddings are EQUIVALENT for matching; diarization segment boundaries additionally
+#: differ by up to one segmentation frame (0.016875 s) when a posterior lands on the
+#: binarisation threshold.
 #: The wording matters enough to pin because an operator told "identical output" would be
 #: entitled to diff a CPU run against a GPU run and expect a match.
 START_BANNER = (

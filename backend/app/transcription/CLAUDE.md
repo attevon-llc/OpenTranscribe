@@ -82,10 +82,25 @@ embedding-only path only: `services/native_embedding_client.py`'s `_embed_window
 CPU when advertised, since every call there is a lightweight 256-d ONNX forward pass and
 never a full diarize job — freeing the sidecar's GPU slot for the diarize jobs sharing it.
 
-⚠️ **CPU and CUDA are NOT bit-identical for everything, and that is exactly why only the
-embedding path is routed.** Measured on the diar-native 0.3.0 release image (2026-09-01):
-speaker centroids/embeddings are **bit-identical between devices** — max delta 0.0 across
-every clip tested — so routing `/embed_window` to CPU is a strict win, never a tradeoff.
+⚠️ **CPU and CUDA are NOT bit-identical — and neither is CUDA with itself.** An upstream
+claim of "max centroid delta 0.0 across every clip tested" was repeated in five places in
+this repo until it was measured here (2026-09-04) against two real sidecars, one
+`DIAR_MODE=cuda` and one `DIAR_MODE=cpu`, same binary digest, same `/models` export, same
+10 s clip:
+
+| comparison | max delta |
+|---|---|
+| CUDA vs CUDA — same sidecar, same input, twice | **2.86e-04** |
+| CPU vs CPU — same sidecar, same input, twice | **0.0** |
+| CUDA vs CPU | 4.11e-04 (cosine **0.999999816**) |
+
+**CUDA is not deterministic with itself** (cuDNN algorithm selection varies run to run), so
+the cross-device gap is barely larger than CUDA's own variance and byte-equality was never
+achievable on any device pair. CPU is the bit-reproducible one. Routing `/embed_window` to
+CPU is still a win — cosine 0.99999982 against a same-speaker mean of 0.85 and a
+different-speaker mean of 0.09 means a voiceprint embedded on CPU matches identically — but
+it is an *equivalence* win, not a bit-identity one. **Never assert byte-equality between two
+embeddings, not even two CUDA runs; compare by cosine.**
 Full `/diarize` output is NOT bit-identical: device choice can shift a segment boundary by
 up to one segmentation frame (measured 0.016875 s on a 30 s clip), because a posterior
 sitting on the binarisation threshold can land on either side depending on CPU vs CUDA

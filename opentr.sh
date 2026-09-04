@@ -742,10 +742,11 @@ add_diar_native_overlay() {
       # GPU-less host without `up` failing on "could not select device driver" (#660).
       # The nvidia reservation and the `cuda` override live in this second file, gated on
       # the same runtime probe add_gpu_overlay uses — without it a GPU host would silently
-      # run the sidecar on CPU, which is slower; embeddings are identical (#679: max
-      # centroid delta 0.0) but diarization segment boundaries may differ by up to one
-      # segmentation frame (0.016875 s) between CPU and GPU, so nothing would ever
-      # surface the mistake.
+      # run the sidecar on CPU, which is slower; embeddings stay EQUIVALENT for speaker
+      # matching (measured 2026-09-04: cosine 0.999999816 CPU-vs-CUDA — not bit-identical,
+      # and CUDA is not even bit-identical with itself at 2.86e-04 run to run) while
+      # diarization segment boundaries may differ by up to one segmentation frame
+      # (0.016875 s), so nothing would ever surface the mistake.
       if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.diar-native-gpu.yml" ]; then
         COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native-gpu.yml"
         echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~2.2 GB warm ORT arena while up."

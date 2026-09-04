@@ -4056,6 +4056,8 @@
   "settings.engineSettings.title": "Engine-Konfiguration",
   "settings.engineSettings.description": "Erweiterte Konfiguration der Engine-Backends für Transkription und Diarisierung. Änderungen werden mit der nächsten Verarbeitungsaufgabe wirksam.",
   "settings.engineSettings.diarizerBackend": "Diarisierungs-Backend",
+  "settings.engineSettings.diarizerRequireSidecar": "Diarisierungs-Sidecar erforderlich",
+  "settings.engineSettings.diarizerRequireSidecarHelp": "Gilt nur, wenn das Diarisierungs-Backend „native“ ist. Aus (Standard): Kann der diar-native-Sidecar eine Anfrage nicht bedienen, wechselt der Job stillschweigend auf die langsamere PyAnnote-Engine und wird trotzdem abgeschlossen. Ein: Ein Sidecar-Fehler wird wiederholt und dann als Jobfehler gemeldet, anstatt zurückzufallen – nützlich, wenn Sie lieber benachrichtigt werden möchten, dass der Sidecar defekt ist, statt unbemerkt mit PyAnnote weiterzutranskribieren.",
   "settings.engineSettings.resetKey": "Zurücksetzen",
   "settings.engineSettings.save": "Speichern",
   "settings.engineSettings.saved": "Gespeichert",

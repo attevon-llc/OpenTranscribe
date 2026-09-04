@@ -4056,6 +4056,8 @@
   "settings.engineSettings.title": "Engine Configuration",
   "settings.engineSettings.description": "Advanced configuration for transcription and diarization engine backends. Changes take effect on the next processing task.",
   "settings.engineSettings.diarizerBackend": "Diarizer Backend",
+  "settings.engineSettings.diarizerRequireSidecar": "Require Diarization Sidecar",
+  "settings.engineSettings.diarizerRequireSidecarHelp": "Only applies when Diarizer Backend is \"native\". Off (default): if the diar-native sidecar can't serve a request, the job silently falls back to the slower PyAnnote engine and still completes. On: a sidecar failure is retried and then raised as a job failure instead of falling back — use this if you'd rather be alerted that the sidecar is broken than keep transcribing on PyAnnote without knowing.",
   "settings.engineSettings.boundarySmoothing": "Boundary Smoothing",
   "settings.engineSettings.boundarySmoothingHelp": "Collapse 1–3 word wrong-speaker islands at speaker turn boundaries (issue #193). Validated to reduce errors; safe to leave on.",
   "settings.engineSettings.boundaryAcousticRecheck": "Acoustic Backchannel Re-check",

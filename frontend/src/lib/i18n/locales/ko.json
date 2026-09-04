@@ -4056,6 +4056,8 @@
   "settings.engineSettings.title": "엔진 구성",
   "settings.engineSettings.description": "전사 및 화자 분리 엔진 백엔드에 대한 고급 구성입니다. 변경 사항은 다음 처리 작업부터 적용됩니다.",
   "settings.engineSettings.diarizerBackend": "화자 분리 백엔드",
+  "settings.engineSettings.diarizerRequireSidecar": "다이어라이제이션 사이드카 필수화",
+  "settings.engineSettings.diarizerRequireSidecarHelp": "다이어라이저 백엔드가 \"native\"일 때만 적용됩니다. 꺼짐(기본값): diar-native 사이드카가 요청을 처리할 수 없으면 작업은 조용히 더 느린 PyAnnote 엔진으로 대체되어 계속 완료됩니다. 켜짐: 사이드카 오류는 재시도된 후 대체되지 않고 작업 실패로 보고됩니다 — 사이드카가 손상된 사실을 모른 채 PyAnnote로 계속 전사하는 대신 알림을 받고 싶다면 사용하세요.",
   "settings.engineSettings.boundarySmoothing": "경계 스무딩",
   "settings.engineSettings.boundarySmoothingHelp": "화자 전환 경계에서 1~3단어 길이의 오배정된 화자 구간을 병합합니다(이슈 #193). 오류 감소가 검증되었으며 켜 두어도 안전합니다.",
   "settings.engineSettings.boundaryAcousticRecheck": "음향 백채널 재확인",

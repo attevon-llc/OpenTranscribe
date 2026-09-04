@@ -58,8 +58,24 @@ def _manifest_entries() -> list[tuple[str, set[str]]]:
     return entries
 
 
-@pytest.mark.skipif(not NOTICE.exists(), reason="NOTICE not present in this checkout")
 def test_notice_exists_and_is_not_empty():
+    """No skipif here, deliberately — this is the test that would have nullified itself.
+
+    It was originally ``@pytest.mark.skipif(not NOTICE.exists(), ...)``, i.e. "skip the
+    check that NOTICE exists when NOTICE does not exist". Deleting the file would have
+    turned the entire CC-BY-4.0 / Apache-2.0 attribution gate into a green SKIP instead of
+    a failure — the issue-#431 shape, in the test written to prevent exactly that.
+    ``audit-tests.py``'s ``skipped-test`` detector does not catch conditional skipifs, so
+    nothing else would have noticed.
+
+    The other tests in this module keep their guards: they assert things ABOUT the file's
+    contents, so they are legitimately inapplicable without it. This one is the existence
+    claim itself and must be able to fail.
+    """
+    assert NOTICE.exists(), (
+        f"{NOTICE} is missing. The weights are CC-BY-4.0 derivatives and speakrs is "
+        "Apache-2.0; both require attribution, and this file is the only thing carrying it."
+    )
     assert NOTICE.read_text(encoding="utf-8").strip(), "NOTICE exists but is empty"
 
 

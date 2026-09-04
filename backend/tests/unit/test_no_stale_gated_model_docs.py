@@ -23,6 +23,7 @@ window also mentions the fallback/optional framing ("fallback", "optional", "las
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,23 @@ OPERATOR_FACING_FILES = (
     "scripts/download-models.sh",
     "backend/app/transcription/diarizer.py",
     "windows-installer/INSTALL-WINDOWS.md",
+    # Added after the audit found DIARIZATION_MODEL defaults still naming the old repo in
+    # all four of these. The detector below had to grow an assignment rule to see them:
+    # `-e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}"` carries
+    # no accept/click/visit wording, so the instruction-marker rule alone scored it clean.
+    "scripts/README.md",
+    "scripts/build-offline-package.sh",
+    "scripts/build-windows-installer.sh",
+    "scripts/test-model-download.sh",
+)
+
+#: A stale repo on the right-hand side of an assignment is an instruction in its own right —
+#: it is the value the tool will actually USE, which is stronger than prose telling someone to
+#: click a link. Matched on the same line only: a variable assignment is self-contained, and
+#: widening to a window would fire on unrelated nearby prose.
+ASSIGNMENT_RE = re.compile(
+    r"(?:^|[\s=\"'{:-])(?:DIARIZATION_MODEL|PYANNOTE_MODEL|DIAR_MODEL)\b[^\n]*?"
+    r"(?:pyannote/segmentation-3\.0|pyannote/speaker-diarization-3\.1)"
 )
 
 
@@ -89,7 +107,11 @@ def _windowed_flags(lines: list[str]) -> list[tuple[int, str]]:
         window_text = "\n".join(lowered[lo:hi])
         has_instruction = any(m in window_text for m in INSTRUCTION_MARKERS)
         has_fallback_scope = any(m in window_text for m in FALLBACK_MARKERS)
-        if has_instruction and not has_fallback_scope:
+        # An assignment needs no instruction wording and no window: the value IS the
+        # instruction. Still honours fallback framing, so a deliberately-scoped
+        # PYANNOTE_V3_FALLBACK assignment can be written without tripping this.
+        is_assignment = bool(ASSIGNMENT_RE.search(lines[i]))
+        if (has_instruction or is_assignment) and not has_fallback_scope:
             flags.append((i + 1, hit_repo))
     return flags
 
@@ -152,6 +174,23 @@ class TestSelfTest:
         )
         findings = _windowed_flags(text.splitlines())
         assert not findings, f"fallback-scoped mention should not be flagged, got {findings}"
+
+    def test_must_fire_on_a_stale_repo_as_a_variable_default(self) -> None:
+        """The shape the detector was blind to: no accept/click/visit wording anywhere."""
+        text = (
+            '        -e WHISPER_MODEL="${WHISPER_MODEL:-large-v3-turbo}" \\\n'
+            '        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \\\n'
+            '        -e USE_GPU="${USE_GPU:-true}" \\\n'
+        )
+        findings = _windowed_flags(text.splitlines())
+        assert findings == [(2, "pyannote/speaker-diarization-3.1")], (
+            f"a stale repo as a variable DEFAULT is what the tool will actually use — "
+            f"stronger than prose telling someone to click a link, got {findings}"
+        )
+
+    def test_must_stay_clean_on_a_correct_variable_default(self) -> None:
+        text = '        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}" \\\n'
+        assert _windowed_flags(text.splitlines()) == []
 
     def test_must_stay_clean_on_plain_mention_with_no_instruction(self) -> None:
         text = (

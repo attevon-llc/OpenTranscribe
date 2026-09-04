@@ -206,6 +206,76 @@ check_environment() {
     fi
 }
 
+# issue #709: `update-full`'s "new .env keys" report (below, in the update-full arm) can only
+# see a key that is ABSENT. Two real cases on this branch are a key that is PRESENT but whose
+# VALUE has rotted — correct when written, silently wrong now:
+#
+#   1. ENGINE_SHARED_VOLUME_PATH=/tmp/transcription — issue #661 E2 removed the
+#      transcription-temp volume this path named. `os.makedirs` recreates it INSIDE the
+#      writer's own container, so the write "succeeds" and the reader finds nothing; every
+#      job silently drops to the MinIO round-trip fallback. `resolve_engine_shared_volume_path()`
+#      (backend/app/core/constants.py) already self-heals this at runtime by preferring the
+#      coded default when the configured path doesn't exist — that saves the install. This
+#      warning is complementary, not a duplicate: it tells the OPERATOR their .env is drifting,
+#      which the silent runtime fallback deliberately does not.
+#   2. GPU_SCALE_WORKERS explicitly set higher than DIAR_NATIVE_MAX_INFLIGHT — defeats the
+#      docker-compose.gpu-scale.yml derivation (`${GPU_SCALE_WORKERS:-${DIAR_NATIVE_MAX_INFLIGHT:-2}}`)
+#      added specifically to prevent that contention (test_env_example_gpu_scale_derivation.py).
+#
+# Consulted by BOTH update-full's post-download report and preflight_upgrade_env, so a release
+# that invalidates a value says so BEFORE teardown, while the operator can still act — same
+# placement issue #670 uses for the native-diarizer refusal.
+#
+# ⚠️ WARN and name the fix. NEVER rewrite .env — this repo never edits an operator's .env
+# without confirmation (see the "new .env keys" report below), and a silent correction here is
+# exactly how the original bug (case 1) hid in the first place.
+#
+# To add a third case: append ONE row to STALE_ENV_CHECKS ("KEY|remedy text") and one `KEY)`
+# arm to the case statement in check_stale_env_values() below — no new function, no new call
+# site, no change to either caller.
+STALE_ENV_CHECKS=(
+    "ENGINE_SHARED_VOLUME_PATH|remove this line from .env (or set it to /scratch/opentranscribe/engine) — the path it names was removed by issue #661 E2's pipeline_scratch consolidation"
+    "GPU_SCALE_WORKERS|comment this out in .env so docker-compose.gpu-scale.yml derives it from DIAR_NATIVE_MAX_INFLIGHT instead — an explicit value here can oversubscribe the diar-native sidecar's admission gate"
+)
+
+# Prints one "  • KEY=value — remedy" line per stale key found in $1 (default .env) to
+# stdout; prints nothing when none are stale. Never modifies the file.
+check_stale_env_values() {
+    local env_file="${1:-.env}"
+    [ -f "$env_file" ] || return 0
+
+    local row key remedy val
+    for row in "${STALE_ENV_CHECKS[@]}"; do
+        key="${row%%|*}"
+        remedy="${row#*|}"
+        val=$(read_env_value "$key" "$env_file")
+        [ -z "$val" ] && continue
+
+        case "$key" in
+            ENGINE_SHARED_VOLUME_PATH)
+                [ "$val" = "/tmp/transcription" ] || continue
+                ;;
+            GPU_SCALE_WORKERS)
+                local max_inflight
+                max_inflight=$(read_env_value DIAR_NATIVE_MAX_INFLIGHT "$env_file")
+                max_inflight="${max_inflight:-2}"
+                case "$val" in
+                    ''|*[!0-9]*) continue ;;
+                esac
+                case "$max_inflight" in
+                    ''|*[!0-9]*) continue ;;
+                esac
+                [ "$val" -gt "$max_inflight" ] || continue
+                ;;
+            *)
+                continue
+                ;;
+        esac
+
+        echo "  • ${key}=${val} — ${remedy}"
+    done
+}
+
 # The two DB commands are the only ones that need scripts/common.sh. Everything else still
 # works standalone, so the source above is unconditional but this check is not — an install
 # whose common.sh predates issue #613 (or is somehow missing) gets a remedy instead of an
@@ -654,6 +724,85 @@ get_compose_files() {
     echo "$compose_files"
 }
 
+# issue #656 (remaining item): a diarization surface for `status`, shown only when
+# docker-compose.diar-native.yml is actually in the resolved compose chain — the same test
+# `get_compose_files` above already decided the answer to, so we only need to look at its
+# output rather than re-deriving anything.
+#
+# ⚠️ This answers "can the sidecar serve RIGHT NOW", nothing else. It deliberately does NOT
+# derive "which engine served a given file" — that is `media_file.diarization_provider`
+# (issue #706), and deriving it from the *configured* value (rather than what actually ran)
+# is the exact bug #706 closed. Don't reintroduce it here.
+#
+# ⚠️ /healthz reports two different device lists: `devices` (what is actually LOADED) and
+# `supported_devices` (build-time capability, i.e. "could be loaded"). Only `devices` belongs
+# in an operator-facing status line — conflating the two caused a live outage on this branch.
+print_diar_native_status() {
+    local compose_files="$1"
+
+    case "$compose_files" in
+        *docker-compose.diar-native.yml*) ;;
+        *) return 0 ;;
+    esac
+
+    echo ""
+    echo -e "${BLUE}Diarization:${NC}"
+
+    local configured
+    configured=$(read_env_value ENGINE_DIARIZER_BACKEND | tr '[:upper:]' '[:lower:]')
+    echo "  configured  ${configured:-native}            (ENGINE_DIARIZER_BACKEND / engine.diarizer_backend)"
+
+    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
+    local health_json ready_code
+    health_json=$(docker compose $compose_files exec -T diar-native curl -sf localhost:8701/healthz 2>/dev/null)
+    # shellcheck disable=SC2086
+    ready_code=$(docker compose $compose_files exec -T diar-native \
+        curl -s -o /dev/null -w '%{http_code}' localhost:8701/readyz 2>/dev/null)
+
+    if [ -z "$health_json" ]; then
+        echo -e "  sidecar     ${RED}unreachable${NC}         (/healthz did not respond — container down or not yet started)"
+    else
+        local models_state models_reason devices
+        models_state=$(printf '%s' "$health_json" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin).get("models_state",""))' 2>/dev/null)
+        models_reason=$(printf '%s' "$health_json" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin).get("models_reason") or "")' 2>/dev/null)
+        # NOT supported_devices — that is build-time capability, not what is loaded.
+        devices=$(printf '%s' "$health_json" | python3 -c \
+            'import json,sys; d=json.load(sys.stdin).get("devices"); print(",".join(d) if isinstance(d, list) else (d or ""))' 2>/dev/null)
+
+        if [ "$ready_code" = "200" ]; then
+            echo -e "  sidecar     ${GREEN}ready${NC}               (/healthz 200, /readyz 200${devices:+, devices=$devices})"
+        else
+            echo -e "  sidecar     ${YELLOW}not ready${NC}           (/healthz 200, /readyz ${ready_code:-no response})"
+            if [ -n "$models_state" ]; then
+                echo "              models_state=${models_state}${models_reason:+ — $models_reason}"
+            fi
+        fi
+    fi
+
+    local max_inflight
+    max_inflight=$(read_env_value DIAR_NATIVE_MAX_INFLIGHT)
+    max_inflight="${max_inflight:-2}"
+    echo "  admission   ${max_inflight} permits       DIAR_NATIVE_MAX_INFLIGHT"
+
+    # Same predicate as backend/tests/unit/test_env_example_gpu_scale_derivation.py — one
+    # rule, two consumers. Do not write a second copy of this comparison.
+    local gpu_scale_workers effective_workers
+    gpu_scale_workers=$(read_env_value GPU_SCALE_WORKERS)
+    effective_workers="${gpu_scale_workers:-$max_inflight}"
+    if echo "$effective_workers" | grep -qE '^[0-9]+$' && echo "$max_inflight" | grep -qE '^[0-9]+$' \
+       && [ "$effective_workers" -gt "$max_inflight" ]; then
+        echo -e "  workers     ${effective_workers}                 ${YELLOW}⚠️  GPU_SCALE_WORKERS exceeds the sidecar's permits${NC}"
+    else
+        echo "  workers     ${effective_workers}                 GPU_SCALE_WORKERS (effective, after derivation)"
+    fi
+
+    local timeout_s
+    timeout_s=$(read_env_value DIAR_NATIVE_TIMEOUT_S)
+    echo "  timeout     ${timeout_s:-1800}s ceiling    DIAR_NATIVE_TIMEOUT_S"
+}
+
 # Refuse an upgrade that the new backend will reject, BEFORE tearing anything down.
 #
 # v0.5.0 flipped security enforcement from fail-open to fail-closed (#284 A0.3):
@@ -774,6 +923,18 @@ preflight_upgrade_env() {
         echo -e "${YELLOW}   ('pipeline_scratch'). If you run the diar-native sidecar, RECREATE it${NC}"
         echo -e "${YELLOW}   (not just restart) after this upgrade:${NC}"
         echo "     docker compose ... up -d --force-recreate diar-native"
+    fi
+
+    # issue #709: stale .env VALUES (key present, value rotted) — warn only, never blocking
+    # and never rewritten. Printed here, before teardown, alongside the other preflight
+    # findings above.
+    local stale_findings
+    stale_findings=$(check_stale_env_values .env)
+    if [ -n "$stale_findings" ]; then
+        echo -e "${YELLOW}⚠️  .env has settings that look present but whose VALUE has gone stale:${NC}"
+        echo "$stale_findings"
+        echo -e "${YELLOW}   Your .env was NOT modified — update these manually before/after upgrading.${NC}"
+        echo ""
     fi
 
     [ ${#problems[@]} -eq 0 ] && return 0
@@ -1172,6 +1333,7 @@ case "${1:-help}" in
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files ps
+        print_diar_native_status "$compose_files"
         ;;
     compose-files)
         # Print the resolved `-f` chain on stdout, and nothing else.
@@ -1474,6 +1636,19 @@ case "${1:-help}" in
                 echo -e "${YELLOW}📋 New settings in this release (your .env was NOT modified):${NC}"
                 echo "$new_keys"
                 echo -e "${YELLOW}   Defaults apply unless you add them to .env — see .env.example.${NC}"
+            fi
+        fi
+
+        # issue #709: the report above only sees a key that is ABSENT. Also flag a key
+        # that is PRESENT but whose VALUE has rotted (see check_stale_env_values()'s
+        # docstring above check_environment() for the two seeded cases). Same
+        # warn-only, never-rewrite contract; run before teardown below.
+        if [ -f .env ]; then
+            stale_findings=$(check_stale_env_values .env)
+            if [ -n "$stale_findings" ]; then
+                echo ""
+                echo -e "${YELLOW}⚠️  Settings in .env whose VALUE has gone stale (your .env was NOT modified):${NC}"
+                echo "$stale_findings"
             fi
         fi
 

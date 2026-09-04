@@ -4056,6 +4056,8 @@
   "settings.engineSettings.title": "Конфигурация движка",
   "settings.engineSettings.description": "Расширенная настройка бэкендов движка транскрипции и диаризации. Изменения вступают в силу при следующей задаче обработки.",
   "settings.engineSettings.diarizerBackend": "Бэкенд диаризации",
+  "settings.engineSettings.diarizerRequireSidecar": "Требовать сайдкар диаризации",
+  "settings.engineSettings.diarizerRequireSidecarHelp": "Применяется только когда бэкенд диаризации — «native». Выкл. (по умолчанию): если сайдкар diar-native не может обработать запрос, задача незаметно переключается на более медленный движок PyAnnote и всё равно завершается. Вкл.: сбой сайдкара повторяется, а затем сообщается как ошибка задачи вместо переключения — используйте это, если хотите получать уведомление о поломке сайдкара, а не продолжать транскрибирование на PyAnnote, не зная об этом.",
   "settings.engineSettings.resetKey": "Сбросить",
   "settings.engineSettings.save": "Сохранить",
   "settings.engineSettings.saved": "Сохранено",

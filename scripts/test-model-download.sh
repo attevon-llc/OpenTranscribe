@@ -31,7 +31,7 @@ docker run --rm \
     --gpus all \
     -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
     -e WHISPER_MODEL="base" \
-    -e DIARIZATION_MODEL="pyannote/speaker-diarization-3.1" \
+    -e DIARIZATION_MODEL="pyannote/speaker-diarization-community-1" \
     -e USE_GPU="true" \
     -e COMPUTE_TYPE="float16" \
     -v "${TEST_CACHE}/huggingface:/home/appuser/.cache/huggingface" \

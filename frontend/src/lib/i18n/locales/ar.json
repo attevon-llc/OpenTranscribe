@@ -4056,6 +4056,8 @@
   "settings.engineSettings.title": "إعداد المحرك",
   "settings.engineSettings.description": "إعداد متقدم لواجهات محركات التفريغ وفصل المتحدثين الخلفية. تسري التغييرات على مهمة المعالجة التالية.",
   "settings.engineSettings.diarizerBackend": "محرك فصل المتحدثين الخلفي",
+  "settings.engineSettings.diarizerRequireSidecar": "طلب وجود السيركار (sidecar) لفصل المتحدثين",
+  "settings.engineSettings.diarizerRequireSidecarHelp": "ينطبق فقط عندما يكون محرك فصل المتحدثين \"native\". إيقاف (الافتراضي): إذا تعذّر على سيركار diar-native خدمة الطلب، تنتقل المهمة بصمت إلى محرك PyAnnote الأبطأ وتكتمل رغم ذلك. تشغيل: تتم إعادة محاولة فشل السيركار ثم يُبلَّغ عنه كفشل للمهمة بدلاً من التراجع — استخدم هذا الخيار إذا كنت تفضل تنبيهك بأن السيركار معطّل بدلاً من الاستمرار في النسخ باستخدام PyAnnote دون معرفة ذلك.",
   "settings.engineSettings.boundarySmoothing": "تنعيم حدود المتحدثين",
   "settings.engineSettings.boundarySmoothingHelp": "دمج الجزر الخاطئة من كلمة إلى ثلاث كلمات عند نقاط تبدّل المتحدثين (المشكلة #193). ثبتت فعاليته في تقليل الأخطاء؛ يُنصح بإبقائه مفعّلًا.",
   "settings.engineSettings.boundaryAcousticRecheck": "إعادة التحقق الصوتي من القنوات الخلفية",

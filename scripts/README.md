@@ -381,7 +381,7 @@ Downloads all required AI models for offline packaging:
 # Set environment variables
 export HUGGINGFACE_TOKEN=your_token_here
 export WHISPER_MODEL=large-v3-turbo
-export DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
+export DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
 
 # Run in Docker container (container runs as appuser, not root)
 docker run --rm \

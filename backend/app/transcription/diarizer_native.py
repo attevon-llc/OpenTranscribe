@@ -197,6 +197,11 @@ _READY_CACHE_TTL_S = max(
 _ready_cache: dict[tuple[str, str], tuple[float, bool]] = {}
 _ready_cache_lock = threading.Lock()
 
+#: /healthz BODIES, cached on the same window as the boolean probes above. Separate dict
+#: because the value is a dict, not a bool, and widening _ready_cache's type would make
+#: every boolean call site pay an isinstance check for no benefit.
+_status_cache: dict[str, tuple[float, dict]] = {}
+
 
 def _cached_probe(kind: str, url: str, probe: Callable[[str], bool]) -> bool:
     """Run *probe* for (kind, url), reusing a result younger than the TTL."""
@@ -224,6 +229,7 @@ def reset_readiness_cache() -> None:
     """
     with _ready_cache_lock:
         _ready_cache.clear()
+        _status_cache.clear()
 
 
 def post_json(url: str, payload: dict, timeout: float) -> dict:
@@ -282,13 +288,25 @@ def _sidecar_healthy_uncached(url: str) -> bool:
 def sidecar_status(base_url: str | None = None) -> dict:
     """The sidecar's ``/healthz`` body, or ``{}`` if it cannot be read.
 
-    Used only to attach a REASON to a readiness failure. Never used to decide readiness:
-    the status code carries that, and parsing a body to make a routing decision would
-    reintroduce the coupling ``/readyz`` exists to remove.
+    Used to attach a REASON to a readiness failure, to resolve the LOADED device list
+    (:func:`sidecar_supports_cpu_device`), and by :func:`sidecar_diagnostics` for the admin
+    stats payload. Never used to decide readiness: the status code carries that, and parsing
+    a body to make a routing decision would reintroduce the coupling ``/readyz`` exists to
+    remove.
+
+    TTL-cached on the same window as the boolean probes. It was not, and
+    ``sidecar_diagnostics`` is reached from ``GET /admin/stats`` — so an unreachable sidecar
+    cost a full 5 s connect timeout, held in the endpoint's threadpool, on every stats
+    request. The boolean probes beside it were already cached, which is precisely why this
+    one being uncached was easy to miss.
     """
     import json
 
     url = (base_url or _DEFAULT_URL).rstrip("/")
+    with _ready_cache_lock:
+        hit = _status_cache.get(url)
+        if hit is not None and time.monotonic() - hit[0] < _READY_CACHE_TTL_S:
+            return hit[1]
     try:
         with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
             f"{url}/healthz", timeout=5
@@ -296,9 +314,15 @@ def sidecar_status(base_url: str | None = None) -> dict:
             body = json.loads(resp.read())
             # A 0.2.0 sidecar answers /healthz with the bare string "ok", so the body is
             # not guaranteed to be an object. A non-dict means "no reason available".
-            return body if isinstance(body, dict) else {}
+            result = body if isinstance(body, dict) else {}
     except Exception:  # noqa: BLE001 — a missing reason must never fail the caller
-        return {}
+        result = {}
+    # Stamp AFTER the request, never before — same reasoning as _cached_probe: sampling the
+    # clock first would bill the timeout against the entry's own lifetime and it could be
+    # born already expired.
+    with _ready_cache_lock:
+        _status_cache[url] = (time.monotonic(), result)
+    return result
 
 
 def sidecar_supports_cpu_device(base_url: str | None = None) -> bool:

@@ -4056,6 +4056,8 @@
   "settings.engineSettings.title": "Configuration du moteur",
   "settings.engineSettings.description": "Configuration avancée des backends du moteur de transcription et de diarisation. Les modifications prennent effet lors de la prochaine tâche de traitement.",
   "settings.engineSettings.diarizerBackend": "Backend de diarisation",
+  "settings.engineSettings.diarizerRequireSidecar": "Exiger le sidecar de diarisation",
+  "settings.engineSettings.diarizerRequireSidecarHelp": "S'applique uniquement lorsque le backend de diarisation est « native ». Désactivé (par défaut) : si le sidecar diar-native ne peut pas traiter une requête, la tâche bascule silencieusement vers le moteur PyAnnote, plus lent, et se termine quand même. Activé : un échec du sidecar est réessayé puis signalé comme un échec de la tâche au lieu de basculer — à utiliser si vous préférez être alerté que le sidecar est défaillant plutôt que de continuer à transcrire avec PyAnnote sans le savoir.",
   "settings.engineSettings.resetKey": "Réinitialiser",
   "settings.engineSettings.save": "Enregistrer",
   "settings.engineSettings.saved": "Enregistré",

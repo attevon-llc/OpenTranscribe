@@ -4056,6 +4056,8 @@
   "settings.engineSettings.title": "エンジン設定",
   "settings.engineSettings.description": "文字起こしと話者分離エンジンのバックエンドに関する詳細設定。変更は次の処理タスクから有効になります。",
   "settings.engineSettings.diarizerBackend": "話者分離バックエンド",
+  "settings.engineSettings.diarizerRequireSidecar": "ダイアライゼーション・サイドカーを必須にする",
+  "settings.engineSettings.diarizerRequireSidecarHelp": "「ダイアライザーバックエンド」が「native」の場合にのみ適用されます。オフ(既定値): diar-native サイドカーがリクエストを処理できない場合、ジョブは黙って低速な PyAnnote エンジンにフォールバックし、そのまま完了します。オン: サイドカーの障害はリトライされた後、フォールバックせずにジョブの失敗として報告されます — サイドカーが壊れていることに気づかないまま PyAnnote で文字起こしを続けるより、通知を受け取りたい場合に使用してください。",
   "settings.engineSettings.resetKey": "リセット",
   "settings.engineSettings.save": "保存",
   "settings.engineSettings.saved": "保存しました",

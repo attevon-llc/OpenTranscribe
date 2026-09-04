@@ -4056,6 +4056,8 @@
   "settings.engineSettings.title": "引擎配置",
   "settings.engineSettings.description": "转录和说话人分离引擎后端的高级配置。更改将在下一个处理任务中生效。",
   "settings.engineSettings.diarizerBackend": "说话人分离后端",
+  "settings.engineSettings.diarizerRequireSidecar": "要求使用分离侧车服务",
+  "settings.engineSettings.diarizerRequireSidecarHelp": "仅在说话人分离后端为“native”时生效。关闭(默认):如果 diar-native 侧车无法处理请求,任务会静默回退到较慢的 PyAnnote 引擎并仍然完成。开启:侧车故障会先重试,然后作为任务失败上报,而不会回退——如果你希望在侧车损坏时收到提醒,而不是在不知情的情况下继续使用 PyAnnote 转录,请启用此项。",
   "settings.engineSettings.resetKey": "重置",
   "settings.engineSettings.save": "保存",
   "settings.engineSettings.saved": "已保存",

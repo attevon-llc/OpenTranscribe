@@ -35,21 +35,22 @@ FAILURES=0
 restore_models() {
     if [ -d "$STASH_DIR" ]; then
         printf '\n\033[0;34mRestoring the stashed model set...\033[0m\n'
+        if [ -d "$MODELS_DIR" ] && [ -n "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
+            # Keep whatever provisioning produced — it is the artifact under test.
+            mv "$MODELS_DIR" "${MODELS_DIR}.provisioned-$(date +%s)"
+        fi
+        # ⚠️ Re-check IMMEDIATELY before the move, not once above. A backend container is
+        # running with this path as a bind-mount source, so dockerd recreates it — empty and
+        # root-owned — the instant the directory is moved away. `mv stash "$MODELS_DIR"` onto
+        # a directory that exists moves the stash INSIDE it, producing a nested
+        # models/diar-native/diar-native and two orphaned 462 MB copies. Observed exactly
+        # once, which is once more than a restore path should ever surprise anyone.
         if [ -d "$MODELS_DIR" ]; then
-            if [ -n "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
-                # Keep whatever provisioning produced — it is the artifact under test.
-                mv "$MODELS_DIR" "${MODELS_DIR}.provisioned-$(date +%s)"
-            else
-                # Docker creates a bind-mount source that does not exist, ROOT-OWNED and
-                # empty. `mv stash "$MODELS_DIR"` would then move the stash *inside* it and
-                # fail on permissions, leaving the real export orphaned under a dot-name.
-                # rmdir works because the parent (models/) is ours, even though this is not.
-                rmdir "$MODELS_DIR" 2>/dev/null || {
-                    echo "  !!!  $MODELS_DIR exists, is empty and cannot be removed."
-                    echo "  !!!  Your model set is SAFE at: $STASH_DIR"
-                    return
-                }
-            fi
+            rmdir "$MODELS_DIR" 2>/dev/null || {
+                echo "  !!!  $MODELS_DIR reappeared and is not empty — refusing to nest."
+                echo "  !!!  Your model set is SAFE at: $STASH_DIR"
+                return
+            }
         fi
         mv "$STASH_DIR" "$MODELS_DIR" && info "restored $MODELS_DIR ($(ls "$MODELS_DIR" | wc -l) files)"
     fi

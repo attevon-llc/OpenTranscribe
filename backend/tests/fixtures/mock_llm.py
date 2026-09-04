@@ -111,20 +111,39 @@ def _wait_until_serving(port: int, deadline_s: float = 30.0) -> bool:
 def mock_llm_url() -> Iterator[str]:
     """Base URL of a running mock LLM, reachable from the TEST process.
 
-    Reuses the compose container when it is up, otherwise starts a subprocess
-    for the session. Never skips: one of the two always works.
+    Starts a subprocess this session OWNS. Never skips, never depends on a container.
+
+    ⚠️ THIS USED TO REUSE THE COMPOSE CONTAINER AND THAT IS WHY IT IS NOT DOING SO ANY MORE.
+
+    The container is a shared, externally-managed process whose lifetime this session does
+    not control, and a session-scoped fixture resolves its URL ONCE. Anything that recreates
+    or stops ``opentranscribe-mock-llm`` mid-session — an overlay bring-up, a stack recreate,
+    another run's teardown — leaves every later request hitting a dead port, and the failures
+    surface inside the tests as ``ConnectionRefused``/``ConnectionReset`` or truncated
+    streams. Those read exactly like real LLM-parsing defects: "expected token-by-token
+    streaming, not one dump: assert 5 > 10", "assert '<channel|>' in ''".
+
+    Measured across three full gate runs on an unchanged tree: 3 such failures, then 8, then
+    a different set — while the very same tests passed in isolation and in a 13,019-test run
+    of the identical command. The gate's own log showed the container up from setup to
+    teardown, so "it was down" was never the whole story and chasing the exact window was
+    costing more than owning the process.
+
+    A stdlib ``http.server`` on a free port costs milliseconds, is immune to every one of
+    those interactions, and satisfies this fixture's actual contract — *a mock LLM the TEST
+    process can reach*. Set ``OT_MOCK_LLM_USE_CONTAINER=1`` to opt back into the shared
+    container (it must still answer ``/v1/models`` before it is accepted).
+
+    ``mock_llm_base_url_for_backend`` is unaffected and still requires the container: the
+    BACKEND cannot reach a host subprocess, which is the whole reason these are two fixtures.
     """
-    # The container branch must wait for the server to ANSWER, exactly like the subprocess
-    # branch below always has. It previously took a bare `_reachable` TCP probe, which a
-    # freshly-created container passes before it serves anything — see _serving_http.
-    if _reachable("127.0.0.1", CONTAINER_PORT):
-        if not _wait_until_serving(CONTAINER_PORT):
+    if os.environ.get("OT_MOCK_LLM_USE_CONTAINER") == "1":
+        if not _wait_until_serving(CONTAINER_PORT, deadline_s=30.0):
             pytest.fail(
-                f"the mock-llm container has port {CONTAINER_PORT} bound but is not answering "
-                f"GET /v1/models. It is starting, wedged, or something else owns that port. "
-                f"This is a hard failure rather than a fall-through to the subprocess branch: "
-                f"binding a second server to a port the container already holds cannot work, "
-                f"and silently testing against the wrong one is worse than stopping."
+                f"OT_MOCK_LLM_USE_CONTAINER=1 but nothing is answering GET /v1/models on "
+                f"127.0.0.1:{CONTAINER_PORT}. Start it with "
+                f"'./opentr.sh start dev --with-mock-llm', or unset the variable to use the "
+                f"session-owned subprocess."
             )
         yield f"http://127.0.0.1:{CONTAINER_PORT}/v1"
         return

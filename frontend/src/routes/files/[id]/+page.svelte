@@ -9,11 +9,6 @@
   import axiosInstance from '$lib/axios';
   import { formatDuration } from '$lib/utils/formatting';
   import { loadTxtPrefs, saveTxtPrefs } from '$lib/export/txtExportPrefs';
-  import {
-    buildExportContent,
-    type ExportFormat,
-    type ExportStrings,
-  } from '$lib/export/transcriptExport';
   import { websocketStore } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
   import {
@@ -1234,76 +1229,37 @@
 
   async function processExportWithComments(includeComments: boolean, txtOptions?: { includeTimestamps: boolean; includeSpeakers: boolean }) {
     const format = pendingExportFormat;
-    let transcriptData = file?.transcript_segments;
-    if (!file || !transcriptData) return;
-    // Fetch comments if user wants to include them
-    let fileComments: Comment[] = [];
-    if (includeComments) {
-      try {
-        const endpoint = `/comments/files/${file.uuid}/comments`;
-        const response = await axiosInstance.get(endpoint);
-        fileComments = response.data || [];
-
-        // Get current user data from auth store
-        const userData = $authStore.user || {} as any;
-
-        // Add current user data to each comment
-        fileComments = fileComments.map((comment: Comment) => {
-          // If the comment is from the current user, add their details
-          if (!comment.user && comment.user_id === userData.uuid) {
-            comment.user = {
-              full_name: userData.full_name,
-              username: userData.username,
-              email: userData.email
-            };
-          } else if (!comment.user) {
-            // For other users' comments that have no user object,
-            // create a placeholder to avoid 'Anonymous'
-            comment.user = {
-              full_name: $t('fileDetail.adminUser'), // Default from browser info
-              username: 'admin',
-              email: 'admin@example.com'
-            };
-          }
-          return comment;
-        });
-
-        // Sort comments by timestamp
-        fileComments.sort((a: Comment, b: Comment) => a.timestamp - b.timestamp);
-      } catch (error) {
-        console.error('Error fetching comments for export:', error);
-        // Continue with export even if comments can't be fetched
-      }
-    }
+    if (!file) return;
 
     try {
       const filename = file.filename.replace(/\.[^/.]+$/, '');
 
-      // Resolve i18n strings here (Svelte store access stays in the page); the pure
-      // serializer in $lib/export consumes them so it can remain store-free.
-      const translations: ExportStrings = {
-        speakerDefault: $t('fileDetail.speakerDefault'),
-        userComment: $t('fileDetail.userComment'),
-        commentType: $t('fileDetail.commentType'),
-        csvHeaderDefault: $t('fileDetail.csvHeaderDefault'),
-        csvHeaderWithComments: $t('fileDetail.csvHeaderWithComments'),
-      };
+      // Serialization happens server-side (issue #673) so the admin `export_locked`
+      // floor is consulted for every format, not just subtitle downloads. The
+      // resolved i18n strings still travel from here — the backend stays
+      // translation-free, matching the rest of the API.
+      const response = await axiosInstance.get(`/files/${file.uuid}/export`, {
+        params: {
+          format,
+          include_comments: includeComments,
+          include_timestamps: txtOptions ? txtOptions.includeTimestamps : true,
+          include_speakers: txtOptions ? txtOptions.includeSpeakers : true,
+          speaker_default_label: $t('fileDetail.speakerDefault'),
+          user_comment_label: $t('fileDetail.userComment'),
+          comment_type_label: $t('fileDetail.commentType'),
+          csv_header_default: $t('fileDetail.csvHeaderDefault'),
+          csv_header_with_comments: $t('fileDetail.csvHeaderWithComments'),
+          // Mirrors every other read on this page (transcript/segments/subtitles):
+          // an owner who toggled "Show original" expects the export to match what
+          // they are looking at. The server still refuses this under the admin
+          // export_locked floor regardless of what is sent here.
+          ...(showOriginal ? { redact: false } : {}),
+        },
+        responseType: 'blob',
+      });
 
-      const content = buildExportContent(
-        format as ExportFormat,
-        transcriptData,
-        speakerList,
-        fileComments,
-        {
-          includeComments,
-          txtOptions,
-          filename,
-          jsonMeta: { filename: file.filename, duration: file.duration },
-          translations,
-        }
-      );
-
-      const blob = new Blob([content], { type: 'text/plain' });
+      const contentType = String(response.headers['content-type'] || 'text/plain');
+      const blob = new Blob([response.data], { type: contentType });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

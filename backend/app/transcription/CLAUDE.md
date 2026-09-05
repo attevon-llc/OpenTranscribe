@@ -129,20 +129,46 @@ an empty `/models` and crash-looping on exit 8. A failure here is never fatal �
 > fallback is removed), **#703** (`celery-worker-gpu-transcribe` consumes a queue nothing
 > publishes to).
 
-**`diar-server` links the IMAGE's OpenBLAS, not upstream's** (issue #721). It is built
-`openblas-system`, so `Dockerfile.prod`/`Dockerfile.lite`'s bare `libopenblas0` on
-`python:3.13-slim-trixie` gives it **0.3.29+ds-3** where upstream validates on Ubuntu 24.04's
-**0.3.26** — and the validated library is *not* copied out alongside the binary. This matters
-because 0.3.28/0.3.29 carry an **arm64-only** GEMM→GEMV defect that took upstream's AMI-16 DER
-from 13.8% to 48.7% **while `verify-models` passed every stage**. Measured 2026-09-05 on
-**amd64**: DER 0.0669 on the shipped image, bit-identical to a 0.3.26 control (centroid delta
-exactly 0.0) — amd64 is in band. **arm64 is NOT MEASURED** and cannot be measured on an x86
-host: OpenBLAS picks kernels by runtime CPU detection, so QEMU exercises the wrong path
-(architecture-blocked verification is tracked by **#713**). ⚠️ Do not reach for
-`test_boundary_regression.py` as coverage here — it replays **frozen** `*.rawinfer.json`
-inference and never runs the diarizer, so it cannot see an inference-time BLAS regression.
-Harness + full numbers: `scripts/diar-openblas-der-ab.py`,
-`docs/diarization-openblas-der/README.md`.
+**`diar-server` now BUNDLES the OpenBLAS upstream validated on** (issue #721). It is built
+`openblas-system`, so it links whatever the *image* provides; `Dockerfile.prod` /
+`Dockerfile.lite` install a bare, **unpinned** `libopenblas0` on `python:3.13-slim-trixie`
+(**0.3.29+ds-3**) where diar-native validates on Ubuntu 24.04's **0.3.26**. Upstream reports
+an **arm64-only** GEMM→GEMV defect in 0.3.28/0.3.29 that took its AMI-16 DER from 13.8% to
+48.7% **while `verify-models` passed every stage**. Both Dockerfiles now COPY
+`libopenblasp-r0.3.26.so` out of the *same* per-`TARGETARCH` `diar-native-bin` stage as the
+binary and set **`DT_RPATH=/opt/diar-native/lib`** on `diar-server` (`patchelf
+--force-rpath`), so the tested pairing travels with the artifact.
+
+⚠️ **Do not describe this as fixing an active 48.7% defect — it does not reproduce here.**
+Measured 2026-09-05 on **both** architectures: amd64 **0.0669** DER on 0.3.29, and **native
+aarch64** (Apple M2 Max, not QEMU) **0.0669** as well — both identical to a 0.3.26 control,
+bit-identical segments, plus a 2,016-case `cblas_?gemm` probe over the forwarding shapes with
+**0 mismatches**. The change is justified as (a) removing **unpinned drift** — nothing in this
+repo pins `libopenblas0`, so the next Debian bump silently re-forms the pairing with no gate
+able to see it — and (b) covering **Graviton3/4**, which select **SVE** kernels no available
+hardware can execute (forcing them SIGILLs) and which therefore remain unproven. #713 tracks
+that residual architecture-blocked gap.
+
+⚠️ **DT_RPATH, not an env var, on purpose.** `native_provision.py` runs
+`diar-server provision-models` as a **subprocess of the backend** — inheriting the *backend's*
+environment, not the sidecar's — and that subprocess is what exports the ONNX/PLDA model set.
+A compose-scoped `LD_LIBRARY_PATH` would have fixed serving and left model *creation* on the
+unvalidated library. Image-wide is not an option either: one shared image runs the API, every
+worker and the sidecar, and `/opt/diar-native/lib` also holds diar's ORT 1.24.2 provider libs,
+which collide by filename with Python's onnxruntime-gpu 1.28.0. `--force-rpath` (DT_RPATH,
+searched *before* `LD_LIBRARY_PATH`) rather than patchelf's default DT_RUNPATH (searched
+*after*), so an env var cannot silently displace it.
+
+Before and after on amd64: DER **0.0669** either way, bit-identical output, 0.0 centroid
+delta, against a ≤0.15 gate — a no-op, as the aarch64 result predicted it would be. ⚠️ **QEMU
+can never answer this question** (OpenBLAS dispatches kernels by runtime CPU detection, so an
+emulated run exercises the wrong path); the aarch64 numbers above came from real hardware.
+⚠️ Do not reach for `test_boundary_regression.py` as coverage here — it replays **frozen**
+`*.rawinfer.json` inference and never runs the diarizer, so it cannot see an inference-time BLAS
+regression. Guards: `tests/unit/test_diar_native_openblas_bundled.py` (build wiring) and
+`tests/integration/test_diar_native_openblas_runtime.py` (`/proc/<pid>/maps` — a COPY the
+loader ignores looks exactly like success). Harness + full numbers:
+`scripts/diar-openblas-der-ab.py`, `docs/diarization-openblas-der/README.md`.
 
 ### PyAnnote fallback specifics
 

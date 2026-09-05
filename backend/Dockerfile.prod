@@ -39,6 +39,81 @@ FROM davidamacey/diar-native:UNAVAILABLE-NO-CUDA-ARM64-BUILD-SEE-ISSUE-680 AS di
 FROM diar-native-bin-${TARGETARCH} AS diar-native-bin
 
 # -----------------------------------------------------------------------------
+# Stage 0b: Bundle diar-native's OWN validated OpenBLAS with its binary (issue #721)
+# -----------------------------------------------------------------------------
+# `diar-server` is built `openblas-system`: it carries an ELF NEEDED entry for
+# `libopenblas.so.0` and links whatever the HOST IMAGE provides — not what upstream
+# validated against. diar-native validates on Ubuntu 24.04 (**0.3.26**); the runtime
+# stage below is `python:3.13-slim-trixie`, whose `libopenblas0` is **0.3.29+ds-3**.
+#
+# Upstream reports that OpenBLAS 0.3.28/0.3.29 carry an **arm64-only** GEMM->GEMV forwarding
+# defect that moved its AMI-16 DER from **13.8% to 48.7%** — with `diar-server verify-models`
+# passing all five stages throughout, so a plausible speaker count sits on badly wrong
+# attribution that no smoke test, image scan, build gate or healthcheck can see.
+#
+# ⚠️ THAT DEFECT DOES NOT REPRODUCE ON ANY KERNEL WE CAN EXECUTE, and this comment must not
+# be read as claiming otherwise. Measured 2026-09-05 on BOTH architectures: amd64 0.0669 DER
+# on 0.3.29, and NATIVE aarch64 (Apple M2 Max, not QEMU — emulation dispatches the wrong
+# kernels and cannot answer this) 0.0669 as well; both identical to a 0.3.26 control, with
+# bit-identical segments, plus a 2,016-case `cblas_?gemm` probe over the forwarding shapes
+# finding 0 mismatches.
+#
+# So this stage is INSURANCE, not repair. It buys two specific things:
+#   - **No unpinned drift.** `libopenblas0` is installed bare and unversioned below, and
+#     there is no apt pin anywhere in this repo. "trixie ships 0.3.29 and 0.3.29 is fine"
+#     is a measurement, not a guarantee — the next Debian bump moves the library under the
+#     binary with nothing able to notice.
+#   - **Coverage for the aarch64 generations we cannot test.** Graviton3/4 select OpenBLAS's
+#     SVE kernels, which the available hardware physically cannot run (forcing them SIGILLs).
+#     Those are the paths upstream's report implicates, and they stay unproven; #713 tracks
+#     that gap. Shipping the library upstream validated on makes upstream's own 13.8% figure
+#     the applicable evidence for them.
+# Full record: `docs/diarization-openblas-der/README.md`.
+#
+# The library is taken from the SAME per-TARGETARCH stage the binary comes from, so its
+# architecture matches the binary's automatically and cannot drift. The version is spelled
+# out in the source path deliberately: `libopenblasp-r0.3.26.so` IS the version number, so
+# an upstream bump off 0.3.26 fails this COPY loudly instead of silently shipping an
+# unvalidated pairing. `openblas-pthread` is the variant Debian/Ubuntu's alternatives
+# select and the one `ldd diar-server` resolves to in the upstream image — verified, not
+# assumed.
+#
+# ⚠️ DT_RPATH, NOT an environment variable, and NOT image-wide. Three reasons, in order:
+#
+#   1. **`diar-server` runs from more than one place.** The compose sidecar
+#      (`docker-compose.diar-native.yml`) sets a service-scoped `LD_LIBRARY_PATH`, but
+#      `app/transcription/native_provision.py` also runs `diar-server provision-models`
+#      as a SUBPROCESS OF THE BACKEND, inheriting the backend's environment — which has no
+#      `/opt/diar-native/lib` on it. That subprocess is what EXPORTS the ONNX/PLDA model
+#      set the sidecar later serves, so an env-only fix would leave model *creation* on
+#      the unvalidated library. `scripts/diar-native-smoke.sh`, `scripts/release/85-smoke.sh`
+#      and `docker run --entrypoint diar-server ...` are three more such call sites.
+#   2. An image-wide `LD_LIBRARY_PATH` would change what numpy/scipy and every other
+#      process in this SHARED backend image resolve. DT_RPATH is a property of this one
+#      ELF, so the blast radius is exactly the binary that needs it.
+#   3. `--force-rpath` emits **DT_RPATH**, not DT_RUNPATH. DT_RPATH is searched BEFORE
+#      `LD_LIBRARY_PATH`; DT_RUNPATH is searched after it. Only the former makes the
+#      validated pairing impossible to displace silently with an env var — which is the
+#      same failure class as the bug being fixed. (`LD_PRELOAD` remains the deliberate
+#      escape hatch for A/B experiments such as `scripts/diar-openblas-der-ab.py`.)
+#
+# patchelf lives in this throwaway stage, never in the shipped image.
+FROM python:3.13-slim-trixie AS diar-native-staged
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+COPY --from=diar-native-bin /usr/local/bin/diar-server /staged/bin/diar-server
+COPY --from=diar-native-bin /usr/lib/*/openblas-pthread/libopenblasp-r0.3.26.so /staged/lib/
+# The RPATH is read back and compared, so a patchelf that silently no-ops fails the BUILD
+# rather than shipping a copied-but-never-loaded library, which looks exactly like success.
+# `test` rather than `| grep` because hadolint requires `pipefail` before any piped RUN.
+RUN set -eux; \
+    patchelf --force-rpath --set-rpath /opt/diar-native/lib /staged/bin/diar-server; \
+    rpath="$(patchelf --print-rpath /staged/bin/diar-server)"; \
+    test "$rpath" = "/opt/diar-native/lib"
+
+# -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation
 # -----------------------------------------------------------------------------
 FROM python:3.13-slim-trixie AS builder
@@ -142,7 +217,27 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 # diar-native's only extra system dependency: libopenblas0 (linked by diar-server itself,
 # per `ldd`). libgfortran5 is openblas's own dependency but is ALREADY present in this
 # image at 0 extra bytes (pulled in transitively by something upstream, e.g. scipy) —
-# verified via `dpkg -l | grep libgfortran` against a built image, not assumed.
+# verified via `dpkg -l | grep libgfortran` on a built image, not assumed. It is what the BUNDLED
+# 0.3.26 above needs too (its only non-glibc NEEDED entry), and `libopenblas0` depends on
+# it, so keeping this install is also what keeps the bundled library loadable.
+#
+# ⚠️ This apt `libopenblas0` STAYS even though the validated 0.3.26 is now bundled beside
+# the binary (issue #721), and that is a decision, not an oversight. Measured in the built
+# image rather than assumed:
+#   - numpy and scipy do NOT use it. They load their own vendored builds
+#     (`numpy.libs/libscipy_openblas64_-*.so`, `scipy.libs/libscipy_openblas-*.so`), so
+#     removing it would not have disturbed them.
+#   - An ELF sweep of all 1,863 distinct objects under /usr /opt /app /home/appuser/.local
+#     /bin /sbin found `libopenblas.so.0` has exactly ONE consumer outside its own package:
+#     `diar-server`.
+#   - But the same package set provides the `libblas.so.3` / `liblapack.so.3` alternatives
+#     that ffmpeg's `libsphinxbase.so.3.0.0` links. Dropping `libopenblas0` re-points a
+#     production audio dependency's BLAS onto the reference implementation, on an
+#     architecture (arm64) that cannot be tested from this host.
+# Bundling does not require that change, so it does not make it. Two copies now exist and
+# **DT_RPATH decides** which one `diar-server` gets — not load order, not an env var, and
+# provably: `/proc/<pid>/maps` inside the running sidecar shows
+# `/opt/diar-native/lib/libopenblasp-r0.3.26.so`.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas0 \
     && rm -rf /var/lib/apt/lists/* \
@@ -212,7 +307,11 @@ RUN mkdir -p /opt/diar-native/lib /opt/diar-native/run && chown appuser:appuser 
 # already-copied 316 MB file forces an overlayfs copy-up that nearly doubled this
 # block's contribution to image size (374 MB measured for a chown of files that were
 # already 356 MB) — caught by comparing `docker history` layer sizes before/after.
-COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/bin/diar-server /usr/local/bin/diar-server
+# From diar-native-staged, not diar-native-bin: the binary shipped here is the upstream
+# one with DT_RPATH=/opt/diar-native/lib added (issue #721), so its sha256 deliberately
+# differs from upstream's. The library beside it is upstream's own validated 0.3.26.
+COPY --from=diar-native-staged --chown=appuser:appuser /staged/bin/diar-server /usr/local/bin/diar-server
+COPY --from=diar-native-staged --chown=appuser:appuser /staged/lib/libopenblasp-r0.3.26.so /opt/diar-native/lib/libopenblasp-r0.3.26.so
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime.so.1.24.2 /opt/diar-native/lib/libonnxruntime.so.1.24.2
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_cuda.so /opt/diar-native/lib/libonnxruntime_providers_cuda.so
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_shared.so /opt/diar-native/lib/libonnxruntime_providers_shared.so
@@ -225,11 +324,18 @@ COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/share/diar-native
 # No `chmod +x` here: the source image's binary is already mode 755 and COPY preserves
 # it — an explicit chmod on an already-copied 33 MB file forces the same overlayfs
 # copy-up as the chown-vs-COPY issue above, for zero behavioral change.
+#
+# The libopenblas.so.0 link is the SONAME diar-server's DT_NEEDED asks for; the target
+# keeps the version in its filename so `/proc/<pid>/maps` names the version that actually
+# ran. It is created here rather than COPY'd because COPY's symlink semantics differ
+# between the classic builder and BuildKit — a dereferenced link would ship a second
+# 37 MB copy under a name that hides which version it is.
 RUN ln -s /opt/diar-native/lib/libonnxruntime_providers_cuda.so /usr/local/bin/libonnxruntime_providers_cuda.so && \
     ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /usr/local/bin/libonnxruntime_providers_shared.so && \
     ln -s /opt/diar-native/lib/libonnxruntime_providers_cuda.so /opt/diar-native/run/libonnxruntime_providers_cuda.so && \
     ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /opt/diar-native/run/libonnxruntime_providers_shared.so && \
-    chown -h appuser:appuser /opt/diar-native/run/libonnxruntime_providers_cuda.so /opt/diar-native/run/libonnxruntime_providers_shared.so
+    ln -s libopenblasp-r0.3.26.so /opt/diar-native/lib/libopenblas.so.0 && \
+    chown -h appuser:appuser /opt/diar-native/run/libonnxruntime_providers_cuda.so /opt/diar-native/run/libonnxruntime_providers_shared.so /opt/diar-native/lib/libopenblas.so.0
 
 # Ensure scripts in .local are usable by adding to PATH
 # Set LD_LIBRARY_PATH for cuDNN libraries from PyTorch package

@@ -49,6 +49,45 @@ FROM davidamacey/diar-native@sha256:63e7a7275aada3da8c4840cbc5e2b4e498605a665808
 FROM diar-native-bin-${TARGETARCH} AS diar-native-bin
 
 # -----------------------------------------------------------------------------
+# Stage 0b: Bundle diar-native's OWN validated OpenBLAS with its binary (issue #721)
+# -----------------------------------------------------------------------------
+# Read `Dockerfile.prod`'s equivalent stage first — the full reasoning lives there and is
+# not repeated. The short version: `diar-server` is built `openblas-system`, so it links
+# whatever the HOST IMAGE provides; upstream validates on Ubuntu 24.04's **0.3.26** while
+# this runtime stage is `python:3.13-slim-trixie` at an unpinned **0.3.29+ds-3**, and
+# upstream reports an **arm64-only** GEMM->GEMV defect in 0.3.28/0.3.29 that took its AMI-16
+# DER from 13.8% to 48.7% while `verify-models` passed every stage.
+#
+# ⚠️ **THIS is the image with an arm64 leg** — `./scripts/docker-build-push.sh
+# list-platforms` reports `lite cpu linux/amd64,linux/arm64`, and Debian trixie's arm64
+# archive serves the same 0.3.29+ds-3 — so it is where the concern was concentrated.
+# **It was measured, and it came back clean**: on NATIVE aarch64 (Apple M2 Max; QEMU cannot
+# answer this, it dispatches the wrong kernels) 0.3.29 scored **0.0669 DER, identical to a
+# 0.3.26 control and to amd64**, with a 2,016-case `cblas_?gemm` probe over the forwarding
+# shapes finding 0 mismatches. Do not describe this stage as repairing a live 48.7% defect.
+#
+# What it does close: the **unpinned drift** (nothing pins `libopenblas0`, so a future
+# Debian bump silently re-forms the pairing) and the **Graviton3/4 SVE** kernels that no
+# available hardware can execute and that therefore stay unproven — #713 tracks that.
+# Full record: `docs/diarization-openblas-der/README.md`.
+#
+# The library comes from the SAME per-TARGETARCH stage as the binary, so the aarch64 leg
+# gets the aarch64 0.3.26 automatically and the pairing cannot drift. The version in the
+# source path is load-bearing: an upstream bump off 0.3.26 fails this COPY loudly rather
+# than silently shipping an unvalidated pairing.
+FROM python:3.13-slim-trixie AS diar-native-staged
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+COPY --from=diar-native-bin /usr/local/bin/diar-server /staged/bin/diar-server
+COPY --from=diar-native-bin /usr/lib/*/openblas-pthread/libopenblasp-r0.3.26.so /staged/lib/
+RUN set -eux; \
+    patchelf --force-rpath --set-rpath /opt/diar-native/lib /staged/bin/diar-server; \
+    rpath="$(patchelf --print-rpath /staged/bin/diar-server)"; \
+    test "$rpath" = "/opt/diar-native/lib"
+
+# -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation
 # -----------------------------------------------------------------------------
 FROM python:3.13-slim-trixie AS builder
@@ -107,6 +146,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # transitively by apt automatically if not already present; unlike the full image, this
 # lite image has no scipy in requirements-lite.txt, so — unlike Dockerfile.prod's verified
 # "already present" claim — it is NOT assumed present here and this step may pull it in.
+#
+# ⚠️ That transitive libgfortran5 is now LOAD-BEARING, not incidental (issue #721): the
+# bundled 0.3.26 copied in below has `libgfortran.so.5` as its only non-glibc NEEDED
+# entry, and this apt line is the sole thing that puts it in the image. Removing
+# `libopenblas0` to "deduplicate" now that the validated copy is bundled would take
+# libgfortran5 with it and leave the bundled library unloadable. See Dockerfile.prod's
+# note on this line for the measured reasons the apt package stays; two copies exist and
+# DT_RPATH — not load order — decides which one diar-server gets.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas0 \
     && rm -rf /var/lib/apt/lists/* \
@@ -145,7 +192,11 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 # for the same reason Dockerfile.prod chowns it — nothing writes there today, but it is
 # the one place a future write-relative-to-cwd would land.
 RUN mkdir -p /opt/diar-native/lib /opt/diar-native/run && chown appuser:appuser /opt/diar-native/run
-COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/bin/diar-server /usr/local/bin/diar-server
+# From diar-native-staged, not diar-native-bin: the binary shipped here is the upstream one
+# with DT_RPATH=/opt/diar-native/lib added (issue #721), so its sha256 deliberately differs
+# from upstream's. The library beside it is upstream's own validated 0.3.26.
+COPY --from=diar-native-staged --chown=appuser:appuser /staged/bin/diar-server /usr/local/bin/diar-server
+COPY --from=diar-native-staged --chown=appuser:appuser /staged/lib/libopenblasp-r0.3.26.so /opt/diar-native/lib/libopenblasp-r0.3.26.so
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime.so.1.24.2 /opt/diar-native/lib/libonnxruntime.so.1.24.2
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_shared.so /opt/diar-native/lib/libonnxruntime_providers_shared.so
 # The 26 s verification clip `provision-models` diarizes in its end-to-end stage —
@@ -156,9 +207,14 @@ COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/share/diar-native
 # runtime), so the shared provider lib is symlinked into both locations, same as
 # Dockerfile.prod. Only the shared provider needs this — there is no cuda provider here
 # to symlink.
+#
+# The libopenblas.so.0 link is the SONAME diar-server's DT_NEEDED asks for; the target
+# keeps the version in its filename so `/proc/<pid>/maps` names the version that actually
+# ran — same rationale as Dockerfile.prod's identical link.
 RUN ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /usr/local/bin/libonnxruntime_providers_shared.so && \
     ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /opt/diar-native/run/libonnxruntime_providers_shared.so && \
-    chown -h appuser:appuser /opt/diar-native/run/libonnxruntime_providers_shared.so
+    ln -s libopenblasp-r0.3.26.so /opt/diar-native/lib/libopenblas.so.0 && \
+    chown -h appuser:appuser /opt/diar-native/run/libonnxruntime_providers_shared.so /opt/diar-native/lib/libopenblas.so.0
 
 # Ensure scripts in .local are usable by adding to PATH
 # No LD_LIBRARY_PATH needed (no CUDA/cuDNN in lite mode)

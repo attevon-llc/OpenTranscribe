@@ -49,11 +49,23 @@ services:
           devices:
             - driver: nvidia
               capabilities: [gpu]
-              # ⚠️ Defaults to GPU_DEVICE_ID — the SAME GPU the rest of the stack uses —
-              # never to a bare 0. This used to read `${DIAR_NATIVE_GPU:-0}`, so simply
-              # enabling this overlay without also setting DIAR_NATIVE_GPU would reserve
-              # device 0. On this workstation device 0 is an A6000 reserved for unrelated
-              # work, and the sidecar holds ~2.2 GB of warm ORT arena — it would have sat
-              # on someone else's card indefinitely. Overlays must inherit the project's
-              # configured GPU, not re-pick one.
+              # ⚠️ Defaults to GPU_DEVICE_ID, never to a bare 0. This used to read
+              # `${DIAR_NATIVE_GPU:-0}`, so simply enabling this overlay without also
+              # setting DIAR_NATIVE_GPU would reserve device 0. On this workstation device 0
+              # is an A6000 reserved for unrelated work, and the sidecar holds ~2.2 GB of
+              # warm ORT arena — it would have sat on someone else's card indefinitely.
+              # Overlays must inherit the project's configured GPU, not re-pick one.
+              #
+              # ⚠️ Under `--gpu-scale` this is NOT the card the workers use. The scaled
+              # workers get GPU_SCALE_DEVICE_ID (default 2) while the sidecar still inherits
+              # GPU_DEVICE_ID (default 0). That is deliberate and costs nothing: the worker
+              # -> sidecar handoff is a PATH on the shared `pipeline_scratch` volume plus an
+              # HTTP JSON body (`diarizer_native.py` post_json), never CUDA IPC or a device
+              # handle, so the two processes are device-independent. Cross-card is in fact
+              # preferable — it keeps the 2.2 GB arena and the diarize compute off the card
+              # running N concurrent Whisper jobs, and `stages.py::_wait_for_vram` only ever
+              # measures the worker's OWN card, so its accounting is accurate exactly when
+              # the sidecar is elsewhere. Co-locate deliberately with
+              # `DIAR_NATIVE_GPU=$GPU_SCALE_DEVICE_ID`, or collapse everything onto one card
+              # with `./opentr.sh --gpu-device N` (which moves all six device ids).
               device_ids: ['${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}}']

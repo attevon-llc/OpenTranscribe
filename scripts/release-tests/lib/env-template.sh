@@ -92,7 +92,13 @@ COMPUTE_TYPE=${COMPUTE_TYPE:-${TEST_COMPUTE_TYPE:-float16}}
 BATCH_SIZE=${BATCH_SIZE:-${TEST_BATCH_SIZE:-16}}
 USE_GPU=${USE_GPU:-${TEST_USE_GPU:-true}}
 GPU_DEVICE_ID=${GPU_DEVICE_ID:-${TEST_GPU_DEVICE_ID:-1}}
-CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-${TEST_GPU_DEVICE_ID:-1}}
+# NOTE: CUDA_VISIBLE_DEVICES is deliberately NOT set here, and must not be added.
+# Every service reads this file via env_file, and Docker has already narrowed each GPU
+# service to a single reserved card that the container sees at index 0. Writing the HOST
+# index in here selects a device that does not exist: measured, a device_ids reservation
+# of host GPU 1 plus CUDA_VISIBLE_DEVICES=1 gives cuInit error 100 (CUDA_ERROR_NO_DEVICE)
+# and a torch device_count of 0, so every GPU worker in a rehearsal stack silently ran on
+# CPU while still reporting healthy. GPU_DEVICE_ID above is the only knob needed.
 TORCH_DEVICE=${TORCH_DEVICE:-cuda}
 
 # ─── HuggingFace token (from .env.test-secrets) ──────────────

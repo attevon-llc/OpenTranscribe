@@ -523,13 +523,22 @@ def _rehearsal_source(name: str) -> str:
 # same stale-exemption discipline as backend/tests/audit-allowlist.txt.
 _HAND_BUILT_BRINGUP_EXEMPTIONS = {
     "test-lite-mode.sh": (
-        "docker-compose.lite.yml is NOT in release-manifest.txt and get_compose_files() "
-        "has no lite branch, so no shipped command can select it — see "
-        "test_lite_mode_is_not_reachable_by_a_shipped_deployment below. The moment that "
-        "changes, that test fails and this exemption must be removed. Since issue #660 "
-        "the hand-built chain also adds docker-compose.diar-native.yml (the CPU-EP "
-        "speaker-embedding sidecar); that addition is reachable only from this script "
-        "and from opentr.sh (dev-only), and does not make lite shippable."
+        "ISSUE #680 INVALIDATED THIS ENTRY'S ORIGINAL REASON and it is deliberately "
+        "rewritten rather than deleted. It used to read 'no shipped command can build "
+        "this chain' — true until #680 added docker-compose.lite.yml to "
+        "release-manifest.txt, gave get_compose_files() a lite branch, and made "
+        "`docker-build-push.sh all` publish opentranscribe-backend-lite. "
+        "test_lite_mode_is_reachable_by_a_shipped_deployment below now asserts all "
+        "three, so the old justification is gone. What keeps the exemption is a "
+        "different fact: this scenario must pin ONE fixed chain regardless of what the "
+        "host has (a GPU here would make the shipped selector add the GPU overlay, and "
+        "the whole point is the no-GPU shape), and it is also the live positive case "
+        "for test_the_hand_built_bringup_detector_actually_fires — a detector with no "
+        "positive case silently stops detecting. Driving it through "
+        "`DEPLOYMENT_MODE=lite ./opentranscribe.sh start` with FORCE_CPU_MODE is now "
+        "POSSIBLE and is the right follow-up; it needs its own change, not a drive-by. "
+        "Since issue #660 the chain also adds docker-compose.diar-native.yml (the "
+        "CPU-EP speaker-embedding sidecar)."
     ),
 }
 
@@ -589,18 +598,24 @@ def test_the_hand_built_bringup_detector_actually_fires():
     )
 
 
-def test_lite_mode_is_not_reachable_by_a_shipped_deployment():
-    """Finding E: `--lite` is a repo/dev-only shape today, and must be labelled as one.
+def test_lite_mode_is_reachable_by_a_shipped_deployment():
+    """Issue #680 turned finding E's tripwire around: lite is now genuinely shippable.
 
-    README.md advertises "API-Lite Deployment", but `docker-compose.lite.yml` is absent
-    from release-manifest.txt (so a curl install never downloads it) and
-    get_compose_files() has no lite branch (so nothing could select it if it did). The
-    lite image is not published by `scripts/docker-build-push.sh all` either.
+    This test used to assert the OPPOSITE — that `--lite` was a repo/dev-only shape —
+    and it existed to fail the moment anyone made it real, so the three facts it named
+    could not silently go stale. All three changed in one place, so it is now the
+    positive invariant on the same three facts:
 
-    This test is the tripwire on that relabel. If someone makes lite genuinely
-    shippable, this fails — and `test-lite-mode.sh`'s "dev-only" header, its exemption
-    above, and the docs all have to be revisited in the same change rather than left
-    stale.
+      1. `docker-compose.lite.yml` is in release-manifest.txt, so a curl install
+         downloads it;
+      2. `opentranscribe.sh:get_compose_files()` has a branch that can select it;
+      3. `scripts/docker-build-push.sh all` builds the lite image, so a release
+         publishes `opentranscribe-backend-lite`.
+
+    All three are load-bearing for arm64, where the full/CUDA image publishes no
+    manifest at all: `arm64_deployment_preflight()` defaults an arm64 host to
+    DEPLOYMENT_MODE=lite, which is a no-op unless every one of them holds. Losing any
+    one turns that default into a deployment that resolves nothing.
     """
     manifest = MANIFEST.read_text(encoding="utf-8")
     listed = [
@@ -613,14 +628,84 @@ def test_lite_mode_is_not_reachable_by_a_shipped_deployment():
         for line in MANAGER.read_text(encoding="utf-8").splitlines()
         if not line.lstrip().startswith("#")
     )
+    builder_code = "\n".join(
+        line
+        for line in (REPO_ROOT / "scripts" / "docker-build-push.sh")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if not line.lstrip().startswith("#")
+    )
 
     in_manifest = "docker-compose.lite.yml" in listed
     in_selector = "docker-compose.lite.yml" in manager_code
-    assert not in_manifest and not in_selector, (
-        "docker-compose.lite.yml is now reachable by a shipped deployment "
-        f"(manifest={in_manifest}, selector={in_selector}). test-lite-mode.sh and "
-        "scripts/release-tests/README.md still describe it as repo/dev-only, and the "
-        "release pipeline still does not publish opentranscribe-backend-lite — update "
-        "all three in this change, and drop the exemption in "
-        "_HAND_BUILT_BRINGUP_EXEMPTIONS."
+    # `all)` must build lite, not merely know the word — build_backend_lite is the
+    # function that produces the image, so its presence in the all/auto dispatch is
+    # the fact, and a bare `lite` string anywhere in the file is not.
+    builds_lite = "build_backend_lite" in builder_code
+
+    assert in_manifest and in_selector and builds_lite, (
+        "lite is no longer reachable by a shipped deployment "
+        f"(manifest={in_manifest}, selector={in_selector}, built={builds_lite}). "
+        "arm64 hosts default to DEPLOYMENT_MODE=lite because the full/CUDA image "
+        "publishes no arm64 manifest — with any of these three missing, that default "
+        "points at nothing. See scripts/release-tests/test-lite-mode.sh's scope note."
+    )
+
+
+def test_the_lite_overlay_covers_every_service_that_would_pull_the_full_image():
+    """A lite deployment must not pull the full/CUDA image for ANY service it starts.
+
+    `flower` was the one that slipped: it has no `profiles:` and no `scale: 0`, so it
+    starts on every deployment, and `docker-compose.lite.yml` did not override its
+    image. On amd64 that quietly drags the ~4.4 GB CUDA image into a deployment whose
+    premise is ~2 GB. On arm64 — where `arm64_deployment_preflight()` now DEFAULTS to
+    lite precisely because the full image publishes no arm64 manifest — `docker compose
+    up` fails outright with "no matching manifest for linux/arm64", so the branch's
+    headline behaviour would not work at all.
+
+    Enumerated from the compose files rather than listed here, so a service added to
+    prod.yml later cannot be forgotten. A service is covered if lite.yml overrides its
+    `image`, scales it to 0, or the base file puts it behind a `profiles:` gate.
+    """
+    yaml = pytest.importorskip("yaml")
+
+    base = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    prod = yaml.safe_load((REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8"))
+    lite = yaml.safe_load((REPO_ROOT / "docker-compose.lite.yml").read_text(encoding="utf-8"))
+
+    base_services = base.get("services", {})
+    lite_services = lite.get("services", {})
+
+    def _replicas(svc: dict) -> int | None:
+        deploy = svc.get("deploy") or {}
+        return deploy.get("replicas")
+
+    full_image_services = {
+        name
+        for name, svc in (prod.get("services") or {}).items()
+        if "opentranscribe-backend:" in str((svc or {}).get("image", ""))
+    }
+    # Must-fire control: if the scan finds nothing, every assertion below is vacuous.
+    assert full_image_services, (
+        "no service in docker-compose.prod.yml references the full backend image — the "
+        "detector matched nothing and this test proves nothing. Did the image reference "
+        "change shape (e.g. a new variable) without this scan being updated?"
+    )
+
+    uncovered = []
+    for name in sorted(full_image_services):
+        if (base_services.get(name) or {}).get("profiles"):
+            continue  # gpu-scale / gpu-split: not started by a lite deployment
+        override = lite_services.get(name) or {}
+        if override.get("image") or _replicas(override) == 0:
+            continue
+        if _replicas(base_services.get(name) or {}) == 0:
+            continue
+        uncovered.append(name)
+
+    assert not uncovered, (
+        f"docker-compose.lite.yml does not cover {uncovered}: these services start on a "
+        "lite deployment and would pull davidamacey/opentranscribe-backend (the full "
+        "CUDA image). On arm64 that image has no manifest at all, so `up` fails. Give "
+        "each one a ${BACKEND_LITE_IMAGE:-...} image override, or scale it to 0."
     )

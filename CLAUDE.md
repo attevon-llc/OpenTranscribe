@@ -143,7 +143,17 @@ Run with `./opentr.sh start dev --gpu-scale` — **the flag is what enables scal
 
 ### Docker build & push (production images)
 
-Skill: `.claude/skills/docker-build-push/SKILL.md` (multi-arch requires `USE_REMOTE_BUILDER=true`).
+Skill: `.claude/skills/docker-build-push/SKILL.md` (any build including `linux/arm64` requires
+`USE_REMOTE_BUILDER=true`, or it runs under QEMU).
+
+**Capability lives in the REPOSITORY and is restated in the TAG** (issue #680):
+`opentranscribe-backend` is CUDA, `opentranscribe-backend-lite` is CPU, and each publishes
+`vX.Y.Z-<cap>-<arch>` legs assembled into a `vX.Y.Z` index whose digest `:latest` is then copied
+from. **`PLATFORMS` is an explicit override, not a default** — the old both-arch default is how a
+CPU-only arm64 backend got published under the CUDA image's tag. Never transcribe the platform
+set into a doc or a script: ask `./scripts/docker-build-push.sh list-platforms`
+(`component<TAB>capability<TAB>platforms`), which is the single home for it. Full table and the
+reason `cuda-arm64` is reserved-but-unbuilt: `scripts/CLAUDE.md`.
 
 ### Cutting a release — `./scripts/release.sh`, never by hand
 

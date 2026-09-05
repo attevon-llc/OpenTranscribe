@@ -1,0 +1,16 @@
+# OpenTranscribe (issue #668, finding 3)
+#
+# Most content here sits behind authentication, but the login page, embedded docs, and
+# any other unauthenticated surface are crawlable by default. Disallow the API and media
+# paths a crawler could otherwise walk at machine speed; leave the app shell itself open
+# so a deliberately public instance (see issue #628's demo) can still have its landing
+# page indexed if it wants that.
+#
+# Deployments that want the opposite (index everything, or nothing) should replace this
+# file — it is a static asset, not something the app enforces.
+User-agent: *
+Disallow: /api/
+Disallow: /files/
+Disallow: /s3/
+Disallow: /minio/
+Disallow: /flower/

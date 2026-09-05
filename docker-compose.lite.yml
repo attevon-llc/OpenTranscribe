@@ -63,3 +63,16 @@ services:
     image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
     environment:
       - DEPLOYMENT_MODE=lite
+
+  # ⚠️ flower was the ONE default-profile service this overlay missed (issue #680).
+  # It has no `profiles:` and no `scale: 0` in docker-compose.yml, so it starts on every
+  # lite deployment — and without this block it starts from the FULL/CUDA image. On
+  # amd64 that silently pulls ~4.4 GB into a deployment whose whole premise is ~2 GB; on
+  # arm64, where opentranscribe.sh now defaults to lite because the full image publishes
+  # no arm64 manifest at all, `docker compose up` fails outright with "no matching
+  # manifest for linux/arm64". Every other backend-image service here is either
+  # overridden above, scaled to 0, or behind the gpu-scale/gpu-split profiles.
+  flower:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    environment:
+      - DEPLOYMENT_MODE=lite

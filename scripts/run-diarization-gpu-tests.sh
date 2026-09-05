@@ -19,7 +19,10 @@
 #   * They self-skip unless OPENTRANSCRIBE_IN_CONTAINER=1 or /.dockerenv exists, so a
 #     host run reports "3 skipped" and looks fine.
 #   * pyproject's addopts selector is `-m 'not integration and not gpu'`, so without
-#     `-o addopts= -m gpu` pytest deselects all of them and exits 0.
+#     `-o addopts= -m gpu` pytest deselects all of them and exits 0. Since issue #719
+#     `-o addopts= -m gpu` is ALSO what keeps CUDA devices visible at all: the fast
+#     selector now hides every device (tests/conftest.py's pytest_configure), so argv
+#     without `-m gpu` gets a `cuda-device-guard` pytest.fail, not a silent skip.
 #   * BENCHMARK_ROOT (/app/benchmark/test_audio) is gitignored: with the fixtures
 #     absent every test skips individually, again exiting 0. This script refuses to
 #     run in that state rather than hand you a vacuous pass.

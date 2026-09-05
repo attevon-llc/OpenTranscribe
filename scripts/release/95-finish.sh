@@ -17,7 +17,8 @@ cd "$REPO_ROOT" || exit 2
 
 VERSION="${1:-${RELEASE_VERSION:-}}"
 JSON_OUT="${JSON_OUT:-false}"
-USER_NS="${DOCKERHUB_USERNAME:-davidamacey}"
+# No USER_NS here any more: the repo namespace comes from security-scan.sh list-repos, which
+# reads DOCKERHUB_USERNAME itself, so the two cannot resolve to different namespaces.
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 : "${VERSION:?95-finish.sh needs a version}"
 
@@ -25,11 +26,33 @@ command -v gh >/dev/null 2>&1 || { echo -e "${RED}gh CLI required${NC}" >&2; exi
 git rev-parse "$VERSION" >/dev/null 2>&1 || { echo -e "${RED}$VERSION is not tagged${NC}" >&2; exit 1; }
 
 # The images MUST exist before the release names the version.
-for repo in backend frontend; do
-    docker manifest inspect "${USER_NS}/opentranscribe-${repo}:${VERSION}" >/dev/null 2>&1 || {
-        echo -e "${RED}${repo}:${VERSION} is not on Docker Hub — publish before finishing${NC}" >&2
-        exit 1; }
-done
+#
+# Derived from security-scan.sh's component table, never listed here — this loop used to read
+# `for repo in backend frontend`, so a release could be published --latest with the lite and
+# docs images entirely absent from Docker Hub. See scripts/release/published-repos.sh.
+# shellcheck source=scripts/release/published-repos.sh
+source "$SCRIPT_DIR/published-repos.sh"
+
+# Capture into a variable FIRST, and propagate the exit. Feeding the function straight into
+# the loop as `done < <(release_published_repos_or_die)` looks equivalent and is not: process
+# substitution runs in a SUBSHELL, so the helper's `exit 3` would end that subshell only. The
+# loop would then read zero lines, `missing` would stay empty, and the stage would PASS — the
+# precise silent-zero-iteration failure the helper exists to prevent, reintroduced at its own
+# call site. `$( )` is a subshell too, but its status lands in $? where `|| exit` can see it.
+repos_tsv="$(release_published_repos_or_die)" || exit $?
+
+missing=()
+while IFS=$'\t' read -r component repo; do
+    [[ -n "$repo" ]] || continue
+    docker manifest inspect "${repo}:${VERSION}" >/dev/null 2>&1 \
+        || missing+=("${component} (${repo}:${VERSION})")
+done <<< "$repos_tsv"
+
+if [[ ${#missing[@]} -gt 0 ]]; then
+    echo -e "${RED}not on Docker Hub — publish before finishing:${NC}" >&2
+    printf '  %s\n' "${missing[@]}" >&2
+    exit 1
+fi
 
 # CI must be green for this tag.
 if [[ "${SKIP_CI_CHECK:-false}" != "true" ]]; then

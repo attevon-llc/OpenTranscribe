@@ -14,7 +14,8 @@ cd "$REPO_ROOT" || exit 2
 
 VERSION="${1:-${RELEASE_VERSION:-}}"
 JSON_OUT="${JSON_OUT:-false}"
-USER_NS="${DOCKERHUB_USERNAME:-davidamacey}"
+# No USER_NS here any more: the repo namespace comes from security-scan.sh list-repos, which
+# reads DOCKERHUB_USERNAME itself, so the two cannot resolve to different namespaces.
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 : "${VERSION:?90-promote.sh needs a version}"
 
@@ -22,11 +23,29 @@ digest_of() {
     docker buildx imagetools inspect "$1" --format '{{println .Manifest.Digest}}' 2>/dev/null | head -1
 }
 
+# Derived from security-scan.sh's component table, never listed here. This loop used to be a
+# literal `for repo in backend backend-lite frontend docs`, which disagreed with 95-finish.sh's
+# literal `backend frontend` — see scripts/release/published-repos.sh.
+# shellcheck source=scripts/release/published-repos.sh
+source "$SCRIPT_DIR/published-repos.sh"
+
+# Captured into a variable, NOT piped in via `< <(...)` — see the note in 95-finish.sh: the
+# helper's `exit 3` inside a process substitution would end only that subshell, leaving this
+# loop to iterate zero times and report success.
+repos_tsv="$(release_published_repos_or_die)" || exit $?
+
 fail=0
-for repo in backend backend-lite frontend docs; do
-    img="${USER_NS}/opentranscribe-${repo}"
+while IFS=$'\t' read -r component img; do
+    [[ -n "$img" ]] || continue
+    repo="${img##*/}"
+    # A missing :$VERSION is a FAILURE, not a SKIP. Promote's whole job is moving :latest onto
+    # the validated digest; a repo with nothing to promote means the publish stage did not do
+    # what the pipeline believes it did, and skipping it silently let :latest keep pointing at
+    # the PREVIOUS release for that component while the release completed green. That is how an
+    # unpublished lite image could ride all the way through to `finish` unnoticed.
     docker manifest inspect "${img}:${VERSION}" >/dev/null 2>&1 || {
-        echo -e "${YELLOW}SKIP  ${repo}: no :${VERSION} published${NC}" >&2; continue; }
+        echo -e "${RED}FAIL  ${component}: no ${img}:${VERSION} published — cannot promote${NC}" >&2
+        fail=1; continue; }
 
     echo -e "${YELLOW}promoting ${img}:${VERSION} -> :latest${NC}" >&2
     docker buildx imagetools create -t "${img}:latest" "${img}:${VERSION}" || { fail=1; continue; }
@@ -38,7 +57,7 @@ for repo in backend backend-lite frontend docs; do
         echo -e "${RED}FAIL  ${repo}: digests differ (${src:0:19} vs ${dst:0:19})${NC}" >&2
         fail=1
     fi
-done
+done <<< "$repos_tsv"
 
 if [[ "$JSON_OUT" == "true" ]]; then
     printf '{"stage":"promote","version":"%s","status":"%s","next":%s}\n' \

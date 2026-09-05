@@ -15,6 +15,12 @@
 #                              otherwise enable a GPU overlay that fails at
 #                              container start with an nvidia-container-cli
 #                              adapter error.
+#   OPENTRANSCRIBE_LITE        When non-empty, install the CPU-only lite deployment
+#                              (opentranscribe-backend-lite + cloud ASR) and persist
+#                              DEPLOYMENT_MODE=lite. Equivalent to --lite; implies
+#                              OPENTRANSCRIBE_FORCE_CPU, since that image ships no
+#                              CUDA runtime. This is distinct from FORCE_CPU alone,
+#                              which still runs the full CUDA image without a GPU.
 #
 # Env vars honored in unattended mode (all optional; any can be pre-set):
 #   PROJECT_DIR                Where to install (default: ./opentranscribe)
@@ -106,6 +112,28 @@ SSL_CONFIGURED=false
 # workloads. Default (unset) preserves the original auto-detect behaviour.
 FORCE_CPU="false"
 if [[ -n "${OPENTRANSCRIBE_FORCE_CPU:-}" ]]; then
+    FORCE_CPU="true"
+fi
+
+# LITE_MODE: when "true", persist DEPLOYMENT_MODE=lite into .env so the install runs the
+# CPU-only image (davidamacey/opentranscribe-backend-lite) with cloud ASR, via
+# opentranscribe.sh's get_compose_files() lite branch.
+#
+# Before this existed, DEPLOYMENT_MODE was written by the installer NOWHERE — the string
+# appears zero times in the pre-#667 installer — while opentranscribe.sh read it in four
+# places. So the shipped lite shape was reachable only by hand-editing .env after install,
+# or incidentally on arm64 (where arm64_deployment_preflight EXPORTS it per-run because the
+# CUDA image has no arm64 leg, without persisting it). `--lite` was additionally swallowed
+# by the unknown-argument arm below, which warned and then performed a FULL install — the
+# worst of both, since the warning scrolls past in a curl|bash and the user believes they
+# asked for lite.
+#
+# --lite implies --cpu: the lite image ships no CUDA runtime at all, so a GPU overlay over
+# it can only fail. The reverse is NOT true — --cpu on the full image is a supported shape
+# (CUDA runtime present, unused), which is why these stay two flags rather than one.
+LITE_MODE="false"
+if [[ -n "${OPENTRANSCRIBE_LITE:-}" ]]; then
+    LITE_MODE="true"
     FORCE_CPU="true"
 fi
 
@@ -868,6 +896,18 @@ _write_hardware_settings() {
     # start/restart time. When "true", the management script skips GPU overlays
     # even if Docker reports an nvidia runtime.
     _upsert_env "FORCE_CPU_MODE" "${FORCE_CPU}"
+
+    # DEPLOYMENT_MODE: which backend IMAGE this install runs. Only written when --lite was
+    # asked for, so an ordinary install keeps whatever .env.example ships ("full") and an
+    # existing install is never silently switched by a re-run.
+    #
+    # This is the same exact string backend/app/services/asr/factory.py compares against
+    # ("lite", lower-cased) to refuse a local-ASR request with a clear error. Keying the
+    # overlay selection and the ASR guard off ONE value is deliberate: they cannot diverge
+    # into a stack running the lite image while the code believes a local model is available.
+    if [[ "$LITE_MODE" == "true" ]]; then
+        _upsert_env "DEPLOYMENT_MODE" "lite"
+    fi
 
     if [[ "$DETECTED_DEVICE" == "cpu" ]]; then
         if grep -q '^ENABLE_DIARIZATION=' .env; then
@@ -2182,6 +2222,14 @@ main() {
                 FORCE_CPU="true"
                 shift
                 ;;
+            --lite)
+                # CPU-only lite image + cloud ASR. Implies --cpu (the lite image carries no
+                # CUDA runtime), and persists DEPLOYMENT_MODE=lite so opentranscribe.sh
+                # selects docker-compose.lite.yml on every subsequent start, not just this one.
+                LITE_MODE="true"
+                FORCE_CPU="true"
+                shift
+                ;;
             --version)
                 # Pin to a specific release. Equivalent to OPENTRANSCRIBE_VERSION.
                 OPENTRANSCRIBE_VERSION="${2:-}"
@@ -2198,9 +2246,16 @@ main() {
             -h|--help)
                 echo "OpenTranscribe installer"
                 echo ""
-                echo "Usage: setup-opentranscribe.sh [--cpu] [--version vX.Y.Z] [--branch <ref>]"
+                echo "Usage: setup-opentranscribe.sh [--cpu] [--lite] [--version vX.Y.Z] [--branch <ref>]"
                 echo ""
                 echo "Options:"
+                echo "  --lite      Install the CPU-only 'lite' deployment: the much"
+                echo "              smaller opentranscribe-backend-lite image, with"
+                echo "              transcription done by a cloud ASR provider you"
+                echo "              configure after install instead of a local GPU"
+                echo "              model. Implies --cpu. Persists DEPLOYMENT_MODE=lite."
+                echo "              This is the only supported shape on hosts with no"
+                echo "              NVIDIA GPU at all, and the default on arm64."
                 echo "  --cpu       Install in CPU-only mode. Skips NVIDIA GPU"
                 echo "              detection and configures the stack to run"
                 echo "              without the GPU compose overlay. Use this on"
@@ -2221,14 +2276,22 @@ main() {
                 echo ""
                 echo "Environment variables (see script header for the full list):"
                 echo "  OPENTRANSCRIBE_FORCE_CPU  Non-empty = same as --cpu"
+                echo "  OPENTRANSCRIBE_LITE       Non-empty = same as --lite"
                 echo "  OPENTRANSCRIBE_UNATTENDED Non-empty = skip all prompts"
                 echo "  OPENTRANSCRIBE_VERSION    Same as --version"
                 echo "  OPENTRANSCRIBE_BRANCH     Same as --branch"
                 exit 0
                 ;;
             *)
-                echo -e "${YELLOW}⚠️  Unknown argument: $1 (ignored)${NC}"
-                shift
+                # FATAL, not a warning. This arm used to warn and continue, which meant a user
+                # who asked for a deployment shape the installer did not understand got a
+                # DIFFERENT shape installed plus one yellow line that scrolls off the top of a
+                # `curl | bash`. `--lite` was exactly that case for as long as the flag did not
+                # exist. Exit 2 (misuse) matches how --version/--branch already reject a missing
+                # value, so the installer has one consistent answer for "that is not a thing".
+                echo -e "${RED}❌ Unknown argument: $1${NC}" >&2
+                echo "   Run with --help to see the supported flags." >&2
+                exit 2
                 ;;
         esac
     done
@@ -2237,7 +2300,12 @@ main() {
     resolve_install_ref
     export OPENTRANSCRIBE_BRANCH OT_IMAGE_TAG
 
-    if [[ "$FORCE_CPU" == "true" ]]; then
+    if [[ "$LITE_MODE" == "true" ]]; then
+        echo -e "${BLUE}ℹ️  Lite (CPU-only) install mode selected — DEPLOYMENT_MODE=lite${NC}"
+        echo "   Backend image: opentranscribe-backend-lite (no CUDA, no local ASR model)"
+        echo "   Transcription requires a cloud ASR provider, configured after install"
+        echo "   in Settings. See docs: API-Lite Deployment."
+    elif [[ "$FORCE_CPU" == "true" ]]; then
         echo -e "${BLUE}ℹ️  CPU-only install mode selected${NC}"
     fi
 

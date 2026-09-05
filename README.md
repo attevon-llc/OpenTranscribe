@@ -328,6 +328,22 @@ OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/attevon-
 
 The CPU-only choice is persisted to `.env` as `FORCE_CPU_MODE=true` so subsequent `./opentranscribe.sh start`/`restart` calls continue to skip the GPU overlay automatically.
 
+**🪶 Lite install (`--lite`):** `--cpu` still runs the full CUDA image, just without a GPU. `--lite`
+is different — it installs the much smaller CPU-only `opentranscribe-backend-lite` image, which
+carries no CUDA runtime and no local ASR model, and transcribes via a **cloud ASR provider** you
+configure after install. Implies `--cpu`, and persists `DEPLOYMENT_MODE=lite`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --lite
+
+# Unattended / CI equivalent
+OPENTRANSCRIBE_LITE=1 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
+```
+
+This is the only supported shape on a host with no NVIDIA GPU at all, and it is what arm64 hosts
+select automatically — the full CUDA image publishes no arm64 leg, so on Apple Silicon and other
+aarch64 machines the lite image is the only backend available.
+
 **⚠️ IMPORTANT - HuggingFace Setup:**
 The script will prompt you for your HuggingFace token during setup. **BEFORE running the installer:**
 

@@ -269,6 +269,12 @@ def stop_migration(
 
         success = migration_progress.force_stop()
 
+        # Release the migration lock (issue #657, defect 4) - a stopped
+        # migration must not leave transcription backing off forever.
+        from app.services.migration_lock_service import migration_lock
+
+        migration_lock.deactivate()
+
         # Revoke any in-flight batch tasks
         try:
             from app.core.celery import celery_app
@@ -545,6 +551,14 @@ def force_complete_migration(
 
         # Mark migration as complete
         migration_progress.complete_migration(success=True)
+
+        # Release the migration lock (issue #657, defect 4). force-complete
+        # only stops waiting on remaining files; without this the pause
+        # point in transcription's embedding extraction would keep backing
+        # off against a migration that is no longer actually running.
+        from app.services.migration_lock_service import migration_lock
+
+        migration_lock.deactivate()
 
         # Send completion notification
         send_ws_event(

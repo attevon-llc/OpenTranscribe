@@ -476,6 +476,19 @@ def migrate_speaker_embeddings_v4_task(
         # Start progress tracking
         migration_progress.start_migration(total_files=total_files, task_id=task_id)
 
+        # Acquire the migration lock (issue #657, defect 4). Previously this
+        # docstring claimed the lock was acquired here and it never was -
+        # migration_lock_service.py had zero production callers. Live
+        # transcription and this migration's GPU batches both resolve the
+        # embedding model through the same (mode, model_name)-keyed cache
+        # (speaker_embedding_service.get_cached_embedding_service); with no
+        # lock, the two race it and pay a 40-60s reload on every alternation.
+        # A transcription pause point (_process_speaker_embeddings) checks
+        # this lock and waits briefly rather than racing it.
+        from app.services.migration_lock_service import migration_lock
+
+        migration_lock.activate()
+
         # Initialize unified progress tracker for ETA
         from app.services.progress_tracker import ProgressTracker
 
@@ -1058,6 +1071,13 @@ def finalize_v4_migration_task(self, user_id: int = 1):
         return result
 
     finally:
-        # ALWAYS clear caches, even on error
+        # ALWAYS clear caches and release the migration lock, even on error.
+        # deactivate() is safe to call even if activate() was never reached
+        # for this run (e.g. a manual /force-complete with no orchestrator
+        # run in between) - it floors the ref count at 0 rather than going
+        # negative.
+        from app.services.migration_lock_service import migration_lock
+
         EmbeddingModeService.clear_cache()
         migration_progress.clear_status()
+        migration_lock.deactivate()

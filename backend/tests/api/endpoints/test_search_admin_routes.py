@@ -234,7 +234,6 @@ def deployed_model():
             "app.services.search.indexing_service.recreate_index_for_dimension",
             side_effect=lambda dim: recorder.dimensions.append(dim) or True,
         ),
-        patch("app.services.search.hybrid_search_service.clear_search_cache"),
         patch("app.services.search.hybrid_search_service.reset_neural_search_state"),
     ):
         yield recorder

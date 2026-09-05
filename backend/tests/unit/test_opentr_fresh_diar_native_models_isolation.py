@@ -276,10 +276,26 @@ def _free_port_offset() -> int:
     covers it with room to spare. Bind-testing (rather than reading ``ss``) is what actually
     proves availability, and matching ``opentr.sh``'s own check means we cannot disagree with it.
     """
+    return _free_port_offsets(1)[0]
+
+
+def _free_port_offsets(count: int) -> list[int]:
+    """``count`` DISTINCT offsets whose whole port blocks are currently unbound.
+
+    Two calls to a stateless ``_free_port_offset()`` return the SAME offset, because nothing
+    is actually bound between them — so a test that starts two concurrent fresh deployments
+    (``team-a``/``team-b``) needs them allocated together, not one at a time. Getting that
+    wrong would hand both stacks the same ports and reintroduce the very collision this
+    helper exists to avoid, in a test whose entire point is that two deployments stay
+    isolated from each other.
+    """
+    found: list[int] = []
     for offset in range(1200, 4000, 100):
         if all(_port_is_free(base + offset) for base in range(5173, 5196)):
-            return offset
-    pytest.skip("no free port-offset block available on this host")
+            found.append(offset)
+            if len(found) == count:
+                return found
+    pytest.skip(f"fewer than {count} free port-offset blocks available on this host")
     raise AssertionError("unreachable")  # pragma: no cover - satisfies type checkers
 
 
@@ -429,12 +445,16 @@ def test_fresh_deployment_ignores_an_explicit_env_override_pointed_at_the_live_d
 def test_two_fresh_deployments_get_two_different_isolated_directories(tmp_path: Path):
     """Isolation is PER-DEPLOYMENT: two --fresh stacks must not share the models directory
     either, or one could still corrupt the export the other is provisioning."""
+    # Allocated together, not one at a time: a stateless per-call lookup would hand both
+    # deployments the SAME offset (nothing is bound between the two calls), which is exactly
+    # the collision this test exists to prove cannot happen.
+    offset_a, offset_b = _free_port_offsets(2)
     _, log_a, checkout = _run(
-        tmp_path, ["start", "dev", "--fresh", "team-a", "--port-offset", "500"]
+        tmp_path, ["start", "dev", "--fresh", "team-a", "--port-offset", str(offset_a)]
     )
     _, log_b, _ = _run(
         tmp_path,
-        ["start", "dev", "--fresh", "team-b", "--port-offset", "600"],
+        ["start", "dev", "--fresh", "team-b", "--port-offset", str(offset_b)],
         checkout_name=checkout.name,
     )
     resolved_a = _resolved_models_dir(log_a)
@@ -445,7 +465,8 @@ def test_two_fresh_deployments_get_two_different_isolated_directories(tmp_path: 
 
 
 #: Deliberately far from anything a real dev stack (or this suite's own --fresh port offsets,
-#: which top out around 5183+600) would ever publish, and env-var driven the same way
+#: which `_free_port_offsets` caps at 5195+3900 = 9095) would ever publish, and env-var driven
+#: the same way
 #: `fresh_apply_port_offset` moves them -- `preflight_ports_or_die` reads `${!var:-default}`,
 #: so exporting these sidesteps the LIVE dev stack's bound 5173-5183 ports without needing
 #: `--fresh` at all, which is the point: this test is proving the NON-fresh path.

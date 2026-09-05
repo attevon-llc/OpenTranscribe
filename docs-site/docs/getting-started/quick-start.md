@@ -53,7 +53,7 @@ The installer will ask for:
 2. **Whisper Model Size** (default: `large-v3-turbo` — auto-detected based on hardware)
    - `large-v3-turbo` - 6x faster, excellent accuracy (default, NVIDIA GPU recommended)
    - `large-v3` - Best accuracy, required for translation to English
-   - `medium` - Good balance (8GB+ GPU or Apple Silicon)
+   - `medium` - Good balance (8GB+ NVIDIA GPU)
    - `base` - Fast (CPU-only systems)
 
 ### Step 3: Start OpenTranscribe

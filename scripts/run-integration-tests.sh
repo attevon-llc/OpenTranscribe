@@ -267,6 +267,11 @@ else
     if $EXPORT_CAPABILITY; then
         EXPORT_ENV=(env RUN_EXPORT_CAPABILITY_TEST=1)
     fi
+    # -m integration is one of only two selections (with -m gpu below) that the CUDA
+    # device guard (issue #719, tests/conftest.py's pytest_configure) leaves un-blinded:
+    # two files under tests/integration/ carry BOTH `integration` and `gpu` markers
+    # (test_diar_native_smoke_live.py, test_gpu_scale_smoke_live.py), so this phase
+    # legitimately needs real device visibility and must stay in that set.
     run_phase_watching_skips "Integration-marked tests" \
         "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         -o addopts="" -m integration -q --tb=short --timeout="${INTEGRATION_TEST_TIMEOUT:-900}"
@@ -289,6 +294,13 @@ run_phase "Dependency parity: venv vs container" \
 # this gate is the ONLY place they run — they were silently ungated before #297.
 # Each module still carries its own runtime skip guard, so this is a no-op on a
 # machine without CUDA; pass --skip-gpu to drop the phase entirely.
+#
+# `-o addopts="" -m gpu` is the other selection (with -m integration above) that the
+# CUDA device guard (issue #719) leaves un-blinded — CUDA_VISIBLE_DEVICES is left as
+# inherited rather than forced to -1, because `-m gpu` satisfies
+# tests/conftest.py's `_selection_may_run_gpu_tests`. Running this phase's pytest
+# invocation with a DIFFERENT -m expression that happens not to select `gpu` would
+# make every gpu test in it error with `cuda-device-guard` instead of running.
 #
 # ⚠️ This phase runs in the VENV, so the three container-only diarization suites
 # (test_diarizer_lifecycle / test_diarization_perf_gates / test_diarization_regression)

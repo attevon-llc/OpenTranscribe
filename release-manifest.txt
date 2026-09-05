@@ -84,6 +84,16 @@ docker-compose.diar-native-gpu.yml
 # references it by name so a fresh install that skips it just keeps the disk-backed
 # default. Load with `./opentr.sh start dev --with-scratch-tmpfs`.
 docker-compose.scratch-tmpfs.yml	optional
+# The lite (CPU-only, cloud-ASR) overlay. `optional` because most installs are full
+# deployments and an older release genuinely does not carry this file — but it is NOT
+# cosmetic: before issue #680 this file was in no manifest at all AND had no branch in
+# get_compose_files(), so `DEPLOYMENT_MODE=lite` was read in four places and could never
+# actually select anything. scripts/release-tests/test-lite-mode.sh documents that gap in
+# its own header and hand-assembles the chain because no shipped command could produce it.
+# It is also what makes the arm64 default reachable: the full/CUDA image publishes no
+# arm64 manifest (see arm64_deployment_preflight in opentranscribe.sh), so on arm64 this
+# overlay is the only thing there is to run.
+docker-compose.lite.yml	optional
 
 # --- Reverse proxy -------------------------------------------------------------
 nginx/site.conf.template

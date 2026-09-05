@@ -16,6 +16,7 @@ NC='\033[0m' # No Color
 # Configuration
 DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME:-davidamacey}"
 REPO_BACKEND="${DOCKERHUB_USERNAME}/opentranscribe-backend"
+REPO_BACKEND_LITE="${DOCKERHUB_USERNAME}/opentranscribe-backend-lite"
 REPO_FRONTEND="${DOCKERHUB_USERNAME}/opentranscribe-frontend"
 REPO_DOCS="${DOCKERHUB_USERNAME}/opentranscribe-docs"
 SCAN_TARGET="${1:-all}"
@@ -50,13 +51,17 @@ readonly EXIT_COULD_NOT_SCAN=2
 # is now a loud failure rather than a silent green scan.
 declare -A SCAN_COMPONENT_DOCKERFILE=(
     [backend]="backend/Dockerfile.prod"
+    [lite]="backend/Dockerfile.lite"
     [frontend]="frontend/Dockerfile.prod"
     [docs]="docs-site/Dockerfile"
+    [blackwell]="backend/Dockerfile.blackwell"
 )
 declare -A SCAN_COMPONENT_REPO=(
     [backend]="${REPO_BACKEND}"
+    [lite]="${REPO_BACKEND_LITE}"
     [frontend]="${REPO_FRONTEND}"
     [docs]="${REPO_DOCS}"
+    [blackwell]="${REPO_BACKEND}"
 )
 
 # Sorted, one per line — the machine-readable contract other scripts consume.
@@ -644,6 +649,17 @@ main() {
     # returned the banner plus the list.
     if [ "${SCAN_TARGET}" = "list-components" ]; then
         scan_components
+        exit 0
+    fi
+
+    # component<TAB>repo, one per line — the machine-readable contract release
+    # stages (50-scan.sh) derive their component->repo mapping from, so that
+    # mapping has exactly one home instead of being re-hardcoded per caller.
+    if [ "${SCAN_TARGET}" = "list-repos" ]; then
+        local component
+        for component in $(scan_components); do
+            printf '%s\t%s\n' "${component}" "${SCAN_COMPONENT_REPO[${component}]}"
+        done
         exit 0
     fi
 

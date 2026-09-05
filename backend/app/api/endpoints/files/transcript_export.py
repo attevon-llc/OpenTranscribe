@@ -167,6 +167,8 @@ def export_transcript(
             csv_header_default=csv_header_default,
             csv_header_with_comments=csv_header_with_comments,
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:

@@ -113,6 +113,8 @@ skips = ["*_test.py", "test_*.py"]
 # Deleting this table is NOT the fix: with no ini at all pytest falls back to collecting from
 # the cwd, which pulls in `frontend/node_modules`.
 # `backend/tests/unit/test_pytest_config_consistency.py` fails if the two drift apart.
+# `-m 'not integration and not gpu'` is now load-bearing for CUDA device VISIBILITY, not
+# only test selection (issue #719) — see the matching note in backend/pyproject.toml.
 testpaths = ["backend/tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -124,7 +126,7 @@ markers = [
     "pki: PKI certificate tests",
     "e2e: end-to-end browser tests",
     "integration: integration tests requiring running dev environment",
-    "gpu: tests requiring a physical GPU — deselected from the fast suite, run by the gate",
+    "gpu: tests requiring a physical GPU — deselected from the fast suite, run by the gate, and the only selection that keeps CUDA devices visible (issue #719)",
     "models: tests requiring ML model weights (Presidio/GLiNER/toxicity) — skipped in fast CI",
     "ddl_exclusive: performs schema DDL (DROP/ALTER TABLE) needing full DB-wide exclusivity, not just self-consistency — see tests/conftest.py's advisory-lock isolation (issue #389)",
 ]

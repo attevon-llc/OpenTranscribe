@@ -6,7 +6,7 @@ End-to-end validation for every OpenTranscribe release. Three scenarios:
 |---|---|
 | `test-fresh-install.sh` | A new user runs the documented `setup-opentranscribe.sh` one-liner and ends up with a working stack on the current release |
 | `test-upgrade.sh` | A user with real data on the previous release can run the documented upgrade path and find their data intact, migrations applied, new features available |
-| `test-lite-mode.sh` | The no-GPU lite **topology and pipeline** (`docker-compose.lite.yml`, cloud-only ASR) run the real upload -> ASR -> segments/speakers -> search -> chat flow, against mocked cloud ASR (`scripts/mock-asr-server.py`, a Gladia stand-in) and a mocked LLM (`scripts/mock-llm-server.py`) — no GPU, vendor API key, or network egress required. Complements `scripts/lite-smoke.sh` (Stage 2, Cycle 2D), which only checks lite/cpu-only topology, not the pipeline. **⚠️ It does NOT prove a user can deploy lite mode** — see below. |
+| `test-lite-mode.sh` | The no-GPU lite **topology and pipeline** (`docker-compose.lite.yml`, cloud-only ASR) run the real upload -> ASR -> segments/speakers -> search -> chat flow, against mocked cloud ASR (`scripts/mock-asr-server.py`, a Gladia stand-in) and a mocked LLM (`scripts/mock-llm-server.py`) — no GPU, vendor API key, or network egress required. Complements `scripts/lite-smoke.sh` (Stage 2, Cycle 2D), which only checks lite/cpu-only topology, not the pipeline. Lite became a shipped deployment shape in issue #680 — see below. |
 
 ## Scenarios A and B run the SHIPPED commands
 
@@ -26,19 +26,26 @@ card silently ran the wrong image. Both scenarios now read the resolved chain ba
 manifest promises was actually downloaded. Rationale and the full finding list:
 [`REHEARSAL_ALIGNMENT_PLAN.md`](REHEARSAL_ALIGNMENT_PLAN.md).
 
-### Scenario C (`--lite`) is a repo/dev-only deployment shape
+### Scenario C (`--lite`) is now a SHIPPED deployment shape (changed by issue #680)
 
-`test-lite-mode.sh` is the one scenario that still hand-builds its chain, and that is
-correct rather than an oversight: `docker-compose.lite.yml` is **not** in
-`release-manifest.txt` (a curl install never downloads it), `get_compose_files()` has no
-lite branch (nothing could select it if it did), and `scripts/docker-build-push.sh all`
-does not build the lite image (no release publishes it). The only documented invocation
-is `./opentr.sh start dev --lite` — the *development* script, in a git clone.
+This section previously said the opposite, and the three facts it rested on were all
+changed by #680: `docker-compose.lite.yml` **is** in `release-manifest.txt` (a curl
+install downloads it), `get_compose_files()` **has** a `DEPLOYMENT_MODE=lite` branch, and
+`scripts/docker-build-push.sh all` **does** build and publish
+`opentranscribe-backend-lite`. `test_lite_mode_is_reachable_by_a_shipped_deployment`
+(`backend/tests/unit/test_compose_file_selection.py`) now asserts all three in the
+positive, so this section still cannot go stale unnoticed.
 
-So the scenario's verdict is "lite works", not "a user can deploy lite". Making the
-latter true is a product decision. `test_lite_mode_is_not_reachable_by_a_shipped_deployment`
-(`backend/tests/unit/test_compose_file_selection.py`) fails the moment any of those three
-facts changes, so this section cannot go stale unnoticed.
+It matters most on **arm64**, where the full/CUDA image publishes no manifest at all, so
+`opentranscribe.sh` defaults an arm64 host to lite. Lite is the only published deployment
+for that architecture.
+
+`test-lite-mode.sh` is nevertheless still the one scenario that hand-builds its chain.
+That is now justified differently: it must pin one fixed chain regardless of the host, so
+that a machine with a GPU does not have the shipped selector add the GPU overlay and
+defeat the no-GPU shape it exists to exercise. Driving it through
+`DEPLOYMENT_MODE=lite FORCE_CPU_MODE=true ./opentranscribe.sh start` is now possible and
+is tracked as follow-up in that test module's exemption entry.
 
 ## ⚠️ Precondition: the live stack must be STOPPED
 

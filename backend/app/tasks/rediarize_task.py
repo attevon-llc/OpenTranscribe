@@ -468,11 +468,26 @@ def rediarize_task(  # noqa: C901
         except Exception as e:
             logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
 
+        # Rediarization always reassigns which speaker every segment belongs
+        # to, which changes both the chunk plane's speaker snapshot/turn
+        # grouping and the full-document index — so it needs a re-index
+        # UNCONDITIONALLY, not only when a caller happened to also request
+        # the 'search_indexing' stage (issue #666). A rediarize-only run
+        # (e.g. from the reprocess UI with just "Re-diarize" checked) used to
+        # dispatch nothing at all, leaving search/RAG attributing every
+        # segment to its pre-rediarize speaker indefinitely.
+        from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+        dispatch_transcript_reindex(file_id=file_id, file_uuid=file_uuid, user_id=user_id)
+
         # Step 10: Dispatch remaining downstream tasks.
         # Remove speaker_llm — it's chained from detect_speaker_attributes_task
         # to ensure gender/age context is available for LLM identification.
+        # Remove search_indexing — the reindex above already (debounced)
+        # covers it, and dispatching the non-debounced full task again here
+        # would race it and duplicate the work.
         if downstream_tasks:
-            filtered = [s for s in downstream_tasks if s != "speaker_llm"]
+            filtered = [s for s in downstream_tasks if s not in ("speaker_llm", "search_indexing")]
             if filtered:
                 _dispatch_downstream(filtered, file_uuid, file_id=file_id, user_id=user_id)
 

@@ -1098,6 +1098,17 @@ def update_single_transcript_segment(
     db.commit()
     db.refresh(segment)
 
+    # The text is what search/RAG chunk documents are built from — a stale
+    # index otherwise serves the pre-edit wording indefinitely (issue #666).
+    # Debounced per file so editing many segments in a row queues one
+    # re-index, not one per PUT.
+    if text_changed:
+        from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+        dispatch_transcript_reindex(
+            file_id=db_file.id, file_uuid=str(db_file.uuid), user_id=int(db_file.user_id)
+        )
+
     # Manually construct Pydantic response with all required fields
     return TranscriptSegmentSchema(
         uuid=segment.uuid,  # type: ignore[arg-type]

@@ -95,11 +95,21 @@ def real_db():
     finally:
         from app.models.media import MediaFile
         from app.models.media import Speaker
+        from app.models.media import Task
         from app.models.media import TranscriptSegment
         from app.models.user import User
 
         db.rollback()
         if created_media_file_ids:
+            # `index_transcript_search_task` (run synchronously by every test via
+            # `.apply()`) writes its own `Task` row via `create_task_record`, and
+            # `task.media_file_id` has no ON DELETE — same reason
+            # `app/api/endpoints/admin.py`'s bulk user-delete path deletes `Task`
+            # before `MediaFile`. Bulk `.delete()` here is Core-level and does not
+            # run the ORM's `cascade="all, delete-orphan"` on `MediaFile.tasks`.
+            db.query(Task).filter(Task.media_file_id.in_(created_media_file_ids)).delete(
+                synchronize_session=False
+            )
             db.query(TranscriptSegment).filter(
                 TranscriptSegment.media_file_id.in_(created_media_file_ids)
             ).delete(synchronize_session=False)
@@ -282,8 +292,12 @@ def test_segment_speaker_reassignment_reaches_the_chunk_plane(throwaway_indices,
     assert docs, "the reassigned file was never indexed"
     # Both segments now belong to SPEAKER_01 — one turn, one chunk, and the
     # ORIGINAL speaker no longer appears anywhere in the file's chunk plane.
-    speakers_seen = {d["speaker"] for d in docs}
-    assert speakers_seen == {"SPEAKER_01"}, docs
+    # Digest docs (`doc_type: digest`) carry a `speakers` LIST, not a singular
+    # `speaker` field — scope to the actual chunk plane docs.
+    chunk_docs = [d for d in docs if d.get("doc_type") == "chunk"]
+    assert chunk_docs, f"no chunk-plane docs among {docs}"
+    speakers_seen = {d["speaker"] for d in chunk_docs}
+    assert speakers_seen == {"SPEAKER_01"}, chunk_docs
 
 
 # --------------------------------------------------------------------------- #
@@ -316,11 +330,15 @@ def test_speaker_merge_reaches_the_chunk_plane(throwaway_indices, real_db):
 
     docs = _chunk_docs(throwaway_indices, os_settings_chunks_index(), file_uuid)
     assert docs, "the merged file was never indexed"
-    speakers_seen = {d["speaker"] for d in docs}
+    # Digest docs (`doc_type: digest`) carry a `speakers` LIST, not a singular
+    # `speaker` field — scope to the actual chunk plane docs.
+    chunk_docs = [d for d in docs if d.get("doc_type") == "chunk"]
+    assert chunk_docs, f"no chunk-plane docs among {docs}"
+    speakers_seen = {d["speaker"] for d in chunk_docs}
     assert speakers_seen == {"SPEAKER_01"}, (
         "every segment was reassigned to the target speaker in Postgres before "
         "the merge committed — the chunk plane must reflect that, not the "
-        "pre-merge source speaker"
+        f"pre-merge source speaker: {chunk_docs}"
     )
 
 
@@ -407,10 +425,9 @@ def test_rediarize_always_dispatches_a_reindex_even_with_no_downstream_tasks_req
         assert len(refreshed) == 2, "rediarize must have re-saved the segments for real"
 
     # Cleanup note: rediarize_task.apply() writes its own Task row via
-    # create_task_record/update_task_status on the real engine — no explicit
-    # cleanup here since Task rows are not FK-blocking and are pruned by the
-    # existing task-retention sweep, same as every other integration test that
-    # runs a task synchronously.
+    # create_task_record/update_task_status on the real engine — `real_db`'s
+    # teardown deletes `Task` rows scoped to `created_media_file_ids` before the
+    # `MediaFile` row, same as every other test in this module.
     del seg1, seg2, speaker_a, media_file  # silence unused-fixture-var lint; ids used above
 
 

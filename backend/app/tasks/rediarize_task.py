@@ -516,6 +516,22 @@ def rediarize_task(  # noqa: C901
 
                     media_file.error_category = categorize_error(error_msg).value
                     db.commit()
+
+                    # A failure anywhere from Step 6 (segments saved) onward
+                    # leaves already-committed speaker/segment changes in
+                    # Postgres with no corresponding reindex — the happy-path
+                    # dispatch above never runs. Dispatch is idempotent/
+                    # debounced (`reindex_dispatch.dispatch_transcript_reindex`),
+                    # so firing it unconditionally on any failure, once the
+                    # file is resolved, is cheap insurance rather than a
+                    # signal that something was actually saved.
+                    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+                    dispatch_transcript_reindex(
+                        file_id=int(media_file.id),
+                        file_uuid=file_uuid,
+                        user_id=int(media_file.user_id),
+                    )
                 except Exception as file_err:
                     logger.warning(f"Could not update file error status: {file_err}")
         except Exception as update_err:

@@ -589,7 +589,22 @@ DEFAULT_BACKUP_ENCRYPT = False  # gpg AES-256 symmetric; needs a passphrase file
 # Path (in-container) to a file whose contents are the gpg symmetric passphrase.
 # Empty = no passphrase configured (encryption requested but unconfigured → task errors).
 DEFAULT_BACKUP_PASSPHRASE_FILE = ""  # noqa: S105  # nosec B105 - a file PATH default (empty = unset), not a password
-DEFAULT_BACKUP_INCLUDE_OPENSEARCH = False  # OS is derived/rebuildable; pg-only this round
+# ⚠️ This used to default to False, justified by a comment calling OpenSearch derived data
+# that Postgres could rebuild. That justification was WRONG and the default was dangerous
+# (issue #658). The transcript/chunk indices are rebuildable; the SPEAKER indices are not.
+# Postgres stores no embedding vectors at all — SpeakerProfile carries only
+# embedding_count + last_embedding_update (models/media.py) — so `speakers_v3`/`speakers_v4`
+# are the sole copy of a deployment's biometric data, and re-deriving one needs the source
+# media (which may be gone) plus a GPU re-embed run. Defaulting this off shipped a
+# scheduled backup that silently excluded the only unrecoverable data in the system.
+#
+# On by default is also the non-noisy choice: the scheduled backup only runs at all when
+# `backup.destination` is a writable mount, which in practice means the --with-backup
+# overlay — and that same overlay is what allow-lists `path.repo` on the OpenSearch
+# container, so the snapshot repository the leg needs is present exactly when the leg can
+# run. Where it is not, opensearch_snapshot.perform_snapshot records an "unsupported"
+# status naming the voiceprints at risk; it never fails the pg dump.
+DEFAULT_BACKUP_INCLUDE_OPENSEARCH = True
 
 # Backup destination: "local" (mounted dir, default) or "s3" (S3-compatible bucket).
 # The s3 path lets homelab/cloud users push dumps off-host to AWS S3 / MinIO / Backblaze /

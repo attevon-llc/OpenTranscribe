@@ -2383,7 +2383,7 @@ class HybridSearchService:
             logger.warning(f"BM25 group backfill failed for query='{query}': {e}")
             return grouped
 
-        bm25_grouped, _ = self._process_collapsed_results(bm25_response, query)
+        bm25_grouped, _ = self._process_collapsed_results(bm25_response, query, is_fused_rrf=False)
         seen = {hit.file_uuid for hit in grouped}
         new_hits = [hit for hit in bm25_grouped if hit.file_uuid not in seen]
         if not new_hits:
@@ -2404,6 +2404,7 @@ class HybridSearchService:
         self,
         response: dict[str, Any],
         query: str,
+        is_fused_rrf: bool = False,
     ) -> tuple[list[SearchHit], int]:
         """Process collapsed OpenSearch response into SearchHit objects.
 
@@ -2413,6 +2414,14 @@ class HybridSearchService:
         Args:
             response: OpenSearch response with collapse + inner_hits.
             query: Original search query for highlight classification.
+            is_fused_rrf: Whether `response` came from the fused hybrid RRF
+                query (`_build_collapsed_search_body`'s `hybrid` body, with a
+                search pipeline attached). `SEARCH_SEMANTIC_HIGH_CONFIDENCE`
+                was tuned against RRF scores (~0.016 at rank 1); on any other
+                path (plain BM25, or the `_bm25_leg_is_starved` raw-cosinesimil
+                arm) that same threshold reads "high" for nearly every result
+                (issue #698). Confidence is only labelled when this is True —
+                everywhere else `semantic_confidence` stays "".
 
         Returns:
             Tuple of (list of SearchHit, estimated total_files).
@@ -2475,8 +2484,9 @@ class HybridSearchService:
             if is_semantic_only:
                 if "semantic" not in match_sources:
                     match_sources.append("semantic")
-                threshold = settings.SEARCH_SEMANTIC_HIGH_CONFIDENCE
-                semantic_confidence = "high" if best_score >= threshold else "low"
+                if is_fused_rrf:
+                    threshold = settings.SEARCH_SEMANTIC_HIGH_CONFIDENCE
+                    semantic_confidence = "high" if best_score >= threshold else "low"
 
             # Detect metadata speaker match
             if query_lower:
@@ -2636,23 +2646,15 @@ class HybridSearchService:
         file_uuid = bucket["key"]
         title = meta["title"]
 
-        if p2 and p2["occurrences"]:
-            occurrences = p2["occurrences"]
-            title_highlighted = p2["title_highlighted"] or title
-            match_sources: list[str] = list(p2["match_sources"])
-            keyword_count: int = p2["keyword_count"]
-            semantic_count: int = p2["semantic_count"]
-            best_score: float = p2["best_score"]
-        else:
-            occurrences = []
-            title_highlighted = title
-            match_sources = ["semantic"]
-            keyword_count = 0
-            semantic_count = 1
-            best_score = 0.5
-
-        if not occurrences:
+        if not p2 or not p2["occurrences"]:
             return None
+
+        occurrences = p2["occurrences"]
+        title_highlighted = p2["title_highlighted"] or title
+        match_sources: list[str] = list(p2["match_sources"])
+        keyword_count: int = p2["keyword_count"]
+        semantic_count: int = p2["semantic_count"]
+        best_score: float = p2["best_score"]
 
         speakers: list[str] = meta["speakers"]
         if query_lower:
@@ -2664,12 +2666,13 @@ class HybridSearchService:
                     break
 
         is_semantic_only = keyword_count == 0
+        # No confidence badge on this path: Phase 2 scores are raw BM25
+        # (unbounded, ~1-30), not the RRF score `SEARCH_SEMANTIC_HIGH_CONFIDENCE`
+        # was tuned against. Labelling here would read "high" for nearly every
+        # result — see issue #698. An absent badge beats a meaningless one.
         semantic_confidence = ""
-        if is_semantic_only:
-            if "semantic" not in match_sources:
-                match_sources.append("semantic")
-            threshold = settings.SEARCH_SEMANTIC_HIGH_CONFIDENCE
-            semantic_confidence = "high" if best_score >= threshold else "low"
+        if is_semantic_only and "semantic" not in match_sources:
+            match_sources.append("semantic")
 
         has_both = keyword_count > 0 and semantic_count > 0
         total_occurrences = max(len(occurrences), keyword_count + semantic_count)
@@ -3159,9 +3162,17 @@ class HybridSearchService:
         if response is None:
             return self._empty_response(query, page, page_size)
 
-        # Process collapsed results
+        # Process collapsed results. `needs_search_pipeline` is True only for
+        # the fused `hybrid` body (an RRF search pipeline was attached); the
+        # `_bm25_leg_is_starved` arm returns a neural-only body with no
+        # pipeline (raw cosinesimil scores), and a retry fallback to BM25
+        # after a hybrid failure produces plain BM25 scores despite
+        # `needs_search_pipeline` having been True for the original attempt.
         t_process = time.time()
-        grouped, total_files_est = self._process_collapsed_results(response, query)
+        is_fused_rrf = needs_search_pipeline and not fell_back_to_bm25
+        grouped, total_files_est = self._process_collapsed_results(
+            response, query, is_fused_rrf=is_fused_rrf
+        )
         process_ms = round((time.time() - t_process) * 1000)
 
         # Group-starvation backfill: with hybrid+RRF, collapse can only return

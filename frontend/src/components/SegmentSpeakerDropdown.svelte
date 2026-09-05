@@ -35,17 +35,10 @@
    * rest here is what lets this component tell a human's label apart from a
    * machine's guess instead of collapsing them.
    */
-  interface SegmentSpeakerWire {
-    uuid: string;
-    name: string;
-    display_name?: string;
-    suggested_name?: string;
-    suggestion_source?: string;
-    confidence?: number;
-    verified?: boolean;
-  }
-
-  $: wireSpeaker = (segment.speaker ?? null) as SegmentSpeakerWire | null;
+  // The wire shape now lives on `Segment['speaker']` in $lib/types/speaker.ts —
+  // this file used to carry a local copy of it, and the repo rule is that a
+  // replaced implementation gets deleted rather than left alongside.
+  $: wireSpeaker = segment.speaker ?? null;
 
   // `display_name` is the ONLY field that means "a human confirmed this name":
   // `POST /speakers` and `PUT /speakers/{uuid}` both flip `verified` the moment it

@@ -527,6 +527,14 @@ def test_a_speaker_embedding_removal_failure_is_reported_as_partial(
     monkeypatch.setattr(os_mod, "remove_speaker_embedding", _boom)
     monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", lambda target, file_uuid: [])
     monkeypatch.setattr(fcs, "_count_surviving", lambda index, query: 0)
+    # The storage leg must SUCCEED for this test to measure what its docstring claims.
+    # Left real, the result depends on whether object storage happens to be reachable:
+    # locally the dev stack answers and only "speakers" fails, but CI has no MinIO, so
+    # `delete_file_storage_artifacts` returns False and `stages` becomes
+    # ["speakers", "storage"]. Stubbing at this seam (rather than at `minio_service.
+    # delete_file`) is what actually covers it — the storage leg also touches the
+    # derived-render cache bucket, so a lower-level stub leaves that path still live.
+    monkeypatch.setattr(fcs, "delete_file_storage_artifacts", lambda file_id, meta: True)
 
     events: list[dict] = []
     real_log = acct_module.audit_logger.log

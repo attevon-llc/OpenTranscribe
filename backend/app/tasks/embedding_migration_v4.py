@@ -774,6 +774,138 @@ def extract_v4_embeddings_task(
 _PROFILE_DOC_QUERY = {"query": {"term": {"document_type": "profile"}}}
 
 
+def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
+    """Backfill v4 profile-voiceprint documents from already-migrated v4 speakers.
+
+    Defect 1 of issue #657: the streaming per-file writer (
+    ``_embedding_result_writer``) only ever produced speaker documents, never
+    ``document_type: "profile"`` docs. Profile voiceprints are consolidated
+    centroids that live only in the ``speakers`` alias's dual-write path
+    (``store_profile_embedding``/``store_profile_embedding_v4``), so any
+    profile not touched by a file transcribed *during* the migration window
+    would have no v4 counterpart at all, and ``swap_speaker_alias`` would
+    silently strand its voiceprint in the (soon inactive) v3 index.
+
+    This recomputes every profile's centroid directly from the v4 speaker
+    documents that already carry a ``profile_uuid`` — the only source of a
+    256-dim vector for that profile, since a v3 512-dim profile embedding
+    cannot be reused at a different dimension without re-running the model.
+    A profile with zero migrated v4 speakers is therefore still not
+    recoverable here; that is a hard requirement of the dimension change, not
+    an oversight, and is why this is called *before* the finalize profile-
+    count guard, which will then correctly refuse the swap if any profile
+    still cannot be accounted for.
+
+    Args:
+        client: OpenSearch client.
+        v4_index: Concrete v4 index to read speakers from / write profiles to.
+
+    Returns:
+        Number of profile documents written.
+    """
+    import numpy as np
+
+    profiles: dict[str, dict] = {}
+
+    try:
+        response = client.search(
+            index=v4_index,
+            body={
+                "size": 500,
+                "query": {
+                    "bool": {
+                        "must": [{"exists": {"field": "profile_uuid"}}],
+                        "must_not": [{"exists": {"field": "document_type"}}],
+                    }
+                },
+                "_source": [
+                    "profile_id",
+                    "profile_uuid",
+                    "user_id",
+                    "organization_id",
+                    "segment_count",
+                    "embedding",
+                ],
+            },
+            scroll="2m",
+        )
+        scroll_id = response.get("_scroll_id")
+        hits = response["hits"]["hits"]
+        while hits:
+            for hit in hits:
+                source = hit["_source"]
+                profile_uuid = source.get("profile_uuid")
+                if not profile_uuid:
+                    continue
+                weight = max(1, int(source.get("segment_count") or 1))
+                entry = profiles.setdefault(
+                    profile_uuid,
+                    {
+                        "profile_id": source.get("profile_id"),
+                        "user_id": source.get("user_id"),
+                        "organization_id": source.get("organization_id"),
+                        "vectors": [],
+                        "weights": [],
+                        "speaker_count": 0,
+                    },
+                )
+                entry["vectors"].append(source["embedding"])
+                entry["weights"].append(weight)
+                entry["speaker_count"] += 1
+            if not scroll_id:
+                break
+            response = client.scroll(scroll_id=scroll_id, scroll="2m")
+            scroll_id = response.get("_scroll_id")
+            hits = response["hits"]["hits"]
+    except Exception as e:
+        logger.error(f"Failed to scroll v4 speaker docs for profile backfill: {e}")
+        return 0
+
+    if not profiles:
+        return 0
+
+    from app.models.media import SpeakerProfile
+    from app.services.opensearch_service import store_profile_embedding_v4
+
+    profile_ids = [e["profile_id"] for e in profiles.values() if e.get("profile_id")]
+    profile_names: dict[int, str] = {}
+    if profile_ids:
+        with session_scope() as db:
+            rows = (
+                db.query(SpeakerProfile.id, SpeakerProfile.name)
+                .filter(SpeakerProfile.id.in_(profile_ids))
+                .all()
+            )
+            profile_names = {row.id: row.name for row in rows}
+
+    written = 0
+    for profile_uuid, entry in profiles.items():
+        try:
+            vectors = np.array(entry["vectors"], dtype=float)
+            weights = np.array(entry["weights"], dtype=float)
+            weighted = np.average(vectors, axis=0, weights=weights)
+            norm = np.linalg.norm(weighted)
+            if norm > 0:
+                weighted = weighted / norm
+
+            ok = store_profile_embedding_v4(
+                profile_id=entry["profile_id"],
+                profile_uuid=profile_uuid,
+                profile_name=profile_names.get(entry["profile_id"], ""),
+                embedding=weighted.tolist(),
+                speaker_count=entry["speaker_count"],
+                user_id=entry["user_id"],
+                organization_id=entry.get("organization_id"),
+            )
+            if ok:
+                written += 1
+        except Exception as e:
+            logger.error(f"Failed to backfill v4 profile {profile_uuid}: {e}")
+
+    logger.info(f"Profile backfill: wrote {written}/{len(profiles)} v4 profile documents")
+    return written
+
+
 def _count_profile_docs(client, index: str) -> int | None:
     """Count `document_type: "profile"` docs in an index.
 
@@ -852,6 +984,16 @@ def finalize_v4_migration_task(self, user_id: int = 1):
                     "Migration appears incomplete. Aborting finalize."
                 ),
             }
+
+        # ---- Backfill profile documents into v4 (defect 1 of issue #657) ----
+        # The streaming per-file writer never produced profile docs; recompute
+        # every profile's centroid from its already-migrated v4 speakers before
+        # the guard below counts them. A profile with zero migrated speakers
+        # cannot be recovered here (no v3->v4 dimension-preserving copy exists)
+        # and will correctly fail the guard that follows.
+        backfilled = migrate_profile_documents_to_v4(client, v4_index)
+        if backfilled:
+            logger.info(f"Finalize: backfilled {backfilled} v4 profile document(s)")
 
         # ---- Profile-voiceprint guard (fail-closed, issue #657) ----
         # The total-doc-count ratio above cannot catch a profile-only loss:

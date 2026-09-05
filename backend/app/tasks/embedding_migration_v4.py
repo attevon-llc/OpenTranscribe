@@ -876,7 +876,12 @@ def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
         )
         scroll_id = response.get("_scroll_id")
         hits = response["hits"]["hits"]
-        while hits:
+        # Hard bound on scroll pages: a malformed/unexpected response shape
+        # (e.g. missing "_scroll_id") must not spin forever re-scrolling.
+        max_pages = 10_000
+        pages = 0
+        while hits and pages < max_pages:
+            pages += 1
             for hit in hits:
                 source = hit["_source"]
                 profile_uuid = source.get("profile_uuid")

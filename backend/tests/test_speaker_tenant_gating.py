@@ -349,7 +349,21 @@ class TestSuggestionOrgGate:
 
         captured: list[dict] = []
 
+        class _FakeIndices:
+            def exists(self, index=None):
+                return False
+
+            def exists_alias(self, name=None):
+                return False
+
+            def get_mapping(self, index=None):
+                # Unknown mapping -> the dimension guard treats this as
+                # "cannot determine, do not refuse" and proceeds to search.
+                return {}
+
         class FakeClient:
+            indices = _FakeIndices()
+
             def search(self, index=None, body=None):
                 captured.append(body)
                 return {"hits": {"hits": []}}
@@ -416,7 +430,21 @@ class TestClusteringOrgGate:
 
         captured: list[dict] = []
 
+        class _FakeIndices:
+            def exists(self, index=None):
+                return False
+
+            def exists_alias(self, name=None):
+                return False
+
+            def get_mapping(self, index=None):
+                # Unknown mapping -> the dimension guard treats this as
+                # "cannot determine, do not refuse" and proceeds to search.
+                return {}
+
         class FakeClient:
+            indices = _FakeIndices()
+
             def search(self, index=None, body=None):
                 captured.append(body)
                 return {"hits": {"hits": []}}
@@ -453,7 +481,19 @@ class TestClusteringOrgGate:
 
         captured: list[dict] = []
 
+        class _FakeIndices:
+            def exists(self, index=None):
+                return False
+
+            def exists_alias(self, name=None):
+                return False
+
+            def get_mapping(self, index=None):
+                return {}
+
         class FakeClient:
+            indices = _FakeIndices()
+
             def index(self, index=None, body=None, **kwargs):
                 captured.append(body)
                 return {"result": "created"}

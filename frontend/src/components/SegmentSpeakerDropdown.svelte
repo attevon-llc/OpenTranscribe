@@ -24,20 +24,11 @@
   let isOpen = false;
   let isCreatingSpeaker = false;
 
-  /**
-   * What `segment.speaker` actually carries on the wire.
-   *
-   * The backend serialises the FULL `Speaker` schema onto every segment
-   * (`backend/app/schemas/media.py::TranscriptSegment.speaker`), so
-   * `suggested_name` / `suggestion_source` / `confidence` / `verified` are all
-   * present — but the shared `Segment` type in `$lib/types/speaker.ts` only
-   * declares the three fields the old render chain happened to use. Declaring the
-   * rest here is what lets this component tell a human's label apart from a
-   * machine's guess instead of collapsing them.
-   */
-  // The wire shape now lives on `Segment['speaker']` in $lib/types/speaker.ts —
-  // this file used to carry a local copy of it, and the repo rule is that a
-  // replaced implementation gets deleted rather than left alongside.
+  // The full wire shape (`suggested_name` / `suggestion_source` / `confidence` /
+  // `verified`) is declared on `Segment['speaker']` in `$lib/types/speaker.ts`,
+  // which is what lets this component tell a human's label apart from a machine's
+  // guess. This file used to carry a local copy of that interface; the copy is
+  // deleted rather than left alongside the shared one.
   $: wireSpeaker = segment.speaker ?? null;
 
   // `display_name` is the ONLY field that means "a human confirmed this name":

@@ -5,15 +5,15 @@ imohash==1.1.0
 mmh3==5.3.0  # via imohash — see requirements.txt for the version-drift note (issue #492)
 # fastapi capped <0.137: 0.137+ stops flattening include_router prefixes into
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
-fastapi==0.136.3
-uvicorn[standard]==0.52.3
-websockets==17.0.1
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+websockets==17.1
 sqlalchemy==2.0.52
 alembic==1.19.1
-pydantic==2.13.4
+pydantic==2.13.5
 pydantic-settings==2.15.0
 # joserfc — see requirements.txt for why (#33, #34: replaces python-jose everywhere)
-joserfc==1.7.4
+joserfc==1.7.5
 # SAML 2.0 SP support (#35) — see requirements.txt for why python3-saml.
 python3-saml==1.16.0
 python-multipart==0.0.32
@@ -22,7 +22,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.3.0
 email-validator==2.3.0
 # OIDC JWKS caching (app/auth/oidc/discovery.py) — see requirements.txt for why this version.
-cachetools==7.1.7
+cachetools==7.1.8
 # Sentence tokenization for hybrid search (app/services/search/hybrid_search_service.py) —
 # see requirements.txt for the pathsec-hardening pin rationale (issue #491).
 nltk==3.10.3
@@ -43,7 +43,7 @@ ldap3==2.9.1
 slowapi==0.1.10
 
 # PKI/X.509 Certificate Authentication
-cryptography==50.0.0
+cryptography==50.0.1
 
 # MFA/TOTP Authentication (FedRAMP IA-2)
 pyotp==2.10.0
@@ -53,7 +53,7 @@ qrcode[pil]==8.2
 # NumPy 2.x compatible
 numpy==2.5.2
 
-# PyTorch CPU-only. NOT dropped by issue #660: sentence-transformers==6.0.0 below
+# PyTorch CPU-only. NOT dropped by issue #660: sentence-transformers==6.0.1 below
 # declares `torch>=1.11.0` in its own installed metadata (used at
 # opensearch_service/client.py and chat/reranker.py for semantic search), so torch
 # is a hard transitive dependency of this file even with pyannote.audio gone.
@@ -128,7 +128,7 @@ onnxconverter-common==1.16.0
 # fold step and the gender export), neither guarded by try/except, and
 # native_provision.py passes no --skip-gender, so its absence is a hard failure of
 # provisioning rather than a degraded export.
-onnxruntime==1.28.0
+onnxruntime==1.29.0
 
 # Supporting libraries
 omegaconf==2.3.1
@@ -136,27 +136,27 @@ ffmpeg-python==0.2.0
 sentencepiece==0.2.2
 psutil==7.2.2
 pyexiftool==0.5.6
-yt-dlp==2026.7.4
+yt-dlp==2026.8.19
 
 # Semantic search and NLP
-sentence-transformers==6.0.0  # For semantic search embeddings (all-MiniLM-L6-v2)
+sentence-transformers==6.0.1  # For semantic search embeddings (all-MiniLM-L6-v2)
 # Note: nltk is installed as transitive dependency from transformers
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see backend/requirements.txt for the
 # full explanation. Caught by tests/unit/test_provider_sdk_compat.py.
-deepgram-sdk==7.7.0
-assemblyai==1.0.0
+deepgram-sdk==7.8.0
+assemblyai==1.1.0
 google-cloud-speech==2.40.0
-azure-cognitiveservices-speech==1.51.1
+azure-cognitiveservices-speech==1.51.2
 # speechmatics-python is deprecated and drops speaker labels — the app uses
 # the async speechmatics-batch client (matches requirements.txt)
 speechmatics-batch==0.5.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3==1.43.74
+boto3==1.43.86
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai==3.3.0
+openai==3.6.0
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
 requests==2.34.2
 # See requirements.txt for why — LLM summary JSON repair (llm_service.py)

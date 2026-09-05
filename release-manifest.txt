@@ -104,6 +104,11 @@ scripts/generate-ssl-cert.sh	exec
 scripts/fix-model-permissions.sh	exec
 scripts/download-models.sh	exec
 scripts/download-models.py
+# Speaker-voiceprint export/import, driven by common.sh's backup_database /
+# restore_database (issue #658). `optional` because releases before it shipped have no
+# such path — but on a release that DOES have it, a missing copy means `backup` refuses
+# rather than quietly writing a dump with none of the deployment's biometric data in it.
+scripts/voiceprint-backup.py	optional,exec
 
 # --- The management script itself ----------------------------------------------
 opentranscribe.sh	exec

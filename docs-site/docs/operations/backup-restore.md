@@ -16,7 +16,8 @@ OpenTranscribe stores data across several services. Understanding each component
 |-----------|--------------------------|----------|----------|
 | **PostgreSQL** | `postgres_data` | Users, transcripts, segments, speakers, settings | Critical |
 | **MinIO** | `minio_data` | Uploaded media files (audio/video) | Critical |
-| **OpenSearch** | `opensearch_data` | Full-text and vector search indices | Medium (rebuildable) |
+| **OpenSearch — search indices** | `opensearch_data` | Full-text and vector transcript/chunk indices | Medium (rebuildable) |
+| **OpenSearch — speaker indices** | `opensearch_data` (`speakers_v3` / `speakers_v4`) | **Speaker voiceprints** — the embeddings that make cross-file speaker identification work | **Critical** (NOT rebuildable) |
 | **Redis** | `redis_data` | Task queue state, cache | Low (ephemeral) |
 | **Model Cache** | `${MODEL_CACHE_DIR:-./models}/` | AI model weights (~2.5GB) | Low (re-downloadable) |
 | **Configuration** | `.env`, `docker-compose.*.yml` | Environment and deployment config | Critical |
@@ -25,12 +26,25 @@ OpenTranscribe stores data across several services. Understanding each component
 **Critical** components contain irreplaceable data. **Medium** components can be rebuilt from critical data (e.g., reindexing). **Low** components are automatically regenerated or re-downloaded.
 :::
 
+:::danger[Speaker voiceprints are not "derived data"]
+PostgreSQL stores **no embedding vectors**. `SpeakerProfile` carries only `embedding_count`
+and `last_embedding_update` — the vectors themselves live *only* in the OpenSearch
+`speakers_v*` indices. Re-deriving one needs the original media (which may be gone) plus a
+GPU re-embed run; a reindex cannot produce it.
+
+`backup` therefore writes a second artifact beside every dump:
+`opentranscribe_backup_YYYYMMDD_HHMMSS.sql.voiceprints.ndjson`. **Keep the two files
+together** — `restore` finds the voiceprint artifact by name and, if it is missing, tells
+you plainly that whatever OpenSearch currently holds is what you now have.
+:::
+
 ```mermaid
 graph TB
     subgraph Critical["Critical - Back Up Always"]
         PG[(PostgreSQL<br/>Users, transcripts,<br/>speakers, settings)]
         MINIO[(MinIO<br/>Media files)]
         ENV[".env Config"]
+        VP[(OpenSearch speakers_v*<br/>Voiceprint embeddings)]
     end
     subgraph Rebuildable["Medium - Rebuildable from Critical Data"]
         OS[(OpenSearch<br/>Search indices)]
@@ -42,6 +56,7 @@ graph TB
 
     PG -->|reindex| OS
     MINIO -->|reprocess| OS
+    MINIO -.->|GPU re-embed only,<br/>impossible if media deleted| VP
 ```
 
 ## Database Backup
@@ -54,7 +69,21 @@ The built-in backup command creates a timestamped SQL dump:
 ./opentranscribe.sh backup
 ```
 
-This creates a file at `./backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql`.
+This creates **two** files:
+
+| File | Contents |
+|---|---|
+| `./backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql` | the PostgreSQL dump |
+| `./backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.voiceprints.ndjson` | every speaker/voiceprint document from OpenSearch, its index mapping, and a content digest |
+
+The second file is not optional and not a convenience: PostgreSQL holds no embedding
+vectors, so the dump on its own contains none of the deployment's biometric data. If the
+export fails (OpenSearch down, for example) the whole `backup` command fails rather than
+reporting success on a half-backup. `restore` locates the artifact from the dump's name, so
+**move and store the pair together**.
+
+With `--encrypt`, the artifact is encrypted too (`…​.voiceprints.ndjson.gpg`) and gpg
+prompts twice — once per file. Use the same passphrase for both.
 
 :::note[`opentranscribe.sh`, not `opentr.sh`]
 `opentranscribe.sh` is the management script the installer places next to your

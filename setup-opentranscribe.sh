@@ -663,14 +663,10 @@ prompt_huggingface_token() {
     echo "  4. Select 'Read' permissions"
     echo "  5. Copy the token"
     echo ""
-    echo -e "${CYAN}Step 2: Accept BOTH gated model agreements (CRITICAL!)${NC}"
-    echo -e "  ${RED}You MUST accept BOTH models or downloads will fail!${NC}"
+    echo -e "${CYAN}Step 2: Accept the gated model agreement (CRITICAL!)${NC}"
+    echo -e "  ${RED}You MUST accept this agreement or downloads will fail!${NC}"
     echo ""
-    echo "  1. Segmentation Model:"
-    echo "     https://huggingface.co/pyannote/segmentation-3.0"
-    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
-    echo ""
-    echo "  2. Speaker Diarization Model:"
+    echo "  Speaker Diarization Model (the only repo OpenTranscribe gates on):"
     echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
     echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
     echo ""
@@ -1642,8 +1638,7 @@ download_ai_models() {
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${RED}REMINDER: You need BOTH steps completed:${NC}"
         echo "  1. HuggingFace token (Read permissions)"
-        echo "  2. Accept BOTH gated model agreements:"
-        echo "     • https://huggingface.co/pyannote/segmentation-3.0"
+        echo "  2. Accept the gated model agreement:"
         echo "     • https://huggingface.co/pyannote/speaker-diarization-community-1"
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
@@ -1669,8 +1664,7 @@ download_ai_models() {
                 if [[ "$HUGGINGFACE_TOKEN" =~ ^hf_ ]]; then
                     print_success "HuggingFace token configured and saved to .env!"
                     echo ""
-                    echo -e "${YELLOW}⚠️  FINAL REMINDER:${NC} Ensure you accepted BOTH model agreements:"
-                    echo "   • pyannote/segmentation-3.0"
+                    echo -e "${YELLOW}⚠️  FINAL REMINDER:${NC} Ensure you accepted the model agreement:"
                     echo "   • pyannote/speaker-diarization-community-1"
                     echo ""
                 else
@@ -1743,8 +1737,12 @@ download_ai_models() {
     # Create models directory structure with proper permissions
     print_info "Creating model cache directories with proper permissions..."
 
-    # Create main directory and subdirectories
-    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml
+    # Create main directory and subdirectories. diar-native lands at the top level
+    # (mounted at /models, not under ~/.cache like the others) — see
+    # scripts/download-models.sh's own mkdir block for why it is included here anyway:
+    # `bash scripts/download-models.sh models` below runs the diar-native download group
+    # too, and its bind-mount source must exist and be owned correctly before that runs.
+    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml models/diar-native
 
     # Set ownership to prevent permission issues in non-root containers
     # Container runs as UID 1000, so we need to ensure host directories are accessible
@@ -1765,7 +1763,7 @@ download_ai_models() {
     chmod -R 755 models
 
     # Verify directories are writable
-    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ]; then
+    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ] && [ -w models/diar-native ]; then
         echo "✓ Model cache directories created with proper permissions"
     else
         print_warning "Model directories exist but may not be writable"
@@ -1801,10 +1799,10 @@ download_ai_models() {
         echo "  • First transcription attempt may fail if models can't download"
         echo ""
         echo -e "${YELLOW}Most common cause: Missing gated model access${NC}"
-        echo "  You likely have NOT accepted BOTH PyAnnote model agreements"
+        echo "  You likely have NOT accepted the PyAnnote model agreement"
         echo ""
         echo -e "${CYAN}To fix before starting:${NC}"
-        echo "  1. Accept both model agreements (URLs shown above)"
+        echo "  1. Accept the model agreement (URL shown above)"
         echo "  2. Wait 1-2 minutes for permissions to propagate"
         echo "  3. Run: cd $PROJECT_DIR && bash scripts/download-models.sh models"
         echo ""
@@ -1819,10 +1817,9 @@ download_ai_models() {
             print_error "Setup aborted - please fix model access and run setup again"
             echo ""
             echo "Quick fix steps:"
-            echo "  1. Accept: https://huggingface.co/pyannote/segmentation-3.0"
-            echo "  2. Accept: https://huggingface.co/pyannote/speaker-diarization-community-1"
-            echo "  3. Wait 1-2 minutes"
-            echo "  4. Run setup again"
+            echo "  1. Accept: https://huggingface.co/pyannote/speaker-diarization-community-1"
+            echo "  2. Wait 1-2 minutes"
+            echo "  3. Run setup again"
             exit 1
         fi
 

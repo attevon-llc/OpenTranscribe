@@ -38,10 +38,19 @@ _PIPELINE_LOAD_TIMEOUT_S = 60.0
 class SpeakerDiarizer:
     """PyAnnote v4 speaker diarization."""
 
+    #: Fixed identity for the in-process engine (issue #706) — unlike NativeSpeakerDiarizer
+    #: there is no internal failover here, so the provider never changes call to call.
+    last_provider = "pyannote"
+
     def __init__(self, config: TranscriptionConfig):
         self.config = config
         self._pipeline: Any = None
         self._model_name: str | None = None
+
+    @property
+    def last_model(self) -> str | None:
+        """The model actually loaded (community-1, or the v3.1 fallback) — set by load_model()."""
+        return self._model_name
 
     @property
     def is_loaded(self) -> bool:
@@ -78,10 +87,12 @@ class SpeakerDiarizer:
                     msg = (
                         f"PyAnnote model '{PYANNOTE_V4_MODEL}' returned None. "
                         "Ensure: 1) HUGGINGFACE_TOKEN is set in .env, "
-                        "2) You accepted BOTH agreements: segmentation-3.0 "
-                        "(https://huggingface.co/pyannote/segmentation-3.0) AND "
+                        "2) You accepted the gated model agreement for "
                         "speaker-diarization-community-1 "
-                        "(https://huggingface.co/pyannote/speaker-diarization-community-1), "
+                        "(https://huggingface.co/pyannote/speaker-diarization-community-1) "
+                        "— that is the only repo this app is gated on; accepting the older "
+                        "segmentation-3.0/speaker-diarization-3.1 agreements only helps the "
+                        "internal last-resort fallback below, not this model, "
                         "3) Restart the containers."
                     )
                 raise PermissionError(msg)

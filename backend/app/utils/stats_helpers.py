@@ -413,42 +413,66 @@ def get_queue_depths() -> dict[str, int]:
         return {q: 0 for q in CeleryQueues.ALL} | {"total": 0}
 
 
-def get_models_info() -> dict[str, dict[str, str]]:
+def get_models_info() -> dict[str, dict[str, Any]]:
     """Get accurate AI model configuration for display.
 
     Reads actual model names from their definitive sources rather
     than relying on settings defaults (which may be stale).
 
     Returns:
-        Dictionary of model entries with name, description, purpose
+        Dictionary of model entries with name, description, purpose (plus, for
+        "diarization", the configured-vs-effective fields below).
     """
     from app.core.config import settings
 
     # Whisper model: directly from settings (accurate)
     whisper_name = settings.WHISPER_MODEL
 
-    # Diarization: use actual constants from diarizer.py
+    # Diarization: report the engine actually SERVING, not merely configured (issue #672,
+    # both halves). "Configured to serve" was already wrong once — a hardcoded "PyAnnote
+    # 3.1" claimed that engine on every install regardless of diarizer_backend — and fixing
+    # that by reporting the configured value was not enough either: ModelManager falls back
+    # from native to the in-process PyAnnote fork silently whenever the sidecar can't serve,
+    # so a deployment configured for native can spend its whole life on PyAnnote while this
+    # panel kept saying "native". describe_diarizer_status() is the SINGLE resolver for
+    # both this panel and /admin/stats (app/api/endpoints/admin.py) — before this it was a
+    # second, hand-rolled copy of the same lookup with its own description table, and the
+    # two disagreed under a bad ENGINE_DIARIZER_BACKEND value.
+    #
+    # The weights are the same either way (both engines serve community-1), so the model
+    # name does not vary with the engine; only the description/backend fields do.
+    diarization_name = "pyannote/speaker-diarization-community-1"
     try:
-        from app.transcription.diarizer import PYANNOTE_V3_FALLBACK
-        from app.transcription.diarizer import PYANNOTE_V4_MODEL
+        from app.transcription.diarizer_native import describe_diarizer_status
 
-        diarization_name = PYANNOTE_V4_MODEL
-        diarization_desc = f"PyAnnote v4 (fallback: {PYANNOTE_V3_FALLBACK})"
-    except ImportError:
-        # torch not available in backend container — use known constants
-        diarization_name = "pyannote/speaker-diarization-community-1"
-        diarization_desc = "PyAnnote v4 (fallback: pyannote/speaker-diarization-3.1)"
+        diarizer_status = describe_diarizer_status()
+    except Exception:  # noqa: BLE001 — a stats panel never fails over a display value
+        diarizer_status = {
+            "configured": "unknown",
+            "configured_description": "unknown diarization engine",
+            "effective": "unknown",
+            "effective_description": "unknown diarization engine",
+            "using_fallback": False,
+        }
 
-    models: dict[str, dict[str, str]] = {
+    models: dict[str, dict[str, Any]] = {
         "whisper": {
             "name": whisper_name,
             "description": f"Whisper {whisper_name}",
             "purpose": "Speech Recognition & Transcription",
         },
         "diarization": {
+            # "description" reports the EFFECTIVE engine — the one actually running —
+            # since that is what this panel exists to answer; "configured_backend" and
+            # "using_fallback" carry the other half so a caller can tell "native, and
+            # it's working" from "native, and I'm silently on the fallback".
             "name": diarization_name,
-            "description": diarization_desc,
+            "description": diarizer_status["effective_description"],
             "purpose": "Speaker Identification & Segmentation",
+            "configured_backend": diarizer_status["configured"],
+            "configured_description": diarizer_status["configured_description"],
+            "effective_backend": diarizer_status["effective"],
+            "using_fallback": diarizer_status["using_fallback"],
         },
     }
 

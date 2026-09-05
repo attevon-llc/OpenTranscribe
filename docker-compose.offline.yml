@@ -137,6 +137,33 @@ services:
     pull_policy: never
     # No volumes needed - scheduler state lives in container only
 
+  # Deliberately NO `diar-native` entry here, unlike every other service in this file.
+  # `diar-native` the service is declared ONLY by the conditional docker-compose.diar-native.yml
+  # overlay — scripts/opentr-offline.sh loads it before this file solely when weights are
+  # already present on disk, and windows-installer/run_opentranscribe.bat never loads it
+  # at all. This file's `-f` chain is unconditional, so an entry here previously defined
+  # `diar-native` on its OWN whenever offline.yml alone was loaded (the Windows path, or
+  # any manual `-f docker-compose.yml -f docker-compose.offline.yml`): it carried
+  # image/pull_policy/environment but no `command:`, so it inherited the shared backend
+  # image's default CMD (uvicorn) instead of `diar-server` — a stray, wrong process
+  # starting on every offline install regardless of whether diarization weights exist.
+  # Adding the missing `command:` would not have made it correct standalone either: this
+  # block also carried no volumes, so even running diar-server it would read an empty
+  # `/models` and crash-loop — the /models bind and the pipeline_scratch handoff mount
+  # (issue #661 E2: one volume, engine/ and diar/ namespaces, formerly two separate
+  # diar-native-tmp/transcription-temp volumes) are declared only in
+  # docker-compose.diar-native.yml. A block that can only ever work in combination with
+  # that overlay has no reason to exist independently of it, so it is removed rather than
+  # patched.
+  #
+  # When docker-compose.diar-native.yml IS loaded (weights present), its own `image:`
+  # already resolves to `davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}`,
+  # which is `:latest` on any offline install that leaves OT_IMAGE_TAG unset (the
+  # documented default per .env.example) — matching every other hardcoded `:latest`
+  # override in this file — plus the correct `command:`, volumes, and healthcheck. This
+  # file has nothing left to add. Net effect: no weights/no overlay -> no diar-native
+  # service defined at all, which is the correct behavior ("no weights, no sidecar").
+
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
     pull_policy: never

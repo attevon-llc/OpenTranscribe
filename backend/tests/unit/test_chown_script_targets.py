@@ -91,22 +91,60 @@ def _chown_targets(text: str) -> list[str]:
 def test_shared_volume_list_matches_the_paths_the_image_reserves() -> None:
     """The script's VOLUMES array must name exactly the volumes compose mounts at the
     paths the Dockerfile reserves -- neither more (a volume this script can't help with)
-    nor fewer (a volume the image reserves that this script silently ignores)."""
+    nor fewer (a volume the image reserves that this script silently ignores).
+
+    Issue #661 E2 dropped this from 3 to 1: the pipeline consolidated onto ONE volume,
+    pipeline_scratch (three namespaces: <file_uuid>/, engine/, diar/), removing the separate
+    transcription-temp and diar-native-tmp volumes/mount points entirely. The count went from
+    3 to 1 because two volumes were REMOVED, not because a parser broke -- the guard below
+    (a synthetic two-path Dockerfile fragment) proves the parser still finds every path when
+    there is more than one, so a real regression back to multiple volumes would still be
+    caught.
+    """
     reserved_paths = _reserved_container_paths()
     compose_volumes = _compose_volumes_for(reserved_paths)
     script_volumes = _script_volume_list()
 
     # Guard: a parser that matched nothing would report a vacuous "equal" pass.
-    assert len(reserved_paths) == 3, f"expected 3 reserved paths, parsed {reserved_paths}"
-    assert len(compose_volumes) == 3, (
-        f"expected 3 compose-mounted volumes at the reserved paths, parsed {compose_volumes}"
+    assert len(reserved_paths) == 1, f"expected 1 reserved path, parsed {reserved_paths}"
+    assert len(compose_volumes) == 1, (
+        f"expected 1 compose-mounted volume at the reserved path, parsed {compose_volumes}"
     )
-    assert len(script_volumes) == 3, f"expected 3 volumes in VOLUMES=(...), parsed {script_volumes}"
+    assert len(script_volumes) == 1, f"expected 1 volume in VOLUMES=(...), parsed {script_volumes}"
 
     assert compose_volumes == script_volumes, (
         f"fix-shared-volume-perms.sh's VOLUMES=(...) ({script_volumes}) does not match the "
         f"volumes compose actually mounts at the Dockerfile's reserved paths ({compose_volumes})"
     )
+
+
+def test_reserved_paths_and_compose_volume_parsers_still_find_multiple_entries() -> None:
+    """Must-fire guard for the len==1 assertions above (issue #661 E2): feed the two parsers
+    synthetic two-path input and confirm both still parse every entry, so a real regression
+    back to multiple reserved volumes would be caught rather than masked by a parser that
+    silently stopped after the first match."""
+    synthetic_dockerfile = (
+        "RUN mkdir -p /scratch/opentranscribe /scratch/other-ns &&\n"
+        "    chown appuser:appuser /scratch/opentranscribe /scratch/other-ns\n"
+    )
+    match = _RESERVED_PATHS_RE.search(synthetic_dockerfile)
+    assert match is not None
+    parsed_paths = set(match.group(1).split())
+    assert parsed_paths == {"/scratch/opentranscribe", "/scratch/other-ns"}
+
+    synthetic_compose = (
+        "services:\n"
+        "  backend:\n"
+        "    volumes:\n"
+        "      - pipeline_scratch:/scratch/opentranscribe\n"
+        "      - other_volume:/scratch/other-ns\n"
+    )
+    volumes: set[str] = set()
+    for line in synthetic_compose.splitlines():
+        m = _COMPOSE_VOLUME_RE.match(line)
+        if m and m.group(2) in parsed_paths:
+            volumes.add(m.group(1))
+    assert volumes == {"pipeline_scratch", "other_volume"}
 
 
 def test_shared_volume_script_only_chowns_the_container_mount_point() -> None:

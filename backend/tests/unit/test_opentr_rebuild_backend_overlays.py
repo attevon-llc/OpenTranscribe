@@ -1,19 +1,26 @@
 """``opentr.sh rebuild-backend`` must not drop the native-diarization overlay.
 
-``docker-compose.diar-native.yml`` is the ONLY file that mounts the ``diar-native-tmp``
-volume at ``/tmp/diar-native`` on ``celery-worker``, and that volume is how
-OpenTranscribe hands the WAV to the sidecar. ``rebuild-backend`` assembled its own
-compose chain (``docker-compose.yml`` + the dev override + GPU + NAS) and never
-included it, so a rebuild recreated the worker with **no mount at that path at all**.
+``docker-compose.diar-native.yml`` is the ONLY file that sets ``DIAR_NATIVE_URL`` on
+``celery-worker`` and shares the pipeline_scratch handoff mount with the sidecar
+(``pipeline_scratch:/scratch/opentranscribe`` — issue #661 E2 consolidated what used to
+be a dedicated ``diar-native-tmp`` volume at ``/tmp/diar-native`` into a namespace,
+``diar/``, of that one volume; this test is keyed on the SERVICE/behaviour the overlay
+wires, not on which volume name happens to carry it today, precisely because that name
+already changed once). ``rebuild-backend`` assembled its own compose chain
+(``docker-compose.yml`` + the dev override + GPU + NAS) and never included it, so a
+rebuild recreated the worker with the sidecar unreachable at all.
 
-Measured on the live stack: the worker wrote the handoff WAV to its own filesystem,
-the sidecar could not see it, and ``/diarize`` answered ::
+Measured on the live stack (pre-E2 shape, when the missing piece was the WAV mount
+rather than the URL): the worker wrote the handoff WAV to its own filesystem, the
+sidecar could not see it, and ``/diarize`` answered ::
 
     HTTP 422  opening /tmp/diar-native/probe.wav: No such file or directory
 
 which the worker classified as a mid-job sidecar failure and answered by falling back
 to the in-process PyAnnote fork. Diarization silently degraded — slower, and no
-speaker gender — with nothing surfaced to the user beyond one log line.
+speaker gender — with nothing surfaced to the user beyond one log line. The DEFECT this
+test guards (rebuild-backend dropping the overlay) is unchanged by E2; only the volume
+name in the reproduction narrative moved.
 
 Same shape as the NAS overlay bug the ``add_nas_overlay`` call site already documents:
 a rebuilt container that looks correct and is bound to the wrong storage.
@@ -239,14 +246,16 @@ def _dry_run_chain(stdout: str) -> list[str]:
 def test_rebuild_backend_keeps_the_diar_native_overlay_when_the_sidecar_is_deployed(
     tmp_path: Path,
 ):
-    """The bug. Without the overlay celery-worker loses /tmp/diar-native entirely."""
+    """The bug. Without the overlay celery-worker loses DIAR_NATIVE_URL (and the shared
+    pipeline_scratch/diar/ handoff namespace) entirely — it can no longer reach the sidecar
+    at all, let alone hand it a WAV."""
     stdout, docker_log = _run(tmp_path, ["rebuild-backend"], sidecar_deployed=True)
     command = _up_command(docker_log)
 
     assert DIAR in _chain(command), (
         f"rebuild-backend dropped {DIAR} from a deployment that HAS the sidecar. "
-        f"celery-worker comes back with no mount at /tmp/diar-native, /diarize "
-        f"answers 422, and diarization silently falls back to PyAnnote. Chain: "
+        f"celery-worker comes back with no DIAR_NATIVE_URL set, /diarize is never even "
+        f"attempted, and diarization silently falls back to PyAnnote. Chain: "
         f"{_chain(command)}"
     )
     assert "celery-worker" in command, command
@@ -478,12 +487,36 @@ def test_rebuild_backend_still_honours_the_nas_overlay(tmp_path: Path):
 #: The four lines `start` prints when it loads the overlay. Pinned verbatim, because
 #: `start` is the path everyone uses and a regression there is worse than the bug
 #: being fixed; the helper reuses this block rather than paraphrasing it.
+#: The GPU line is conditional now: the reservation moved to
+#: docker-compose.diar-native-gpu.yml so the base overlay stays loadable on a CPU-only or
+#: --lite host (#660), and it is only appended when the nvidia runtime was detected. These
+#: tests stub `docker` without an nvidia runtime, so they take the CPU branch.
+#:
+#: ⚠️ 2.2 GB, not the 4.1 GB this pinned for a year. Measured with
+#: `nvidia-smi --query-compute-apps`: diar-server 0.3.1 holds 2,248 MiB idle where the
+#: pre-0.3.1 binary held 4,762 MiB, both under SPEAKRS_LAZY_SESSIONS=1 — so the halving is
+#: the binary, not the flag. The old figure was repeated in four places and measured in none.
+#:
+#: ⚠️ The CPU line no longer says "identical output". That claim was RETRACTED upstream
+#: (#679), and its replacement — that embeddings are bit-identical across devices — did
+#: not survive measurement either. Measured 2026-09-04 against two real sidecars:
+#: CPU-vs-CUDA max delta 4.11e-04 (cosine 0.999999816), and CUDA differs from ITSELF by
+#: 2.86e-04 run to run, so byte-equality was never achievable on any device pair.
+#: Embeddings are EQUIVALENT for matching; diarization segment boundaries additionally
+#: differ by up to one segmentation frame (0.016875 s) when a posterior lands on the
+#: binarisation threshold.
+#: The wording matters enough to pin because an operator told "identical output" would be
+#: entitled to diff a CPU run against a GPU run and expect a match.
 START_BANNER = (
     "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)",
-    "   diar-server on GPU 0 — ~4.1 GB warm ORT arena while up.",
+    "   diar-server on CPU (no nvidia runtime detected) — slower; embeddings identical, "
+    "diarization boundaries may differ by up to 0.016875s (#679).",
     "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);",
     "   without the sidecar that config falls back to the in-process PyAnnote fork.",
 )
+
+#: The GPU branch's line, for the test that drives the nvidia path explicitly.
+START_BANNER_GPU_LINE = "   diar-server on GPU 0 — ~2.2 GB warm ORT arena while up."
 
 AUTOLOAD_LINE = (
     "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; "
@@ -572,16 +605,29 @@ def test_only_the_shared_helper_appends_the_diar_native_overlay():
     assert source.count("add_diar_native_overlay rebuild") == 1
 
 
-def test_a_fresh_stack_is_still_excluded_from_the_start_autodetect():
-    """`--fresh` keeps the sidecar opt-in, and the refactor must not lose that.
+def test_a_fresh_stack_participates_in_the_start_autodetect():
+    """`--fresh` is no longer excluded, and the exclusion must not come back.
 
-    Static rather than executed: `start --fresh` refuses (exit 1) when the main
-    stack holds the standard dev ports, so a live-stack-dependent test here would
-    pass or fail on what else is running, which is not a measurement.
+    It was excluded while a fresh stack had no route to its own model export: loading
+    the overlay there could only produce a sidecar crash-looping on an empty /models.
+    Provisioning now runs from the backend's lifespan on every stack including a fresh
+    one, so the exclusion would do the opposite of its purpose — it would make the
+    fresh-install rehearsal the one deployment shape that never rehearses the sidecar.
+
+    Static rather than executed: `start --fresh` refuses (exit 1) when the main stack
+    holds the standard dev ports, so a live-stack-dependent test here would pass or fail
+    on what else is running, which is not a measurement.
     """
     source = OPENTR.read_text(encoding="utf-8")
     body = source.split("add_diar_native_overlay() {", 1)[1].split("\n}\n", 1)[0]
-    assert '[ -z "${FRESH_FLAG:-}" ]' in body, (
-        "the start-mode predicate no longer excludes fresh deployments; a fresh "
-        "stack would auto-load the sidecar and take a GPU nobody asked it to"
+    assert '[ -z "${FRESH_FLAG:-}" ]' not in body, (
+        "the start-mode predicate excludes fresh deployments again; a --fresh stack "
+        "would silently run PyAnnote, which is precisely what it exists to rehearse"
+    )
+    # The guard that replaced it: nothing can produce the weights without a token, so
+    # loading the overlay with neither weights nor token is the crash-loop the old
+    # exclusion was really protecting against.
+    assert "HUGGINGFACE_TOKEN" in body, (
+        "the autoload predicate no longer consults a token, so it can load the overlay "
+        "on a stack that has no way to produce the weights"
     )

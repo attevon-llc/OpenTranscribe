@@ -8,6 +8,7 @@ import logging
 from app.core.celery import celery_app
 from app.core.constants import GPUPriority
 from app.db.session_utils import session_scope
+from app.transcription.diarizer_native import DiarSidecarUnavailableError
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 
@@ -15,6 +16,7 @@ from .context import TranscriptionContext
 from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import retry_on_diar_sidecar_unavailable
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
 
@@ -130,6 +132,13 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
 
         return gpu_result
 
+    except DiarSidecarUnavailableError as exc:
+        # issue #656 Step 5: BEFORE `except Exception` — see the twin comment in
+        # `core.py::transcribe_gpu_task` for why the ordering is load-bearing. Deliberately
+        # does NOT clean up the shared-volume WAV (unlike the generic handler below): the
+        # redelivered attempt needs it, and it is cleaned up on eventual success or on
+        # exhaustion of the retry ladder.
+        retry_on_diar_sidecar_unavailable(self, exc, file_uuid)
     except Exception as e:
         logger.error(f"Diarize GPU task failed for file {file_uuid}: {e}")
         # Best-effort cleanup on failure — WAV is no longer needed

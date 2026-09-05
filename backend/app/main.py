@@ -724,6 +724,21 @@ def _start_pii_warmup() -> None:
         logger.warning(f"PII analyzer warm-up could not start (non-fatal): {e}")
 
 
+def _provision_native_diarizer() -> None:
+    """Export the native diarizer's model set if it is not already vouched for.
+
+    Wrapped so an import-time failure — a lite image with no such module, say — is as
+    survivable as a provisioning failure. ``ensure_native_models`` never raises on its
+    own; this guards everything around it.
+    """
+    try:
+        from app.transcription.native_provision import ensure_native_models
+
+        ensure_native_models()
+    except Exception as e:  # noqa: BLE001 — a degraded diarizer never blocks startup
+        logger.warning(f"diar-native provisioning could not run (non-fatal): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
@@ -754,6 +769,23 @@ async def lifespan(app: FastAPI):
             "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; a migrate job is "
             "expected to own them. Readiness will verify the schema is at head."
         )
+
+    # Export the native diarizer's ONNX/PLDA set before anything can ask for a
+    # diarization. The weights are gated and non-redistributable, so every deployment
+    # converts them locally once; that conversion is what the native engine's speed
+    # comes from, and without it the pipeline silently runs in-process PyAnnote
+    # (issues #654, #639). Idempotent — a valid marker makes this a stat pass, so the
+    # cost is paid on the first boot only.
+    #
+    # Deliberately synchronous: the diar-native service waits on this container's
+    # health, so finishing here is what guarantees the sidecar never starts against an
+    # empty models directory and crash-loops on exit 8. The backend healthcheck already
+    # allows a 600 s start_period, comfortably over the 137 s a cold export measured.
+    #
+    # Never fatal. A failure leaves /readyz at 503 and diarization falls back to
+    # PyAnnote, which is supported; the loud refusal belongs in the installer's upgrade
+    # preflight where an operator can still act (issue #670).
+    _provision_native_diarizer()
 
     _register_chat_usage_hook()
 

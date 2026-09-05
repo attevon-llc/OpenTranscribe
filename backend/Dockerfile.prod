@@ -198,6 +198,12 @@ COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/bin/diar-server /
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime.so.1.24.2 /opt/diar-native/lib/libonnxruntime.so.1.24.2
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_cuda.so /opt/diar-native/lib/libonnxruntime_providers_cuda.so
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_shared.so /opt/diar-native/lib/libonnxruntime_providers_shared.so
+# The 26 s verification clip `provision-models` diarizes in its end-to-end stage. The
+# standalone diar-server images bake one in; an image that only COPYs the binary out of
+# them has none, so provisioning from here must pass --smoke-clip and would otherwise
+# exit 2. Taken from the same pinned digest as the binary, so the clip and the code that
+# scores it move together. ~832 KB.
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/share/diar-native/smoke.wav /usr/local/share/diar-native/smoke.wav
 # No `chmod +x` here: the source image's binary is already mode 755 and COPY preserves
 # it — an explicit chmod on an already-copied 33 MB file forces the same overlayfs
 # copy-up as the chown-vs-COPY issue above, for zero behavioral change.
@@ -252,13 +258,34 @@ ENV GIT_SHA=${GIT_SHA}
 ARG BUILD_TIME=unknown
 ENV BUILD_TIME=${BUILD_TIME}
 
-# Reserve the pipeline's shared-volume mount points. A named volume inherits the image
+# Reserve the pipeline's shared-volume mount point. A named volume inherits the image
 # directory's ownership at creation, so without this it lands root-owned and the non-root
-# worker cannot write the stage-to-stage WAV handoff. /tmp/diar-native is the same hazard for
-# the diar-native sidecar's WAV handoff (--with-diar-native) — same image, same non-root user.
-# Existing deployments predate this and need scripts/fix-shared-volume-perms.sh once.
-RUN mkdir -p /scratch/opentranscribe /tmp/transcription /tmp/diar-native && \
-    chown appuser:appuser /scratch/opentranscribe /tmp/transcription /tmp/diar-native
+# worker cannot write the stage-to-stage WAV handoff. Existing deployments predate this and
+# need scripts/fix-shared-volume-perms.sh once.
+#
+# Issue #661 E2: this used to be THREE separate mount points/volumes
+# (pipeline_scratch, transcription-temp, diar-native-tmp) — consolidated onto one volume,
+# pipeline_scratch, with three namespaces (<file_uuid>/, engine/, diar/). Kept as two RUN
+# blocks, mount point first: backend/tests/unit/test_chown_script_targets.py's
+# ``_RESERVED_PATHS_RE`` greps the FIRST ``RUN mkdir -p ... &&`` line for the volume's own
+# mount point (what fix-shared-volume-perms.sh chowns) and ``_compose_volumes_for`` maps it
+# to a compose mount line; the namespace subdirs below are not compose mounts, so folding
+# them into the same line would make that derivation compare apples to oranges.
+RUN mkdir -p /scratch/opentranscribe && \
+    chown appuser:appuser /scratch/opentranscribe
+
+# The engine/ and diar/ namespaces. Ownership note (both directions, issue #661 E2):
+# - FRESH volume: Docker initialises the new named volume from the image's CONTENT at the
+#   mount point, preserving ownership, so these subdirs come up appuser-owned for free.
+# - EXISTING volume (upgrade): Docker does NOT re-copy into an already-populated volume, so
+#   these subdirs won't exist yet — runtime `os.makedirs(exist_ok=True)` creates them under
+#   an already-appuser-owned parent (preprocess.py, audio_loader.py, diarizer_native.py), so
+#   they land appuser too. This is NOT issue #580 (that was a runtime mkdir of a MOUNT POINT
+#   Docker had already made root-owned) — a subdir of an appuser-owned parent is different,
+#   UNLESS the parent itself is root-owned, which is exactly what
+#   scripts/fix-shared-volume-perms.sh (2.7) exists to repair on an upgrading install.
+RUN mkdir -p /scratch/opentranscribe/engine /scratch/opentranscribe/diar && \
+    chown appuser:appuser /scratch/opentranscribe/engine /scratch/opentranscribe/diar
 
 # Switch to non-root user
 USER appuser

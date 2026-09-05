@@ -32,6 +32,23 @@ services:
       dockerfile: Dockerfile.blackwell
     image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
 
+  # Deliberately NO `diar-native` entry here. A retag of it USED to live in this file
+  # (`image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}`),
+  # with a comment claiming it kept the sidecar on the same Blackwell build as
+  # celery-worker below. It could not deliver that: both opentr.sh (add_gpu_overlay,
+  # then add_diar_native_overlay) and opentranscribe.sh (get_compose_files) always append
+  # this blackwell overlay BEFORE docker-compose.diar-native.yml, and compose's last-file-
+  # wins merge means diar-native.yml's own `image:` key always overrides whatever this
+  # file set — verified: resolving the full chain up to and including diar-native.yml
+  # gave `celery-worker` -> `:blackwell` but `diar-native` -> `:latest`, the exact
+  # mismatch the removed comment claimed was fixed. A compose-side retag genuinely cannot
+  # win that ordering; reordering the two `-f` appends would require editing opentr.sh /
+  # opentranscribe.sh, out of scope for this file. The real fix is on the shell side:
+  # exporting `DIAR_NATIVE_IMAGE=...:${OT_BLACKWELL_IMAGE_TAG:-blackwell}` before compose
+  # runs, so docker-compose.diar-native.yml's own `${DIAR_NATIVE_IMAGE:-...}` fallback
+  # resolves to the Blackwell tag regardless of file order (tracked separately). Leaving
+  # an inert retag with a comment asserting it worked was worse than no entry at all.
+
   # Override GPU worker to use Blackwell image with SM_121 patches
   celery-worker:
     build:

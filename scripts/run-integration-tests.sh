@@ -19,6 +19,7 @@
 #   ./scripts/run-integration-tests.sh --search-quality  # + corpus relevance harness
 #   ./scripts/run-integration-tests.sh --cleanup      # + orphaned test-user dry run
 #   ./scripts/run-integration-tests.sh --skip-gpu     # drop the GPU phase
+#   ./scripts/run-integration-tests.sh --export-capability  # + real diar-native model export (~150s, needs HUGGINGFACE_TOKEN)
 
 set -euo pipefail
 
@@ -37,6 +38,7 @@ E2E_SMOKE=false
 SEARCH_QUALITY=false
 CLEANUP=false
 RUN_GPU=true
+EXPORT_CAPABILITY=false
 for arg in "$@"; do
     case "$arg" in
         --coverage) COVERAGE=true ;;
@@ -44,6 +46,7 @@ for arg in "$@"; do
         --search-quality) SEARCH_QUALITY=true ;;
         --cleanup) CLEANUP=true ;;
         --skip-gpu) RUN_GPU=false ;;
+        --export-capability) EXPORT_CAPABILITY=true ;;
         -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo -e "${RED}Unknown option: $arg${NC}"; exit 2 ;;
     esac
@@ -103,6 +106,17 @@ GATED_FILES=(tests/test_pki_auth.py tests/test_mfa_security.py
              tests/test_fedramp_controls.py tests/test_fips_140_3.py
              tests/test_auth_config_service.py tests/test_admin_security.py
              tests/test_admin_endpoints.py)
+
+# --- diar-native "sidecar expected" predicate --------------------------------
+#
+# diar_native_sidecar_expected() used to be defined here. It moved to
+# scripts/lib/diar-native-expected.sh when run-dev-tests.sh needed the same question (to
+# decide whether --with-diar-native belongs in its auto-started overlay set) — see that
+# file's header. Sourced rather than copied, for the reason this block already gave: a
+# second copy of "is native diarization configured?" is how this repo's env-var drift
+# usually starts.
+# shellcheck source=lib/diar-native-expected.sh
+source "$SCRIPT_DIR/lib/diar-native-expected.sh"
 
 FAILED_PHASES=()
 SKIPPED_PHASES=()   # phases that exited 4 = NOT MEASURED (verified nothing, but did not fail)
@@ -236,8 +250,25 @@ if [ ${#STACK_INCOMPLETE[@]} -gt 0 ]; then
     echo -e "  the phase would still exit 0. Start the full stack: ${YELLOW}./opentr.sh start dev${NC}\n"
     SKIPPED_PHASES+=("Integration-marked tests")
 else
+    # test_export_toolchain_in_shipped_images.py::test_the_running_backend_actually_completes_a_real_export
+    # lives in tests/integration/ and is therefore already COLLECTED here — but it
+    # self-gates on RUN_EXPORT_CAPABILITY_TEST and, unset, always skips ("NOT MEASURED",
+    # never a pass). Nothing else in this repo set that variable, so the real ~150s,
+    # gated-weights export it drives had never actually run in any automated path
+    # (issue: the headline "provision on first boot" capability was covered by nothing).
+    # --export-capability is deliberately opt-in here (a 150s download is too heavy for
+    # the everyday inner loop) but IS unconditionally wired into the release pipeline —
+    # scripts/release/60-test.sh always passes it — so the real check still runs
+    # somewhere automated rather than depending on an operator remembering the flag. A
+    # HUGGINGFACE_TOKEN with the pyannote/speaker-diarization-community-1 gate accepted
+    # is required for a real verdict; without one the test skips loudly, distinguishably
+    # from a pass (see that test's own skip message).
+    EXPORT_ENV=()
+    if $EXPORT_CAPABILITY; then
+        EXPORT_ENV=(env RUN_EXPORT_CAPABILITY_TEST=1)
+    fi
     run_phase_watching_skips "Integration-marked tests" \
-        "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
+        "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         -o addopts="" -m integration -q --tb=short --timeout="${INTEGRATION_TEST_TIMEOUT:-900}"
 fi
 
@@ -276,9 +307,39 @@ if $RUN_GPU; then
     # The diar-native sidecar is a separate container running a Rust binary, so no
     # pytest module can inspect it — its execution provider is only observable from
     # outside, via device-memory residency (issue #520). Exits 4 when the sidecar is
-    # not running, which run_phase reports as NOT MEASURED rather than as a pass.
-    run_phase "diar-native CUDA execution provider" \
-        bash "$PROJECT_ROOT/scripts/diar-native-smoke.sh"
+    # not running.
+    #
+    # issue #669: this used to go through run_phase like every other phase, which maps
+    # exit 4 to NOT MEASURED unconditionally — so this, the pre-merge gate, was green on
+    # a stack whose diarizer never ran, on EVERY machine, including ones where the
+    # sidecar was fully configured and simply not started. That is too strict to fix by
+    # making exit 4 fatal everywhere (a frontend dev's laptop with no sidecar configured
+    # would fail a gate it has no way to satisfy) and too lax to leave as a silent skip
+    # (a machine where native diarization IS configured deserves a real gate). So: fail
+    # only when diar_native_sidecar_expected() says the sidecar should be running on
+    # THIS deployment; otherwise report it — loudly, by name, same as every other NOT
+    # MEASURED phase — but do not fail the gate over it.
+    diar_native_rc=0
+    bash "$PROJECT_ROOT/scripts/diar-native-smoke.sh" || diar_native_rc=$?
+    echo -e "${BLUE}--- diar-native CUDA execution provider ---${NC}"
+    if (( diar_native_rc == 0 )); then
+        echo -e "${GREEN}✓ diar-native CUDA execution provider passed${NC}\n"
+    elif (( diar_native_rc == 4 )); then
+        if diar_native_sidecar_expected; then
+            echo -e "${RED}✗ diar-native CUDA execution provider NOT MEASURED, but engine.diarizer_backend"
+            echo -e "  resolves to native and an export or HUGGINGFACE_TOKEN is configured — this"
+            echo -e "  deployment was expected to be running the sidecar. Treating as a FAILURE.${NC}\n"
+            FAILED_PHASES+=("diar-native CUDA execution provider (expected, NOT MEASURED)")
+        else
+            echo -e "${YELLOW}⊘ diar-native CUDA execution provider NOT MEASURED — sidecar not expected on"
+            echo -e "  this deployment (backend is not native, or no export/HUGGINGFACE_TOKEN is"
+            echo -e "  configured to produce one)${NC}\n"
+            SKIPPED_PHASES+=("diar-native CUDA execution provider (not expected on this deployment)")
+        fi
+    else
+        echo -e "${RED}✗ diar-native CUDA execution provider FAILED${NC}\n"
+        FAILED_PHASES+=("diar-native CUDA execution provider")
+    fi
 else
     echo -e "${YELLOW}Skipping GPU-marked tests (--skip-gpu).${NC}"
 fi

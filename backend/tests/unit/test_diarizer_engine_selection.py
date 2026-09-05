@@ -37,10 +37,19 @@ from app.transcription.diarizer import SpeakerDiarizer
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.transcription.engine import stages as stages_mod
 from app.transcription.engine.backends import VALID_DIARIZER_BACKENDS
-from app.transcription.engine.backends import get_diarizer_backend
-from app.transcription.engine.backends.diarizers.native_backend import NativeBackend
-from app.transcription.engine.backends.diarizers.pyannote_backend import PyAnnoteBackend
 from app.transcription.model_manager import ModelManager
+
+#: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
+#: module-level state, run on ONE xdist worker.
+#:
+#: `_free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
+#: between that close and the caller's `HTTPServer((host, port))` bind, another worker can be
+#: handed the same ephemeral port. Seven modules use that helper and none were grouped, which
+#: is why a DIFFERENT diar test failed on each full-suite run while every one of them passed in
+#: isolation. Same remedy the repo already uses for tests sharing mutable global state
+#: (backend/tests/CLAUDE.md's `--dist loadgroup` note); here the shared state is the machine's
+#: ephemeral-port pool plus diarizer_native's readiness caches.
+pytestmark = pytest.mark.xdist_group("diar_native_state")
 
 
 def _free_port() -> int:
@@ -142,17 +151,11 @@ class TestDiarizerBackendRegistry:
     def test_native_and_pyannote_are_the_only_registered_backends(self):
         assert set(VALID_DIARIZER_BACKENDS) == {"native", "pyannote"}
 
-    def test_get_diarizer_backend_native_returns_native_backend(self):
-        backend = get_diarizer_backend("native")
-        assert isinstance(backend, NativeBackend)
-
-    def test_get_diarizer_backend_pyannote_returns_pyannote_backend(self):
-        backend = get_diarizer_backend("pyannote")
-        assert isinstance(backend, PyAnnoteBackend)
-
-    def test_get_diarizer_backend_unknown_raises(self):
-        with pytest.raises(ValueError, match="Unknown diarizer backend"):
-            get_diarizer_backend("nemo-not-registered")
+    # `get_diarizer_backend()` and its three tests are gone (issue #672). It was dotted-path
+    # importlib dispatch with no production caller — construction happens in
+    # `ModelManager._build_diarizer` — so the tests exercised a resolver nothing resolved
+    # through. `VALID_DIARIZER_BACKENDS`, which IS production (config._resolve_diarizer_backend
+    # and engine_settings validation), keeps its coverage above.
 
 
 # ---------------------------------------------------------------------------
@@ -200,20 +203,89 @@ class TestDiarizerBackendResolution:
 
 
 class TestOverlapDiarizationEnabled:
-    def test_disabled_for_pyannote_backend(self, monkeypatch: pytest.MonkeyPatch):
+    """The gate must ask whether the sidecar is REACHABLE, not whether it is configured.
+
+    Overlapping only makes sense when diarization is another process's work. Keyed off
+    configuration alone (the pre-#665 behaviour), a native-configured deployment with a
+    dead sidecar reported True, `_collect_diarization` skipped
+    `_make_room_for_local_diarizer`, and since that helper holds the ONLY
+    `release_transcriber()` call site, Whisper and the in-process PyAnnote fallback ran
+    co-resident on one GPU — precisely what it exists to prevent.
+    """
+
+    @staticmethod
+    def _record_probe(monkeypatch: pytest.MonkeyPatch, answer: bool) -> list[bool]:
+        """Patch the readiness probe at its source, recording each call.
+
+        The probe itself is covered against real HTTP servers in
+        `test_diar_native_readiness_gate.py`; what matters here is *whether the gate asks
+        it at all*, and how often, which the call log is the only way to observe.
+        """
+        probed: list[bool] = []
+
+        def _fake_ready(base_url=None):
+            probed.append(True)
+            return answer
+
+        monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", _fake_ready)
+        return probed
+
+    def test_disabled_for_pyannote_backend_without_probing(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        probed = self._record_probe(monkeypatch, True)
         tc = TranscriptionConfig(diarizer_backend="pyannote")
-        assert stages_mod._overlap_diarization_enabled(tc) is False
 
-    def test_enabled_for_native_backend_by_default(self, monkeypatch: pytest.MonkeyPatch):
+        assert stages_mod._overlap_diarization_enabled(tc) is False
+        # A pinned-pyannote deployment must not pay a 5 s network timeout per job to be
+        # told something its configuration already settled.
+        assert probed == []
+
+    def test_enabled_for_native_when_the_sidecar_is_ready(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        probed = self._record_probe(monkeypatch, True)
         tc = TranscriptionConfig(diarizer_backend="native")
-        assert stages_mod._overlap_diarization_enabled(tc) is True
 
-    def test_disabled_when_diar_overlap_env_is_zero(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("DIAR_OVERLAP", "0")
+        assert stages_mod._overlap_diarization_enabled(tc) is True
+        assert len(probed) == 1, "the gate must probe exactly once per evaluation"
+
+    def test_disabled_for_native_when_the_sidecar_is_not_ready(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The #665 regression. Before the fix this returned True."""
+        monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        self._record_probe(monkeypatch, False)
         tc = TranscriptionConfig(diarizer_backend="native")
+
         assert stages_mod._overlap_diarization_enabled(tc) is False
+
+    def test_disabled_for_native_against_a_genuinely_unreachable_sidecar(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Same as above with the probe unpatched — a real closed port, real ECONNREFUSED.
+
+        Keeps this class from being satisfiable by a mock that agrees with itself.
+        ``_DEFAULT_URL`` is read from the environment once at import, so setting
+        ``DIAR_NATIVE_URL`` here would do nothing and the test would pass because the
+        compose hostname does not resolve off the network — right answer, wrong reason.
+        """
+        monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        monkeypatch.setattr(
+            "app.transcription.diarizer_native._DEFAULT_URL",
+            f"http://127.0.0.1:{_free_port()}",
+        )
+        tc = TranscriptionConfig(diarizer_backend="native")
+
+        assert stages_mod._overlap_diarization_enabled(tc) is False
+
+    def test_disabled_when_diar_overlap_env_is_zero_without_probing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("DIAR_OVERLAP", "0")
+        probed = self._record_probe(monkeypatch, True)
+        tc = TranscriptionConfig(diarizer_backend="native")
+
+        assert stages_mod._overlap_diarization_enabled(tc) is False
+        assert probed == [], "the debug escape hatch must short-circuit before the probe"
 
 
 # ---------------------------------------------------------------------------
@@ -395,9 +467,11 @@ class TestRealFailover:
         """NativeSpeakerDiarizer.diarize(): the shared scratch dir cannot be written to.
 
         A genuine `PermissionError` from a real unwritable directory (chmod 0o555), not
-        a patched exception — the same failure shape the `/tmp/diar-native` named-volume
-        ownership bug produced in production (the volume landed root-owned on first
-        creation, so the non-root worker's WAV write failed). Before this fix, only the
+        a patched exception — the same failure shape the pipeline_scratch `diar/`
+        namespace's ownership bug produced in production (the volume landed root-owned
+        on first creation, so the non-root worker's WAV write failed; issue #661 E2
+        folded what was a dedicated `/tmp/diar-native` named volume at the time this bug
+        was found into that namespace). Before this fix, only the
         `/diarize` HTTP call was wrapped in the fallback handler; a write failure
         propagated out of `diarize()` uncaught and hard-failed the whole transcription
         instead of degrading to PyAnnote the way an unreachable sidecar does.
@@ -432,5 +506,282 @@ class TestRealFailover:
         finally:
             # tmp_path's own cleanup needs write access to remove the directory.
             unwritable_dir.chmod(0o755)
+            httpd.shutdown()
+            httpd.server_close()
+
+
+# ---------------------------------------------------------------------------
+# #665 (the part the point-in-time gate fix missed): sidecar REACHABLE at the
+# overlap gate, then fails mid-job. The transcriber must still be released and the
+# in-process fallback must still be built — but only on the main thread, after
+# transcription is known to have finished, never from the overlapped diarize thread.
+# ---------------------------------------------------------------------------
+
+
+class _MidJobFailureHandler(http.server.BaseHTTPRequestHandler):
+    """A real server: reachable and ready, but /diarize always answers 500."""
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+        if self.path in ("/healthz", "/readyz"):
+            self.send_response(200)
+        else:
+            self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+        self.send_response(500)
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+
+class _FakeHW:
+    def log_vram_usage(self, *_a: object, **_kw: object) -> None:
+        pass
+
+    def optimize_memory_usage(self) -> None:
+        pass
+
+
+class _FakeProfiler:
+    def snapshot(self, *_a: object, **_kw: object) -> None:
+        pass
+
+    @contextlib.contextmanager
+    def step(self, *_a: object, **_kw: object):
+        yield
+
+
+class _FakeManagerOneNativeDiarizer:
+    """Just enough of ModelManager's surface for _collect_diarization to run."""
+
+    def __init__(self, diarizer):
+        self._diarizer = diarizer
+        self.release_calls = 0
+
+    def get_diarizer(self, tc):
+        return self._diarizer
+
+    def release_transcriber(self) -> None:
+        self.release_calls += 1
+
+
+class TestOverlapMidJobFailureDegradesSafely:
+    def test_release_and_fallback_happen_on_the_main_thread_after_transcription(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        tmp_path,
+    ):
+        """Drives the real `_AsyncDiarization` / `_collect_diarization` / diarize() path.
+
+        The sidecar answers /healthz and /readyz (so `_overlap_diarization_enabled` sees a
+        reachable sidecar and the gate opens — overlap ON) but always 500s on /diarize, a
+        genuine mid-job loss discovered only once the async attempt actually runs. Before
+        this fix, `_make_room_for_local_diarizer` (the only `release_transcriber()` call
+        site) was skipped whenever `async_diarization` was merely non-None — even after its
+        attempt failed and fell through to an inline PyAnnote build that never freed VRAM,
+        and the in-process fallback could be built from the async thread itself, co-resident
+        with a main thread that might still be transcribing.
+        """
+        monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        port = _free_port()
+        httpd = http.server.HTTPServer(("127.0.0.1", port), _MidJobFailureHandler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", FakeSpeakerDiarizer)
+            monkeypatch.setattr("app.transcription.diarizer_native._SHARED_DIR", str(tmp_path))
+            monkeypatch.setattr(
+                "app.transcription.diarizer_native._DEFAULT_URL", f"http://127.0.0.1:{port}"
+            )
+            # This host has real GPUs with >16GB VRAM, which would otherwise take
+            # `_make_room_for_local_diarizer`'s "both models fit, keep loaded" branch and
+            # never call release_transcriber() — a false pass unrelated to what's under
+            # test. Force the low-VRAM branch so `release_calls` actually exercises it.
+            monkeypatch.setattr(stages_mod, "_get_total_vram_mb", lambda: 0)
+
+            config = TranscriptionConfig(diarizer_backend="native")
+            native = NativeSpeakerDiarizer(config, base_url=f"http://127.0.0.1:{port}")
+            native.load_model()
+
+            # Sanity: the gate must actually be OPEN here, exactly the #665 precondition —
+            # otherwise this test would exercise the sequential path by accident.
+            assert stages_mod._overlap_diarization_enabled(config) is True
+
+            manager = _FakeManagerOneNativeDiarizer(native)
+            audio = np.zeros(16000, dtype=np.float32)
+
+            async_diar = stages_mod._AsyncDiarization(audio, config, manager, "task-665")
+            caplog.set_level(logging.WARNING)
+            diarize_df, overlap_info, embeddings, provider, model = stages_mod._collect_diarization(
+                audio, config, manager, _FakeHW(), _FakeProfiler(), None, async_diar
+            )
+            assert provider == "pyannote", (
+                "the in-process fallback served this call — the resolved provider must say "
+                "so, not merely that native was CONFIGURED (issue #706)"
+            )
+            assert model == getattr(native._fallback, "_model_name", None)
+
+            assert manager.release_calls == 1, (
+                "transcriber must be released exactly once, even though async_diarization "
+                "was not None — skipping release whenever it was merely attempted (rather "
+                "than actually served) is the #665 gap this closes"
+            )
+            assert isinstance(native._fallback, FakeSpeakerDiarizer)
+            assert native._fallback.diarize_calls == 1, (
+                "the in-process fallback must run exactly once — sequentially, on the main "
+                "thread, after transcription is known to be finished — never from the "
+                "overlapped diarize thread while transcription might still be running"
+            )
+            assert len(diarize_df) == 1
+
+            assert any("refusing" in r.message.lower() for r in caplog.records), (
+                "the overlapped thread's refusal to co-load PyAnnote must be logged, not silent"
+            )
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_overlapped_diarize_call_never_builds_the_fallback_itself(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ):
+        """Narrower unit check on NativeSpeakerDiarizer.diarize() directly: with
+        allow_local_fallback=False, a sidecar failure must raise rather than ever
+        constructing the in-process engine — the exact operation that is unsafe to run
+        concurrently with a main-thread transcription.
+        """
+        port = _free_port()
+        httpd = http.server.HTTPServer(("127.0.0.1", port), _MidJobFailureHandler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            built: list[object] = []
+
+            class _CountingFake(FakeSpeakerDiarizer):
+                def __init__(self, config):
+                    super().__init__(config)
+                    built.append(self)
+
+            monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", _CountingFake)
+            monkeypatch.setattr("app.transcription.diarizer_native._SHARED_DIR", str(tmp_path))
+
+            config = TranscriptionConfig(diarizer_backend="native")
+            native = NativeSpeakerDiarizer(config, base_url=f"http://127.0.0.1:{port}")
+            native.load_model()
+
+            audio = np.zeros(16000, dtype=np.float32)
+            with pytest.raises(RuntimeError, match="refusing"):
+                native.diarize(audio, allow_local_fallback=False)
+
+            assert built == [], (
+                "allow_local_fallback=False must raise instead of ever building the "
+                "in-process fallback engine"
+            )
+
+            # The default (sequential contexts) must still fall back normally.
+            result, _, _ = native.diarize(audio)
+            assert len(result) == 1
+            assert len(built) == 1
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+
+# ---------------------------------------------------------------------------
+# issue #656 Step 2: a SATURATED sidecar (readyz green, diarize gated) must not pay the
+# full budget twice — once overlapped, once again on the inline retry against the identical
+# permit-starved gate.
+# ---------------------------------------------------------------------------
+
+
+class _SaturatedSidecarHandler(http.server.BaseHTTPRequestHandler):
+    """A real server: /healthz and /readyz answer fast; /diarize accepts then stalls past
+    whatever budget the client was given — reproducing B8's saturated-admission-gate shape
+    (the gate blocks /diarize only; /readyz keeps answering 200 fast)."""
+
+    post_count = {"count": 0}
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+        if self.path in ("/healthz", "/readyz"):
+            self.send_response(200)
+        else:
+            self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+        _SaturatedSidecarHandler.post_count["count"] += 1
+        import time as _time
+
+        _time.sleep(2.0)  # far longer than the test's tiny per-request budget
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'{"exclusive_segments": [], "segments": []}')
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+
+class TestSaturatedSidecarSkipsSecondAttempt:
+    def test_the_inline_retry_does_not_re_attempt_a_wedged_sidecar(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ):
+        """Before issue #656 Step 2, an overlapped attempt against a saturated sidecar failed
+        with a bare TimeoutError, and the inline retry re-attempted the SAME wedged sidecar —
+        doubling the worst-case hold. Now the overlapped failure is classified
+        DiarSidecarUnavailableError(reason="timeout") and the inline retry skips straight to the
+        PyAnnote fallback: exactly one POST /diarize, not two.
+        """
+        _SaturatedSidecarHandler.post_count["count"] = 0
+        monkeypatch.delenv("DIAR_OVERLAP", raising=False)
+        port = _free_port()
+        # ⚠️ ThreadingHTTPServer, NOT HTTPServer — this is the whole falsifiability of the
+        # test. A single-threaded server handles one request at a time, and do_POST sleeps
+        # 2.0s against a 0.2s client budget, so a SECOND POST would sit unaccepted in the
+        # listen backlog and never increment post_count. `== 1` then holds because of the
+        # server's serialization rather than because skip_sidecar worked, and the assertion
+        # passes with the fix reverted. Measured in a `git archive HEAD` tree: reverting
+        # stages.py's `skip_sidecar = True` gave "1 passed" under HTTPServer, and
+        # "assert 2 == 1" (red, correctly) under ThreadingHTTPServer.
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), _SaturatedSidecarHandler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", FakeSpeakerDiarizer)
+            monkeypatch.setattr("app.transcription.diarizer_native._SHARED_DIR", str(tmp_path))
+            monkeypatch.setattr(
+                "app.transcription.diarizer_native._DEFAULT_URL", f"http://127.0.0.1:{port}"
+            )
+            # A tiny per-request budget so the test doesn't wait out a real _TIMEOUT_S.
+            monkeypatch.setattr(
+                "app.transcription.diarizer_native._diarize_budget_s", lambda audio: 0.2
+            )
+            monkeypatch.setattr(stages_mod, "_get_total_vram_mb", lambda: 0)
+
+            config = TranscriptionConfig(diarizer_backend="native")
+            native = NativeSpeakerDiarizer(config, base_url=f"http://127.0.0.1:{port}")
+            native.load_model()
+            assert stages_mod._overlap_diarization_enabled(config) is True
+
+            manager = _FakeManagerOneNativeDiarizer(native)
+            audio = np.zeros(16000, dtype=np.float32)
+
+            async_diar = stages_mod._AsyncDiarization(audio, config, manager, "task-656")
+            diarize_df, _overlap_info, _embeddings, provider, _model = (
+                stages_mod._collect_diarization(
+                    audio, config, manager, _FakeHW(), _FakeProfiler(), None, async_diar
+                )
+            )
+
+            assert _SaturatedSidecarHandler.post_count["count"] == 1, (
+                "the inline retry must NOT re-attempt the same wedged sidecar — today it "
+                "was 2, doubling the worst-case hold on a Celery slot, a GPU thread and the "
+                "decoded ndarray"
+            )
+            assert provider == "pyannote"
+            assert len(diarize_df) == 1
+        finally:
             httpd.shutdown()
             httpd.server_close()

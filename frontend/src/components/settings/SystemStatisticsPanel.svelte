@@ -237,7 +237,17 @@
             </div>
             <div class="model-item">
               <span class="model-label">{$t('settings.statistics.diarization')}:</span>
-              <span class="model-value">{stats.models.diarization?.name || $t('common.notAvailable')}</span>
+              <span class="model-value">
+                {stats.models.diarization?.description || stats.models.diarization?.name || $t('common.notAvailable')}
+              </span>
+              {#if stats.models.diarization?.using_fallback}
+                <span class="model-fallback-badge" title={$t('settings.statistics.diarizationFallbackWarning', {
+                  configured: stats.models.diarization?.configured_description || stats.models.diarization?.configured_backend,
+                  effective: stats.models.diarization?.description || stats.models.diarization?.effective_backend
+                })}>
+                  ⚠ {$t('settings.statistics.diarizationFallbackBadge')}
+                </span>
+              {/if}
             </div>
             {#if stats.models.search_embedding}
               <div class="model-item">
@@ -918,6 +928,26 @@
     font-weight: 500;
     color: var(--text-color);
     font-family: 'Courier New', Courier, monospace;
+  }
+
+  .model-fallback-badge {
+    display: inline-block;
+    align-self: flex-start;
+    margin-top: 0.125rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--warning-text, #92400e);
+    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.12);
+    border: 1px solid var(--warning-color, #f59e0b);
+    border-radius: 10px;
+    padding: 0.125rem 0.5rem;
+    cursor: help;
+  }
+
+  :global([data-theme='dark']) .model-fallback-badge {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.12);
+    border-color: #fbbf24;
   }
 
   /* Responsive Design */

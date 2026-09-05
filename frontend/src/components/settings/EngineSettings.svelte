@@ -15,6 +15,7 @@
 
   interface EngineSettingsResponse {
     diarizer_backend: EngineSettingValue<string>;
+    diarizer_require_sidecar: EngineSettingValue<boolean>;
     boundary_smoothing_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_recheck_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_cosine_margin: EngineSettingValue<number>;
@@ -32,6 +33,7 @@
 
   // Draft values (bound to form controls)
   let draftDiarizerBackend = 'native';
+  let draftDiarizerRequireSidecar = false;
   let draftBoundarySmoothing = false;
   let draftAcousticRecheck = false;
   let draftAcousticCosineMargin = 0.05;
@@ -47,6 +49,7 @@
       const res = await axiosInstance.get<EngineSettingsResponse>('/admin/engine-settings');
       settings = res.data;
       draftDiarizerBackend = settings.diarizer_backend.value;
+      draftDiarizerRequireSidecar = settings.diarizer_require_sidecar.value;
       draftBoundarySmoothing = settings.boundary_smoothing_enabled.value;
       draftAcousticRecheck = settings.boundary_acoustic_recheck_enabled.value;
       draftAcousticCosineMargin = settings.boundary_acoustic_cosine_margin.value;
@@ -65,6 +68,7 @@
     // Only send keys where the draft differs from the current server value
     const payload: Partial<{
       diarizer_backend: string;
+      diarizer_require_sidecar: boolean;
       boundary_smoothing_enabled: boolean;
       boundary_acoustic_recheck_enabled: boolean;
       boundary_acoustic_cosine_margin: number;
@@ -73,6 +77,9 @@
 
     if (draftDiarizerBackend !== settings.diarizer_backend.value) {
       payload.diarizer_backend = draftDiarizerBackend;
+    }
+    if (draftDiarizerRequireSidecar !== settings.diarizer_require_sidecar.value) {
+      payload.diarizer_require_sidecar = draftDiarizerRequireSidecar;
     }
     if (draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value) {
       payload.boundary_smoothing_enabled = draftBoundarySmoothing;
@@ -131,6 +138,7 @@
 
   $: isDirty = settings !== null && (
     draftDiarizerBackend !== settings.diarizer_backend.value ||
+    draftDiarizerRequireSidecar !== settings.diarizer_require_sidecar.value ||
     draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value ||
     draftAcousticRecheck !== settings.boundary_acoustic_recheck_enabled.value ||
     Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value ||
@@ -188,6 +196,43 @@
             <option value="native">native (default)</option>
             <option value="pyannote">pyannote (failover)</option>
           </select>
+        </div>
+      </div>
+
+      <!-- Require Diarization Sidecar -->
+      <div class="form-row">
+        <div class="form-field">
+          <div class="field-label-row">
+            <span class="field-name">{$t('settings.engineSettings.diarizerRequireSidecar')}</span>
+            <span class="source-badge {sourceClass(settings.diarizer_require_sidecar.source)}">
+              {sourceLabel(settings.diarizer_require_sidecar.source)}
+            </span>
+            {#if settings.diarizer_require_sidecar.source !== 'default'}
+              <button
+                class="reset-btn"
+                on:click={() => resetKey('diarizer_require_sidecar')}
+                disabled={resetInProgress === 'diarizer_require_sidecar' || saving}
+                title={$t('settings.engineSettings.resetKey')}
+              >
+                {#if resetInProgress === 'diarizer_require_sidecar'}
+                  <Spinner size="small" />
+                {:else}
+                  {$t('settings.engineSettings.resetKey')}
+                {/if}
+              </button>
+            {/if}
+          </div>
+          <label class="toggle-label" for="diarizer-require-sidecar-input">
+            <input
+              id="diarizer-require-sidecar-input"
+              type="checkbox"
+              class="toggle-input"
+              bind:checked={draftDiarizerRequireSidecar}
+              disabled={saving || resetInProgress !== null}
+            />
+            <span class="toggle-switch"></span>
+            <span class="toggle-text help-text">{$t('settings.engineSettings.diarizerRequireSidecarHelp')}</span>
+          </label>
         </div>
       </div>
 

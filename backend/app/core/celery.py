@@ -748,6 +748,15 @@ def _validate_task_routes():
     intentionally_unrouted = {
         "transcription.gpu_transcribe",  # Routed to "gpu" or "cloud-asr" by dispatch.py
         "transcription.cpu_transcribe",  # Routed to "cpu-transcribe" by dispatch.py
+        # Dispatched from exactly one place — _dispatch_gpu_split_diarize_chain in
+        # tasks/transcription/core.py — which always .set(queue=GPU_DIARIZE) explicitly.
+        # Deliberately NOT given a static route: "gpu-diarize" is only consumed under the
+        # gpu-split compose profile, so a static default would send an accidental bare
+        # dispatch to a queue with no consumer on every NON-split deployment, which is
+        # precisely issue #703's failure mode (a reserved worker doing no work while files
+        # sit in `processing` forever). An unrouted accident lands on 'celery' and is at
+        # least visible; a wrongly-routed one is silent.
+        "transcription.diarize_gpu",
     }
 
     routed_names = set(celery_app.conf.task_routes.keys())

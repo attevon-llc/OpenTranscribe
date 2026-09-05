@@ -216,6 +216,165 @@ for k in sorted(interesting):
     ac_warn "──────── end diagnostics ────────"
 }
 
+# ac_diar_engine_verdict FILE_UUID [WORKER_CONTAINER] [SINCE]
+#
+# Answers "which engine actually diarized THIS file?" — a question
+# `ac_wait_for_file_status` returning "completed" cannot answer. The
+# fallback from the native sidecar to in-process PyAnnote is SILENT BY
+# DESIGN (diarizer_native.py / model_manager.py log one warning line and
+# carry on), so a rehearsal that only checks the upload's final status can
+# pass on a stack whose diarizer is dead (issue #670).
+#
+# Primary source (issue #706): `media_file.diarization_provider`, wired onto
+# the wire via GET /api/files/{uuid}. It is per-file and survives log
+# rotation/worker restarts — the two defects the old log-grep
+# implementation had no answer for. Vocabulary is `native` | `pyannote` |
+# NULL (see the column's own docs: `pyannote` deliberately covers BOTH a
+# directly-configured pyannote run and a native run that fell back — both
+# mean "PyAnnote served this job").
+#
+# Falls back to the old worker-log grep ONLY when the column is
+# GENUINELY ABSENT from a successfully-parsed response — i.e. an old
+# FROM-release stack predating #706, whose API has neither the column nor
+# the field at all. That fallback is NOT scoped to FILE_UUID and inherits
+# every defect the log-grep approach always had (unrelated hits in the
+# time window, no survival across log rotation/restart); it exists purely
+# so a genuinely old-schema stack reads as "could not measure" rather than
+# a hard failure.
+#
+# A FAILED REQUEST (curl error, empty body, or a body that fails to parse
+# as JSON) is a DIFFERENT condition and is NEVER routed into that
+# fallback (issue #707 — it used to be, via a blanket `|| echo ""`, which
+# meant a single connection blip or slow backend on a CURRENT stack
+# silently downgraded a per-file DB verdict to an unscoped 30-minute log
+# grep). It is reported instead as `error:request`, a THIRD source
+# alongside `db` and `log` that callers must treat as a hard failure, not
+# a pass of any kind — the request simply proves nothing.
+#
+# Echoes "<verdict>:<source>" where source is "db" (the new, trustworthy
+# per-file signal), "log" (the old, unscoped fallback — legitimate only
+# for a genuinely old-schema stack), or "request" (the request/response
+# itself was unusable — never a verdict about diarization at all):
+#   native:db      diarization_provider == "native" for this file
+#   pyannote:db    diarization_provider == "pyannote" — PyAnnote served it,
+#                  directly or via a native fallback
+#   none:db        the column exists on the wire and is NULL — diarization
+#                  never resolved a provider for this file
+#   unknown:db     the column held a value in neither vocabulary entry
+#   native:log     legacy fallback — a "native diarization done" line was
+#                  seen and no fallback line, somewhere in the window
+#   fallback:log   legacy fallback — at least one "falling back to
+#                  PyAnnote" line was seen somewhere in the window
+#   unknown:log    legacy fallback — worker container up but neither line
+#                  appeared in the window
+#   absent:none    the column was genuinely absent AND the named worker
+#                  container isn't running either — nothing answered
+#   error:request  the request failed or the response could not be parsed
+#                  as JSON — NOT the same as an old stack lacking the
+#                  column; a caller must not treat this as a pass
+#
+# ⚠️ This function does NOT guarantee a `:log` verdict is free of false
+# positives or false negatives — it never did. `native:log`/`fallback:log`/
+# `unknown:log` are exactly as unscoped as the log-grep approach always
+# was (any job in the time window, not this file). What this function DOES
+# guarantee is that a `:log` verdict is only ever produced when the column
+# was genuinely absent from a parsed response, never merely because a
+# request failed. Whether `*:log` is safe to treat as a pass is a decision
+# for the CALLER, who knows whether the stack being measured is expected
+# to carry the column — see test-fresh-install.sh/test-upgrade.sh for how
+# each of the two current callers makes that call.
+#
+# Deliberately does NOT prove GPU residency — that is
+# scripts/diar-native-smoke.sh's job (device-memory residency via
+# nvidia-smi), and it proves the opposite half of this question: the sidecar
+# process is alive and pinned to the right GPU, not that any job was routed
+# to it. Callers that want both should run both.
+ac_diar_engine_verdict() {
+    local file_uuid="${1:?ac_diar_engine_verdict requires a file uuid}"
+    local worker_container="${2:-opentranscribe-celery-worker}"
+    local since="${3:-30m}"
+
+    local body="" curl_rc=0
+    body=$(ac_curl "$API_BASE/files/$file_uuid" 2>/dev/null) && curl_rc=0 || curl_rc=$?
+
+    if (( curl_rc != 0 )) || [[ -z "$body" ]]; then
+        # The request itself failed (connection blip, timeout, non-2xx with
+        # an empty/suppressed body). This is NOT "the column is absent" —
+        # it is "we don't know anything" — so it must never be routed into
+        # the old-stack log fallback below.
+        echo "error:request"
+        return 0
+    fi
+
+    # Presence of the KEY, not its value, is what distinguishes an old
+    # pre-#706 API (no key at all -> fall back to logs) from a current one
+    # reporting a real NULL (diarization never resolved, a legitimate DB
+    # verdict). A plain .get() collapses that distinction, so check
+    # membership explicitly. A response that isn't valid JSON at all (or
+    # isn't a dict once unwrapped) is a parse failure, not an old schema —
+    # treat it the same as a failed request.
+    local column_status
+    column_status=$(python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("parse_error"); sys.exit(0)
+if isinstance(d, dict) and "file" in d and isinstance(d["file"], dict):
+    d = d["file"]
+if not isinstance(d, dict):
+    print("parse_error"); sys.exit(0)
+print("has_column" if "diarization_provider" in d else "no_column")
+' <<<"$body" 2>/dev/null || echo "parse_error")
+
+    if [[ "$column_status" == "parse_error" ]]; then
+        echo "error:request"
+        return 0
+    fi
+
+    if [[ "$column_status" == "has_column" ]]; then
+        local provider
+        provider=$(python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if isinstance(d, dict) and "file" in d and isinstance(d["file"], dict):
+    d = d["file"]
+v = d.get("diarization_provider")
+print(v if v else "")
+' <<<"$body" 2>/dev/null || echo "")
+        case "$provider" in
+            native)   echo "native:db" ;;
+            pyannote) echo "pyannote:db" ;;
+            "")       echo "none:db" ;;
+            *)        echo "unknown:db" ;;
+        esac
+        return 0
+    fi
+
+    # column_status == "no_column": the response parsed fine, as a real
+    # object, and genuinely has no diarization_provider key at all — an
+    # old FROM-release schema/API predating #706. Fall back to the
+    # unscoped log grep so a genuinely old-schema stack is measured as
+    # best-effort rather than reported as a hard failure.
+    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$worker_container"; then
+        echo "absent:none"
+        return 0
+    fi
+
+    local logs native_hits fallback_hits
+    logs=$(docker logs --since "$since" "$worker_container" 2>&1 || true)
+    native_hits=$(grep -c 'native diarization done in' <<<"$logs" || true)
+    fallback_hits=$(grep -c 'falling back to PyAnnote' <<<"$logs" || true)
+
+    if (( fallback_hits > 0 )); then
+        echo "fallback:log"
+    elif (( native_hits > 0 )); then
+        echo "native:log"
+    else
+        echo "unknown:log"
+    fi
+}
+
 ac_wait_for_file_status() {
     # Poll /api/files/<uuid> until status == completed (or error/timeout).
     local file_uuid="$1"

@@ -116,9 +116,14 @@ def validate_gated_model_access():
         if not hf_token:
             return False, 'No HuggingFace token provided'
 
-        # List of REQUIRED gated models (community-1 is not gated)
+        # List of REQUIRED gated models. community-1 IS gated (auto-approved, but the
+        # agreement must still be accepted) and is the ONLY repo the app actually
+        # downloads via whisperx's DiarizationPipeline (whisperx>=3.7 defaults to
+        # "pyannote/speaker-diarization-community-1", see backend/app/transcription/
+        # diarizer.py PYANNOTE_V4_MODEL and native_provision.py). segmentation-3.0 /
+        # speaker-diarization-3.1 are NOT what either download group needs.
         gated_models = [
-            'pyannote/segmentation-3.0',
+            'pyannote/speaker-diarization-community-1',
         ]
 
         api = HfApi()
@@ -245,27 +250,22 @@ def download_pyannote_models():
             print_error('❌ GATED MODEL ACCESS DENIED - DOWNLOAD CANNOT PROCEED')
             print_error('=' * 80)
             print_error('')
-            print_error('⚠️  YOUR TOKEN DOES NOT HAVE ACCESS TO REQUIRED PYANNOTE MODELS')
+            print_error('⚠️  YOUR TOKEN DOES NOT HAVE ACCESS TO THE REQUIRED PYANNOTE MODEL')
             print_error('')
-            print_error('This means you have NOT accepted the model user agreements.')
+            print_error('This means you have NOT accepted the model user agreement.')
             print_error('')
             print_error('╔════════════════════════════════════════════════════════════════════╗')
-            print_error('║  REQUIRED ACTION: Accept BOTH model agreements on HuggingFace      ║')
+            print_error('║  REQUIRED ACTION: Accept the model agreement on HuggingFace         ║')
             print_error('╚════════════════════════════════════════════════════════════════════╝')
             print_error('')
-            print_error('Step 1: Visit the Segmentation Model page')
-            print_error('   URL: https://huggingface.co/pyannote/segmentation-3.0')
-            print_error("   → Look for the 'Agree and access repository' button")
-            print_error('   → Click it to accept the terms')
-            print_error('')
-            print_error('Step 2: Visit the Speaker Diarization Model page')
+            print_error('Step 1: Visit the Speaker Diarization Model page')
             print_error('   URL: https://huggingface.co/pyannote/speaker-diarization-community-1')
             print_error("   → Look for the 'Agree and access repository' button")
             print_error('   → Click it to accept the terms')
             print_error('')
-            print_error('Step 3: Wait 1-2 minutes for permissions to propagate')
+            print_error('Step 2: Wait 1-2 minutes for permissions to propagate')
             print_error('')
-            print_error('Step 4: Run this script again:')
+            print_error('Step 3: Run this script again:')
             print_error('   bash scripts/download-models.sh models')
             print_error('')
             print_error('=' * 80)
@@ -319,7 +319,10 @@ def download_pyannote_models():
 
         # Step 3: Diarize (same as backend - downloads PyAnnote models)
         print_info('Step 3/3: Running speaker diarization (downloads PyAnnote models)...')
-        print_info('  This downloads: segmentation-3.0, embedding, wespeaker-voxceleb...')
+        print_info(
+            '  This downloads: speaker-diarization-community-1 '
+            '(bundles segmentation, embedding, wespeaker-voxceleb)...'
+        )
 
         try:
             diarize_model = whisperx.diarize.DiarizationPipeline(
@@ -367,19 +370,15 @@ def download_pyannote_models():
             print_error('⚠️  THIS LOOKS LIKE A GATED MODEL ACCESS ERROR!')
             print_error('=' * 70)
             print_error('')
-            print_error("This error usually means you haven't accepted the model agreements.")
+            print_error("This error usually means you haven't accepted the model agreement.")
             print_error('')
-            print_error('You MUST accept BOTH PyAnnote gated model agreements:')
+            print_error('You MUST accept the PyAnnote gated model agreement:')
             print_error('')
-            print_error('  1. Segmentation Model:')
-            print_error('     https://huggingface.co/pyannote/segmentation-3.0')
-            print_error("     → Click 'Agree and access repository'")
-            print_error('')
-            print_error('  2. Speaker Diarization Model:')
+            print_error('  Speaker Diarization Model:')
             print_error('     https://huggingface.co/pyannote/speaker-diarization-community-1')
             print_error("     → Click 'Agree and access repository' (if prompted)")
             print_error('')
-            print_error('After accepting BOTH agreements:')
+            print_error('After accepting the agreement:')
             print_error('  • Wait 1-2 minutes for permissions to propagate')
             print_error('  • Run this script again: bash scripts/download-models.sh models')
             print_error('')
@@ -937,6 +936,71 @@ def download_redaction_models():
     return {'redaction': results}
 
 
+def download_diar_native_models():
+    """Provision the native diarizer's (`diar-server`) ONNX/PLDA model set.
+
+    Delegates entirely to `app.transcription.native_provision.ensure_native_models` — the
+    SAME function `main.py`'s FastAPI lifespan calls at backend startup — rather than
+    re-implementing the model set, timeout, exit-code table, remedies, and the
+    blank-`HF_ENDPOINT` scrub a second time here. There is exactly one implementation of
+    diar-native provisioning; this is a caller of it, not a fork of it. See that module's
+    docstring for why the export logic itself lives in `diar-server`, not in either Python
+    caller. Note there is deliberately no `DEPLOYMENT_MODE=lite` skip anywhere in that chain
+    (issue #654) — `requirements-lite.txt` now installs the export toolchain too, so a lite
+    install provisions itself exactly like the full image.
+
+    This works because this script runs INSIDE the backend container:
+    `download-models.sh`'s `docker run` mounts this file at `/app/download-models.py` and
+    runs it against `davidamacey/opentranscribe-backend` (the full image, not `-lite` — see
+    `resolve_downloader_image()`), so `app.transcription.native_provision` is importable
+    here exactly as it is from the FastAPI process. It also means the target directory,
+    model set, and timeout all resolve identically to a real backend boot, with no separate
+    config surface for this script to drift from.
+    """
+    print_header('Provisioning Native Diarization Models (diar-server)')
+
+    try:
+        from app.transcription.native_provision import ensure_native_models
+    except ImportError as exc:
+        # Degrade, don't crash: one group's absent dependency should not fail every other
+        # group this run downloads. This is not "should never happen" -- it is exactly what
+        # happens on an image built before this module existed, or a run of this script
+        # outside the backend container it is designed for.
+        print_error(f'Cannot import app.transcription.native_provision: {exc}')
+        print_error(
+            'This group only works when run inside the OpenTranscribe backend container -- '
+            'see scripts/download-models.sh, which does this automatically. Skipping.'
+        )
+        return {
+            'diar_native': {
+                'status': 'skipped',
+                'reason': f'native_provision unavailable: {exc}',
+            }
+        }
+
+    result = ensure_native_models()
+
+    if result.status == 'ok':
+        verb = 'already provisioned' if result.already_provisioned else 'provisioned'
+        print_success(
+            f'diar-native models {verb} at {result.models_dir} ({result.duration_s:.1f}s)'
+        )
+        return {'diar_native': {'status': 'downloaded', 'models_dir': result.models_dir}}
+
+    if result.status == 'skipped':
+        print_info(f'diar-native provisioning skipped: {result.reason}')
+        return {'diar_native': {'status': 'skipped', 'reason': result.reason}}
+
+    print_error(f'diar-native provisioning failed: {result.reason}')
+    return {
+        'diar_native': {
+            'status': 'failed',
+            'error': result.reason,
+            'exit_code': result.exit_code,
+        }
+    }
+
+
 def get_cache_info():
     """Get information about cached models"""
     # Use default paths (same as backend)
@@ -945,6 +1009,9 @@ def get_cache_info():
     nltk_home = os.environ.get('NLTK_DATA') or str(Path.home() / '.cache' / 'nltk_data')
     sent_home = str(Path.home() / '.cache' / 'sentence-transformers')
     opensearch_ml_home = str(Path.home() / '.cache' / 'opensearch-ml')
+    # Not under ~/.cache like the others -- /models (DIAR_MODELS_DIR) is the same
+    # top-level mount point the backend and the diar-native sidecar both read from.
+    diar_native_home = os.environ.get('DIAR_MODELS_DIR', '/models')
 
     cache_dirs = {
         'huggingface': Path(hf_home),
@@ -952,6 +1019,7 @@ def get_cache_info():
         'nltk_data': Path(nltk_home),
         'sentence_transformers': Path(sent_home),
         'opensearch_ml': Path(opensearch_ml_home),
+        'diar_native': Path(diar_native_home),
     }
 
     info = {}
@@ -1022,6 +1090,7 @@ DOWNLOAD_GROUPS = {
     'speaker-attributes': download_speaker_attribute_models,
     'opensearch': download_opensearch_neural_models,
     'redaction': download_redaction_models,
+    'diar-native': download_diar_native_models,
 }
 
 #: Groups that need no Hugging Face credential. NLTK corpora come from NLTK's own

@@ -45,8 +45,10 @@ BLACKWELL = "docker-compose.blackwell.yml"
 NGINX = "docker-compose.nginx.yml"
 BACKUP = "docker-compose.backup.yml"
 DIAR = "docker-compose.diar-native.yml"
+GPU_SPLIT = "docker-compose.gpu-split.yml"
 
-ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR)
+DIAR_GPU = "docker-compose.diar-native-gpu.yml"
+ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR, DIAR_GPU, GPU_SPLIT)
 
 
 def _make_deployment(
@@ -297,14 +299,15 @@ def test_backup_overlay_needs_its_own_toggle_not_just_a_backup_path(tmp_path: Pa
 # --------------------------------------------------------------------------- #
 
 
-def test_diar_native_does_not_start_without_its_exported_weights(tmp_path: Path):
+def test_diar_native_does_not_start_with_neither_weights_nor_a_token(tmp_path: Path):
     """.env.example ships ENGINE_DIARIZER_BACKEND=native and several DIAR_NATIVE_*
     variables, so none of those can mean "run the sidecar" — every install has them.
 
     It also must not start weightless: diar-server exits when it cannot load its models
     and the service is `restart: unless-stopped`, so that combination is an endless
-    crash loop that ALSO fails `up --wait` for the entire stack. Falling back to the
-    in-process PyAnnote engine is the correct, working outcome here.
+    crash loop that ALSO fails `up --wait` for the entire stack. With no weights AND no
+    token, nothing can ever produce them, so falling back to the in-process PyAnnote
+    engine is the correct, working outcome.
     """
     chain, _ = _resolve(
         tmp_path,
@@ -318,16 +321,43 @@ def test_diar_native_does_not_start_without_its_exported_weights(tmp_path: Path)
     assert DIAR not in _files(chain), chain
 
 
+def test_diar_native_starts_on_a_token_alone_before_any_export_exists(tmp_path: Path):
+    """A fresh install must converge in ONE start, not two.
+
+    The backend exports the model set from its own lifespan, so gating the overlay on the
+    export already existing meant the first start provisioned and the second finally
+    noticed. A configured HUGGINGFACE_TOKEN is what makes that export possible, so it
+    stands in for the weights until they exist.
+    """
+    chain, stderr = _resolve(
+        tmp_path,
+        env_lines=("ENGINE_DIARIZER_BACKEND=native", "HUGGINGFACE_TOKEN=hf_example"),
+        diar_weights=False,
+    )
+    assert DIAR in _files(chain), chain
+    assert "provision" in stderr.lower(), stderr
+
+
 def test_diar_native_starts_once_its_weights_have_been_exported(tmp_path: Path):
     """The whole point of #639: a self-hosted deployment must have SOME path to the
     engine its own config claims is the default. Before this, there was none.
-
-    Exporting the weights is the opt-in — that directory is created only by
-    `download-models diar-native`, so no extra env var is needed to express intent.
     """
     chain, stderr = _resolve(tmp_path, diar_weights=True)
-    assert _files(chain) == [BASE, PROD, GPU, DIAR], chain
+    assert _files(chain) == [BASE, PROD, GPU, DIAR, DIAR_GPU], chain
     assert "Native diarization sidecar enabled" in stderr, stderr
+
+
+def test_diar_native_gpu_overlay_is_omitted_without_an_nvidia_runtime(tmp_path: Path):
+    """The reservation lives in its own file so the base overlay stays CPU-loadable.
+
+    If both were one file, a GPU-less or --lite host would fail `up` with "could not
+    select device driver" (#660). Splitting them only helps if the GPU half is genuinely
+    conditional, so this drives the no-nvidia path and asserts the sidecar still starts.
+    """
+    chain, stderr = _resolve(tmp_path, diar_weights=True, nvidia_runtime=False)
+    assert DIAR in _files(chain), "the sidecar must still run without a GPU"
+    assert DIAR_GPU not in _files(chain), chain
+    assert "CPU" in stderr, stderr
 
 
 def test_diar_native_weights_without_the_overlay_file_warns_loudly(tmp_path: Path):
@@ -371,6 +401,109 @@ def test_a_deployment_without_the_prod_overlay_still_resolves(tmp_path: Path):
 
 
 # --------------------------------------------------------------------------- #
+# GPU split overlay (issue #708): opentranscribe.sh had ZERO references to
+# gpu-split before this — `rg 'gpu-split|GPU_SPLIT' opentranscribe.sh` returned
+# nothing, so a self-hosted install had no way to select the overlay even once
+# it was added to release-manifest.txt. gpu_split_active() is the single gate,
+# keyed on the SAME ENGINE_GPU_SPLIT variable dispatch.py's gpu_split_enabled()
+# reads to route work onto the split queues — one operator-facing switch for
+# both halves.
+# --------------------------------------------------------------------------- #
+
+
+def test_gpu_split_overlay_is_not_selected_by_default(tmp_path: Path):
+    """.env.example ships ENGINE_GPU_SPLIT=false, so a plain install must not load it."""
+    chain, _ = _resolve(tmp_path, nvidia_runtime=True, compute_cap="8.6")
+    assert GPU_SPLIT not in _files(chain), chain
+
+
+def test_gpu_split_overlay_needs_the_dedicated_toggle_not_just_device_ids(tmp_path: Path):
+    """GPU_TRANSCRIBE_DEVICE_ID / GPU_DIARIZE_DEVICE_ID ship set in .env.example too
+    (0 and 1) — keying selection off their presence would enable the overlay for
+    every install, the same trap issue #616 already caught for the backup overlay."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("GPU_TRANSCRIBE_DEVICE_ID=0", "GPU_DIARIZE_DEVICE_ID=1"),
+    )
+    assert GPU_SPLIT not in _files(chain), chain
+
+
+def test_gpu_split_overlay_loads_when_engine_gpu_split_is_true(tmp_path: Path):
+    chain, stderr = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("ENGINE_GPU_SPLIT=true",),
+    )
+    assert _files(chain) == [BASE, PROD, GPU, GPU_SPLIT], chain
+    assert "GPU split overlay enabled" in stderr, stderr
+
+
+def test_gpu_split_overlay_is_case_insensitive_on_the_toggle(tmp_path: Path):
+    """The app-side gpu_split_enabled() normalises case; this script's gate must match
+    it exactly, or the two halves of the single switch can disagree."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("ENGINE_GPU_SPLIT=True",),
+    )
+    assert GPU_SPLIT in _files(chain), chain
+
+
+def test_gpu_split_overlay_is_skipped_without_an_nvidia_runtime(tmp_path: Path):
+    """A GPU-reservation overlay cannot load on a host with no GPU at all."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=False,
+        compute_cap="",
+        env_lines=("ENGINE_GPU_SPLIT=true",),
+    )
+    assert GPU_SPLIT not in _files(chain), chain
+
+
+def test_gpu_split_overlay_is_skipped_under_force_cpu_mode(tmp_path: Path):
+    """FORCE_CPU_MODE is the authoritative opt-out even with an nvidia runtime present
+    (WSL2 can advertise the runtime with no working adapter passthrough)."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("ENGINE_GPU_SPLIT=true", "FORCE_CPU_MODE=true"),
+    )
+    assert GPU_SPLIT not in _files(chain), chain
+
+
+def test_gpu_split_toggle_without_the_overlay_file_falls_back_silently(tmp_path: Path):
+    """Same `[ -f ... ]` fallthrough shape as the Blackwell overlay: an install predating
+    the manifest entry, or one whose download 404'd, must not crash — it just runs
+    without the split (i.e. every job stays on the shared 'gpu' queue)."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        overlays=(BASE, PROD, GPU, NGINX, BACKUP),  # no GPU_SPLIT on disk
+        env_lines=("ENGINE_GPU_SPLIT=true",),
+    )
+    assert _files(chain) == [BASE, PROD, GPU], chain
+
+
+def test_gpu_split_combines_with_the_native_diarization_sidecar(tmp_path: Path):
+    """The two overlays are independent selections; nothing about gpu-split should
+    suppress diar-native or vice versa."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("ENGINE_GPU_SPLIT=true",),
+        diar_weights=True,
+    )
+    assert _files(chain) == [BASE, PROD, GPU, DIAR, DIAR_GPU, GPU_SPLIT], chain
+
+
+# --------------------------------------------------------------------------- #
 # The rehearsal must drive this logic, not reimplement it
 # --------------------------------------------------------------------------- #
 
@@ -393,7 +526,10 @@ _HAND_BUILT_BRINGUP_EXEMPTIONS = {
         "docker-compose.lite.yml is NOT in release-manifest.txt and get_compose_files() "
         "has no lite branch, so no shipped command can select it — see "
         "test_lite_mode_is_not_reachable_by_a_shipped_deployment below. The moment that "
-        "changes, that test fails and this exemption must be removed."
+        "changes, that test fails and this exemption must be removed. Since issue #660 "
+        "the hand-built chain also adds docker-compose.diar-native.yml (the CPU-EP "
+        "speaker-embedding sidecar); that addition is reachable only from this script "
+        "and from opentr.sh (dev-only), and does not make lite shippable."
     ),
 }
 

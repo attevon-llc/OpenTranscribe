@@ -749,6 +749,25 @@ async def get_admin_stats(
 
         # Get AI model configuration
         from app.core.config import settings
+        from app.transcription.diarizer_native import describe_diarizer_status
+        from app.transcription.diarizer_native import sidecar_diagnostics
+
+        # Single resolver, shared with /system/stats (app/utils/stats_helpers.py) — issue
+        # #672's second half. This used to be a hand-rolled, UNVALIDATED copy of the
+        # diarizer_backend resolution (via engine_settings._resolve_setting) with its own
+        # description table; it disagreed with the other panel's answer on a bad config
+        # value, and both of them reported the CONFIGURED backend rather than the one
+        # actually serving. describe_diarizer_status() does a bounded (<=5s, TTL-cached)
+        # network probe when the configured backend is "native", so it is offloaded to a
+        # thread — this handler is `async def` and a probe run inline would stall every
+        # other in-flight request on this worker's event loop for the same 5s.
+        diarizer_status = await asyncio.to_thread(describe_diarizer_status)
+        # issue #656 Step 9: a live, deployment-wide "can it serve right now" probe — same
+        # asyncio.to_thread offload as above and for the same reason (a synchronous 5s probe
+        # inline would block this worker's whole event loop). Kept even when the configured
+        # backend is "pyannote" so an admin can see whether the sidecar has come back before
+        # switching to it.
+        sidecar_info = await asyncio.to_thread(sidecar_diagnostics)
 
         models_info = {
             "whisper": {
@@ -757,9 +776,20 @@ async def get_admin_stats(
                 "purpose": "Speech Recognition & Transcription",
             },
             "diarization": {
-                "name": settings.PYANNOTE_MODEL,
-                "description": "PyAnnote Speaker Diarization 3.1",
+                # Weights are shared by both engines (local_provider.py); the engine
+                # actually serving is what varies. "description" reports the EFFECTIVE
+                # engine — what is really running — since that is the question this panel
+                # exists to answer; "configured_backend"/"using_fallback" carry the other
+                # half (what was asked for) so an operator can tell "native, and it's
+                # working" from "native, and I'm silently on the fallback".
+                "name": "pyannote/speaker-diarization-community-1",
+                "description": diarizer_status["effective_description"],
                 "purpose": "Speaker Identification & Segmentation",
+                "configured_backend": diarizer_status["configured"],
+                "configured_description": diarizer_status["configured_description"],
+                "effective_backend": diarizer_status["effective"],
+                "using_fallback": diarizer_status["using_fallback"],
+                "sidecar": sidecar_info,
             },
         }
 

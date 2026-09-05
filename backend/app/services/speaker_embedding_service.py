@@ -28,6 +28,13 @@ from app.utils.hardware_detection import detect_hardware
 
 logger = logging.getLogger(__name__)
 
+_NO_BACKEND_AVAILABLE_MESSAGE = (
+    "No speaker-embedding backend available: the diar-native sidecar did not answer "
+    "and the in-process PyAnnote model is not installed in this image. Check "
+    "DIAR_NATIVE_URL and that the sidecar is reachable, or run against a full image "
+    "that ships pyannote.audio."
+)
+
 
 class SpeakerEmbeddingService:
     """Service for extracting speaker embeddings.
@@ -93,6 +100,20 @@ class SpeakerEmbeddingService:
                 self.model_name,
             )
             return
+
+        # NOTE: no lite-specific refusal here. One was added when #660 removed
+        # pyannote.audio from requirements-lite.txt, on the premise that lite had no
+        # in-process embedding model to fall back to. That premise no longer holds:
+        # pyannote.audio is back in lite, because the diar-native sidecar's ONNX/PLDA
+        # graphs are non-redistributable derivatives that lite must EXPORT for itself,
+        # and the exporter imports pyannote.audio. Having it installed means the
+        # in-process path is available on lite as the same graceful degrade every other
+        # deployment gets — refusing here would turn a working fallback into a hard
+        # failure, on the one local model job a cloud-ASR deployment still has.
+        #
+        # v3 (512-d) also falls through to here by design: `_native_backend_usable`
+        # excludes it because the sidecar serves 256-d v4 only, so in-process PyAnnote is
+        # the ONLY path for a v3 install — on lite as anywhere else.
 
         import torch
 
@@ -168,10 +189,7 @@ class SpeakerEmbeddingService:
             # Only reachable if _load_fallback_model left no model loaded, which means
             # the in-process model could not be loaded either. Say so, rather than
             # dying on "'NoneType' object is not callable" two lines down.
-            raise RuntimeError(
-                "No speaker-embedding backend available: the diar-native sidecar did not "
-                "answer and the in-process PyAnnote model is not loaded."
-            )
+            raise RuntimeError(_NO_BACKEND_AVAILABLE_MESSAGE)
 
         audio_input = {"waveform": waveform, "sample_rate": sample_rate}
         # Inference(window="whole") returns a single np.ndarray embedding
@@ -195,9 +213,14 @@ class SpeakerEmbeddingService:
         """Initialize the pyannote embedding model."""
         try:
             # Lazy import: pyannote is GPU-worker-only; keeping it out of the
-            # module top level spares the API server (and CI) the import cost.
-            from pyannote.audio import Inference
-            from pyannote.audio import Model
+            # module top level spares the API server (and CI) the import cost. It is
+            # also ABSENT from lite (issue #660) — caught explicitly below so that case
+            # gets the shaped sidecar-pointing error instead of a raw import traceback.
+            try:
+                from pyannote.audio import Inference
+                from pyannote.audio import Model
+            except (ImportError, ModuleNotFoundError) as import_err:
+                raise RuntimeError(_NO_BACKEND_AVAILABLE_MESSAGE) from import_err
 
             # Check if we have a Hugging Face token
             hf_token = settings.HUGGINGFACE_TOKEN
@@ -283,12 +306,16 @@ class SpeakerEmbeddingService:
         except Exception as ffmpeg_err:
             logger.debug(f"FFmpeg failed ({ffmpeg_err}), trying torchaudio")
 
-        # 2. torchaudio (when backends are available)
+        # 2. torchaudio (when backends are available). Absent entirely in lite since
+        # issue #660 — ImportError/ModuleNotFoundError falls through to scipy below
+        # exactly like the "no backend" torchaudio failure it already tolerated.
         try:
             import torchaudio
 
             waveform, sr = torchaudio.load(audio_path)
             return waveform, int(sr)
+        except (ImportError, ModuleNotFoundError) as ta_missing:
+            logger.debug(f"torchaudio not installed ({ta_missing}), trying scipy")
         except Exception as ta_err:
             if "backend" not in str(ta_err).lower() and "already_closed" not in str(ta_err).lower():
                 raise
@@ -447,6 +474,17 @@ class SpeakerEmbeddingService:
 
         Returns:
             Dictionary mapping speaker IDs to lists of embeddings
+
+        Note:
+            The audio file is decoded exactly ONCE up front (previously
+            ``extract_embedding_from_file`` decoded the entire file again for
+            every selected segment — up to 30 full-file decodes per job for
+            5 segments x 6 speakers). Each segment is then sliced from that
+            single in-memory waveform via ``extract_embedding_from_waveform``,
+            which applies the identical start/end sample slicing and ``_embed``
+            call ``extract_embedding_from_file`` used, so the resulting
+            embeddings are byte-for-byte the same — only the number of
+            decodes changes (issue #661 E3.2).
         """
         from app.services.audio_segment_utils import group_segments_by_speaker
         from app.services.audio_segment_utils import merge_adjacent_segments
@@ -454,6 +492,14 @@ class SpeakerEmbeddingService:
 
         speaker_embeddings: dict[int, list[np.ndarray]] = {}
         grouped = group_segments_by_speaker(segments, speaker_mapping)
+        if not grouped:
+            return speaker_embeddings
+
+        try:
+            waveform, sample_rate = self._load_audio(audio_path)
+        except Exception as e:
+            logger.error(f"Error loading audio {audio_path} for segment embeddings: {e}")
+            return speaker_embeddings
 
         for speaker_id, speaker_segs in grouped.items():
             merged = merge_adjacent_segments(speaker_segs)
@@ -463,8 +509,8 @@ class SpeakerEmbeddingService:
 
             embeddings = []
             for segment in selected:
-                embedding = self.extract_embedding_from_file(
-                    audio_path, {"start": segment["start"], "end": segment["end"]}
+                embedding = self.extract_embedding_from_waveform(
+                    waveform, sample_rate, {"start": segment["start"], "end": segment["end"]}
                 )
 
                 if embedding is not None:

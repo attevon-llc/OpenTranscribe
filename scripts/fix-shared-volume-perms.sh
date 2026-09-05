@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Repair ownership of the pipeline's shared volumes.
 #
-# The backend image reserves /scratch/opentranscribe, /tmp/transcription and /tmp/diar-native
-# so a freshly created named volume inherits appuser (uid 1000). Volumes created by an older
+# The backend image reserves /scratch/opentranscribe (with engine/ and diar/ subdirs) so a
+# freshly created named volume inherits appuser (uid 1000). Volumes created by an older
 # image predate that and are root-owned 0755, which the non-root workers cannot write: the
 # engine's WAV handoff between the GPU and CPU stages then silently degrades to a
 # re-decode, and the diar-native sidecar cannot be handed audio at all.
@@ -20,7 +20,16 @@ PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}"
 # default used to be 1000:1000, which doesn't exist in the image, so a volume repaired by
 # this script diverged from one created fresh by the image itself (issue #580).
 UID_GID="${SHARED_VOLUME_OWNER:-1000:999}"
-VOLUMES=(pipeline_scratch transcription-temp diar-native-tmp)
+
+# Issue #661 E2: the pipeline consolidated onto ONE volume, pipeline_scratch, with three
+# namespaces (<file_uuid>/, engine/, diar/) — transcription-temp and diar-native-tmp no
+# longer exist on a fresh install. Only pipeline_scratch may satisfy the "fixed -eq 0"
+# refusal below: a stack that still HAS the two legacy volumes (not yet upgraded/pruned)
+# but a root-owned pipeline_scratch must not report success just because the legacy repair
+# happened to touch something. Legacy volumes are still repaired when present (harmless,
+# keeps a rollback to an older image usable) but never counted.
+VOLUMES=(pipeline_scratch)
+LEGACY_VOLUMES=(transcription-temp diar-native-tmp)
 
 echo "project: $PROJECT   owner: $UID_GID"
 fixed=0
@@ -32,9 +41,25 @@ for vol in "${VOLUMES[@]}"; do
   fi
   before=$(docker run --rm -v "$full":/v alpine:3 stat -c '%u:%g %a' /v)
   docker run --rm -v "$full":/v alpine:3 chown -R "$UID_GID" /v
+  # chmod the two reserved namespace subdirs too (issue #661 E2) so a fresh
+  # `os.makedirs(exist_ok=True)` under a repaired-but-not-yet-created parent inherits
+  # correctly; `mkdir -p` here is a no-op if the runtime already created them.
+  docker run --rm -v "$full":/v alpine:3 sh -c \
+    'mkdir -p /v/engine /v/diar && chown "'"$UID_GID"'" /v/engine /v/diar && chmod 775 /v/engine /v/diar'
   after=$(docker run --rm -v "$full":/v alpine:3 stat -c '%u:%g %a' /v)
   echo "  $full: $before -> $after"
   fixed=$((fixed + 1))
+done
+
+for vol in "${LEGACY_VOLUMES[@]}"; do
+  full="${PROJECT}_${vol}"
+  if ! docker volume inspect "$full" >/dev/null 2>&1; then
+    continue
+  fi
+  before=$(docker run --rm -v "$full":/v alpine:3 stat -c '%u:%g %a' /v)
+  docker run --rm -v "$full":/v alpine:3 chown -R "$UID_GID" /v
+  after=$(docker run --rm -v "$full":/v alpine:3 stat -c '%u:%g %a' /v)
+  echo "  $full: $before -> $after (legacy volume, repaired but not counted)"
 done
 
 # A run that repairs zero volumes because every one of them is genuinely absent (a

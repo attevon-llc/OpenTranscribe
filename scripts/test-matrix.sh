@@ -37,6 +37,13 @@ EXIT_GATE=1
 EXIT_MISUSE=2
 EXIT_PRECONDITION=3
 EXIT_ABORT=4
+# 5 = every leg that RAN passed, but at least one reported NOT MEASURED (exit 4 under the
+# smoke contract). Distinct from 0 on purpose: the report and the summary already name the
+# uncovered legs, but a caller reading only $? could not tell a fully measured green matrix
+# from one whose diarization/gpu-scale/lite legs never executed. Same discipline as
+# security-scan.sh's 1-vs-2 split (issue #681) — "measured, and fine" and "never measured"
+# are different outcomes and must not share an exit code.
+EXIT_NOT_MEASURED=5
 
 DOC="docs-site/docs/developer-guide/full-test-matrix.md"
 
@@ -81,6 +88,10 @@ STAGE_ARG=""
 # the smoke one. That divergence is real and pre-existing; declaring it per leg
 # is how this script reads each verdict correctly instead of calling a smoke
 # script's honest "I could not measure this" an operator abort.
+#
+# A smoke leg's "not measured" is recorded as SKIP (never PASS) and, since it
+# would otherwise vanish into a 0, propagates to THIS script's own exit code as
+# EXIT_NOT_MEASURED (5). See the note beside that constant.
 LEGS=(
     "1.1|1|safe-precommit full run|scripts/safe-precommit.sh run --all-files|standard"
     "1.2|1|backend test summary|scripts/run-backend-tests.sh --summary|standard"
@@ -436,6 +447,12 @@ if [[ "$MODE_DRY_RUN" != "true" ]]; then
         info "${YELLOW}${SKIP_COUNT} leg(s) reported NOT MEASURED — this run did not cover them:${NC}"
         for s in "${SKIPPED_LEGS[@]}"; do info "  ⊘ $s"; done
         info "${YELLOW}A green matrix with skips is not a fully measured one.${NC}"
+        # ...and neither is a green EXIT CODE. Only upgrade a pass: a real failure
+        # (gate/precondition/abort) is the more important verdict and keeps its code.
+        if (( RC == 0 )); then
+            info "${YELLOW}Exiting ${EXIT_NOT_MEASURED} (NOT MEASURED), not 0.${NC}"
+            RC=$EXIT_NOT_MEASURED
+        fi
     fi
     info "Report: $REPORT_FILE"
 fi

@@ -65,14 +65,36 @@ def write_wav_to_shared_volume(
         return None
 
 
+# Chunk size (in samples) for the scaled read below. 4_000_000 int16 samples is 8 MB per
+# mmap page-in and produces a 16 MB float32 chunk — small enough to bound the working set,
+# large enough that the per-chunk Python/numpy overhead is negligible against a 3h file.
+_SCALED_READ_CHUNK_SAMPLES = 4_000_000
+
+
 def load_from_shared_volume(wav_path: str) -> np.ndarray | None:
-    """Load audio from shared-volume WAV (sub-second mmap-read).
+    """Load audio from shared-volume WAV via a lazy, chunked scaled read.
+
+    ``wavfile.read(..., mmap=True)`` opens the file without paging it in, but the
+    int16 -> float32 ``/32767`` normalization below still has to touch every sample —
+    the mmap by itself only saves a *disk* read, not the memory this function must
+    still produce. What it *does* avoid, by converting in fixed-size chunks straight
+    into a preallocated float32 output array (with the divide applied ``in place`` on
+    each chunk), is ever holding a second full-length float32 temporary at once: the
+    naive ``data.astype(np.float32) / 32767.0`` allocates one array for the cast and a
+    *second* for the divide, doubling peak memory over one 3h/16kHz mono file's ~691 MB
+    float32 footprint. Peak here is the one output array plus one chunk's worth of
+    scratch (issue #661 E4).
+
+    ⚠️ Scaling to [-1, 1] is not optional and must not be skipped or reordered: faster_whisper's
+    feature extractor only checks ``dtype != float32`` and casts without dividing, so handing
+    it a raw (unscaled) int16-derived array yields amplitudes ~32767x too large with no
+    exception — a silently garbage transcript. Do not "simplify" this into a dtype-only view.
 
     Args:
         wav_path: Absolute path written by write_wav_to_shared_volume.
 
     Returns:
-        float32 numpy array at 16kHz, or None if path missing.
+        float32 numpy array at 16kHz, normalized to [-1, 1], or None if path missing.
     """
     if not wav_path or not os.path.exists(wav_path):
         return None
@@ -80,7 +102,14 @@ def load_from_shared_volume(wav_path: str) -> np.ndarray | None:
         import scipy.io.wavfile as wavfile  # type: ignore[import]
 
         _, data = wavfile.read(wav_path, mmap=True)
-        audio: np.ndarray = data.astype(np.float32) / 32767.0
+        n_samples = data.shape[0]
+        audio = np.empty(data.shape, dtype=np.float32)
+        for start in range(0, n_samples, _SCALED_READ_CHUNK_SAMPLES):
+            end = min(start + _SCALED_READ_CHUNK_SAMPLES, n_samples)
+            # Assignment casts int16 -> float32 for this chunk only; the in-place
+            # divide then scales it without allocating a second chunk-sized array.
+            audio[start:end] = data[start:end]
+            audio[start:end] /= 32767.0
         logger.debug(f"mmap-loaded shared-volume WAV: {wav_path} ({len(audio)} samples)")
         return audio
     except Exception as e:

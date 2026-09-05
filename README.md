@@ -332,12 +332,10 @@ The CPU-only choice is persisted to `.env` as `FORCE_CPU_MODE=true` so subsequen
 The script will prompt you for your HuggingFace token during setup. **BEFORE running the installer:**
 
 1. **Get a FREE token:** Visit [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-2. **Accept BOTH gated model agreements** (required for speaker diarization):
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) - Click "Agree and access repository"
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) - Click "Agree and access repository"
+2. **Accept the gated model agreement** (required for speaker diarization): [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) - Click "Agree and access repository" (this is the only repo OpenTranscribe actually gates on; it's auto-approved)
 3. **Enter your token** when prompted by the installer
 
-If you provide a valid token with both model agreements accepted, AI models will be downloaded and cached before Docker starts, ensuring the app is ready to use immediately. If you skip this step, models will download on first use (10-30 minute delay).
+If you provide a valid token with the model agreement accepted, AI models will be downloaded and cached before Docker starts, ensuring the app is ready to use immediately. If you skip this step, models will download on first use (10-30 minute delay).
 
 Once setup is complete, start OpenTranscribe with:
 
@@ -431,7 +429,7 @@ GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
 # Configure in .env
 GPU_TRANSCRIBE_DEVICE_ID=0   # GPU for WhisperX (transcription)
 GPU_DIARIZE_DEVICE_ID=1      # GPU for PyAnnote (diarization)
-ENGINE_SHARED_VOLUME_PATH=/tmp/transcription  # shared volume mount path
+ENGINE_SHARED_VOLUME_PATH=/scratch/opentranscribe/engine  # per-task handoff dir on the pipeline_scratch volume
 
 # Start with GPU split
 ./opentr.sh start dev --with-gpu-split
@@ -880,19 +878,15 @@ OpenTranscribe requires a HuggingFace token for speaker diarization and voice fi
 2. Click "New token" and select "Read" access
 3. Copy the generated token
 
-#### **2. Accept Model User Agreements** ⚠️ **CRITICAL - MUST ACCEPT BOTH!**
+#### **2. Accept Model User Agreement** ⚠️ **CRITICAL**
 
-**You MUST accept the user agreements for BOTH PyAnnote models or speaker diarization will fail:**
+**You MUST accept the user agreement for the PyAnnote diarization model or speaker diarization will fail:**
 
-1. **Segmentation Model** (Required):
-   - Visit: [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+1. **Speaker Diarization Model** (Required):
+   - Visit: [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — this is the only repo OpenTranscribe actually gates on (auto-approved, CC-BY-4.0)
    - Click: **"Agree and access repository"**
 
-2. **Speaker Diarization Model** (Required):
-   - Visit: [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-   - Click: **"Agree and access repository"**
-
-> **⚠️ Common Issue:** If you only accept one model agreement, downloads will fail with `'NoneType' object has no attribute 'eval'` error. You MUST accept BOTH agreements.
+> **⚠️ Common Issue:** If the agreement isn't accepted, downloads will fail with `'NoneType' object has no attribute 'eval'` or an HTTP 403/PermissionError. Older docs mentioned `pyannote/segmentation-3.0` and `pyannote/speaker-diarization-3.1` — that pair is optional and only helps the in-process PyAnnote engine's internal last-resort fallback; it is never a substitute for accepting `community-1`.
 
 #### **3. Configure Token**
 Add your token to the environment configuration:

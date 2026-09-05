@@ -227,6 +227,13 @@ services:
       # its OWN filesystem, so a model the backend downloads must land in this shared
       # path, not the backend's private cache, for OpenSearch to ever find it.
       - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models
+      # The native diarizer's exported ONNX/PLDA set, READ-WRITE and only here. The
+      # backend owns the export (app/transcription/native_provision.py, run from the
+      # lifespan); the diar-native sidecar mounts this same host directory READ-ONLY at
+      # the identical container path, so both agree on the location by construction and
+      # only one process can ever write it. Same DIAR_NATIVE_MODELS_DIR indirection the
+      # sidecar uses, so pinning it in .env moves both together (issue #654).
+      - ${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-./models}/diar-native}:/models
       # Shared scratch for cross-worker preprocessed-WAV handoff
       - pipeline_scratch:/scratch/opentranscribe
     ports:
@@ -322,7 +329,6 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       # Shared scratch — reads the preprocessed WAV that the CPU worker staged
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -436,7 +442,6 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       - PRELOAD_CPU_WHISPER=true
       # ffmpeg preprocess threading (opt-in CPU-contention control; default off).
@@ -752,6 +757,15 @@ services:
   # GPU device assignment is controlled via GPU_TRANSCRIBE_DEVICE_ID /
   # GPU_DIARIZE_DEVICE_ID.  GPU reservation (deploy.resources.reservations)
   # must be added via an overlay file (see docker-compose.gpu.yml pattern).
+  #
+  # celery-worker-gpu-transcribe only receives work because
+  # transcription/dispatch.py:_resolve_gpu_queue() routes the initial GPU stage
+  # to the 'gpu-transcribe' queue when app.core.constants.gpu_split_enabled()
+  # is true. Before issue #703's fix, nothing ever published to that queue —
+  # this worker held its GPU reservation and sat idle under --with-gpu-split.
+  # ENGINE_GPU_SPLIT propagation to the dispatching containers (backend,
+  # celery-worker, celery-cpu-worker, celery-download-worker) is handled in
+  # docker-compose.gpu-split.yml, not here — see that file's header comment.
 
   celery-worker-gpu-transcribe:
     container_name: ${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-transcribe
@@ -770,7 +784,6 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -830,7 +843,6 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -913,7 +925,6 @@ services:
       # match the other transcription workers or the scaled worker can't see the
       # handoff and silently falls back to re-downloading from MinIO per file.
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     tmpfs:
       - /app/temp:noexec,nosuid,size=20g,mode=1777
     depends_on:
@@ -1038,14 +1049,18 @@ volumes:
   redis_data:
   opensearch_data:
   flower_data:
-  # Shared scratch volume for cross-worker artifact handoff. Holds the
-  # preprocessed 16 kHz WAV (one per in-flight file, plus ephemeral
-  # derived artifacts). Defaults to a regular disk-backed volume so the
-  # stack works on every host; override to tmpfs in an environment
-  # overlay (see docker-compose.scratch-tmpfs.yml) for RAM-backed speed.
-  # See backend/app/utils/scratch_volume.py for the contract.
+  # Shared scratch volume for cross-worker artifact handoff (issue #661 E2: ONE volume,
+  # three namespaces). Holds the preprocessed 16 kHz WAV under `<file_uuid>/` (one per
+  # in-flight file, plus ephemeral derived artifacts — see backend/app/utils/scratch_volume.py
+  # for that contract), the engine's Stage-1→Stage-2 handoff WAV under `engine/`
+  # (ENGINE_SHARED_VOLUME_PATH, backend/app/core/constants.py), and the diar-native sidecar's
+  # own-copy fallback under `diar/` (DIAR_NATIVE_SHARED_DIR). Same volume for all three is what
+  # lets the engine handoff be an `os.link` instead of a cross-filesystem copy. Defaults to a
+  # regular disk-backed volume so the stack works on every host; override to tmpfs in an
+  # environment overlay (see docker-compose.scratch-tmpfs.yml) for RAM-backed speed — worst
+  # case there is `DIAR_NATIVE_MAX_INFLIGHT x 2 x largest_file` (the x2 is the own-copy
+  # fallback transiently holding both names).
   pipeline_scratch:
-  transcription-temp:
     driver: local
 
 networks:

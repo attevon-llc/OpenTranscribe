@@ -73,6 +73,23 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         _cleanup_temp(gpu_result.get("file_uuid"))
         return gpu_result
 
+    if gpu_result.get("status") == "split_forwarded":
+        # gpu-split topology (core.py::transcribe_gpu_task): this dict is what the
+        # transcribe-only leg returns to satisfy the OUTER pipeline chain's
+        # unconditional third link. It carries no user_id/speaker_mapping/etc. — the
+        # real completion belongs to diarize_gpu_task, which core.py already chained
+        # to a SEPARATE finalize_transcription invocation of its own. This call is
+        # that outer chain running against a payload that isn't the real result; it
+        # must be a no-op, not a KeyError (issue that made every --with-gpu-split job
+        # fail visibly even though diarization went on to complete correctly).
+        logger.debug(
+            "finalize_transcription: no-op for split_forwarded result (file_id=%s, "
+            "task_id=%s) — the real finalize runs after diarize_gpu_task",
+            gpu_result.get("file_id"),
+            gpu_result.get("task_id"),
+        )
+        return gpu_result
+
     file_uuid = gpu_result["file_uuid"]
     file_id = gpu_result["file_id"]
     user_id = gpu_result["user_id"]

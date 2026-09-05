@@ -7,7 +7,12 @@ FAILED and notify the SPA.
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+from typing import NoReturn
 
+from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
+from app.core.constants import DIAR_SIDECAR_RETRY_BASE
+from app.core.constants import DIAR_SIDECAR_RETRY_MAX
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -18,7 +23,83 @@ from app.utils.task_utils import update_task_status
 
 from .notifications import send_error_notification
 
+if TYPE_CHECKING:
+    from app.transcription.diarizer_native import DiarSidecarUnavailableError
+
 logger = logging.getLogger(__name__)
+
+
+def retry_on_diar_sidecar_unavailable(
+    task, exc: "DiarSidecarUnavailableError", file_uuid: str
+) -> NoReturn:
+    """Shared retry-scheduling helper for issue #656 Step 5.
+
+    Used by both ``transcribe_gpu_task`` (``core.py``) and ``diarize_gpu_task``
+    (``diarize_task.py``) — extracted so each task's own ``except`` clause stays a single
+    call, keeping cyclomatic complexity under the repo's C901 gate rather than raising it.
+
+    ``task.retry()`` always raises ``celery.exceptions.Retry``, so this function never
+    returns normally; callers still write ``raise retry_on_diar_sidecar_unavailable(...)``
+    for readability even though the raise happens inside.
+
+    MUST be caught by an ``except DiarSidecarUnavailableError`` clause placed BEFORE the
+    task's generic ``except Exception`` — see both call sites' comments for why: raised from
+    inside the generic handler, ``_handle_transcription_failure`` would already have marked
+    the file ERROR and sent an error notification on every attempt, not just the last.
+    """
+    countdown = exc.retry_after or min(
+        DIAR_SIDECAR_RETRY_BASE * 2**task.request.retries, DIAR_SIDECAR_RETRY_MAX
+    )
+    logger.warning(
+        "diar-native sidecar unavailable (%s) for file %s (attempt %d/%d), retrying in %.0fs",
+        exc.reason,
+        file_uuid,
+        task.request.retries + 1,
+        DIAR_SIDECAR_MAX_RETRIES,
+        countdown,
+    )
+    raise task.retry(exc=exc, countdown=countdown, max_retries=DIAR_SIDECAR_MAX_RETRIES) from exc
+
+
+def retry_on_asr_rate_limit(task, exc, file_uuid: str) -> NoReturn:
+    """Shared retry-scheduling helper for a cloud-ASR vendor throttle/quota response
+    (``ASRRateLimitedError``). Extracted alongside :func:`retry_on_diar_sidecar_unavailable`
+    for the same reason — keeping ``transcribe_gpu_task``'s own cyclomatic complexity under
+    the repo's C901 gate. Deliberately a SEPARATE policy from the task's
+    ``autoretry_for=(ConnectionError, TimeoutError)``: that one's ``retry_backoff_max=30`` /
+    ``max_retries=1`` are tuned for a GPU-path connection blip, far too short for a vendor
+    throttle, and ``autoretry_for`` cannot honor ``Retry-After``.
+    """
+    from app.core.constants import CLOUD_ASR_MAX_RETRIES
+    from app.core.constants import CLOUD_ASR_RETRY_BASE
+    from app.core.constants import CLOUD_ASR_RETRY_MAX
+
+    countdown = exc.retry_after or min(
+        CLOUD_ASR_RETRY_BASE * 2**task.request.retries, CLOUD_ASR_RETRY_MAX
+    )
+    logger.warning(
+        "Cloud ASR rate-limited for file %s (attempt %d/%d), retrying in %.0fs: %s",
+        file_uuid,
+        task.request.retries + 1,
+        CLOUD_ASR_MAX_RETRIES,
+        countdown,
+        exc,
+    )
+    raise task.retry(exc=exc, countdown=countdown, max_retries=CLOUD_ASR_MAX_RETRIES) from exc
+
+
+def retry_transcribe_gpu_exception(task, exc, file_uuid: str) -> NoReturn:
+    """Single call site for ``transcribe_gpu_task``'s ``except (ASRRateLimitedError,
+    DiarSidecarUnavailableError)`` clause — dispatches to the matching ``retry_on_*`` helper.
+    Keeping the isinstance check here (rather than in the task body) keeps that function's
+    own cyclomatic complexity under the repo's C901 gate; always raises.
+    """
+    from app.transcription.diarizer_native import DiarSidecarUnavailableError
+
+    if isinstance(exc, DiarSidecarUnavailableError):
+        retry_on_diar_sidecar_unavailable(task, exc, file_uuid)
+    else:
+        retry_on_asr_rate_limit(task, exc, file_uuid)
 
 
 @dataclass

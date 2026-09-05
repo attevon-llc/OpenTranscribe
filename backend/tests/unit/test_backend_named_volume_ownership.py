@@ -3,15 +3,18 @@
 A Docker-managed NAMED volume (unlike a host bind mount) has no path to `chown` from
 outside the image: Docker initializes its ownership from whatever the image already has
 at that mount point *at build time*. `Dockerfile.prod` / `Dockerfile.lite` reserve
-`/scratch/opentranscribe` and `/tmp/transcription` this way — `RUN mkdir -p ... && chown
-appuser:appuser ...` before `USER appuser` — so a freshly created volume is writable by
-the non-root worker that owns the pipeline's stage-to-stage WAV handoff.
+`/scratch/opentranscribe` this way — `RUN mkdir -p ... && chown appuser:appuser ...`
+before `USER appuser` — so a freshly created volume is writable by the non-root worker
+that owns the pipeline's stage-to-stage WAV handoff. Issue #661 E2 consolidated what used
+to be three separate volumes/mount points (`pipeline_scratch`, `transcription-temp` at
+`/tmp/transcription`, `diar-native-tmp` at `/tmp/diar-native`) onto this one volume with
+three internal namespaces.
 
-`/tmp/diar-native` (docker-compose.diar-native.yml's `diar-native-tmp` volume) was added
-without that reservation. Reproduced live on a fresh `./opentr.sh reset dev`: the volume
-was created root-owned, and every real transcription through the diar-native sidecar
-failed with a permission error on its first write. Nothing in the suite caught it —
-every other test runs against an already-provisioned stack, and this bug only manifests
+A volume mounted at a new path without a matching Dockerfile reservation was reproduced
+live on a fresh `./opentr.sh reset dev` for the original `diar-native-tmp` addition: the
+volume was created root-owned, and every real transcription through the diar-native
+sidecar failed with a permission error on its first write. Nothing in the suite caught it
+— every other test runs against an already-provisioned stack, and this bug only manifests
 on a volume's FIRST creation. This test would have caught it: it derives, from the
 compose files themselves, every named volume a backend-image service mounts, and checks
 each target against Dockerfile.prod's actual reserved-path list.
@@ -116,15 +119,27 @@ def _dockerfile_reserved_paths(dockerfile: Path) -> set[str]:
 
 
 def test_the_compose_walk_finds_the_known_volumes() -> None:
-    """Guard on the guard: a walk matching nothing would pass every assertion below."""
+    """Guard on the guard: a walk matching nothing would pass every assertion below.
+
+    Issue #661 E2 consolidated the pipeline onto ONE named volume (``pipeline_scratch``,
+    mounted at ``/scratch/opentranscribe``) with three internal namespaces
+    (``<file_uuid>/``, ``engine/``, ``diar/``) — the separate ``diar-native-tmp`` volume this
+    test used to also assert on (mounted at ``/tmp/diar-native``) no longer exists in any
+    overlay, so that half of the guard is retired rather than failing forever. The
+    non-vacuousness property this test protects — "the walk actually finds something, not
+    nothing" — is now carried DELIBERATELY by
+    ``test_a_brand_new_unreserved_scratch_volume_is_caught`` below (a synthetic new-volume
+    case, independent of which real volumes exist today) plus the assertion added here that
+    the walk visited more than one compose file, so a walk silently scoped to a single file
+    would still fail loudly.
+    """
+    compose_files = sorted(REPO_ROOT.glob("docker-compose*.yml"))
+    assert len(compose_files) > 1, (
+        "expected multiple docker-compose*.yml files — the walk must span all of them, "
+        "not silently narrow to one"
+    )
     targets = _all_backend_named_volume_targets()
     assert "/scratch/opentranscribe" in targets, "The compose walk found no named volumes at all."
-    # Compared against parsed compose YAML, never used for file I/O — same false positive
-    # docker-compose.yml's own transcription-temp mount line already annotates.
-    assert "/tmp/diar-native" in targets, (  # noqa: S108  # nosec B108
-        "docker-compose.diar-native.yml's diar-native-tmp volume was not found — "
-        "either the walk broke or the overlay stopped declaring it."
-    )
 
 
 def test_the_reserved_path_parser_can_actually_fail() -> None:

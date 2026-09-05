@@ -350,6 +350,7 @@ def test_completion_flips_status_and_records_the_processing_provenance(db_sessio
         language="de",
         whisper_model="large-v3-turbo",
         diarization_model="pyannote/speaker-diarization-community-1",
+        diarization_provider="native",
         embedding_mode="v4",
         asr_provider="deepgram",
         asr_model="nova-3",
@@ -362,6 +363,10 @@ def test_completion_flips_status_and_records_the_processing_provenance(db_sessio
     assert media_file.completed_at is not None
     assert media_file.whisper_model == "large-v3-turbo"
     assert media_file.diarization_model == "pyannote/speaker-diarization-community-1"
+    assert media_file.diarization_provider == "native", (
+        "issue #706: the engine that actually served diarization must land on the row, "
+        "not just the model name"
+    )
     assert media_file.embedding_mode == "v4"
     assert media_file.asr_provider == "deepgram"
     assert media_file.asr_model == "nova-3"
@@ -377,6 +382,7 @@ def test_omitted_provenance_fields_do_not_erase_what_is_already_stored(db_sessio
     """
     media_file.whisper_model = "large-v3"
     media_file.embedding_mode = "v3"
+    media_file.diarization_provider = "native"
     db_session.commit()
 
     update_media_file_transcription_status(
@@ -386,13 +392,32 @@ def test_omitted_provenance_fields_do_not_erase_what_is_already_stored(db_sessio
         language="en",
         whisper_model=None,
         diarization_model=None,
+        diarization_provider=None,
         embedding_mode=None,
     )
 
     db_session.refresh(media_file)
     assert media_file.whisper_model == "large-v3"
     assert media_file.embedding_mode == "v3"
+    assert media_file.diarization_provider == "native", (
+        "diarization_provider=None must mean 'no new information', same as the other "
+        "provenance columns — never blank a value an earlier pass recorded"
+    )
     assert media_file.status == FileStatus.COMPLETED
+
+
+def test_diarization_provider_is_recorded_for_a_pyannote_fallback_run(db_session, media_file):
+    """The other resolved value the vocabulary must round-trip (issue #706)."""
+    update_media_file_transcription_status(
+        db_session,
+        media_file.id,
+        [_segment(0.0, 5.0, "x")],
+        diarization_model="pyannote/speaker-diarization-community-1",
+        diarization_provider="pyannote",
+    )
+
+    db_session.refresh(media_file)
+    assert media_file.diarization_provider == "pyannote"
 
 
 def test_diarization_disabled_is_recorded_even_though_it_is_falsy(db_session, media_file):

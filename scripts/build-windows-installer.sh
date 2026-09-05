@@ -147,6 +147,15 @@ extract_docker_images() {
 
     print_info "Source: docker-compose.yml (single source of truth)"
 
+    # DECISION (issue #655): the diar-native sidecar image is intentionally NOT
+    # extracted or packaged here. docker-compose.diar-native.yml is never copied
+    # into the installer package (see the "Copying docker-compose configuration"
+    # step below) and there is no overlay hook in run_opentranscribe.bat either.
+    # Windows installs are PyAnnote-diarization-only by design -- see
+    # windows-installer/INSTALL-WINDOWS.md's HuggingFace token step. If native
+    # diarization on Windows is ever built, it needs both a `docker save` of the
+    # diar-native image here AND an overlay hook in run_opentranscribe.bat.
+
     # Get infrastructure images from main docker-compose.yml
     mapfile -t INFRASTRUCTURE_IMAGES < <(extract_infrastructure_images)
 
@@ -252,7 +261,7 @@ download_models() {
         $gpu_args \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${WHISPER_MODEL:-large-v3-turbo}" \
-        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
+        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}" \
         -e USE_GPU="${USE_GPU:-true}" \
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
         -e OPENSEARCH_MODELS="${OPENSEARCH_MODELS:-}" \

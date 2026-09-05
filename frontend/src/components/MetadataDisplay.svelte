@@ -236,7 +236,7 @@
         </div>
       </div>
 
-      {#if file?.whisper_model || file?.diarization_model || file?.diarization_disabled || file?.embedding_mode}
+      {#if file?.whisper_model || file?.diarization_model || file?.diarization_provider || file?.diarization_disabled || file?.embedding_mode}
         <div class="processing-models-section">
           <hr class="models-divider" />
           <div class="models-row">
@@ -251,7 +251,18 @@
                 <span class="model-label">{$t('metadata.diarizationLabel')}</span>
                 <span class="model-name">{file.diarization_model}</span>
               </span>
-            {:else if file.diarization_disabled}
+            {/if}
+            {#if file.diarization_provider}
+              <span class="model-badge">
+                <span class="model-label">{$t('metadata.diarizationEngineLabel')}</span>
+                <span class="model-name">
+                  {file.diarization_provider === 'native'
+                    ? $t('metadata.diarizationEngineNative')
+                    : $t('metadata.diarizationEnginePyannote')}
+                </span>
+              </span>
+            {/if}
+            {#if !file.diarization_model && file.diarization_disabled}
               <span class="model-badge diarization-disabled">
                 <span class="model-label">{$t('metadata.diarizationLabel')}</span>
                 <span class="model-name">{$t('metadata.diarizationDisabled')}</span>

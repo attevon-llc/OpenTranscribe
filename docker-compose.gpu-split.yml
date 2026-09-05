@@ -24,6 +24,25 @@
 # Each worker reserves exactly ONE host GPU via device_ids. Docker remaps the
 # reserved card to index 0 inside the container, which is why the base sets
 # CUDA_VISIBLE_DEVICES=0 for both split workers (same pattern as gpu-scale).
+#
+# ENGINE_GPU_SPLIT=true below is NOT redundant with the same var hardcoded on
+# celery-worker-gpu-transcribe/-diarize in docker-compose.yml (issue #703
+# follow-up). Those two workers only ever run split-mode work, so the base file
+# hardcoding it there is correct and untouched. But dispatch.py's
+# _resolve_gpu_queue() (app/core/constants.gpu_split_enabled()) ALSO needs to see
+# this var, and it runs in every container that can dispatch a transcription
+# pipeline — backend, celery-worker, celery-cpu-worker, celery-download-worker —
+# none of which has any other way to learn that --with-gpu-split was used
+# (COMPOSE_PROFILES is a host/compose-CLI value, never passed into a container).
+# Before this override existed, celery-worker's OWN forward-to-gpu-diarize check
+# (transcription/core.py) also depended on this var reaching it — and nothing
+# did: .env.example ships ENGINE_GPU_SPLIT=false, and celery-worker only reads
+# it via env_file, so an operator who ran --with-gpu-split without ALSO hand-
+# editing .env got no split at all, silently. Setting it here, gated on this
+# overlay (loaded if and only if --with-gpu-split was passed), fixes both at
+# once. A caller container not listed below (e.g. a future task added on
+# another queue) reads the coded default 'false' and falls back to the always-
+# staffed 'gpu' queue rather than one nothing drains.
 
 services:
   celery-worker-gpu-transcribe:
@@ -43,3 +62,19 @@ services:
             - driver: nvidia
               device_ids: ["${GPU_DIARIZE_DEVICE_ID:-1}"]
               capabilities: [gpu]
+
+  backend:
+    environment:
+      - ENGINE_GPU_SPLIT=true
+
+  celery-worker:
+    environment:
+      - ENGINE_GPU_SPLIT=true
+
+  celery-cpu-worker:
+    environment:
+      - ENGINE_GPU_SPLIT=true
+
+  celery-download-worker:
+    environment:
+      - ENGINE_GPU_SPLIT=true

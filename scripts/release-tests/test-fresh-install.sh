@@ -381,7 +381,7 @@ phase_03_pin_local_image() {
     model_cache_dir=$(awk -F= '/^MODEL_CACHE_DIR=/{print $2; exit}' "$target/.env")
     [[ -z "$model_cache_dir" || "$model_cache_dir" == "./models" ]] && model_cache_dir="$target/models"
     [[ "$model_cache_dir" != /* ]] && model_cache_dir="$target/${model_cache_dir#./}"
-    mkdir -p "$model_cache_dir"/{huggingface,torch,nltk_data,sentence-transformers,opensearch-ml}
+    mkdir -p "$model_cache_dir"/{huggingface,torch,nltk_data,sentence-transformers,opensearch-ml,diar-native}
 
     # In hub mode (USE_HUB_IMAGES=true) we intentionally skip the shared cache
     # so models download from HuggingFace exactly as a fresh user would experience.
@@ -397,11 +397,17 @@ phase_03_pin_local_image() {
         gr_log "hub mode: model cache is empty — models will download from HuggingFace on first start (fresh-user path)"
     elif [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
         gr_log "seeding model cache from shared cache …"
-        # Hardlinks for the big trees, a real copy for nltk_data: nltk >=3.10
-        # pathsec refuses multiply-linked files and every transcription fails.
-        # See lib/model-cache.sh for the full story.
+        # Hardlinks for the big trees; a real copy for nltk_data (nltk >=3.10
+        # pathsec refuses multiply-linked files) and for diar-native (its
+        # provisioning step can rewrite the exported .onnx/.npy files in
+        # place — issue #670). See lib/model-cache.sh for both stories.
+        # diar-native is included here so this scenario proves the FAST path
+        # (weights already present) rather than always paying for — and
+        # depending on the reliability of — a live HuggingFace export at
+        # backend startup; ac_diar_engine_verdict below is what actually
+        # proves diarization worked, seeded or not.
         mc_seed_cache "$shared_cache" "$model_cache_dir" \
-            huggingface torch nltk_data sentence-transformers pyannote opensearch-ml
+            huggingface torch nltk_data sentence-transformers pyannote opensearch-ml diar-native
         gr_ok "model cache seeded from $shared_cache"
     else
         gr_warn "shared model cache not found at $shared_cache — first start will download models"
@@ -629,6 +635,91 @@ phase_06_api_smoke() {
                     as_record FAIL "transcription for file $fid"
                 fi
             done
+
+            # Which engine actually diarized these files? "completed" above proves
+            # nothing — the fallback to in-process PyAnnote is SILENT BY DESIGN, so a
+            # stack whose diarizer is dead can still pass every assertion above
+            # (issue #670). Two independent, non-redundant signals — see
+            # diar-native-smoke.sh's and ac_diar_engine_verdict's own headers for why
+            # neither is sufficient alone.
+            #
+            # GPU residency is only meaningful when this run actually asked for a GPU
+            # deployment: TEST_USE_GPU=false (--cpu) legitimately runs diar-native in
+            # CPU mode, holding zero device memory, which diar-native-smoke.sh would
+            # correctly but unhelpfully report as FAIL.
+            if [[ "$TEST_USE_GPU" == "true" ]]; then
+                # Wrapped in `if`, never called bare: diar-native-smoke.sh exits
+                # non-zero on both FAIL (1) and NOT MEASURED (4), and this script runs
+                # under `set -euo pipefail` — an unwrapped non-fatal-by-design helper
+                # call here would silently truncate every phase after it (issues
+                # #617/#618; see scripts/CLAUDE.md's "bare helper call" gotcha).
+                local diar_smoke_rc=0 diar_smoke_out=""
+                if diar_smoke_out=$("$REPO_ROOT/scripts/diar-native-smoke.sh" --json 2>&1); then
+                    diar_smoke_rc=0
+                else
+                    diar_smoke_rc=$?
+                fi
+                case "$diar_smoke_rc" in
+                    0) as_record PASS "diar-native sidecar GPU residency (diar-native-smoke.sh)" ;;
+                    4) as_record SKIP "diar-native sidecar GPU residency" "NOT MEASURED: $diar_smoke_out" ;;
+                    *) as_record FAIL "diar-native sidecar GPU residency" "$diar_smoke_out" ;;
+                esac
+            fi
+
+            # Verdict is per-file (issue #706's diarization_provider column),
+            # not a whole-worker-log grep, so the check is against the
+            # specific file just proven "completed" — not whichever job
+            # last happened to log a line in a 30-minute window. The last
+            # uploaded file id stands in for "the file(s) that just
+            # completed": a fresh install here uploads at most a couple of
+            # small clips, so verifying one is representative of the batch.
+            # This scenario always installs the CURRENT release, whose API always ships
+            # #706's diarization_provider column (see ac_diar_engine_verdict's header) —
+            # so a `:log` verdict here is never the legitimate old-stack case, only a
+            # signal something is wrong. `native:log` therefore does NOT get an
+            # unqualified PASS: an unscoped 30-minute log grep can report PASS from an
+            # unrelated earlier job, which is exactly the false-pass hole #706 was
+            # written to close (issue #707).
+            local diar_verdict diar_verdict_source
+            diar_verdict=$(ac_diar_engine_verdict "$fid" "opentranscribe-celery-worker" "30m")
+            diar_verdict_source="${diar_verdict#*:}"
+            case "$diar_verdict" in
+                native:db)
+                    as_record PASS "native diarizer served the completed file ($fid, source=$diar_verdict_source)"
+                    ;;
+                native:log)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "verdict=native:log — an unscoped legacy worker-log grep, not the per-file diarization_provider column. A fresh install of the current release should always carry that column; a :log result here means the DB-backed check was unavailable, not that diarization succeeded. Never trusted as a pass (issue #707)"
+                    ;;
+                pyannote:db)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "media_file.diarization_provider=pyannote — PyAnnote served this job (direct config or a silent native fallback)"
+                    ;;
+                fallback:log)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "worker log shows a 'falling back to PyAnnote' line — the sidecar degraded silently (no diarization_provider column on this API; legacy log-based check)"
+                    ;;
+                none:db)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "media_file.diarization_provider is NULL after completion — diarization never resolved a provider"
+                    ;;
+                error:request)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "ac_diar_engine_verdict's request to /api/files/$fid failed or returned unparseable JSON (verdict=error:request) — this is a request failure, not evidence the diarization_provider column is absent, and is never silently downgraded to the log fallback"
+                    ;;
+                absent:none)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "file record unreachable and opentranscribe-celery-worker is not running"
+                    ;;
+                unknown:db|unknown:log)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "could not determine which engine served this job (verdict=$diar_verdict)"
+                    ;;
+                *)
+                    as_record FAIL "native diarizer served the completed file ($fid)" \
+                        "unrecognized verdict from ac_diar_engine_verdict: $diar_verdict"
+                    ;;
+            esac
 
             # Hybrid search — query for a common English stop word that any
             # transcribed audiobook will contain.

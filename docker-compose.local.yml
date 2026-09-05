@@ -32,6 +32,26 @@ services:
   celery-worker-gpu-scaled:
     pull_policy: never
 
+  # Deliberately NO entry for `diar-native` here. Unlike every service above,
+  # diar-native is not declared anywhere in docker-compose.yml or docker-compose.prod.yml
+  # — it exists ONLY when docker-compose.diar-native.yml is also loaded, and that overlay
+  # is conditional (`--with-diar-native` / opentr.sh's models-or-token auto-detect). An
+  # unconditional `pull_policy: never` stanza here (with no `image:` of its own) used to
+  # make `diar-native` a phantom service the moment the sidecar overlay was NOT loaded:
+  # `start prod --build` / `reset prod --build` failed outright with "service diar-native
+  # has neither an image nor a build context specified" on every fresh install, since
+  # this file alone was enough to declare the service but not enough to define it.
+  #
+  # No replacement entry is needed: docker-compose.diar-native.yml's own `image:` already
+  # resolves to `${DIAR_NATIVE_IMAGE:-davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}}`
+  # — the SAME tag `backend`/`celery-worker` above get locally built under in a
+  # `--build` run. Compose's default pull_policy (`missing`) only pulls an image that
+  # isn't already present locally, so once that shared tag exists from the backend build,
+  # diar-native resolves to it with no network call — the explicit `never` this file sets
+  # for the other services is belt-and-braces, not load-bearing here. In dev, opentr.sh
+  # separately exports `DIAR_NATIVE_IMAGE=opentranscribe-backend:latest` for the same
+  # reason, which this file does not need to duplicate.
+
   frontend:
     pull_policy: never
 

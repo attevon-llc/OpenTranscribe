@@ -53,18 +53,82 @@ qrcode[pil]==8.2
 # NumPy 2.x compatible
 numpy==2.5.2
 
-# PyTorch CPU-only (for speaker embeddings — no CUDA build)
+# PyTorch CPU-only. NOT dropped by issue #660: sentence-transformers==6.0.0 below
+# declares `torch>=1.11.0` in its own installed metadata (used at
+# opensearch_service/client.py and chat/reranker.py for semantic search), so torch
+# is a hard transitive dependency of this file even with pyannote.audio gone.
 # Use --extra-index-url so PyPI remains available for all other packages.
-# --index-url would replace PyPI entirely, breaking pyannote.audio and other deps.
+# --index-url would replace PyPI entirely, breaking other deps.
+# The explicit `+cpu` pin is REQUIRED, not cosmetic: without it, pip resolves
+# torch as an ordinary transitive dependency of sentence-transformers from the
+# default PyPI index, which serves the CUDA-linked build — making this
+# CPU-only image LARGER, with nvidia wheels, on a host that never has a GPU.
+# Guarded by test_requirements_lite_torch_guard.py.
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.11.0+cpu
-# Explicit CPU pin - without it, pyannote.audio>=4.0.7's own torchaudio>=2.8.0
-# floor lets pip resolve whatever it wants, including a CUDA-linked PyPI build
-# into what's supposed to be a CPU-only image.
-torchaudio==2.11.0+cpu
 
-# PyAnnote (CPU-only, for speaker embedding extraction and cross-file speaker matching)
+# torchaudio + pyannote.audio + the ONNX export toolchain: RESTORED, and the reason
+# matters because #660 briefly removed them.
+#
+# Lite serves speaker embeddings from the diar-native CPU-EP sidecar (`/embed_window`),
+# which needs none of this AT RUNTIME. But the sidecar cannot start from nothing: it
+# reads ONNX/PLDA graphs that are DERIVATIVES of the gated
+# pyannote/speaker-diarization-community-1 weights, and upstream ships only
+# `pytorch_model.bin` — there is no `.onnx` to download, and the derivatives are not
+# redistributable. They must be EXPORTED on the machine that will serve them.
+#
+# `diar-server` already carries the export: its five Python scripts are `include_str!`d
+# into the Rust binary, which `Dockerfile.lite` copies in and which runs here (verified:
+# `provision-models` reaches HF token validation in this image). What a Rust binary
+# cannot carry is the Python packages those scripts import.
+#
+# ⚠️ DERIVE THIS LIST, DO NOT TRIM IT BY EYE. This comment previously claimed the binary
+# named "exactly these: pyannote.audio, onnxscript, onnxslim, onnxconverter_common" — four
+# of the eleven it actually imports. `onnxruntime` was the one that mattered and was the
+# one missed, so lite still could not provision and #660's headline was undelivered by a
+# single absent line. The reproducible derivation, against a running sidecar:
+#
+#   docker exec <diar-native-container> sh -c \
+#     'grep -a -oE "^ *(import|from) [a-zA-Z_][a-zA-Z0-9_.]*" /usr/local/bin/diar-server \
+#      | sed -E "s/^ *//" | sort -u'
+#
+# and then check each third-party name against the BUILT image rather than this file,
+# because several arrive transitively and reading the requirements alone under-reports:
+#
+#   docker run --rm --entrypoint python3 <lite-image> -c \
+#     "import importlib.util as u; print([m for m in (...) if not u.find_spec(m)])"
+#
+# Measured against `ot-lite:export`: transformers and huggingface_hub are PRESENT
+# transitively (via pyannote.audio and sentence-transformers), numpy/onnx/torch(audio) are
+# declared here, and `onnxsim` is ABSENT **by design** — it has no CPython 3.13 wheel and
+# is a C++ extension, so the exporter falls back to `onnxslim`, which is numerically
+# bit-exact but emits a differently-shaped graph (recorded in the marker's
+# `toolchain.folder`; a `folder` mismatch is NOT corruption).
+#
+# So removing them did not shrink a runtime dependency — it removed lite's ability to
+# provision itself, leaving a standalone lite install with NO voiceprint path at all
+# (SpeakerEmbeddingService raises when the sidecar is unusable, and the sidecar is
+# unusable with no models). Lite must download the real weights at setup and export them
+# in-container, exactly as the full image does.
+#
+# ⚠️ onnxconverter-common's absence is INVISIBLE, not an error: the export silently
+# falls back to a 379 MB fp32 gender model instead of the 189 MB fp16 one, costing
+# ~500 MiB of VRAM forever. The marker's `toolchain.gender_precision` is the only
+# falsifiable check. See native_provision.py.
+torchaudio==2.11.0+cpu
 pyannote.audio==4.0.7
+onnx==1.22.0
+onnxscript==0.7.1
+onnxslim==0.1.96
+onnxconverter-common==1.16.0
+# Plain CPU onnxruntime, NOT the -gpu wheel requirements.txt selects for linux/x86_64.
+# Both install into the same `onnxruntime/` import namespace and whichever lands last
+# wins, so lite — which is CPU-only and, per #667, must also build for aarch64 — pins the
+# portable one unconditionally. The exporter imports it in two places (`_numeric_parity`'s
+# fold step and the gender export), neither guarded by try/except, and
+# native_provision.py passes no --skip-gender, so its absence is a hard failure of
+# provisioning rather than a degraded export.
+onnxruntime==1.28.0
 
 # Supporting libraries
 omegaconf==2.3.1

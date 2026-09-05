@@ -243,14 +243,13 @@ check_huggingface_token() {
     echo "   • Select 'Read' permissions"
     echo "   • Copy the token"
     echo ""
-    echo -e "${RED}2. Accept BOTH gated model agreements (REQUIRED):${NC}"
-    echo -e "   ${YELLOW}• Segmentation Model:${NC}"
-    echo "     https://huggingface.co/pyannote/segmentation-3.0"
-    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
-    echo ""
+    echo -e "${RED}2. Accept the gated model agreement (REQUIRED):${NC}"
     echo -e "   ${YELLOW}• Speaker Diarization Model:${NC}"
     echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
     echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
+    echo ""
+    echo -e "   ${YELLOW}(Optional, internal last-resort fallback only — not required for${NC}"
+    echo -e "   ${YELLOW}normal diarization: pyannote/segmentation-3.0)${NC}"
     echo ""
     echo "3. Configure your token:"
     echo "   • Export it: export HUGGINGFACE_TOKEN=your_token_here"
@@ -279,6 +278,7 @@ download_models_docker() {
     print_info "  • Chat reranker (cross-encoder, RAG chat)"
     print_info "  • OpenSearch neural search models"
     print_info "  • Content-redaction models (PII / toxicity)"
+    print_info "  • Native diarizer (diar-server) ONNX/PLDA export"
     echo ""
     print_warning "This may take 10-30 minutes depending on your internet speed..."
     echo ""
@@ -289,6 +289,10 @@ download_models_docker() {
     mkdir -p "$MODEL_CACHE_DIR/nltk_data"
     mkdir -p "$MODEL_CACHE_DIR/sentence-transformers"
     mkdir -p "$MODEL_CACHE_DIR/opensearch-ml"
+    # diar-native's export lands at the top level, not under huggingface/torch like the
+    # PyAnnote weights it is exported FROM — it is mounted at /models (DIAR_MODELS_DIR),
+    # the same convention the backend and the diar-native sidecar both read.
+    mkdir -p "$MODEL_CACHE_DIR/diar-native"
 
     print_info "Starting model download using Docker..."
     echo ""
@@ -366,6 +370,7 @@ download_models_docker() {
         -v "$(realpath "$MODEL_CACHE_DIR/nltk_data"):/home/appuser/.cache/nltk_data" \
         -v "$(realpath "$MODEL_CACHE_DIR/sentence-transformers"):/home/appuser/.cache/sentence-transformers" \
         -v "$(realpath "$MODEL_CACHE_DIR/opensearch-ml"):/home/appuser/.cache/opensearch-ml" \
+        -v "$(realpath "$MODEL_CACHE_DIR/diar-native"):/models" \
         -v "$SCRIPT_DIR/download-models.py:/app/download-models.py:ro" \
         "${DOWNLOADER_IMAGE}" \
         python /app/download-models.py
@@ -442,20 +447,19 @@ download_models_docker() {
         echo "Without them, the entire transcription process cannot complete."
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${CYAN}REQUIRED ACTION: Accept BOTH Gated Model Agreements${NC}"
+        echo -e "${CYAN}REQUIRED ACTION: Accept the Gated Model Agreement${NC}"
         echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
         echo ""
-        echo "You MUST accept BOTH of these model agreements on HuggingFace:"
+        echo "You MUST accept this model agreement on HuggingFace:"
         echo ""
-        echo "  1. Segmentation Model:"
-        echo "     https://huggingface.co/pyannote/segmentation-3.0"
-        echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
-        echo ""
-        echo "  2. Speaker Diarization Model:"
+        echo "  Speaker Diarization Model:"
         echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
         echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
         echo ""
-        echo -e "${CYAN}After accepting BOTH agreements:${NC}"
+        echo "  (Optional, internal last-resort fallback only — not required for normal"
+        echo "  diarization: pyannote/segmentation-3.0)"
+        echo ""
+        echo -e "${CYAN}After accepting the agreement:${NC}"
         echo "  • Wait 1-2 minutes for permissions to propagate"
         echo "  • Run this script again: bash scripts/download-models.sh models"
         echo ""
@@ -480,12 +484,14 @@ show_summary() {
     local nltk_size
     local st_size
     local opensearch_size
+    local diar_native_size
     total_size=$(get_dir_size "$MODEL_CACHE_DIR")
     hf_size=$(get_dir_size "$MODEL_CACHE_DIR/huggingface")
     torch_size=$(get_dir_size "$MODEL_CACHE_DIR/torch")
     nltk_size=$(get_dir_size "$MODEL_CACHE_DIR/nltk_data")
     st_size=$(get_dir_size "$MODEL_CACHE_DIR/sentence-transformers")
     opensearch_size=$(get_dir_size "$MODEL_CACHE_DIR/opensearch-ml")
+    diar_native_size=$(get_dir_size "$MODEL_CACHE_DIR/diar-native")
 
     echo -e "${GREEN}✅ Model cache ready!${NC}"
     echo ""
@@ -496,6 +502,7 @@ show_summary() {
     echo "  • NLTK data: $nltk_size"
     echo "  • Sentence-transformers: $st_size"
     echo "  • OpenSearch neural models: $opensearch_size"
+    echo "  • Native diarizer (diar-server) export: $diar_native_size"
     echo ""
     print_info "Models are cached and will be available immediately when Docker starts"
     echo ""

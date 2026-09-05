@@ -1,8 +1,42 @@
 # =============================================================================
 # OpenTranscribe Backend - Lite Dockerfile (API-only, no GPU required)
-# Multi-stage build for cloud-only ASR deployments (~2 GB vs 8.9 GB full image)
-# No faster-whisper, no ctranslate2, no CUDA — uses cloud ASR providers instead
+# Multi-stage build for cloud-only ASR deployments. MEASURED 2026-09-04 on this host:
+# 2.70 GB, vs 15.2 GB for the full image. (The previous "~2 GB vs 8.9 GB" was stale on
+# both halves — re-measure with `docker image ls` rather than trusting this line.)
+# No faster-whisper, no ctranslate2, no CUDA — uses cloud ASR providers instead.
+#
+# It DOES carry pyannote.audio + the ONNX export toolchain, which looks contradictory for
+# a "lite" image and is not: the diar-native sidecar reads ONNX/PLDA graphs that are
+# non-redistributable derivatives of gated weights, so there is nothing to download and a
+# lite deployment must EXPORT them for itself or have no speaker-voiceprint path at all.
+#
+# ⚠️ "Lite" means NO GPU/CUDA/faster-whisper — it does NOT mean "as small as possible".
+# Nothing in this repo gates on the size of this image (no test, no script, no CI job), and
+# #660's own title is "--lite adopts the diar-native CPU execution provider for speaker
+# embeddings" — a capability goal. If a tool is required for lite to work, it ships. Chasing
+# megabytes here has already cost real functionality once: the toolchain was removed as
+# "unused at runtime" (true) without noticing it was the only way to CREATE the models
+# (2.38 GB and no voiceprint path at all), and the restore then shipped without
+# `onnxruntime`, which the exporter imports unguarded — an image that still could not
+# provision, at 2.62 GB.
+#
+# So verify the CAPABILITY, never the size:
+#   docker run --rm --entrypoint diar-server <image> provision-models --models-dir /tmp/m \
+#     --mode cpu --json
+# must reach exit 5 (TOKEN_DENIED) with no token supplied. A dependency failure means the
+# toolchain is incomplete however small the image is. (For reference only, measured
+# 2026-09-04: 2.70 GB. Not a budget, not a target.)
 # =============================================================================
+
+# diar-native (T1 diarization sidecar) binary + ONNX Runtime CPU-provider libs, pinned
+# by DIGEST — SAME pin as Dockerfile.prod:21, so the binary running here is byte-for-byte
+# the one the full image ships, never a separately-tracked version (#660). Unlike
+# Dockerfile.prod, this stage's COPY below deliberately excludes
+# libonnxruntime_providers_cuda.so: lite is CPU-only by definition (no CUDA runtime, no
+# nvidia driver expected on the host), and diar-server's CPU execution provider needs no
+# separate provider .so to dlopen — only the CUDA path does. DIAR_MODE must be `cpu` (or
+# unset, since diar-server's own default is cpu) for any container built from this image.
+FROM davidamacey/diar-native@sha256:83a709be94d0ca06441fa10aea0680f53b03cc10eb3ce11c4eeb84478400567d AS diar-native-bin
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation
@@ -58,6 +92,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
+# diar-native's only extra system dependency: libopenblas0 (linked by diar-server itself,
+# per `ldd` — see Dockerfile.prod). Its own dependency libgfortran5 is pulled in
+# transitively by apt automatically if not already present; unlike the full image, this
+# lite image has no scipy in requirements-lite.txt, so — unlike Dockerfile.prod's verified
+# "already present" claim — it is NOT assumed present here and this step may pull it in.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libopenblas0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
 # Create non-root user for security
 # No video group needed (no GPU access required in lite mode)
 RUN groupadd -r appuser && \
@@ -76,6 +120,35 @@ WORKDIR /app
 
 # Copy Python packages from builder stage
 COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+
+# diar-native binary + ONNX Runtime CPU-provider libs (#660). Adapted from
+# Dockerfile.prod's equivalent block — read that one first, this is NOT a blind copy:
+#   - No libonnxruntime_providers_cuda.so: lite has no CUDA runtime to load it against,
+#     and the CPU execution provider needs no separate provider .so.
+#   - No image-wide LD_LIBRARY_PATH here, same as Dockerfile.prod: a compose-level
+#     LD_LIBRARY_PATH scoped to just the diar-native SERVICE is what points at
+#     /opt/diar-native/lib (see docker-compose.diar-native.yml) — never image-wide, so it
+#     can never collide with a Python onnxruntime install's own same-named provider libs.
+#   - No `video` group step needed here either — this image already has none (no GPU
+#     access in lite mode), and the CPU provider needs none.
+# /opt/diar-native/run is diar-server's working_dir (compose-level); chowned to appuser
+# for the same reason Dockerfile.prod chowns it — nothing writes there today, but it is
+# the one place a future write-relative-to-cwd would land.
+RUN mkdir -p /opt/diar-native/lib /opt/diar-native/run && chown appuser:appuser /opt/diar-native/run
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/bin/diar-server /usr/local/bin/diar-server
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime.so.1.24.2 /opt/diar-native/lib/libonnxruntime.so.1.24.2
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_shared.so /opt/diar-native/lib/libonnxruntime_providers_shared.so
+# The 26 s verification clip `provision-models` diarizes in its end-to-end stage —
+# same rationale and source as Dockerfile.prod's identical COPY.
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/share/diar-native/smoke.wav /usr/local/share/diar-native/smoke.wav
+# ORT resolves its provider libs relative to the executable's directory AND the process
+# cwd (diar-server has no ELF NEEDED entry for libonnxruntime — it's dlopen'd at
+# runtime), so the shared provider lib is symlinked into both locations, same as
+# Dockerfile.prod. Only the shared provider needs this — there is no cuda provider here
+# to symlink.
+RUN ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /usr/local/bin/libonnxruntime_providers_shared.so && \
+    ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /opt/diar-native/run/libonnxruntime_providers_shared.so && \
+    chown -h appuser:appuser /opt/diar-native/run/libonnxruntime_providers_shared.so
 
 # Ensure scripts in .local are usable by adding to PATH
 # No LD_LIBRARY_PATH needed (no CUDA/cuDNN in lite mode)
@@ -98,10 +171,17 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-# Reserve the pipeline's shared-volume mount points so a freshly created named volume
-# inherits appuser rather than root — see Dockerfile.prod for the full note.
-RUN mkdir -p /scratch/opentranscribe /tmp/transcription /tmp/diar-native && \
-    chown appuser:appuser /scratch/opentranscribe /tmp/transcription /tmp/diar-native
+# Reserve the pipeline's shared-volume mount point so a freshly created named volume
+# inherits appuser rather than root — see Dockerfile.prod for the full note (issue #661 E2:
+# one volume, pipeline_scratch, three namespaces). This image DOES ship the diar-server
+# binary (see the COPY block above, issue #660), so this reservation is live here too.
+# Since #654, requirements-lite.txt also RESTORED the export toolchain (torch/torchaudio/
+# onnx/onnxscript/onnxslim/onnxconverter-common) — this image can export its own ONNX/PLDA
+# weights exactly like the full image, and "lite cannot export it locally" is a dead claim.
+RUN mkdir -p /scratch/opentranscribe && \
+    chown appuser:appuser /scratch/opentranscribe
+RUN mkdir -p /scratch/opentranscribe/engine /scratch/opentranscribe/diar && \
+    chown appuser:appuser /scratch/opentranscribe/engine /scratch/opentranscribe/diar
 
 # Switch to non-root user
 USER appuser

@@ -27,9 +27,10 @@ workers that silently re-download every file. See
 | **Dev (default)** | `./opentr.sh start dev` | Vite hot-reload, relaxed auth limits, auto-loads `docker-compose.override.yml`. |
 | **Production** | `./opentr.sh start prod --build` | Pre-built/local images, nginx, strict auth. |
 | **CPU-only** | `./opentr.sh start dev --cpu` | Local transcription on CPU; skips the GPU overlay. |
-| **Lite (cloud ASR)** | `./opentr.sh start dev --lite` | No GPU; transcription via a configured cloud ASR provider. |
+| **Lite (cloud ASR)** | `./opentr.sh start dev --lite` | No GPU; transcription via a configured cloud ASR provider. Speaker embeddings (v4/256-d) come from the diar-native CPU-EP sidecar, not an in-process PyAnnote model — the lite image runs no in-process PyAnnote (issue #660), though since #654 `requirements-lite.txt` DOES install `pyannote.audio` and the export toolchain (onnx/onnxscript/onnxslim/onnxconverter-common) so the sidecar can provision its own weights. Add `--with-diar-native`; set `DIAR_NATIVE_MODELS_DIR` only if pointing it at a pre-made export instead of provisioning fresh. v3 (512-d) speaker data is unserviceable under lite until migrated to v4. |
 | **GPU scale (dual-GPU)** | `./opentr.sh start dev --gpu-scale` | N parallel workers on `GPU_SCALE_DEVICE_ID`; keeps the default worker too when `GPU_SCALE_DEFAULT_WORKER=1`. |
-| **GPU split** | `./opentr.sh start dev --with-gpu-split` | Transcription and diarization on **separate** GPUs. Needs `ENGINE_GPU_SPLIT=true`. |
+| **GPU split** | `./opentr.sh start dev --with-gpu-split` | Transcription and diarization on **separate** GPUs. Needs `ENGINE_GPU_SPLIT=true`. On a production install, set `ENGINE_GPU_SPLIT=true` in `.env` and run `./opentranscribe.sh start` — that single variable is both the app-side routing switch and (as of issue #708) what `opentranscribe.sh` gates the `docker-compose.gpu-split.yml` overlay on; there is no separate `--with-*` flag (`./opentranscribe.sh` has none). |
+| **Native diarization sidecar** | `./opentr.sh start dev --with-diar-native` | Runs `diar-server` (Rust/ONNX) alongside `celery-worker` instead of in-process PyAnnote. **Windows installer excluded** — see `windows-installer/INSTALL-WINDOWS.md`. |
 | **NAS / NVMe storage** | `./opentr.sh start dev --nas` | Bind-mounts custom host paths for media/DB/search. Auto-detected from `.env`; `--no-nas` suppresses it. |
 | **Fresh / isolated** | `./opentr.sh start dev --fresh <name>` | Throwaway stack, own project + volumes, NAS overlay never loaded. See [Fresh Deployments](./fresh-deployments.md). |
 | **Monitoring** | `./opentr.sh start dev --with-monitoring` | Prometheus (:5186) + Grafana (:5185). See [Monitoring](./monitoring.md). |
@@ -167,11 +168,28 @@ GPU_DIARIZE_DEVICE_ID=1      # host GPU for the gpu-diarize worker
 ./opentr.sh start dev --with-gpu-split
 ```
 
-This loads `docker-compose.gpu-split.yml`, which activates the `gpu-transcribe` /
-`gpu-diarize` worker services (defined in the base compose under the `gpu-split`
-profile) and grants each a **dedicated GPU reservation**. The two device IDs must
-be **different** for the split to help — if they're equal, both stages share one
-card with no benefit.
+On a **production / self-hosted** install (`opentranscribe.sh`), there is no
+`--with-gpu-split` flag — set the same `.env` variables and just `start`:
+
+```bash
+ENGINE_GPU_SPLIT=true
+GPU_TRANSCRIBE_DEVICE_ID=0
+GPU_DIARIZE_DEVICE_ID=1
+./opentranscribe.sh start
+```
+
+`ENGINE_GPU_SPLIT=true` is the one switch: `app/core/constants.py`'s
+`gpu_split_enabled()` reads it to route dispatch onto the `gpu-transcribe` /
+`gpu-diarize` queues, and `opentranscribe.sh`'s `gpu_split_active()` reads the
+identical value to decide whether to add `docker-compose.gpu-split.yml` to the
+compose chain (issue #708) — so the two halves can't drift out of sync the way
+they could before this overlay had any code path to it in the shipped script.
+
+Either front end loads `docker-compose.gpu-split.yml`, which activates the
+`gpu-transcribe` / `gpu-diarize` worker services (defined in the base compose
+under the `gpu-split` profile) and grants each a **dedicated GPU reservation**.
+The two device IDs must be **different** for the split to help — if they're
+equal, both stages share one card with no benefit.
 
 #### Device reservation → `cuda:0` mapping
 

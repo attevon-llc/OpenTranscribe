@@ -16,8 +16,23 @@
 # Configuration:
 #   Set these variables in your .env file:
 #   - GPU_SCALE_DEVICE_ID=2           # GPU device ID for scaled workers (default: 2)
-#   - GPU_SCALE_WORKERS=4             # Number of parallel workers (default: 4)
+#   - GPU_SCALE_WORKERS=4             # Number of parallel workers (default: DIAR_NATIVE_MAX_INFLIGHT, see below)
 #   - GPU_SCALE_DEFAULT_WORKER=0      # Set to 1 to keep default worker (dual-GPU mode)
+#
+# ⚠️ GPU_SCALE_WORKERS vs. DIAR_NATIVE_MAX_INFLIGHT — READ BEFORE CHANGING EITHER.
+# When diarization runs through the native gRPC sidecar (docker-compose.diar-native.yml),
+# that sidecar caps concurrent diarization jobs at DIAR_NATIVE_MAX_INFLIGHT (its own default:
+# 2 permits). This worker's --concurrency is how many transcription+diarization jobs it runs
+# AT ONCE, each of which can call into that sidecar. Nothing in backend/app reads
+# DIAR_NATIVE_MAX_INFLIGHT to bound its own concurrency, so if GPU_SCALE_WORKERS is left at a
+# value higher than the sidecar's permit count, extra jobs queue on the sidecar with no
+# client-side limit — and DIAR_NATIVE_TIMEOUT_S defaults to 3600s, so with acks_late a
+# redelivery can pile a NEW job onto the same already-saturated permits.
+# The default below derives GPU_SCALE_WORKERS FROM DIAR_NATIVE_MAX_INFLIGHT precisely so an
+# operator who sets neither gets numbers that already agree (both fall back to 2). If you
+# raise GPU_SCALE_WORKERS explicitly, raise DIAR_NATIVE_MAX_INFLIGHT (and the sidecar's own
+# resources) to match — an explicit GPU_SCALE_WORKERS overrides this derivation and can
+# reintroduce the contention this comment exists to prevent.
 #
 # Single-GPU Mode (default): Replaces default worker with scaled workers on one GPU.
 #   GPU_SCALE_DEFAULT_WORKER=0 (default)
@@ -44,7 +59,7 @@ services:
       celery -A app.core.celery worker
       -Q gpu
       --pool=${GPU_SCALE_POOL:-threads}
-      --concurrency=${GPU_SCALE_WORKERS:-4}
+      --concurrency=${GPU_SCALE_WORKERS:-${DIAR_NATIVE_MAX_INFLIGHT:-2}}
       --max-tasks-per-child=${GPU_SCALE_MAX_TASKS:-500}
       -n gpu-scaled@%h
       -E
@@ -56,7 +71,7 @@ services:
       # only sees one GPU at index 0.
       - CUDA_VISIBLE_DEVICES=0
       # Tell TranscriptionConfig how many concurrent tasks share GPU weights
-      - GPU_CONCURRENT_REQUESTS=${GPU_SCALE_WORKERS:-4}
+      - GPU_CONCURRENT_REQUESTS=${GPU_SCALE_WORKERS:-${DIAR_NATIVE_MAX_INFLIGHT:-2}}
       - PRELOAD_GPU_MODELS=true
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-scaled@$$HOSTNAME"]

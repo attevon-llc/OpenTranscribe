@@ -46,6 +46,18 @@
 # backend/tests/unit/test_compose_file_selection.py FAILS the moment any of the three
 # facts above stops holding, so this paragraph cannot quietly go stale.
 #
+# Since issue #660, this chain also hand-builds -f docker-compose.diar-native.yml: lite's
+# speaker embeddings come from the diar-native CPU-EP sidecar's /embed_window, not an
+# in-process PyAnnote model. Its weights come from DIAR_NATIVE_MODELS_DIR, pre-seeded
+# here from the shared model cache — since issue #654, `requirements-lite.txt` DOES ship
+# the export toolchain (pyannote.audio, onnx, onnxscript, onnxslim, onnxconverter-common),
+# so a lite deployment can provision its own weights on first boot exactly like the full
+# image; this rehearsal pre-seeds them anyway so the run is deterministic rather than
+# depending on network access to HuggingFace mid-rehearsal. The sidecar is pinned to the
+# SAME locally-built lite image as the other lite workers (DIAR_NATIVE_IMAGE in phase_03).
+# This does NOT make lite shippable; it is still reachable only from here and from
+# opentr.sh.
+#
 # Idempotent: phases are tracked under $TEST_ROOT/.phase/<phase>.done so
 # re-running picks up where it left off. Pass --force to clear them.
 #
@@ -65,6 +77,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # ─── Tunables (overridable via env) ─────────────────────────────────────────
 TEST_SCENARIO="lite-mode"
 TEST_PROJECT_NAME="${TEST_PROJECT_NAME:-ot-reltest-lite}"
+# Also the compose project (env-template.sh writes it as COMPOSE_PROJECT_NAME into the
+# generated .env) — export it here too so compose-project.sh's compose_project_name()
+# scopes every `docker ps` lookup below to THIS rehearsal's stack, never whatever
+# unrelated stack (e.g. the live dev one) happens to be running on the same host.
+export COMPOSE_PROJECT_NAME="$TEST_PROJECT_NAME"
 TEST_ROOT="${TEST_ROOT:-/mnt/nvm/opentranscribe-test-runs/${TEST_PROJECT_NAME}-$(date +%Y%m%d-%H%M%S)}"
 TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 
@@ -143,6 +160,8 @@ source "$LIB_DIR/assertions.sh"
 source "$LIB_DIR/versions.sh"
 # shellcheck source=lib/model-cache.sh
 source "$LIB_DIR/model-cache.sh"
+# shellcheck source=../lib/compose-project.sh
+source "$REPO_ROOT/scripts/lib/compose-project.sh"
 
 if [[ -z "$LOCAL_IMAGE_TAG" ]]; then
     LOCAL_IMAGE_TAG="$(ver_to_version)"
@@ -222,7 +241,7 @@ phase_01_build_lite_images() {
     if docker image inspect "davidamacey/opentranscribe-backend-lite:${LOCAL_IMAGE_TAG}" >/dev/null 2>&1; then
         gr_ok "backend-lite image already present"
     else
-        gr_log "building lite backend image (~2 GB, no CUDA/faster-whisper)"
+        gr_log "building lite backend image (no CUDA/faster-whisper; carries the ONNX export toolchain)"
         docker build \
             -t "davidamacey/opentranscribe-backend-lite:${LOCAL_IMAGE_TAG}" \
             -f "$REPO_ROOT/backend/Dockerfile.lite" \
@@ -286,6 +305,14 @@ phase_03_pin_and_layer_overlays() {
     cp "$REPO_ROOT/docker-compose.lite.yml" "$target/docker-compose.lite.yml"
     cp "$REPO_ROOT/docker-compose.mock-asr.yml" "$target/docker-compose.mock-asr.yml"
     cp "$REPO_ROOT/docker-compose.mock-llm.yml" "$target/docker-compose.mock-llm.yml"
+    # Native diarization sidecar (issue #660): lite's speaker embeddings come from
+    # its CPU-EP /embed_window, not an in-process PyAnnote model (which the lite
+    # image no longer ships as of the requirements-lite.txt shrink). Copied in the
+    # same way as the lite/mock overlays above — this is one of the two places
+    # (here and opentr.sh) allowed to reference docker-compose.diar-native.yml
+    # under lite; see the header comment and the exemption in
+    # test_compose_file_selection.py / test_compose_bringup_delegation.py.
+    cp "$REPO_ROOT/docker-compose.diar-native.yml" "$target/docker-compose.diar-native.yml"
     mkdir -p "$target/scripts" "$target/backend/tests/fixtures/media"
     cp "$REPO_ROOT/scripts/mock-asr-server.py" "$target/scripts/mock-asr-server.py"
     cp "$REPO_ROOT/scripts/mock-llm-server.py" "$target/scripts/mock-llm-server.py"
@@ -295,9 +322,15 @@ phase_03_pin_and_layer_overlays() {
     # Pin the locally-built lite image explicitly (docker-compose.lite.yml
     # defaults to :latest via BACKEND_LITE_IMAGE, which is never what a
     # release rehearsal should trust).
+    # Pin the sidecar to the SAME locally-built lite image (issue #660 B4) — the
+    # overlay's own default is the FULL backend image, and resolving
+    # docker-compose.yml + prod + lite + diar-native without this override
+    # produces the mismatched pair B4 describes (lite workers on one image, the
+    # sidecar on another).
     {
         echo ""
         echo "BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:${LOCAL_IMAGE_TAG}"
+        echo "DIAR_NATIVE_IMAGE=davidamacey/opentranscribe-backend-lite:${LOCAL_IMAGE_TAG}"
         echo "PULL_POLICY=never"
     } >> "$target/.env"
 
@@ -318,16 +351,25 @@ phase_03_pin_and_layer_overlays() {
     # never nltk_data via a raw hardlink (see mc_seed_cache/mc_assert_no_hardlinks
     # in lib/model-cache.sh; hardlinked nltk corpus files fail nltk>=3.10's
     # pathsec check and silently break every downstream job that touches it).
+    # diar-native (issue #660): the CPU-EP sidecar's own export, ~484 MB of
+    # ONNX/PLDA weights. Since issue #654, `requirements-lite.txt` ships the export
+    # toolchain (pyannote.audio, onnx, onnxscript, onnxslim, onnxconverter-common), so a
+    # lite deployment CAN provision its own weights on first boot -- this rehearsal
+    # pre-seeds them anyway via DIAR_NATIVE_MODELS_DIR (exactly as documented in
+    # .env.example) so the run is deterministic rather than depending on network access
+    # to HuggingFace mid-rehearsal. Seeded from the shared cache below if present;
+    # otherwise the sidecar will exit 8 against an empty --models-dir and phase_06b will
+    # report it, not silently pass.
     local model_cache_dir
     model_cache_dir=$(awk -F= '/^MODEL_CACHE_DIR=/{print $2; exit}' "$target/.env")
     [[ -z "$model_cache_dir" || "$model_cache_dir" == "./models" ]] && model_cache_dir="$target/models"
     [[ "$model_cache_dir" != /* ]] && model_cache_dir="$target/${model_cache_dir#./}"
-    mkdir -p "$model_cache_dir"/{sentence-transformers,opensearch-ml}
+    mkdir -p "$model_cache_dir"/{sentence-transformers,opensearch-ml,diar-native}
 
     local shared_cache="/mnt/nvm/opentranscribe-test-runs/.shared-model-cache"
     if [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
-        gr_log "seeding embedding/opensearch-ml model cache from shared cache …"
-        mc_seed_cache "$shared_cache" "$model_cache_dir" sentence-transformers opensearch-ml
+        gr_log "seeding embedding/opensearch-ml/diar-native model cache from shared cache …"
+        mc_seed_cache "$shared_cache" "$model_cache_dir" sentence-transformers opensearch-ml diar-native
         gr_ok "model cache seeded from $shared_cache"
     else
         gr_warn "shared model cache not found at $shared_cache — first start will download the embedding model"
@@ -364,6 +406,7 @@ phase_04_start_stack() {
     docker compose \
         -f docker-compose.yml -f docker-compose.prod.yml \
         -f docker-compose.lite.yml \
+        -f docker-compose.diar-native.yml \
         -f docker-compose.mock-asr.yml -f docker-compose.mock-llm.yml \
         up -d
     popd >/dev/null
@@ -400,9 +443,56 @@ phase_06_topology_check() {
     echo "backend image: $backend_image" | tee -a "$report"
 
     local gpu_worker
-    gpu_worker=$(docker ps --format '{{.Names}}' --filter 'name=celery-worker-gpu' || true)
+    gpu_worker=$(docker ps --format '{{.Names}}' \
+        --filter "label=com.docker.compose.project=$(compose_project_name)" \
+        --filter 'name=celery-worker-gpu' || true)
     [[ -z "$gpu_worker" ]] || gr_die "GPU worker container present ($gpu_worker) in a lite-mode rehearsal"
     echo "no GPU worker container: confirmed" | tee -a "$report"
+}
+
+phase_06b_sidecar_check() {
+    # Issue #660: prove lite's speaker embeddings actually come from the CPU-EP
+    # sidecar running the LITE image, not a full-image sidecar or an in-process
+    # PyAnnote model that Step 7's shrink was supposed to remove.
+    local report="$TEST_ROOT/topology.txt"
+
+    local sidecar_name
+    sidecar_name="$(overlay_container_name diar-native)"
+    [[ -n "$sidecar_name" ]] || gr_die "no diar-native sidecar container found in project $(compose_project_name) — --with-diar-native overlay did not start it"
+
+    local sidecar_image
+    sidecar_image=$(docker inspect "$sidecar_name" --format '{{.Config.Image}}' 2>/dev/null || echo "")
+    [[ "$sidecar_image" == *-lite* ]] || gr_die "diar-native sidecar image '$sidecar_image' does not contain '-lite' — B4's mismatched image pair (issue #660)"
+    echo "diar-native sidecar image: $sidecar_image" | tee -a "$report"
+
+    local healthz
+    healthz=$(docker exec "$sidecar_name" curl -fsS http://localhost:8701/healthz 2>/dev/null || echo "")
+    [[ -n "$healthz" ]] || gr_die "diar-native /healthz did not respond"
+    # Assert the LOADED `devices`, never `supported_devices` — the latter is a build-time
+    # capability list a CUDA-only sidecar also reports, which cannot distinguish a lite
+    # CPU sidecar from a full CUDA one (the exact failure this check exists to catch;
+    # see native_embedding_client.py's devices-vs-supported_devices note).
+    echo "$healthz" | grep -q '"devices":\["cpu"\]' || gr_die "diar-native /healthz does not report cpu as a LOADED device: $healthz"
+    echo "diar-native /healthz reports cpu loaded: confirmed" | tee -a "$report"
+
+    local cpu_worker_name
+    cpu_worker_name=$(overlay_container_name celery-cpu-worker)
+    if [[ -n "$cpu_worker_name" ]]; then
+        if docker logs "$cpu_worker_name" 2>&1 | grep -q "Speaker embeddings served by the diar-native sidecar"; then
+            echo "celery-cpu-worker logged the sidecar-served message: confirmed" | tee -a "$report"
+        else
+            gr_warn "celery-cpu-worker has not yet logged the sidecar-served message — expected once a speaker-embedding extraction has run (phase_07 triggers one)"
+        fi
+    else
+        gr_warn "celery-cpu-worker container not found by name filter — cannot check its log"
+    fi
+
+    # The measured fact that makes the shrink real, not merely asserted: pyannote.audio
+    # must be ABSENT from the lite image's site-packages post-Step-7.
+    if docker exec "$cpu_worker_name" python3 -c 'import pyannote.audio' >/dev/null 2>&1; then
+        gr_die "pyannote.audio is still importable inside celery-cpu-worker — the lite image was not rebuilt after requirements-lite.txt's Step 7 shrink, or the shrink regressed"
+    fi
+    echo "pyannote.audio is NOT importable in celery-cpu-worker: confirmed (issue #660 Step 7)" | tee -a "$report"
 }
 
 phase_07_pipeline_assertions() {
@@ -487,6 +577,19 @@ labels = {s.get("speaker_label") for s in segs if s.get("speaker_label")}
 print(len(labels))
 ' 2>/dev/null || echo 0)
             as_assert_eq "exactly 2 speakers" "2" "$speaker_labels"
+
+            # Issue #660: the speaker rows this lite pipeline just produced must carry
+            # 256-dim (v4) vectors — proof the CPU-EP sidecar, not an absent in-process
+            # PyAnnote model, actually served the embedding.
+            local embedding_dim
+            embedding_dim=$(docker exec opentranscribe-opensearch curl -s \
+                'http://localhost:9200/speakers/_search' \
+                -H 'Content-Type: application/json' \
+                -d '{"size":1,"sort":[{"created_at":{"order":"desc"}}],"_source":["embedding"]}' \
+                2>/dev/null \
+                | python3 -c 'import sys,json; hits=json.load(sys.stdin).get("hits",{}).get("hits",[]); print(len((hits[0]["_source"].get("embedding") or [])) if hits else 0)' \
+                2>/dev/null || echo 0)
+            as_assert_eq "speaker embedding is 256-dim (v4, via the diar-native sidecar)" "256" "$embedding_dim"
         else
             as_record FAIL "transcription for file $file_uuid"
         fi
@@ -590,6 +693,7 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     MOCK_ASR_SCENARIO=error docker compose \
         -f docker-compose.yml -f docker-compose.prod.yml \
         -f docker-compose.lite.yml \
+        -f docker-compose.diar-native.yml \
         -f docker-compose.mock-asr.yml -f docker-compose.mock-llm.yml \
         up -d --force-recreate --no-deps mock-asr
     popd >/dev/null
@@ -632,6 +736,7 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     MOCK_ASR_SCENARIO=ok docker compose \
         -f docker-compose.yml -f docker-compose.prod.yml \
         -f docker-compose.lite.yml \
+        -f docker-compose.diar-native.yml \
         -f docker-compose.mock-asr.yml -f docker-compose.mock-llm.yml \
         up -d --force-recreate --no-deps mock-asr
     popd >/dev/null
@@ -676,6 +781,7 @@ phase 03 phase_03_pin_and_layer_overlays
 phase 04 phase_04_start_stack
 phase 05 phase_05_wait_for_health
 phase 06 phase_06_topology_check
+phase 06b phase_06b_sidecar_check
 phase 07 phase_07_pipeline_assertions
 phase 08 phase_08_finish
 

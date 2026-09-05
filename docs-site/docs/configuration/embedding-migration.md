@@ -90,6 +90,17 @@ Times are approximate and depend on CPU performance. Migration runs in the backg
 
 Before starting the migration process, verify these requirements:
 
+:::warning[Lite deployments: migrate to v4 before running lite]
+As of issue #660, a **lite** deployment (`DEPLOYMENT_MODE=lite`) ships neither
+`pyannote.audio` nor `torchaudio` — speaker embeddings there are served
+exclusively by the diar-native CPU-EP sidecar, which only speaks v4 (256-dim).
+A lite install still holding **v3** (512-dim) speaker data cannot extract any
+speaker embeddings at all until it migrates: the service refuses at
+construction with an actionable error rather than crashing on a missing
+in-process model. Complete this migration on a full (non-lite) deployment
+first, then switch to `--lite`.
+:::
+
 ### Check Current Version
 
 View your current PyAnnote version in the admin UI:

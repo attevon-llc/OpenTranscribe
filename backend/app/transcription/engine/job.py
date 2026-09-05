@@ -44,6 +44,11 @@ class JobResult:
     # Per-speaker gender when the diarization engine produced it (sidecar path).
     speaker_gender: dict | None = None
     stage_timings: dict[str, float] = field(default_factory=dict)
+    # The engine that ACTUALLY served diarization for this job (issue #706) — "native" or
+    # "pyannote", resolved AFTER any in-process fallback, never the configured backend. None
+    # when diarization was disabled/skipped.
+    diarization_provider: str | None = None
+    diarization_model: str | None = None
 
     def to_pipeline_dict(self) -> dict:
         """Return the dict shape TranscriptionPipeline.process() returns."""
@@ -57,6 +62,10 @@ class JobResult:
             result["native_speaker_embeddings"] = self.native_speaker_embeddings
         if self.speaker_gender:
             result["speaker_gender"] = self.speaker_gender
+        if self.diarization_provider:
+            result["diarization_provider"] = self.diarization_provider
+        if self.diarization_model:
+            result["diarization_model"] = self.diarization_model
         return result
 
 
@@ -138,6 +147,9 @@ class RawInferenceResult:
     # Per-speaker gender from the sidecar, classified off the same audio as diarization.
     # None when the engine did not produce it (fork path, or feature disabled).
     speaker_gender: dict | None = None
+    # The engine that ACTUALLY served diarization (issue #706) — see JobResult's fields.
+    diarization_provider: str | None = None
+    diarization_model: str | None = None
 
     def serialize(self) -> dict:
         emb = None
@@ -158,6 +170,8 @@ class RawInferenceResult:
             "speaker_gender": self.speaker_gender,
             "config_snapshot": self.config_snapshot,
             "stage_timings": self.stage_timings,
+            "diarization_provider": self.diarization_provider,
+            "diarization_model": self.diarization_model,
         }
 
     @classmethod
@@ -174,6 +188,8 @@ class RawInferenceResult:
             speaker_gender=payload.get("speaker_gender"),
             config_snapshot=payload.get("config_snapshot", {}),
             stage_timings=payload.get("stage_timings", {}),
+            diarization_provider=payload.get("diarization_provider"),
+            diarization_model=payload.get("diarization_model"),
         )
 
     @staticmethod

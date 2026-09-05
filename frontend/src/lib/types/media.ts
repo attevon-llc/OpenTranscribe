@@ -153,6 +153,13 @@ export interface MediaFileDetail extends MediaFile {
   asr_provider?: string;
   whisper_model?: string;
   diarization_model?: string;
+  /**
+   * Which engine actually diarized THIS file — `"native"` | `"pyannote"` | `null`.
+   * There is no separate "fallback" value: a native-configured run that fell back to
+   * PyAnnote is recorded as `"pyannote"`, since operationally both mean PyAnnote served
+   * it. `null`/`undefined` means "not diarized / not recorded" — never render a default.
+   */
+  diarization_provider?: string | null;
   embedding_mode?: string;
 
   // Source / delivery

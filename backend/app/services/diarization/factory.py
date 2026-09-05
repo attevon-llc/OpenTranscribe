@@ -30,19 +30,17 @@ class DiarizationProviderFactory:
 
         Returns:
             A ``DiarizationProvider`` instance, or ``None`` when the source is
-            ``"provider"`` (use ASR provider's built-in diarization) or ``"off"``
-            (diarization disabled).
+            ``"provider"`` (use ASR provider's built-in diarization), ``"off"``
+            (diarization disabled), or ``"local"`` (run on our own GPU — resolved by
+            ``rediarize_task`` calling ``ModelManager.get_diarizer()`` directly, never
+            through this factory; see the class-level note on ``VALID_DIARIZATION_SOURCES``
+            usage in ``app/services/diarization/CLAUDE.md``).
 
         Raises:
             ValueError: If *source* is unknown or a required API key is missing.
         """
-        if source in ("provider", "off"):
+        if source in ("provider", "off", "local"):
             return None
-
-        if source == "local":
-            from .local_provider import LocalDiarizationProvider
-
-            return LocalDiarizationProvider()
 
         if source == "pyannote":
             from .pyannote_provider import PyAnnoteCloudDiarizationProvider
@@ -67,7 +65,9 @@ class DiarizationProviderFactory:
 
         Returns:
             A ``DiarizationProvider`` instance, or ``None`` when diarization_source
-            is ``"provider"`` or ``"off"``.
+            is ``"provider"``, ``"off"``, or ``"local"`` (the ``local`` source runs on our
+            own GPU via ``rediarize_task`` -> ``ModelManager.get_diarizer()`` directly,
+            never through this factory — issue #672).
         """
         from app.models import UserSetting
 
@@ -82,17 +82,11 @@ class DiarizationProviderFactory:
         )
         source = source_setting.setting_value if source_setting else DEFAULT_DIARIZATION_SOURCE
 
-        if source in ("provider", "off"):
+        if source in ("provider", "off", "local"):
             return None
-
-        if source == "local":
-            from .local_provider import LocalDiarizationProvider
-
-            return LocalDiarizationProvider()
 
         if source == "pyannote":
             # Read pyannote.ai diarization config from user_diarization_settings.
-            # NOTE: UserDiarizationSettings model will be created in a separate task.
             from app.models.user_diarization_settings import UserDiarizationSettings
             from app.utils.encryption import decrypt_value
 

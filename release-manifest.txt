@@ -42,17 +42,48 @@ docker-compose.yml
 docker-compose.prod.yml
 docker-compose.gpu.yml
 docker-compose.gpu-scale.yml
+# Optional overlay for multi-GPU SPLIT: transcription and diarization on separate host
+# GPUs, gated on ENGINE_GPU_SPLIT=true (opentranscribe.sh's gpu_split_active(), issue
+# #708). `optional` because it only benefits a 2+ GPU host and most installs never set
+# the gating var — unlike docker-compose.gpu-scale.yml above, which every single-GPU
+# install can benefit from and is therefore required. Before this entry, a self-hosted
+# install could never download this file at all: get_compose_files() had no reference
+# to gpu-split, so setting ENGINE_GPU_SPLIT=true routed dispatch onto queues nothing
+# consumed (issues #703/#705 fix what happens there; this is what makes their fix
+# reachable outside `opentr.sh` dev).
+docker-compose.gpu-split.yml	optional
 docker-compose.blackwell.yml	optional
 docker-compose.nginx.yml
 docker-compose.backup.yml	optional
 # The native (Rust/ONNX) diarization sidecar. `engine.diarizer_backend` defaults to
 # `native`, so without this overlay a deployment silently serves every file from the
 # in-process PyAnnote fallback instead (issue #639). The diar-server binary already
-# ships inside the backend image; the ONNX/PLDA weights are exported locally by
-# scripts/download-models.py from the operator's own gated HuggingFace access, exactly
-# as the PyAnnote weights are. Selection is gated on those weights existing — no
-# separate toggle, since the directory is only created by running the export.
-docker-compose.diar-native.yml	optional
+# ships inside the backend image; the ONNX/PLDA weights are exported locally from the
+# operator's own gated HuggingFace access, exactly as the PyAnnote weights are.
+#
+# NOT `optional` any more (issue #670). An optional entry that 404s during `update-full`
+# is reported as a yellow "(optional, not in this release)" line and the upgrade
+# continues — which, for the overlay that carries the DEFAULT diarization engine, means
+# a transient network blip silently downgrades an install to the fallback with no error
+# anywhere. Required is the honest description: the engine is not optional, only the
+# fallback is.
+#
+# Selection is no longer gated on the weights already existing. The backend exports them
+# from its FastAPI lifespan (app/transcription/native_provision.py), so gating on them
+# beforehand cost a fresh install two starts to converge; the gate is now "engine is
+# native AND (weights present OR a HuggingFace token is configured)" — the token being
+# what makes the export possible.
+docker-compose.diar-native.yml
+# The GPU reservation for that sidecar, split into its own file so the overlay above is
+# safe to load on a CPU-only or --lite host with no nvidia runtime. Loaded alongside
+# docker-compose.gpu.yml; it also flips DIAR_MODE from the CPU-safe default to `cuda`.
+docker-compose.diar-native-gpu.yml
+# Opt-in RAM-backed override for the `pipeline_scratch` cross-worker WAV handoff volume
+# (issue #661 E5; see backend/app/utils/scratch_volume.py). `optional` — this is a
+# performance knob for RAM-rich hosts, never required, and the base compose file already
+# references it by name so a fresh install that skips it just keeps the disk-backed
+# default. Load with `./opentr.sh start dev --with-scratch-tmpfs`.
+docker-compose.scratch-tmpfs.yml	optional
 
 # --- Reverse proxy -------------------------------------------------------------
 nginx/site.conf.template
@@ -71,3 +102,12 @@ opentranscribe.sh	exec
 # Downloaded so `update-full` can diff it against the user's .env and report new
 # keys. The user's own .env is NEVER touched.
 .env.example
+
+# --- Legal ------------------------------------------------------------------
+# CC-BY-4.0 (pyannote model weights, both diarization engines) and Apache-2.0
+# (speakrs / diar-native) both carry attribution obligations. Neither backend
+# Dockerfile's build context includes this repo-root file (context is ./backend),
+# so this manifest entry is the ONLY mechanism that gets it to a self-hosted
+# deployment (issue #663). Not `optional` -- a NOTICE nobody receives is not
+# attribution.
+NOTICE

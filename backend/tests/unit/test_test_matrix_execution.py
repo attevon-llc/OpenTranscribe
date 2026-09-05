@@ -318,6 +318,61 @@ def test_the_matrix_reports_abort_and_blocked_separately_from_fail():
         assert token in source, f"the report no longer emits a {token.split()[0]} line"
 
 
+@pytest.mark.parametrize(
+    ("rc_in", "skip_count", "expected"),
+    [
+        # The regression this exists for: every leg that ran passed, but a smoke leg reported
+        # NOT MEASURED (exit 4). Before EXIT_NOT_MEASURED that exited 0, so a caller reading
+        # only $? could not tell a fully measured matrix from one whose diar-native/gpu-scale/
+        # lite legs never executed at all.
+        (0, 1, 5),
+        (0, 3, 5),
+        # A real verdict is the more important one and must survive: never downgrade a failure
+        # into "not measured".
+        (1, 2, 1),
+        (3, 1, 3),
+        (4, 1, 4),
+        # Nothing skipped -> an honest, fully measured pass stays 0.
+        (0, 0, 0),
+    ],
+)
+def test_not_measured_legs_do_not_exit_zero(rc_in: int, skip_count: int, expected: int):
+    """A green matrix with skips must not produce a green EXIT CODE.
+
+    Runs test-matrix.sh's REAL summary block rather than asserting a string is present in the
+    file: a grep would pass against a block that computed the wrong code. `info` and the colour
+    variables are stubbed because they are the only things the block needs from the rest of the
+    script; SKIPPED_LEGS is populated so the reporting loop executes for real too.
+    """
+    source = _matrix_source()
+    block = re.search(
+        r"^    if \(\( SKIP_COUNT > 0 \)\); then\n.*?^    fi$",
+        source,
+        re.DOTALL | re.MULTILINE,
+    )
+    assert block, (
+        "the SKIP_COUNT summary block was not found in test-matrix.sh — if it was renamed or "
+        "restructured, update this test rather than deleting it: it guards the NOT-MEASURED "
+        "exit code from silently collapsing back to 0"
+    )
+    legs = " ".join(f'"leg{i}: reason"' for i in range(skip_count))
+    snippet = (
+        "info() { :; }\n"
+        "YELLOW=''; NC=''\n"
+        "EXIT_NOT_MEASURED=5\n"
+        f"RC={rc_in}\n"
+        f"SKIP_COUNT={skip_count}\n"
+        f"declare -a SKIPPED_LEGS=({legs})\n"
+        f"{block.group(0)}\n"
+        "exit $RC\n"
+    )
+    rc, out = _run_shell(snippet)
+    assert rc == expected, (
+        f"RC={rc_in} with {skip_count} NOT-MEASURED leg(s) exited {rc}, expected {expected}. "
+        f"A NOT-MEASURED run must never be indistinguishable from a measured pass: {out}"
+    )
+
+
 def test_the_doc_and_the_script_still_agree():
     """check_doc_sync's anchors are load-bearing; a doc edit must not silently break them."""
     assert DOC.is_file(), f"{DOC} is missing — the anti-staleness check cannot run"

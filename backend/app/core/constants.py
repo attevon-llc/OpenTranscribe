@@ -40,7 +40,10 @@ class CeleryQueues:
     UTILITY = "utility"
     CLOUD_ASR = "cloud-asr"  # Dynamic: cloud ASR providers (CPU worker consumes)
     CPU_TRANSCRIBE = "cpu-transcribe"  # Dynamic: lightweight CPU transcription
-    GPU_TRANSCRIBE = "gpu-transcribe"  # Phase 4: transcription-only GPU worker
+    # Phase 4: transcription-only GPU worker (celery-worker-gpu-transcribe, gpu-split
+    # profile). dispatch.py's _resolve_gpu_queue() routes here only when
+    # gpu_split_enabled() is true (issue #703 — this queue previously had no publisher).
+    GPU_TRANSCRIBE = "gpu-transcribe"
     GPU_DIARIZE = "gpu-diarize"  # Phase 4: diarization-only GPU worker
     REDACTION = "redaction"  # Content redaction detection (dedicated CPU service)
     DEFAULT = "celery"  # Celery default queue (NLP worker consumes as fallback)
@@ -59,6 +62,34 @@ class CeleryQueues:
         REDACTION,
         DEFAULT,
     ]
+
+
+def gpu_split_enabled() -> bool:
+    """Whether THIS process's environment ASKS FOR the gpu-split topology.
+
+    Read at call time (never cached) so a test can flip ``ENGINE_GPU_SPLIT`` per-case,
+    and because Celery worker processes never re-import this module after startup.
+
+    ⚠️ This is a REQUEST, not a guarantee a consumer exists. ``ENGINE_GPU_SPLIT`` is
+    documented in ``.env.example`` as an ordinary operator knob and reaches every
+    container via ``env_file: .env`` regardless of which Compose overlay is loaded —
+    ``docker-compose.gpu-split.yml`` additionally hardcodes it to ``true`` on the
+    dispatching services, but that overlay is loaded only under ``--with-gpu-split``,
+    while ``env_file`` is not. So an operator who sets ``ENGINE_GPU_SPLIT=true`` in
+    ``.env`` directly (no ``--with-gpu-split``) makes this function return True with
+    ``celery-worker-gpu-transcribe`` never started to drain the queue it names.
+    Before this branch the flag was inert for dispatch, so that combination is a
+    regression, not a pre-existing risk.
+
+    Do NOT route on this value alone. ``dispatch.py::_resolve_gpu_queue`` also
+    verifies a live consumer is bound to ``CeleryQueues.GPU_TRANSCRIBE`` (via Celery
+    control ``inspect().active_queues()``) before honouring it, and falls back to the
+    always-staffed ``'gpu'`` queue otherwise — that check, not this function, is what
+    keeps the failure direction "no split", never "queued on a dead queue" (issue
+    #703, amended by the corroboration this docstring used to (wrongly) claim this
+    function alone provided).
+    """
+    return _os.environ.get("ENGINE_GPU_SPLIT", "false").lower() == "true"
 
 
 class GPUPriority:
@@ -647,6 +678,50 @@ VALID_SPEAKER_PROMPT_BEHAVIORS = ["always_prompt", "use_defaults", "use_custom"]
 # Diarization source options
 VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "off")
 DEFAULT_DIARIZATION_SOURCE = "provider"
+
+# Native diarizer (diar-native sidecar) model provisioning.
+#
+# The ONNX/PLDA set is exported locally from the gated pyannote weights — see
+# app/transcription/native_provision.py for why it cannot be shipped. These are coded
+# defaults so a deployment needs no .env entry to work; the matching DIAR_NATIVE_*
+# variables in .env.example only exist to override them.
+#
+# `fast` carries the batch-64 graphs; `small` is the laptop tier (issue #511).
+VALID_DIAR_NATIVE_MODEL_SETS = ("fast", "small")
+DEFAULT_DIAR_NATIVE_MODEL_SET = "fast"
+# A cold export writes ~484 MB and measured 137 s in this image. The budget is wide
+# because most of the wall clock is a HuggingFace download that a slow link can stretch;
+# it exists to bound a hang, not to pace a healthy run.
+DEFAULT_DIAR_NATIVE_PROVISION_TIMEOUT_S = 1800
+
+# Per-request /diarize timeout, DURATION-SCALED (issue #656 Step 4). A flat bound is wrong in
+# both directions: DIAR_NATIVE_TIMEOUT_S (env, ceiling only) is meaningless for a 30-second
+# memo and would fail a genuine multi-hour recording if raised naively. The real per-request
+# budget is derived from audio already in hand (`len(audio)/16000`, no new plumbing needed):
+#
+#   budget(d) = min(DIAR_NATIVE_TIMEOUT_S, DIAR_SIDECAR_TIMEOUT_FLOOR_S + d / DIAR_SIDECAR_MIN_RTF)
+#
+# Derivation (docs/BENCHMARK_RESULTS.md): PyAnnote diarization measured 80.2x/79.1x realtime
+# solo, 26x at concurrency=3 (the slowest figure in the tree, "queue-load est."); largest file
+# ever benchmarked is 4.7h = 17,059s. DIAR_SIDECAR_MIN_RTF=3.0 leaves 8.7x margin on the worst
+# figure and 26x on the only directly-measured one. DIAR_SIDECAR_TIMEOUT_FLOOR_S=300 covers
+# connect + first-request ORT session load (SPEAKRS_LAZY_SESSIONS=1) + a short admission queue.
+# Above ~1.25h audio the ceiling binds at 1800s, still 2.7x the slowest number ever recorded for
+# the largest supported file. CPU-mode sidecar throughput is UNMEASURED here — that is why the
+# ceiling stays the env var DIAR_NATIVE_TIMEOUT_S rather than being folded into this constant.
+DIAR_SIDECAR_TIMEOUT_FLOOR_S = 300
+DIAR_SIDECAR_MIN_RTF = 3.0
+
+# =============================================================================
+# diar-native sidecar-unavailable retry policy (issue #656 Step 5)
+# =============================================================================
+# Mirrors CLOUD_ASR_* above: a retry ladder is policy, not an operator knob, so there are
+# deliberately no matching .env entries. 30+60+120+240 ~= 7.5 min total, sized to span a
+# container recreate plus a lazy model (re)load — the sidecar healthcheck itself needs
+# 15s x 3 failures to mark the container unhealthy, so the first retry must clear that.
+DIAR_SIDECAR_RETRY_BASE = 30  # seconds — first retry delay when the sidecar gave no Retry-After
+DIAR_SIDECAR_RETRY_MAX = 600  # seconds — backoff ceiling (10 min)
+DIAR_SIDECAR_MAX_RETRIES = 4  # attempts
 
 # =============================================================================
 # Language Settings (Multilingual Support)
@@ -1288,3 +1363,135 @@ DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = False  # chat.rag.context_expansion_ena
 DEFAULT_CHAT_OVERVIEW_CITABLE = False  # chat.rag.overview_citable
 DEFAULT_CHAT_OVERVIEW_BLOCK_RULE = False  # chat.rag.overview_block_rule
 DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS = False  # chat.rag.overview_after_excerpts
+
+# =============================================================================
+# Engine shared-volume WAV handoff (issue #661 E0, consolidated onto pipeline_scratch in E2)
+# =============================================================================
+# ``ENGINE_SHARED_VOLUME_PATH`` names the container path of the ``engine/`` namespace inside
+# the single ``pipeline_scratch`` volume (mounted at ``PIPELINE_SCRATCH_DEFAULT`` by every
+# compose service that reads or writes the handoff WAV: docker-compose.yml's
+# celery-worker*/gpu-transcribe*/gpu-diarize* services, docker-compose.diar-native.yml's
+# diar-native sidecar — read-only there) and set to the same value in .env.example. This is
+# the ONE default all readers/writers must agree on. E2 folded what used to be a SEPARATE
+# ``transcription-temp`` volume/filesystem into a namespace of ``pipeline_scratch`` so the
+# preprocess → engine handoff (``preprocess.py``) can ``os.link`` instead of cross-filesystem
+# copying — before that, a bare "/tmp" default (or a stale volume name) meant an install whose
+# .env predated the variable wrote into the writer's container-local /tmp, the reader looked in
+# the real mount, found nothing, and silently fell back to MinIO with no log distinguishing the
+# two cases — the exact per-job re-serialization cost this shared-volume path exists to avoid.
+ENGINE_SHARED_VOLUME_DEFAULT = "/scratch/opentranscribe/engine"
+
+
+def resolve_engine_shared_volume_path() -> str:
+    """The handoff directory, ignoring a configured path that no longer exists.
+
+    Every reader and writer of the engine handoff WAV must call this rather than reading
+    ``ENGINE_SHARED_VOLUME_PATH`` directly, because an explicit value silently outlives the
+    volume it named.
+
+    E2 folded ``transcription-temp`` into a namespace of ``pipeline_scratch`` and moved the
+    coded default here. But ``.env`` beats a coded default, and every install created before
+    that change carries ``ENGINE_SHARED_VOLUME_PATH=/tmp/transcription`` from the old
+    ``.env.example`` — a path that is no longer mounted anywhere. ``os.makedirs`` then
+    cheerfully recreates it *inside the writer's container*, the GPU worker looks in the real
+    mount, finds nothing, and falls back to MinIO. Measured on a live upgraded stack: the
+    handoff silently degraded on every job, which is precisely the regression E0 was written
+    to make visible.
+
+    So: if the configured directory does not exist but the coded default does, the configured
+    value is stale — prefer the default and say so loudly. On a correctly configured install
+    the configured path exists (the image pre-creates it and the volume mounts over it) —
+    **but existing is NOT sufficient proof it is the real mount.** ``preprocess.py`` used to do
+    ``os.makedirs(os.environ.get("ENGINE_SHARED_VOLUME_PATH", "/tmp"))`` unconditionally, which
+    recreates a stale configured path *inside the writer's own writable layer* the moment
+    anything tries to use it — so a present-but-stale directory is exactly the failure mode
+    this function exists to catch, not a case where the check is inert. It deliberately does
+    NOT rewrite ``.env``; this repo never edits an operator's ``.env`` without confirmation.
+    """
+    import logging
+    import os
+
+    configured = os.environ.get("ENGINE_SHARED_VOLUME_PATH")
+    if not configured or configured == ENGINE_SHARED_VOLUME_DEFAULT:
+        return ENGINE_SHARED_VOLUME_DEFAULT
+
+    configured_exists = os.path.isdir(configured)
+    default_exists = os.path.isdir(ENGINE_SHARED_VOLUME_DEFAULT)
+
+    if not configured_exists:
+        if not default_exists:
+            # Neither exists. Honour the operator's value rather than inventing one — the
+            # caller's own mkdir//not-found logging is then the accurate signal.
+            return configured
+        logging.getLogger(__name__).warning(
+            "ENGINE_SHARED_VOLUME_PATH=%s does not exist in this container, but %s does — "
+            "using the latter. This usually means .env predates the pipeline_scratch volume "
+            "consolidation (issue #661 E2), which removed the transcription-temp volume that "
+            "path named. Update ENGINE_SHARED_VOLUME_PATH in .env to silence this.",
+            configured,
+            ENGINE_SHARED_VOLUME_DEFAULT,
+        )
+        return ENGINE_SHARED_VOLUME_DEFAULT
+
+    if not default_exists:
+        # This container never got the shared mount at all (e.g. a reader that predates it)
+        # — nothing to compare against, so honour the operator's value.
+        return configured
+
+    # Both paths "exist" — but a directory recreated by a stale os.makedirs call in this
+    # container's writable layer also passes os.path.isdir. Discriminate by filesystem
+    # device: the real shared mount and the coded default live on the same mounted volume,
+    # a stale local directory does not.
+    configured_dev = _stat_dev(configured)
+    default_dev = _stat_dev(ENGINE_SHARED_VOLUME_DEFAULT)
+    if configured_dev is not None and configured_dev == default_dev:
+        return configured
+
+    logging.getLogger(__name__).warning(
+        "ENGINE_SHARED_VOLUME_PATH=%s exists but is not on the same filesystem as the "
+        "shared %s mount — treating it as a stale directory left behind in this "
+        "container's writable layer (os.makedirs recreates a missing configured path "
+        "there silently) rather than the real shared volume, and using the default "
+        "instead. This usually means .env predates the pipeline_scratch volume "
+        "consolidation (issue #661 E2), which removed the transcription-temp volume that "
+        "path named. Update ENGINE_SHARED_VOLUME_PATH in .env to silence this.",
+        configured,
+        ENGINE_SHARED_VOLUME_DEFAULT,
+    )
+    return ENGINE_SHARED_VOLUME_DEFAULT
+
+
+def _stat_dev(path: str) -> int | None:
+    """``os.stat(path).st_dev``, or ``None`` if it cannot be stat'd.
+
+    Broken out so tests can simulate two directories that exist but live on different
+    filesystems — every real container does (a bind-mounted named volume vs. the image's
+    writable layer), but a pytest ``tmp_path`` fixture puts everything on one device, so a
+    filesystem-only test can't exercise the real comparison. Tests monkeypatch this function
+    directly instead.
+    """
+    import os
+
+    try:
+        return os.stat(path).st_dev
+    except OSError:
+        return None
+
+
+# Root of the consolidated pipeline scratch volume (issue #661 E2) — one named volume,
+# ``pipeline_scratch``, three namespaces: ``<file_uuid>/`` (scratch_volume.py, per-file),
+# ``engine/`` (ENGINE_SHARED_VOLUME_DEFAULT above, per-task), and ``diar/``
+# (DIAR_NATIVE_SHARED_DIR_DEFAULT below, the sidecar's own-copy fallback). Same filesystem is
+# what makes the engine handoff an ``os.link`` instead of a cross-filesystem copy.
+PIPELINE_SCRATCH_DEFAULT = "/scratch/opentranscribe"
+
+# Sidecar's own-copy fallback directory when it cannot reuse a hard-linked WAV (diarizer_native.py).
+DIAR_NATIVE_SHARED_DIR_DEFAULT = "/scratch/opentranscribe/diar"
+
+# Top-level directory names inside PIPELINE_SCRATCH_DEFAULT that are NOT per-file UUID dirs.
+# The janitor (scratch_volume.sweep_expired) must sweep files INSIDE these by their own mtime
+# and never rmtree the namespace directory itself — unlike an ordinary <file_uuid>/ dir, these
+# directories' own mtime bumps on every file created inside them, so treating them like an
+# ordinary per-file dir would eventually rmtree an in-flight handoff WAV out from under a
+# running job (issue #661 E2 phase 1.2).
+RESERVED_SCRATCH_NAMESPACES = frozenset({"engine", "diar"})

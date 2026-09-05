@@ -32,7 +32,6 @@ services:
       # can't read the WAV the CPU worker staged and the engine handoff fails
       # (S3 NoSuchKey on temp/preprocess). Mount both shared scratch volumes.
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data

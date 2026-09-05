@@ -303,17 +303,32 @@ ensure_secrets_file() {
 
 ensure_clean_test_state() {
     # Refuse if any live opentranscribe-* container is currently running.
-    local running
+    #
+    # `diar-native` is the only project service with no `container_name`, so compose gives
+    # it its DEFAULT name (`<project>-diar-native-<n>`) instead — which matches this
+    # `^opentranscribe-` regex only when the compose project is actually named
+    # `opentranscribe` (true for this rehearsal, which pins COMPOSE_PROJECT_NAME=opentranscribe
+    # below, but not for a real install whose directory is named something else). Also catch
+    # it by compose project label so this stays correct if that pin ever changes.
+    local running running_diar
     running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
-    if [[ -n "$running" ]]; then
+    running_diar=$(docker ps --format '{{.Names}}' \
+        --filter 'label=com.docker.compose.project=opentranscribe' \
+        --filter 'label=com.docker.compose.service=diar-native' || true)
+    if [[ -n "$running" || -n "$running_diar" ]]; then
         gr_die "live opentranscribe-* containers are running:
 $running
+$running_diar
 
 Stop them with: ./opentr.sh stop  (preserves all data)"
     fi
     # Remove stopped opentranscribe-* containers (would collide on container_name)
-    local stopped
+    local stopped stopped_diar
     stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    stopped_diar=$(docker ps -a --format '{{.Names}}' \
+        --filter 'label=com.docker.compose.project=opentranscribe' \
+        --filter 'label=com.docker.compose.service=diar-native' || true)
+    stopped="$(printf '%s\n%s' "$stopped" "$stopped_diar" | sed '/^$/d' | sort -u)"
     if [[ -n "$stopped" ]]; then
         gr_log "removing stopped opentranscribe-* containers from previous runs"
         docker rm $stopped >/dev/null 2>&1 || true
@@ -475,22 +490,32 @@ phase_03_prepare_v033_compose() {
     local model_cache="$shared_cache"
     mkdir -p "$model_cache/huggingface" "$model_cache/torch" \
              "$model_cache/nltk_data" "$model_cache/sentence-transformers" \
-             "$model_cache/opensearch-ml" "$model_cache/pyannote"
+             "$model_cache/opensearch-ml" "$model_cache/pyannote" \
+             "$model_cache/diar-native"
+
+    local live_cache="/mnt/nvm/repos/transcribe-app/models"
 
     # One-time seed from live production cache if we haven't already. Check
     # for the sentinel file ".seeded-from-live" to avoid re-copying on every
     # run. mc_seed_cache hardlinks the big trees (cheap, no data duplication)
     # but makes a REAL copy of nltk_data — nltk >=3.10 pathsec refuses
     # multiply-linked files, and a hardlinked nltk_data fails every
-    # transcription in the run. See lib/model-cache.sh.
+    # transcription in the run — and of diar-native, whose export can be
+    # rewritten in place by an older FROM release's provisioning step, which
+    # would corrupt this host's LIVE diar-native weights through the
+    # hardlink (issue #670; see lib/model-cache.sh's MC_NO_HARDLINK_SUBDIRS
+    # header for the full reasoning).
     if [[ ! -f "$model_cache/.seeded-from-live" ]]; then
-        local live_cache="/mnt/nvm/repos/transcribe-app/models"
         if [[ -d "$live_cache/huggingface" ]]; then
             gr_log "seeding shared model cache from live cache (one-time)"
-            # Only the subdirs HF/PyAnnote/Whisper actually need.
+            # diar-native is included so this scenario proves the FAST path
+            # (weights already present, no live HuggingFace export at
+            # backend startup) rather than depending on that export
+            # succeeding every run. ac_diar_engine_verdict in phase 11 is
+            # what actually proves diarization worked, seeded or not.
             # Skip opensearch-ml (container-specific) and onnx (newer releases only).
             mc_seed_cache "$live_cache" "$model_cache" \
-                huggingface torch nltk_data sentence-transformers pyannote
+                huggingface torch nltk_data sentence-transformers pyannote diar-native
             touch "$model_cache/.seeded-from-live"
             gr_ok "shared model cache seeded from live cache"
         else
@@ -503,6 +528,22 @@ phase_03_prepare_v033_compose() {
         # hardlinked. The sentinel means "seeded", not "seeded correctly", so
         # re-assert the invariant on every reuse rather than trusting it.
         mc_break_hardlinks "$model_cache/nltk_data"
+
+        # diar-native did not exist as a seeded subdir before issue #670's fix,
+        # so a shared cache whose sentinel predates this change never gets it
+        # from the branch above (the sentinel means "seeded", not "seeded
+        # completely" either). Top it up incrementally rather than requiring
+        # an operator to blow away the whole multi-GB cache to pick up one
+        # new subdir.
+        if [[ -z "$(ls -A "$model_cache/diar-native" 2>/dev/null)" ]]; then
+            if [[ -d "$live_cache/diar-native" ]] && [[ -n "$(ls -A "$live_cache/diar-native" 2>/dev/null)" ]]; then
+                gr_log "shared cache predates diar-native seeding — topping it up from the live cache"
+                mc_seed_cache "$live_cache" "$model_cache" diar-native
+                gr_ok "diar-native seeded into the existing shared model cache"
+            else
+                gr_warn "no diar-native export in the live cache either — the backend will export its own on startup"
+            fi
+        fi
     fi
 
     # Gate: whichever branch ran above, the pathsec invariant must hold before
@@ -1471,6 +1512,98 @@ phase_11_new_data_post_upgrade() {
     seg_count=$(ac_segment_count "$fid")
     as_assert_ge "NEW transcript has segments" "$seg_count" 1
 
+    # Which engine actually diarized this file? "completed" above proves
+    # nothing — the fallback to in-process PyAnnote is SILENT BY DESIGN, so an
+    # upgrade whose diarizer is dead can still pass every assertion above
+    # (issue #670: "test-upgrade.sh seeds diar-native and fails if
+    # diarization is dead"). This check is deliberately only on the UPGRADED
+    # (TO) side: phase 05's seed upload runs against the FROM release, which
+    # may predate diar-native entirely and would never log either the native
+    # or the fallback line — asserting there would fail on correct behaviour
+    # from an old release. The current codebase always ships diar-native
+    # support, so there is no equivalent excuse here.
+    #
+    # Two independent, non-redundant signals — see diar-native-smoke.sh's and
+    # ac_diar_engine_verdict's own headers for why neither is sufficient
+    # alone. GPU residency is only meaningful when this run actually asked
+    # for a GPU deployment (TEST_USE_GPU=false legitimately runs diar-native
+    # on CPU, holding zero device memory).
+    if [[ "$TEST_USE_GPU" == "true" ]]; then
+        # Wrapped in `if`, never called bare: diar-native-smoke.sh exits
+        # non-zero on both FAIL (1) and NOT MEASURED (4), and this script
+        # runs under `set -euo pipefail` — an unwrapped non-fatal-by-design
+        # helper call here would silently truncate every phase after it
+        # (issues #617/#618; see scripts/CLAUDE.md's "bare helper call"
+        # gotcha).
+        local diar_smoke_rc=0 diar_smoke_out=""
+        if diar_smoke_out=$("$REPO_ROOT/scripts/diar-native-smoke.sh" --json 2>&1); then
+            diar_smoke_rc=0
+        else
+            diar_smoke_rc=$?
+        fi
+        case "$diar_smoke_rc" in
+            0) as_record PASS "diar-native sidecar GPU residency on upgraded stack (diar-native-smoke.sh)" ;;
+            4) as_record SKIP "diar-native sidecar GPU residency on upgraded stack" "NOT MEASURED: $diar_smoke_out" ;;
+            *) as_record FAIL "diar-native sidecar GPU residency on upgraded stack" "$diar_smoke_out" ;;
+        esac
+    fi
+
+    # Verdict is per-file (issue #706's diarization_provider column) and
+    # keyed to THIS file's own uuid, not a whole-worker-log grep in a
+    # 30-minute window — this is the TO (post-upgrade) side, which always
+    # ships #706, so the DB path is expected to answer every time; the
+    # log-fallback branches below exist only as a defensive net, not the
+    # expected path here (see ac_diar_engine_verdict's header for why the
+    # FROM side is never checked this way at all).
+    # This is the TO (post-upgrade) side, which — per ac_diar_engine_verdict's own
+    # header and the phase-11 comment above — always ships #706's
+    # diarization_provider column. The genuine old-stack case the function's log
+    # fallback exists for is the FROM side, which this check deliberately never
+    # runs against. So on THIS side a `:log` verdict is never the legitimate
+    # old-schema case either, and `native:log` must not get an unqualified PASS —
+    # an unscoped 30-minute log grep can report PASS from an unrelated earlier
+    # job/phase, which is exactly the false-pass hole #706 closed (issue #707).
+    local diar_verdict diar_verdict_source
+    diar_verdict=$(ac_diar_engine_verdict "$fid" "opentranscribe-celery-worker" "30m")
+    diar_verdict_source="${diar_verdict#*:}"
+    case "$diar_verdict" in
+        native:db)
+            as_record PASS "native diarizer served the post-upgrade file ($fid, source=$diar_verdict_source)"
+            ;;
+        native:log)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "verdict=native:log — an unscoped legacy worker-log grep, not the per-file diarization_provider column. The upgraded (TO) stack should always carry that column; a :log result here means the DB-backed check was unavailable, not that diarization succeeded, and may reflect an unrelated job from an earlier phase of this same run. Never trusted as a pass (issue #707)"
+            ;;
+        pyannote:db)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "media_file.diarization_provider=pyannote — PyAnnote served this job (direct config or a silent native fallback) after the upgrade"
+            ;;
+        fallback:log)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "worker log shows a 'falling back to PyAnnote' line — the sidecar degraded silently after the upgrade (no diarization_provider column on this API; legacy log-based check)"
+            ;;
+        none:db)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "media_file.diarization_provider is NULL after completion on the upgraded stack — diarization never resolved a provider"
+            ;;
+        error:request)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "ac_diar_engine_verdict's request to /api/files/$fid failed or returned unparseable JSON (verdict=error:request) on the upgraded stack — this is a request failure, not evidence the diarization_provider column is absent, and is never silently downgraded to the log fallback"
+            ;;
+        absent:none)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "file record unreachable and opentranscribe-celery-worker is not running on the upgraded stack"
+            ;;
+        unknown:db|unknown:log)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "could not determine which engine served this job on the upgraded stack (verdict=$diar_verdict)"
+            ;;
+        *)
+            as_record FAIL "native diarizer served the post-upgrade file ($fid)" \
+                "unrecognized verdict from ac_diar_engine_verdict: $diar_verdict"
+            ;;
+    esac
+
     # And the new content must be reachable through search — proving the
     # upgraded stack INDEXED it, not merely stored it.
     local new_hits=0 waited=0
@@ -1894,7 +2027,18 @@ phase_16_rollback_and_assert() {
                 ;;
             *) ;; # third-party infra image, not app-versioned — see comment above
         esac
-    done < <(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-')
+    done < <(printf '%s\n%s\n' \
+        "$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-')" \
+        "$(docker ps --format '{{.Names}}' \
+            --filter 'label=com.docker.compose.project=opentranscribe' \
+            --filter 'label=com.docker.compose.service=diar-native')" \
+        | sed '/^$/d' | sort -u)
+    # `diar-native` has no `container_name`, so its default compose name
+    # (`opentranscribe-diar-native-<n>`, since this rehearsal pins
+    # COMPOSE_PROJECT_NAME=opentranscribe) already matches the name filter above in THIS
+    # rehearsal — the extra project-label filter is defense-in-depth against that pin ever
+    # changing, since diar-native runs `davidamacey/opentranscribe-backend` (the shared
+    # image) and is exactly the kind of app-versioned container this loop must not miss.
 
     # #619's own root cause, guarded against here: with ZERO app containers running,
     # `mismatched` is trivially empty and the assertion below PASSES having checked

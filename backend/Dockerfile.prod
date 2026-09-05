@@ -18,7 +18,25 @@ FROM denoland/deno:bin AS deno-bin
 # ambiguous). Only ~419 MB of the standalone 3.46 GB image is actually needed: the
 # binary, three ORT libs (see the exclusion note below), and libopenblas0. The standalone image
 # is 2.9 GB as of diar-native 0.3.1.
-FROM davidamacey/diar-native@sha256:83a709be94d0ca06441fa10aea0680f53b03cc10eb3ce11c4eeb84478400567d AS diar-native-bin
+#
+# ⚠️ #680/#667: this is a SINGLE-ARCH (linux/amd64) image — diar-native publishes no CUDA
+# arm64 build (only *-cpu-arm64 / *-provision-arm64, see Dockerfile.lite). A
+# `--platform linux/arm64` build of this Dockerfile does NOT fail here — BuildKit only warns
+# (InvalidBaseImagePlatform) and COPY --from still succeeds, shipping an amd64 ELF that
+# fails at container start with "exec format error". This full/CUDA image is therefore
+# amd64-ONLY for v0.5.0 (a `vX.Y.Z-cuda-arm64` tag leg is reserved in the grammar but not
+# built). The arm64 stage below intentionally references a tag that does not exist so that
+# declaring `--platform linux/arm64` for this Dockerfile fails LOUDLY at the pull step
+# instead of silently shipping a broken binary — remove this stage and replace it with a
+# real digest only once diar-native publishes a CUDA arm64 artifact.
+ARG TARGETARCH
+FROM davidamacey/diar-native@sha256:83a709be94d0ca06441fa10aea0680f53b03cc10eb3ce11c4eeb84478400567d AS diar-native-bin-amd64
+FROM davidamacey/diar-native:UNAVAILABLE-NO-CUDA-ARM64-BUILD-SEE-ISSUE-680 AS diar-native-bin-arm64
+# This FROM selects one of the two stages immediately above (amd64 is digest-
+# pinned; arm64 is a deliberately nonexistent tag, see the comment above) by ARG
+# TARGETARCH; hadolint cannot trace that indirection.
+# hadolint ignore=DL3006
+FROM diar-native-bin-${TARGETARCH} AS diar-native-bin
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation

@@ -460,14 +460,23 @@ arm64_deployment_preflight() {
     export DEPLOYMENT_MODE=lite
 }
 
-# Is a working NVIDIA GPU path actually on offer for this host? Architecture is
-# part of the answer, not just the presence of a runtime: an arm64 host can
-# advertise the nvidia runtime (Jetson, GB10) and still have no full/CUDA image
-# to run, per arm64_deployment_preflight above. Used to decide whether to even
-# mention the GPU path to an operator.
+# Is a working NVIDIA GPU path actually on offer for this deployment? The runtime
+# being present is only one of FOUR reasons the answer can be no, and every caller
+# that re-derives a subset of them drifts the moment a fifth is added — which is
+# exactly how the diar-native-gpu gate came to reproduce two of three conditions
+# and miss lite (#680). One function, one answer:
+#
+#   1. no nvidia container runtime at all;
+#   2. the operator opted out at install time (FORCE_CPU_MODE);
+#   3. DEPLOYMENT_MODE=lite — the lite image carries no CUDA runtime, so any GPU
+#      reservation made for it reserves a device nothing in the container can use;
+#   4. an arm64 host, where the full/CUDA image publishes no manifest at all (see
+#      arm64_deployment_preflight) — a Jetson/GB10 can advertise the nvidia runtime
+#      and still have nothing CUDA-capable to run.
 nvidia_gpu_offer_available() {
     [ "$(detect_nvidia_runtime)" = "nvidia" ] || return 1
     force_cpu_mode_requested && return 1
+    [ "$(effective_deployment_mode)" != "lite" ] || return 1
     if [ "$(host_architecture)" = "arm64" ] && [ "${OPENTRANSCRIBE_FORCE_FULL_ON_ARM64:-}" != "true" ]; then
         return 1
     fi
@@ -524,8 +533,12 @@ force_cpu_mode_requested() {
 # every OTHER call site here, which builds `$compose_files` and runs `docker compose` in
 # the SAME process.
 pin_diar_native_image_for_blackwell() {
-    force_cpu_mode_requested && return 0
-    [ "$(detect_nvidia_runtime)" = "nvidia" ] || return 0
+    # nvidia_gpu_offer_available(), not a re-derived runtime+FORCE_CPU pair: this
+    # function WRITES a pin into .env, so getting it wrong is sticky. On a lite
+    # deployment (including every arm64 host, which now defaults to lite) it would
+    # otherwise persist DIAR_NATIVE_IMAGE=<blackwell CUDA image> for a stack whose
+    # GPU overlay was never loaded.
+    nvidia_gpu_offer_available || return 0
     is_blackwell_gpu || return 0
     [ -f docker-compose.blackwell.yml ] || return 0
 
@@ -570,16 +583,17 @@ pin_diar_native_image_for_blackwell() {
 # exact silent-misconfiguration issue #703's live-consumer check now falls back safely
 # from, but the fallback is "process on the shared gpu queue", not "actually split").
 #
-# Also requires an nvidia runtime and no FORCE_CPU_MODE opt-out — same probe
-# get_compose_files() uses for the plain GPU overlay — since a GPU-reservation overlay
-# cannot load on a host that decided not to use its GPU at all.
+# Also requires nvidia_gpu_offer_available() — the single home for "is a GPU path
+# actually on offer here", covering the nvidia runtime, FORCE_CPU_MODE, lite mode and
+# arm64 — since a GPU-reservation overlay cannot load on a deployment that decided not
+# to use its GPU at all, and enumerating a subset of those reasons here is how the
+# diar-native-gpu gate drifted (#680).
 gpu_split_active() {
     [ -f docker-compose.gpu-split.yml ] || return 1
     local split_enabled
     split_enabled=$(read_env_value ENGINE_GPU_SPLIT | tr '[:upper:]' '[:lower:]')
     [ "$split_enabled" = "true" ] || return 1
-    force_cpu_mode_requested && return 1
-    [ "$(detect_nvidia_runtime)" = "nvidia" ] || return 1
+    nvidia_gpu_offer_available || return 1
     return 0
 }
 

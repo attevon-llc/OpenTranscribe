@@ -598,7 +598,8 @@ aux-file record.
   that list** — `assert_platform_table_matches_scan_components` checks it on every run, because
   a component in one table and not the other is either unscanned or built with an empty platform
   list. Guarded by `scripts/tests/test-scan-not-a-pass.sh` (19 cases) and
-  `scripts/tests/test-publish-platforms.sh` (11 assertions, each with an observed red state),
+  `scripts/tests/test-publish-platforms.sh` (19 sections, each with an observed red state —
+  it prints its own assertion count, don't transcribe one here),
   both offline, both wired as pre-commit hooks.
   ⚠️ `test-scan-not-a-pass.sh` uses **`bogus`** as its "unknown component" placeholder. It used
   to use `lite` — which stopped being unknown the moment #680 made it real, at which point those
@@ -612,6 +613,36 @@ aux-file record.
   `scripts/release/40-build.sh`'s baked-version check runs against. It also runs
   `push-security-reports.sh` when `PUSH_SECURITY_REPORTS=true`, which **git-commits and pushes**
   `security-reports/` to whatever branch is checked out.
+
+### `80-publish.sh`'s manifest gate: two document shapes, three exit codes
+
+⚠️ **`imagetools inspect --raw` returns two different documents and they carry different
+facts.** Measured against the published `opentranscribe-backend:v0.4.1`:
+
+| ref | shape | declares platforms? | has layers? |
+|---|---|---|---|
+| `repo:tag` (published tag) | INDEX — `manifests[]` | ✅ (plus `unknown/unknown` attestations) | ❌ — per-entry `size` is the **~2.4 KB manifest blob** |
+| `repo@<digest>` | MANIFEST — `config`+`layers` | ❌ (architecture lives in the config blob) | ✅ |
+
+So the platform-set checks read the **index** and the size/layer comparison must read the
+**per-platform manifest** — `resolve-digest` pulls the digest out of the index and the stage
+re-inspects `repo@<digest>`. Feeding the index straight to `check-ratio` reports
+`sizes a=0 b=0 ratio=inf` and fails **every time, even comparing an index against itself**;
+that is how the gate shipped for its first revision, so it would have blocked the very
+release it exists to protect. The equivalence check is keyed on **how many platforms the
+index declares**, never on how many capability leg tags exist — gating on legs silently
+exempted `frontend`/`docs`, whose 1.25 bound `releasing.md` documents.
+
+**`scripts/lib/manifest_platform_check.py` exits 0 / 1 / 3**, and the split is the same rule
+as `security-scan.sh`'s 1-vs-2 (#681): `1` = checked and WRONG, `3` = **could not check**
+(malformed/empty/absent JSON, or a correct document of the wrong shape). Both fail the
+stage; only `1` is a claim about the artifact. An uncaught `JSONDecodeError` would have
+exited 1 and read, in the log, exactly like a real platform mismatch.
+
+`85-smoke.sh` asserts CAPABILITY (`torch.version.cuda` empty for lite, non-empty for full),
+and **must capture the `docker run` exit status**: an image that cannot execute at all prints
+an empty string too, so discarding rc turns "could not check" into "CPU-only confirmed" — the
+#680 failure mode with a green tick, in the stage whose job is to catch it.
 
 ## DESTRUCTIVE — never run casually
 

@@ -53,9 +53,23 @@ assert_cuda_capability() {
     local ctx_args=()
     [[ -n "$ctx" ]] && ctx_args=(--context "$ctx")
 
+    # ⚠️ The exit code is load-bearing, and swallowing it was a fail-open: with
+    # `2>/dev/null` and no rc check, an image that could not run AT ALL (wrong-arch
+    # ELF, no python3, failed pull) yields an EMPTY string — which the lite branch
+    # below reads as "torch.version.cuda is empty, CPU-only confirmed" and PASSES.
+    # "could not check" must never look like "checked and correct" (issue #681's
+    # rule, applied here). So: capture rc, keep stderr, and fail on a bad run.
+    local run_out run_rc=0
+    run_out=$(docker "${ctx_args[@]}" run --rm --pull always "$img" \
+        python3 -c 'import torch; print(torch.version.cuda or "")' 2>&1) || run_rc=$?
+    if [[ $run_rc -ne 0 ]]; then
+        echo -e "${RED}FAIL  ${label}: could NOT run the capability probe (docker rc=${run_rc}) — this is 'not verified', not 'CPU-only'${NC}" >&2
+        echo "      ${run_out}" >&2
+        fail=1
+        return 1
+    fi
     local cuda_ver
-    cuda_ver=$(docker "${ctx_args[@]}" run --rm --pull always "$img" \
-        python3 -c 'import torch; print(torch.version.cuda or "")' 2>/dev/null | tr -d '\r')
+    cuda_ver=$(printf '%s' "$run_out" | tr -d '\r' | tail -n 1)
 
     if [[ "$expect_nonempty" == "true" ]]; then
         if [[ -n "$cuda_ver" ]]; then

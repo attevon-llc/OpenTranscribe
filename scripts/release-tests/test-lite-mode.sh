@@ -20,31 +20,33 @@
 # TEST_USE_GPU is hard-coded false: this scenario's entire point is the
 # no-GPU lite deployment shape.
 #
-# ⚠️ SCOPE: `--lite` IS NOT A USER-REACHABLE DEPLOYMENT SHAPE TODAY.
+# ⚠️ SCOPE (REWRITTEN BY ISSUE #680 — the previous version of this block is now FALSE).
 #
-# Unlike Scenarios A and B, this one hand-builds its `docker compose -f ...` chain, and
-# that is currently correct rather than a bug — because there is no shipped command that
-# could build it. Three facts, all verified:
+# This block used to say `--lite` was not a user-reachable deployment shape, resting on
+# three facts. All three were changed by #680, in one place, and are now asserted in the
+# positive by `test_lite_mode_is_reachable_by_a_shipped_deployment`
+# (backend/tests/unit/test_compose_file_selection.py):
 #
-#   * `docker-compose.lite.yml` is NOT in release-manifest.txt, so a real
-#     `curl … setup-opentranscribe.sh | bash` install never downloads it.
-#   * `opentranscribe.sh:get_compose_files()` has no lite branch, so nothing would
-#     select it even if it were on disk.
-#   * `scripts/docker-build-push.sh all` builds backend, frontend and docs — not the
-#     lite image — so no `opentranscribe-backend-lite` is published by a release.
+#   * `docker-compose.lite.yml` IS in release-manifest.txt, so a real
+#     `curl … setup-opentranscribe.sh | bash` install downloads it.
+#   * `opentranscribe.sh:get_compose_files()` HAS a lite branch keyed on
+#     DEPLOYMENT_MODE, so a production install can select it.
+#   * `scripts/docker-build-push.sh all` builds the lite image, so a release publishes
+#     `davidamacey/opentranscribe-backend-lite`.
 #
-# The only documented invocation is `./opentr.sh start dev --lite`
-# (docs-site/docs/operations/deployment-configuration.md), i.e. the DEVELOPMENT script,
-# in a git clone. README.md's "API-Lite Deployment" bullet therefore describes a
-# repo/dev capability, not something a self-hoster can install.
+# That change was not cosmetic: the full/CUDA image publishes an **amd64-only** manifest
+# (no aarch64 CUDA torch wheel, no aarch64 onnxruntime-gpu wheel, no CUDA arm64
+# diar-native sidecar), so `arm64_deployment_preflight()` defaults an arm64 host to
+# DEPLOYMENT_MODE=lite. Lite is the ONLY published deployment for that architecture.
 #
-# So read this scenario's verdict precisely: it proves the lite TOPOLOGY AND PIPELINE
-# work. It does NOT prove a user can deploy them. Making that true is a product decision
-# (manifest entry + a get_compose_files() branch keyed on DEPLOYMENT_MODE + publishing
-# the lite image + installer support) — see scripts/release-tests/REHEARSAL_ALIGNMENT_PLAN.md
-# finding E. `test_lite_mode_is_not_reachable_by_a_shipped_deployment` in
-# backend/tests/unit/test_compose_file_selection.py FAILS the moment any of the three
-# facts above stops holding, so this paragraph cannot quietly go stale.
+# This scenario nonetheless still hand-builds its `docker compose -f ...` chain, which
+# is now justified differently rather than not at all: it must pin ONE fixed chain
+# regardless of the host, and a machine with a GPU would otherwise have the shipped
+# selector add the GPU overlay — defeating the no-GPU shape this scenario exists to
+# exercise. It is also the live positive case for
+# `test_the_hand_built_bringup_detector_actually_fires`. Driving it through
+# `DEPLOYMENT_MODE=lite FORCE_CPU_MODE=true ./opentranscribe.sh start` is now POSSIBLE
+# and is the right follow-up — see the exemption entry in that same test module.
 #
 # Since issue #660, this chain also hand-builds -f docker-compose.diar-native.yml: lite's
 # speaker embeddings come from the diar-native CPU-EP sidecar's /embed_window, not an

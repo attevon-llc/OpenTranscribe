@@ -324,7 +324,7 @@ repos:
         entry: scripts/tests/test-publish-platforms.sh
         language: system
         pass_filenames: false
-        files: ^(backend/Dockerfile\.(prod|lite)|scripts/(docker-build-push\.sh|security-scan\.sh|lib/manifest_platform_check\.py|release/80-publish\.sh|tests/(test-publish-platforms\.sh|fixtures/manifest-fixtures\.py)))$
+        files: ^(backend/Dockerfile\.(prod|lite)|scripts/(docker-build-push\.sh|security-scan\.sh|lib/manifest_platform_check\.py|release/(80-publish|85-smoke)\.sh|tests/(test-publish-platforms\.sh|fixtures/manifest-fixtures\.py)))$
 
   # Commit message linting (optional)
   - repo: https://github.com/compilerla/conventional-pre-commit

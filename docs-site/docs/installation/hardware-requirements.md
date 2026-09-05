@@ -56,10 +56,10 @@ For regular use and production deployments:
 - **Transcription only**: 4-6GB VRAM
 - **Transcription + Diarization**: 6-8GB VRAM
 - **Multiple concurrent jobs**: 10-12GB+ VRAM
-- **Hybrid mode (low-VRAM / macOS)**: ~1.3GB VRAM for diarization only — transcription runs on CPU
+- **Hybrid mode (low-VRAM NVIDIA GPUs)**: ~1.3GB VRAM for diarization only — transcription runs on CPU
 :::
 
-:::info[Hybrid Mode for Low-VRAM GPUs and macOS]
+:::info[Hybrid Mode for Low-VRAM GPUs — and why macOS is not one]
 If your GPU has less than ~5 GB of usable VRAM, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU (small model, int8) while speaker diarization stays on GPU. This requires only ~1.3 GB VRAM for PyAnnote and still produces fully diarized transcripts.
 
 On **macOS (Apple Silicon)**, use the `--lite` (CPU-only) image — Docker Desktop

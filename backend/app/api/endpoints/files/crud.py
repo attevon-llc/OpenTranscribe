@@ -1076,11 +1076,17 @@ def update_single_transcript_segment(
             status_code=status.HTTP_404_NOT_FOUND, detail="Transcript segment not found"
         )
 
-    # Update fields
+    # Update fields. Explicit allow-list rather than a blind setattr loop over
+    # whatever the schema happens to declare — `TranscriptSegmentUpdate` is the wire
+    # contract, not a safe-to-apply set of ORM attribute names (issue #722: an earlier
+    # blind loop let a client rewrite the segment's primary key, and separately crash
+    # the request by sending a UUID into the integer `speaker_id` FK).
+    mutable_segment_fields = ("start_time", "end_time", "text")
     update_fields = segment_update.model_dump(exclude_unset=True)
     text_changed = "text" in update_fields and update_fields["text"] != segment.text
-    for field, value in update_fields.items():
-        setattr(segment, field, value)
+    for field in mutable_segment_fields:
+        if field in update_fields:
+            setattr(segment, field, update_fields[field])
 
     # If the text changed, re-run redaction detection for THIS segment only so the
     # edited text never bypasses masking. The API process preloads no ML detectors,

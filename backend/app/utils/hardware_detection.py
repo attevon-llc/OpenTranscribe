@@ -18,6 +18,70 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def resolve_cuda_device_index(cuda: Any | None = None) -> int:
+    """Return the CUDA ordinal this process should compute on.
+
+    **Ordinal 0 is correct almost everywhere, and that is not an accident.** Every GPU
+    service in this repo is reserved with `device_ids: ['${GPU_DEVICE_ID}']`, which the
+    NVIDIA container runtime resolves in nvidia-smi/PCI order and then exposes to the
+    container as its ONLY device — at ordinal 0. Measured: a container reserved
+    `device=1` on this host sees exactly one device and it is the RTX 3080 Ti that
+    nvidia-smi calls 1. Selecting `GPU_DEVICE_ID` inside such a container instead
+    selects a device that does not exist (`cuInit` -> 100, `device_count() == 0`), which
+    silently drops every GPU worker to CPU.
+
+    The exception is a service reserved with `count: all` — today `celery-cpu-worker`,
+    which needs NVML visibility of every card for `system.update_gpu_stats`. It sees all
+    of them, and CUDA's default `FASTEST_FIRST` ordering does not match nvidia-smi, so
+    ordinal 0 there is an arbitrary card the deployment may not own. `GPU_DEVICE_ID` is
+    the operator's answer to "which card is ours", and `CUDA_DEVICE_ORDER=PCI_BUS_ID`
+    (pinned as image ENV) is what makes that host index equal the CUDA ordinal.
+
+    Falls back to 0 — never raises and never picks a device it cannot verify.
+    """
+    if cuda is None:
+        import torch
+
+        cuda = torch.cuda
+
+    try:
+        visible = int(cuda.device_count())
+    except Exception as e:  # pragma: no cover - driver-level failure
+        logger.debug(f"Could not count CUDA devices ({e}); using ordinal 0")
+        return 0
+
+    if visible <= 1:
+        # One device (or none): Docker already made the choice. Honouring GPU_DEVICE_ID
+        # here is the bug, not the fix.
+        return 0
+
+    raw = (os.getenv("GPU_DEVICE_ID") or "").strip()
+    if not raw:
+        return 0
+
+    try:
+        index = int(raw)
+    except ValueError:
+        logger.warning(
+            "GPU_DEVICE_ID=%r is not an integer; falling back to CUDA ordinal 0 "
+            "of %d visible devices",
+            raw,
+            visible,
+        )
+        return 0
+
+    if index < 0 or index >= visible:
+        logger.warning(
+            "GPU_DEVICE_ID=%d is out of range for the %d CUDA device(s) visible to "
+            "this container; falling back to ordinal 0",
+            index,
+            visible,
+        )
+        return 0
+
+    return index
+
+
 class HardwareConfig:
     """Hardware detection and configuration for cross-platform AI processing."""
 
@@ -47,8 +111,17 @@ class HardwareConfig:
             self.torch_available = False
             self.torch_version = None
 
-        # Device and compute type detection
+        # Device and compute type detection.
+        # device_index is resolved once and used by EVERY cuda call below — selecting
+        # one device while sizing batches against another's VRAM is the same defect
+        # twice, so they share a single source of truth.
+        self.device_index = 0
         self.device = force_device or self._detect_optimal_device()
+        if self.device == "cuda" and self.torch_available:
+            # `and self.torch_available` matters: TORCH_DEVICE=cuda skips detection
+            # entirely, so without it a torch-less host would raise ImportError out of
+            # the constructor instead of failing later at the first real device call.
+            self._bind_cuda_device()
         self.compute_type = force_compute_type or self._detect_optimal_compute_type()
         self.batch_size = self._get_optimal_batch_size()
 
@@ -67,13 +140,6 @@ class HardwareConfig:
         if torch.cuda.is_available():
             cuda_device_count = torch.cuda.device_count()
             logger.info(f"CUDA available with {cuda_device_count} device(s)")
-
-            # In production, Docker maps the requested GPU (via GPU_DEVICE_ID) to device 0
-            # For simplicity, always use device 0 since celery-worker runs in Docker
-            torch.cuda.set_device(0)
-            device_name = torch.cuda.get_device_name(0)
-            gpu_requested = os.getenv("GPU_DEVICE_ID", "0")
-            logger.info(f"Using CUDA device 0 (GPU_DEVICE_ID={gpu_requested}): {device_name}")
             return "cuda"
 
         # Check for MPS (Apple Silicon)
@@ -89,6 +155,30 @@ class HardwareConfig:
         logger.info("Using CPU (no GPU acceleration available)")
         return "cpu"
 
+    def _bind_cuda_device(self) -> None:
+        """Resolve and select the CUDA ordinal for this process.
+
+        Logs the PCI bus id, not just the ordinal: an ordinal is meaningless in a bug
+        report, and "which physical card did this actually get" is the question every
+        multi-GPU investigation here has started from.
+        """
+        import torch
+
+        self.device_index = resolve_cuda_device_index()
+        try:
+            torch.cuda.set_device(self.device_index)
+            props = torch.cuda.get_device_properties(self.device_index)
+            logger.info(
+                "Using CUDA ordinal %d (GPU_DEVICE_ID=%s, CUDA_DEVICE_ORDER=%s): %s pci=%s",
+                self.device_index,
+                os.getenv("GPU_DEVICE_ID", "<unset>"),
+                os.getenv("CUDA_DEVICE_ORDER", "<unset — ordinals may not match nvidia-smi>"),
+                props.name,
+                getattr(props, "pci_bus_id", "unknown"),
+            )
+        except Exception as e:
+            logger.warning(f"Could not select CUDA device {self.device_index}: {e}")
+
     def _detect_optimal_compute_type(self) -> str:
         """Detect optimal compute precision based on device and capabilities."""
         if not self.torch_available:
@@ -97,7 +187,7 @@ class HardwareConfig:
         import torch
 
         if self.device == "cuda":
-            capability = torch.cuda.get_device_capability()
+            capability = torch.cuda.get_device_capability(self.device_index)
             if capability[0] >= 8 or (capability[0] == 7 and capability[1] >= 5):
                 # Turing+ (7.5+): INT8 Tensor Cores — ~20% faster, <0.1 WER impact
                 return "int8_float16"
@@ -133,7 +223,7 @@ class HardwareConfig:
             try:
                 import torch
 
-                total_memory = torch.cuda.get_device_properties(0).total_memory
+                total_memory = torch.cuda.get_device_properties(self.device_index).total_memory
                 memory_gb = total_memory / (1024**3)
                 return self._batch_for_model(model_name or "", memory_gb)
             except Exception:
@@ -204,7 +294,7 @@ class HardwareConfig:
 
         if self.device == "cuda":
             # Always use device 0 (Docker maps selected GPU to index 0)
-            return torch.device("cuda:0")
+            return torch.device(f"cuda:{self.device_index}")
         else:
             return torch.device(self.device)
 
@@ -233,7 +323,9 @@ class HardwareConfig:
             try:
                 import torch
 
-                total_mb = float(torch.cuda.get_device_properties(0).total_memory) / (1024**2)
+                total_mb = float(
+                    torch.cuda.get_device_properties(self.device_index).total_memory
+                ) / (1024**2)
                 min_peak = self._min_peak_mb(model_name)
                 # If bs=2 peak exceeds 80% of total VRAM, GPU can't run this model safely
                 return bool(min_peak > total_mb * 0.80)
@@ -272,7 +364,7 @@ class HardwareConfig:
         # Add device-specific configurations
         if self.device == "cuda":
             # Always use device 0 (Docker maps selected GPU to index 0)
-            config["device_index"] = 0
+            config["device_index"] = self.device_index
 
         return config
 
@@ -297,15 +389,15 @@ class HardwareConfig:
         if self.device == "cuda" and torch.cuda.is_available():
             try:
                 # Get memory stats from PyTorch
-                allocated = torch.cuda.memory_allocated(0) / (1024**2)  # Convert to MB
-                reserved = torch.cuda.memory_reserved(0) / (1024**2)
-                total = torch.cuda.get_device_properties(0).total_memory / (1024**2)
+                allocated = torch.cuda.memory_allocated(self.device_index) / (1024**2)
+                reserved = torch.cuda.memory_reserved(self.device_index) / (1024**2)
+                total = torch.cuda.get_device_properties(self.device_index).total_memory / (1024**2)
                 free = total - allocated
 
                 # NVML device-level memory (captures CTranslate2, CUDA contexts, etc.)
                 from app.utils.nvml_monitor import get_gpu_memory
 
-                nvml = get_gpu_memory()
+                nvml = get_gpu_memory(self.device_index)
                 device_used_mb = nvml.used_mb if nvml else allocated
                 device_free_mb = nvml.free_mb if nvml else free
 
@@ -363,7 +455,7 @@ class HardwareConfig:
         import torch
 
         if self.device == "cuda" and torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats(0)
+            torch.cuda.reset_peak_memory_stats(self.device_index)
 
     def get_peak_vram_mb(self) -> float:
         """Get peak VRAM usage in MB since last reset.
@@ -376,7 +468,7 @@ class HardwareConfig:
         import torch
 
         if self.device == "cuda" and torch.cuda.is_available():
-            return float(torch.cuda.max_memory_allocated(0)) / (1024**2)
+            return float(torch.cuda.max_memory_allocated(self.device_index)) / (1024**2)
         return 0.0
 
     def optimize_memory_usage(self, aggressive: bool = True):

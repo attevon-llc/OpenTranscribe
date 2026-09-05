@@ -377,6 +377,17 @@ COPY --chown=appuser:appuser . .
 # position affects is cache reuse.
 ARG APP_VERSION=unknown
 ENV APP_VERSION=${APP_VERSION}
+
+# Make CUDA ordinals match nvidia-smi, NVML and Docker's `device_ids` (issue #719).
+# CUDA's default FASTEST_FIRST ordering does NOT match nvidia-smi on multi-GPU hosts
+# (measured: nvidia-smi 0=A6000/1=RTX3080Ti/2=A6000 vs CUDA 0=A6000/1=A6000/2=RTX3080Ti),
+# so an ordinal derived from GPU_DEVICE_ID could select a card the deployment does not own.
+# Set as image ENV, not compose `environment:`, for two reasons: it must be in place before
+# the process starts (there is no safe point to set it after the first CUDA call), and the
+# API, every Celery worker and the diar-native sidecar all run from this one image with only
+# their CMD replaced — a per-service compose entry would have to be repeated on a dozen
+# services and would silently miss the next one added.
+ENV CUDA_DEVICE_ORDER=PCI_BUS_ID
 ARG GIT_SHA=unknown
 ENV GIT_SHA=${GIT_SHA}
 ARG BUILD_TIME=unknown

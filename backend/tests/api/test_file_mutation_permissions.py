@@ -237,8 +237,8 @@ def _find_min_permission_editor_sites() -> list[tuple[str, int]]:
 # ``user_files.py``) were fixed by a prior commit (issue #588 part 1) and are
 # listed here only so the guard's count matches the codebase exactly.
 MUTATING_ENDPOINTS: list[tuple[str, int]] = [
-    ("files/__init__.py", 1137),
-    ("files/__init__.py", 1204),
+    ("files/__init__.py", 1139),
+    ("files/__init__.py", 1206),
     ("files/crud.py", 874),
     ("files/crud.py", 965),
     ("files/crud.py", 1053),

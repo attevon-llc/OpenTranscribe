@@ -25,6 +25,11 @@ FROM nvcr.io/nvidia/pytorch:26.07-py3
 ARG APP_VERSION=unknown
 ENV APP_VERSION=${APP_VERSION}
 
+# Make CUDA ordinals match nvidia-smi, NVML and Docker's `device_ids` (issue #719).
+# This image reserves `count: all` for celery-cpu-worker exactly as the prod overlay
+# does, so the multi-visible-device case it guards is reachable here too.
+ENV CUDA_DEVICE_ORDER=PCI_BUS_ID
+
 LABEL org.opencontainers.image.title="OpenTranscribe Backend (Blackwell)" \
       org.opencontainers.image.description="AI-powered transcription backend for NVIDIA Blackwell/DGX Spark" \
       org.opencontainers.image.vendor="OpenTranscribe" \

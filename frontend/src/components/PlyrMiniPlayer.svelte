@@ -3,7 +3,7 @@
   import Plyr from 'plyr';
   import 'plyr/dist/plyr.css';
   import WaveformPlayer from '$components/WaveformPlayer.svelte';
-  import { waitForMediaMetadata, HAVE_METADATA } from '$lib/utils/mediaReady';
+  import { applyMediaSeek, waitForMediaMetadata, HAVE_METADATA } from '$lib/utils/mediaReady';
 
   export let mediaUrl: string;
   export let contentType: string;
@@ -61,30 +61,14 @@
       fullscreen: { iosNative: false, fallback: true },
     });
 
-    let hasStartedPlayback = false;
-
-    function seekAndPlay() {
-      if (hasStartedPlayback || !player) return;
-      hasStartedPlayback = true;
-      // Seek to the requested start once metadata is ready, then autoplay.
-      applySeek(startTime, { play: autoplay });
-    }
-
-    const media = (player as any).media as HTMLMediaElement | undefined;
-    if (media) {
-      const onCanPlay = () => {
-        seekAndPlay();
-        media.removeEventListener('canplay', onCanPlay);
-      };
-      media.addEventListener('canplay', onCanPlay);
-      // Handle already-ready media (e.g., from browser cache)
-      if (media.readyState >= 3) {
-        seekAndPlay();
-      }
-      media.addEventListener('seeked', () => { seeking = false; }, { once: true });
-      media.addEventListener('playing', () => { seeking = false; }, { once: true });
-      media.addEventListener('error', () => { seeking = false; }, { once: true });
-    }
+    // Issue the initial seek immediately rather than gating it on `canplay`
+    // (readyState >= HAVE_FUTURE_DATA). That was STRICTER than the
+    // `loadedmetadata` gate #647 removed from VideoPlayer, and it waited on
+    // buffering data at position 0 that the seek is about to discard anyway —
+    // with no fallback if `canplay` never fired (#649). `applySeek` below
+    // issues the raw `currentTime` assignment up front and only awaits
+    // metadata to resync Plyr's own clock, same as VideoPlayer.seekToTime.
+    applySeek(startTime, { play: autoplay });
 
     player.on('timeupdate', () => {
       if (player) {
@@ -98,7 +82,12 @@
       }
     });
 
+    // Persistent (not `{ once: true }`) handlers so a later `hotSwapSource`
+    // seek still clears the spinner — the previous once-only raw media
+    // listeners were consumed by the FIRST seek, so a hot-swapped presigned
+    // URL fell back to the 15s timer every time after that (#649).
     player.on('playing', () => { seeking = false; dispatch('play'); });
+    player.on('seeked', () => { seeking = false; });
     player.on('pause', () => { dispatch('pause'); });
     player.on('error', () => { seeking = false; });
     player.on('ready', () => { dispatch('ready'); });
@@ -115,31 +104,43 @@
     }
   }
 
-  // Metadata-safe seek primitive. Plyr silently drops a seek if its internal
-  // duration isn't ready yet, which makes the player start from 0. Wait for
-  // loadedmetadata/canplay, then set BOTH the Plyr and raw-media currentTime.
+  // Metadata-safe seek primitive. Issues the seek to the media element FIRST,
+  // without waiting for metadata — assigning `currentTime` before
+  // `loadedmetadata` is NOT discarded per spec, so the previous
+  // wait-then-seek order only delayed the browser's own range request for no
+  // benefit (the #645/#647 bug, unfixed here until now). Plyr's OWN
+  // `currentTime` setter still bails while its internal duration is 0, so we
+  // resync `player.currentTime` once metadata lands purely to keep its
+  // progress bar honest — that resync is what waits, never the seek itself.
   async function applySeek(time: number, { play }: { play: boolean }) {
     if (!player || !mediaElement) return;
     const media = mediaElement;
 
-    if (media.readyState < HAVE_METADATA) {
-      // Shared with VideoPlayer — see $lib/utils/mediaReady. The raw
-      // `media.currentTime` assignment below always lands even if Plyr's own
-      // setter bails, so no extra settling delay is needed here.
-      await waitForMediaMetadata(media);
-    }
-
-    if (!player) return;
+    const appliedDirectly = time > 0 ? applyMediaSeek(media, time) : true;
     if (time > 0) {
       // Pause before seeking so a slow/deep seek can't briefly play the buffered
       // start of the file while the target byte-range loads.
       try { media.pause(); } catch {}
-      player.currentTime = time;
-      media.currentTime = time;
-      // Wait until the playhead is actually at the target (seek landed) before
-      // resuming — on slow links the seeked event can lag well behind the set.
-      await waitForSeeked(media, time);
+    }
+
+    if (media.readyState < HAVE_METADATA) {
+      // Shared with VideoPlayer — see $lib/utils/mediaReady.
+      const ready = await waitForMediaMetadata(media);
       if (!player) return;
+      if (!ready && !appliedDirectly) {
+        // Metadata never arrived and the direct assignment failed; nothing
+        // more we can usefully do without guessing.
+        seeking = false;
+        return;
+      }
+    }
+
+    if (!player) return;
+    if (time > 0) {
+      if (Math.abs((player.currentTime ?? 0) - time) > 0.05) {
+        player.currentTime = time;
+      }
+      if (!appliedDirectly) media.currentTime = time;
     }
 
     if (play) {
@@ -152,24 +153,9 @@
     }
   }
 
-  // Resolve once the media element has actually seeked to (or near) the target,
-  // or after a timeout so playback never hangs on an unreachable position.
-  function waitForSeeked(media: HTMLMediaElement, time: number): Promise<void> {
-    if (Math.abs(media.currentTime - time) < 0.5) return Promise.resolve();
-    return new Promise((resolve) => {
-      const done = () => {
-        media.removeEventListener('seeked', done);
-        clearTimeout(timer);
-        resolve();
-      };
-      const timer = setTimeout(done, 10000);
-      media.addEventListener('seeked', done, { once: true });
-    });
-  }
-
-  // Swap in a refreshed presigned URL without losing position. The init-time
-  // seekAndPlay won't re-fire (its hasStartedPlayback guard is already set), so
-  // we restore currentTime/play-state ourselves.
+  // Swap in a refreshed presigned URL without losing position. `initPlayer`'s
+  // initial `applySeek` call only fires once, at player creation, so we
+  // restore currentTime/play-state ourselves here.
   async function hotSwapSource(newUrl: string) {
     activeSrc = newUrl;
     if (!player || !mediaElement) return;
@@ -198,10 +184,11 @@
   }
 
   onMount(() => {
-    // Wait for Svelte to bind the media element
-    setTimeout(() => {
-      initPlayer();
-    }, 50);
+    // `bind:this={mediaElement}` is assigned before `onMount` fires, so the
+    // element is already bound here — the previous 50ms sleep just delayed
+    // player creation (and, transitively, the initial seek) for no reason
+    // (#649).
+    initPlayer();
   });
 
   onDestroy(() => {

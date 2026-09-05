@@ -74,3 +74,9 @@ RUN pip install --user --no-cache-dir --no-warn-script-location -r /tmp/requirem
 LABEL org.opencontainers.image.title="OpenTranscribe Backend (test)" \
       org.opencontainers.image.description="Production backend image plus pytest — local GPU test runs only, never published"
 ENV OPENTRANSCRIBE_TEST_IMAGE=1
+
+# Make CUDA ordinals match nvidia-smi, NVML and Docker's `device_ids` (issue #719).
+# Inherited from BASE_IMAGE in the default build, restated because BASE_IMAGE is a
+# build arg: the GPU diarization suites this image exists to run must not depend on
+# which base someone pointed it at.
+ENV CUDA_DEVICE_ORDER=PCI_BUS_ID

@@ -83,6 +83,11 @@ FROM python:3.13-slim-trixie
 ARG APP_VERSION=unknown
 ENV APP_VERSION=${APP_VERSION}
 
+# Make CUDA ordinals match nvidia-smi, NVML and Docker's `device_ids` (issue #719).
+# Harmless on this CPU-only image, and kept identical to Dockerfile.prod so the
+# lite/CUDA pair cannot drift on device selection if lite ever gains a GPU path.
+ENV CUDA_DEVICE_ORDER=PCI_BUS_ID
+
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Backend Lite" \
       org.opencontainers.image.description="Cloud-only ASR backend (no GPU required) with multi-provider support" \

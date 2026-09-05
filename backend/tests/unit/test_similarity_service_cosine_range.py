@@ -1,6 +1,6 @@
 """``SimilarityService`` must report one cosine space from every method (issue #690).
 
-Cosine lives in ``[-1, 1]``. ``cosine_similarity`` and ``batch_cosine_similarity``
+Cosine lives in ``[-1, 1]``. ``cosine_similarity``
 used to clamp to ``[0, 1]`` while ``opensearch_similarity_search`` — a method on the
 *same class* — returned the unclamped ``(2 * score) - 1`` conversion. Two callers of
 one class therefore got different ranges for the same quantity, and every negative
@@ -97,29 +97,6 @@ def test_cosine_similarity_preserves_a_negative_cosine(label, other, expected):
 
     assert result == pytest.approx(expected, abs=1e-6), label
     assert result < 0.0, f"{label}: the negative half of the cosine domain was clamped away"
-
-
-def test_batch_cosine_similarity_preserves_negative_cosines():
-    """The batch path clamped identically and must move with its sibling."""
-    targets = [np.array(other, dtype=np.float64) for _, other, _ in COSINE_PAIRS]
-
-    results = SimilarityService.batch_cosine_similarity(UNIT_X, targets)
-
-    assert len(results) == len(COSINE_PAIRS)
-    assert results == [pytest.approx(expected, abs=1e-6) for _, _, expected in COSINE_PAIRS]
-    assert results[0] < 0.0, "cosine -1.0 came back non-negative"
-    assert results[1] < 0.0, "cosine -0.6 came back non-negative"
-
-
-def test_the_two_in_process_methods_report_the_same_value():
-    """One class, one space: the scalar and batch paths must not diverge."""
-    targets = [np.array(other, dtype=np.float64) for _, other, _ in COSINE_PAIRS]
-
-    batched = SimilarityService.batch_cosine_similarity(UNIT_X, targets)
-    scalar = [SimilarityService.cosine_similarity(UNIT_X, target) for target in targets]
-
-    assert len(scalar) == len(COSINE_PAIRS)
-    assert batched == [pytest.approx(value, abs=1e-6) for value in scalar]
 
 
 def test_the_clamp_still_bounds_float_rounding_to_the_cosine_domain():

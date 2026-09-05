@@ -36,7 +36,20 @@ should import `app.api` or `app.services` at module scope.
   (redaction, watch sources, engine/boundary). **Check here before adding a `.env` var.**
 - `celery.py` — `celery_app`, explicit `task_queues`, `task_routes`, beat schedule. Patches
   `torch.load(weights_only=False)` *before* any ML import; the whole ML block is skipped when
-  `SKIP_CELERY=true` (test startup).
+  `SKIP_CELERY=true` (test startup, **and** `scripts/celery_pool_healthcheck.py`, which is a
+  CLI client that never runs a task — measured 7.3 s -> 2.8 s per probe).
+  ⚠️ **`init_worker_process` runs inside every forked prefork child, against a kill timer.**
+  `worker_process_init` fires from `billiard.pool.Worker.after_fork()`, which runs *before*
+  `on_loop_start()` puts `WORKER_UP`; the parent SIGKILLs any child that misses
+  `worker_proc_alive_timeout` and forks a replacement, which runs the same code. So a slow
+  step there is not a slow start, it is a self-sustaining fork/kill loop that accepts **zero**
+  tasks and recovers only when the slowness does (69,231 kills over 10 h 46 m, issue #631 —
+  the cause was `huggingface_hub.login()`, whose `whoami()` goes out through `requests` with no
+  `timeout=`). No network, no locks, no model loads in that function. `publish_hf_token_to_
+  environment()` is the network-free replacement: `huggingface_hub.get_token()` prefers
+  `HF_TOKEN` from the environment over its on-disk token file, so a dict write does what the
+  round trip did. `worker_proc_alive_timeout` (`CELERY_PROC_ALIVE_TIMEOUT`, default 30 s) is
+  defence in depth over celery's bare 4.0 s, not the fix.
 - `enums.py` — centralized enums (`FileStatus`), imported from here instead of model modules to
   break import cycles. `ReasoningOffSwitch` lives here rather than beside its probe because
   three layers read it (the service that measures it, the Pydantic response that carries it,

@@ -1,22 +1,21 @@
 """``SEARCH_SEMANTIC_HIGH_CONFIDENCE`` has exactly one value, read from ``settings``.
 
-Two call sites in ``hybrid_search_service`` decide ``SearchHit.semantic_confidence``
-(``"high"`` / ``"low"``) for a semantic-only file:
+As of issue #698, only ONE call site in ``hybrid_search_service`` may decide
+``SearchHit.semantic_confidence`` from this threshold: ``_process_collapsed_results``, and only
+on the fused hybrid-RRF path (``is_fused_rrf=True``). ``SEARCH_SEMANTIC_HIGH_CONFIDENCE`` was
+tuned against RRF scores (~0.016 at rank 1); comparing it against a raw ``cosinesimil`` score
+(``_bm25_leg_is_starved`` arm, [0, 1], 0.5 = orthogonal) or a raw BM25 score
+(``_build_search_hit_from_bucket``, Phase 2, ~1-30) reads "high" for nearly every result — see
+issue #698. ``_build_search_hit_from_bucket`` therefore no longer reads the setting at all; it
+never labels confidence (``semantic_confidence`` stays ``""``), which is honest for a BM25-space
+score.
 
-* ``_process_collapsed_results``   — the single-phase collapse path
-* ``_build_search_hit_from_bucket`` — the two-phase (non-relevance sort) path
-
-Both read the setting, and both used to read it through ``getattr(settings, ...)`` with a
-**divergent** inline fallback: ``0.015`` at the first site, ``0.010`` at the second. Because
-``SEARCH_SEMANTIC_HIGH_CONFIDENCE`` is a declared field on the ``BaseSettings`` subclass it can
-never be absent, so *both* fallbacks were unreachable and the effective threshold was ``0.010``
-at both sites. The code nonetheless read as if two different thresholds were in play, and the
-next reader to "honour" the 0.015 would have changed live ranking behaviour by accident.
-
-The guard below is source-level on purpose: a behavioural test cannot see a dead default, so
-it cannot fail when one is reintroduced. ``test_no_call_site_supplies_an_inline_default`` is the
-red-before/green-after assertion; the behavioural pair beside it pins that both sites actually
-track ``settings`` rather than a literal of their own.
+This file previously pinned the earlier, source-level "the setting has one dead-code-free value,
+read identically at both sites" invariant from PR #697/#698's prerequisite. That invariant is
+superseded: there is now deliberately only one reader, and the two paths deliberately no longer
+agree (one labels, one never does). ``test_no_call_site_supplies_an_inline_default`` remains —
+still true, still worth guarding — and per-score-space behaviour is covered in
+``test_semantic_confidence_score_spaces_698.py``.
 
 Pattern follows ``tests/api/test_file_mutation_permissions.py``'s ``MUTATING_ENDPOINTS``
 anti-drift guard — AST, not grep, so a mention in a docstring or comment cannot satisfy it.
@@ -38,11 +37,10 @@ SETTING_NAME = "SEARCH_SEMANTIC_HIGH_CONFIDENCE"
 APP_DIR = pathlib.Path(__file__).resolve().parents[2] / "app"
 SERVICE_PATH = APP_DIR / "services" / "search" / "hybrid_search_service.py"
 
-# The two functions that classify a semantic-only hit's confidence. Both must read the
-# setting, and neither may carry a default of its own.
+# The one function permitted to read the setting (#698: `_build_search_hit_from_bucket`'s
+# Phase 2 scores are raw BM25, not RRF, so it must never read this threshold at all).
 EXPECTED_READER_FUNCTIONS = {
     "_process_collapsed_results",
-    "_build_search_hit_from_bucket",
 }
 
 
@@ -216,8 +214,10 @@ def _bucket_and_phase2(score: float) -> tuple[dict, dict]:
     return bucket, phase2
 
 
-def _confidence_from_collapsed_path(score: float) -> str:
-    hits, _ = HybridSearchService()._process_collapsed_results(_collapsed_response(score), "")
+def _confidence_from_collapsed_path(score: float, *, is_fused_rrf: bool = True) -> str:
+    hits, _ = HybridSearchService()._process_collapsed_results(
+        _collapsed_response(score), "", is_fused_rrf=is_fused_rrf
+    )
     assert len(hits) == 1, "fixture should yield exactly one collapsed file group"
     return hits[0].semantic_confidence
 
@@ -230,28 +230,26 @@ def _confidence_from_two_phase_path(score: float) -> str:
 
 
 @pytest.mark.parametrize("threshold", [0.010, 0.25])
-def test_both_paths_switch_at_the_same_configured_threshold(monkeypatch, threshold):
-    """Both classification paths must move together when the single setting moves.
+def test_the_fused_path_switches_at_the_configured_threshold(monkeypatch, threshold):
+    """The one remaining classifier moves when the single setting moves.
 
-    Probed just below, exactly at, and just above the configured value. A site carrying its own
-    literal instead of the setting disagrees with the other at the ``0.25`` parametrization.
+    Probed just below, exactly at, and just above the configured value, on the fused-RRF path
+    only (`is_fused_rrf=True`) — the only case this threshold is ever compared against.
     """
     monkeypatch.setattr(settings, SETTING_NAME, threshold)
     below, at, above = threshold - 0.001, threshold, threshold + 0.001
 
     assert _confidence_from_collapsed_path(below) == "low"
-    assert _confidence_from_two_phase_path(below) == "low"
     assert _confidence_from_collapsed_path(at) == "high"
-    assert _confidence_from_two_phase_path(at) == "high"
     assert _confidence_from_collapsed_path(above) == "high"
-    assert _confidence_from_two_phase_path(above) == "high"
 
 
-@pytest.mark.parametrize("score", [0.005, 0.0125, 0.02])
-def test_the_two_paths_agree_on_every_probe_score(score):
-    """The two sites classify identically at the deployed threshold.
+@pytest.mark.parametrize("score", [0.005, 0.0125, 0.02, 999.0])
+def test_the_two_phase_path_never_labels_confidence(score):
+    """`_build_search_hit_from_bucket` (Phase 2, raw BM25 scores) never reads the threshold.
 
-    ``0.0125`` sits between the two former inline defaults (0.010 and 0.015), so this probe is
-    the one that would disagree if a site ever honoured a 0.015 of its own.
+    Any score — including one far outside RRF's ~0-0.065 range — must produce no badge rather
+    than a meaningless "high". This is the issue #698 regression: before the fix this path read
+    "high" for nearly every semantic-only Phase-2 result.
     """
-    assert _confidence_from_collapsed_path(score) == _confidence_from_two_phase_path(score)
+    assert _confidence_from_two_phase_path(score) == ""

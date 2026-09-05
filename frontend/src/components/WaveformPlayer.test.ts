@@ -154,7 +154,10 @@ describe('loading waveform data', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(mockAxios.get).toHaveBeenCalledWith('/files/f1/waveform', { params: { samples: 1000 } });
+    // Default test width (300px, set in beforeEach) falls in the "small"
+    // resolution bucket at desktop innerWidth — see 'resolution selection'
+    // above for the bucket boundaries.
+    expect(mockAxios.get).toHaveBeenCalledWith('/files/f1/waveform', { params: { samples: 500 } });
   });
 
   it('draws bars once data arrives and hides the loading overlay', async () => {
@@ -250,7 +253,7 @@ describe('click-to-seek', () => {
     // soon as duration becomes known, not require the user to click again.
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
     const onSeek = vi.fn();
-    const { container, component } = render(WaveformPlayer, {
+    const { container, rerender } = render(WaveformPlayer, {
       props: { fileId: 'f1', duration: 0 },
       events: { seek: onSeek },
     } as never);
@@ -272,10 +275,7 @@ describe('click-to-seek', () => {
     await fireEvent.click(canvasOf(container), { clientX: 75 }); // 25% across
     expect(onSeek).not.toHaveBeenCalled(); // nothing to compute a time against yet
 
-    (component as unknown as { $set: (props: Record<string, unknown>) => void }).$set({
-      duration: 100,
-    });
-    await Promise.resolve();
+    await rerender({ fileId: 'f1', duration: 100 });
 
     expect(onSeek).toHaveBeenCalledWith(expect.objectContaining({ detail: { time: 25 } }));
   });
@@ -283,7 +283,7 @@ describe('click-to-seek', () => {
   it('does not replay a queued seek on an unrelated duration update once it has flushed', async () => {
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
     const onSeek = vi.fn();
-    const { container, component } = render(WaveformPlayer, {
+    const { container, rerender } = render(WaveformPlayer, {
       props: { fileId: 'f1', duration: 0 },
       events: { seek: onSeek },
     } as never);
@@ -303,14 +303,11 @@ describe('click-to-seek', () => {
     });
 
     await fireEvent.click(canvasOf(container), { clientX: 75 });
-    const set = (component as unknown as { $set: (props: Record<string, unknown>) => void }).$set;
-    set({ duration: 100 });
-    await Promise.resolve();
+    await rerender({ fileId: 'f1', duration: 100 });
     expect(onSeek).toHaveBeenCalledTimes(1);
 
     onSeek.mockClear();
-    set({ duration: 120 });
-    await Promise.resolve();
+    await rerender({ fileId: 'f1', duration: 120 });
     expect(onSeek).not.toHaveBeenCalled();
   });
 

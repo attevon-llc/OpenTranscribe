@@ -385,7 +385,20 @@ def _embedding_result_writer(
         )
 
     if docs:
-        _bulk_write_v4_embeddings(docs)
+        written = _bulk_write_v4_embeddings(docs)
+        # Issue #657, defect 5: the return value used to be ignored here, so
+        # a total bulk-write failure (_bulk_write_v4_embeddings returns 0 on
+        # any exception, or on a client-unavailable early return) still
+        # reported `len(docs)` written. process_batch_pipelined's caller
+        # unconditionally calls on_file_success() after this returns, so
+        # that file was marked done with NOTHING actually indexed. Raise
+        # instead — process_batch_pipelined's except clause routes a raised
+        # exception to on_file_failure(), which is the real outcome here.
+        if written < len(docs):
+            raise RuntimeError(
+                f"v4 bulk write wrote {written}/{len(docs)} speaker embedding "
+                f"document(s) for media_file_id={prepared.media_file_id}"
+            )
 
     return len(docs)
 

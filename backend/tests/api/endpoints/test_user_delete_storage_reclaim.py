@@ -238,14 +238,34 @@ def test_a_storage_failure_is_reported_and_does_not_silently_pass(
 
     No live MinIO needed: ``minio_service.delete_file`` is monkeypatched to raise for
     the file's key, which is enough to exercise the residual-error plumbing end to end.
+
+    The OpenSearch leg is replaced by a **spy** so this measures the STORAGE leg
+    exactly. It is not decoration: against an unreachable cluster —
+    ``SKIP_OPENSEARCH=True`` with no OpenSearch service, which is precisely how the
+    GitHub ``backend-tests`` job runs — ``_cleanup_opensearch_for_file`` contributes
+    three more residuals of its own, and the exact assertions below became
+    ``storage_objects_failed == 4`` / ``stages == ["storage", "transcript",
+    "transcript_chunks", "transcript_summaries"]``. The spy still asserts the account
+    path *routes through* that leg with this file's plan, so stubbing it cannot hide a
+    fix that stopped calling it; its own residual reporting is covered against
+    ``purge_media_file``.
     """
     import logging
 
+    import app.services.file_cleanup_service as fcs
     import app.services.minio_service as minio_mod
 
     fuuid = uuid_pkg.uuid4()
     failing_key = f"tests/issue695/{fuuid}/orig.bin"
     _make_media_file(db_session, int(normal_user.id), uuid=fuuid, storage_path=failing_key)
+
+    opensearch_calls: list[str] = []
+
+    def _spy_opensearch(target: dict, file_uuid: str) -> list[dict]:
+        opensearch_calls.append(file_uuid)
+        return []
+
+    monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", _spy_opensearch)
 
     real_delete_file = minio_mod.delete_file
 
@@ -279,6 +299,9 @@ def test_a_storage_failure_is_reported_and_does_not_silently_pass(
     assert db_session.query(User).filter(User.id == normal_user.id).first() is None
     assert db_session.query(MediaFile).filter(MediaFile.storage_path == failing_key).first() is None
 
+    assert opensearch_calls == [str(fuuid)], (
+        "the account purge no longer routes this file through the OpenSearch erasure"
+    )
     assert len(events) == 1
     assert events[0]["outcome"] is AuditOutcome.PARTIAL
     assert events[0]["details"]["storage_objects_failed"] == 1
@@ -294,12 +317,14 @@ def test_a_user_with_no_files_still_deletes_cleanly(
 ):
     """CONTROL against a plausible wrong fix (a prefix sweep), not a red/green pin.
 
-    This test CANNOT be watched red against HEAD: a user with zero files already
-    deletes cleanly on master, because there is nothing for the (missing) storage
-    phase to fail on. Its only job is to prove the real fix does not replace "do
-    nothing" with "sweep a prefix" — a `delete_prefix` call would still pass every
-    other test here while quietly deleting unrelated objects that happen to share
-    the account's user-id-keyed prefix.
+    **This test's red on pre-fix master is not evidence of the defect.** It does go
+    red there, but only on `KeyError: 'storage_objects_failed'` — a response key that
+    did not exist yet — and the behaviour it asserts (a user with zero files deletes
+    cleanly, touching no object) is already true on master, because there is nothing
+    for the missing storage phase to act on. Its only job is to prove the real fix
+    does not replace "do nothing" with "sweep a prefix": a ``delete_prefix`` call would
+    pass every other test here while quietly deleting unrelated objects that happen to
+    share the account's user-id-keyed prefix.
     """
     import app.services.minio_service as minio_mod
 
@@ -386,32 +411,30 @@ def test_the_media_file_delete_is_still_one_statement(
     assert len(statements) == 1, f"expected exactly one bulk DELETE, got {statements}"
 
 
-def test_every_caller_of_the_user_cascade_also_purges_storage():
-    """Structural backstop: any caller of ``_delete_user_media_files`` must also purge storage.
+def _calls(func_node: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
+    """True when ``func_node``'s body calls ``name`` (bare or as an attribute)."""
+    for node in ast.walk(func_node):
+        if isinstance(node, ast.Call):
+            target = node.func
+            called_name = None
+            if isinstance(target, ast.Name):
+                called_name = target.id
+            elif isinstance(target, ast.Attribute):
+                called_name = target.attr
+            if called_name == name:
+                return True
+    return False
 
-    AST over ``backend/app`` — includes a must-fire fixture (a synthetic function
-    calling the cascade helper alone) so this cannot be a detector that matches
-    nothing.
+
+def _cascade_callers_missing_purge(root: Path) -> list[str]:
+    """Every function under ``root`` that runs the cascade without the storage purge.
+
+    Module level, and taking a root, so the must-fire control below runs **this**
+    detector over a synthetic tree rather than re-implementing it — a control that
+    re-implements the thing it is controlling proves only that the copy works.
     """
-    app_root = Path(__file__).resolve().parents[3] / "app"
-    assert app_root.is_dir(), app_root
-
     offenders: list[str] = []
-
-    def _calls(func_node: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
-        for node in ast.walk(func_node):
-            if isinstance(node, ast.Call):
-                target = node.func
-                called_name = None
-                if isinstance(target, ast.Name):
-                    called_name = target.id
-                elif isinstance(target, ast.Attribute):
-                    called_name = target.attr
-                if called_name == name:
-                    return True
-        return False
-
-    for py_file in app_root.rglob("*.py"):
+    for py_file in sorted(root.rglob("*.py")):
         # No `except SyntaxError`: every file under backend/app is real, importable
         # application code, so a parse failure here is itself a finding worth
         # seeing, not something to skip past.
@@ -421,7 +444,21 @@ def test_every_caller_of_the_user_cascade_also_purges_storage():
                 if _calls(node, "_delete_user_media_files") and not _calls(
                     node, "purge_account_external_copies"
                 ):
-                    offenders.append(f"{py_file.relative_to(app_root)}::{node.name}")
+                    offenders.append(f"{py_file.relative_to(root)}::{node.name}")
+    return offenders
+
+
+def test_every_caller_of_the_user_cascade_also_purges_storage():
+    """Structural backstop: any caller of ``_delete_user_media_files`` must also purge storage.
+
+    AST over ``backend/app``. Its must-fire control is the test below, which drives the
+    same detector over a synthetic offender so this cannot be a detector matching
+    nothing.
+    """
+    app_root = Path(__file__).resolve().parents[3] / "app"
+    assert app_root.is_dir(), app_root
+
+    offenders = _cascade_callers_missing_purge(app_root)
 
     assert offenders == [], (
         "every caller of _delete_user_media_files must also call "
@@ -429,27 +466,23 @@ def test_every_caller_of_the_user_cascade_also_purges_storage():
     )
 
 
-def test_the_structural_backstop_fires_on_a_synthetic_offender(tmp_path, monkeypatch):
-    """Must-fire control for the AST backstop above.
+def test_the_structural_backstop_fires_on_a_synthetic_offender(tmp_path):
+    """Must-fire AND must-stay-clean control for the AST backstop above.
 
-    Without this, the detector could match nothing and the test above would pass
-    vacuously forever.
+    Without this the detector could match nothing and the test above would pass
+    vacuously forever. It runs ``_cascade_callers_missing_purge`` itself over a
+    two-file tree: one function that calls the cascade alone (must be reported) and
+    one that also purges (must not be).
     """
-    offender_src = "def bad_caller(db, user_id):\n    _delete_user_media_files(db, user_id)\n"
     fake_app = tmp_path / "app"
     fake_app.mkdir()
-    (fake_app / "offender.py").write_text(offender_src)
+    (fake_app / "offender.py").write_text(
+        "def bad_caller(db, user_id):\n    _delete_user_media_files(db, user_id)\n"
+    )
+    (fake_app / "compliant.py").write_text(
+        "def good_caller(db, user_id, plan):\n"
+        "    _delete_user_media_files(db, user_id)\n"
+        "    purge_account_external_copies(plan)\n"
+    )
 
-    import ast as ast_mod
-
-    tree = ast_mod.parse(offender_src)
-    found_bad_call = False
-    found_good_call = False
-    for node in ast_mod.walk(tree):
-        if isinstance(node, ast_mod.Call) and isinstance(node.func, ast_mod.Name):
-            if node.func.id == "_delete_user_media_files":
-                found_bad_call = True
-            if node.func.id == "purge_account_external_copies":
-                found_good_call = True
-    assert found_bad_call
-    assert not found_good_call
+    assert _cascade_callers_missing_purge(fake_app) == ["offender.py::bad_caller"]

@@ -29,6 +29,37 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 FIXTURES="$SCRIPT_DIR/fixtures/manifest-fixtures.py"
 CHECKER="$REPO_ROOT/scripts/lib/manifest_platform_check.py"
 
+# Every repo file this suite makes an assertion ABOUT. This is a declared contract, not a
+# comment: backend/tests/unit/test_precommit_hook_file_scope.py reads this array and fails if
+# the `publish-platforms-not-a-pass` hook's `files:` pattern in .pre-commit-config.yaml does
+# not select every entry — AND if this array omits a path the script actually reads.
+#
+# Why it exists: the hook's `files:` pattern went stale. The suite grew sections asserting on
+# 90-promote.sh, 95-finish.sh, published-repos.sh, Dockerfile.blackwell, setup-opentranscribe.sh
+# and asr/factory.py while the pattern still listed only the original six paths, so a commit
+# touching ONLY 95-finish.sh — the file whose hardcoded repo list let a release publish :latest
+# with no lite image on Docker Hub — would not have run this suite at all. A guard that does
+# not select the file it guards is the same failure mode as a detector that matches nothing.
+SUBJECT_FILES=(
+    setup-opentranscribe.sh
+    backend/Dockerfile.prod
+    backend/Dockerfile.lite
+    backend/Dockerfile.blackwell
+    backend/app/services/asr/factory.py
+    scripts/docker-build-push.sh
+    scripts/security-scan.sh
+    scripts/lib/manifest_platform_check.py
+    scripts/release/80-publish.sh
+    scripts/release/85-smoke.sh
+    scripts/release/90-promote.sh
+    scripts/release/95-finish.sh
+    scripts/release/published-repos.sh
+    scripts/tests/test-publish-platforms.sh
+    scripts/tests/fixtures/manifest-fixtures.py
+)
+# Consumed by the unit test above; referenced here so shellcheck sees a use.
+[ "${OT_PRINT_SUBJECT_FILES:-}" = "1" ] && { printf '%s\n' "${SUBJECT_FILES[@]}"; exit 0; }
+
 pass=0
 fail=0
 ok() { echo "  ok   - $1"; pass=$((pass + 1)); }

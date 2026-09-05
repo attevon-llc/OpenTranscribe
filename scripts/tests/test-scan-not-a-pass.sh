@@ -40,6 +40,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD_SCRIPT="$REPO_ROOT/scripts/docker-build-push.sh"
 
+# Every repo file this suite makes an assertion ABOUT — the same declared contract
+# scripts/tests/test-publish-platforms.sh carries, read by
+# backend/tests/unit/test_precommit_hook_file_scope.py, which fails if this hook's `files:`
+# pattern in .pre-commit-config.yaml does not select every entry (or if this array omits a
+# path the script reads). This suite's pattern was already correct when the check was added;
+# the declaration exists so it CANNOT silently stop being correct, which is what happened to
+# the sibling hook.
+SUBJECT_FILES=(
+    scripts/docker-build-push.sh
+    scripts/security-scan.sh
+    scripts/tests/test-scan-not-a-pass.sh
+)
+# Must stay ABOVE every echo in this file: the contract is that this mode prints paths and
+# nothing else.
+[ "${OT_PRINT_SUBJECT_FILES:-}" = "1" ] && { printf '%s\n' "${SUBJECT_FILES[@]}"; exit 0; }
+
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 

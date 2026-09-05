@@ -1249,6 +1249,11 @@
           comment_type_label: $t('fileDetail.commentType'),
           csv_header_default: $t('fileDetail.csvHeaderDefault'),
           csv_header_with_comments: $t('fileDetail.csvHeaderWithComments'),
+          // Mirrors every other read on this page (transcript/segments/subtitles):
+          // an owner who toggled "Show original" expects the export to match what
+          // they are looking at. The server still refuses this under the admin
+          // export_locked floor regardless of what is sent here.
+          ...(showOriginal ? { redact: false } : {}),
         },
         responseType: 'blob',
       });

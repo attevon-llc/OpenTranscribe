@@ -91,8 +91,8 @@ echo "== security-scan.sh: exit codes distinguish 'found something' from 'never 
 # MUST-FIRE. Before the fix this exited 1 — the same code as "scanned, has
 # findings" — which is what made the two indistinguishable to every caller.
 rc=0
-( cd "$REPO_ROOT" && OUTPUT_DIR="$REPORTS_DIR" ./scripts/security-scan.sh lite ) \
-    > "$TMP_ROOT/scan-lite.out" 2>&1 || rc=$?
+( cd "$REPO_ROOT" && OUTPUT_DIR="$REPORTS_DIR" ./scripts/security-scan.sh bogus ) \
+    > "$TMP_ROOT/scan-bogus.out" 2>&1 || rc=$?
 if [ "$rc" -eq 2 ]; then
     ok "an unknown component exits 2 (could not scan), not 1 (findings)"
 else
@@ -100,12 +100,13 @@ else
 fi
 
 # MUST-STAY-CLEAN: the machine-readable component contract other scripts derive
-# their lists from must actually list the three published images.
+# their lists from must actually list the published images (issue #680 added
+# `lite` and `blackwell` alongside the original three).
 known="$( (cd "$REPO_ROOT" && OUTPUT_DIR="$REPORTS_DIR" ./scripts/security-scan.sh list-components 2>/dev/null) | tr '\n' ' ')"
-if [ "$known" = "backend docs frontend " ]; then
+if [ "$known" = "backend blackwell docs frontend lite " ]; then
     ok "list-components reports the published components: ${known% }"
 else
-    bad "list-components reported '${known:0:120}'; expected 'backend docs frontend '"
+    bad "list-components reported '${known:0:120}'; expected 'backend blackwell docs frontend lite '"
 fi
 
 echo "== run_security_scan: the policy flag tolerates findings, never the absence of a scan =="
@@ -116,7 +117,7 @@ case_unscannable_component_is_fatal() {
     export FAIL_ON_SECURITY_ISSUES=false
     export SKIP_SECURITY_SCAN=false
     local rc=0
-    OUTPUT_DIR="$REPORTS_DIR" run_security_scan lite > "$TMP_ROOT/rss-lite.out" 2>&1 || rc=$?
+    OUTPUT_DIR="$REPORTS_DIR" run_security_scan bogus > "$TMP_ROOT/rss-bogus.out" 2>&1 || rc=$?
     return "$rc"
 }
 rc=0
@@ -279,7 +280,7 @@ case_parallel_unscannable_component() {
     export SKIP_SECURITY_SCAN=false
     export FAIL_ON_SECURITY_ISSUES=false
     local rc=0
-    run_parallel_scans lite > "$TMP_ROOT/parallel-lite.out" 2>&1 || rc=$?
+    run_parallel_scans bogus > "$TMP_ROOT/parallel-bogus.out" 2>&1 || rc=$?
     return "$rc"
 }
 rc=0
@@ -289,7 +290,7 @@ if [ "$rc" -ne 0 ]; then
 else
     bad "run_parallel_scans returned 0 for a component that cannot be scanned"
 fi
-if grep -qF "$SUCCESS_BANNER" "$TMP_ROOT/parallel-lite.out"; then
+if grep -qF "$SUCCESS_BANNER" "$TMP_ROOT/parallel-bogus.out"; then
     bad "the summary printed '$SUCCESS_BANNER' for a component that was never scanned"
 else
     ok "the summary does NOT claim success for a component that was never scanned"
@@ -323,7 +324,7 @@ case_pull_dispatch_refuses_unknown() {
     assert_components_scannable() { return 0; }  # bypass the earlier guard
     run_security_scan() { return 0; }
     local rc=0
-    run_parallel_scans lite > "$TMP_ROOT/parallel-nopull.out" 2>&1 || rc=$?
+    run_parallel_scans bogus > "$TMP_ROOT/parallel-nopull.out" 2>&1 || rc=$?
     return "$rc"
 }
 rc=0

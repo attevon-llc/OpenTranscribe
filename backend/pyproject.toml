@@ -107,6 +107,12 @@ testpaths = ["tests"]
 # test (54.6 s), so it cannot fire on a merely slow test — tighten it once the suite is fast.
 # Both require pytest-timeout, which is therefore MANDATORY in requirements-dev/-ci: a
 # missing plugin makes --timeout a collection error, not a no-op (issue #431).
+# `-m 'not integration and not gpu'` is now load-bearing for CUDA device VISIBILITY, not
+# only test selection (issue #719): tests/conftest.py's pytest_configure asks whether this
+# exact expression can ever select a `gpu`-marked test and, since it cannot, sets
+# CUDA_VISIBLE_DEVICES=-1 before any worker imports torch. Changing this default without
+# checking tests/conftest.py's `_selection_may_run_gpu_tests` can silently re-open every
+# GPU to the fast suite again.
 addopts = "-n auto --dist loadgroup --tb=short -q --strict-markers --durations=25 --timeout=300 -m 'not integration and not gpu'"
 markers = [
     "slow: marks tests as slow",
@@ -114,7 +120,7 @@ markers = [
     "pki: PKI certificate tests",
     "e2e: end-to-end browser tests",
     "integration: integration tests requiring running dev environment",
-    "gpu: tests requiring a physical GPU — deselected from the fast suite, run by the gate",
+    "gpu: tests requiring a physical GPU — deselected from the fast suite, run by the gate, and the only selection that keeps CUDA devices visible (issue #719)",
     "models: tests requiring ML model weights (Presidio/GLiNER/toxicity) — skipped in fast CI",
     "ddl_exclusive: performs schema DDL (DROP/ALTER TABLE) needing full DB-wide exclusivity, not just self-consistency — see tests/conftest.py's advisory-lock isolation (issue #389)",
 ]

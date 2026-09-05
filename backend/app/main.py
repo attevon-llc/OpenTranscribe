@@ -31,6 +31,7 @@ from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.observability import ObservabilityMiddleware
+from app.middleware.robots import RobotsHeaderMiddleware
 
 # Set up logging (text or structured JSON per settings.LOG_FORMAT)
 configure_logging()
@@ -972,6 +973,10 @@ app.add_middleware(
 
 # Configure maximum upload size (50GB)
 app.router.default_max_upload_size = 50 * 1024 * 1024 * 1024  # type: ignore[attr-defined]  # 50GB
+
+# Mark every API response as non-indexable (issue #668, finding 3). Response-header-only,
+# so its position relative to the other middleware below is not load-bearing.
+app.add_middleware(RobotsHeaderMiddleware)
 
 # Add Audit Middleware for request ID tracking (FedRAMP AU-2/AU-3)
 app.add_middleware(AuditMiddleware)

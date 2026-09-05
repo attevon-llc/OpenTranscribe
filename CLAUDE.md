@@ -27,8 +27,10 @@ Instead:
 - To free a GPU, stop the worker container — never signal the process inside it.
 - If a task looks stuck, read `./opentr.sh logs celery-worker` first. A long transcription is
   usually still running.
-- **Ask before anything destructive.** GPU 1 (RTX 3080 Ti) is this project's only GPU; GPUs 0 and 2
-  are reserved for unrelated work and must never be touched.
+- **Ask before anything destructive.** GPU 1 (RTX 3080 Ti) is this project's only GPU. GPU 0
+  genuinely runs unrelated work (`tritonserver`) and must never be touched. GPU 2 was measured
+  available and in active use by this project's own test runs (2026-09-05) — it is not reserved
+  for unrelated work the way GPU 0 is.
 
 ## ⚠️ CRITICAL: Local Code vs Docker Hub Images
 
@@ -141,7 +143,17 @@ Run with `./opentr.sh start dev --gpu-scale` — **the flag is what enables scal
 
 ### Docker build & push (production images)
 
-Skill: `.claude/skills/docker-build-push/SKILL.md` (multi-arch requires `USE_REMOTE_BUILDER=true`).
+Skill: `.claude/skills/docker-build-push/SKILL.md` (any build including `linux/arm64` requires
+`USE_REMOTE_BUILDER=true`, or it runs under QEMU).
+
+**Capability lives in the REPOSITORY and is restated in the TAG** (issue #680):
+`opentranscribe-backend` is CUDA, `opentranscribe-backend-lite` is CPU, and each publishes
+`vX.Y.Z-<cap>-<arch>` legs assembled into a `vX.Y.Z` index whose digest `:latest` is then copied
+from. **`PLATFORMS` is an explicit override, not a default** — the old both-arch default is how a
+CPU-only arm64 backend got published under the CUDA image's tag. Never transcribe the platform
+set into a doc or a script: ask `./scripts/docker-build-push.sh list-platforms`
+(`component<TAB>capability<TAB>platforms`), which is the single home for it. Full table and the
+reason `cuda-arm64` is reserved-but-unbuilt: `scripts/CLAUDE.md`.
 
 ### Cutting a release — `./scripts/release.sh`, never by hand
 
@@ -375,24 +387,35 @@ python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
   measurement cycles on the Redis-retry bug; `python -m cProfile -o out.prof -m pytest <test>`
   found it in one.
 
-Current (measured 2026-08-13, load average ~10 on 48 cores — quote the command, not the
-number, if you are unsure): backend **6,623 passed / 62 real skips / 104 s** (from
-4,752 / 458 / 511 s); frontend **669 passed / 76 files / 21.6 s**; e2e **341 collected,
-271 passed / 1 failed** (`test_promote_publishes_to_the_shared_vocabulary`), plus 8
-visual-regression baselines currently failing. The junit XML reports 146 skipped because
-it counts the 84 xfails; 62 is the real skip count.
+Current (measured 2026-09-05, load average 9→56 on 48 cores — quote the command, not the
+number, if you are unsure, and note this was measured under load, not a clean run): backend
+**12,882 passed / 148 skipped / 154-182 s** wall.
 
-**These numbers rot — re-derive rather than trust them.** The previous values above were
-wrong by 1,294 backend tests and 188 frontend tests when checked. `./scripts/run-backend-tests.sh
---summary` and `cd frontend && npm run test` answer in seconds.
+**These numbers rot — re-derive rather than trust them.** Prior values in this file have been
+wrong by over a thousand tests when checked. `./scripts/run-backend-tests.sh --summary` and
+`cd frontend && npm run test` answer in seconds. The root `baseline.xml` is a stale
+**5,473-test artifact from Aug 11** — regenerate or delete it before trusting any
+`--baseline` comparison against it today.
 
-Barrier clusters: none remain at sub-second scale, but a residual ~9 s DDL cluster does —
-21 of the 35 tests over 5 s are `v3xx_migration_consistency` tests from 8 different modules
-all landing near 9 s, which is the `ddl_exclusive` advisory-lock queue. DDL modules are
-~418 s of the ~1,197 s summed CPU. Far better than the 414-of-511 s it started from, but
-"zero barrier clusters" overstates it. Regenerate the timing baseline with
-`./scripts/run-backend-tests.sh && cp /tmp/ot-backend-tests/last.xml baseline.xml` — it is
-gitignored, because a committed measurement rots.
+**The DDL/`ddl_exclusive` barrier claim in earlier versions of this file was measured and
+refuted (2026-09-05).** Actual cost: DDL modules were **262 s of 2,031 s (12.9%)** and
+**239 s of 1,580 s (15.1%)** summed CPU across two runs — not the previously claimed
+418/1,197. Zero `v3xx_migration_consistency` tests appear above 3.5 s. The 43
+`ddl_exclusive`-marked tests sum to 59.5-68.8 s (3.4-3.8% of total), with the slowest single
+test at 2.91 s and none in the slowest 30 overall. An A/B run with all `ddl_exclusive` tests
+deselected showed the barrier costs only **+12.9 s to +5.8 s** — smaller than the
+**21.0-28.1 s of same-config run-to-run noise** observed between otherwise-identical runs.
+Tellingly, the timing-cluster detector still fires with **zero** DDL tests selected: its
+"barrier suspects" at 13k tests are not the advisory-lock queue, they're the CPU-bound tail
+under 48-way worker contention. The detector's underlying premise — that unrelated tests
+sharing a duration band can't be coincidence — held at 5k tests and does not at 13k.
+
+**The real cost is collection, not any barrier.** `pytest tests/ -k
+"zzz_no_such_test_zzz" -n auto` — matching zero tests — still took **96.3 s wall** (48
+workers each collecting the entire tree); `-n 16` dropped that to 78.3 s, and
+`--collect-only -n0` (single worker) took 44.5 s. That means roughly **96 s of a ~154 s
+suite is spent before a single test runs** — 6-10x the DDL barrier's cost, and the actual
+place to look for a speedup.
 
 ### E2E (pytest + Playwright)
 

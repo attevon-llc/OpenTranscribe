@@ -217,6 +217,105 @@ def test_a_fresh_install_downloads_every_compose_overlay_the_manifest_lists(tmp_
         assert (workdir / overlay).is_file(), f"{overlay} was not written to the install dir"
 
 
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_a_pinned_install_survives_a_required_entry_the_tag_predates(tmp_path):
+    """issue #723 — a REQUIRED manifest entry added TODAY must not retroactively break the
+    install of an ALREADY PUBLISHED release.
+
+    `download_release_manifest_artifacts()` fetches the manifest from the pinned ref first,
+    but falls back to the default branch when that ref predates release-manifest.txt
+    entirely (issue #683). That fallback list is then NEWER than the tag it is applied to, so
+    it can list a required entry the tag genuinely never shipped — exactly what happened when
+    `NOTICE` was added required (91128ecb) while v0.4.1 (published before release-manifest.txt
+    existed) was still the latest release: the pinned manifest fetch 404ed, the fallback to
+    master borrowed a manifest listing NOTICE as required, and the download of NOTICE from the
+    v0.4.1 tag 404ed too, which install-failed EVERY fresh install.
+
+    This drives that exact shape with a SYNTHETIC required entry rather than pinning on NOTICE
+    itself, per the issue's acceptance criteria: the regression is the class (a borrowed,
+    newer-than-the-tag manifest listing something the tag lacks), not this one instance.
+    A pinned install must still succeed — skipping the entry, not failing closed.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    old_tag = "v0.0.0-predates-manifest"
+    synthetic_required_entry = "SYNTHETIC_REQUIRED_FILE_723"
+
+    borrowed_manifest = tmp_path / "borrowed-release-manifest.txt"
+    borrowed_manifest.write_text(f"docker-compose.yml\n{synthetic_required_entry}\n")
+
+    # Stub curl:
+    #   * the OLD TAG's own manifest fetch 404s (it predates release-manifest.txt)
+    #   * the DEFAULT BRANCH's manifest fetch succeeds, returning the borrowed manifest
+    #     above — which lists a REQUIRED entry the old tag never shipped
+    #   * the GitHub API call inside resolve_default_branch() reports "master"
+    #   * every artifact download from the old tag succeeds EXCEPT the synthetic entry,
+    #     which 404s — simulating a file that simply does not exist at that old ref
+    stub = bin_dir / "curl"
+    stub.write_text(
+        "#!/bin/bash\n"
+        "url=''; out=''\n"
+        "while [ $# -gt 0 ]; do\n"
+        '  case "$1" in\n'
+        '    -o) out="$2"; shift 2 ;;\n'
+        '    http*) url="$1"; shift ;;\n'
+        "    *) shift ;;\n"
+        "  esac\n"
+        "done\n"
+        '  case "$url" in\n'
+        "    *api.github.com*)\n"
+        '      echo \'{"default_branch": "master"}\'\n'
+        "      exit 0\n"
+        "      ;;\n"
+        f"    */master/release-manifest.txt)\n"
+        f'      cp {borrowed_manifest} "$out"\n'
+        "      exit 0\n"
+        "      ;;\n"
+        f"    */{old_tag}/release-manifest.txt)\n"
+        # This tag predates the manifest — the pinned-ref fetch must fail.
+        "      exit 1\n"
+        "      ;;\n"
+        f"    *{synthetic_required_entry})\n"
+        # This tag never shipped the synthetic file the borrowed manifest requires.
+        "      exit 1\n"
+        "      ;;\n"
+        "    *)\n"
+        '      [ -n "$out" ] && printf "stub-content\\n" > "$out"\n'
+        "      exit 0\n"
+        "      ;;\n"
+        "  esac\n"
+    )
+    stub.chmod(0o755)
+
+    workdir = tmp_path / "install"
+    workdir.mkdir()
+
+    snippet = (
+        "set -uo pipefail\nset -e\n"
+        "RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''\n"
+        + _extract_function(INSTALLER, "resolve_default_branch")
+        + "\n"
+        + _extract_function(INSTALLER, "download_release_manifest_artifacts")
+        + "\ndownload_release_manifest_artifacts\n"
+    )
+    proc = subprocess.run(
+        ["bash", "-c", snippet],
+        capture_output=True,
+        text=True,
+        cwd=str(workdir),
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "OPENTRANSCRIBE_BRANCH": old_tag},
+    )
+    assert proc.returncode == 0, (
+        f"a pinned install at {old_tag} failed because today's manifest requires "
+        f"{synthetic_required_entry}, which {old_tag} never shipped — a REQUIRED addition to "
+        f"the manifest retroactively broke an already-published release's install "
+        f"(issue #723):\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    assert (workdir / "docker-compose.yml").is_file()
+    assert not (workdir / synthetic_required_entry).exists()
+
+
 def test_opentr_sh_is_not_shipped_and_the_shipped_script_covers_it():
     """opentr.sh is deliberately absent (issue #613): its backup/restore path uses bare
     `docker compose`, and the base compose file ALONE is an invalid project — measured

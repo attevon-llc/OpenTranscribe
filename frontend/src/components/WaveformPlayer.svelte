@@ -21,6 +21,11 @@
   let waveformError: string = '';
   let isDragging = false;
   let animationFrameId: number | null = null;
+  // A click/keyboard seek that arrives before `duration` is known (e.g. the
+  // player hasn't reported its duration yet) used to be silently discarded —
+  // the interaction had no effect and gave no feedback. Queue it and flush
+  // once `duration` becomes available instead (#649).
+  let pendingSeekRatio: number | null = null;
 
   const dispatch = createEventDispatcher();
 
@@ -217,14 +222,29 @@
   let mouseDownHandledSeek = false;
 
   function seekFromPointer(event: MouseEvent) {
-    if (!container || duration <= 0) return;
+    if (!container) return;
 
     const rect = container.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
     const seekRatio = Math.min(Math.max(clickX / rect.width, 0), 1);
-    const seekTime = seekRatio * duration;
 
-    dispatch('seek', { time: seekTime });
+    if (duration <= 0) {
+      // Duration isn't known yet (e.g. clicked immediately on a fresh page
+      // load, before the player has reported it). Queue the ratio rather than
+      // discarding the click — the reactive block below flushes it as soon as
+      // `duration` arrives.
+      pendingSeekRatio = seekRatio;
+      return;
+    }
+
+    dispatch('seek', { time: seekRatio * duration });
+  }
+
+  // Flush a seek that arrived before duration was known.
+  $: if (duration > 0 && pendingSeekRatio !== null) {
+    const ratio = pendingSeekRatio;
+    pendingSeekRatio = null;
+    dispatch('seek', { time: ratio * duration });
   }
 
   /**
@@ -287,7 +307,12 @@
    * Handle keyboard navigation
    */
   function handleKeyDown(event: KeyboardEvent) {
-    if (duration <= 0) return;
+    // 'Home' always means "seek to 0" regardless of whether duration is known
+    // yet, so it doesn't need to wait. The other keys need `duration` to
+    // compute a target and are dropped silently below — same call as the
+    // click case above, but they act on a live `currentTime` rather than a
+    // ratio, so there's no meaningful value to queue when duration is still 0.
+    if (duration <= 0 && event.code !== 'Home') return;
 
     let seekTime = currentTime;
     const seekStep = duration * 0.01; // 1% of duration
@@ -328,15 +353,17 @@
 
   // Mount and cleanup
   onMount(() => {
-    // Use setTimeout to ensure DOM is fully rendered
-    setTimeout(() => {
-      if (canvas && container) {
-        handleResize();
-      }
-
-      // Load waveform data
-      loadWaveformData();
-    }, 100);
+    // Svelte's `bind:this` assigns `canvas`/`container` before `onMount`
+    // fires, so the DOM is already there — the previous 100ms sleep bought
+    // nothing but delayed `loadWaveformData()`, which doesn't touch the DOM
+    // at all (getOptimalResolution reads `container.offsetWidth`, which is
+    // already valid here). Waveform fetches on a fresh page load used to be
+    // dead-weighted by this (#649); it also skewed getOptimalResolution's
+    // container-width check on the very first paint.
+    if (canvas && container) {
+      handleResize();
+    }
+    loadWaveformData();
 
     // Cleanup function
     return () => {

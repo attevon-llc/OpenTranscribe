@@ -1200,26 +1200,36 @@
     // Listen for events to open Add Media modal
     const handleOpenModalEvent = (event: CustomEvent) => {
       showUploadModal = true;
-      // Dispatch a separate event for the FileUploader after the modal is shown
-      setTimeout(() => {
+      // Dispatch a separate `window` event for the FileUploader once it has
+      // actually mounted and registered its own listener. `window` events
+      // aren't buffered, so a fixed sleep here is a race, not a safety
+      // margin: if FileUploader's `onMount` (which is what subscribes to
+      // `setFileUploaderTab`) hadn't run yet, the event was silently dropped
+      // and the tab request lost. `tick()` resolves once Svelte has flushed
+      // the DOM update that mounts FileUploader — including its `onMount` —
+      // so this fires as soon as the listener genuinely exists, not after a
+      // guessed delay (#649).
+      tick().then(() => {
         if (event.detail?.activeTab) {
           window.dispatchEvent(new CustomEvent('setFileUploaderTab', {
             detail: { activeTab: event.detail.activeTab }
           }));
         }
-      }, 50);
+      });
     };
 
     // Listen for direct file upload from recording popup
     const handleUploadRecordedFile = (event: CustomEvent) => {
       if (event.detail?.file) {
         showUploadModal = true;
-        // Trigger file upload directly
-        setTimeout(() => {
+        // Trigger file upload directly once FileUploader has mounted and
+        // registered its `directFileUpload` listener — same race as above,
+        // same fix (#649).
+        tick().then(() => {
           window.dispatchEvent(new CustomEvent('directFileUpload', {
             detail: { file: event.detail.file }
           }));
-        }, 100);
+        });
       }
     };
 

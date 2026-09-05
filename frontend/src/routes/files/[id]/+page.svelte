@@ -2019,8 +2019,11 @@
       videoElementChecked = true;
       const videoElement = document.getElementById('player');
       if (videoElement) {
-        // Video element found, initializing player
-        setTimeout(() => initializePlayer(), 100); // Small delay to ensure element is fully rendered
+        // Video element found — initialize immediately. `initializePlayer` only
+        // marks a flag once the element exists (already confirmed above); the
+        // previous 100ms sleep just delayed the `?t=` seek that follows it for
+        // no reason (#649).
+        initializePlayer();
       } else {
         // Video element not found yet, will try again next update
         videoElementChecked = false;
@@ -2037,16 +2040,19 @@
       hasSeenTimestamp = true;
       const targetTime = parseFloat(seekTime);
       if (!isNaN(targetTime) && targetTime >= 0) {
-        // Seek the player to the specified timestamp
-        setTimeout(() => {
-          if (videoPlayerComponent && typeof videoPlayerComponent.seekToTime === 'function') {
-            videoPlayerComponent.seekToTime(targetTime);
-          } else {
-            currentTime = targetTime;
-          }
-          // Scroll the transcript segment into view
-          scrollToSegmentAtTime(targetTime);
-        }, 500);
+        // Seek the player to the specified timestamp immediately. The 500ms
+        // sleep here predated #647: `VideoPlayer.seekToTime` used to await
+        // `loadedmetadata` internally, so this queued the call behind that
+        // wait. It now issues the seek to the media element before metadata
+        // arrives, so the sleep was dead weight stacked on top of #647's fix
+        // (#649).
+        if (videoPlayerComponent && typeof videoPlayerComponent.seekToTime === 'function') {
+          videoPlayerComponent.seekToTime(targetTime);
+        } else {
+          currentTime = targetTime;
+        }
+        // Scroll the transcript segment into view
+        scrollToSegmentAtTime(targetTime);
       }
     }
   }

@@ -1037,6 +1037,10 @@
     width: 100%;
     padding: 0;
     min-height: 300px;
+    /* Fill the modal's now-fixed height (#739) so the footer sits at the bottom
+       of the dialog instead of floating under the content with a dead gap
+       beneath it. `.step-body` is `flex: 1`, so it absorbs the slack. */
+    height: 100%;
   }
 
   /* ── Stepper Indicator ── */
@@ -1148,6 +1152,10 @@
     flex: 1;
     min-height: 200px;
     position: relative;
+    /* A step taller than the fixed-height dialog scrolls here, inside the step
+       area, so the stepper above and the nav buttons below stay put (#739). */
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .step-content {

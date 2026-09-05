@@ -28,15 +28,25 @@
 # 2026-09-04: 2.70 GB. Not a budget, not a target.)
 # =============================================================================
 
-# diar-native (T1 diarization sidecar) binary + ONNX Runtime CPU-provider libs, pinned
-# by DIGEST — SAME pin as Dockerfile.prod:21, so the binary running here is byte-for-byte
-# the one the full image ships, never a separately-tracked version (#660). Unlike
-# Dockerfile.prod, this stage's COPY below deliberately excludes
-# libonnxruntime_providers_cuda.so: lite is CPU-only by definition (no CUDA runtime, no
-# nvidia driver expected on the host), and diar-server's CPU execution provider needs no
-# separate provider .so to dlopen — only the CUDA path does. DIAR_MODE must be `cpu` (or
-# unset, since diar-server's own default is cpu) for any container built from this image.
-FROM davidamacey/diar-native@sha256:83a709be94d0ca06441fa10aea0680f53b03cc10eb3ce11c4eeb84478400567d AS diar-native-bin
+# diar-native (T1 diarization sidecar) binary + ONNX Runtime CPU-provider libs.
+# ⚠️ Pre-#680 bug: this stage pinned the SAME digest as Dockerfile.prod:21 — the CUDA
+# standalone image (tag 0.3.1) — despite the comment above (now corrected) claiming
+# CPU-provider libs. That happened to still "work" on amd64 only because the COPY below
+# cherry-picks specific files out of a CUDA-capable image, and there was no arm64 leg at
+# all: BuildKit does not error on a --platform linux/arm64 build against a single-arch
+# amd64 base (issue #680) — COPY --from succeeds and only running the copied ELF fails,
+# with "exec format error" at container start. Fixed by selecting the real per-arch
+# diar-native CPU tag via TARGETARCH, still pinned by digest so the binary is
+# reproducible — just the correct (CPU) image, and now built for both architectures.
+ARG TARGETARCH
+FROM davidamacey/diar-native@sha256:b00b4bb5999d0b5cc353dae27c07b17fe61b232517f250aaf3ef03536c610879 AS diar-native-bin-amd64
+FROM davidamacey/diar-native@sha256:63e7a7275aada3da8c4840cbc5e2b4e498605a6658086355c62b84af75232d64 AS diar-native-bin-arm64
+# This FROM selects one of the two DIGEST-PINNED stages immediately above by ARG
+# TARGETARCH; hadolint cannot trace that indirection and flags it as an untagged
+# external image, but it resolves to one of the two pinned FROMs on this same
+# page, never a floating tag.
+# hadolint ignore=DL3006
+FROM diar-native-bin-${TARGETARCH} AS diar-native-bin
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation

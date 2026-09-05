@@ -1,175 +1,81 @@
-name: Build and Publish Docker Images
+name: Build and Publish Docker Images (RETIRED — see scripts/release.sh)
+
+# ⚠️ RETIRED, DELIBERATELY, by issue #680. Do not re-enable the jobs below without
+# reading this whole comment.
+#
+# This workflow was a SECOND publisher, parallel to and unaware of the release
+# pipeline (`scripts/release.sh` → `scripts/release/80-publish.sh`), and it published
+# under the OLD tag grammar: `:latest-amd64` / `:latest-arm64` legs assembled into
+# `:latest` by `docker buildx imagetools create`.
+#
+# Two independent reasons that is now actively unsafe:
+#
+#  1. IT WOULD OVERWRITE THE PUBLISHED INDEX. Its final step did
+#         imagetools create -t davidamacey/opentranscribe-backend:latest \
+#             davidamacey/opentranscribe-backend:latest-amd64
+#     i.e. it REPLACES `:latest` with a manifest assembled from a tag this workflow
+#     built moments earlier — silently discarding whatever the release pipeline
+#     promoted there by digest (`scripts/release/90-promote.sh`, whose entire point
+#     is that `:latest` and `:vX.Y.Z` provably resolve to the SAME digest). One
+#     manual dispatch of this workflow after a release would break that guarantee
+#     with no error anywhere.
+#
+#  2. WRONG GRAMMAR, AND A SECOND HOME FOR IT. Capability now lives in the
+#     repository and is restated in the tag: `vX.Y.Z-<cap>-<arch>` legs
+#     (`-cuda-amd64`, `-cpu-amd64`, `-cpu-arm64`) assembled into a `vX.Y.Z` index,
+#     with `:latest` a digest-copy of that index. `latest-amd64` is not part of that
+#     scheme. The scheme has exactly ONE home — the COMPONENT_PLATFORMS /
+#     COMPONENT_CAPABILITY table in `scripts/docker-build-push.sh`, printed by
+#     `./scripts/docker-build-push.sh list-platforms` — precisely so a second copy
+#     cannot drift out of sync with it. Re-implementing it here would recreate the
+#     drift issue #680 is about.
+#
+# The `build_backend_arm64` job below was ALREADY `if: false` for an unrelated reason
+# (13.8 GB image exhausting the GitHub runner), which is how the backend manifest step
+# came to assemble an amd64-only index by hand while the local pipeline believed it was
+# publishing both arches. That mismatch is the shape of the #680 bug.
+#
+# To publish images, use the release pipeline, which builds, SCANS, rehearses,
+# publishes and only then promotes:
+#
+#     ./scripts/release.sh run <version>          # full sequence
+#     ./scripts/release.sh publish <version> --yes
+#
+# If CI-side image builds are ever wanted again, they must call
+# `scripts/docker-build-push.sh` (so they inherit the platform/capability table and
+# the leg/index assembly) rather than open-coding `docker/build-push-action` tags —
+# and the manifest-structure gate in `scripts/release/80-publish.sh` must run against
+# whatever they publish.
 
 on:
-  workflow_dispatch:  # Manual triggering ONLY - automatic builds disabled
-  # Automatic builds disabled - run manually via GitHub Actions UI
-  # push:
-  #   branches:
-  #     - master
-  #   paths-ignore:
-  #     - '**.md'
-  #     - '.github/**'
-  #     - '!.github/workflows/docker-publish.yml'
+  workflow_dispatch:
+    inputs:
+      i_understand_this_is_retired:
+        description: >-
+          This workflow is retired (issue #680) and will fail on purpose.
+          Use ./scripts/release.sh instead. Type RETIRED to acknowledge.
+        required: true
+        default: ''
 
 jobs:
-  build_backend_amd64:
+  refuse:
+    name: This workflow is retired — use scripts/release.sh
     runs-on: ubuntu-latest
     steps:
-      - name: Maximize build disk space
-        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c # v10
-        with:
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push backend AMD64
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile.prod
-          platforms: linux/amd64
-          push: true
-          tags: davidamacey/opentranscribe-backend:latest-amd64
-          cache-from: type=registry,ref=davidamacey/opentranscribe-backend:buildcache-amd64
-          cache-to: type=registry,ref=davidamacey/opentranscribe-backend:buildcache-amd64,mode=max
-
-  build_backend_arm64:
-    runs-on: ubuntu-latest
-    if: false  # Disabled - build locally due to size (13.8GB) causing GitHub runner failures
-    steps:
-      - name: Maximize build disk space
-        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c # v10
-        with:
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push backend ARM64
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile.prod
-          platforms: linux/arm64
-          push: true
-          tags: davidamacey/opentranscribe-backend:latest-arm64
-          cache-from: type=registry,ref=davidamacey/opentranscribe-backend:buildcache-arm64
-          cache-to: type=registry,ref=davidamacey/opentranscribe-backend:buildcache-arm64,mode=max
-
-  build_frontend_amd64:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Maximize build disk space
-        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c # v10
-        with:
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push frontend AMD64
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile.prod
-          platforms: linux/amd64
-          push: true
-          tags: davidamacey/opentranscribe-frontend:latest-amd64
-          cache-from: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache-amd64
-          cache-to: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache-amd64,mode=max
-
-  build_frontend_arm64:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Maximize build disk space
-        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c # v10
-        with:
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push frontend ARM64
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile.prod
-          platforms: linux/arm64
-          push: true
-          tags: davidamacey/opentranscribe-frontend:latest-arm64
-          cache-from: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache-arm64
-          cache-to: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache-arm64,mode=max
-
-  create_manifests:
-    needs: [build_backend_amd64, build_frontend_amd64, build_frontend_arm64]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Login to DockerHub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Create and push backend manifest (AMD64 only for now)
+      - name: Explain and fail
         run: |
-          docker buildx imagetools create -t davidamacey/opentranscribe-backend:latest \
-            davidamacey/opentranscribe-backend:latest-amd64
-
-      - name: Create and push frontend manifest
-        run: |
-          docker buildx imagetools create -t davidamacey/opentranscribe-frontend:latest \
-            davidamacey/opentranscribe-frontend:latest-amd64 \
-            davidamacey/opentranscribe-frontend:latest-arm64
+          echo "::error title=Retired workflow::docker-publish.yml was retired by issue #680."
+          echo ""
+          echo "It published under the OLD tag grammar (:latest-amd64 / :latest-arm64 -> :latest)"
+          echo "and its final step would OVERWRITE the :latest index that scripts/release/90-promote.sh"
+          echo "promotes by digest, silently breaking the ':latest and :vX.Y.Z are the same bytes'"
+          echo "guarantee. Its backend arm64 job was also already disabled, so it assembled an"
+          echo "amd64-only index by hand -- the exact shape of the #680 bug."
+          echo ""
+          echo "Publish with the release pipeline instead:"
+          echo "  ./scripts/release.sh run <version>"
+          echo "  ./scripts/release.sh publish <version> --yes"
+          echo ""
+          echo "Current tag grammar (single source of truth):"
+          echo "  ./scripts/docker-build-push.sh list-platforms"
+          exit 1

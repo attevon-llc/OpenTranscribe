@@ -57,6 +57,18 @@ what it appears to. A green one from the wrong schema is worse.
   `norecursedirs=["tests/e2e"]`. **`--strict-markers` makes an unregistered marker a collection
   error** — register any new marker in `[tool.pytest.ini_options] markers` or collection fails.
   (The e2e markers live in `tests/e2e/pytest.ini`, which is a separate rootdir config.)
+- **CUDA device guard (issue #719).** `conftest.py`'s `pytest_configure` asks pytest's own
+  `Expression` parser whether the active `-m` selection can ever satisfy `gpu` (satisfiability,
+  not a `"gpu" in markexpr` substring check — the default expression `not integration and not
+  gpu` CONTAINS that substring and must still leave the guard ON). When it cannot, it sets
+  `CUDA_VISIBLE_DEVICES=-1` before any worker imports torch, so `torch.cuda.is_available()`
+  reads `False` for the whole run. `-m gpu` and `-m integration` (two files carry both markers)
+  keep real device access. A `gpu`-marked test that somehow runs under the guard **ERRORS**
+  (`pytest.fail`, message contains `cuda-device-guard`) rather than skipping on "CUDA not
+  available" — a skip there would look like a pass. Escape hatch: `OT_TEST_CUDA_VISIBLE_DEVICES`
+  (`=1` sets it and bypasses the marker check, `=all` leaves the ambient value alone, `=""` is an
+  explicit blind). An ambient `CUDA_VISIBLE_DEVICES` in the shell does **not** release the guard —
+  the block deliberately does not use `os.environ.setdefault`. Tests: `unit/test_cuda_device_guard.py`.
 - `@pytest.mark.models` = needs Presidio/GLiNER/toxicity weights; those modules also
   `importorskip` + `preload()`-skip, so fast CI passes without weights.
 - Module-level `skipif` env gates → suite: `RUN_PKI_TESTS`→`test_pki_auth`, `RUN_MFA_TESTS`→
@@ -272,7 +284,10 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   skips (`ensure_container`); without `-o addopts= -m gpu` pytest deselects every test; without
   the gitignored `benchmark/test_audio/*.wav` fixtures each test skips individually; and without
   a visible CUDA device `torch_cuda` skips. `run-diarization-gpu-tests.sh` hard-fails on the
-  first three rather than handing you a green vacuum.
+  first three rather than handing you a green vacuum. **The CUDA device guard (issue #719,
+  above) is a fifth potential source of that state** — but the hook converts it to a hard
+  `pytest.fail` (`cuda-device-guard` in the message) rather than a fifth silent skip, so a
+  `gpu`-marked test that runs without `-m gpu` errors loudly instead of passing vacuously.
 - **`tests/integration/test_scheduled_backup_restore_roundtrip.py` needs the backend image
   built** (`./opentr.sh build` or `./opentr.sh start dev --build`) — its Tier-1 "trustworthy
   evidence" test runs the real `backup_service.run_pg_dump` inside a throwaway container from

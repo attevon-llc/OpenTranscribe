@@ -26,7 +26,6 @@ BLUE='\033[0;34m'; NC='\033[0m'
 : "${VERSION:?50-scan.sh needs a version}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'
-HUB="${DOCKERHUB_USERNAME:-davidamacey}"
 
 # The images must exist locally at THIS tag before we scan.
 #
@@ -38,8 +37,20 @@ HUB="${DOCKERHUB_USERNAME:-davidamacey}"
 #
 # So the tag is asserted rather than assumed: a missing image fails here instead
 # of quietly redirecting the scan to whatever :latest happens to point at.
+#
+# Components/repos are DERIVED from security-scan.sh's own list-repos command
+# (issue #680), not hardcoded — `backend frontend docs` used to be the whole
+# list here, which silently never checked (or scanned) `lite`/`blackwell` once
+# those existed. `blackwell` is deliberately excluded: it is never built by
+# `all`/`auto` and is not part of this stage's local-build precondition.
+declare -A REPO_FOR_COMPONENT=()
+while IFS=$'\t' read -r component repo; do
+    [[ "$component" == "blackwell" ]] && continue
+    REPO_FOR_COMPONENT["$component"]="$repo"
+done < <(./scripts/security-scan.sh list-repos)
+
 missing=()
-for repo in "$HUB/opentranscribe-backend" "$HUB/opentranscribe-frontend" "$HUB/opentranscribe-docs"; do
+for repo in "${REPO_FOR_COMPONENT[@]}"; do
     docker image inspect "${repo}:${VERSION}" >/dev/null 2>&1 || missing+=("${repo}:${VERSION}")
 done
 if (( ${#missing[@]} )); then
@@ -51,12 +62,23 @@ fi
 
 echo -e "${BLUE}Scanning locally built ${VERSION} images${NC}" >&2
 
+# security-scan.sh's own `all` target scans EVERY scannable component,
+# including `blackwell` — which this stage's build precondition above never
+# checks for, because `blackwell` is not part of `docker-build-push.sh all`/
+# `auto` (built and scanned only on request, see docker-build-push.sh's
+# build_backend_blackwell). Scanning explicitly by the components this stage
+# actually has local images for avoids a false "could not scan" on an image
+# nothing here ever built.
 rc=0
-SCAN_SOURCE=local \
-FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-true}" \
-OUTPUT_DIR="$OUT_DIR" \
-IMAGE_TAG="$VERSION" \
-    ./scripts/security-scan.sh all || rc=$?
+for component in "${!REPO_FOR_COMPONENT[@]}"; do
+    comp_rc=0
+    SCAN_SOURCE=local \
+    FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-true}" \
+    OUTPUT_DIR="$OUT_DIR" \
+    IMAGE_TAG="$VERSION" \
+        ./scripts/security-scan.sh "$component" || comp_rc=$?
+    (( comp_rc > rc )) && rc=$comp_rc
+done
 
 if (( rc >= 2 )); then
     echo -e "${RED}scan could NOT RUN (security-scan.sh exit ${rc}) — this is not 'no findings'${NC}" >&2
@@ -66,7 +88,7 @@ fi
 # Assert the reports describe the image we meant to scan. Reading the tag back
 # out of the artifact is the only thing that would have caught the bug above --
 # the run looked completely normal while measuring the wrong release.
-for comp in backend frontend docs; do
+for comp in "${!REPO_FOR_COMPONENT[@]}"; do
     report="$OUT_DIR/${comp}-trivy.json"
     [[ -f "$report" ]] || continue
     scanned=$(python3 -c "

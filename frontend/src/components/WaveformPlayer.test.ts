@@ -46,14 +46,29 @@ function canvasOf(container: HTMLElement): HTMLCanvasElement {
   return container.querySelector('canvas.waveform-canvas') as HTMLCanvasElement;
 }
 
-function setContainerWidth(container: HTMLElement, width: number) {
-  Object.defineProperty(rootOf(container), 'offsetWidth', { configurable: true, value: width });
+// `loadWaveformData()` (and its `getOptimalResolution()` container-width read)
+// now runs SYNCHRONOUSLY during `onMount` (#649 removed the artificial 100ms
+// sleep that used to separate them), i.e. before `render()` even returns — so
+// a test can no longer stub `offsetWidth` on the rendered instance afterward
+// and expect it to matter. Patch the prototype getter once, and let each test
+// set the value it wants BEFORE calling `render()`.
+let mockedContainerWidth = 0;
+Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+  configurable: true,
+  get() {
+    return mockedContainerWidth;
+  },
+});
+
+function setContainerWidth(width: number) {
+  mockedContainerWidth = width;
 }
 
-// The 100ms setTimeout in onMount, plus the microtask chain of the mocked axios
-// call that runs after it — both real, so nothing races fake-timer flushing.
+// The microtask chain of the mocked axios call — real, so nothing races
+// fake-timer flushing. `onMount` no longer sleeps before firing it (#649);
+// this only waits for the axios promise itself to settle.
 async function waitForMountedLoad() {
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 /** Let one requestAnimationFrame callback run (drag seeks are rAF-coalesced). */
@@ -71,6 +86,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
   Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
   Object.defineProperty(window.navigator, 'connection', { configurable: true, value: undefined });
+  mockedContainerWidth = 300;
 });
 
 afterEach(() => {
@@ -83,8 +99,8 @@ describe('resolution selection', () => {
   it('requests the small resolution for a narrow (mobile) viewport', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 });
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
+    setContainerWidth(300);
     const { container } = render(WaveformPlayer, { props: { fileId: 'f1' } });
-    setContainerWidth(container, 300);
 
     await waitForMountedLoad();
 
@@ -97,8 +113,8 @@ describe('resolution selection', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 });
     Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
+    setContainerWidth(1400);
     const { container } = render(WaveformPlayer, { props: { fileId: 'f1' } });
-    setContainerWidth(container, 1400);
 
     await waitForMountedLoad();
 
@@ -114,8 +130,8 @@ describe('resolution selection', () => {
       value: { effectiveType: '2g', downlink: 0.2 },
     });
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
+    setContainerWidth(1400);
     const { container } = render(WaveformPlayer, { props: { fileId: 'f1' } });
-    setContainerWidth(container, 1400);
 
     await waitForMountedLoad();
 
@@ -125,10 +141,38 @@ describe('resolution selection', () => {
 });
 
 describe('loading waveform data', () => {
+  it('fetches the waveform on mount without waiting for a timer (#649)', async () => {
+    // DEFECT THIS CATCHES: `onMount` used to sleep 100ms via `setTimeout`
+    // before calling `loadWaveformData()`, even though `bind:this` assigns
+    // `canvas`/`container` before `onMount` fires and the fetch itself
+    // doesn't touch the DOM. That silently dead-weighted every waveform
+    // fetch by 100ms on a fresh page load. Only microtask turns are awaited
+    // below — no timer tick at all — so this fails under the old code.
+    mockAxios.get.mockResolvedValue({ data: { waveform: [10, 200, 50] } });
+    const { container } = render(WaveformPlayer, { props: { fileId: 'f1', duration: 10 } });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Default test width (300px, set in beforeEach) falls in the "small"
+    // resolution bucket at desktop innerWidth — see 'resolution selection'
+    // above for the bucket boundaries.
+    expect(mockAxios.get).toHaveBeenCalledWith('/files/f1/waveform', { params: { samples: 500 } });
+
+    // A called mock proves the REQUEST went out immediately; it does not
+    // prove the fetched data ever reached the component. Wait for the
+    // real axios promise to settle and assert the waveform actually
+    // rendered — same outcome as 'draws bars once data arrives' below, just
+    // reached without an artificial timer in between.
+    await waitForMountedLoad();
+    expect(container.querySelector('.waveform-loading')).toBeNull();
+    expect(ctx.fillRect).toHaveBeenCalled();
+    expect(canvasOf(container).classList.contains('hidden')).toBe(false);
+  });
+
   it('draws bars once data arrives and hides the loading overlay', async () => {
     mockAxios.get.mockResolvedValue({ data: { waveform: [10, 200, 50] } });
     const { container } = render(WaveformPlayer, { props: { fileId: 'f1', duration: 10 } });
-    setContainerWidth(container, 300);
 
     await waitForMountedLoad();
 
@@ -140,7 +184,6 @@ describe('loading waveform data', () => {
   it('adopts the server duration when none was supplied', async () => {
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3], duration: 42.5 } });
     const { container } = render(WaveformPlayer, { props: { fileId: 'f1', duration: 0 } });
-    setContainerWidth(container, 300);
 
     await waitForMountedLoad();
 
@@ -150,7 +193,6 @@ describe('loading waveform data', () => {
   it('leaves a caller-supplied duration alone when the server value is within 0.1s', async () => {
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3], duration: 10.05 } });
     const { container } = render(WaveformPlayer, { props: { fileId: 'f1', duration: 10 } });
-    setContainerWidth(container, 300);
 
     await waitForMountedLoad();
 
@@ -160,7 +202,6 @@ describe('loading waveform data', () => {
   it('shows an error and keeps the canvas hidden when the server returns no samples', async () => {
     mockAxios.get.mockResolvedValue({ data: { waveform: [] } });
     const { container } = render(WaveformPlayer, { props: { fileId: 'f1' } });
-    setContainerWidth(container, 300);
 
     await waitForMountedLoad();
 
@@ -171,7 +212,6 @@ describe('loading waveform data', () => {
   it('surfaces the request error message and retries on button click', async () => {
     mockAxios.get.mockRejectedValueOnce(new Error('network down'));
     const { container } = render(WaveformPlayer, { props: { fileId: 'f1' } });
-    setContainerWidth(container, 300);
 
     await waitForMountedLoad();
     expect(container.querySelector('.waveform-error')?.textContent).toContain('network down');
@@ -195,7 +235,6 @@ describe('click-to-seek', () => {
       props: { fileId: 'f1', duration: 100 },
       events: { seek: onSeek },
     } as never);
-    setContainerWidth(container, 300);
     await waitForMountedLoad();
 
     const root = rootOf(container);
@@ -216,18 +255,69 @@ describe('click-to-seek', () => {
     expect(onSeek).toHaveBeenCalledWith(expect.objectContaining({ detail: { time: 25 } }));
   });
 
-  it('does nothing when duration is not yet known', async () => {
+  it('queues a click seek that arrives before duration is known, and flushes it once duration arrives (#649)', async () => {
+    // DEFECT THIS CATCHES: a click while `duration <= 0` used to be silently
+    // discarded — no seek, no feedback, no memory of the click. That's
+    // realistic on a fresh page load: the player hasn't reported its
+    // duration to this component yet. The click should still take effect as
+    // soon as duration becomes known, not require the user to click again.
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
     const onSeek = vi.fn();
-    const { container } = render(WaveformPlayer, {
+    const { container, rerender } = render(WaveformPlayer, {
       props: { fileId: 'f1', duration: 0 },
       events: { seek: onSeek },
     } as never);
-    setContainerWidth(container, 300);
     await waitForMountedLoad();
 
-    await fireEvent.click(canvasOf(container), { clientX: 75 });
+    const root = rootOf(container);
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      width: 300,
+      top: 0,
+      right: 300,
+      bottom: 0,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON() {},
+    });
 
+    await fireEvent.click(canvasOf(container), { clientX: 75 }); // 25% across
+    expect(onSeek).not.toHaveBeenCalled(); // nothing to compute a time against yet
+
+    await rerender({ fileId: 'f1', duration: 100 });
+
+    expect(onSeek).toHaveBeenCalledWith(expect.objectContaining({ detail: { time: 25 } }));
+  });
+
+  it('does not replay a queued seek on an unrelated duration update once it has flushed', async () => {
+    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
+    const onSeek = vi.fn();
+    const { container, rerender } = render(WaveformPlayer, {
+      props: { fileId: 'f1', duration: 0 },
+      events: { seek: onSeek },
+    } as never);
+    await waitForMountedLoad();
+
+    const root = rootOf(container);
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      width: 300,
+      top: 0,
+      right: 300,
+      bottom: 0,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON() {},
+    });
+
+    await fireEvent.click(canvasOf(container), { clientX: 75 });
+    await rerender({ fileId: 'f1', duration: 100 });
+    expect(onSeek).toHaveBeenCalledTimes(1);
+
+    onSeek.mockClear();
+    await rerender({ fileId: 'f1', duration: 120 });
     expect(onSeek).not.toHaveBeenCalled();
   });
 
@@ -242,7 +332,6 @@ describe('click-to-seek', () => {
       props: { fileId: 'f1', duration: 100 },
       events: { seek: onSeek },
     } as never);
-    setContainerWidth(container, 300);
     await waitForMountedLoad();
 
     const root = rootOf(container);
@@ -278,7 +367,6 @@ describe('click-to-seek', () => {
       props: { fileId: 'f1', duration: 100 },
       events: { seek: onSeek },
     } as never);
-    setContainerWidth(container, 300);
     await waitForMountedLoad();
 
     const root = rootOf(container);
@@ -306,7 +394,6 @@ describe('click-to-seek', () => {
       props: { fileId: 'f1', duration: 100 },
       events: { seek: onSeek },
     } as never);
-    setContainerWidth(container, 300);
     await waitForMountedLoad();
 
     const root = rootOf(container);
@@ -350,7 +437,6 @@ describe('keyboard seek', () => {
       props: { fileId: 'f1', duration, currentTime },
       events: { seek: onSeek },
     } as never);
-    setContainerWidth(container, 300);
     await waitForMountedLoad();
     return { container, onSeek };
   }
@@ -390,5 +476,13 @@ describe('keyboard seek', () => {
     const { container, onSeek } = await setup(0, 0);
     await fireEvent.keyDown(canvasOf(container), { code: 'ArrowRight' });
     expect(onSeek).not.toHaveBeenCalled();
+  });
+
+  it('seeks to 0 on Home even when duration is not yet known', async () => {
+    // 'Home' always means "seek to 0" — no `duration` is needed to compute
+    // that target, so it doesn't need to wait for one like the other keys.
+    const { container, onSeek } = await setup(0, 0);
+    await fireEvent.keyDown(canvasOf(container), { code: 'Home' });
+    expect(onSeek).toHaveBeenCalledWith(expect.objectContaining({ detail: { time: 0 } }));
   });
 });

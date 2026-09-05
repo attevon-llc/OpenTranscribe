@@ -14,12 +14,17 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
+from fastapi import Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
 from app.api.endpoints.auth import get_current_active_user
+from app.auth.rate_limit import get_llm_outbound_rate_limit
+from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.services import llm_context_window
 from app.services import llm_reasoning
@@ -786,15 +791,22 @@ def delete_all_user_configurations(
 
 
 @router.post("/test", response_model=schemas.ConnectionTestResponse)
+@limiter.limit(get_llm_outbound_rate_limit(), key_func=user_or_ip_key)
 def test_llm_connection(
     *,
+    request: Request,
     test_request: schemas.ConnectionTestRequest,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Test connection to LLM provider without saving settings.
     If config_id is provided and no api_key, will use the stored API key from that config.
+
+    Rate-limited (issue #676): this handler makes a server-side outbound request to a
+    caller-supplied ``base_url`` and sits behind ``get_current_active_user``, not an
+    admin gate — see ``get_llm_outbound_rate_limit``.
     """
     _assert_safe_llm_endpoint(test_request.base_url, "LLM test-connection")
     start_time = time.time()
@@ -871,6 +883,7 @@ def test_llm_connection(
 
 @router.post("/test-current", response_model=schemas.ConnectionTestResponse)
 def test_active_configuration(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -935,7 +948,12 @@ def test_active_configuration(
     # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
     # Harmless only while these two callers never set `config_id` on the request they build —
     # the first one that does gets an AttributeError on a Depends instance.
-    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
+    # `request=request` is required for the same reason (issue #676 made it keyword-only, for
+    # the outbound rate limiter's per-user/per-IP key); omitting it is a TypeError at call time,
+    # which is what broke both of these endpoints.
+    result = test_llm_connection(
+        request=request, test_request=test_request, current_user=current_user, db=db
+    )
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -952,6 +970,7 @@ def test_active_configuration(
 @router.post("/test-config/{config_uuid}", response_model=schemas.ConnectionTestResponse)
 def test_specific_configuration(
     config_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -986,7 +1005,12 @@ def test_specific_configuration(
     # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
     # Harmless only while these two callers never set `config_id` on the request they build —
     # the first one that does gets an AttributeError on a Depends instance.
-    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
+    # `request=request` is required for the same reason (issue #676 made it keyword-only, for
+    # the outbound rate limiter's per-user/per-IP key); omitting it is a TypeError at call time,
+    # which is what broke both of these endpoints.
+    result = test_llm_connection(
+        request=request, test_request=test_request, current_user=current_user, db=db
+    )
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -1215,12 +1239,18 @@ def get_config_api_key(
 
 
 @router.get("/ollama/models")
+@limiter.limit(get_llm_outbound_rate_limit(), key_func=user_or_ip_key)
 async def get_ollama_models(
+    request: Request,
     base_url: str,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Get available models from an Ollama instance
+
+    Rate-limited (issue #676): fetches a caller-supplied ``base_url`` server-side —
+    see ``get_llm_outbound_rate_limit``.
     """
     import aiohttp
 
@@ -1398,10 +1428,13 @@ def _get_http_error_message(status_code: int, models_url: str, error_text: str =
 
 
 @router.get("/openai-compatible/models")
+@limiter.limit(get_llm_outbound_rate_limit(), key_func=user_or_ip_key)
 async def get_openai_compatible_models(
+    request: Request,
     base_url: str,
     api_key: str | None = None,
     config_id: str | None = None,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -1410,6 +1443,9 @@ async def get_openai_compatible_models(
 
     Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers.
     If config_id is provided and no api_key, will use the stored API key from that config.
+
+    Rate-limited (issue #676): fetches a caller-supplied ``base_url`` server-side —
+    see ``get_llm_outbound_rate_limit``.
     """
     import aiohttp
 

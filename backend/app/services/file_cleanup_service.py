@@ -505,6 +505,30 @@ def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], 
             fail("speakers", f"could not verify {idx}: {e}")
 
 
+def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], None]) -> None:
+    """Delete the account's speaker-profile embeddings (biometric data).
+
+    Sibling of :func:`_erase_speaker_docs` for :class:`SpeakerProfile` rows (issue
+    #715) — used only by :func:`purge_account_external_copies`, after the account's
+    rows have already committed, so a failure here is not retryable and must be
+    reported rather than swallowed. ``remove_profile_embedding`` sweeps its own main +
+    v4-staging indices and swallows its own errors (returns ``False`` for both
+    "absent" and "failed"), so — unlike the speaker case — there is no independent
+    survivor count to verify against; the best this can report is whether the call
+    itself raised.
+    """
+    if not profile_uuids:
+        return
+
+    for profile_uuid in profile_uuids:
+        try:
+            from app.services.opensearch_service import remove_profile_embedding
+
+            remove_profile_embedding(profile_uuid)
+        except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
+            fail("profiles", e)
+
+
 def _erase_transcript_doc(file_uuid: str, fail: Callable[[str, object], None]) -> None:
     """Delete the transcript document — the verbatim text of the recording."""
     try:
@@ -778,10 +802,20 @@ class AccountPurgePlan:
             preserved when a single FILE is destroyed — but the account-delete path
             destroys the profiles themselves (``_delete_user_owned_records``), and
             nothing else has ever removed the avatar objects backing them.
+        speaker_uuids: Every ``Speaker.uuid`` this account owns (issue #715). Read
+            here, alongside ``avatar_paths``, so :func:`purge_account_external_copies`
+            can remove the OpenSearch voiceprints **after** the account's rows commit,
+            instead of ``admin._delete_user_speakers`` doing it — one OpenSearch round
+            trip per speaker — from inside the caller's open transaction.
+        profile_uuids: Every ``SpeakerProfile.uuid`` this account owns (issue #715),
+            for the same reason: ``admin._delete_user_owned_records`` used to remove
+            the profile embeddings itself, also from inside the open transaction.
     """
 
     files: list[dict[str, Any]] = field(default_factory=list)
     avatar_paths: list[str] = field(default_factory=list)
+    speaker_uuids: list[str] = field(default_factory=list)
+    profile_uuids: list[str] = field(default_factory=list)
 
 
 def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
@@ -791,13 +825,16 @@ def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
     reason :func:`_load_purge_plan` reads plain data: an escaping instance lazy-loads,
     which reopens a transaction in the middle of the caller's external-copy phase.
 
-    ``speaker_uuids`` is deliberately left ``[]`` on every file plan here, NOT because
-    the file's speakers should be skipped, but because the account-delete cascade
-    already removes every one of this user's speaker embeddings itself
-    (``admin._delete_user_speakers``, which runs before the bulk file delete). Reusing
-    ``_purge_external_copies`` per file would otherwise attempt the same OpenSearch
-    deletes twice — harmless (idempotent), but worth documenting so a future reader
-    does not "fix" this into a duplicate sweep.
+    ``speaker_uuids`` is left ``[]`` on every FILE plan here — not because a file's
+    speakers should be skipped, but because they are not per-file work at all.
+    :class:`AccountPurgePlan` carries the account's speaker and profile UUIDs at the
+    top level instead (issue #715): both used to be swept by
+    ``admin._delete_user_speakers`` / ``admin._delete_user_owned_records`` themselves,
+    one OpenSearch round trip per speaker/profile, from inside the caller's open
+    transaction. They are read here as plain column-only tuples, and
+    :func:`purge_account_external_copies` removes the embeddings after the account's
+    rows have committed, matching the phase split every other external-copy delete in
+    this module already uses.
 
     Args:
         db: The caller's session, used only for the reads below.
@@ -807,6 +844,7 @@ def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
         An :class:`AccountPurgePlan` naming every object this account's cascade must
         remove from object storage and OpenSearch.
     """
+    from app.models.media import Speaker
     from app.models.media import SpeakerProfile
 
     file_rows = (
@@ -841,7 +879,20 @@ def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
     )
     avatar_paths = [str(row[0]) for row in avatar_rows if row[0]]
 
-    return AccountPurgePlan(files=files, avatar_paths=avatar_paths)
+    speaker_rows = db.query(Speaker.uuid).filter(Speaker.user_id == user_id).all()
+    speaker_uuids = [str(row[0]) for row in speaker_rows]
+
+    profile_uuid_rows = (
+        db.query(SpeakerProfile.uuid).filter(SpeakerProfile.user_id == user_id).all()
+    )
+    profile_uuids = [str(row[0]) for row in profile_uuid_rows]
+
+    return AccountPurgePlan(
+        files=files,
+        avatar_paths=avatar_paths,
+        speaker_uuids=speaker_uuids,
+        profile_uuids=profile_uuids,
+    )
 
 
 def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]]:
@@ -853,6 +904,10 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
     :func:`_purge_external_copies` per file rather than open-coding a second artifact
     list, which is what gives this call thumbnail + derived-cache (including listed
     masked variants) + OpenSearch erasure for free, in one audited implementation.
+    Also sweeps ``plan.speaker_uuids`` / ``plan.profile_uuids`` (issue #715) — this is
+    now the only place either embedding is removed; neither
+    ``admin._delete_user_speakers`` nor ``admin._delete_user_owned_records`` touches
+    OpenSearch any more.
 
     Args:
         plan: The plain-data plan from :func:`load_account_purge_plans`.
@@ -874,6 +929,12 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
                     "error": str(e),
                 }
             )
+
+    def _fail(stage: str, err: object) -> None:
+        residual.append({"stage": stage, "error": str(err)})
+
+    _erase_speaker_docs(plan.speaker_uuids, _fail)
+    _erase_profile_docs(plan.profile_uuids, _fail)
 
     for avatar_path in plan.avatar_paths:
         try:

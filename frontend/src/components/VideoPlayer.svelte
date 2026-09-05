@@ -50,12 +50,23 @@
 
   // External seek function for waveform and transcript clicks
   export async function seekToTime(time: number) {
-    if (!player) {
+    // Use the raw bound element, not `(player as any).media` — that requires
+    // Plyr to have been constructed first, which is itself async (this
+    // component's own `$: if (videoUrl && mediaElement && !player)
+    // initializePlyr()`). A caller (e.g. the `?t=` deep-link handler) firing
+    // in the same reactivity flush as this component's mount can land here
+    // BEFORE that reactive statement has run, i.e. while `player` is still
+    // null. The old code's `if (!player) return` silently dropped exactly
+    // that seek — the same "act on not-yet-ready state" shape #649 found and
+    // fixed in WaveformPlayer's click handler, here unmasked by removing the
+    // caller's incidental delay rather than caused by it. `mediaElement` is
+    // bound directly on the <video>/<audio> tag and needs no Plyr instance.
+    const media = mediaElement ?? ((player as any)?.media as HTMLMediaElement | undefined);
+    if (!media) {
       return;
     }
 
     const requestId = ++seekRequestId;
-    const media = (player as any).media as HTMLMediaElement | undefined;
 
     // Show seeking spinner immediately, and keep it up until `seeked` fires
     // rather than clearing it on a blind short timer.
@@ -69,12 +80,12 @@
     // index. The previous implementation awaited `loadedmetadata` (up to a
     // hard-coded 15s) plus a fixed 150ms *before* touching the element, which
     // added that entire wait to every seek issued during page load.
-    const appliedDirectly = media ? applyMediaSeek(media, time) : false;
+    const appliedDirectly = applyMediaSeek(media, time);
 
     currentTime = time;
     dispatch('timeupdate', { currentTime: time, duration });
 
-    if (media && media.readyState < HAVE_METADATA) {
+    if (media.readyState < HAVE_METADATA) {
       // Plyr's own `currentTime` setter bails while its duration is still 0, so
       // its progress bar would stay at zero. Re-apply through Plyr once metadata
       // lands — this only syncs the control UI, the seek itself already happened.
@@ -88,8 +99,11 @@
       if (!appliedDirectly) applyMediaSeek(media, time);
     }
 
-    // Keep Plyr's internal clock in sync (progress bar, time readout).
-    if (Math.abs((player.currentTime ?? 0) - time) > 0.05) {
+    // Keep Plyr's internal clock in sync (progress bar, time readout) —
+    // best-effort: `player` may still not exist yet if this resolved before
+    // Plyr was constructed, in which case Plyr will simply pick up the
+    // media element's already-seeked position when it initializes.
+    if (player && Math.abs((player.currentTime ?? 0) - time) > 0.05) {
       player.currentTime = time;
     }
   }

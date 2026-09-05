@@ -329,11 +329,21 @@ class TranscriptSegmentBase(BaseModel):
 
 
 class TranscriptSegmentUpdate(BaseModel):
-    id: int | None = None  # Optional since segment is identified by UUID in URL
+    """Fields a client may edit via ``PUT .../transcript/segments/{segment_uuid}``.
+
+    Deliberately excludes ``id`` (the segment is identified by the path UUID, and the
+    primary key must never be client-writable) and ``speaker_id`` (speaker reassignment
+    has its own endpoint, ``PUT /transcripts/segments/{uuid}/speaker``, which resolves
+    the UUID to the ORM's integer FK correctly — see issue #722). ``extra="forbid"`` so a
+    client sending either (or any other unsupported field) gets a 422, not a silently
+    dropped write.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     start_time: float | None = None
     end_time: float | None = None
     text: str | None = None
-    speaker_id: UUID | None = None
 
 
 class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):

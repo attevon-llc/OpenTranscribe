@@ -228,7 +228,17 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
 
 
 def _refresh_index_and_clear_cache() -> None:
-    """Refresh the search index and clear the search cache."""
+    """Refresh the search index after a reindex completes.
+
+    Issue #666: this used to also call ``hybrid_search_service.clear_search_cache()``,
+    a process-local dict clear that ran in whichever worker executed this
+    coordinator — never the API process that actually serves cached search
+    responses, so it was a no-op where it mattered. The response cache is now
+    invalidated by its own ``corpus_version`` cache-key field
+    (``hybrid_search_service._search_corpus_version``), which
+    ``index_transcript_chunks`` already bumps for every file this reindex
+    processes — no explicit clear needed, cross-process, for free.
+    """
     try:
         from app.services.opensearch_service import opensearch_client
 
@@ -237,13 +247,6 @@ def _refresh_index_and_clear_cache() -> None:
             logger.info("Refreshed search index after reindex completion")
     except Exception as e:
         logger.warning(f"Index refresh after reindex failed: {e}")
-
-    try:
-        from app.services.search.hybrid_search_service import clear_search_cache
-
-        clear_search_cache()
-    except Exception as e:
-        logger.warning(f"Failed to clear search cache: {e}")
 
 
 def _set_bulk_indexing_mode() -> None:

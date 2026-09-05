@@ -950,6 +950,181 @@ pg_restore_restart_decision() {
 }
 
 #######################
+# VOICEPRINT (SPEAKER-EMBEDDING) BACKUP PRIMITIVES (issue #658)
+#######################
+#
+# Speaker voiceprints exist in exactly ONE place: the OpenSearch `speakers_v*` indices.
+# PostgreSQL stores no embedding vectors at all — `SpeakerProfile` carries only
+# `embedding_count` + `last_embedding_update`, and `Speaker`/`SpeakerCluster` have no
+# vector column (backend/app/models/media.py) — so a bare `pg_dump` leaves a deployment
+# with NO recoverable copy of its biometric data. Voiceprints are not derived data:
+# re-deriving one needs the source media (which may be gone) plus a GPU re-embed run.
+#
+# These are the same shape as the pg primitives above — first argument is an *exec
+# prefix* — so production passes "docker compose exec -T opensearch" and the integration
+# test passes "docker exec -i <throwaway-opensearch>", and the tests drive the exact code
+# the CLI ships rather than a re-implementation.
+#
+# The work itself is done by scripts/voiceprint-backup.py, piped into the OpenSearch
+# container's own python3 (`python3 -c "$(cat …)"`). Running it THERE rather than on the
+# host is deliberate: it needs no host tooling, so a `curl | bash` production install is
+# covered identically to a git checkout, and it talks to 127.0.0.1:9200 inside the
+# container, so it still works while every application container is stopped — which is
+# exactly the state restore_database leaves them in between the replay and the restart
+# decision.
+
+# Sidecar artifact suffix, appended to the dump's name with any `.gpg` stripped first, so
+# `opentranscribe_backup_X.sql` and `opentranscribe_backup_X.sql.gpg` both resolve to the
+# same stem and a restore can find the artifact from either form.
+VOICEPRINT_SUFFIX=".voiceprints.ndjson"
+
+# Echo the sidecar artifact path for a dump path (encrypted or not).
+# $1 dump_path
+voiceprint_artifact_path() {
+  local dump_path="${1:-}"
+  echo "${dump_path%.gpg}${VOICEPRINT_SUFFIX}"
+}
+
+# Echo the path to the helper, resolved relative to THIS file so it works from a git
+# checkout, a production install, and a test's temp cwd alike.
+voiceprint_helper_path() {
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  echo "$here/voiceprint-backup.py"
+}
+
+# Shared runner for the three modes below. Fails loudly (never silently degrades) when the
+# helper is missing: an absent helper and "this deployment has no voiceprints" must not
+# look the same, which is the whole failure mode #658 is about.
+#
+# $1 exec_prefix
+# $2 mode          export | import | verify
+# $3 index_base    (optional; defaults to OPENSEARCH_SPEAKER_INDEX, else "speakers")
+_voiceprint_run() {
+  local exec_prefix="$1"
+  local mode="$2"
+  local index_base="${3:-${OPENSEARCH_SPEAKER_INDEX:-speakers}}"
+
+  local helper
+  helper="$(voiceprint_helper_path)"
+  if [ ! -f "$helper" ]; then
+    echo "❌ voiceprint $mode: helper not found at $helper"
+    echo "   Re-download it (release-manifest.txt lists scripts/voiceprint-backup.py) —"
+    echo "   without it, speaker voiceprints are NOT covered by this backup."
+    return 1
+  fi
+
+  local program
+  program="$(cat "$helper")"
+  # shellcheck disable=SC2086
+  $exec_prefix python3 -c "$program" "$mode" --index-base "$index_base"
+}
+
+# Export every speaker index to a single self-describing artifact (manifest line + _bulk
+# pairs). Removes a partial artifact on failure so a half-written file can never be
+# mistaken for a complete one.
+#
+# $1 exec_prefix
+# $2 out_file
+# $3 index_base (optional)
+os_export_speaker_indices() {
+  local exec_prefix="$1"
+  local out_file="$2"
+  local index_base="${3:-}"
+
+  if ! _voiceprint_run "$exec_prefix" export "$index_base" > "$out_file"; then
+    rm -f "$out_file"
+    return 1
+  fi
+}
+
+# Recreate any missing speaker index from the artifact's saved mappings, bulk-load its
+# documents, and restore the read alias.
+#
+# $1 exec_prefix
+# $2 in_file
+# $3 index_base (optional)
+os_import_speaker_indices() {
+  local exec_prefix="$1"
+  local in_file="$2"
+  local index_base="${3:-}"
+
+  _voiceprint_run "$exec_prefix" import "$index_base" < "$in_file"
+}
+
+# Prove the restore actually happened: re-read the live cluster and compare document
+# counts AND a content digest of every embedding against the artifact's manifest.
+# Returns 1 on any mismatch, so a silent zero-voiceprint restore fails loudly instead of
+# reporting success.
+#
+# $1 exec_prefix
+# $2 in_file
+# $3 index_base (optional)
+os_verify_speaker_restore() {
+  local exec_prefix="$1"
+  local in_file="$2"
+  local index_base="${3:-}"
+
+  _voiceprint_run "$exec_prefix" verify "$index_base" < "$in_file"
+}
+
+# Echo how many speaker-PROFILE documents OpenSearch currently holds, or "unknown" when
+# the cluster/alias cannot be read. Used for the Postgres<->OpenSearch consistency report
+# below — `speaker_profile.embedding_count` is a Postgres number describing data that
+# lives only in OpenSearch, so a restore of one without the other leaves rows claiming
+# embeddings that do not exist.
+#
+# $1 exec_prefix
+# $2 index_base (optional)
+os_speaker_profile_doc_count() {
+  local exec_prefix="$1"
+  local index_base="${2:-${OPENSEARCH_SPEAKER_INDEX:-speakers}}"
+
+  local body='{"query":{"term":{"document_type":"profile"}}}'
+  local raw
+  # shellcheck disable=SC2086
+  raw="$($exec_prefix curl -sf -X POST "http://127.0.0.1:9200/${index_base}/_count" \
+         -H 'Content-Type: application/json' -d "$body" 2>/dev/null)" || {
+    echo "unknown"
+    return 0
+  }
+  local count
+  count="$(echo "$raw" | grep -o '"count":[0-9]*' | head -1 | cut -d: -f2)"
+  echo "${count:-unknown}"
+}
+
+# Report whether Postgres and OpenSearch agree about voiceprints, and say plainly when
+# they do not. Never fails the caller — it is a diagnostic, and the authoritative gate is
+# os_verify_speaker_restore above.
+#
+# $1 pg_exec_prefix
+# $2 db_user
+# $3 db_name
+# $4 os_exec_prefix
+report_voiceprint_consistency() {
+  local pg_exec_prefix="$1"
+  local db_user="$2"
+  local db_name="$3"
+  local os_exec_prefix="$4"
+
+  local claiming
+  # shellcheck disable=SC2086
+  claiming="$($pg_exec_prefix psql -tA -U "$db_user" "$db_name" -c \
+    "SELECT count(*) FROM speaker_profile WHERE COALESCE(embedding_count, 0) > 0;" 2>/dev/null | tr -d '[:space:]')"
+  claiming="${claiming:-unknown}"
+
+  local present
+  present="$(os_speaker_profile_doc_count "$os_exec_prefix")"
+
+  echo "🗣️  Voiceprint consistency: $claiming speaker_profile row(s) claim embeddings; OpenSearch holds $present profile document(s)."
+  if [ "$claiming" != "unknown" ] && [ "$present" != "unknown" ] && [ "$claiming" != "$present" ]; then
+    echo "   ⚠️  These disagree. Rows claiming an embedding that OpenSearch does not hold will never"
+    echo "       match a speaker — the profile looks trained in the UI and behaves as if it is not."
+    echo "       Restore the matching *${VOICEPRINT_SUFFIX} artifact, or re-run speaker identification."
+  fi
+}
+
+#######################
 # BACKUP / RESTORE (issue #613)
 #######################
 #
@@ -1018,6 +1193,8 @@ backup_database() {
 
   if [[ "$ENCRYPT_BACKUP" == true ]]; then
     echo "📦 Creating encrypted database backup: ${BACKUP_FILE}.gpg..."
+    echo "ℹ️  gpg will prompt for a passphrase TWICE — once for the database dump, once for the"
+    echo "   speaker-voiceprint artifact beside it. Use the same passphrase for both."
     # Subshell with pipefail so a pg_dump failure isn't masked by gpg succeeding
     # shellcheck disable=SC2086
     if (set -o pipefail; docker compose $compose_files exec -T postgres pg_dump -U "$db_user" "$db_name" \
@@ -1040,6 +1217,42 @@ backup_database() {
       exit 1
     fi
   fi
+
+  # Speaker voiceprints (issue #658). NOT optional and NOT "nice to have": PostgreSQL
+  # holds no embedding vectors, so the dump written above contains none of this
+  # deployment's biometric data. A failure here fails the whole backup — a partial
+  # artifact that reports success is precisely the bug being fixed.
+  local dump_display="./backups/${BACKUP_FILE}"
+  if [[ "$ENCRYPT_BACKUP" == true ]]; then
+    dump_display="${dump_display}.gpg"
+  fi
+  local voiceprint_file
+  voiceprint_file="$(voiceprint_artifact_path "./backups/${BACKUP_FILE}")"
+  echo "🗣️  Exporting speaker voiceprints from OpenSearch..."
+  # The prefix is built as ONE quoted string here and word-split inside _voiceprint_run,
+  # the same exec-prefix contract the pg primitives use.
+  if ! os_export_speaker_indices "docker compose $compose_files exec -T opensearch" "$voiceprint_file"; then
+    echo "❌ Voiceprint export failed — this backup is INCOMPLETE."
+    echo "   The database dump itself succeeded and is at ${dump_display},"
+    echo "   but speaker voiceprints live ONLY in OpenSearch and are not in it. Bring OpenSearch"
+    echo "   up and re-run '$frontend_cmd backup' before relying on this as a restore point."
+    exit 1
+  fi
+
+  if [[ "$ENCRYPT_BACKUP" == true ]]; then
+    if ! gpg --symmetric --cipher-algo AES256 --output "${voiceprint_file}.gpg" "$voiceprint_file"; then
+      rm -f "${voiceprint_file}.gpg"
+      echo "❌ Could not encrypt the voiceprint artifact — leaving it unencrypted would write"
+      echo "   biometric data beside an encrypted dump. Removing it; this backup is INCOMPLETE."
+      rm -f "$voiceprint_file"
+      exit 1
+    fi
+    rm -f "$voiceprint_file"
+    voiceprint_file="${voiceprint_file}.gpg"
+  fi
+  echo "✅ Voiceprints exported: $voiceprint_file"
+  echo "   Keep it BESIDE the dump — 'restore' finds it by name and refuses to report success"
+  echo "   if the voiceprints it holds do not come back."
 }
 
 # Function to restore database from backup (issue #599)
@@ -1283,9 +1496,11 @@ restore_database() {
       echo "   ⚠️  --no-safety-dump: no safety dump will be taken. The current database is NOT recoverable after this."
     fi
     echo ""
-    echo "   ⚠️  MinIO (media files) and OpenSearch (search indices) are NOT rolled back with the"
+    echo "   ⚠️  MinIO (media files) and the OpenSearch SEARCH indices are NOT rolled back with the"
     echo "   database — restoring only PostgreSQL creates a time skew (media with no row, rows with"
     echo "   no media, stale search hits). Reindex from Admin → Search afterwards."
+    echo "   The OpenSearch SPEAKER indices ARE rolled back when a *${VOICEPRINT_SUFFIX} artifact"
+    echo "   sits beside this dump (issue #658) — those hold voiceprints, which exist nowhere else."
     echo ""
     printf '   Type the database name ("%s") to confirm, anything else cancels: ' "$db_name"
     local confirm_name
@@ -1426,6 +1641,66 @@ restore_database() {
 
   [ -n "$temp_sql" ] && rm -f "$temp_sql"
 
+  # ---- Speaker voiceprints (issue #658) ------------------------------------------------
+  # Runs AFTER the database replay has been verified (so a failed replay never replaces the
+  # live voiceprints with an older set) and BEFORE the restart decision (so the app never
+  # comes back up over a half-restored speaker plane). OpenSearch is deliberately NOT in the
+  # stop list above, so this works with every application container still stopped.
+  local os_exec_prefix="docker compose $compose_files exec -T opensearch"
+  local voiceprint_file=""
+  local voiceprint_temp=""
+  local voiceprint_plain
+  voiceprint_plain="$(voiceprint_artifact_path "$backup_file")"
+  if [ -f "$voiceprint_plain" ]; then
+    voiceprint_file="$voiceprint_plain"
+  elif [ -f "${voiceprint_plain}.gpg" ]; then
+    if ! command -v gpg &> /dev/null; then
+      echo "❌ Found ${voiceprint_plain}.gpg but gpg is not installed — cannot restore voiceprints."
+      echo "   Install gnupg (e.g. 'apt install gnupg') and re-run the restore."
+      echo "⏸️  Services left stopped."
+      exit 1
+    fi
+    echo "🔓 Decrypting the voiceprint artifact..."
+    voiceprint_temp=$(mktemp ./backups/.voiceprints_XXXXXX)
+    if ! gpg --yes --output "$voiceprint_temp" --decrypt "${voiceprint_plain}.gpg"; then
+      rm -f "$voiceprint_temp"
+      echo "❌ Could not decrypt ${voiceprint_plain}.gpg — voiceprints were NOT restored."
+      echo "⏸️  Services left stopped."
+      exit 1
+    fi
+    voiceprint_file="$voiceprint_temp"
+  fi
+
+  if [ -n "$voiceprint_file" ]; then
+    echo "🗣️  Restoring speaker voiceprints into OpenSearch..."
+    if ! os_import_speaker_indices "$os_exec_prefix" "$voiceprint_file"; then
+      [ -n "$voiceprint_temp" ] && rm -f "$voiceprint_temp"
+      echo "❌ Voiceprint restore failed. The database was restored and verified, but the speaker"
+      echo "   embeddings are NOT in place — every profile would silently stop matching."
+      echo "   Fix OpenSearch and re-run: $frontend_cmd restore --yes $backup_file"
+      echo "⏸️  Services left stopped — bringing the app up now would run against a half-restored"
+      echo "   speaker plane and start writing new embeddings into it."
+      exit 1
+    fi
+    echo "🔍 Verifying voiceprint restore..."
+    if ! os_verify_speaker_restore "$os_exec_prefix" "$voiceprint_file"; then
+      [ -n "$voiceprint_temp" ] && rm -f "$voiceprint_temp"
+      echo "❌ Voiceprint verification failed — the live indices do not match the backup (see the"
+      echo "   mismatch(es) above). A restore that silently comes back with zero voiceprints is"
+      echo "   the same data loss with extra steps, so this is treated as a failed restore."
+      echo "⏸️  Services left stopped."
+      exit 1
+    fi
+    [ -n "$voiceprint_temp" ] && rm -f "$voiceprint_temp"
+    echo "✅ Voiceprints restored and verified against the backup's content digest."
+  else
+    echo "⚠️  No voiceprint artifact found beside this backup (looked for ${voiceprint_plain}"
+    echo "   and ${voiceprint_plain}.gpg). Backups taken before issue #658 do not have one:"
+    echo "   speaker embeddings live ONLY in OpenSearch and are NOT in the SQL dump, so whatever"
+    echo "   OpenSearch currently holds is what this deployment now has."
+  fi
+  report_voiceprint_consistency "$exec_prefix" "$db_user" "$db_name" "$os_exec_prefix"
+
   # Decide whether it is safe to bring the app back up automatically (issue #610). The
   # decision is made by the shared, independently-tested pg_restore_restart_decision
   # (scripts/common.sh) — never reimplemented here — so both front ends and their test
@@ -1460,8 +1735,9 @@ restore_database() {
     "${restart_services[@]}"
     echo "✅ Database restored successfully."
   fi
-  echo "ℹ️  MinIO and OpenSearch were NOT rolled back — reindex from Admin → Search if the"
-  echo "   restored database's file list differs from what MinIO/OpenSearch currently have."
+  echo "ℹ️  MinIO and the OpenSearch SEARCH indices were NOT rolled back — reindex from"
+  echo "   Admin → Search if the restored database's file list differs from what they hold."
+  echo "   (The speaker/voiceprint indices were handled above — see the line starting 🗣️.)"
   if [ -n "$safety_dump_file" ]; then
     echo "   Pre-restore safety dump of the database this replaced: $safety_dump_file"
   fi

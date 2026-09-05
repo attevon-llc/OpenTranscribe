@@ -173,11 +173,22 @@ check_fresh_install() {
     fi
     pass "fresh install at ${tag}: all required artifacts downloaded"
 
+    # issue #723: when the manifest had to be borrowed from the default branch (this tag
+    # predates release-manifest.txt), a REQUIRED entry the borrowed manifest lists but $tag
+    # never shipped (e.g. NOTICE) is expected to be missing, and download_release_manifest_
+    # artifacts() now skips it instead of failing the install. Demanding it here would fail
+    # a gate the installer itself considers a pass, and is exactly the class of bug #723
+    # found: a REQUIRED addition to today's manifest retroactively breaking every already
+    # published release's install.
+    local manifest_borrowed=false
     if grep -q "predates release-manifest.txt" "$log"; then
+        manifest_borrowed=true
         info "used the fallback manifest (this release predates release-manifest.txt)"
     fi
 
-    # Every non-optional manifest entry must be on disk.
+    # Every non-optional manifest entry must be on disk -- unless the manifest itself was
+    # borrowed from a newer ref, in which case a missing entry means "this tag predates the
+    # file", not a broken install.
     local missing=() path flags
     while IFS= read -r line; do
         case "$line" in '' | '#'*) continue ;; esac
@@ -185,6 +196,7 @@ check_fresh_install() {
         flags=$(printf '%s' "$line" | cut -s -f2)
         [[ -n "$path" ]] || continue
         case ",$flags," in *,optional,*) continue ;; esac
+        [[ "$manifest_borrowed" == true ]] && continue
         [[ -f "$workdir/$path" ]] || missing+=("$path")
     done <"$workdir/release-manifest.txt"
 

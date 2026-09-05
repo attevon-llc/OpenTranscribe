@@ -325,7 +325,7 @@
     color: #a16207;
   }
 
-  :global(.dark) .keyword-count-badge {
+  :global([data-theme='dark']) .keyword-count-badge {
     background: rgba(250, 204, 21, 0.12);
     color: #fbbf24;
   }
@@ -335,7 +335,7 @@
     color: #d97706;
   }
 
-  :global(.dark) .semantic-count-badge {
+  :global([data-theme='dark']) .semantic-count-badge {
     background: rgba(251, 191, 36, 0.12);
     color: #fcd34d;
   }
@@ -424,7 +424,7 @@
     color: var(--color-success-text, #166534);
   }
 
-  :global(.dark) .source-content {
+  :global([data-theme='dark']) .source-content {
     background: rgba(34, 197, 94, 0.15);
     color: #4ade80;
   }
@@ -434,7 +434,7 @@
     color: var(--color-info-text, #1e40af);
   }
 
-  :global(.dark) .source-title {
+  :global([data-theme='dark']) .source-title {
     background: rgba(59, 130, 246, 0.15);
     color: #60a5fa;
   }
@@ -444,7 +444,7 @@
     color: #059669;
   }
 
-  :global(.dark) .source-speaker {
+  :global([data-theme='dark']) .source-speaker {
     background: rgba(16, 185, 129, 0.12);
     color: #34d399;
   }
@@ -454,7 +454,7 @@
     color: #d97706;
   }
 
-  :global(.dark) .semantic-badge {
+  :global([data-theme='dark']) .semantic-badge {
     background: rgba(251, 191, 36, 0.15);
     color: #fcd34d;
   }
@@ -464,7 +464,7 @@
     color: #0d9488;
   }
 
-  :global(.dark) .source-metadata_speaker {
+  :global([data-theme='dark']) .source-metadata_speaker {
     background: rgba(13, 148, 136, 0.15);
     color: #5eead4;
   }
@@ -475,7 +475,7 @@
     font-weight: 600;
   }
 
-  :global(.dark) .dual-match-badge {
+  :global([data-theme='dark']) .dual-match-badge {
     background: rgba(129, 140, 248, 0.15);
     color: #818cf8;
   }
@@ -485,7 +485,7 @@
     color: var(--text-secondary, #6b7280);
   }
 
-  :global(.dark) .relevance-badge {
+  :global([data-theme='dark']) .relevance-badge {
     background: rgba(255, 255, 255, 0.08);
     color: #9ca3af;
   }
@@ -509,7 +509,7 @@
     color: #a16207;
   }
 
-  :global(.dark) .occurrence-type-label.exact {
+  :global([data-theme='dark']) .occurrence-type-label.exact {
     background: rgba(250, 204, 21, 0.12);
     color: #fbbf24;
   }
@@ -519,7 +519,7 @@
     color: #d97706;
   }
 
-  :global(.dark) .occurrence-type-label.related {
+  :global([data-theme='dark']) .occurrence-type-label.related {
     background: rgba(251, 191, 36, 0.12);
     color: #fcd34d;
   }
@@ -611,7 +611,7 @@
     border-color: var(--primary-color, #4f46e5);
   }
 
-  :global(.dark) .view-transcript-btn:hover {
+  :global([data-theme='dark']) .view-transcript-btn:hover {
     background: rgba(129, 140, 248, 0.12);
   }
 
@@ -626,7 +626,7 @@
     gap: 0.25rem;
   }
 
-  :global(.dark) .meta-chip {
+  :global([data-theme='dark']) .meta-chip {
     background: rgba(255, 255, 255, 0.07);
     border-color: rgba(255, 255, 255, 0.12);
     color: #9ca3af;

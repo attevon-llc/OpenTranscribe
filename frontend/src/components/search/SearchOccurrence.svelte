@@ -117,7 +117,7 @@
     font-weight: 500;
   }
 
-  :global(.dark) .snippet :global(mark.semantic) {
+  :global([data-theme='dark']) .snippet :global(mark.semantic) {
     background: rgba(251, 191, 36, 0.25);
   }
 
@@ -128,7 +128,7 @@
     border-radius: 0 4px 4px 0;
   }
 
-  :global(.dark) .snippet.semantic-snippet {
+  :global([data-theme='dark']) .snippet.semantic-snippet {
     background: rgba(251, 191, 36, 0.1);
     border-left-color: rgba(251, 191, 36, 0.35);
   }

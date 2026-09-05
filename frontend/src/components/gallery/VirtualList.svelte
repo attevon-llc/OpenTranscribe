@@ -371,7 +371,7 @@
     background: rgba(59, 130, 246, 0.05);
   }
 
-  :global(.dark) .file-list-row.navigating {
+  :global([data-theme='dark']) .file-list-row.navigating {
     background: rgba(59, 130, 246, 0.1);
   }
 

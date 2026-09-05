@@ -573,7 +573,7 @@
     text-transform: capitalize;
   }
 
-  :global(.dark) .shared-chip {
+  :global([data-theme='dark']) .shared-chip {
     background: rgba(59, 130, 246, 0.15);
     color: #60a5fa;
   }

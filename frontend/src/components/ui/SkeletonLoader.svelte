@@ -38,7 +38,6 @@
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
 
-  :global(.dark) .skeleton-line,
   :global([data-theme='dark']) .skeleton-line {
     background: linear-gradient(
       90deg,

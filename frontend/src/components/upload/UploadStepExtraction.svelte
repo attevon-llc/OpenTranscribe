@@ -199,7 +199,7 @@
     background: rgba(59, 130, 246, 0.04);
   }
 
-  :global(.dark) .choice-option.selected {
+  :global([data-theme='dark']) .choice-option.selected {
     background: rgba(59, 130, 246, 0.08);
   }
 

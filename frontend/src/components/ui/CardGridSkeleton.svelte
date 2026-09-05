@@ -166,7 +166,7 @@
     z-index: 1;
   }
 
-  :global(.dark) .skel-thumb-icon {
+  :global([data-theme='dark']) .skel-thumb-icon {
     color: rgba(148, 163, 184, 0.35);
   }
 
@@ -254,7 +254,7 @@
     background: rgba(100, 116, 139, 0.12);
   }
 
-  :global(.dark) .shimmer {
+  :global([data-theme='dark']) .shimmer {
     background: rgba(148, 163, 184, 0.1);
   }
 
@@ -272,7 +272,7 @@
     animation: shimmerSlide 1.4s ease-in-out infinite;
   }
 
-  :global(.dark) .shimmer::after {
+  :global([data-theme='dark']) .shimmer::after {
     background: linear-gradient(
       90deg,
       transparent 0%,

@@ -448,7 +448,7 @@
     overflow: hidden;
   }
 
-  :global(.dark) .notifications-panel {
+  :global([data-theme='dark']) .notifications-panel {
     box-shadow:
       0 20px 25px -5px rgba(0, 0, 0, 0.4),
       0 10px 10px -5px rgba(0, 0, 0, 0.2),
@@ -583,7 +583,7 @@
     background: rgba(59, 130, 246, 0.04);
   }
 
-  :global(.dark) .notification-item.unread {
+  :global([data-theme='dark']) .notification-item.unread {
     background: rgba(59, 130, 246, 0.08);
   }
 

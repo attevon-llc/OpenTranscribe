@@ -344,19 +344,19 @@ By using this IS (which includes any device attached to this IS), you consent to
   }
 
   /* Dark mode adjustments */
-  :global(.dark) .consent-modal {
+  :global([data-theme='dark']) .consent-modal {
     background-color: #1e293b;
   }
 
-  :global(.dark) .consent-body {
+  :global([data-theme='dark']) .consent-body {
     background-color: #0f172a;
   }
 
-  :global(.dark) .consent-text {
+  :global([data-theme='dark']) .consent-text {
     color: #e2e8f0;
   }
 
-  :global(.dark) .consent-footer {
+  :global([data-theme='dark']) .consent-footer {
     background-color: #1e293b;
     border-top-color: #334155;
   }

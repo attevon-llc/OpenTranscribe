@@ -494,10 +494,10 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   }
 
-  :global(.dark) .collections-btn:hover:not(:disabled),
-  :global(.dark) .tags-btn:hover:not(:disabled),
-  :global(.dark) .select-btn:hover:not(:disabled),
-  :global(.dark) .organize-btn:hover:not(:disabled) {
+  :global([data-theme='dark']) .collections-btn:hover:not(:disabled),
+  :global([data-theme='dark']) .tags-btn:hover:not(:disabled),
+  :global([data-theme='dark']) .select-btn:hover:not(:disabled),
+  :global([data-theme='dark']) .organize-btn:hover:not(:disabled) {
     background-color: rgba(255, 255, 255, 0.08);
   }
 

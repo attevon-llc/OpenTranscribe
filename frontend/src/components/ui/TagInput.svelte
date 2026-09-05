@@ -126,7 +126,7 @@
   }
 
   :global([data-theme='dark']) .tag-pill,
-  :global(.dark) .tag-pill {
+  :global([data-theme='dark']) .tag-pill {
     background: rgba(59, 130, 246, 0.2);
     color: #60a5fa;
   }

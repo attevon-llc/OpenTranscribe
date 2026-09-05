@@ -481,25 +481,25 @@
   }
 
   /* Dark mode adjustments */
-  :global(.dark) .upload-panel {
+  :global([data-theme='dark']) .upload-panel {
     background: var(--surface-color);
     border-color: var(--border-color);
   }
 
-  :global(.dark) .overall-progress {
+  :global([data-theme='dark']) .overall-progress {
     background: var(--background-color);
     border-color: var(--border-color);
   }
 
-  :global(.dark) .progress-label {
+  :global([data-theme='dark']) .progress-label {
     color: var(--text-primary);
   }
 
-  :global(.dark) .progress-percent {
+  :global([data-theme='dark']) .progress-percent {
     color: var(--text-secondary);
   }
 
-  :global(.dark) .progress-bar {
+  :global([data-theme='dark']) .progress-bar {
     background: var(--border-color);
   }
 

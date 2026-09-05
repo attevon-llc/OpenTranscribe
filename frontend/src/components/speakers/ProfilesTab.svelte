@@ -357,7 +357,7 @@
     vertical-align: middle;
     white-space: nowrap;
   }
-  :global(.dark) .shared-badge {
+  :global([data-theme='dark']) .shared-badge {
     background: rgba(99, 102, 241, 0.2);
     color: #a5b4fc;
   }

@@ -124,4 +124,27 @@ second client-side exporter believing this exception still applies.
   edition's vendors — CI's seam-guard greps `frontend/src` (and `backend/app`) for `clerk|stripe`
   and fails the build on a match.
 
+## Theming — two rules that have both already shipped a bug (issue #746)
+
+Tokens live in `src/styles/theme.css`; the light values are on `:root`, the dark ones on
+`[data-theme='dark']`. `src/stores/theme.js` sets **`data-theme` on `<html>`** and
+`theme-<light|dark>` on `<body>`.
+
+- **The dark-mode selector is `:global([data-theme='dark'])`, never `:global(.dark)`.** No
+  element in this app is ever given the class `dark`, so 34 components had written their entire
+  dark-mode override against a selector that could not match: the light value stayed applied in
+  dark mode and nothing failed. `src/styles/theme-parity.test.ts` now fails on any new one.
+- **A global element rule can out-specify a component's scoped rule, so don't set colours on
+  `button:<pseudo-class>` in `src/styles/form-elements.css`.** Svelte compiles `.foo { … }` to
+  `.foo.svelte-HASH` — specificity (0,2,0) — which `button:focus:not(:disabled)` (0,2,1) beats.
+  That is exactly how #746 happened: the global focus rule repainted `background-color`, browsers
+  put `:focus` on a button on mouse-down, and every icon button styled
+  `.foo { background: <solid>; color: white }` turned into a white glyph on a near-transparent
+  background — invisible in light mode — as soon as it was clicked. Focus feedback is an
+  `outline` on `:focus-visible` now; keep it that way.
+
+Hand-rolled icon buttons are where this recurs, because they are copied rather than reused.
+Prefer the `ui/` primitives (`SearchBar`'s clear/next controls, `CopyButton`, `Chip`,
+`BaseModal`'s header close) over re-declaring the pattern.
+
 ## Verify UI changes in a browser (light + dark) — type-check ≠ feature-check.

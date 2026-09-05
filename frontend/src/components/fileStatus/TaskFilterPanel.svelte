@@ -144,7 +144,7 @@
     white-space: nowrap;
   }
 
-  :global(.dark) .quick-chip,
+  :global([data-theme='dark']) .quick-chip,
   :global([data-theme='dark']) .quick-chip {
     background: rgba(96, 165, 250, 0.12);
     color: #93c5fd;
@@ -155,7 +155,7 @@
     transform: translateY(-1px);
   }
 
-  :global(.dark) .quick-chip:hover,
+  :global([data-theme='dark']) .quick-chip:hover,
   :global([data-theme='dark']) .quick-chip:hover {
     background: rgba(96, 165, 250, 0.2);
   }
@@ -302,7 +302,7 @@
     font-size: 0.8rem !important;
   }
 
-  :global(.dark) .date-picker-inline :global(.datepicker .calendars-container),
+  :global([data-theme='dark']) .date-picker-inline :global(.datepicker .calendars-container),
   :global([data-theme='dark']) .date-picker-inline :global(.datepicker .calendars-container) {
     --datepicker-container-background: var(--surface-color, #1e293b);
     --datepicker-container-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);

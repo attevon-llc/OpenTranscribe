@@ -1344,7 +1344,7 @@
     margin-top: 0.25rem;
   }
 
-  :global(.dark) .collection-tag {
+  :global([data-theme='dark']) .collection-tag {
     background: rgba(var(--primary-color-rgb), 0.2);
     color: #60a5fa;
   }
@@ -1595,7 +1595,7 @@
   }
 
   :global([data-theme='dark']) .config-item.shared,
-  :global(.dark) .config-item.shared {
+  :global([data-theme='dark']) .config-item.shared {
     background: rgba(96, 165, 250, 0.06);
   }
 
@@ -1613,7 +1613,7 @@
   }
 
   :global([data-theme='dark']) .share-badge,
-  :global(.dark) .share-badge {
+  :global([data-theme='dark']) .share-badge {
     background: rgba(96, 165, 250, 0.15);
     color: #60a5fa;
   }
@@ -1632,7 +1632,7 @@
   }
 
   :global([data-theme='dark']) .admin-badge,
-  :global(.dark) .admin-badge {
+  :global([data-theme='dark']) .admin-badge {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
   }
@@ -1649,7 +1649,7 @@
   }
 
   :global([data-theme='dark']) .shared-section-header h4,
-  :global(.dark) .shared-section-header h4 {
+  :global([data-theme='dark']) .shared-section-header h4 {
     color: #60a5fa;
   }
 
@@ -1673,7 +1673,7 @@
   }
 
   :global([data-theme='dark']) .tag-pill,
-  :global(.dark) .tag-pill {
+  :global([data-theme='dark']) .tag-pill {
     background: rgba(var(--primary-color-rgb), 0.2);
     color: #60a5fa;
   }

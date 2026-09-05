@@ -295,7 +295,7 @@
     border-radius: 6px;
   }
 
-  :global(.dark) .permission-guide {
+  :global([data-theme='dark']) .permission-guide {
     background: rgba(59, 130, 246, 0.08);
     border-color: rgba(59, 130, 246, 0.2);
   }

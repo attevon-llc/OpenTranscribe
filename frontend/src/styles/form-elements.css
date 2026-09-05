@@ -102,12 +102,34 @@ button {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-button:hover:not(:disabled),
-button:focus:not(:disabled) {
+button:hover:not(:disabled) {
   background-color: var(--button-hover);
   transform: scale(1.02);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   text-decoration: none !important;
+}
+
+/*
+ * Focus must NOT repaint the background (issue #746).
+ *
+ * This rule used to read `button:hover:not(:disabled), button:focus:not(:disabled)`,
+ * which repainted `background-color: var(--button-hover)` on focus as well as hover.
+ * A browser puts `:focus` on a <button> on plain mouse-down, so the repaint stuck
+ * after every click, and its specificity — (0,2,1): `button` + `:focus` + `:not(:disabled)`
+ * — beats every Svelte-scoped single-class rule, which the compiler emits as
+ * `.foo.svelte-HASH`, i.e. (0,2,0). So a component that styled an icon button as
+ * `.foo { background: <solid brand colour>; color: white }` lost its solid background
+ * the moment it was clicked and was left with a white glyph on `var(--button-hover)`
+ * (`rgba(0, 0, 0, 0.05)` in light mode) over a white surface — an invisible button.
+ * Confirmed instances: TranscriptSearch's jump/next-match control and the gallery
+ * toolbar's `.upload-btn` / `.cancel-btn`.
+ *
+ * Keyboard focus now gets a ring instead, which is both the accessible treatment and
+ * specificity-safe (it sets no colour a component could be relying on).
+ */
+button:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 button:active:not(:disabled) {
@@ -121,8 +143,8 @@ button.primary {
   box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
 }
 
-button.primary:hover:not(:disabled),
-button.primary:focus:not(:disabled) {
+/* `:focus` deliberately omitted — see the `button:focus-visible` note above (#746). */
+button.primary:hover:not(:disabled) {
   background-color: #2563eb;
   color: white !important;
   transform: scale(1.02);

@@ -408,7 +408,7 @@
     }
   }
 
-  :global(.dark) .file-card.new-file {
+  :global([data-theme='dark']) .file-card.new-file {
     animation: newFileGlowDark 0.6s ease-out;
   }
 
@@ -439,7 +439,7 @@
     box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
   }
 
-  :global(.dark) .file-card.selected {
+  :global([data-theme='dark']) .file-card.selected {
     background-color: rgba(59, 130, 246, 0.1);
     border-color: #60a5fa;
     box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
@@ -518,7 +518,7 @@
     background-color: rgba(0, 0, 0, 0.03);
   }
 
-  :global(.dark) .thumbnail-container {
+  :global([data-theme='dark']) .thumbnail-container {
     background-color: rgba(255, 255, 255, 0.05);
   }
 
@@ -722,20 +722,20 @@
 
   /* --- Dark mode --- */
 
-  :global(.dark) .file-card {
+  :global([data-theme='dark']) .file-card {
     background: var(--surface-color);
     border-color: var(--border-color);
   }
 
-  :global(.dark) .file-card:hover {
+  :global([data-theme='dark']) .file-card:hover {
     border-color: var(--border-hover);
   }
 
-  :global(.dark) .file-name {
+  :global([data-theme='dark']) .file-name {
     color: var(--text-primary);
   }
 
-  :global(.dark) .meta-line {
+  :global([data-theme='dark']) .meta-line {
     color: var(--text-secondary);
   }
 

@@ -230,8 +230,8 @@
     background-color: rgba(59, 130, 246, 0.05);
   }
 
-  :global(.dark) .drop-zone:hover,
-  :global(.dark) .drop-zone.active {
+  :global([data-theme='dark']) .drop-zone:hover,
+  :global([data-theme='dark']) .drop-zone.active {
     background-color: rgba(59, 130, 246, 0.1);
   }
 

@@ -771,6 +771,28 @@ def extract_v4_embeddings_task(
 # Finalize task (safe version)
 # ---------------------------------------------------------------------------
 
+_PROFILE_DOC_QUERY = {"query": {"term": {"document_type": "profile"}}}
+
+
+def _count_profile_docs(client, index: str) -> int | None:
+    """Count `document_type: "profile"` docs in an index.
+
+    Fail-closed: returns ``None`` (never ``0``) whenever the count cannot be
+    trusted — the index is missing, or the count query itself errors. Callers
+    MUST treat ``None`` as "refuse", never as "no profiles to worry about".
+    Profile documents (voiceprints) are OpenSearch's ONLY copy — Postgres
+    stores no embedding vectors (see `app/models/media.py`'s note on
+    `Speaker` / `SpeakerProfile`) — so an unresolvable count is not a reason
+    to proceed, it is the reason to stop.
+    """
+    try:
+        if not client.indices.exists(index=index):
+            return None
+        return int(client.count(index=index, body=_PROFILE_DOC_QUERY)["count"])
+    except Exception as e:
+        logger.error(f"Profile-doc count failed for index '{index}': {e}")
+        return None
+
 
 @celery_app.task(bind=True, name="finalize_v4_migration", priority=UtilityPriority.BACKGROUND)
 def finalize_v4_migration_task(self, user_id: int = 1):
@@ -778,6 +800,11 @@ def finalize_v4_migration_task(self, user_id: int = 1):
 
     Safety checks:
     - Count validation: reject if v4 has <50% of v3 docs
+    - Profile-voiceprint guard: reject on ANY shortfall of `document_type:
+      "profile"` docs between v3 and v4, or if either count is unresolvable.
+      OpenSearch is the only copy of these embeddings (issue #657) and the
+      total-doc-count ratio above cannot detect a profile-only loss, so this
+      is a separate, fail-closed gate alongside it — not a replacement.
     - Flush v4 before swap to ensure all docs are persisted
     - Post-swap verification: reject if new main has <95% of v4 count
     - finally block ALWAYS clears mode cache + releases migration lock
@@ -823,6 +850,38 @@ def finalize_v4_migration_task(self, user_id: int = 1):
                     f"V4 index has only {v4_count} docs vs {v3_count} in v3 "
                     f"({v4_count / v3_count * 100:.0f}%). "
                     "Migration appears incomplete. Aborting finalize."
+                ),
+            }
+
+        # ---- Profile-voiceprint guard (fail-closed, issue #657) ----
+        # The total-doc-count ratio above cannot catch a profile-only loss:
+        # v3 legitimately holds more docs than v4 for unrelated reasons, so
+        # the ratio absorbs a missing set of profile docs. Check separately.
+        v3_profile_count = _count_profile_docs(client, v3_index)
+        v4_profile_count = _count_profile_docs(client, v4_index)
+
+        if v3_profile_count is None or v4_profile_count is None:
+            return {
+                "status": "error",
+                "message": (
+                    "Cannot verify profile voiceprint counts "
+                    f"(v3='{v3_index}': {v3_profile_count}, "
+                    f"v4='{v4_index}': {v4_profile_count}). "
+                    "Refusing to swap — OpenSearch is the only copy of these "
+                    "embeddings and the count could not be confirmed safe."
+                ),
+            }
+
+        if v3_profile_count > v4_profile_count:
+            return {
+                "status": "error",
+                "message": (
+                    f"V4 index has only {v4_profile_count} profile voiceprint "
+                    f"doc(s) vs {v3_profile_count} in v3. Finalizing would "
+                    "silently drop profile voiceprints (OpenSearch is their "
+                    "only copy — Postgres stores no embedding vectors). "
+                    "Aborting finalize; carry profile docs into v4 before "
+                    "retrying."
                 ),
             }
 

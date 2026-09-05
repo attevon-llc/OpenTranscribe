@@ -340,6 +340,13 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_PER_MINUTE: int = 10
     # Rate limit for general API endpoints
     RATE_LIMIT_API_PER_MINUTE: int = 100
+    # Rate limit for handlers that make a server-side outbound request to a caller-supplied
+    # base_url (LLM connection-test + model-discovery, issue #676). Deliberately tighter than
+    # the general API limit: a connection test is a human-scale action, and this router has
+    # no admin gate, so an uncapped limit here is an amplification/resource-exhaustion surface
+    # even though the target itself is DNS-pinned against private IPs (see
+    # `_assert_safe_llm_endpoint`/`_pin_llm_endpoint` in `app/api/endpoints/llm_settings.py`).
+    RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE: int = 10
     # Enable rate limiting (disable for testing)
     RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
     # Trusted proxy IPs for rate limiting (comma-separated)

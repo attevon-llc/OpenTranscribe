@@ -1431,6 +1431,24 @@ def merge_speakers(
         f"Queued background merge processing for {source_speaker_uuid} -> {target_speaker.uuid}"
     )
 
+    # `_update_opensearch_speaker_merge` (in the background task above) only
+    # touches the speaker/voiceprint index — every segment that used to belong
+    # to the source speaker was just reassigned to the target in Postgres, but
+    # the chunk plane's `speaker`/`speakers` snapshot and turn grouping for
+    # both files kept the pre-merge attribution until a full reindex ran
+    # (issue #666). One file when source and target share a recording, two
+    # when they don't.
+    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+    for media_file_id in affected_media_files:
+        merged_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
+        if merged_file:
+            dispatch_transcript_reindex(
+                file_id=merged_file.id,
+                file_uuid=str(merged_file.uuid),
+                user_id=int(merged_file.user_id),
+            )
+
     # Invalidate caches
     try:
         from app.services.redis_cache_service import redis_cache

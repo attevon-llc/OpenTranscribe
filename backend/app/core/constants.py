@@ -287,6 +287,13 @@ SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprec
 SEARCH_CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_MAX_SIZE = 256
 
+# How long a mutation (segment edit, speaker reassignment/merge, rediarize) waits
+# before a real re-index actually runs (issue #666). A Redis SETNX debounce keyed
+# per file coalesces bursts of edits — a user correcting twenty segments in a row
+# queues one re-index, not twenty — at the cost of the edit being searchable this
+# many seconds later rather than immediately.
+TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS = 15
+
 # OpenSearch Native Neural Search Model Registry
 # These models are registered and deployed directly in OpenSearch via ML Commons plugin
 # Organized by quality tier (Fast → Balanced → Best) and language support (English / Multilingual)

@@ -305,10 +305,18 @@ def get_gpu_usage():
 
 
 def _delete_user_speakers(db: Session, user_id: int) -> None:
-    """Delete all speakers for a user, including OpenSearch embeddings.
+    """Delete all speakers for a user. Pure DB — no OpenSearch here (issue #715).
 
-    Collects speaker UUIDs before bulk SQL delete so OpenSearch can be cleaned
-    even though the bulk operation bypasses ORM instance-level callbacks.
+    This used to remove each speaker's OpenSearch embedding itself, one round trip
+    per speaker, from inside the caller's open transaction (``delete_admin_user``'s
+    ``db.begin_nested()`` savepoint, or the bare request transaction in
+    ``users.delete_user``) — holding locks, including ``ACCESS SHARE`` on
+    ``media_file`` taken moments later, for as long as OpenSearch took to answer. The
+    caller now reads every speaker UUID via
+    ``file_cleanup_service.load_account_purge_plans`` **before** this function runs
+    and removes the embeddings via ``purge_account_external_copies`` **after** its own
+    transaction commits, with no session held — the same phase split
+    ``_delete_user_owned_records`` already uses for ``SpeakerProfile`` avatars.
 
     **The segment detach is not optional.** ``transcript_segment.speaker_id`` is a
     plain FK with ``ON DELETE NO ACTION``, and this runs *before*
@@ -346,16 +354,6 @@ def _delete_user_speakers(db: Session, user_id: int) -> None:
     db.query(Speaker).filter(Speaker.user_id == user_id).delete(synchronize_session=False)
     logger.info("Speakers deleted from DB")
 
-    # Clean OpenSearch embeddings after bulk DB delete (non-fatal)
-    try:
-        from app.services.opensearch_service import remove_speaker_embedding
-
-        for uuid in speaker_uuids:
-            remove_speaker_embedding(uuid)
-        logger.info(f"Removed {len(speaker_uuids)} speaker embeddings from OpenSearch")
-    except Exception as e:
-        logger.warning(f"OpenSearch speaker cleanup failed during user {user_id} deletion: {e}")
-
 
 def _delete_user_owned_records(db: Session, user_id: int) -> None:
     """Delete all user-owned records that are not covered by DB-level CASCADE.
@@ -388,6 +386,13 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     via ``file_cleanup_service.load_account_purge_plans`` **before** this function runs
     and destroys the objects via ``purge_account_external_copies`` after the
     transaction commits.
+
+    **Nor are the profiles' OpenSearch embeddings** (issue #715). This used to remove
+    each one itself, one round trip per profile, from inside the caller's open
+    transaction — the same defect ``_delete_user_speakers`` had. The caller now reads
+    every profile UUID via ``load_account_purge_plans`` alongside the avatar paths and
+    removes the embeddings via ``purge_account_external_copies`` after the transaction
+    commits.
     """
     # Speaker collections and their members
     sc_ids = [
@@ -412,9 +417,8 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         db.query(Collection).filter(Collection.user_id == user_id).delete(synchronize_session=False)
         logger.info(f"Deleted {len(col_ids)} collections for user {user_id}")
 
-    # Speaker profiles — collect UUIDs first so OpenSearch can be cleaned
-    profile_rows = db.query(SpeakerProfile.uuid).filter(SpeakerProfile.user_id == user_id).all()
-    profile_uuids = [str(row[0]) for row in profile_rows]
+    # Speaker profiles. OpenSearch embeddings are NOT removed here — see the
+    # docstring; the caller's purge plan already has every UUID.
     profiles_deleted = (
         db.query(SpeakerProfile)
         .filter(SpeakerProfile.user_id == user_id)
@@ -422,14 +426,6 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     )
     if profiles_deleted:
         logger.info(f"Deleted {profiles_deleted} speaker profiles for user {user_id}")
-        try:
-            from app.services.opensearch_service import remove_profile_embedding
-
-            for puuid in profile_uuids:
-                remove_profile_embedding(puuid)
-            logger.info(f"Removed {len(profile_uuids)} profile embeddings from OpenSearch")
-        except Exception as e:
-            logger.warning(f"OpenSearch profile cleanup failed during user {user_id} deletion: {e}")
 
     # Comments
     comments_deleted = (

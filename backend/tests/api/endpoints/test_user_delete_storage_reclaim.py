@@ -32,6 +32,7 @@ from minio.error import S3Error
 from app.auth.audit import AuditOutcome
 from app.core.config import settings
 from app.models.media import MediaFile
+from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.models.user import User
 from app.services.minio_service import minio_client
@@ -409,6 +410,153 @@ def test_the_media_file_delete_is_still_one_statement(
         event.remove(engine, "before_cursor_execute", _before_cursor_execute)
 
     assert len(statements) == 1, f"expected exactly one bulk DELETE, got {statements}"
+
+
+def _make_speaker(db_session, user_id: int, media_file_id: int, **kwargs) -> Speaker:
+    speaker = Speaker(
+        uuid=kwargs.pop("uuid", None) or uuid_pkg.uuid4(),
+        user_id=user_id,
+        media_file_id=media_file_id,
+        name=kwargs.pop("name", "SPEAKER_00"),
+        **kwargs,
+    )
+    db_session.add(speaker)
+    db_session.commit()
+    db_session.refresh(speaker)
+    return speaker
+
+
+def _make_speaker_profile(db_session, user_id: int, **kwargs) -> SpeakerProfile:
+    profile = SpeakerProfile(
+        uuid=kwargs.pop("uuid", None) or uuid_pkg.uuid4(),
+        user_id=user_id,
+        name=kwargs.pop("name", f"Profile {uuid_pkg.uuid4().hex[:8]}"),
+        **kwargs,
+    )
+    db_session.add(profile)
+    db_session.commit()
+    db_session.refresh(profile)
+    return profile
+
+
+def test_speaker_and_profile_embeddings_are_removed_only_after_the_rows_are_committed(
+    client, admin_token_headers, normal_user, db_session, monkeypatch
+):
+    """The issue #715 headline: no OpenSearch round trip while a transaction is open.
+
+    ``_delete_user_speakers`` used to call ``remove_speaker_embedding`` once per
+    speaker — and ``_delete_user_owned_records`` called ``remove_profile_embedding``
+    once per profile — from INSIDE ``delete_admin_user``'s ``db.begin_nested()``
+    savepoint. This spies on ``Session.commit`` and both OpenSearch removal functions
+    into one ORDERED list and asserts every removal call follows the commit — the same
+    shape as ``test_the_objects_are_removed_only_after_the_rows_are_committed`` above,
+    which pins the same rule for object storage.
+    """
+    import app.services.opensearch_service as os_mod
+
+    media_file = _make_media_file(db_session, int(normal_user.id))
+    speaker = _make_speaker(db_session, int(normal_user.id), int(media_file.id))
+    profile = _make_speaker_profile(db_session, int(normal_user.id))
+    # Captured now: the request commits and deletes these rows, which expires the
+    # ORM instances — reading .uuid off them AFTER the request raises ObjectDeletedError.
+    speaker_uuid = str(speaker.uuid)
+    profile_uuid = str(profile.uuid)
+
+    order: list[str] = []
+    real_commit = db_session.commit
+
+    def _commit_spy():
+        order.append("commit")
+        return real_commit()
+
+    def _speaker_spy(speaker_uuid: str):
+        order.append(f"speaker:{speaker_uuid}")
+        return True
+
+    def _profile_spy(profile_uuid: str):
+        order.append(f"profile:{profile_uuid}")
+        return True
+
+    monkeypatch.setattr(db_session, "commit", _commit_spy)
+    monkeypatch.setattr(os_mod, "remove_speaker_embedding", _speaker_spy)
+    monkeypatch.setattr(os_mod, "remove_profile_embedding", _profile_spy)
+
+    response = client.delete(f"/api/admin/users/{normal_user.uuid}", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK, response.text
+
+    speaker_call = f"speaker:{speaker_uuid}"
+    profile_call = f"profile:{profile_uuid}"
+
+    assert "commit" in order
+    assert speaker_call in order, f"the speaker embedding was never removed: {order}"
+    assert profile_call in order, f"the profile embedding was never removed: {order}"
+    assert order.index("commit") < order.index(speaker_call), (
+        f"a speaker embedding was removed before any commit: {order}"
+    )
+    assert order.index("commit") < order.index(profile_call), (
+        f"a profile embedding was removed before any commit: {order}"
+    )
+
+
+def test_a_speaker_embedding_removal_failure_is_reported_as_partial(
+    client, admin_token_headers, normal_user, db_session, monkeypatch
+):
+    """A removal failure must land in ``residual_errors`` -> PARTIAL, never a 500 or a silent pass.
+
+    ``purge_account_external_copies`` takes no session and must never raise
+    (``users.delete_user`` has no try/except around it) — so this asserts the account
+    delete still returns 200 with the deletion already committed, AND that the
+    failure is visible in the audit trail, not merely logged.
+
+    The file's own OpenSearch legs (transcript/chunks/summaries) and the speaker
+    survivor-count verification are stubbed to a clean no-op — this test measures the
+    speaker-removal failure in isolation, not whatever a real/unreachable cluster does
+    to the file-level legs (see ``test_a_storage_failure_is_reported_and_does_not_
+    silently_pass``'s docstring for why those legs are noisy without a stub).
+    """
+    import app.services.file_cleanup_service as fcs
+    import app.services.opensearch_service as os_mod
+    from app.services import account_security_service as acct_module
+
+    media_file = _make_media_file(db_session, int(normal_user.id))
+    _make_speaker(db_session, int(normal_user.id), int(media_file.id))
+
+    def _boom(speaker_uuid: str):
+        raise RuntimeError(f"simulated OpenSearch outage for {speaker_uuid}")
+
+    monkeypatch.setattr(os_mod, "remove_speaker_embedding", _boom)
+    monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", lambda target, file_uuid: [])
+    monkeypatch.setattr(fcs, "_count_surviving", lambda index, query: 0)
+    # The storage leg must SUCCEED for this test to measure what its docstring claims.
+    # Left real, the result depends on whether object storage happens to be reachable:
+    # locally the dev stack answers and only "speakers" fails, but CI has no MinIO, so
+    # `delete_file_storage_artifacts` returns False and `stages` becomes
+    # ["speakers", "storage"]. Stubbing at this seam (rather than at `minio_service.
+    # delete_file`) is what actually covers it — the storage leg also touches the
+    # derived-render cache bucket, so a lower-level stub leaves that path still live.
+    monkeypatch.setattr(fcs, "delete_file_storage_artifacts", lambda file_id, meta: True)
+
+    events: list[dict] = []
+    real_log = acct_module.audit_logger.log
+
+    def _spy_log(**kw):
+        events.append(kw)
+        return real_log(**kw)
+
+    monkeypatch.setattr(acct_module.audit_logger, "log", _spy_log)
+
+    response = client.delete(f"/api/admin/users/{normal_user.uuid}", headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+
+    db_session.expire_all()
+    assert db_session.query(User).filter(User.id == normal_user.id).first() is None, (
+        "a residual OpenSearch failure must not be retried by leaving the account undeleted"
+    )
+
+    assert len(events) == 1
+    assert events[0]["outcome"] is AuditOutcome.PARTIAL
+    assert events[0]["details"]["stages"] == ["speakers"]
 
 
 def _calls(func_node: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:

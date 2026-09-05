@@ -286,11 +286,45 @@ Release — publishing it in CI would point new users at a version whose images 
 not exist yet. `finish` owns that, and refuses until this workflow is green.
 
 :::note[Why publishing is local]
-The backend production image is ~13.8 GB. GitHub's free runners cannot build it —
-that is why `docker-publish.yml`'s backend ARM64 job is disabled. ARM64 builds use
-a remote builder over SSH (`scripts/setup-remote-builder.sh`), which turns a 2-3
-hour QEMU emulation into roughly 20 minutes of native build.
+The backend production image is ~13.8 GB. GitHub's free runners cannot build it.
+`.github/workflows/docker-publish.yml` is now **retired** entirely (issue #680): it
+was a second publisher using the old `:latest-amd64` / `:latest-arm64` grammar, and
+its final step assembled `:latest` by hand — which would overwrite the index
+`promote` had copied by digest, silently breaking the ":latest and :vX.Y.Z are the
+same bytes" guarantee. Publishing happens only through `./scripts/release.sh`.
+ARM64 legs use a remote builder over SSH (`scripts/setup-remote-builder.sh`), which
+turns 2-3 hours of QEMU emulation into roughly 20 minutes of native build.
 :::
+
+### What gets published, and under what tags
+
+Capability lives in the **repository** and is restated in the **tag**. Do not copy this
+table into another file — `./scripts/docker-build-push.sh list-platforms` prints it, and
+`80-publish.sh` derives its checks from that command rather than from any hardcoded
+architecture list:
+
+| Repository | Capability | Legs published | Index | `:latest` |
+|---|---|---|---|---|
+| `opentranscribe-backend` | `cuda` | `vX.Y.Z-cuda-amd64` | `vX.Y.Z` | digest-copy of index |
+| `opentranscribe-backend-lite` | `cpu` | `vX.Y.Z-cpu-amd64`, `vX.Y.Z-cpu-arm64` | `vX.Y.Z` | digest-copy |
+| `opentranscribe-frontend` | — | (no capability legs) | `vX.Y.Z` | digest-copy |
+| `opentranscribe-docs` | — | (no capability legs) | `vX.Y.Z` | digest-copy |
+
+`vX.Y.Z-cuda-arm64` is **reserved in the grammar but not built**: there is no aarch64 CUDA
+torch wheel at the pinned version, `onnxruntime-gpu` publishes no aarch64 wheels at all, and
+diar-native ships no CUDA arm64 build of its sidecar. So the full image is **amd64-only**, and
+`opentranscribe.sh` defaults an arm64 host to the lite image with an explanation.
+
+`publish` verifies structure, not just existence — the pre-#680 check only grepped the
+manifest for an architecture string, which a *degraded but present* arm64 leg passes:
+
+1. each `-<cap>-<arch>` leg tag declares **exactly one** platform, the declared one;
+2. each `vX.Y.Z` index declares **exactly** the declared platform set — a missing platform
+   fails **and so does an extra one**;
+3. legs of the **same** capability are equivalent: identical layer count, size ratio within
+   1.25 (lite/frontend/docs) or 2.00 (full). Never compared across capabilities — the whole
+   point is that a CUDA image and a CPU image have no reason to be the same size, which is
+   why "arm64 is 8.4× smaller" went unnoticed for as long as it did.
 
 ## Before you start
 

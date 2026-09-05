@@ -23,7 +23,7 @@ digest_of() {
 }
 
 fail=0
-for repo in backend frontend docs; do
+for repo in backend backend-lite frontend docs; do
     img="${USER_NS}/opentranscribe-${repo}"
     docker manifest inspect "${img}:${VERSION}" >/dev/null 2>&1 || {
         echo -e "${YELLOW}SKIP  ${repo}: no :${VERSION} published${NC}" >&2; continue; }

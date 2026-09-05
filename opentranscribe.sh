@@ -375,6 +375,114 @@ is_blackwell_gpu() {
     [[ "$compute_cap" == 12.* ]]
 }
 
+# Host CPU architecture, normalized to the names Docker/OCI manifests use
+# (amd64 / arm64), so a caller never has to know that `uname -m` says x86_64 on
+# one and aarch64 on the other. Anything else is echoed through unchanged.
+host_architecture() {
+    local machine
+    machine=$(uname -m 2>/dev/null || echo unknown)
+    case "$machine" in
+        x86_64|amd64)   echo "amd64" ;;
+        aarch64|arm64)  echo "arm64" ;;
+        *)              echo "$machine" ;;
+    esac
+}
+
+# The deployment mode this run will actually use, env var beating .env.
+# read_env_value only ever reads .env, so a preflight that exports
+# DEPLOYMENT_MODE (see arm64_deployment_preflight below) would otherwise be
+# invisible to every consumer that asks .env directly.
+effective_deployment_mode() {
+    local mode="${DEPLOYMENT_MODE:-}"
+    if [ -z "$mode" ]; then
+        mode=$(read_env_value DEPLOYMENT_MODE)
+    fi
+    echo "$mode" | tr '[:upper:]' '[:lower:]'
+}
+
+# arm64 hosts: the FULL (CUDA) image has no arm64 leg, so default to lite (#680).
+#
+# This is not a preference, it is what is publishable. Three independent reasons,
+# each one sufficient on its own:
+#
+#   1. No CUDA/torch parity. The cu128 index has no aarch64 torch wheel for the
+#      pinned version, and the 14 nvidia-*-cu12 dependencies are gated
+#      `platform_machine == "x86_64"` — an arm64 "full" build silently resolves
+#      to a CPU-only dependency set. That is exactly the artifact issue #680
+#      found published under the GPU image's tag.
+#   2. onnxruntime-gpu has ZERO aarch64 wheels at the pinned version, so the
+#      GPU execution provider cannot be installed on arm64 at all.
+#   3. diar-native publishes no CUDA arm64 build (only *-cpu-arm64 and
+#      *-provision-arm64), so the sidecar binary the full image COPYs in does
+#      not exist for this architecture.
+#
+# Consequently `davidamacey/opentranscribe-backend:<version>` publishes an
+# amd64-only manifest index. Pulling it on arm64 fails with "no matching
+# manifest for linux/arm64" — which is the CORRECT, loud outcome, and much
+# better than the pre-#680 state where a degraded arm64 image was published
+# under that same tag and started successfully before failing at model-load
+# time inside a worker.
+#
+# So on arm64 this switches the run to DEPLOYMENT_MODE=lite (the CPU-only image,
+# which DOES publish an arm64 leg) and says why. Override with
+# OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true if you have built a full arm64 image
+# yourself — nothing here can produce one for you.
+#
+# MUST be called as a plain statement, never through `$(...)` — same subshell
+# hazard documented on pin_diar_native_image_for_blackwell: the `export` below
+# has to survive into the later `compose_files=$(get_compose_files)` call.
+arm64_deployment_preflight() {
+    [ "$(host_architecture)" = "arm64" ] || return 0
+
+    local mode
+    mode=$(effective_deployment_mode)
+    if [ "$mode" = "lite" ]; then
+        echo -e "${BLUE}🖥️  arm64 host, DEPLOYMENT_MODE=lite — using the CPU-only image (the only one published for arm64)${NC}" >&2
+        return 0
+    fi
+
+    if [ "${OPENTRANSCRIBE_FORCE_FULL_ON_ARM64:-}" = "true" ]; then
+        echo -e "${YELLOW}⚠️  arm64 host with OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true — NOT switching to lite${NC}" >&2
+        echo -e "${YELLOW}   The published full/CUDA image has no arm64 manifest. Unless you built one${NC}" >&2
+        echo -e "${YELLOW}   yourself, the pull will fail with 'no matching manifest for linux/arm64'.${NC}" >&2
+        return 0
+    fi
+
+    echo -e "${YELLOW}🖥️  arm64 host detected — defaulting to the lite (CPU-only) image${NC}" >&2
+    echo -e "${YELLOW}   The full/CUDA image is published for linux/amd64 ONLY. On arm64:${NC}" >&2
+    echo -e "${YELLOW}     • no aarch64 CUDA torch wheel exists at the pinned version, and the${NC}" >&2
+    echo -e "${YELLOW}       nvidia-*-cu12 dependencies are gated platform_machine == \"x86_64\"${NC}" >&2
+    echo -e "${YELLOW}     • onnxruntime-gpu publishes no aarch64 wheels at all${NC}" >&2
+    echo -e "${YELLOW}     • diar-native publishes no CUDA arm64 build of its sidecar binary${NC}" >&2
+    echo -e "${YELLOW}   Cloud ASR providers still work; local GPU transcription does not.${NC}" >&2
+    echo -e "${YELLOW}   To override (only useful if you built a full arm64 image yourself):${NC}" >&2
+    echo -e "${YELLOW}     OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true ./opentranscribe.sh start${NC}" >&2
+    export DEPLOYMENT_MODE=lite
+}
+
+# Is a working NVIDIA GPU path actually on offer for this deployment? The runtime
+# being present is only one of FOUR reasons the answer can be no, and every caller
+# that re-derives a subset of them drifts the moment a fifth is added — which is
+# exactly how the diar-native-gpu gate came to reproduce two of three conditions
+# and miss lite (#680). One function, one answer:
+#
+#   1. no nvidia container runtime at all;
+#   2. the operator opted out at install time (FORCE_CPU_MODE);
+#   3. DEPLOYMENT_MODE=lite — the lite image carries no CUDA runtime, so any GPU
+#      reservation made for it reserves a device nothing in the container can use;
+#   4. an arm64 host, where the full/CUDA image publishes no manifest at all (see
+#      arm64_deployment_preflight) — a Jetson/GB10 can advertise the nvidia runtime
+#      and still have nothing CUDA-capable to run.
+nvidia_gpu_offer_available() {
+    [ "$(detect_nvidia_runtime)" = "nvidia" ] || return 1
+    force_cpu_mode_requested && return 1
+    [ "$(effective_deployment_mode)" != "lite" ] || return 1
+    if [ "$(host_architecture)" = "arm64" ] && [ "${OPENTRANSCRIBE_FORCE_FULL_ON_ARM64:-}" != "true" ]; then
+        return 1
+    fi
+    return 0
+}
+
 # force_cpu_mode_requested: returns success (0) when the user opted out of
 # GPU acceleration at install time (setup-opentranscribe.sh --cpu, or the
 # OPENTRANSCRIBE_FORCE_CPU env var), which persisted FORCE_CPU_MODE=true to
@@ -425,8 +533,12 @@ force_cpu_mode_requested() {
 # every OTHER call site here, which builds `$compose_files` and runs `docker compose` in
 # the SAME process.
 pin_diar_native_image_for_blackwell() {
-    force_cpu_mode_requested && return 0
-    [ "$(detect_nvidia_runtime)" = "nvidia" ] || return 0
+    # nvidia_gpu_offer_available(), not a re-derived runtime+FORCE_CPU pair: this
+    # function WRITES a pin into .env, so getting it wrong is sticky. On a lite
+    # deployment (including every arm64 host, which now defaults to lite) it would
+    # otherwise persist DIAR_NATIVE_IMAGE=<blackwell CUDA image> for a stack whose
+    # GPU overlay was never loaded.
+    nvidia_gpu_offer_available || return 0
     is_blackwell_gpu || return 0
     [ -f docker-compose.blackwell.yml ] || return 0
 
@@ -471,16 +583,17 @@ pin_diar_native_image_for_blackwell() {
 # exact silent-misconfiguration issue #703's live-consumer check now falls back safely
 # from, but the fallback is "process on the shared gpu queue", not "actually split").
 #
-# Also requires an nvidia runtime and no FORCE_CPU_MODE opt-out — same probe
-# get_compose_files() uses for the plain GPU overlay — since a GPU-reservation overlay
-# cannot load on a host that decided not to use its GPU at all.
+# Also requires nvidia_gpu_offer_available() — the single home for "is a GPU path
+# actually on offer here", covering the nvidia runtime, FORCE_CPU_MODE, lite mode and
+# arm64 — since a GPU-reservation overlay cannot load on a deployment that decided not
+# to use its GPU at all, and enumerating a subset of those reasons here is how the
+# diar-native-gpu gate drifted (#680).
 gpu_split_active() {
     [ -f docker-compose.gpu-split.yml ] || return 1
     local split_enabled
     split_enabled=$(read_env_value ENGINE_GPU_SPLIT | tr '[:upper:]' '[:lower:]')
     [ "$split_enabled" = "true" ] || return 1
-    force_cpu_mode_requested && return 1
-    [ "$(detect_nvidia_runtime)" = "nvidia" ] || return 1
+    nvidia_gpu_offer_available || return 1
     return 0
 }
 
@@ -540,25 +653,69 @@ diar_native_marker_present() {
 get_compose_files() {
     local compose_files="-f docker-compose.yml"
 
+    # Architecture preflight FIRST, because it can change DEPLOYMENT_MODE and every
+    # decision below reads it. Called here rather than only at the `start` case arm
+    # so that stop/restart/status/compose-files resolve the SAME chain start did —
+    # a teardown that resolves a different overlay set than the bring-up addresses
+    # a different set of services. Its banners go to stderr like every other banner
+    # in this function, so `compose-files` still prints only the chain on stdout.
+    arm64_deployment_preflight
+
     # Production deployment always uses prod overrides
     if [ -f docker-compose.prod.yml ]; then
         compose_files="$compose_files -f docker-compose.prod.yml"
     fi
 
+    # Lite (CPU-only) overlay. Before issue #680 this branch did not exist at all:
+    # DEPLOYMENT_MODE=lite was read by four other places in this script but could
+    # never actually select docker-compose.lite.yml, so a production install had no
+    # shipped way to run the lite images — scripts/release-tests/test-lite-mode.sh
+    # says so in its own header and hand-assembles the chain instead. That gap is
+    # what made "default arm64 to lite" impossible to honour, since there was
+    # nowhere for the default to point.
+    local deployment_mode
+    deployment_mode=$(effective_deployment_mode)
+    if [ "$deployment_mode" = "lite" ]; then
+        if [ -f docker-compose.lite.yml ]; then
+            compose_files="$compose_files -f docker-compose.lite.yml"
+            echo -e "${BLUE}☁️  Lite overlay enabled (DEPLOYMENT_MODE=lite) — CPU-only image, cloud ASR${NC}" >&2
+        else
+            echo -e "${YELLOW}⚠️  DEPLOYMENT_MODE=lite but docker-compose.lite.yml is missing${NC}" >&2
+            echo -e "${YELLOW}   This install predates the lite overlay being shipped (release-manifest.txt).${NC}" >&2
+            echo -e "${YELLOW}   Run './opentranscribe.sh update-full' to fetch it, or the full image will be used.${NC}" >&2
+        fi
+    fi
+
     # Add GPU overlay if NVIDIA runtime is available and overlay exists,
-    # unless the user explicitly chose CPU-only mode at install time.
-    local docker_runtime
+    # unless the user explicitly chose CPU-only mode at install time, or this is
+    # a lite deployment (the lite image carries no CUDA runtime at all, so a GPU
+    # reservation on it reserves a device nothing in the container can use).
+    #
+    # `gpu_overlay_selected` records the ANSWER, not the inputs. The diar-native-gpu
+    # gate further down used to recompute it from `$docker_runtime` +
+    # force_cpu_mode_requested, which silently stopped tracking this block the moment a
+    # third reason to skip the GPU (lite) was added — the sidecar would have reserved a
+    # CUDA device, and flipped DIAR_MODE to `cuda`, inside a CPU-only image. That is
+    # exactly the invariant #660 states: the sidecar can never claim a device the rest
+    # of the stack decided not to use.
+    local docker_runtime gpu_overlay_selected=false
     docker_runtime=$(detect_nvidia_runtime)
-    if force_cpu_mode_requested; then
+    if [ "$deployment_mode" = "lite" ]; then
+        if [ "$docker_runtime" = "nvidia" ]; then
+            echo -e "${BLUE}🧮 Lite deployment — skipping GPU overlay despite nvidia runtime being available${NC}" >&2
+        fi
+    elif force_cpu_mode_requested; then
         if [ "$docker_runtime" = "nvidia" ]; then
             echo -e "${BLUE}🧮 CPU-only mode (FORCE_CPU_MODE=true in .env) — skipping GPU overlay despite nvidia runtime being available${NC}" >&2
         fi
     elif [ "$docker_runtime" = "nvidia" ]; then
         if is_blackwell_gpu && [ -f docker-compose.blackwell.yml ]; then
             compose_files="$compose_files -f docker-compose.blackwell.yml"
+            gpu_overlay_selected=true
             echo -e "${BLUE}Blackwell GPU overlay enabled (SM_12x detected)${NC}" >&2
         elif [ -f docker-compose.gpu.yml ]; then
             compose_files="$compose_files -f docker-compose.gpu.yml"
+            gpu_overlay_selected=true
             echo -e "${BLUE}GPU acceleration enabled (NVIDIA Container Toolkit detected)${NC}" >&2
         fi
     fi
@@ -678,10 +835,13 @@ get_compose_files() {
             # The overlay above is CPU-safe by construction (no device reservation,
             # DIAR_MODE defaults to cpu) so it can load on a GPU-less or FORCE_CPU_MODE
             # host. The reservation and the `cuda` override are in a second file, added
-            # only when a GPU overlay was actually selected above — keyed off the same
-            # $docker_runtime probe, so the sidecar can never claim a device the rest of
-            # the stack decided not to use (#660).
-            if [ "$docker_runtime" = "nvidia" ] && ! force_cpu_mode_requested \
+            # only when a GPU overlay was ACTUALLY selected above — gated on that block's
+            # recorded answer ($gpu_overlay_selected), not on re-deriving it from
+            # $docker_runtime, so the sidecar can never claim a device the rest of the
+            # stack decided not to use (#660). Re-deriving is how this drifted: it
+            # reproduced two of the three skip conditions and missed lite (#680), which
+            # would have put a CUDA reservation and DIAR_MODE=cuda on the CPU-only image.
+            if [ "$gpu_overlay_selected" = true ] \
                && [ -f docker-compose.diar-native-gpu.yml ]; then
                 compose_files="$compose_files -f docker-compose.diar-native-gpu.yml"
                 echo -e "${BLUE}   Holds ~2.2 GB of GPU memory on device ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} while up.${NC}" >&2
@@ -1321,6 +1481,11 @@ case "${1:-help}" in
             ensure_minio_kms_secret ".env"
         fi
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
+        # Plain statement, not `$(...)`: get_compose_files() calls this too, but from
+        # inside a command substitution, where the DEPLOYMENT_MODE export dies with the
+        # subshell. `docker compose up` below interpolates ${BACKEND_LITE_IMAGE}/
+        # ${DEPLOYMENT_MODE} itself, so the export has to exist in THIS shell as well.
+        arm64_deployment_preflight
         pin_diar_native_image_for_blackwell
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
@@ -1585,9 +1750,16 @@ case "${1:-help}" in
         # Releases published before release-manifest.txt existed have no list to read, and
         # following the pin (above) means we now ask them for one. Borrow the list from the
         # default branch in that case — the ARTIFACTS still come from $GITHUB_RAW, i.e. the
-        # pinned release, so this cannot un-pin the install. The manifest's `optional` flag
-        # absorbs entries the older release does not have. Same fallback as
+        # pinned release, so this cannot un-pin the install. Same fallback as
         # setup-opentranscribe.sh's download_release_manifest_artifacts(); see issue #683.
+        #
+        # issue #723: a borrowed manifest is NEWER than $BRANCH, so it can list a REQUIRED
+        # entry that tag never shipped (NOTICE, added required in 91128ecb). `optional`
+        # alone does not absorb that — it only helps entries someone remembered to flag,
+        # and a required-on-principle file is deliberately never flagged optional. So once
+        # the manifest is known to be borrowed, a download failure for ANY entry means
+        # "this tag predates the file" and is skipped rather than fatal.
+        MANIFEST_BORROWED=0
         echo "  Downloading release-manifest.txt..."
         if ! curl -fsSL "$GITHUB_RAW/release-manifest.txt" -o release-manifest.txt.new; then
             rm -f release-manifest.txt.new
@@ -1596,8 +1768,10 @@ case "${1:-help}" in
             if [ -n "$MANIFEST_FALLBACK_BRANCH" ] && [ "$MANIFEST_FALLBACK_BRANCH" != "$BRANCH" ] &&
                 curl -fsSL "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${MANIFEST_FALLBACK_BRANCH}/release-manifest.txt" \
                     -o release-manifest.txt.new; then
+                MANIFEST_BORROWED=1
                 echo -e "  ${YELLOW}⚠️${NC}  $BRANCH predates release-manifest.txt — using the file list from '${MANIFEST_FALLBACK_BRANCH}'."
-                echo -e "     Config files are still downloaded from $BRANCH."
+                echo -e "     Config files are still downloaded from $BRANCH; files that release"
+                echo -e "     does not have are skipped, whether or not the manifest marks them optional."
             else
                 rm -f release-manifest.txt.new
                 echo -e "  ${RED}✗${NC} could not fetch release-manifest.txt from $BRANCH"
@@ -1634,8 +1808,12 @@ case "${1:-help}" in
                         echo -e "  ${YELLOW}⚠️${NC} $artifact_path (optional, not in this release)"
                         ;;
                     *)
-                        echo -e "  ${RED}✗${NC} $artifact_path (REQUIRED — download failed)"
-                        update_failed=1
+                        if [ "$MANIFEST_BORROWED" -eq 1 ]; then
+                            echo -e "  ${YELLOW}⚠️${NC} $artifact_path (required by a newer manifest, but $BRANCH predates it — skipped)"
+                        else
+                            echo -e "  ${RED}✗${NC} $artifact_path (REQUIRED — download failed)"
+                            update_failed=1
+                        fi
                         ;;
                 esac
             fi

@@ -57,8 +57,12 @@ No, but **highly recommended** for practical use. CPU-only processing is very sl
 
 ### Can I use Apple Silicon (M1/M2/M3)?
 
-Yes! OpenTranscribe supports Apple Silicon Macs with MPS (Metal Performance Shaders) acceleration. Performance is between CPU and NVIDIA GPU:
-- **M2 Max**: 1-hour video → ~15-20 minutes
+Yes, with the `--lite` (CPU-only) image — but **not** with MPS acceleration. Docker
+Desktop on macOS has no Metal/GPU passthrough into the Linux VM the container runs
+in, so every container on Apple Silicon is CPU-only regardless of the host chip's
+MPS capability. Expect CPU-class timings, not GPU-class ones — see the CPU figures
+above. (An MPS code path exists in the diarization engine, but it is unreachable in
+every containerized deployment; see `backend/app/transcription/CLAUDE.md`.)
 
 ### What GPUs are supported?
 

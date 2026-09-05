@@ -208,7 +208,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### ⚡ **Performance & Scaling**
 - **Multi-GPU Worker Scaling**: Optional parallel processing on dedicated GPUs for high-throughput systems, including an optional ASR/diarization **GPU split** (`--with-gpu-split`) that runs transcription and diarization on separate GPUs
-- **Hybrid Mode**: Automatic CPU transcription + GPU/MPS diarization for small-VRAM GPUs and Apple Silicon
+- **Hybrid Mode**: Automatic CPU transcription + GPU diarization for small-VRAM GPUs (Linux/WSL2 with an NVIDIA GPU only — a containerized deployment on Apple Silicon has no Docker Metal passthrough and runs CPU-only via the `--lite` image, not MPS)
 - **Combined Transcription Engine**: Unified, backend-pluggable engine with admin-tunable runtime settings and per-worker metrics
 - **Fast Uploads**: Optional presigned direct-to-MinIO uploads with content-hash (imohash) deduplication and a shared-memory WAV handoff that removes redundant downloads from the processing pipeline
 - **Pipeline Timing Instrumentation**: Opt-in end-to-end wall-clock timing (`ENABLE_BENCHMARK_TIMING`) with admin timing endpoints
@@ -1218,16 +1218,16 @@ docker stats
 - Fast NVMe storage
 - Load balancer for multiple instances
 
-#### **Low-VRAM / macOS Deployments — Hybrid Mode**
+#### **Low-VRAM Deployments — Hybrid Mode**
 
-For systems where the GPU cannot fit the full transcription model, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU while diarization stays on GPU/MPS. This requires only ~1.3 GB VRAM for PyAnnote and delivers speaker-diarized transcripts without a dedicated GPU.
+For systems where the GPU cannot fit the full transcription model, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU while diarization stays on GPU. This requires only ~1.3 GB VRAM for PyAnnote and delivers speaker-diarized transcripts without a dedicated GPU. This is a Linux/WSL2-with-NVIDIA-GPU feature — there is no GPU/MPS path available on macOS (Docker Desktop has no Metal passthrough), so macOS deployments use the `--lite` (CPU-only) image instead and run both stages on CPU.
 
 | Scenario | Transcription | Diarization | Trigger |
 |---|---|---|---|
 | GPU ≥ 8 GB + large-v3-turbo | GPU | GPU | Normal mode |
 | GPU 4–6 GB + large-v3-turbo | CPU (small model) | GPU | Auto hybrid |
-| macOS Apple Silicon (any) | CPU (small model) | MPS (PyAnnote fork) | Always hybrid |
-| `WHISPER_HYBRID_MODE=true` | CPU (small model) | GPU/MPS | Manual override |
+| macOS (any Apple Silicon) | CPU (small model) | CPU (`--lite` image) | Always CPU-only — no MPS in Docker |
+| `WHISPER_HYBRID_MODE=true` | CPU (small model) | GPU | Manual override (Linux/WSL2 + NVIDIA GPU only) |
 
 The CPU model defaults to `small` (int8, ~15–30× real-time on modern hardware). Override with `WHISPER_HYBRID_CPU_MODEL=medium` for better accuracy at the cost of speed.
 

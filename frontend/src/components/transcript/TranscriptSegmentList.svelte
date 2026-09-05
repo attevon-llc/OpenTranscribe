@@ -244,6 +244,14 @@
   function handleSpeakerCreated(event: CustomEvent) {
     dispatch('speakerCreatedFromDropdown', event.detail);
   }
+
+  // Accepting an unconfirmed speaker suggestion from a segment's dropdown (#741).
+  // Forwarded verbatim onto the same `speakerUpdate` contract the speaker editor
+  // panel uses, so the route's validation / linked-profile confirmation / rename
+  // propagation all run — rather than a second path doing the same job.
+  function handleSpeakerUpdate(event: CustomEvent) {
+    dispatch('speakerUpdate', event.detail);
+  }
 </script>
 
 <div bind:this={transcriptContainer} class="transcript-display-container">
@@ -332,6 +340,7 @@
                       mediaFileUuid={file?.uuid?.toString() || ''}
                       on:change={handleSegmentSpeakerChange}
                       on:speakerCreated={handleSpeakerCreated}
+                      on:speakerUpdate={handleSpeakerUpdate}
                     />
                   </div>
                   {/if}
@@ -413,6 +422,7 @@
                   mediaFileUuid={file?.uuid?.toString() || ''}
                   on:change={handleSegmentSpeakerChange}
                   on:speakerCreated={handleSpeakerCreated}
+                  on:speakerUpdate={handleSpeakerUpdate}
                 />
               </div>
               {/if}

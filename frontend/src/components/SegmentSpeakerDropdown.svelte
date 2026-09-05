@@ -7,6 +7,12 @@
   import { translateSpeakerLabel } from '$lib/i18n';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
+  import BaseModal from '$components/ui/BaseModal.svelte';
+  import {
+    isPlaceholderSpeakerName,
+    nextPlaceholderSpeakerName,
+    placeholderSpeakerNumber
+  } from '$lib/utils/speakerNames';
 
   export let segment: Segment;
   export let speakers: Speaker[] = [];
@@ -18,29 +24,104 @@
   let isOpen = false;
   let isCreatingSpeaker = false;
 
-  // Compute the next speaker name (e.g., SPEAKER_03 if SPEAKER_00, SPEAKER_01, SPEAKER_02 exist)
-  function getNextSpeakerName(): string {
-    let maxNumber = -1;
-    for (const speaker of speakers) {
-      const match = speaker.name?.match(/^SPEAKER_(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNumber) maxNumber = num;
-      }
-    }
-    const nextNum = maxNumber + 1;
-    return `SPEAKER_${nextNum.toString().padStart(2, '0')}`;
+  /**
+   * What `segment.speaker` actually carries on the wire.
+   *
+   * The backend serialises the FULL `Speaker` schema onto every segment
+   * (`backend/app/schemas/media.py::TranscriptSegment.speaker`), so
+   * `suggested_name` / `suggestion_source` / `confidence` / `verified` are all
+   * present — but the shared `Segment` type in `$lib/types/speaker.ts` only
+   * declares the three fields the old render chain happened to use. Declaring the
+   * rest here is what lets this component tell a human's label apart from a
+   * machine's guess instead of collapsing them.
+   */
+  interface SegmentSpeakerWire {
+    uuid: string;
+    name: string;
+    display_name?: string;
+    suggested_name?: string;
+    suggestion_source?: string;
+    confidence?: number;
+    verified?: boolean;
   }
 
-  async function handleCreateNewSpeaker() {
-    if (!mediaFileUuid || isCreatingSpeaker) return;
+  $: wireSpeaker = (segment.speaker ?? null) as SegmentSpeakerWire | null;
+
+  // `display_name` is the ONLY field that means "a human confirmed this name":
+  // `POST /speakers` and `PUT /speakers/{uuid}` both flip `verified` the moment it
+  // is set, and nothing else writes it without an affirmative click.
+  //
+  // Deliberately NOT part of this chain: `speaker.resolved_display_name` and
+  // `segment.resolved_speaker_name`. Both are `canonical_speaker_label(...)`, which
+  // returns `suggested_name` once confidence >= 0.75 — i.e. they intentionally
+  // collapse "confirmed" and "guessed" into one string. Rendering either one here
+  // would put an unverified LLM guess in the name slot, which is exactly what the
+  // repo rule "LLM speaker-ID suggestions are never auto-applied" forbids (#741).
+  $: confirmedName = (wireSpeaker?.display_name ?? '').trim();
+  $: speakerNumberLabel = wireSpeaker?.name || segment.speaker_label || '';
+  $: triggerLabel = translateSpeakerLabel(
+    confirmedName || speakerNumberLabel || $t('common.unknown')
+  );
+
+  // An unconfirmed suggestion is surfaced as its own row in the menu, with the
+  // confidence score, never as the speaker's name.
+  $: pendingSuggestion =
+    !confirmedName && wireSpeaker?.suggested_name && wireSpeaker.uuid
+      ? {
+          uuid: wireSpeaker.uuid,
+          name: wireSpeaker.suggested_name,
+          confidence: wireSpeaker.confidence ?? 0
+        }
+      : null;
+
+  // The next free diarization SLOT for this file (e.g. SPEAKER_03). It is never a
+  // name on its own — see `$lib/utils/speakerNames` for the shared contract.
+  function getNextSpeakerSlot(): string {
+    return nextPlaceholderSpeakerName(speakers.map((s) => s.name));
+  }
+
+  // --- "Add speaker": name it FIRST, then create (#740) -----------------------
+  // This used to POST the next auto-label on the click itself. The user was never
+  // offered a field, and nothing in the segment row changed, so it read as a no-op —
+  // and every repeat click minted another orphan SPEAKER_NN row.
+  let showCreateModal = false;
+  let newSpeakerName = '';
+  let newSpeakerSlot = '';
+
+  function openCreateSpeakerModal() {
+    if (!mediaFileUuid) return;
+    // The dropdown is a body portal that outlives the component's own DOM; leaving
+    // it open would float it over the dialog.
+    closeDropdown();
+    newSpeakerSlot = getNextSpeakerSlot();
+    newSpeakerName = '';
+    showCreateModal = true;
+  }
+
+  function closeCreateSpeakerModal() {
+    showCreateModal = false;
+    newSpeakerName = '';
+  }
+
+  // A typed name that is itself `SPEAKER_NN` is a placeholder, not an identity —
+  // accepting it would recreate exactly the state #740 exists to stop.
+  $: newSpeakerNameIsPlaceholder =
+    newSpeakerName.trim() !== '' && isPlaceholderSpeakerName(newSpeakerName);
+  $: canCreateSpeaker =
+    !isCreatingSpeaker && newSpeakerName.trim() !== '' && !newSpeakerNameIsPlaceholder;
+
+  async function confirmCreateSpeaker() {
+    const typedName = newSpeakerName.trim();
+    if (!mediaFileUuid || !canCreateSpeaker) return;
 
     isCreatingSpeaker = true;
-    const newSpeakerName = getNextSpeakerName();
-
     try {
+      // `name` keeps the diarization slot (speaker colours hash it, and the
+      // named-vs-auto ordering below reads it); the human's label goes in
+      // `display_name`, which is also what marks the new row verified server-side.
       const response = await axiosInstance.post(`/speakers?media_file_uuid=${mediaFileUuid}`, {
-        name: newSpeakerName
+        name: newSpeakerSlot,
+        display_name: typedName
       });
 
       const newSpeaker = response.data;
@@ -48,19 +129,48 @@
       // Dispatch event to notify parent that a new speaker was created
       dispatch('speakerCreated', { speaker: newSpeaker });
 
-      // Auto-select the new speaker for this segment
+      // Auto-select the new speaker for this segment. The speaker OBJECT rides
+      // along: the parent's optimistic patch resolves the uuid against
+      // `speakerList`, which cannot contain a speaker created a millisecond ago,
+      // so without it the segment renders "Unknown" until a refetch lands — the
+      // "I clicked Add speaker and nothing happened" report.
       dispatch('change', {
         segmentUuid: segment.uuid,
-        speakerUuid: newSpeaker.uuid
+        speakerUuid: newSpeaker.uuid,
+        speaker: newSpeaker
       });
 
-      closeDropdown();
+      closeCreateSpeakerModal();
     } catch (error) {
       console.error('Failed to create new speaker:', error);
       toastStore.error($t('common.somethingWentWrong'));
     } finally {
       isCreatingSpeaker = false;
     }
+  }
+
+  function handleCreateModalKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      confirmCreateSpeaker();
+    }
+  }
+
+  /**
+   * Accept an unconfirmed suggestion — one affirmative click, never automatic.
+   *
+   * Reuses the `speakerUpdate` contract the speaker editor's suggestion chips
+   * already dispatch (`{ speakerId, newName }`), so the accept runs the route's
+   * existing validation, linked-profile confirmation and rename propagation
+   * instead of a second path doing the same job.
+   */
+  function acceptSuggestion() {
+    if (!pendingSuggestion) return;
+    dispatch('speakerUpdate', {
+      speakerId: pendingSuggestion.uuid,
+      newName: pendingSuggestion.name
+    });
+    closeDropdown();
   }
 
   // Create portal container on mount
@@ -147,7 +257,8 @@
     const itemHeight = 36;
     const headerHeight = 28;
     const dividerHeight = 9;
-    const estimatedHeight = headerHeight + itemHeight + dividerHeight + (speakers.length * itemHeight) + (mediaFileUuid ? dividerHeight + itemHeight : 0);
+    const suggestionHeight = pendingSuggestion ? headerHeight + itemHeight + dividerHeight : 0;
+    const estimatedHeight = headerHeight + itemHeight + dividerHeight + (speakers.length * itemHeight) + (mediaFileUuid ? dividerHeight + itemHeight : 0) + suggestionHeight;
 
     const viewportHeight = window.innerHeight;
     const spaceBelow = viewportHeight - rect.bottom - 8;
@@ -202,6 +313,22 @@
     line2.setAttribute('y2', '12');
     svg.appendChild(line1);
     svg.appendChild(line2);
+    return svg;
+  }
+
+  // Helper to create the "AI suggestion" sparkle icon element
+  function createSparkleSvg(): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '12');
+    svg.setAttribute('height', '12');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'currentColor');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute(
+      'd',
+      'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z'
+    );
+    svg.appendChild(path);
     return svg;
   }
 
@@ -268,10 +395,47 @@
     header.textContent = $t('speaker.assignSpeaker');
     menu.appendChild(header);
 
-    // "Create New Speaker" button — top of list for quick access
-    if (mediaFileUuid) {
-      const nextSpeakerName = getNextSpeakerName();
+    // Unconfirmed LLM / voice-match suggestion — offered HERE, with its confidence
+    // score, and never in the name slot (#741). One affirmative click accepts it.
+    if (pendingSuggestion) {
+      const suggestionHeader = document.createElement('div');
+      suggestionHeader.className = 'dropdown-header suggestion-header';
+      suggestionHeader.textContent = $t('speaker.unconfirmedSuggestion');
+      menu.appendChild(suggestionHeader);
 
+      const suggestionBtn = document.createElement('button');
+      suggestionBtn.className = 'dropdown-item suggestion-btn';
+      suggestionBtn.dataset.action = 'accept-suggestion';
+      suggestionBtn.title = $t('speaker.acceptSuggestionTitle');
+
+      const suggestionOption = document.createElement('div');
+      suggestionOption.className = 'speaker-option';
+      suggestionOption.appendChild(createSparkleSvg());
+
+      const suggestionSpan = document.createElement('span');
+      suggestionSpan.textContent = pendingSuggestion.name;
+      suggestionOption.appendChild(suggestionSpan);
+      suggestionBtn.appendChild(suggestionOption);
+
+      const confidenceBadge = document.createElement('span');
+      confidenceBadge.className = 'suggestion-confidence';
+      confidenceBadge.textContent = `${Math.round(pendingSuggestion.confidence * 100)}%`;
+      suggestionBtn.appendChild(confidenceBadge);
+
+      suggestionBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        acceptSuggestion();
+      });
+      menu.appendChild(suggestionBtn);
+
+      const suggestionDivider = document.createElement('div');
+      suggestionDivider.className = 'dropdown-divider';
+      menu.appendChild(suggestionDivider);
+    }
+
+    // "Add speaker" — top of list for quick access. Opens the naming dialog; the
+    // speaker is not created until the user has typed a name (#740).
+    if (mediaFileUuid) {
       const createBtn = document.createElement('button');
       createBtn.className = 'dropdown-item create-speaker-btn';
       createBtn.dataset.action = 'create-speaker';
@@ -281,13 +445,13 @@
       createOption.appendChild(createPlusSvg());
 
       const createSpan = document.createElement('span');
-      createSpan.textContent = `${$t('speaker.createNew')} ${nextSpeakerName}`;
+      createSpan.textContent = $t('speaker.addSpeaker');
       createOption.appendChild(createSpan);
 
       createBtn.appendChild(createOption);
       createBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        handleCreateNewSpeaker();
+        openCreateSpeakerModal();
       });
       menu.appendChild(createBtn);
     }
@@ -316,8 +480,7 @@
     // Classification uses the effective display name so that a speaker renamed to
     // "John Smith" (display_name) is treated as named even though their internal
     // name is still "SPEAKER_01".
-    const isAutoLabel = (s: Speaker) =>
-      /^SPEAKER_\d+$/.test(s.display_name || s.name);
+    const isAutoLabel = (s: Speaker) => isPlaceholderSpeakerName(s.display_name || s.name);
     const namedSpeakers = speakers.filter((s) => !isAutoLabel(s));
     const autoSpeakers = speakers.filter((s) => isAutoLabel(s));
 
@@ -326,10 +489,12 @@
       const color = getSpeakerColor(speaker.name);
       // If the speaker has a human name but the underlying id is SPEAKER_##,
       // append the number so the user can see continuity in the ordered list.
-      const numMatch = speaker.name.match(/^SPEAKER_(\d+)$/);
+      const slotNumber = placeholderSpeakerNumber(speaker.name);
       const effectiveName = translateSpeakerLabel(speaker.display_name || speaker.name);
       const label =
-        numMatch && speaker.display_name ? `${effectiveName} (${numMatch[1]})` : effectiveName;
+        slotNumber !== null && speaker.display_name
+          ? `${effectiveName} (${slotNumber.toString().padStart(2, '0')})`
+          : effectiveName;
       const speakerBtn = createDropdownItem(
         speaker.uuid,
         label,
@@ -363,6 +528,10 @@
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
       z-index: 10000;
       min-width: 200px;
+      /* A long suggested name used to widen the menu past the viewport edge, where
+         the fixed `left` offset left it unreachable and overlapping the transcript.
+         Cap it and let the row labels ellipsise instead (#741). */
+      max-width: min(340px, calc(100vw - 24px));
       padding: 4px;
       max-height: 400px;
       overflow-y: auto;
@@ -444,9 +613,42 @@
       background: rgba(59, 130, 246, 0.1);
     }
 
+    /* Every icon in a menu row is a fixed 12px square that never shrinks. They used
+       to be three different sizes (12px colour dot, 14px plus, 16px checkmark) with
+       no `flex-shrink: 0`, so the rows did not line up and the checkmark on a long
+       name was squeezed to a sliver by the label beside it (#741). */
+    .speaker-dropdown-portal .dropdown-item > svg,
+    .speaker-dropdown-portal .speaker-option > svg {
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+    }
+
     .speaker-dropdown-portal .create-speaker-btn svg {
       color: var(--primary-color, #3b82f6);
       margin-right: 4px;
+    }
+
+    .speaker-dropdown-portal .suggestion-header {
+      color: var(--warning-color, #f59e0b);
+    }
+
+    .speaker-dropdown-portal .suggestion-btn svg {
+      color: var(--warning-color, #f59e0b);
+      margin-right: 4px;
+    }
+
+    .speaker-dropdown-portal .suggestion-btn:hover {
+      background: var(--surface-hover, #334155);
+    }
+
+    .speaker-dropdown-portal .suggestion-confidence {
+      flex-shrink: 0;
+      margin-left: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary, #94a3b8);
+      font-variant-numeric: tabular-nums;
     }
   </style>
 </svelte:head>
@@ -462,8 +664,16 @@
       class="segment-speaker"
       style="background-color: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').bg}; border-color: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').border}; --speaker-light: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').textLight}; --speaker-dark: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').textDark};"
     >
-      {translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('common.unknown'))}
+      {triggerLabel}
     </div>
+    {#if pendingSuggestion}
+      <!-- The suggestion exists but is unconfirmed: a marker, not a name. -->
+      <span class="suggestion-marker" title={$t('speaker.unconfirmedSuggestion')} aria-hidden="true">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+      </span>
+    {/if}
     <svg
       class="dropdown-arrow"
       class:open={isOpen}
@@ -479,10 +689,60 @@
   </button>
 </div>
 
+<BaseModal
+  isOpen={showCreateModal}
+  title={$t('speaker.newSpeakerTitle')}
+  maxWidth="420px"
+  onClose={closeCreateSpeakerModal}
+>
+  <label class="new-speaker-field">
+    <span class="new-speaker-label">{$t('speaker.newSpeakerNameLabel')}</span>
+    <!-- svelte-ignore a11y-autofocus -->
+    <input
+      class="new-speaker-name-input"
+      type="text"
+      autofocus
+      maxlength="100"
+      bind:value={newSpeakerName}
+      on:keydown={handleCreateModalKeydown}
+      placeholder={$t('speaker.newSpeakerNamePlaceholder')}
+    />
+  </label>
+  {#if newSpeakerNameIsPlaceholder}
+    <p class="new-speaker-error">{$t('speaker.placeholderNameRejected')}</p>
+  {:else}
+    <p class="new-speaker-hint">{$t('speaker.newSpeakerSlotHint', { label: newSpeakerSlot })}</p>
+  {/if}
+  <svelte:fragment slot="footer">
+    <!-- `modal-button` / `modal-cancel-button` / `modal-primary-button` are the
+         global classes in `src/styles/form-elements.css`; the `create-speaker-*`
+         classes are selector hooks only and carry no styling of their own. -->
+    <button
+      type="button"
+      class="modal-button modal-cancel-button create-speaker-cancel"
+      on:click={closeCreateSpeakerModal}
+    >
+      {$t('common.cancel')}
+    </button>
+    <button
+      type="button"
+      class="modal-button modal-primary-button create-speaker-confirm"
+      on:click={confirmCreateSpeaker}
+      disabled={!canCreateSpeaker}
+    >
+      {isCreatingSpeaker ? $t('common.saving') : $t('speaker.addSpeaker')}
+    </button>
+  </svelte:fragment>
+</BaseModal>
+
 <style>
   .speaker-dropdown-container {
     position: relative;
     display: inline-block;
+    /* Without these the container refuses to shrink below its content, so a long
+       name pushed the transcript text sideways instead of ellipsising (#741). */
+    max-width: 100%;
+    min-width: 0;
   }
 
   .speaker-trigger {
@@ -493,6 +753,8 @@
     border: none;
     cursor: pointer;
     padding: 0;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .segment-speaker {
@@ -502,6 +764,10 @@
     border-radius: 12px;
     white-space: nowrap;
     max-width: 150px;
+    /* Pairs with the flex parent: `max-width` alone caps growth but a flex item's
+       automatic minimum size is its content, so the pill still refused to shrink
+       and the arrow was pushed out of the row. */
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     border: 1px solid;
@@ -527,5 +793,44 @@
 
   .speaker-trigger:hover .segment-speaker {
     opacity: 0.8;
+  }
+
+  /* Marks "there is an unconfirmed suggestion for this speaker" WITHOUT putting the
+     guess in the name slot — the suggestion itself lives in the menu (#741). */
+  .suggestion-marker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    color: var(--warning-color, #f59e0b);
+  }
+
+  .new-speaker-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .new-speaker-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  /* The input itself is deliberately unstyled here: `src/styles/form-elements.css`
+     already themes every `input` for light and dark. */
+
+  .new-speaker-hint {
+    margin: 0.625rem 0 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .new-speaker-error {
+    margin: 0.625rem 0 0;
+    font-size: 0.75rem;
+    color: var(--error-color);
   }
 </style>

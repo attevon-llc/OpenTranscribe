@@ -6,6 +6,7 @@
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { RENAME_PROPAGATION_TIMEOUT_MS } from '$lib/api/speakerClusters';
+  import { isPlaceholderSpeakerName } from '$lib/utils/speakerNames';
 
   export let file: any = null;
   export let speakerList: any[] = [];
@@ -120,8 +121,11 @@
     if (!speaker.cross_video_matches || speaker.cross_video_matches.length === 0) {
       return false;
     }
-    // Only labeled speakers have cross-video matches (appears in X videos)
-    return !!(speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_'));
+    // Only labeled speakers have cross-video matches (appears in X videos).
+    // Uses the shared placeholder contract rather than a local
+    // `.startsWith('SPEAKER_')`, which also swallowed a genuinely named speaker
+    // such as "SPEAKER_OF_THE_HOUSE" — see `$lib/utils/speakerNames`.
+    return !isPlaceholderSpeakerName(speaker.display_name);
   }
 </script>
 

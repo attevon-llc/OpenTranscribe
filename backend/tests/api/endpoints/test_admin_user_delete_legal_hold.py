@@ -20,12 +20,37 @@ back ``db_session``. Both entry points are covered, because there are two:
 cascade helpers.
 """
 
+import pytest
 from fastapi import status
 
 from app.models.media import MediaFile
 from app.models.user import User
 from tests.user_owned_rows import make_media_file
 from tests.user_owned_rows import seed_owned_rows
+
+
+@pytest.fixture(autouse=True)
+def _spy_storage_reclaim_phase(monkeypatch):
+    """Neutralize the object-storage/OpenSearch reclaim phase (issue #695).
+
+    Same rationale as ``test_admin.py``'s sibling fixture — these tests seed rows
+    but never upload real objects. A spy, not a silent stub: it asserts the plan is
+    shaped like an ``AccountPurgePlan`` before reporting a clean sweep.
+    """
+    import app.services.file_cleanup_service as fcs
+
+    calls: list[fcs.AccountPurgePlan] = []
+
+    def _spy(plan: fcs.AccountPurgePlan) -> list[dict]:
+        assert isinstance(plan, fcs.AccountPurgePlan)
+        for file_plan in plan.files:
+            assert "file_uuid" in file_plan
+            assert "storage_path" in file_plan
+        calls.append(plan)
+        return []
+
+    monkeypatch.setattr(fcs, "purge_account_external_copies", _spy)
+    yield calls
 
 
 def _place_under_legal_hold(db_session, media_file: MediaFile) -> int:

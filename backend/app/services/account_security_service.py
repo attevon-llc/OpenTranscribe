@@ -276,16 +276,52 @@ class DeletedUser:
         return cls(uuid=str(user.uuid), email=str(user.email))
 
 
-def audit_user_deleted(user: DeletedUser, actor: User, client_ip: str, user_agent: str) -> None:
-    """Record a user deletion. ``ADMIN_USER_DELETE`` had no emitter before this."""
+def audit_user_deleted(
+    user: DeletedUser,
+    actor: User,
+    client_ip: str,
+    user_agent: str,
+    residual_errors: list[dict] | None = None,
+) -> None:
+    """Record a user deletion. ``ADMIN_USER_DELETE`` had no emitter before this.
+
+    Args:
+        user: Snapshot of the deleted account, captured before the row was gone.
+        actor: The admin who performed the deletion.
+        client_ip: Requesting client's IP.
+        user_agent: Requesting client's user agent.
+        residual_errors: Per-object failures from
+            ``file_cleanup_service.purge_account_external_copies`` (issue #695) — object
+            storage or OpenSearch documents that may still exist after the account's rows
+            were removed. Non-empty flips the outcome to ``PARTIAL`` so an incomplete
+            storage reclaim cannot audit as a clean success. ``details`` carries only
+            **counters** (``storage_objects_failed``, ``stages``), never the object keys
+            themselves — those quote filenames and storage paths and belong in the ERROR
+            log line instead, mirroring the GDPR erasure ledger's no-free-text rule.
+    """
+    residual_errors = residual_errors or []
+    details: dict[str, object] = {"target_user": user.uuid, "target_email": user.email}
+    outcome = AuditOutcome.SUCCESS
+    if residual_errors:
+        outcome = AuditOutcome.PARTIAL
+        details["storage_objects_failed"] = len(residual_errors)
+        details["stages"] = sorted({str(e.get("stage")) for e in residual_errors})
+        logger.error(
+            "user deletion for %s (%s) left %d external object(s) undeleted: %s",
+            user.uuid,
+            user.email,
+            len(residual_errors),
+            residual_errors,
+        )
+
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
-        outcome=AuditOutcome.SUCCESS,
+        outcome=outcome,
         user_id=actor.id,
         username=str(actor.email),
         source_ip=client_ip,
         user_agent=user_agent,
-        details={"target_user": user.uuid, "target_email": user.email},
+        details=details,
     )
 
 

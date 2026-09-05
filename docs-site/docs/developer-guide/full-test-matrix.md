@@ -223,6 +223,38 @@ still importing torch/whisperx when Flower booted is absent from it forever; see
 `celery-worker-gpu-scaled` logs during the run, and batch wall-clock is less than N times a
 single-file baseline.
 
+#### diar-native routing under gpu-scale / gpu-split — HARDWARE-GATED, last verified 2026-09-05
+
+These two rows cannot be cleared by `docker compose config` or by "a job completed": the
+PyAnnote fallback is silent by design, so an unreachable sidecar still yields correct
+transcripts ([#655](https://github.com/attevon-llc/OpenTranscribe/issues/655),
+[#711](https://github.com/attevon-llc/OpenTranscribe/issues/711)). Static wiring is enforced by
+`backend/tests/unit/test_diar_native_overlay_wiring.py`; the live proof is
+`backend/tests/integration/test_diar_native_multigpu_provider_live.py`, which is
+`integration`/`gpu`-marked and therefore **never runs in CI** — it must be run by hand on
+multi-GPU hardware:
+
+```bash
+cd backend && POSTGRES_PORT=<offset+5176> BACKEND_PORT=<offset+5174> \
+  venv/bin/python -m pytest tests/integration/test_diar_native_multigpu_provider_live.py \
+  --override-ini="addopts=" -m "integration or gpu" -v
+```
+
+⚠️ Bring up **exactly one** diarizing topology per run. With `celery-worker-gpu-scaled` and
+`celery-worker-gpu-diarize` both up, the broker picks the worker and the result is
+unattributable; the probe skips as NOT MEASURED rather than passing.
+
+| Row | Last verified | Evidence |
+|---|---|---|
+| `--gpu-scale` reaches diar-native | 2026-09-05 | `celery-worker-gpu-scaled`: `native diarization done in 2.8s`, `diarization_provider == "native"`, 0 fallback lines |
+| `--with-gpu-split` reaches diar-native | 2026-09-05 | `celery-worker-gpu-diarize`: `native diarization done in 3.3s`, 0 fallback lines; `celery-worker-gpu-transcribe` diarized nothing, i.e. it forwarded |
+
+**Still unverified** (criterion 5 of #711): the *device* relationship between the sidecar and
+the gpu-scale worker. `GPU_SCALE_DEVICE_ID` defaults to `2` while the sidecar defaults to
+`DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}`, so the shipped defaults describe a **cross-card**
+arrangement — legal, merely slower. The 2026-09-05 run had both on one card (GPU 1) because
+this host allocates a single GPU to the project, so it did not exercise the default pairing.
+
 ### Cycle 2C — diarization providers (~20 min, can fold into 2A if VRAM allows)
 
 diar-native loads by **default** — `--no-diar-native` is what suppresses it — so Cycle 2A already

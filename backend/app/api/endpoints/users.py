@@ -668,6 +668,8 @@ def delete_user(
     from app.api.endpoints.admin import _delete_user_media_files
     from app.api.endpoints.admin import _delete_user_owned_records
     from app.api.endpoints.admin import _delete_user_speakers
+    from app.services.file_cleanup_service import load_account_purge_plans
+    from app.services.file_cleanup_service import purge_account_external_copies
 
     user_id = user.id
 
@@ -676,6 +678,12 @@ def delete_user(
     # deletes of rows the caller was told were not deleted (issue #689).
     _assert_no_files_under_legal_hold(db, user_id)
 
+    # Phase 0 — read the storage/OpenSearch plan while the rows still exist (issue
+    # #695). See admin.delete_admin_user's docstring for the full phase-boundary
+    # rationale; this handler has no savepoint, so the read happens before any bulk
+    # delete runs at all.
+    purge_plan = load_account_purge_plans(db, user_id)
+
     _delete_user_owned_records(db, user_id)
     _delete_user_speakers(db, user_id)
     _delete_user_media_files(db, user_id)
@@ -683,7 +691,12 @@ def delete_user(
     db.delete(user)
     db.commit()
 
+    # Phase 2 — object storage + OpenSearch. NO transaction is held here. The rows are
+    # already gone, so a failure here is NOT retryable: it must be visible, never
+    # swallowed.
+    residual_errors = purge_account_external_copies(purge_plan)
+
     # ADMIN_USER_DELETE existed as an event type with no emitter anywhere.
-    audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent)
+    audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent, residual_errors)
 
     return None

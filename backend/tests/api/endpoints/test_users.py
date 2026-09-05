@@ -8,6 +8,32 @@ from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.user import User
 
+
+@pytest.fixture(autouse=True)
+def _spy_storage_reclaim_phase(monkeypatch):
+    """Neutralize the object-storage/OpenSearch reclaim phase (issue #695).
+
+    Same rationale as ``test_admin.py``'s sibling fixture — this module's deletion
+    tests seed rows but never upload real objects. A spy, not a silent stub: it
+    asserts the plan is shaped like an ``AccountPurgePlan`` before reporting a clean
+    sweep.
+    """
+    import app.services.file_cleanup_service as fcs
+
+    calls: list[fcs.AccountPurgePlan] = []
+
+    def _spy(plan: fcs.AccountPurgePlan) -> list[dict]:
+        assert isinstance(plan, fcs.AccountPurgePlan)
+        for file_plan in plan.files:
+            assert "file_uuid" in file_plan
+            assert "storage_path" in file_plan
+        calls.append(plan)
+        return []
+
+    monkeypatch.setattr(fcs, "purge_account_external_copies", _spy)
+    yield calls
+
+
 #: The five fields ``users.py`` strips on both update paths. Sending any one of
 #: them must leave the stored value alone.
 #:

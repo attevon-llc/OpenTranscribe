@@ -5,6 +5,8 @@ File cleanup service for recovering stuck files and maintaining system health.
 import contextlib
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
+from dataclasses import field
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -754,6 +756,133 @@ def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
         )
 
     residual.extend(_cleanup_opensearch_for_file(plan, file_uuid) or [])
+    return residual
+
+
+@dataclass(frozen=True)
+class AccountPurgePlan:
+    """Plain-data plan for destroying every external copy an ACCOUNT owns (issue #695).
+
+    Deleting a user removes ``media_file`` rows via a bulk ``query(...).delete()``
+    (``admin._delete_user_media_files``) that never loads instances and therefore never
+    reaches ``purge_media_file`` — so the objects those rows named survived every
+    account deletion forever. This is the account-scoped analogue of
+    :func:`_load_purge_plan`: read everything the external destroy needs *before* the
+    bulk delete runs, as plain data, then hand it to :func:`purge_account_external_copies`
+    with no transaction open.
+
+    Attributes:
+        files: One ``_load_purge_plan``-shaped dict per media file the account owns.
+        avatar_paths: Every non-null ``SpeakerProfile.avatar_path`` the account owns.
+            ``purge_media_file`` deliberately never touches these — profiles are
+            preserved when a single FILE is destroyed — but the account-delete path
+            destroys the profiles themselves (``_delete_user_owned_records``), and
+            nothing else has ever removed the avatar objects backing them.
+    """
+
+    files: list[dict[str, Any]] = field(default_factory=list)
+    avatar_paths: list[str] = field(default_factory=list)
+
+
+def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
+    """Read the storage/OpenSearch addresses of everything an account owns.
+
+    Two COLUMN-ONLY queries — **plain tuples, never ORM instances** — for the same
+    reason :func:`_load_purge_plan` reads plain data: an escaping instance lazy-loads,
+    which reopens a transaction in the middle of the caller's external-copy phase.
+
+    ``speaker_uuids`` is deliberately left ``[]`` on every file plan here, NOT because
+    the file's speakers should be skipped, but because the account-delete cascade
+    already removes every one of this user's speaker embeddings itself
+    (``admin._delete_user_speakers``, which runs before the bulk file delete). Reusing
+    ``_purge_external_copies`` per file would otherwise attempt the same OpenSearch
+    deletes twice — harmless (idempotent), but worth documenting so a future reader
+    does not "fix" this into a duplicate sweep.
+
+    Args:
+        db: The caller's session, used only for the reads below.
+        user_id: Internal id of the account about to be deleted.
+
+    Returns:
+        An :class:`AccountPurgePlan` naming every object this account's cascade must
+        remove from object storage and OpenSearch.
+    """
+    from app.models.media import SpeakerProfile
+
+    file_rows = (
+        db.query(
+            MediaFile.id,
+            MediaFile.uuid,
+            MediaFile.filename,
+            MediaFile.storage_path,
+            MediaFile.thumbnail_path,
+        )
+        .filter(MediaFile.user_id == user_id)
+        .all()
+    )
+    files: list[dict[str, Any]] = [
+        {
+            "file_id": int(row.id),
+            "file_uuid": str(row.uuid),
+            "owner_id": int(user_id),
+            "filename": str(row.filename) if row.filename else None,
+            "storage_path": str(row.storage_path) if row.storage_path else None,
+            "thumbnail_path": str(row.thumbnail_path) if row.thumbnail_path else None,
+            "speaker_uuids": [],
+            "speaker_read_error": None,
+        }
+        for row in file_rows
+    ]
+
+    avatar_rows = (
+        db.query(SpeakerProfile.avatar_path)
+        .filter(SpeakerProfile.user_id == user_id, SpeakerProfile.avatar_path.isnot(None))
+        .all()
+    )
+    avatar_paths = [str(row[0]) for row in avatar_rows if row[0]]
+
+    return AccountPurgePlan(files=files, avatar_paths=avatar_paths)
+
+
+def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]]:
+    """Destroy every external copy an ACCOUNT owned. **Takes no Session, never raises.**
+
+    Runs after the account's rows are already committed (see
+    ``admin.delete_admin_user`` / ``users.delete_user``): the rows are gone, so a
+    failure here is not retryable and must be visible, never swallowed. Reuses
+    :func:`_purge_external_copies` per file rather than open-coding a second artifact
+    list, which is what gives this call thumbnail + derived-cache (including listed
+    masked variants) + OpenSearch erasure for free, in one audited implementation.
+
+    Args:
+        plan: The plain-data plan from :func:`load_account_purge_plans`.
+
+    Returns:
+        One ``{"stage", "file_uuid"|"avatar_path", "error"}`` dict per object that may
+        still exist. Empty means every object was confirmed gone.
+    """
+    residual: list[dict[str, Any]] = []
+
+    for file_plan in plan.files:
+        try:
+            residual.extend(_purge_external_copies(file_plan))
+        except Exception as e:  # noqa: BLE001 — one file must never block the rest
+            residual.append(
+                {
+                    "stage": "storage",
+                    "file_uuid": file_plan.get("file_uuid"),
+                    "error": str(e),
+                }
+            )
+
+    for avatar_path in plan.avatar_paths:
+        try:
+            from app.services.minio_service import delete_file
+
+            delete_file(avatar_path)
+        except Exception as e:  # noqa: BLE001 — one avatar must never block the rest
+            residual.append({"stage": "avatar", "avatar_path": avatar_path, "error": str(e)})
+
     return residual
 
 

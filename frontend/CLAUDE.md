@@ -69,8 +69,14 @@ in production passes while proving nothing. Correctness over 1.3 s.
 The frontend renders backend data and captures input. Business logic, aggregation, and
 domain formatting belong in the API. The backend already sends pre-formatted display fields
 (`formatted_duration`, `display_status`, `resolved_speaker_name`, analytics, …) — render those,
-don't recompute. Approved client-side exception: purely-presentational transforms on
-already-downloaded data (TXT/SRT/VTT/CSV export).
+don't recompute. ⚠️ **The former "approved client-side exception" for purely-presentational
+transforms on already-downloaded data (TXT/SRT/VTT/CSV export) is retracted — it is the
+mechanism of a live security bug, issue #673.** A client-side serializer cannot enforce a
+server-side policy: five of the six user-clickable export formats build transcript text in
+the browser, so none of them ever consult the server-side `export_locked` admin lock. An
+admin can mandate censored exports and every SPA export button still writes the unredacted
+original to disk. Transcript export is being moved server-side to close this. Do not add a
+second client-side exporter believing this exception still applies.
 
 ## dev (Vite) vs prod (nginx) — both must work
 

@@ -314,6 +314,12 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   A test that opens its **own** connection cannot be reached by the marker — it must call
   `tests/db_locks.py`'s `acquire_ddl_lock_exclusive[_raw]()` itself, as
   `unit/test_uuid7_migration_guard.py` does for the raw v368 guard block.
+  Measured 2026-09-05, at ~12,900 tests total: the barrier now costs **6-13 s of a ~154 s
+  suite**, across 43 `ddl_exclusive` tests with ~4 s of actual DDL work — the rest is lock
+  queueing, not execution. **A two-pass split (running `ddl_exclusive` tests in a separate
+  pytest process) was measured and rejected**: the second process re-pays interpreter startup,
+  import, and collection, costing +20.3 s to +48.6 s to remove a barrier worth at most 12.9 s —
+  a net loss. Don't re-propose it without new evidence the collection cost can be shared.
 - E2E runs from the repo root against `backend/tests/e2e/`, so `e2e/pytest.ini` becomes the
   rootdir config — pyproject `addopts` (`-n auto`, `-m 'not integration'`) do **not** apply.
 

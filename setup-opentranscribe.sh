@@ -519,9 +519,17 @@ download_release_manifest_artifacts() {
     # preferred. Only when the pinned ref predates the manifest do we borrow the list
     # from the default branch. The ARTIFACTS are always fetched from the pinned ref
     # ($github_raw) either way — only the file *list* falls back, so this cannot
-    # reintroduce an unpinned install. The manifest's `optional` flag is what absorbs
-    # the skew: a file a newer manifest lists but an older release does not have is
-    # reported and skipped, not fatal.
+    # reintroduce an unpinned install.
+    #
+    # issue #723: a borrowed manifest is NEWER than the tag it is being applied to, so
+    # it can list a REQUIRED entry the tag genuinely never shipped (e.g. NOTICE, added
+    # required in 91128ecb the same day this was found). The `optional` flag alone does
+    # not absorb that skew — it only helps entries someone remembered to mark, and a
+    # required-on-principle file like NOTICE is deliberately never marked optional. So
+    # when the manifest had to be borrowed, a download failure for ANY entry is treated
+    # as "this tag predates the file" and skipped, never fatal — the tag's own manifest
+    # (the normal, non-borrowed case) is still enforced at full strictness.
+    local manifest_borrowed=0
     if ! curl -fsSL --connect-timeout 10 --max-time 30 \
         "$github_raw/release-manifest.txt" -o release-manifest.txt.new; then
         rm -f release-manifest.txt.new
@@ -533,9 +541,10 @@ download_release_manifest_artifacts() {
             curl -fsSL --connect-timeout 10 --max-time 30 \
                 "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${default_branch}/release-manifest.txt" \
                 -o release-manifest.txt.new; then
+            manifest_borrowed=1
             echo -e "  ${YELLOW}⚠️${NC}  ${branch} predates release-manifest.txt — using the file list from '${default_branch}'."
             echo "     Deployment files are still downloaded from ${branch}; files that release"
-            echo "     does not have are skipped only if the manifest marks them optional."
+            echo "     does not have are skipped, whether or not the manifest marks them optional."
         else
             rm -f release-manifest.txt.new
             echo -e "${RED}❌ Failed to download release-manifest.txt from ${branch}${NC}"
@@ -595,8 +604,12 @@ download_release_manifest_artifacts() {
                     echo -e "  ${YELLOW}⚠️${NC}  $artifact_path (optional, not in this release)"
                     ;;
                 *)
-                    echo -e "  ${RED}✗${NC}  $artifact_path (REQUIRED — download failed)"
-                    install_failed=1
+                    if [ "$manifest_borrowed" -eq 1 ]; then
+                        echo -e "  ${YELLOW}⚠️${NC}  $artifact_path (required by a newer manifest, but ${branch} predates it — skipped)"
+                    else
+                        echo -e "  ${RED}✗${NC}  $artifact_path (REQUIRED — download failed)"
+                        install_failed=1
+                    fi
                     ;;
             esac
         fi

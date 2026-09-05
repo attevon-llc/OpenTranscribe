@@ -1585,9 +1585,16 @@ case "${1:-help}" in
         # Releases published before release-manifest.txt existed have no list to read, and
         # following the pin (above) means we now ask them for one. Borrow the list from the
         # default branch in that case — the ARTIFACTS still come from $GITHUB_RAW, i.e. the
-        # pinned release, so this cannot un-pin the install. The manifest's `optional` flag
-        # absorbs entries the older release does not have. Same fallback as
+        # pinned release, so this cannot un-pin the install. Same fallback as
         # setup-opentranscribe.sh's download_release_manifest_artifacts(); see issue #683.
+        #
+        # issue #723: a borrowed manifest is NEWER than $BRANCH, so it can list a REQUIRED
+        # entry that tag never shipped (NOTICE, added required in 91128ecb). `optional`
+        # alone does not absorb that — it only helps entries someone remembered to flag,
+        # and a required-on-principle file is deliberately never flagged optional. So once
+        # the manifest is known to be borrowed, a download failure for ANY entry means
+        # "this tag predates the file" and is skipped rather than fatal.
+        MANIFEST_BORROWED=0
         echo "  Downloading release-manifest.txt..."
         if ! curl -fsSL "$GITHUB_RAW/release-manifest.txt" -o release-manifest.txt.new; then
             rm -f release-manifest.txt.new
@@ -1596,8 +1603,10 @@ case "${1:-help}" in
             if [ -n "$MANIFEST_FALLBACK_BRANCH" ] && [ "$MANIFEST_FALLBACK_BRANCH" != "$BRANCH" ] &&
                 curl -fsSL "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${MANIFEST_FALLBACK_BRANCH}/release-manifest.txt" \
                     -o release-manifest.txt.new; then
+                MANIFEST_BORROWED=1
                 echo -e "  ${YELLOW}⚠️${NC}  $BRANCH predates release-manifest.txt — using the file list from '${MANIFEST_FALLBACK_BRANCH}'."
-                echo -e "     Config files are still downloaded from $BRANCH."
+                echo -e "     Config files are still downloaded from $BRANCH; files that release"
+                echo -e "     does not have are skipped, whether or not the manifest marks them optional."
             else
                 rm -f release-manifest.txt.new
                 echo -e "  ${RED}✗${NC} could not fetch release-manifest.txt from $BRANCH"
@@ -1634,8 +1643,12 @@ case "${1:-help}" in
                         echo -e "  ${YELLOW}⚠️${NC} $artifact_path (optional, not in this release)"
                         ;;
                     *)
-                        echo -e "  ${RED}✗${NC} $artifact_path (REQUIRED — download failed)"
-                        update_failed=1
+                        if [ "$MANIFEST_BORROWED" -eq 1 ]; then
+                            echo -e "  ${YELLOW}⚠️${NC} $artifact_path (required by a newer manifest, but $BRANCH predates it — skipped)"
+                        else
+                            echo -e "  ${RED}✗${NC} $artifact_path (REQUIRED — download failed)"
+                            update_failed=1
+                        fi
                         ;;
                 esac
             fi

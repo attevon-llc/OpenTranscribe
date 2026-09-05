@@ -550,11 +550,35 @@ aux-file record.
 
 ## docker-build-push.sh
 
-- **ALWAYS `USE_REMOTE_BUILDER=true`.** It defaults to `false` and `PLATFORMS` defaults to
-  `linux/amd64,linux/arm64`, so without it ARM64 builds under QEMU — 2–3 h instead of 15–30 min.
+- **The tag grammar, and its ONE home** (issue #680). Capability lives in the **repository** — a
+  manifest index cannot span repos — and is **restated in the tag**:
+
+  | repo | capability | legs built | index | `:latest` |
+  |---|---|---|---|---|
+  | `opentranscribe-backend` | `cuda` | `vX.Y.Z-cuda-amd64` | `vX.Y.Z` | digest-copy of the index |
+  | `opentranscribe-backend-lite` | `cpu` | `vX.Y.Z-cpu-amd64`, `vX.Y.Z-cpu-arm64` | `vX.Y.Z` | digest-copy |
+  | `opentranscribe-frontend` / `-docs` | `multiarch` | (no cap legs) | `vX.Y.Z` | digest-copy |
+  | `opentranscribe-backend` (`:blackwell`) | `blackwell` | `vX.Y.Z-blackwell-arm64` | — | `:blackwell` |
+
+  `vX.Y.Z-cuda-arm64` is **reserved and not built**: no aarch64 CUDA torch wheel at the pinned
+  version, `onnxruntime-gpu` has zero aarch64 wheels, and diar-native publishes no CUDA arm64
+  sidecar. Do not transcribe this table anywhere else — ask the script:
+  **`./scripts/docker-build-push.sh list-platforms`** prints `component<TAB>capability<TAB>platforms`
+  and is the single source of truth (`COMPONENT_PLATFORMS` / `COMPONENT_CAPABILITY`).
+  `scripts/release/80-publish.sh` and `40-build.sh` derive from it rather than hardcoding arches.
+- **`PLATFORMS` is now an explicit OVERRIDE, not a default.** It used to default to
+  `linux/amd64,linux/arm64` for **every** component, which is the mechanism issue #680 names for
+  how a degraded arm64 backend got published beside a good amd64 one under one tag with nothing
+  to notice. Unset, each component builds only its own declared platforms; set, it forces every
+  component being built onto that list (`PLATFORMS=linux/amd64 $0 backend` for a quick
+  single-arch build).
+- **ALWAYS `USE_REMOTE_BUILDER=true`** when a build includes `linux/arm64` (today: `lite`).
+  It defaults to `false`, and without it arm64 builds under QEMU — 2–3 h instead of 15–30 min.
   It hard-exits if the `opentranscribe-multiarch` builder is missing (`setup-remote-builder.sh setup`).
-- `SKIP_SECURITY_SCAN=true` for quick iteration; `PLATFORMS=linux/amd64` for single-arch (no remote
-  builder needed); `$0 auto` builds only git-changed components.
+- `SKIP_SECURITY_SCAN=true` for quick iteration; `$0 lite` / `$0 backend` for one component;
+  `$0 auto` builds only git-changed components (`backend` changes build **both** backend and lite,
+  since both come from `backend/`). `blackwell` is built **only on request** — never by
+  `all`/`auto`, and never published.
 - ⚠️ **"Scanned, findings tolerable" and "never scanned" are DIFFERENT outcomes and must stay
   that way** (issue #681). `security-scan.sh` exits **1** for findings and **2** for could-not-scan
   (unknown component, image unobtainable, a sub-scan that died without recording a verdict);
@@ -565,15 +589,29 @@ aux-file record.
   state, since it was in `BUILT_COMPONENTS` with a `security-scan.sh` arm but no registry-pull
   branch, so the default path "scanned" an image it never fetched.
 - **The scannable component list has exactly one home**: the `SCAN_COMPONENT_*` tables in
-  `security-scan.sh`, exposed as `./scripts/security-scan.sh list-components`.
-  `docker-build-push.sh` validates `BUILT_COMPONENTS` against that before pulling anything, and
-  both its pull dispatches now have a failing `*)`. Adding a component (e.g. `lite`, issue #667)
-  means adding it there; forgetting is now loud instead of a green run over an unscanned
-  published image. Guarded by `scripts/tests/test-scan-not-a-pass.sh` (19 cases, 0.4 s, no
-  Docker/network), wired as the `scan-not-a-pass` pre-commit hook.
-- **Every path ends in `buildx --push` — there is no local-only mode.** `:latest` and `:vX.Y.Z` hit
-  Docker Hub the instant the build finishes, and it then runs `push-security-reports.sh`, which
-  **git-commits and pushes** `security-reports/` to whatever branch is checked out.
+  `security-scan.sh`, exposed as `./scripts/security-scan.sh list-components` (and
+  `list-repos`, `component<TAB>repo`, which `scripts/release/50-scan.sh` derives its
+  component→repo map from). `docker-build-push.sh` validates `BUILT_COMPONENTS` against that
+  before pulling anything, and both its pull dispatches have a failing `*)`. Adding a component
+  means adding it there; forgetting is loud instead of a green run over an unscanned published
+  image. `lite` and `blackwell` are in it as of #680. **The platform table's key set must EQUAL
+  that list** — `assert_platform_table_matches_scan_components` checks it on every run, because
+  a component in one table and not the other is either unscanned or built with an empty platform
+  list. Guarded by `scripts/tests/test-scan-not-a-pass.sh` (19 cases) and
+  `scripts/tests/test-publish-platforms.sh` (11 assertions, each with an observed red state),
+  both offline, both wired as pre-commit hooks.
+  ⚠️ `test-scan-not-a-pass.sh` uses **`bogus`** as its "unknown component" placeholder. It used
+  to use `lite` — which stopped being unknown the moment #680 made it real, at which point those
+  cases started a REAL Trivy scan and hung. If you ever make `bogus` a component, rename it there.
+- **`BUILD_MODE=local` is the only path that does not push.** Every other path ends in
+  `buildx --push`: `:vX.Y.Z` (and `:latest`, unless `PUSH_LATEST=false`) hit Docker Hub the
+  instant the build finishes. Capability-bearing components push one **leg** per architecture and
+  then assemble the index with `buildx imagetools create`, so the index provably contains exactly
+  those legs. In `local` mode there is nothing in a registry to assemble from, so index assembly
+  is skipped and the single host-arch build is additionally tagged `repo:vX.Y.Z` — which is what
+  `scripts/release/40-build.sh`'s baked-version check runs against. It also runs
+  `push-security-reports.sh` when `PUSH_SECURITY_REPORTS=true`, which **git-commits and pushes**
+  `security-reports/` to whatever branch is checked out.
 
 ## DESTRUCTIVE — never run casually
 

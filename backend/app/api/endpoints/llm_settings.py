@@ -883,6 +883,7 @@ def test_llm_connection(
 
 @router.post("/test-current", response_model=schemas.ConnectionTestResponse)
 def test_active_configuration(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -947,7 +948,12 @@ def test_active_configuration(
     # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
     # Harmless only while these two callers never set `config_id` on the request they build —
     # the first one that does gets an AttributeError on a Depends instance.
-    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
+    # `request=request` is required for the same reason (issue #676 made it keyword-only, for
+    # the outbound rate limiter's per-user/per-IP key); omitting it is a TypeError at call time,
+    # which is what broke both of these endpoints.
+    result = test_llm_connection(
+        request=request, test_request=test_request, current_user=current_user, db=db
+    )
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -964,6 +970,7 @@ def test_active_configuration(
 @router.post("/test-config/{config_uuid}", response_model=schemas.ConnectionTestResponse)
 def test_specific_configuration(
     config_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -998,7 +1005,12 @@ def test_specific_configuration(
     # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
     # Harmless only while these two callers never set `config_id` on the request they build —
     # the first one that does gets an AttributeError on a Depends instance.
-    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
+    # `request=request` is required for the same reason (issue #676 made it keyword-only, for
+    # the outbound rate limiter's per-user/per-IP key); omitting it is a TypeError at call time,
+    # which is what broke both of these endpoints.
+    result = test_llm_connection(
+        request=request, test_request=test_request, current_user=current_user, db=db
+    )
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:

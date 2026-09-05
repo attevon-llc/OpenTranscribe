@@ -20,6 +20,7 @@ import contextlib
 import datetime
 import json
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
@@ -196,6 +197,9 @@ def _count_embeddable_speakers_per_file(file_ids: list[int]) -> dict[int, int]:
         return {int(fid): cnt for fid, cnt in rows}
 
 
+_ALREADY_MIGRATED_COMPOSITE_PAGE_SIZE = 10000
+
+
 def _get_already_migrated_file_ids() -> set[int]:
     """Return set of media_file_id values fully migrated in the v4 index."""
     from app.services.opensearch_service import get_opensearch_client
@@ -209,22 +213,37 @@ def _get_already_migrated_file_ids() -> set[int]:
         return set()
 
     try:
-        response = client.search(
-            index=v4_index,
-            body={
-                "size": 0,
-                "aggs": {
-                    "file_ids": {
-                        "terms": {
-                            "field": "media_file_id",
-                            "size": 50000,
-                        }
-                    }
+        # Issue #657, defect 6: a plain `terms` agg caps at `size` buckets -
+        # 50,000 - and silently UNDER-reports past that, which re-processes
+        # already-migrated files rather than erroring loudly. `composite`
+        # pages through every distinct media_file_id via `after`, with no
+        # cap on the total number of buckets visited.
+        v4_counts: dict[int, int] = {}
+        after: dict[str, Any] | None = None
+        page_size = _ALREADY_MIGRATED_COMPOSITE_PAGE_SIZE
+        while True:
+            composite_agg: dict[str, Any] = {
+                "size": page_size,
+                "sources": [{"media_file_id": {"terms": {"field": "media_file_id"}}}],
+            }
+            if after is not None:
+                composite_agg["after"] = after
+            response = client.search(
+                index=v4_index,
+                body={
+                    "size": 0,
+                    "aggs": {"file_ids": {"composite": composite_agg}},
                 },
-            },
-        )
-        buckets = response.get("aggregations", {}).get("file_ids", {}).get("buckets", [])
-        v4_counts = {int(b["key"]): b["doc_count"] for b in buckets}
+            )
+            file_ids_agg = response.get("aggregations", {}).get("file_ids", {})
+            buckets = file_ids_agg.get("buckets", [])
+            if not buckets:
+                break
+            for b in buckets:
+                v4_counts[int(b["key"]["media_file_id"])] = b["doc_count"]
+            after = file_ids_agg.get("after_key")
+            if after is None or len(buckets) < page_size:
+                break
     except Exception as e:
         logger.warning(f"Could not query v4 index for skip logic: {e}")
         return set()

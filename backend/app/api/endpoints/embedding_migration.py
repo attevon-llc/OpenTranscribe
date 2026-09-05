@@ -101,7 +101,22 @@ def get_migration_status(
         progress = migration_progress.get_status()
         status["progress"] = progress
 
-        status["transcription_paused"] = False
+        # Issue #657, defect 4: this was hardcoded False even after the lock
+        # was actually wired up - now reports the real lock state.
+        from app.services.migration_lock_service import migration_lock
+
+        status["transcription_paused"] = migration_lock.is_active()
+
+        # Issue #657, defect 6: the UI ETA used to multiply v3_document_count
+        # (speaker DOCUMENTS) by a per-file constant, as if they were files -
+        # overcounting by however many speakers the average file has.
+        # completed_file_count is the actual unit the ETA formula needs.
+        from app.models.media import FileStatus
+        from app.models.media import MediaFile
+
+        status["completed_file_count"] = (
+            db.query(MediaFile).filter(MediaFile.status == FileStatus.COMPLETED).count()
+        )
 
         # Detect stalled migration: v4 index has docs but mode is still v3
         # and Redis progress is empty/expired (no running migration)

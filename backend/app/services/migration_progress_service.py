@@ -22,6 +22,18 @@ logger = logging.getLogger(__name__)
 # Redis key prefix for migration tracking
 MIGRATION_KEY_PREFIX = "embedding_migration"
 
+# Issue #657, defect 6: 24h was quoted as the safety-net TTL while the docs
+# themselves estimate 12+ hours for 1000+ files - leaving less than a 2x
+# margin for a slow batch, a paused-for-migration-lock stretch, or simple
+# GPU contention. Every increment_processed() call refreshes this TTL (see
+# _INCREMENT_LUA's `EX`), so it is really "time since the last processed
+# file", not "time since migration start" - but a long stall between files
+# (a huge single file, a wedged GPU) could still exceed 24h and cause
+# is_running() to read False mid-migration, aborting in-flight batches.
+# 72h gives real headroom without keeping a genuinely-abandoned migration's
+# Redis key alive indefinitely.
+MIGRATION_STATUS_TTL_SECONDS = 72 * 60 * 60
+
 
 class MigrationStatus(TypedDict):
     """Type definition for migration status."""
@@ -152,7 +164,7 @@ class MigrationProgressService:
 
             status_key = self._get_key("status")
             # Set with 24-hour TTL as a safety measure
-            self.redis_client.set(status_key, json.dumps(status), ex=86400)
+            self.redis_client.set(status_key, json.dumps(status), ex=MIGRATION_STATUS_TTL_SECONDS)
             # Clear any previous completion flag
             self.redis_client.delete(self._get_key("completed"))
             logger.info(f"Started migration tracking: {total_files} files")
@@ -190,7 +202,7 @@ class MigrationProgressService:
         end
     end
 
-    redis.call("SET", key, cjson.encode(status), "EX", 86400)
+    redis.call("SET", key, cjson.encode(status), "EX", ARGV[4])
     return status["processed_files"]
     """
 
@@ -219,6 +231,7 @@ class MigrationProgressService:
                 file_uuid or "",
                 "1" if not success else "0",
                 datetime.now(UTC).isoformat(),
+                MIGRATION_STATUS_TTL_SECONDS,
             )
             return True
 

@@ -209,11 +209,22 @@ def prepare_file(
     except Exception as e:
         raise PermanentFileError(f"{file_uuid} MinIO object missing ({storage_path}): {e}") from e
 
-    # Generate presigned URL — ffmpeg will seek directly into MinIO
+    # Generate presigned URL — ffmpeg will seek directly into MinIO.
+    #
+    # Issue #657, defect 6: this used to be a flat 2h regardless of the
+    # deployment's actual signing-credential lifetime, while ALL 25 files in
+    # a batch are presigned upfront (submit_segment_fetches, below) and
+    # processed sequentially — a slow batch can outlive its own last file's
+    # URL. clamp_presigned_expiry() uses the deployment's real ceiling
+    # (PRESIGNED_URL_MAX_SECONDS, 6h default) instead of a value picked with
+    # no relation to it, which does not fix a batch slower than the ceiling
+    # but at minimum stops leaving 4 of those 6 hours unused for free.
+    from app.services.storage_backend import max_presigned_seconds
+
     audio_source = minio_client.presigned_get_object(
         bucket_name=settings.MEDIA_BUCKET_NAME,
         object_name=storage_path,
-        expires=datetime.timedelta(hours=2),
+        expires=datetime.timedelta(seconds=max_presigned_seconds()),
     )
 
     return PreparedFile(

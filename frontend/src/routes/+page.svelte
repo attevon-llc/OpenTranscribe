@@ -16,6 +16,7 @@
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
   import GalleryGrid from '$components/gallery/GalleryGrid.svelte';
   import BulkTagModal from '$components/gallery/BulkTagModal.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
   import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
   import type { BulkTagAction } from '$lib/types/tag';
 
@@ -1487,56 +1488,25 @@
 
 <!-- Upload Modal -->
 {#if showUploadModal}
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <!--
-    Upload modal backdrop.
-    Backdrop click is intentionally NOT bound to close - the user has in-progress
-    upload state (file, tags, collections, speaker settings, etc.) and a stray
-    click outside should not destroy their work. Only the X button and Escape
-    key close the modal explicitly.
+    `closeOnBackdropClick={false}` is deliberate: the user has in-progress upload
+    state (file, tags, collections, speaker settings) and a stray click outside
+    must not destroy their work. The X button and Escape still close.
+
+    This was hand-rolled modal chrome until #739. BaseModal brings the scroll
+    lock, focus trap and `overscroll-behavior: contain` the copy never had — the
+    last of which is why scrolling the wizard used to scroll the gallery behind it.
   -->
-  <div
-    class="modal-backdrop"
-    role="presentation"
-    transition:fade={{ duration: 400 }}
-    on:wheel|preventDefault|self
-    on:touchmove|preventDefault|self
-    on:keydown={(e) => e.key === 'Escape' && toggleUploadModal()}
-  >
-    <!-- The actual modal dialog -->
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <!-- svelte-ignore a11y_interactive_supports_focus -->
-    <div
-      class="modal-container"
-      role="dialog"
-      aria-labelledby="upload-modal-title"
-      aria-modal="true"
-      tabindex="-1"
-      transition:scale={{ duration: 350, start: 0.9 }}
-      on:click|stopPropagation
-      on:keydown|stopPropagation>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 id="upload-modal-title">{$t('nav.addMedia')}</h2>
-          <button
-            class="modal-close"
-            on:click={toggleUploadModal}
-            aria-label={$t('gallery.closeUploadDialog')}
-            title={$t('gallery.closeUploadDialog')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <FileUploader on:uploadComplete={handleUploadComplete} />
-        </div>
-      </div>
-    </div>
+  <div class="upload-modal-host">
+    <BaseModal
+      isOpen={showUploadModal}
+      title={$t('nav.addMedia')}
+      maxWidth="720px"
+      closeOnBackdropClick={false}
+      onClose={toggleUploadModal}
+    >
+      <FileUploader on:uploadComplete={handleUploadComplete} />
+    </BaseModal>
   </div>
 {/if}
 
@@ -1814,6 +1784,19 @@
     flex: 1;
     padding: 1.5rem;
     overflow-y: auto;
+    /* Without this, scrolling past the end of a modal's content scrolls the
+       gallery underneath it (#739). BaseModal already sets this; these
+       hand-rolled dialogs did not. */
+    overscroll-behavior: contain;
+  }
+
+  /* The upload wizard steps have very different natural heights, so a
+     content-sized dialog resized and flickered on every Next/Back (#739).
+     Pinning the height keeps the stepper, content area and footer buttons
+     stationary across all six steps. Scoped to this dialog's host so the other
+     BaseModal consumers stay content-sized. */
+  .upload-modal-host :global(.modal-container) {
+    height: min(90vh, 780px);
   }
 
   /* Responsive design */

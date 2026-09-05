@@ -958,11 +958,10 @@
           {$t('uploader.back')}
         </button>
       {/if}
-      {#if currentStep?.optional && !isLastStep}
-        <button type="button" class="nav-btn nav-skip" on:click={goNext}>
-          {$t('uploader.skip')}
-        </button>
-      {/if}
+      <!-- No "Skip" button here (#739): it called `goNext` — the same handler as
+           the Next button beside it — so it offered a choice that did not exist.
+           Advancing past an optional step without filling it in IS skipping it;
+           "Review with defaults" remains the way to jump straight to the end. -->
     </div>
 
     <div class="nav-right">
@@ -1301,14 +1300,6 @@
   }
 
   .nav-back:hover { background: var(--button-hover); color: var(--text-primary); }
-
-  .nav-skip {
-    background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-  }
-
-  .nav-skip:hover { background: var(--surface-color); color: var(--text-primary); }
 
   /* "Review with defaults" — prominent secondary action, clearly distinct from Next */
   .nav-review-defaults {

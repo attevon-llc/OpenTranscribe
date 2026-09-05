@@ -65,3 +65,44 @@ describe('BaseModal z-index contract', () => {
     expect(el.style.getPropertyValue('--modal-instance-z-index').trim()).toBe('1300');
   });
 });
+
+/**
+ * Some dialogs hold in-progress user work that a stray click outside must not
+ * destroy — the upload wizard (#739) carries a chosen file plus tags,
+ * collections and speaker settings. Those opt out of close-on-backdrop while
+ * keeping the Escape key and the X button, so there is still an obvious way out.
+ */
+describe('BaseModal backdrop dismissal', () => {
+  it('closes on a backdrop click by default', async () => {
+    const onClose = vi.fn();
+    const { container } = render(BaseModal, {
+      props: { isOpen: true, title: 'Dismissable', onClose },
+    });
+
+    backdrop(container).click();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not close on a backdrop click when closeOnBackdropClick is false', async () => {
+    const onClose = vi.fn();
+    const { container } = render(BaseModal, {
+      props: { isOpen: true, title: 'Protected', onClose, closeOnBackdropClick: false },
+    });
+
+    backdrop(container).click();
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('still closes via the X button when closeOnBackdropClick is false', async () => {
+    const onClose = vi.fn();
+    const { container } = render(BaseModal, {
+      props: { isOpen: true, title: 'Protected', onClose, closeOnBackdropClick: false },
+    });
+
+    (container.querySelector('.modal-close-button') as HTMLElement).click();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

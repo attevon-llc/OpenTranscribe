@@ -33,6 +33,15 @@
    * stops scrolling and long content is unreachable.
    */
   export let allowOverflow = false;
+  /**
+   * Whether clicking the backdrop dismisses the modal.
+   *
+   * Set `false` for dialogs holding in-progress user work that a stray click
+   * must not destroy — the upload wizard (#739) carries a chosen file plus
+   * tags, collections and speaker settings. Escape and the X button still
+   * close, so there is always an obvious way out.
+   */
+  export let closeOnBackdropClick = true;
   export let onClose: () => void = () => {};
 
   // Stable id for wiring the dialog's accessible name to its <h2> title (when no
@@ -50,6 +59,7 @@
   });
 
   function handleBackdropClick(event: MouseEvent) {
+    if (!closeOnBackdropClick) return;
     if (event.target === event.currentTarget) onClose();
   }
 

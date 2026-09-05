@@ -69,6 +69,7 @@ from .streaming import get_thumbnail_streaming_response
 from .streaming import validate_file_exists
 from .subtitles import router as subtitles_router
 from .summary_status import router as summary_status_router
+from .transcript_export import router as transcript_export_router
 from .upload import process_file_upload
 from .url_processing import router as url_processing_router
 from .waveform import router as waveform_router
@@ -131,6 +132,7 @@ router.include_router(prepare_upload.router, prefix="", tags=["files"])
 router.include_router(complete_upload.router, prefix="", tags=["files"])
 router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
+router.include_router(transcript_export_router, prefix="", tags=["files"])
 router.include_router(waveform_router, prefix="", tags=["waveform"])
 router.include_router(url_processing_router, prefix="", tags=["url-processing"])
 router.include_router(segments_router, prefix="", tags=["files"])

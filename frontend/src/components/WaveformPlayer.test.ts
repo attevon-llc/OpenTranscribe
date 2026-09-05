@@ -148,8 +148,8 @@ describe('loading waveform data', () => {
     // doesn't touch the DOM. That silently dead-weighted every waveform
     // fetch by 100ms on a fresh page load. Only microtask turns are awaited
     // below — no timer tick at all — so this fails under the old code.
-    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
-    render(WaveformPlayer, { props: { fileId: 'f1' } });
+    mockAxios.get.mockResolvedValue({ data: { waveform: [10, 200, 50] } });
+    const { container } = render(WaveformPlayer, { props: { fileId: 'f1', duration: 10 } });
 
     await Promise.resolve();
     await Promise.resolve();
@@ -158,6 +158,16 @@ describe('loading waveform data', () => {
     // resolution bucket at desktop innerWidth — see 'resolution selection'
     // above for the bucket boundaries.
     expect(mockAxios.get).toHaveBeenCalledWith('/files/f1/waveform', { params: { samples: 500 } });
+
+    // A called mock proves the REQUEST went out immediately; it does not
+    // prove the fetched data ever reached the component. Wait for the
+    // real axios promise to settle and assert the waveform actually
+    // rendered — same outcome as 'draws bars once data arrives' below, just
+    // reached without an artificial timer in between.
+    await waitForMountedLoad();
+    expect(container.querySelector('.waveform-loading')).toBeNull();
+    expect(ctx.fillRect).toHaveBeenCalled();
+    expect(canvasOf(container).classList.contains('hidden')).toBe(false);
   });
 
   it('draws bars once data arrives and hides the loading overlay', async () => {

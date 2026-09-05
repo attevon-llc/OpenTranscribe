@@ -9,6 +9,8 @@
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
+  import EmptyState from '$components/ui/EmptyState.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { createDebouncedHandler } from '$lib/utils/debounce';
@@ -75,10 +77,20 @@
     max: null
   };
 
-  // Server-provided min/max values for sliders
+  // Server-provided min/max values for sliders.
+  //
+  // ⚠️ These are PLACEHOLDERS until `/files/metadata-filters` answers, and the
+  // sliders are not rendered before then (#744). A slider drawn against the
+  // fabricated 0–3600 range emits a `durationRange` measured in a scale the
+  // library does not use: on a library of two-minute files every position of
+  // the handle matches every file, which is exactly what "the duration filter
+  // does nothing" looked like. The same applied permanently when the request
+  // FAILED — the old catch set `metadataLoaded = true` and carried on with the
+  // seed, so the control silently described a library that did not exist.
   let durationBounds = { min: 0, max: 3600 };
   let fileSizeBounds = { min: 0, max: 1024 }; // in MB
   let metadataLoaded = false;
+  let errorMetadata: string | null = null;
 
   // Slider values (two-element arrays for dual handles)
   let durationSliderValues: [number, number] = [0, 3600];
@@ -125,18 +137,34 @@
 
   /** @type {Speaker[]} */
   let allSpeakers: any[] = [];
-  let dropdownSpeakers: any[] = [];  // All speakers for multiselect dropdown
+  let dropdownSpeakers: any[] = [];  // Named speakers for multiselect dropdown
+
+  /** The string the API offers a speaker under, and the value sent back as `?speaker=`. */
+  const speakerLabel = (speaker: any): string => speaker.display_name || speaker.name;
+
+  // Named people vs. unlabeled diarization placeholders (#743).
+  //
+  // The API flags any entry no human has named with `is_unnamed`. A placeholder
+  // is scoped to ONE FILE — `SPEAKER_00` in two recordings is two different
+  // people — so these must NEVER be rendered as people. They are collapsed into
+  // a single "files with unlabeled speakers" facet below, which is a true
+  // statement about a file instead of a false one about a person.
+  $: namedSpeakers = allSpeakers.filter(speaker => !speaker.is_unnamed);
+  $: unlabeledSpeakers = allSpeakers.filter(speaker => speaker.is_unnamed);
+  $: unlabeledLabels = unlabeledSpeakers.map(speakerLabel);
+  $: unlabeledSelected =
+    unlabeledLabels.length > 0 && unlabeledLabels.every(label => selectedSpeakers.includes(label));
 
   // Reactive: Prepare dropdown speakers with proper format
-  $: dropdownSpeakers = allSpeakers.map(speaker => ({
+  $: dropdownSpeakers = namedSpeakers.map(speaker => ({
     id: speaker.uuid,
-    name: translateSpeakerLabel(speaker.display_name || speaker.name),
+    name: translateSpeakerLabel(speakerLabel(speaker)),
     count: speaker.media_count || 0
   }));
 
   // Reactive: Convert selected speaker names to IDs for multiselect
-  $: selectedSpeakerIds = allSpeakers
-    .filter(speaker => selectedSpeakers.includes(speaker.display_name || speaker.name))
+  $: selectedSpeakerIds = namedSpeakers
+    .filter(speaker => selectedSpeakers.includes(speakerLabel(speaker)))
     .map(speaker => speaker.uuid);
 
   /** @type {boolean} */
@@ -216,6 +244,17 @@
     });
   }
 
+  /**
+   * Turn a caught value into something renderable, without swallowing it.
+   *
+   * Every facet fetch below FAILS VISIBLY: an empty list is indistinguishable
+   * from "you have none of these", so a 500 used to render as a normal, empty
+   * filter with no error and no way to retry (#743a).
+   */
+  function describeError(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
   // Fetch all tags (cached with TTL, invalidated via WebSocket push)
   async function fetchTags() {
     loadingTags = true;
@@ -226,6 +265,7 @@
     } catch (err) {
       console.error('[FilterSidebar] Error fetching tags:', err);
       allTags = [];
+      errorTags = describeError(err);
     } finally {
       loadingTags = false;
     }
@@ -240,24 +280,47 @@
   // past ~500 distinct names for the same reason
   // (`services/chat/speaker_resolver.py`). `q` is optional, so calling this with
   // no argument (initial load, WebSocket-pushed re-fetch) is unchanged.
+  //
+  // `include_unnamed` asks for speakers nobody has named yet (#743). Without it
+  // the roster is people-only, so a library that has been diarized but never
+  // renamed — which is every library until someone does the work — offered
+  // nothing at all to filter by.
+  //
+  // `limit` is passed explicitly, one MORE than we display: the server caps the
+  // roster, and an over-full page is the only exact way to tell "this was cut"
+  // from "this is all of them". Previously neither was sent and a capped list
+  // silently omitted speakers (#743b).
+  const SPEAKER_FILTER_PAGE_SIZE = 200;
+  let speakersTruncated = false;
+
   async function fetchSpeakers(q = '') {
     loadingSpeakers = true;
     errorSpeakers = null;
 
     try {
-      allSpeakers = await apiCache.getOrFetch(
+      const rows = await apiCache.getOrFetch(
         cacheKey.speakers(q || undefined),
         async () => {
           const response = await axiosInstance.get('/speakers', {
-            params: { for_filter: true, q: q.trim() || undefined }
+            params: {
+              for_filter: true,
+              q: q.trim() || undefined,
+              include_unnamed: true,
+              limit: SPEAKER_FILTER_PAGE_SIZE + 1
+            }
           });
           return response.data;
         },
         CacheTTL.SPEAKERS
       );
+      const list = Array.isArray(rows) ? rows : [];
+      speakersTruncated = list.length > SPEAKER_FILTER_PAGE_SIZE;
+      allSpeakers = list.slice(0, SPEAKER_FILTER_PAGE_SIZE);
     } catch (err) {
       console.error('Error fetching speakers:', err);
       allSpeakers = [];
+      speakersTruncated = false;
+      errorSpeakers = describeError(err);
     } finally {
       loadingSpeakers = false;
     }
@@ -336,6 +399,26 @@
   }
 
   /**
+   * Toggle the "files with unlabeled speakers" facet (#743).
+   *
+   * Selects (or clears) EVERY unlabeled diarization label at once. The server
+   * ORs the `speaker` params, so this resolves to "files that still contain a
+   * speaker nobody has named" — the review question a user actually has —
+   * without ever claiming that `SPEAKER_00` is one person across files.
+   */
+  function toggleUnlabeledSpeakers() {
+    if (unlabeledSelected) {
+      selectedSpeakers = selectedSpeakers.filter(s => !unlabeledLabels.includes(s));
+    } else {
+      selectedSpeakers = [
+        ...selectedSpeakers,
+        ...unlabeledLabels.filter(label => !selectedSpeakers.includes(label))
+      ];
+    }
+    triggerFiltersImmediate();
+  }
+
+  /**
    * Handle speaker selection from multiselect dropdown
    * @param {CustomEvent} event - Event with speaker id
    */
@@ -398,6 +481,7 @@
   let availableLanguages: string[] = [];
 
   async function fetchMediaMetadata() {
+    errorMetadata = null;
     try {
       const data = await apiCache.getOrFetch(
         cacheKey.metadataFilters(),
@@ -432,7 +516,12 @@
       metadataLoaded = true;
     } catch (error) {
       console.error('Error fetching media metadata:', error);
-      metadataLoaded = true; // Still show sliders with defaults
+      // Deliberately NOT `metadataLoaded = true` (#744): the range sliders are
+      // meaningless without the library's real bounds, and rendering them
+      // against the 0–3600 / 0–1024 seed is what made a moved handle silently
+      // match every file. Show the failure and offer a retry instead.
+      metadataLoaded = false;
+      errorMetadata = describeError(error);
     }
   }
 
@@ -648,7 +737,15 @@
     {#if loadingTags}
       <p class="loading-text">{$t('filter.loadingTags')}</p>
     {:else if errorTags}
-      <p class="empty-text">{$t('filter.noTagsAvailable')}</p>
+      <EmptyState
+        icon="⚠️"
+        title={$t('filter.tagsLoadFailed')}
+        description={$t('filter.facetLoadFailedHelp')}
+        padding="12px 0"
+      >
+        <button class="retry-button" data-testid="tags-retry" on:click={fetchTags}
+          >{$t('filter.retry')}</button>
+      </EmptyState>
     {:else if allTags.length === 0}
       <p class="empty-text">{$t('filter.noTagsCreated')}</p>
     {:else}
@@ -700,33 +797,50 @@
         data-testid="speaker-search-input"
       />
       {#if searchingSpeakers}
-        <span class="speaker-search-spinner" aria-hidden="true"></span>
+        <Spinner size="small" />
       {/if}
     </div>
     {#if loadingSpeakers && !searchingSpeakers}
       <p class="loading-text">{$t('filter.loadingSpeakers')}</p>
     {:else if errorSpeakers}
-      <p class="empty-text">{$t('filter.noSpeakersAvailable')}</p>
-    {:else if allSpeakers.length === 0}
-      <p class="empty-text">
-        {speakerSearchQuery.trim() ? $t('filter.noSpeakersMatchSearch') : $t('filter.noSpeakersDetected')}
-      </p>
+      <EmptyState
+        icon="⚠️"
+        title={$t('filter.speakersLoadFailed')}
+        description={$t('filter.facetLoadFailedHelp')}
+        padding="12px 0"
+      >
+        <button
+          class="retry-button"
+          data-testid="speakers-retry"
+          on:click={() => fetchSpeakers(speakerSearchQuery)}
+        >{$t('filter.retry')}</button>
+      </EmptyState>
     {:else}
-      <div class="speakers-list">
-        {#each allSpeakers.slice(0, 4) as speaker}
-          <button
-            class="speaker-button {selectedSpeakers.includes(speaker.display_name || speaker.name) ? 'selected' : ''}"
-            on:click={() => toggleSpeaker(speaker.display_name || speaker.name)}
-            title={$t('filter.speakerTooltip', { speaker: translateSpeakerLabel(speaker.display_name || speaker.name), count: speaker.media_count ? $t('filter.speakerAppearsInFiles', { count: speaker.media_count }) : '' })}
-          >
-            {translateSpeakerLabel(speaker.display_name || speaker.name)}
-            {#if speaker.media_count}
-              <span class="speaker-count">{speaker.media_count}</span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-      {#if allSpeakers.length > 0}
+      {#if namedSpeakers.length === 0}
+        <p class="empty-text">
+          {#if speakerSearchQuery.trim()}
+            {$t('filter.noSpeakersMatchSearch')}
+          {:else if unlabeledSpeakers.length > 0}
+            {$t('filter.noNamedSpeakers')}
+          {:else}
+            {$t('filter.noSpeakersDetected')}
+          {/if}
+        </p>
+      {:else}
+        <div class="speakers-list">
+          {#each namedSpeakers.slice(0, 4) as speaker}
+            <button
+              class="speaker-button {selectedSpeakers.includes(speakerLabel(speaker)) ? 'selected' : ''}"
+              on:click={() => toggleSpeaker(speakerLabel(speaker))}
+              title={$t('filter.speakerTooltip', { speaker: translateSpeakerLabel(speakerLabel(speaker)), count: speaker.media_count ? $t('filter.speakerAppearsInFiles', { count: speaker.media_count }) : '' })}
+            >
+              {translateSpeakerLabel(speakerLabel(speaker))}
+              {#if speaker.media_count}
+                <span class="speaker-count">{speaker.media_count}</span>
+              {/if}
+            </button>
+          {/each}
+        </div>
         <div class="dropdown-section">
           <SearchableMultiSelect
             options={dropdownSpeakers}
@@ -738,6 +852,26 @@
             on:deselect={handleSpeakerDeselect}
           />
         </div>
+      {/if}
+      <!-- Unlabeled speakers: ONE facet, never a list of pseudo-people (#743). -->
+      {#if unlabeledSpeakers.length > 0}
+        <div class="speakers-list">
+          <button
+            class="speaker-button {unlabeledSelected ? 'selected' : ''}"
+            data-testid="unlabeled-speakers-facet"
+            aria-pressed={unlabeledSelected}
+            on:click={toggleUnlabeledSpeakers}
+            title={$t('filter.unlabeledSpeakersTooltip')}
+          >
+            {$t('filter.unlabeledSpeakers')}
+          </button>
+        </div>
+        <small class="input-help">{$t('filter.unlabeledSpeakersHelp')}</small>
+      {/if}
+      {#if speakersTruncated}
+        <small class="input-help" data-testid="speakers-truncated">
+          {$t('filter.speakersTruncated', { count: SPEAKER_FILTER_PAGE_SIZE })}
+        </small>
       {/if}
     {/if}
   </div>
@@ -828,45 +962,69 @@
     </div>
   {/if}
 
-  <!-- Duration Range -->
-  <div class="filter-section">
-    <h3>{$t('filter.duration')}</h3>
-    <div class="slider-labels">
-      <span>{formatClock(durationSliderValues[0])}</span>
-      <span>{formatClock(durationSliderValues[1])}</span>
+  <!-- Duration + File Size ranges.
+       Both are gated on `metadataLoaded` (#744): a range control whose bounds
+       are the hardcoded seed rather than the library's real min/max emits a
+       filter every file satisfies, which reads as "the slider does nothing". -->
+  {#if errorMetadata}
+    <div class="filter-section">
+      <h3>{$t('filter.duration')}</h3>
+      <EmptyState
+        icon="⚠️"
+        title={$t('filter.rangesLoadFailed')}
+        description={$t('filter.rangesLoadFailedHelp')}
+        padding="12px 0"
+      >
+        <button class="retry-button" data-testid="metadata-retry" on:click={fetchMediaMetadata}
+          >{$t('filter.retry')}</button>
+      </EmptyState>
     </div>
-    <div class="slider-wrapper">
-      <RangeSlider
-        bind:values={durationSliderValues}
-        min={durationBounds.min}
-        max={durationBounds.max}
-        step={durationBounds.max > 7200 ? 60 : durationBounds.max > 600 ? 30 : 10}
-        range
-        pushy
-        on:change={handleDurationSliderChange}
-      />
+  {:else if !metadataLoaded}
+    <div class="filter-section">
+      <h3>{$t('filter.duration')}</h3>
+      <p class="loading-text">{$t('filter.loadingRanges')}</p>
     </div>
-  </div>
+  {:else}
+    <!-- Duration Range -->
+    <div class="filter-section">
+      <h3>{$t('filter.duration')}</h3>
+      <div class="slider-labels">
+        <span>{formatClock(durationSliderValues[0])}</span>
+        <span>{formatClock(durationSliderValues[1])}</span>
+      </div>
+      <div class="slider-wrapper">
+        <RangeSlider
+          bind:values={durationSliderValues}
+          min={durationBounds.min}
+          max={durationBounds.max}
+          step={durationBounds.max > 7200 ? 60 : durationBounds.max > 600 ? 30 : 10}
+          range
+          pushy
+          on:change={handleDurationSliderChange}
+        />
+      </div>
+    </div>
 
-  <!-- File Size Range -->
-  <div class="filter-section">
-    <h3>{$t('filter.fileSize')}</h3>
-    <div class="slider-labels">
-      <span>{formatFileSize(fileSizeSliderValues[0])}</span>
-      <span>{formatFileSize(fileSizeSliderValues[1])}</span>
+    <!-- File Size Range -->
+    <div class="filter-section">
+      <h3>{$t('filter.fileSize')}</h3>
+      <div class="slider-labels">
+        <span>{formatFileSize(fileSizeSliderValues[0])}</span>
+        <span>{formatFileSize(fileSizeSliderValues[1])}</span>
+      </div>
+      <div class="slider-wrapper">
+        <RangeSlider
+          bind:values={fileSizeSliderValues}
+          min={fileSizeBounds.min}
+          max={fileSizeBounds.max}
+          step={fileSizeBounds.max > 10240 ? 100 : fileSizeBounds.max > 1024 ? 10 : 1}
+          range
+          pushy
+          on:change={handleFileSizeSliderChange}
+        />
+      </div>
     </div>
-    <div class="slider-wrapper">
-      <RangeSlider
-        bind:values={fileSizeSliderValues}
-        min={fileSizeBounds.min}
-        max={fileSizeBounds.max}
-        step={fileSizeBounds.max > 10240 ? 100 : fileSizeBounds.max > 1024 ? 10 : 1}
-        range
-        pushy
-        on:change={handleFileSizeSliderChange}
-      />
-    </div>
-  </div>
+  {/if}
 
   <!-- Processing Status -->
   <div class="filter-section">
@@ -1272,20 +1430,23 @@
     min-width: 0;
   }
 
-  .speaker-search-spinner {
-    flex-shrink: 0;
-    width: 0.9rem;
-    height: 0.9rem;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: speaker-search-spin 0.7s linear infinite;
+  /* Retry control for a facet whose fetch failed — an empty facet must never
+     be the way an outage looks (#743a). */
+  .retry-button {
+    margin-top: 0.5rem;
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    padding: 0.3rem 0.8rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  @keyframes speaker-search-spin {
-    to {
-      transform: rotate(360deg);
-    }
+  .retry-button:hover {
+    background-color: var(--hover-color);
+    border-color: var(--primary-color);
   }
 
   /* Tag and Speaker button styles */

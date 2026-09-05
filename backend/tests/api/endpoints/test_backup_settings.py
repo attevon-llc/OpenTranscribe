@@ -229,13 +229,22 @@ def test_status_treats_an_unparseable_stored_cron_as_not_due(
 
 
 def test_status_omits_the_opensearch_probe_when_snapshots_are_off(
-    client, super_admin_token_headers, clean_backup_settings
+    client, super_admin_token_headers, clean_backup_settings, db_session
 ):
     """The snapshot probe is a live network call, so it is only made when opted in.
 
     Catches the ``include_opensearch`` guard being dropped, which would make the
     status endpoint reach out to OpenSearch on every poll of a pg-only deployment.
+
+    The setting is written EXPLICITLY rather than leaned on as the coded default: since
+    issue #658 the default is ``True`` (the speaker indices hold voiceprints, which exist
+    nowhere else and are not "derived data"), so a test that inferred "off" from the
+    default would silently stop exercising the off path.
     """
+    from app.services import backup_service as bs
+
+    bs.update_settings(db_session, include_opensearch=False)
+
     response = client.get(f"{BASE}/status", headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
     body = response.json()

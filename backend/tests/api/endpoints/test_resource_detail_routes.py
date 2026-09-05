@@ -142,6 +142,57 @@ def test_editing_a_segment_can_move_its_timings(
     assert body["display_timestamp"] == "2:05"
 
 
+def test_editing_a_segment_cannot_rewrite_its_primary_key(
+    client, db_session, user_token_headers, normal_user
+):
+    """Issue #722: ``id`` reached the ORM via a blind ``setattr`` loop and let a client
+    move a segment's primary key to any id it chose, including one already in use
+    (which then raised an unhandled ``UniqueViolation`` -> 500). The field is vestigial
+    — the handler resolves the segment from the path ``segment_uuid`` — so it must be
+    rejected outright rather than merely ignored-if-harmless.
+    """
+    media_file = make_media_file(db_session, int(normal_user.id))
+    segment = _make_segment(db_session, media_file)
+    original_id = segment.id
+
+    response = client.put(
+        _segment_url(media_file.uuid, segment.uuid),
+        headers=user_token_headers,
+        json={"id": original_id + 99000000, "text": "MUTATED"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    db_session.expire_all()
+    db_session.refresh(segment)
+    assert segment.id == original_id
+    assert segment.text == "original text"
+
+
+def test_editing_a_segment_rejects_a_speaker_id_on_this_route(
+    client, db_session, user_token_headers, normal_user
+):
+    """Issue #722: a schema-valid ``speaker_id`` UUID reached the ORM's integer
+    ``speaker_id`` FK via the same blind ``setattr`` loop and raised an unhandled
+    ``DatatypeMismatch`` -> 500. Speaker reassignment has its own endpoint
+    (``PUT /transcripts/segments/{uuid}/speaker``, which resolves the uuid to the
+    integer FK correctly) — this route must reject the field, never 500 or silently
+    write it.
+    """
+    media_file = make_media_file(db_session, int(normal_user.id))
+    segment = _make_segment(db_session, media_file)
+
+    response = client.put(
+        _segment_url(media_file.uuid, segment.uuid),
+        headers=user_token_headers,
+        json={"speaker_id": str(uuid_pkg.uuid4())},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    db_session.expire_all()
+    db_session.refresh(segment)
+    assert segment.speaker_id is None
+
+
 def test_a_segment_from_another_file_is_404(client, db_session, user_token_headers, normal_user):
     """The segment lookup is filtered by the file in the path, not just by uuid.
 

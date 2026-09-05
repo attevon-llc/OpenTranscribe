@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
 
   export let file: File | null = null;
@@ -13,6 +13,7 @@
   }>();
 
   let fileInput: HTMLInputElement;
+  let dropZoneEl: HTMLDivElement | null = null;
   let drag = false;
   let dragDropCleanup: (() => void) | null = null;
 
@@ -110,10 +111,7 @@
     }
   }
 
-  function initDragAndDrop() {
-    const dropZone = document.getElementById('drop-zone');
-    if (!dropZone) return () => {};
-
+  function initDragAndDrop(dropZone: HTMLDivElement) {
     dropZone.addEventListener('dragover', handleDragOver);
     dropZone.addEventListener('dragleave', handleDragLeave);
     dropZone.addEventListener('drop', handleDrop);
@@ -125,9 +123,19 @@
     };
   }
 
-  onMount(() => {
-    dragDropCleanup = initDragAndDrop();
-  });
+  // Rebind whenever the drop-zone element (re)appears. `{#if !file}` destroys
+  // and recreates it (select a file, then clear it), and the previous
+  // `onMount`-only `getElementById` bind only ever attached to the FIRST
+  // instance — the recreated node had no drag/drop listeners at all, so a
+  // drop after clearing a file had nothing to call `preventDefault()`, and
+  // the browser navigated away to the dropped file instead (#649).
+  $: if (dropZoneEl) {
+    if (dragDropCleanup) dragDropCleanup();
+    dragDropCleanup = initDragAndDrop(dropZoneEl);
+  } else if (dragDropCleanup) {
+    dragDropCleanup();
+    dragDropCleanup = null;
+  }
 
   onDestroy(() => {
     if (dragDropCleanup) dragDropCleanup();
@@ -139,6 +147,7 @@
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <div
       id="drop-zone"
+      bind:this={dropZoneEl}
       class="drop-zone"
       class:active={drag}
       on:click={openFileDialog}

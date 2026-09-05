@@ -97,6 +97,44 @@ def ensure_repository(client: Any) -> None:
     )
 
 
+def voiceprint_doc_count(client: Any) -> int | None:
+    """Count the speaker-embedding documents a snapshot would cover.
+
+    Issue #658: the transcript indices are rebuildable from Postgres, the speaker ones are
+    not — Postgres holds no embedding vectors, so ``speakers_v*`` is the only copy of a
+    deployment's biometric data. Recording this number turns "the snapshot ran" into "the
+    snapshot covered N voiceprints", so a run that quietly covered zero is visible on
+    ``backup.last_result`` instead of reading as a success.
+
+    Args:
+        client: A live OpenSearch client.
+
+    Returns:
+        The document count across every concrete speaker index, or None when it could not
+        be read (never 0 for an unreachable cluster — "I could not ask" and "there are
+        none" must not look the same).
+    """
+    from app.core.constants import get_speaker_index
+
+    try:
+        return int(client.count(index=f"{get_speaker_index()}*")["count"])
+    except Exception as exc:  # noqa: BLE001 - a diagnostic; unreadable is not zero
+        logger.debug("Could not count voiceprint documents: %s", exc)
+        return None
+
+
+def _at_risk_suffix(client: Any) -> str:
+    """Name the voiceprints a failed/skipped snapshot leaves with no copy anywhere."""
+    count = voiceprint_doc_count(client)
+    if not count:
+        return ""
+    return (
+        f" {count} speaker-embedding document(s) are therefore NOT backed up by this run, "
+        "and Postgres holds no copy of them (issue #658). Use './opentr.sh backup', which "
+        "writes a portable *.voiceprints.ndjson artifact beside the dump."
+    )
+
+
 def _snapshot_name(ts: str | None = None) -> str:
     """Build a timestamp-stemmed snapshot name (shared stem with the pg dump)."""
     stamp = ts or datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
@@ -177,11 +215,13 @@ def perform_snapshot(cfg: dict[str, Any], ts: str | None = None) -> dict[str, An
             "OpenSearch snapshot repository could not be registered "
             f"({exc}). Start the stack with --with-backup so the OpenSearch container "
             "gets path.repo + the snapshot bind-mount, or disable 'Include OpenSearch'."
-        )
+        ) + _at_risk_suffix(client)
         logger.warning(msg)
         return {"status": "unsupported", "error": msg}
 
     name = _snapshot_name(ts)
+    # Read BEFORE the snapshot so the number describes what was in the cluster when it ran.
+    voiceprints = voiceprint_doc_count(client)
     try:
         logger.info("Creating OpenSearch snapshot %s/%s", REPO_NAME, name)
         client.snapshot.create(
@@ -194,7 +234,11 @@ def perform_snapshot(cfg: dict[str, Any], ts: str | None = None) -> dict[str, An
         pruned = prune_snapshots(client, cfg)
         duration = round(time.monotonic() - started, 2)
         logger.info(
-            "OpenSearch snapshot complete: %s (%.2fs, pruned %d)", name, duration, len(pruned)
+            "OpenSearch snapshot complete: %s (%.2fs, pruned %d, voiceprints %s)",
+            name,
+            duration,
+            len(pruned),
+            "unknown" if voiceprints is None else voiceprints,
         )
         return {
             "status": "ok",
@@ -202,11 +246,16 @@ def perform_snapshot(cfg: dict[str, Any], ts: str | None = None) -> dict[str, An
             "repository": REPO_NAME,
             "duration_s": duration,
             "pruned": pruned,
+            "voiceprints": voiceprints,
         }
     except Exception as exc:  # noqa: BLE001 - snapshot failure is recorded, never raised
         duration = round(time.monotonic() - started, 2)
         logger.error("OpenSearch snapshot failed: %s", exc)
-        return {"status": "error", "error": str(exc), "duration_s": duration}
+        return {
+            "status": "error",
+            "error": str(exc) + _at_risk_suffix(client),
+            "duration_s": duration,
+        }
 
 
 def snapshot_status() -> dict[str, Any]:

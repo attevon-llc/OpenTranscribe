@@ -490,6 +490,43 @@ def _make_cache_key(**kwargs) -> str:
     return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
 
 
+def _search_corpus_version() -> str:
+    """The same global "has indexed content changed" marker chat's retrieval cache uses.
+
+    Issue #666: this process-local response cache used to be invalidated by
+    ``clear_search_cache()``, a bare dict ``.clear()`` called from the reindex
+    and model-switch coordinators — but those run in a CPU/embedding **worker**
+    process, and searches are served from the **API** process, so the clear was
+    a no-op in the process that actually mattered (it only ever helped a
+    single-process dev deployment where the two happen to share one interpreter).
+    A stale cache entry for content that has since been re-indexed could
+    therefore be served for the rest of ``SEARCH_CACHE_TTL_SECONDS`` regardless
+    of how many times ``clear_search_cache`` ran elsewhere.
+
+    Reusing ``chat.retrieval_cache.corpus_version()`` rather than inventing a
+    second counter: it is already bumped, cross-process via Redis, by every
+    real content-changing write to the chunk plane
+    (``indexing_service._invalidate_chat_retrieval_cache``, called from
+    ``index_transcript_chunks`` and the rename-propagation tasks) — exactly the
+    set of events that should also invalidate a cached search page. Folding it
+    into the cache key means a version bump makes every previously cached key
+    permanently unreachable rather than requiring anyone to remember to clear
+    a cache living in a different process.
+
+    Returns:
+        The current version as a string; "0" (matching an unbumped corpus) if
+        Redis is unreachable, so a read failure degrades to the pre-existing
+        TTL-only behaviour rather than breaking search.
+    """
+    try:
+        from app.services.chat.retrieval_cache import corpus_version
+
+        return corpus_version()
+    except Exception:  # noqa: BLE001 — a cache-key input must not break search
+        logger.debug("Search corpus version read failed", exc_info=True)
+        return "0"
+
+
 def _resolve_redaction_config_for_cache(user_id: int) -> "EffectiveRedactionConfig | None":
     """Resolve the requesting user's redaction policy BEFORE the cache lookup.
 
@@ -626,13 +663,6 @@ def _set_cached_response(cache_key: str, response: SearchResponse) -> None:
         # Evict oldest (least recently used) entries if cache is full
         while len(_search_cache) > SEARCH_CACHE_MAX_SIZE:
             _search_cache.popitem(last=False)  # Remove oldest (first item)
-
-
-def clear_search_cache() -> None:
-    """Clear the entire search cache. Called after reindex or model switch."""
-    with _search_cache_lock:
-        _search_cache.clear()
-    logger.info("Search cache cleared")
 
 
 def reset_neural_search_state() -> None:
@@ -895,6 +925,7 @@ class HybridSearchService:
             file_uuid=file_uuid,
             fusion_pipeline=search_pipeline_id(fusion),
             redaction_policy=policy_fingerprint,
+            corpus_version=_search_corpus_version(),
         )
         cached = _get_cached_response(cache_key)
         if cached:

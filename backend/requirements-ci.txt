@@ -68,6 +68,15 @@ qrcode[pil]==8.2
 
 # AI/ML stack (CPU wheels via the extra index above)
 numpy==2.4.6
+# pandas is TRANSITIVE in the real image (pyannote-core/database/metrics and whisperx each
+# declare a bare `pandas>=2.2.3` floor), and CI installs none of those. But the diarize
+# result handed to speaker_assigner IS a pandas DataFrame in production, and
+# tests/unit/test_speaker_assigner.py exercises exactly that. Without this pin the test
+# raises ModuleNotFoundError in CI; with an `importorskip` it would silently SKIP, which is
+# the same green-vacuum that let the pandas 3.0 breakage reach production in the first place.
+# Pinned to the version the image resolves so CI reproduces the real condition, not a
+# friendlier one.
+pandas==3.0.5
 # See requirements.txt for why 2.11.0 (not a newer torch) is the pinned pair.
 torch==2.11.0
 torchaudio==2.11.0

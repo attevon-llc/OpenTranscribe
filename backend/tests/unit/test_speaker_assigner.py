@@ -44,6 +44,36 @@ def _transcript(words: list[tuple[float, float]]) -> dict:
     return {"segments": [seg], "language": "en"}
 
 
+def test_assign_speakers_accepts_a_pandas_dataframe_diarize_result():
+    """Issue: rediarization failed for every file with pandas 3.0's "Multi-dimensional
+    indexing (e.g. `obj[:, None]`) is no longer supported" — raised inside `_batch_assign`
+    (`d_ends[None, :]`) whenever `diarize_df.start`/`.end` are pandas Series rather than numpy
+    arrays. `DiarizeResult.start`/`.end`/`.speaker` are typed as numpy arrays, but a
+    pandas DataFrame also answers `.start`/`.end`/`.speaker` via column attribute access — as
+    Series — so anything upstream that ever hands `assign_speakers` a raw DataFrame (exactly
+    the shape `rediarize_task`'s "Re-diarize only" reprocess path was measured constructing)
+    used to crash instead of assigning speakers. `np.asarray()` on those three accessors is
+    the fix; this asserts the outcome (real speaker labels came back), not merely that the
+    call didn't raise — a change that ran the function but assigned nothing would still pass
+    a no-raise-only check."""
+    import pandas as pd
+
+    diarize_df = pd.DataFrame(
+        [
+            {"start": 0.0, "end": 5.0, "speaker": "SPEAKER_A"},
+            {"start": 5.0, "end": 10.0, "speaker": "SPEAKER_B"},
+        ]
+    )
+    transcript = _transcript([(1.0, 2.0), (7.0, 8.0)])
+
+    result = assign_speakers(diarize_df, transcript)
+
+    words = result["segments"][0]["words"]
+    assert words[0]["speaker"] == "SPEAKER_A"
+    assert words[1]["speaker"] == "SPEAKER_B"
+    assert result["segments"][0]["speaker"] == "SPEAKER_A"
+
+
 def test_word_assigned_to_max_overlap_speaker():
     """A word squarely inside one speaker's interval, and another squarely inside a second
     speaker's interval, must each be labeled with the interval they actually overlap. A bug

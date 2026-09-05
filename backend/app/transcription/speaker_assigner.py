@@ -47,10 +47,19 @@ def assign_speakers(
 
     step_start = time.perf_counter()
 
-    # Extract diarization intervals as numpy arrays
-    d_starts = diarize_df.start.astype(np.float64)
-    d_ends = diarize_df.end.astype(np.float64)
-    d_speaker_labels = diarize_df.speaker
+    # Extract diarization intervals as numpy arrays. `np.asarray` (not `.astype` on
+    # `diarize_df.start` directly) is deliberate: `.start`/`.end`/`.speaker` are typed as
+    # numpy arrays on `DiarizeResult`, but pandas allows attribute access to a DataFrame's
+    # columns too, so a caller that (accidentally or historically) hands in a pandas
+    # DataFrame-shaped object still has `.start`/`.end`/`.speaker` — as pandas Series, not
+    # ndarrays. `Series.astype()` returns another Series, and pandas 3.0 hard-errors the
+    # moment `_batch_assign` below does `d_ends[None, :]` on one ("Multi-dimensional
+    # indexing... is no longer supported"), where a plain ndarray never had that ambiguity.
+    # `np.asarray` normalizes either shape to ndarray up front, which is what this function's
+    # own docstring already promises callers.
+    d_starts = np.asarray(diarize_df.start, dtype=np.float64)
+    d_ends = np.asarray(diarize_df.end, dtype=np.float64)
+    d_speaker_labels = np.asarray(diarize_df.speaker)
 
     # Build speaker index mapping for matrix multiply
     unique_speakers = np.unique(d_speaker_labels)

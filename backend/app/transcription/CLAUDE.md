@@ -129,6 +129,21 @@ an empty `/models` and crash-looping on exit 8. A failure here is never fatal �
 > fallback is removed), **#703** (`celery-worker-gpu-transcribe` consumes a queue nothing
 > publishes to).
 
+**`diar-server` links the IMAGE's OpenBLAS, not upstream's** (issue #721). It is built
+`openblas-system`, so `Dockerfile.prod`/`Dockerfile.lite`'s bare `libopenblas0` on
+`python:3.13-slim-trixie` gives it **0.3.29+ds-3** where upstream validates on Ubuntu 24.04's
+**0.3.26** — and the validated library is *not* copied out alongside the binary. This matters
+because 0.3.28/0.3.29 carry an **arm64-only** GEMM→GEMV defect that took upstream's AMI-16 DER
+from 13.8% to 48.7% **while `verify-models` passed every stage**. Measured 2026-09-05 on
+**amd64**: DER 0.0669 on the shipped image, bit-identical to a 0.3.26 control (centroid delta
+exactly 0.0) — amd64 is in band. **arm64 is NOT MEASURED** and cannot be measured on an x86
+host: OpenBLAS picks kernels by runtime CPU detection, so QEMU exercises the wrong path
+(architecture-blocked verification is tracked by **#713**). ⚠️ Do not reach for
+`test_boundary_regression.py` as coverage here — it replays **frozen** `*.rawinfer.json`
+inference and never runs the diarizer, so it cannot see an inference-time BLAS regression.
+Harness + full numbers: `scripts/diar-openblas-der-ab.py`,
+`docs/diarization-openblas-der/README.md`.
+
 ### PyAnnote fallback specifics
 
 Fork `davidamacey/pyannote-audio@gpu-optimizations`, pinned to a **commit SHA** in

@@ -4,7 +4,9 @@
 # HTTPException.detail, which is typed str while every lifecycle gate raises an
 # object. Declared once here rather than as a cast at every call site — casts
 # bury the assertion, and widening a production signature to suit a test is worse.
+import itertools
 import os
+import re
 import socket
 import sys
 import tempfile
@@ -130,6 +132,149 @@ os.environ["POSTGRES_HOST"] = "localhost"
 # Ensure we use the correct port (Docker exposes on 5176)
 if "POSTGRES_PORT" not in os.environ or os.environ.get("POSTGRES_PORT") == "5432":
     os.environ["POSTGRES_PORT"] = "5176"
+
+# --- CUDA device guard (issue #719) -----------------------------------------
+# The fast suite opened a ~300 MiB CUDA primary context on EVERY xdist worker
+# that happened to import torch, on whichever device is default (device 0) —
+# multiplied by `-n auto`, that is tens of contexts on cards this project does
+# not own (GPU 0/2 are reserved for unrelated work; root CLAUDE.md). Nothing in
+# the harness restricted device visibility before this.
+#
+# WHY THIS LIVES IN `pytest_configure`, NOT AT MODULE LEVEL:
+# `import torch` is not the freeze point — the first CUDA *call* is. Setting
+# CUDA_VISIBLE_DEVICES after even one `torch.cuda.is_available()` leaves
+# `is_available()` True while `device_count()` reads 0: an inconsistent state
+# WORSE than no guard, because `hardware_detection._detect_optimal_device` then
+# takes the cuda branch and calls `torch.cuda.set_device(0)` against a device
+# that doesn't exist. `pytest_configure` runs before torch is ever imported in
+# every invocation shape checked (fast suite, `-m gpu`, `-m integration`, an
+# e2e run via `import tests.conftest`).
+#
+# WHY A HOOK AND NEVER A MODULE-LEVEL ASSIGNMENT:
+# `tests/e2e/conftest.py` does `import tests.conftest` purely for its module
+# body's side effects — the e2e run has its OWN pytest.ini/rootdir, so hooks
+# defined here do NOT register for it. A module-level `os.environ[...] = ...`
+# would therefore blind every e2e run with no hook available to ever release
+# it. Putting the guard in `pytest_configure` means e2e is untouched by
+# construction: the module body runs, the hook does not.
+_CUDA_GUARD_SENTINEL = "-1"
+_CUDA_GUARD_HATCH = "OT_TEST_CUDA_VISIBLE_DEVICES"
+_CUDA_GUARD_APPLIED = pytest.StashKey[bool]()
+
+# pytest expression grammar keywords that are never marker names.
+_MARKEXPR_KEYWORDS = {"not", "and", "or", "True", "False", "None"}
+
+
+def _selection_may_run_gpu_tests(markexpr: str) -> bool:
+    """Return whether some marker set containing "gpu" satisfies `markexpr`.
+
+    The default markexpr is `not integration and not gpu`, which CONTAINS the
+    substring "gpu" — a naive `if "gpu" in markexpr` would disable the guard on
+    every default run, invisibly. Two files are marked BOTH `integration` and
+    `gpu` (`test_diar_native_smoke_live.py`, `test_gpu_scale_smoke_live.py`), so
+    the gate's `-m integration` phase legitimately selects gpu tests and must
+    NOT be blinded either. Satisfiability — is there an assignment of the
+    expression's own marker names (forcing gpu=True) that evaluates True — is
+    the only predicate that gets both cases right.
+    """
+    if not markexpr.strip():
+        # An empty markexpr selects everything, including `gpu` tests. Blinding
+        # here would silently turn a `gpu`-marked test into a "CUDA not
+        # available" skip — a green vacuum. pytest_runtest_setup below turns
+        # that into a loud, non-skippable failure instead of relying on this
+        # function to somehow return True for "everything".
+        return False
+    names = sorted((set(re.findall(r"[A-Za-z_]\w*", markexpr)) - _MARKEXPR_KEYWORDS) | {"gpu"})
+    if len(names) > 12:
+        # Combinatorial guard: 2**12 = 4096 evaluations, comfortably fast. A
+        # markexpr naming more than 12 distinct markers is not realistic here;
+        # refuse rather than hang.
+        return False
+    try:
+        from _pytest.mark.expression import Expression  # private API
+    except ImportError:
+        # Fail toward the SAFE direction: if we cannot ask pytest what the
+        # expression means, assume it might select gpu tests and leave CUDA
+        # visible. test_the_marker_predicate_rejects_the_default_expression's
+        # fallback case (7.5) pins this so it can never regress silently.
+        return True
+    expr = Expression.compile(markexpr)
+    for combo in itertools.product((False, True), repeat=len(names)):
+        env = dict(zip(names, combo, strict=True))
+        if not env["gpu"]:
+            continue
+        if expr.evaluate(lambda n, _env=env: _env.get(n, False)):
+            return True
+    return False
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Restrict CUDA device visibility unless the selection may run gpu tests.
+
+    Escape hatch `OT_TEST_CUDA_VISIBLE_DEVICES`: "1" sets CUDA_VISIBLE_DEVICES
+    and skips the marker check entirely; "all" leaves it exactly as inherited
+    from the parent shell; "" is an explicit blind; unset means the marker
+    predicate above decides.
+
+    Deliberately does NOT use `os.environ.setdefault` (unlike lines 39/95/98/120
+    in this same file) — an ambient CUDA_VISIBLE_DEVICES already set in the
+    developer's shell must NOT release the guard. `setdefault` would make that
+    the single most likely way this ships broken; test 7.7
+    (`test_an_ambient_cuda_visible_devices_does_not_release_the_guard`) exists
+    to catch a regression back to it.
+    """
+    hatch = os.environ.get(_CUDA_GUARD_HATCH)
+    if hatch is not None:
+        if hatch != "all":
+            os.environ["CUDA_VISIBLE_DEVICES"] = hatch
+        config.stash[_CUDA_GUARD_APPLIED] = False
+        return
+
+    markexpr = config.getoption("markexpr", default="") or ""
+    if _selection_may_run_gpu_tests(markexpr):
+        config.stash[_CUDA_GUARD_APPLIED] = False
+        return
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = _CUDA_GUARD_SENTINEL
+    # PCI_BUS_ID makes pytest's/torch's device ordinals agree with `nvidia-smi`,
+    # GPU_DEVICE_ID and Docker `device_ids`. Measured on this host: CUDA's
+    # default FASTEST_FIRST ordering does NOT match nvidia-smi (nvidia-smi
+    # 0=A6000/1=RTX3080Ti/2=A6000, torch default order 0=A6000/1=A6000/
+    # 2=RTX3080Ti) — so under the default ordering, CUDA_VISIBLE_DEVICES=1
+    # would select nvidia-smi GPU 2, a card reserved for unrelated work. This
+    # is a real behaviour change on multi-GPU hosts, applied here rather than
+    # left implicit.
+    os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+    config.stash[_CUDA_GUARD_APPLIED] = True
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Hard-fail a `gpu`-marked test collected under the guard, never skip it.
+
+    Closes the empty-markexpr hole loudly: `-m ''` (or no `-m` at all) selects
+    everything including `gpu` tests, which `_selection_may_run_gpu_tests`
+    treats as blind by design. Without this, a `gpu` test run that way would
+    SKIP on "CUDA not available" — a green vacuum, this repo's signature
+    failure mode (issue #431). A per-item `pytest.fail(pytrace=False)` is used
+    rather than a session-level UsageError in `pytest_collection_modifyitems`:
+    a UsageError raised inside an xdist worker can break the collection
+    protocol, per the measured plan for issue #719.
+    """
+    if not item.config.stash.get(_CUDA_GUARD_APPLIED, False):
+        return
+    if item.get_closest_marker("gpu") is None:
+        return
+    pytest.fail(
+        "cuda-device-guard: this test is marked @pytest.mark.gpu but CUDA "
+        "devices are hidden (CUDA_VISIBLE_DEVICES="
+        f"{os.environ.get('CUDA_VISIBLE_DEVICES')!r}). Select it explicitly "
+        "with `-m gpu` (or set OT_TEST_CUDA_VISIBLE_DEVICES) rather than "
+        "letting it run blind — a skip here would look like a pass.",
+        pytrace=False,
+    )
+
+
+# --- end CUDA device guard --------------------------------------------------
 
 # Import app modules after setting environment variables (they check env during import)
 from app.core.config import settings  # noqa: E402

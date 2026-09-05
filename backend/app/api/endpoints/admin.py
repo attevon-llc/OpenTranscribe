@@ -380,6 +380,14 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     ``user_id`` can find them. They are ``ON DELETE SET NULL`` at the database
     level instead (``v387``), which is enforced for every deletion path including
     ones that do not exist yet.
+
+    **``SpeakerProfile.avatar_path`` objects are NOT deleted here** (issue #695). This
+    function bulk-deletes the ``speaker_profile`` rows below, so by the time it could
+    act there is nothing left to read a path off of — the same shape as
+    ``_delete_user_media_files`` and object storage. The caller reads every avatar path
+    via ``file_cleanup_service.load_account_purge_plans`` **before** this function runs
+    and destroys the objects via ``purge_account_external_copies`` after the
+    transaction commits.
     """
     # Speaker collections and their members
     sc_ids = [
@@ -561,6 +569,14 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
     "commenting is collaborative"), so another account's comment on this user's
     file would block the bulk delete. Scope both by ``media_file_id``, not by
     ``user_id``.
+
+    **Object storage is deliberately NOT touched here** (issue #695). The bulk delete
+    below is exactly why: it never loads a ``MediaFile`` instance, so there is nothing
+    to read a ``storage_path`` off of by the time this function could act on one. The
+    caller reads the storage plan with ``file_cleanup_service.load_account_purge_plans``
+    **before** calling this function, and destroys the objects with
+    ``purge_account_external_copies`` **after** its own transaction commits — see
+    ``delete_admin_user``'s docstring for the phase split and why.
 
     Args:
         db: Database session
@@ -913,7 +929,7 @@ def create_admin_user(
         ) from e
 
 
-@router.delete("/users/{user_uuid}", response_model=dict[str, str])
+@router.delete("/users/{user_uuid}", response_model=dict[str, Any])
 def delete_admin_user(
     user_uuid: str,
     request: Request,
@@ -922,17 +938,33 @@ def delete_admin_user(
 ):
     """Delete a user and all their data (admin only).
 
+    **Phase boundary (issue #695).** The three cascade helpers below delete
+    ``media_file`` (and every table hanging off it) via **bulk** SQL — one statement,
+    no instances loaded, no cascade — which never reaches ``file_cleanup_service``'s
+    object-storage/OpenSearch destroy. Left alone, every deleted account's recordings
+    stayed in MinIO forever. The fix keeps that bulk delete (it is why
+    ``_delete_user_media_files`` exists — see its docstring) but reads the storage plan
+    with ``load_account_purge_plans`` **before** the savepoint, and destroys those
+    external copies with ``purge_account_external_copies`` **after** ``db.commit()`` —
+    with no transaction open, matching ``purge_media_file``'s own phase split. Doing
+    that I/O on a live session previously wedged the DB for up to 1h26m
+    (``idle in transaction``); doing it inside the savepoint would have meant a slow
+    MinIO/OpenSearch round trip holds a lock for the whole cascade.
+
     Args:
         user_uuid: UUID of the user to delete
         db: Database session
         current_user: Current admin user
 
     Returns:
-        Success message
+        ``{"message": str, "storage_objects_failed": int}`` — the count is 0 when
+        every external object was confirmed gone.
 
     Raises:
         HTTPException: If user not found or deletion not allowed
     """
+    from app.services.file_cleanup_service import load_account_purge_plans
+    from app.services.file_cleanup_service import purge_account_external_copies
     from app.utils.uuid_helpers import get_user_by_uuid
 
     logger.info(f"Admin deleting user with UUID: {user_uuid}")
@@ -960,12 +992,16 @@ def delete_admin_user(
         # 409 is worse than either outcome on its own (issue #689).
         _assert_no_files_under_legal_hold(db, int(user_id))
 
+        # Phase 0 — read the storage/OpenSearch plan while the rows still exist and the
+        # transaction is open. Postgres reads only; no object storage touched yet.
+        purge_plan = load_account_purge_plans(db, int(user_id))
+
         # Capture what the audit record needs before the row is gone: after the commit
         # the ORM object is expired, so reading user.email would re-query a deleted row.
         deleted_snapshot = DeletedUser.of(user)
         client_ip, user_agent = _get_client_info(request)
 
-        # Delete all user data atomically using a savepoint
+        # Phase 1 — delete all user data atomically using a savepoint
         savepoint = db.begin_nested()
         try:
             _delete_user_owned_records(db, int(user_id))
@@ -979,15 +1015,23 @@ def delete_admin_user(
             raise
         db.commit()
 
+        # Phase 2 — object storage + OpenSearch. NO transaction is held here. The rows
+        # are already gone, so a failure here is NOT retryable: it must be visible
+        # (residual_errors -> PARTIAL audit outcome + ERROR log), never swallowed.
+        residual_errors = purge_account_external_copies(purge_plan)
+
         # This endpoint destroys a user, their files and their transcripts irreversibly
         # and recorded NOTHING — while its twin, DELETE /api/users/{uuid}, performs the
         # identical deletion through these same three helpers and does audit it. Emitted
         # after the commit, matching that twin, so a failed delete leaves no record of a
         # deletion that did not happen. FedRAMP AU-2/AU-12, GDPR Art. 30(2)(d).
-        audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent)
+        audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent, residual_errors)
 
         logger.info(f"User deletion completed successfully: {user_id}")
-        return {"message": "User deleted successfully"}
+        return {
+            "message": "User deleted successfully",
+            "storage_objects_failed": len(residual_errors),
+        }
 
     except HTTPException:
         raise

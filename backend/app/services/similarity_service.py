@@ -70,57 +70,6 @@ class SimilarityService:
         return float(max(-1.0, min(1.0, similarity)))
 
     @staticmethod
-    def batch_cosine_similarity(
-        query_embedding: np.ndarray | torch.Tensor,
-        target_embeddings: list[np.ndarray | torch.Tensor],
-    ) -> list[float]:
-        """
-        GPU-accelerated batch cosine similarity using PyTorch.
-
-        Processes all comparisons in parallel using vectorized tensor operations.
-
-        Args:
-            query_embedding: Single query embedding
-            target_embeddings: List of target embeddings to compare against
-
-        Returns:
-            List of cosine similarities in ``[-1, 1]``, in the same order as
-            ``target_embeddings``. Same space as :meth:`cosine_similarity`.
-        """
-        if not target_embeddings:
-            return []
-
-        # Convert all inputs to torch tensors
-        if isinstance(query_embedding, np.ndarray):
-            query_tensor = torch.from_numpy(query_embedding).float()
-        else:
-            query_tensor = query_embedding.float()
-
-        target_tensors = []
-        for target in target_embeddings:
-            if isinstance(target, np.ndarray):
-                target_tensors.append(torch.from_numpy(target).float())
-            else:
-                target_tensors.append(target.float())
-
-        # Stack targets into a single tensor and move to device
-        targets_matrix = torch.stack(target_tensors).to(SimilarityService.device)
-        query_tensor = query_tensor.to(SimilarityService.device)
-
-        # Compute all similarities at once using PyTorch's vectorized operations
-        similarities = nn_functional.cosine_similarity(
-            query_tensor.unsqueeze(0).expand(targets_matrix.size(0), -1), targets_matrix, dim=1
-        )
-
-        # Convert to Python floats, bounded to cosine's real domain (issue #690).
-        result = []
-        for sim in similarities:
-            score = float(sim.item())
-            result.append(max(-1.0, min(1.0, score)))
-
-        return result
-
-    @staticmethod
     def opensearch_similarity_search(
         embedding: list[float] | np.ndarray | torch.Tensor,
         user_id: int,

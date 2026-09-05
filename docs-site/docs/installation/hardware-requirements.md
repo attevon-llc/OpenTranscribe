@@ -62,7 +62,10 @@ For regular use and production deployments:
 :::info[Hybrid Mode for Low-VRAM GPUs and macOS]
 If your GPU has less than ~5 GB of usable VRAM, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU (small model, int8) while speaker diarization stays on GPU. This requires only ~1.3 GB VRAM for PyAnnote and still produces fully diarized transcripts.
 
-On **macOS (Apple Silicon)**, hybrid mode is always active — PyAnnote runs on MPS while faster-whisper runs on CPU (MPS transcription support is unreliable).
+On **macOS (Apple Silicon)**, use the `--lite` (CPU-only) image — Docker Desktop
+on macOS has no Metal/GPU passthrough, so every container is CPU-only there
+regardless of host chip. There is no MPS acceleration path available inside a
+container on this platform; expect CPU-class timings.
 
 See [Performance Tuning → Hybrid Mode](../operations/performance-tuning.md#hybrid-mode) for configuration details.
 :::
@@ -196,7 +199,7 @@ The following ports must be available:
 | Platform | NVIDIA GPU | Notes |
 |----------|------------|-------|
 | Linux | ✅ Full support | Best performance |
-| macOS | N/A — Apple Silicon | Hybrid mode auto-enabled: PyAnnote on MPS, transcription on CPU |
+| macOS | N/A — no Docker Metal passthrough | CPU-only via the `--lite` image — no MPS acceleration in a container |
 | Windows | ✅ via WSL2 | CUDA in WSL2 required |
 
 ## Verification Commands

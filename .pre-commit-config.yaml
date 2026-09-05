@@ -319,6 +319,13 @@ repos:
         pass_filenames: false
         files: ^scripts/(docker-build-push\.sh|security-scan\.sh|tests/test-scan-not-a-pass\.sh)$
 
+      - id: publish-platforms-not-a-pass
+        name: a published multi-arch tag cannot report equivalence it does not have (#680)
+        entry: scripts/tests/test-publish-platforms.sh
+        language: system
+        pass_filenames: false
+        files: ^(backend/Dockerfile\.(prod|lite)|scripts/(docker-build-push\.sh|security-scan\.sh|lib/manifest_platform_check\.py|release/80-publish\.sh|tests/(test-publish-platforms\.sh|fixtures/manifest-fixtures\.py)))$
+
   # Commit message linting (optional)
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v3.0.0

@@ -453,3 +453,140 @@ class TestPreparedFileDataclass:
 
         sp = SpeakerSnapshot(id=1, uuid="sp-1", name="Alice")
         assert sp.profile_id is None
+
+
+class TestCountProfileDocs:
+    """Tests for _count_profile_docs — must never return 0 on ambiguity."""
+
+    def test_returns_none_when_index_missing(self):
+        from app.tasks.embedding_migration_v4 import _count_profile_docs
+
+        client = MagicMock()
+        client.indices.exists.return_value = False
+        assert _count_profile_docs(client, "speakers_v3") is None
+        client.count.assert_not_called()
+
+    def test_returns_none_on_count_error(self):
+        from app.tasks.embedding_migration_v4 import _count_profile_docs
+
+        client = MagicMock()
+        client.indices.exists.return_value = True
+        client.count.side_effect = RuntimeError("opensearch unavailable")
+        assert _count_profile_docs(client, "speakers_v3") is None
+
+    def test_returns_count_and_filters_by_document_type(self):
+        from app.tasks.embedding_migration_v4 import _count_profile_docs
+
+        client = MagicMock()
+        client.indices.exists.return_value = True
+        client.count.return_value = {"count": 7}
+        assert _count_profile_docs(client, "speakers_v3") == 7
+        _, kwargs = client.count.call_args
+        assert kwargs["index"] == "speakers_v3"
+        assert kwargs["body"]["query"]["term"]["document_type"] == "profile"
+
+
+class TestFinalizeV4MigrationProfileGuard:
+    """Fail-closed profile-voiceprint guard on finalize_v4_migration_task (issue #657).
+
+    OpenSearch is the ONLY copy of profile voiceprints (Postgres stores no
+    embedding vectors). The total-doc-count ratio check cannot detect a
+    profile-only shortfall, so this guard is separate and must refuse the
+    alias swap on any shortfall or any ambiguity in the counts.
+    """
+
+    @patch("app.services.opensearch_service.swap_speaker_alias")
+    @patch("app.services.opensearch_service.get_active_versioned_index")
+    @patch(_OS_CLIENT_PATCH)
+    def test_refuses_swap_on_profile_shortfall(self, mock_get_client, mock_active_index, mock_swap):
+        """v3 has profile docs v4 lacks -> finalize must refuse, alias must not move."""
+        from app.tasks.embedding_migration_v4 import finalize_v4_migration_task
+
+        client = MagicMock()
+        client.indices.exists.return_value = True
+        client.indices.flush.return_value = {}
+        mock_active_index.return_value = "speakers_v3"
+
+        def count_side_effect(index, body=None):
+            is_profile_query = (
+                body is not None
+                and body.get("query", {}).get("term", {}).get("document_type") == "profile"
+            )
+            if is_profile_query:
+                # v3 holds 3 profile docs, v4 holds 0 -> shortfall.
+                return {"count": 3 if index == "speakers_v3" else 0}
+            # Total-doc-count check: keep it comfortably passing.
+            return {"count": 100}
+
+        client.count.side_effect = count_side_effect
+        mock_get_client.return_value = client
+
+        result = finalize_v4_migration_task.run(user_id=1)
+
+        assert result["status"] == "error"
+        assert "profile" in result["message"].lower()
+        mock_swap.assert_not_called()
+
+    @patch("app.services.opensearch_service.swap_speaker_alias")
+    @patch("app.services.opensearch_service.get_active_versioned_index")
+    @patch(_OS_CLIENT_PATCH)
+    def test_refuses_swap_when_profile_count_unavailable(
+        self, mock_get_client, mock_active_index, mock_swap
+    ):
+        """Profile count query errors -> ambiguity must refuse, never proceed."""
+        from app.tasks.embedding_migration_v4 import finalize_v4_migration_task
+
+        client = MagicMock()
+        client.indices.exists.return_value = True
+        client.indices.flush.return_value = {}
+        mock_active_index.return_value = "speakers_v3"
+
+        def count_side_effect(index, body=None):
+            is_profile_query = (
+                body is not None
+                and body.get("query", {}).get("term", {}).get("document_type") == "profile"
+            )
+            if is_profile_query:
+                raise RuntimeError("opensearch timeout")
+            return {"count": 100}
+
+        client.count.side_effect = count_side_effect
+        mock_get_client.return_value = client
+
+        result = finalize_v4_migration_task.run(user_id=1)
+
+        assert result["status"] == "error"
+        assert "cannot verify" in result["message"].lower()
+        mock_swap.assert_not_called()
+
+    @patch("app.services.opensearch_service.swap_speaker_alias")
+    @patch("app.services.opensearch_service.get_active_versioned_index")
+    @patch(_OS_CLIENT_PATCH)
+    def test_allows_swap_when_profile_counts_are_not_short(
+        self, mock_get_client, mock_active_index, mock_swap
+    ):
+        """v4 profile count >= v3 profile count -> proceeds to swap."""
+        from app.tasks.embedding_migration_v4 import finalize_v4_migration_task
+
+        client = MagicMock()
+        client.indices.exists.return_value = True
+        client.indices.flush.return_value = {}
+        mock_active_index.return_value = "speakers_v3"
+        mock_swap.return_value = {"status": "success"}
+
+        def count_side_effect(index, body=None):
+            is_profile_query = (
+                body is not None
+                and body.get("query", {}).get("term", {}).get("document_type") == "profile"
+            )
+            if is_profile_query:
+                return {"count": 3}
+            return {"count": 100}
+
+        client.count.side_effect = count_side_effect
+        mock_get_client.return_value = client
+
+        result = finalize_v4_migration_task.run(user_id=1)
+
+        assert result["status"] == "success"
+        mock_swap.assert_called_once()

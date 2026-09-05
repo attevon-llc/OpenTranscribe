@@ -19,15 +19,34 @@ the budget it runs against is no longer celery's bare default.
 from __future__ import annotations
 
 import logging
+import sys
 import time
+import types
+from collections.abc import Callable
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 from celery.concurrency.asynpool import PROC_ALIVE_TIMEOUT
 
+from app.core import celery as celery_module
 from app.core.celery import celery_app
 from app.core.celery import init_worker_process
+from app.core.celery import preload_models
 from app.core.celery import publish_hf_token_to_environment
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+class _StubFasterWhisper(types.ModuleType):
+    """A stand-in ``faster_whisper`` module, with the one attribute we set DECLARED.
+
+    Assigning an undeclared name onto a bare ``ModuleType`` is invisible to mypy; typing
+    it here keeps every call through the stub checked.
+    """
+
+    WhisperModel: Callable[..., object]
 
 
 @pytest.fixture(autouse=True)
@@ -198,3 +217,121 @@ class TestForkKillBudget:
 
         monkeypatch.setenv("CELERY_PROC_ALIVE_TIMEOUT", "not-a-number")
         assert _float_env("CELERY_PROC_ALIVE_TIMEOUT", 30.0) == 30.0
+
+
+@pytest.mark.unit
+class TestMainProcessPreloadIsBounded:
+    """``preload_models`` runs on ``worker_ready``, in the MainProcess **main thread** —
+    the same thread that runs celery's event loop, and therefore
+    ``asynpool.verify_process_alive``.
+
+    So an unbounded model load here does not merely delay startup: it freezes the loop, and
+    a forked child that never signals UP is then neither SIGKILLed nor logged. Observed in a
+    --fresh stack with huggingface.co blackholed: the worker sat at "Preloading CPU
+    lightweight model 'base'" with **zero** ``Timed out waiting for UP message`` lines while
+    its children were stalled in the fork initializer, and re-running with
+    ``PRELOAD_CPU_WHISPER=false`` released it.
+
+    ⚠️ Say "for as long as the fault takes", not "forever". Measured in the prod image
+    against that same blackhole, the unbounded call returned by itself after 140.0 s and the
+    bounded one after 125.7 s. Nothing on the Hub path sets a timeout, so the duration is
+    whatever the client's retry chain produces for that fault — a TCP blackhole terminates,
+    an endpoint that accepts and never replies does not.
+    """
+
+    @staticmethod
+    def _install_faster_whisper_stub(monkeypatch, whisper_model: Callable[..., object]) -> None:
+        """Register *whisper_model* as ``faster_whisper.WhisperModel`` for this test.
+
+        A stub module rather than a patched real import, so the test states the same thing
+        on a CPU-only CI box where ``faster_whisper`` is not installed at all. The
+        ``ModuleType`` subclass exists to DECLARE the attribute: assigning an arbitrary
+        name onto a bare module is invisible to the type checker, and a ``MagicMock``
+        module would type as ``Any`` and stop checking the call signature entirely.
+        """
+        stub = _StubFasterWhisper("faster_whisper")
+        stub.WhisperModel = whisper_model
+        monkeypatch.setitem(sys.modules, "faster_whisper", stub)
+
+    @staticmethod
+    def _stalling_whisper_model(seconds: float, calls: list[str]) -> Callable[..., object]:
+        """A model constructor that outlives any bound placed on it."""
+
+        def _stalling_model(model_name: str, *args: object, **kwargs: object) -> object:
+            calls.append(model_name)
+            time.sleep(seconds)
+            raise AssertionError("the stub must never complete inside the bound")
+
+        return _stalling_model
+
+    def test_a_stalled_cpu_whisper_preload_does_not_freeze_the_event_loop(
+        self, monkeypatch, caplog
+    ):
+        monkeypatch.setenv("PRELOAD_CPU_WHISPER", "true")
+        monkeypatch.delenv("PRELOAD_GPU_MODELS", raising=False)
+        monkeypatch.delenv("PRELOAD_REDACTION_MODELS", raising=False)
+        monkeypatch.setattr(celery_module, "_CPU_WHISPER_PRELOAD_TIMEOUT_S", 0.5)
+        calls: list[str] = []
+        self._install_faster_whisper_stub(monkeypatch, self._stalling_whisper_model(20.0, calls))
+
+        started = time.monotonic()
+        with caplog.at_level(logging.WARNING, logger="app.core.celery"):
+            preload_models()
+        elapsed = time.monotonic() - started
+
+        assert calls, "the stub model was never constructed — the test proved nothing"
+        assert elapsed < 5.0, (
+            f"preload_models blocked for {elapsed:.1f}s against a 0.5s bound; on a real "
+            f"worker that is the MainProcess event loop, and asynpool.verify_process_alive "
+            f"cannot fire while it is frozen"
+        )
+
+    def test_the_stall_is_reported_rather_than_swallowed_silently(self, monkeypatch, caplog):
+        """A bound that gives up quietly trades a hang for an unexplained cold model."""
+        monkeypatch.setenv("PRELOAD_CPU_WHISPER", "true")
+        monkeypatch.delenv("PRELOAD_GPU_MODELS", raising=False)
+        monkeypatch.delenv("PRELOAD_REDACTION_MODELS", raising=False)
+        monkeypatch.setattr(celery_module, "_CPU_WHISPER_PRELOAD_TIMEOUT_S", 0.5)
+        self._install_faster_whisper_stub(monkeypatch, self._stalling_whisper_model(20.0, []))
+
+        with caplog.at_level(logging.WARNING, logger="app.core.celery"):
+            preload_models()
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("preloading failed" in m.lower() for m in messages), messages
+
+    def test_a_healthy_preload_still_completes_normally(self, monkeypatch, caplog):
+        """The control: the bound must not be the reason the load stops happening."""
+        monkeypatch.setenv("PRELOAD_CPU_WHISPER", "true")
+        monkeypatch.delenv("PRELOAD_GPU_MODELS", raising=False)
+        monkeypatch.delenv("PRELOAD_REDACTION_MODELS", raising=False)
+        loaded: list[str] = []
+
+        def _healthy_model(model_name: str, *args: object, **kwargs: object) -> object:
+            loaded.append(model_name)
+            return object()
+
+        self._install_faster_whisper_stub(monkeypatch, _healthy_model)
+
+        with caplog.at_level(logging.INFO, logger="app.core.celery"):
+            preload_models()
+
+        assert loaded, "the model was never loaded at all"
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("preloaded successfully" in m for m in messages), messages
+
+    def test_the_bound_matches_the_container_start_allowance(self):
+        """`start_period` is two things at once, and the bound has to respect both.
+
+        It is the time the deployment already allows for this load — so a shorter bound
+        would fail preloads that are legitimately slow. It is *also* the window in which a
+        frozen MainProcess goes unnoticed, because outside it a worker that cannot answer
+        `inspect stats` already fails the healthcheck — so a longer bound would let the
+        freeze outlive the period in which nothing would report it.
+        """
+        compose = yaml.safe_load((_REPO_ROOT / "docker-compose.yml").read_text())
+        start_period = float(
+            str(compose["services"]["celery-cpu-worker"]["healthcheck"]["start_period"]).rstrip("s")
+        )
+
+        assert start_period == celery_module._CPU_WHISPER_PRELOAD_TIMEOUT_S

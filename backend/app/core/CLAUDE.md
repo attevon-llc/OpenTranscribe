@@ -50,6 +50,22 @@ should import `app.api` or `app.services` at module scope.
   `HF_TOKEN` from the environment over its on-disk token file, so a dict write does what the
   round trip did. `worker_proc_alive_timeout` (`CELERY_PROC_ALIVE_TIMEOUT`, default 30 s) is
   defence in depth over celery's bare 4.0 s, not the fix.
+  ⚠️ **That kill timer covers respawns only, so the absence of `Timed out waiting for UP
+  message` in a worker's logs proves nothing.** It is armed from `on_process_up` via
+  `hub.call_later`, so the initial pool population predates it and a hub blocked in a long
+  callback cannot fire it. `preload_models` runs on `worker_ready` in that same MainProcess
+  main thread — which is why its model loads are bounded
+  (`_CPU_WHISPER_PRELOAD_TIMEOUT_S`, `hf_hub_offline.load_with_timeout`): nothing on the Hub
+  path sets a timeout, so an unbounded `WhisperModel(...)` freezes the loop for however long
+  that particular fault happens to take, and the storm detection goes down with it.
+  ⚠️ **Measured, so quote it rather than "it hangs forever":** against a blackholed
+  `huggingface.co` in the prod image the unbounded call returned by itself after **140.0 s**
+  and the bounded one after **125.7 s**. The bound's worth is that it is *declared* — a TCP
+  blackhole terminates, an endpoint that accepts and never replies does not. 120 s is
+  `celery-cpu-worker`'s `start_period`, i.e. the window in which a frozen MainProcess is
+  invisible; outside it, a worker that cannot answer `inspect stats` already fails the
+  healthcheck. Read `init_worker_process`'s `fork init started`/`finished` pairs when the
+  `asynpool` line is missing — those come from the child.
 - `enums.py` — centralized enums (`FileStatus`), imported from here instead of model modules to
   break import cycles. `ReasoningOffSwitch` lives here rather than beside its probe because
   three layers read it (the service that measures it, the Pydantic response that carries it,

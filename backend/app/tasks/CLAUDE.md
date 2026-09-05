@@ -127,6 +127,16 @@ indexing → WebSocket notification.
   ⚠️ Nothing in the compose set acts on `unhealthy`: there is no autoheal/watchtower container
   and `restart: always` fires only when the **main** process exits. The check makes the wedge
   visible; it does not recover from it.
+- **`Timed out waiting for UP message` covers RESPAWNS ONLY — its absence proves nothing.**
+  celery arms that kill timer from `on_process_up` via `hub.call_later`, so it exists only once
+  the worker has a hub: the children forked when the pool is **first populated** predate it, and
+  a hub blocked inside a long callback cannot fire it either. Anything slow on `worker_ready`
+  runs in the MainProcess main thread and blocks exactly that loop — which is why
+  `preload_models`' model loads are bounded (`_CPU_WHISPER_PRELOAD_TIMEOUT_S`, and the
+  `hf_hub_offline.load_with_timeout` wrappers), not just for tidiness. When a worker looks
+  wedged with **no** such line in its logs, read `init_worker_process`'s `fork init
+  started`/`fork init finished` pairs instead — those are emitted from the child and do not
+  depend on the parent's loop.
 - `request_id` is stamped on task headers at publish and cleared in `task_postrun`; never
   assume a ContextVar survives into the next task.
 - **NEVER hold a DB session across slow non-DB work.** Three phases, always: a short read

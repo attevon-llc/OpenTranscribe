@@ -198,6 +198,16 @@ celery_app.conf.update(
     # longer does I/O) — it is defence in depth so ordinary contention on a loaded
     # host cannot start the loop at all. It stays FINITE deliberately: a genuinely
     # dead fork must still be reaped.
+    #
+    # ⚠️ THE TIMER COVERS RESPAWNS, NOT THE INITIAL POOL. `verify_process_alive` is armed
+    # from `on_process_up` via `hub.call_later`, so it only exists once the worker has a
+    # hub. The children forked when the pool is first populated predate that, and a hub
+    # blocked in a long-running callback cannot fire it either (see `preload_models`).
+    # Consequence for whoever greps logs during the next incident: a fork stall AT STARTUP
+    # produces **no** `Timed out waiting for UP message` line at all — the worker simply
+    # sits there. Absence of the signature is not absence of the problem; check
+    # `init_worker_process`'s own "fork init started/finished" pairs, which are emitted
+    # regardless of the hub.
     worker_proc_alive_timeout=_float_env("CELERY_PROC_ALIVE_TIMEOUT", 30.0),
     worker_send_task_events=True,  # Enable real-time task events for Flower
     task_send_sent_event=True,  # Fire event when task is dispatched to queue
@@ -704,9 +714,24 @@ def warn_inert_max_tasks_per_child(**kwargs):
     )
 
 
+# Wall-clock bound on the CPU-lightweight Whisper warm-up (issue #631). Matched to
+# celery-cpu-worker's `start_period: 120s` in docker-compose.yml, which is both the
+# allowance the deployment declares for this load AND the window in which a frozen
+# MainProcess goes unnoticed — see the call site for why those being the same number is
+# the point.
+_CPU_WHISPER_PRELOAD_TIMEOUT_S = 120.0
+
+
 @worker_ready.connect
 def preload_models(**kwargs):
     """Preload AI models at worker startup.
+
+    ⚠️ This runs on ``worker_ready``, in the **MainProcess main thread** — the thread that
+    also runs celery's event loop, and therefore ``asynpool.verify_process_alive``. A model
+    load that stalls here does not merely delay startup: it freezes the loop, so a forked
+    child that never signals UP is neither SIGKILLed nor logged, and the respawn-storm
+    signature (``Timed out waiting for UP message``) does not appear at all. Every load
+    below must be bounded. See ``init_worker_process`` for the fork side of issue #631.
 
     GPU workers: Load Whisper + PyAnnote into VRAM (shared across threads).
     CPU-transcribe workers: Load lightweight Whisper model into RAM.
@@ -764,13 +789,52 @@ def preload_models(**kwargs):
                 f"Preloading CPU lightweight model '{cpu_config.model_name}' "
                 f"(compute_type={cpu_config.compute_type})..."
             )
-            from faster_whisper import WhisperModel
+            import faster_whisper
 
-            # Load model to warm the cache — subsequent loads are instant
-            _model = WhisperModel(
-                cpu_config.model_name,
-                device="cpu",
-                compute_type="int8",
+            from app.utils.hf_hub_offline import hf_offline_requested
+            from app.utils.hf_hub_offline import load_with_timeout
+
+            # NOT named `kwargs`: this function's own signature already binds that name.
+            load_kwargs: dict[str, bool] = {}
+            if hf_offline_requested():
+                load_kwargs["local_files_only"] = True
+
+            # Load model to warm the cache — subsequent loads are instant.
+            #
+            # ⚠️ BOUNDED, and not merely for tidiness (issue #631). `WhisperModel(...)`
+            # resolves the model through the HuggingFace Hub, and **nothing on that path
+            # sets a timeout** — the duration of a failure is whatever the client's retry
+            # chain happens to produce for that particular fault. It runs on
+            # `worker_ready`, in the **MainProcess main thread**, so a stall here freezes
+            # the worker's event loop — and that loop is what runs
+            # `asynpool.verify_process_alive`. A frozen loop means a forked child that
+            # misses its UP message is neither killed nor logged, so the respawn-storm
+            # signature never appears. Bounding this is part of making that detection
+            # trustworthy, not a separate cleanup.
+            #
+            # ⚠️ Be precise about what the bound buys. Measured in the prod image against a
+            # blackholed huggingface.co, the UNBOUNDED call returned on its own after
+            # 140.0 s and the bounded one after 125.7 s — so for *that* fault it saves
+            # about 14 s. Its value is that it is a **declared** ceiling: a TCP blackhole
+            # happens to terminate, whereas an endpoint that accepts the connection and
+            # never answers does not (there is no read timeout here either), and neither
+            # does a resolver that keeps retrying.
+            #
+            # 120 s is not a round number: it is celery-cpu-worker's own `start_period` in
+            # docker-compose.yml. That is the window during which a frozen MainProcess is
+            # INVISIBLE — outside it, a worker that cannot answer `inspect stats` already
+            # fails the healthcheck. Matching the two means the freeze cannot outlive the
+            # window in which nothing would notice it. Failing is cheap either way: this
+            # only warms a cache, and the first task loads the model anyway.
+            _model = load_with_timeout(
+                lambda: faster_whisper.WhisperModel(
+                    cpu_config.model_name,
+                    device="cpu",
+                    compute_type="int8",
+                    **load_kwargs,
+                ),
+                timeout=_CPU_WHISPER_PRELOAD_TIMEOUT_S,
+                label=f"CPU lightweight Whisper model ({cpu_config.model_name})",
             )
             del _model
             logger.info(f"CPU lightweight model '{cpu_config.model_name}' preloaded successfully")

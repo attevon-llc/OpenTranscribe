@@ -808,10 +808,20 @@ resolve_install_ref() {
     fi
 
     print_info "Resolving the latest published release..."
-    local resolved=""
-    resolved=$(curl -fsSL --connect-timeout 10 --max-time 20 \
-        "https://api.github.com/repos/attevon-llc/OpenTranscribe/releases/latest" 2>/dev/null \
-        | grep -m1 '"tag_name"' | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/' || true)
+    # Retry before giving up. The unauthenticated GitHub API is rate-limited to 60/hour
+    # PER IP, so on any shared or NAT'd address -- a company network, a cloud host, CI --
+    # a single call failing is ordinary rather than exceptional, and without a retry that
+    # ends a real user's `curl | bash` install outright. Caught by the install-path gate
+    # on 2026-09-06, where the same job failed and then passed on a re-run with no code
+    # change; the gate was right, the installer was fragile.
+    local resolved="" _attempt
+    for _attempt in 1 2 3; do
+        resolved=$(curl -fsSL --connect-timeout 10 --max-time 20 \
+            "https://api.github.com/repos/attevon-llc/OpenTranscribe/releases/latest" 2>/dev/null \
+            | grep -m1 '"tag_name"' | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/' || true)
+        [ -n "$resolved" ] && break
+        [ "$_attempt" -lt 3 ] && sleep $((_attempt * 3))
+    done
 
     if [ -z "$resolved" ] || ! echo "$resolved" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
         # Unauthenticated GitHub API is rate-limited to 60/hour per IP, so a

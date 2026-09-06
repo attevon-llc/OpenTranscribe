@@ -9,7 +9,7 @@
       "stage": "now",
       "released": false,
       "scheduled": true,
-      "total": 274,
+      "total": 275,
       "closed": 269,
       "areas": [
         {
@@ -47,7 +47,7 @@
           "name": "Docs & Release Ops",
           "scope": "Docs site, release pipeline, repo tooling",
           "known": true,
-          "total": 5,
+          "total": 6,
           "closed": 1,
           "issues": [
             {
@@ -73,6 +73,11 @@
             {
               "number": 784,
               "title": "task(release): no patch/hotfix path exists — 4 of the last 5 minors needed one within 24 hours",
+              "done": false
+            },
+            {
+              "number": 800,
+              "title": "fix(ci): the install-path release gate fails intermittently on identical code",
               "done": false
             }
           ]

@@ -38,6 +38,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 # Every overlay get_compose_files() can put in front of `docker compose`.
+#
+# ⚠️ This tuple is what `_make_deployment` lays down on disk, and get_compose_files() guards
+# every overlay behind a `[ -f ... ]` existence check — so an overlay MISSING here is not a
+# smaller fixture, it is a branch this whole module cannot reach. LITE was absent until
+# issue #667, which is why nothing here had ever exercised the `DEPLOYMENT_MODE=lite` arm
+# despite that being the only backend an arm64 host can install.
 BASE = "docker-compose.yml"
 PROD = "docker-compose.prod.yml"
 GPU = "docker-compose.gpu.yml"
@@ -46,9 +52,10 @@ NGINX = "docker-compose.nginx.yml"
 BACKUP = "docker-compose.backup.yml"
 DIAR = "docker-compose.diar-native.yml"
 GPU_SPLIT = "docker-compose.gpu-split.yml"
+LITE = "docker-compose.lite.yml"
 
 DIAR_GPU = "docker-compose.diar-native-gpu.yml"
-ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR, DIAR_GPU, GPU_SPLIT)
+ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR, DIAR_GPU, GPU_SPLIT, LITE)
 
 
 def _make_deployment(
@@ -708,4 +715,108 @@ def test_the_lite_overlay_covers_every_service_that_would_pull_the_full_image():
         "lite deployment and would pull davidamacey/opentranscribe-backend (the full "
         "CUDA image). On arm64 that image has no manifest at all, so `up` fails. Give "
         "each one a ${BACKEND_LITE_IMAGE:-...} image override, or scale it to 0."
+    )
+
+
+# ── The shipped lite permutation, driven through the REAL selector (issue #667) ──────────
+#
+# `scripts/validate-deployments.sh` covers ~20 permutations, but every row of it resolves via
+# `./opentr.sh <args> --dry-run` — the DEV launcher. The shipped selector is
+# `opentranscribe.sh:get_compose_files()`, keyed on DEPLOYMENT_MODE, and `opentranscribe.sh`
+# has no `--dry-run` at all, so that harness structurally cannot reach it. Adding one there
+# would mean either giving the production launcher a new user-facing flag (a change to a
+# script real users curl, deserving its own review) or re-implementing the chain resolution
+# inside the test — the exact "never a re-implementation" anti-pattern verify-install-paths.sh
+# documents.
+#
+# So the permutation lives here instead, where `_resolve` already runs the real
+# `get_compose_files()` out of the real script against a fake install directory. Until now
+# lite's shipped reachability was asserted only by SUBSTRING (the three facts in
+# `test_lite_mode_is_reachable_by_a_shipped_deployment`); these run it.
+
+
+def test_deployment_mode_lite_actually_selects_the_lite_overlay(tmp_path):
+    chain, _ = _resolve(tmp_path, env_lines=("DEPLOYMENT_MODE=lite",))
+    assert "docker-compose.lite.yml" in chain, (
+        "DEPLOYMENT_MODE=lite did not put the lite overlay in the compose chain, so a shipped "
+        f"lite install would run the full CUDA images. Chain was: {chain}"
+    )
+
+
+def test_the_default_deployment_does_not_select_the_lite_overlay(tmp_path):
+    """Must-stay-clean control: without it the test above passes on a selector that always
+    adds the overlay, which would push every full install onto the CPU-only image."""
+    chain, _ = _resolve(tmp_path, env_lines=("DEPLOYMENT_MODE=full",))
+    assert "docker-compose.lite.yml" not in chain, (
+        f"a full deployment picked up the lite overlay. Chain was: {chain}"
+    )
+
+
+def test_lite_skips_the_gpu_overlay_even_on_a_host_with_the_nvidia_runtime(tmp_path):
+    """The lite image carries no CUDA runtime, so a GPU reservation over it can only fail.
+
+    This is the permutation a dev-launcher harness cannot express: `opentr.sh --lite` clears
+    the GPU flags itself, whereas the shipped path has to decide from DEPLOYMENT_MODE alone,
+    on a host that genuinely reports an nvidia runtime.
+    """
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=True,
+        compute_cap="8.6",
+        env_lines=("DEPLOYMENT_MODE=lite",),
+    )
+    assert "docker-compose.lite.yml" in chain, f"lite overlay missing from: {chain}"
+    assert "docker-compose.gpu.yml" not in chain, (
+        "a lite deployment loaded the GPU overlay on an nvidia-runtime host. The lite image "
+        f"has no CUDA runtime, so those services cannot start. Chain was: {chain}"
+    )
+
+
+def test_all_overlays_covers_every_overlay_the_selector_can_choose():
+    """Guard the FIXTURE, not the script — an omission here deletes a branch silently.
+
+    `get_compose_files()` guards each overlay behind `[ -f <file> ]`, and `_make_deployment`
+    only writes the files in `ALL_OVERLAYS`. So an overlay the selector knows about but the
+    fixture never creates is unreachable by every test in this module: the branch is skipped,
+    no test fails, and the coverage simply is not there. That is exactly what happened to
+    `docker-compose.lite.yml` — present in the shipped selector, absent from this tuple, and
+    therefore never once exercised here despite lite being the only backend an arm64 host can
+    install (issue #667).
+
+    Deriving the expected set from the script means the next overlay added to the selector
+    fails HERE, loudly, instead of quietly reducing what this module covers.
+    """
+    source = MANAGER.read_text(encoding="utf-8")
+    # Anchor on the DEFINITION, not the name. `get_compose_files()` also appears inside the
+    # prose comments above it, and slicing from the first textual match captured 58 lines of
+    # documentation and zero code — which made `referenced` empty and every entry in
+    # ALL_OVERLAYS look dead. A guard that resolves to an empty set is the failure mode this
+    # whole module exists to catch, so it gets an explicit anchor and the control below.
+    marker = "\nget_compose_files() {\n"
+    assert marker in source, (
+        "opentranscribe.sh no longer defines get_compose_files() at top level; this guard "
+        "would silently scan nothing"
+    )
+    start = source.index(marker)
+    end = source.index("\n}", start + len(marker))
+    body = source[start:end]
+    body = "\n".join(line.split("#", 1)[0] for line in body.splitlines())
+
+    referenced = set(re.findall(r"docker-compose[a-z0-9.-]*\.yml", body))
+    assert len(referenced) >= len(ALL_OVERLAYS), (
+        f"only found {sorted(referenced)} inside get_compose_files() — the slice is not "
+        f"reaching the function body, so both assertions below are vacuous"
+    )
+    missing = sorted(referenced - set(ALL_OVERLAYS))
+    assert not missing, (
+        f"get_compose_files() can select {missing}, but ALL_OVERLAYS does not list them, so "
+        f"_make_deployment never writes those files and every test in this module silently "
+        f"skips that branch via the `[ -f ... ]` guard. Add them to ALL_OVERLAYS."
+    )
+    # And the reverse would be a fixture writing files nothing reads — harmless, but it means
+    # a renamed overlay leaves a dead constant behind that looks like coverage.
+    unused = sorted(set(ALL_OVERLAYS) - referenced)
+    assert not unused, (
+        f"ALL_OVERLAYS lists {unused}, which get_compose_files() never mentions — either the "
+        f"overlay was renamed and this tuple was not updated, or it is dead."
     )

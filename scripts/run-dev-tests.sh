@@ -294,11 +294,7 @@ if $WITH_GPU_SCALE; then
     else
         echo -e "${YELLOW}==>${NC} --with-gpu-scale: $PROJECT_GPU_COUNT distinct project GPUs configured" \
              "— bringing up the --gpu-scale worker topology"
-        if ! "$REPO_ROOT/opentr.sh" start dev --gpu-scale >/dev/null 2>&1; then
-            echo -e "${RED}error:${NC} failed to bring up --gpu-scale topology — run" \
-                 "'./opentr.sh start dev --gpu-scale' manually to see why" >&2
-            exit "$EXIT_PRECONDITION"
-        fi
+        start_stack_or_die "the --gpu-scale worker topology" "gpu-scale-bringup" --gpu-scale
         echo -e "  ${YELLOW}NOTE:${NC} this run does not revert the --gpu-scale topology automatically —" \
              "run './opentr.sh start dev' (no --gpu-scale) afterward to drop back to the single default worker."
     fi
@@ -317,11 +313,7 @@ if $WITH_PIPELINE_SMOKE; then
     else
         echo -e "${YELLOW}==>${NC} --with-pipeline-smoke: bringing up --with-llm-test (real GPU-backed model," \
              "can take several minutes on a cold model download)"
-        if ! "$REPO_ROOT/opentr.sh" start dev --with-llm-test >/dev/null 2>&1; then
-            echo -e "${RED}error:${NC} failed to bring up --with-llm-test — run" \
-                 "'./opentr.sh start dev --with-llm-test' manually to see why" >&2
-            exit "$EXIT_PRECONDITION"
-        fi
+        start_stack_or_die "--with-llm-test (GPU-backed vLLM)" "llm-test-bringup" --with-llm-test
         LLM_TEST_STARTED_BY_US=true
         echo -e "${YELLOW}==>${NC} waiting for the vLLM OpenAI-compatible endpoint on :$LLM_TEST_PORT..."
         LLM_TEST_DEADLINE=$(( $(date +%s) + 600 ))

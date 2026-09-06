@@ -143,7 +143,7 @@
   .tag-chip.selected {
     border-color: var(--primary-color);
     background-color: rgba(var(--primary-color-rgb), 0.12);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
   }
 

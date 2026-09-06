@@ -410,7 +410,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     flex-shrink: 0;
   }
 
@@ -462,7 +462,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .section-icon svg {

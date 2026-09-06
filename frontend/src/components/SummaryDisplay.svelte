@@ -522,7 +522,7 @@
   }
 
   .action-item-bullet {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 600;
     margin-top: 0.1rem;
   }
@@ -593,7 +593,7 @@
   }
 
   .speaker-talktime {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
     font-size: 0.85rem;
   }
@@ -687,7 +687,7 @@
 
   :global(.number-value) {
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   /* Search highlighting: .search-match / .current-match live in src/styles/search.css

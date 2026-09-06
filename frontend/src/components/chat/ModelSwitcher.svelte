@@ -183,7 +183,7 @@
 
   .warning-btn.primary {
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
   }
 </style>

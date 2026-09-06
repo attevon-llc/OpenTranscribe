@@ -224,7 +224,7 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     font-weight: 600;
   }
@@ -337,7 +337,7 @@
   }
 
   .dropdown-menu :global(a.dropdown-item:hover) {
-    color: var(--primary-color) !important;
+    color: var(--primary-on-surface) !important;
     text-decoration: none !important;
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05)) !important;
     transform: translateX(2px) !important;
@@ -349,7 +349,7 @@
   }
 
   .dropdown-menu :global(a.dropdown-item:visited:hover) {
-    color: var(--primary-color) !important;
+    color: var(--primary-on-surface) !important;
     text-decoration: none !important;
   }
 
@@ -372,18 +372,18 @@
 
   .dropdown-menu :global(a.dropdown-item:hover svg) {
     opacity: 1 !important;
-    color: var(--primary-color) !important;
+    color: var(--primary-on-surface) !important;
   }
 
   .dropdown-item:hover {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     transform: translateX(2px);
   }
 
   .dropdown-item:hover svg {
     opacity: 1;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .dropdown-item:focus {

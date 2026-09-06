@@ -174,7 +174,7 @@
     border: none;
     background: none;
     padding: 0;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.78rem;
     cursor: pointer;
     text-decoration: underline;

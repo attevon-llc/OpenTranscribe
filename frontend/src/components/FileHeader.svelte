@@ -320,7 +320,7 @@
   }
 
   .processing-icon {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     animation: spin 2s linear infinite;
     flex-shrink: 0;
   }
@@ -350,7 +350,7 @@
   .progress-percentage {
     font-size: 14px;
     font-weight: 700;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     background: rgba(var(--primary-color-rgb), 0.1);
     padding: 4px 8px;
     border-radius: 4px;
@@ -412,7 +412,7 @@
   }
 
   .stage.active:not(:last-child)::after {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   .stage-dot {
@@ -427,7 +427,7 @@
   }
 
   .stage.active .stage-dot {
-    background: #3b82f6;
+    background: var(--primary-color);
     animation: pulse 1.5s infinite;
   }
 
@@ -455,7 +455,7 @@
   }
 
   .stage.active .stage-label {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 600;
   }
 
@@ -500,7 +500,7 @@
   }
 
   .expand-link {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     font-weight: 500;
     text-decoration: none;
@@ -549,7 +549,7 @@
 
   .edit-btn:hover {
     background: var(--surface-hover);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .edit-btn:focus {
@@ -566,14 +566,14 @@
     font-size: 12px;
     font-weight: 500;
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     white-space: nowrap;
     flex-shrink: 0;
     margin-bottom: 16px;
     text-transform: capitalize;
   }
 
-  :global(.dark) .shared-chip {
+  :global([data-theme='dark']) .shared-chip {
     background: rgba(59, 130, 246, 0.15);
     color: #60a5fa;
   }

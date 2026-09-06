@@ -1068,7 +1068,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -1142,11 +1142,11 @@
   .view-button {
     background-color: transparent;
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .view-button:hover:not(:disabled) {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
   }
@@ -1158,7 +1158,7 @@
   }
 
   .edit-button:hover:not(:disabled) {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
   }
@@ -1265,7 +1265,7 @@
 
   .info-tooltip:hover {
     opacity: 1;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .info-tooltip[data-tooltip]:hover::after {
@@ -1330,7 +1330,7 @@
     align-items: center;
     padding: 0.125rem 0.5rem;
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-radius: 10px;
     font-size: 0.7rem;
     font-weight: 500;
@@ -1344,7 +1344,7 @@
     margin-top: 0.25rem;
   }
 
-  :global(.dark) .collection-tag {
+  :global([data-theme='dark']) .collection-tag {
     background: rgba(var(--primary-color-rgb), 0.2);
     color: #60a5fa;
   }
@@ -1381,7 +1381,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -1434,7 +1434,7 @@
 
   .copy-button-header:hover {
     background-color: var(--hover-bg);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-color: var(--primary-color);
   }
 
@@ -1594,8 +1594,7 @@
     background: rgba(59, 130, 246, 0.04);
   }
 
-  :global([data-theme='dark']) .config-item.shared,
-  :global(.dark) .config-item.shared {
+  :global([data-theme='dark']) .config-item.shared {
     background: rgba(96, 165, 250, 0.06);
   }
 
@@ -1607,13 +1606,12 @@
     font-size: 0.625rem;
     font-weight: 600;
     background: rgba(59, 130, 246, 0.12);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     text-transform: uppercase;
     letter-spacing: 0.02em;
   }
 
-  :global([data-theme='dark']) .share-badge,
-  :global(.dark) .share-badge {
+  :global([data-theme='dark']) .share-badge {
     background: rgba(96, 165, 250, 0.15);
     color: #60a5fa;
   }
@@ -1631,8 +1629,7 @@
     letter-spacing: 0.02em;
   }
 
-  :global([data-theme='dark']) .admin-badge,
-  :global(.dark) .admin-badge {
+  :global([data-theme='dark']) .admin-badge {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
   }
@@ -1645,11 +1642,10 @@
   }
 
   .shared-section-header h4 {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
-  :global([data-theme='dark']) .shared-section-header h4,
-  :global(.dark) .shared-section-header h4 {
+  :global([data-theme='dark']) .shared-section-header h4 {
     color: #60a5fa;
   }
 
@@ -1669,11 +1665,10 @@
     font-size: 0.6875rem;
     font-weight: 500;
     background: rgba(59, 130, 246, 0.12);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
-  :global([data-theme='dark']) .tag-pill,
-  :global(.dark) .tag-pill {
+  :global([data-theme='dark']) .tag-pill {
     background: rgba(var(--primary-color-rgb), 0.2);
     color: #60a5fa;
   }
@@ -1726,7 +1721,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
   }
 
   .toggle-input:checked + .toggle-switch::after {

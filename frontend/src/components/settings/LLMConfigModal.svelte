@@ -949,7 +949,7 @@
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.25rem 0.5rem;
@@ -1081,7 +1081,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -1154,7 +1154,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   .toggle-input:checked + .toggle-switch::after {
@@ -1201,7 +1201,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -1242,7 +1242,7 @@
 
   .info-tooltip:hover {
     opacity: 1;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .info-tooltip[data-tooltip]:hover::after {

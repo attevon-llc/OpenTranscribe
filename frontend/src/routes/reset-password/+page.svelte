@@ -244,7 +244,7 @@
   }
 
   .auth-button {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     border-radius: 10px;

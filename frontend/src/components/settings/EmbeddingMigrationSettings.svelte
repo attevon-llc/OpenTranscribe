@@ -643,7 +643,7 @@
 
   .migration-box.upgrade .migration-icon {
     background: rgba(var(--primary-color-rgb), 0.2);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .migration-box.complete .migration-icon {
@@ -740,7 +740,7 @@
   .progress-percent {
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .progress-bar-container {
@@ -752,7 +752,7 @@
 
   .progress-bar-fill {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     border-radius: 4px;
     transition: width 0.3s ease;
   }

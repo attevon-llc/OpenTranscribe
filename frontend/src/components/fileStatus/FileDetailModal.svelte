@@ -249,7 +249,7 @@
 
   .status-processing {
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .status-pending {
@@ -267,22 +267,22 @@
     color: #6b7280;
   }
 
-  :global(.dark) .status-completed {
+  :global([data-theme='dark']) .status-completed {
     background: rgba(16, 185, 129, 0.2);
     color: #34d399;
   }
 
-  :global(.dark) .status-processing {
+  :global([data-theme='dark']) .status-processing {
     background: rgba(59, 130, 246, 0.2);
     color: #60a5fa;
   }
 
-  :global(.dark) .status-pending {
+  :global([data-theme='dark']) .status-pending {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
   }
 
-  :global(.dark) .status-error {
+  :global([data-theme='dark']) .status-error {
     background: rgba(239, 68, 68, 0.2);
     color: #f87171;
   }
@@ -302,7 +302,7 @@
     overscroll-behavior: none;
   }
 
-  :global(.dark) .detailed-status-modal {
+  :global([data-theme='dark']) .detailed-status-modal {
     background: rgba(0, 0, 0, 0.7);
   }
 
@@ -318,7 +318,7 @@
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   }
 
-  :global(.dark) .modal-content {
+  :global([data-theme='dark']) .modal-content {
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
   }
 
@@ -478,7 +478,7 @@
     border: 1px solid var(--warning-border);
   }
 
-  :global(.dark) .warning {
+  :global([data-theme='dark']) .warning {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
     border-color: rgba(245, 158, 11, 0.3);

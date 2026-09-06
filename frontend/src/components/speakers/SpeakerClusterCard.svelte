@@ -256,7 +256,7 @@
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--primary-color, #3b82f6) 12%, transparent);
+    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
     color: var(--primary-color, #3b82f6);
     white-space: nowrap;
     flex-shrink: 0;
@@ -384,12 +384,12 @@
 
   /* Merge — blue outline → solid blue */
   .action-btn.merge {
-    color: #3b82f6;
+    color: var(--primary-on-surface);
     border-color: #3b82f6;
   }
 
   .action-btn.merge:hover {
-    background: #3b82f6;
+    background: var(--primary-color);
     border-color: #3b82f6;
     color: white;
     transform: scale(1.02);
@@ -412,7 +412,7 @@
 
   /* Promote — blue outline → solid blue */
   .action-btn.promote {
-    color: #3b82f6;
+    color: var(--primary-on-surface);
     border-color: #3b82f6;
   }
 

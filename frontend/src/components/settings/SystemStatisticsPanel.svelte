@@ -696,7 +696,7 @@
   }
 
   .stat-detail-active {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
   }
 
@@ -754,7 +754,7 @@
 
   .gpu-step-btn:hover {
     background-color: var(--primary-light, var(--border-color));
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-color: var(--primary-color);
   }
 
@@ -777,7 +777,7 @@
 
   .progress-fill {
     height: 100%;
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     transition: width 0.3s ease;
   }
 

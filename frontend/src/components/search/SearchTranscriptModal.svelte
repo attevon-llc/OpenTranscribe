@@ -1008,7 +1008,7 @@
     border-radius: 4px;
     font-size: 0.78rem;
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     white-space: nowrap;
     transition:
@@ -1051,8 +1051,18 @@
     padding: 0 !important;
   }
 
-  /* Navigation Bar */
+  /* Navigation Bar
+     Pinned to the top of the scrolling body (#745). Opening this modal from a
+     search result auto-scrolls to the matched segment, which used to carry the
+     match counter and the prev/next arrows off-screen with no way back to them.
+     `.modal-body` is the scroll container and its padding is zeroed just above,
+     so `top: 0` sits flush. The background must stay opaque or scrolled
+     transcript shows through the bar. z-index clears `.reading-progress-bar`
+     (z-index 5), which sticks inside the wrapper below this. */
   .nav-bar {
+    position: sticky;
+    top: 0;
+    z-index: 6;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1211,7 +1221,7 @@
   .segment-time {
     font-size: 12px;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-family: monospace;
     white-space: nowrap;
   }

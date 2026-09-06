@@ -51,7 +51,7 @@
   .toggle-truncation {
     background: none;
     border: none;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     padding: 0;
     margin: 0;
     font-size: 0.85rem;

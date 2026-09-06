@@ -6,6 +6,7 @@
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { RENAME_PROPAGATION_TIMEOUT_MS } from '$lib/api/speakerClusters';
+  import { isPlaceholderSpeakerName } from '$lib/utils/speakerNames';
 
   export let file: any = null;
   export let speakerList: any[] = [];
@@ -120,8 +121,11 @@
     if (!speaker.cross_video_matches || speaker.cross_video_matches.length === 0) {
       return false;
     }
-    // Only labeled speakers have cross-video matches (appears in X videos)
-    return !!(speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_'));
+    // Only labeled speakers have cross-video matches (appears in X videos).
+    // Uses the shared placeholder contract rather than a local
+    // `.startsWith('SPEAKER_')`, which also swallowed a genuinely named speaker
+    // such as "SPEAKER_OF_THE_HOUSE" — see `$lib/utils/speakerNames`.
+    return !isPlaceholderSpeakerName(speaker.display_name);
   }
 </script>
 
@@ -568,7 +572,7 @@
   .legend-info-icon {
     background: none;
     border: none;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     padding: 2px;
     border-radius: 50%;
@@ -665,14 +669,14 @@
     border-radius: 10px;
     border: 1px solid var(--border-color);
     background: var(--surface-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     transition: all 0.15s ease;
     line-height: 1.4;
   }
 
   .timestamp-link:hover {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
     transform: scale(1.02);
@@ -821,7 +825,7 @@
   .save-speakers-button {
     margin-top: 16px;
     padding: 0.6rem 1.2rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 10px;
@@ -867,7 +871,7 @@
     padding: 0.25rem 0.65rem;
     border-radius: 999px;
     background-color: rgba(var(--primary-color-rgb), 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.78rem;
     font-weight: 500;
   }
@@ -1022,7 +1026,7 @@
 
   .more-matches-text {
     cursor: pointer;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
   }
 
@@ -1209,7 +1213,7 @@
   }
 
   .suggestion-chip.llm-chip {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   .suggestion-chip.llm-chip:hover {

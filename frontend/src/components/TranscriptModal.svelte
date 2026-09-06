@@ -533,7 +533,7 @@
 
   .reading-progress-fill {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     transition: width 0.1s ease-out;
     border-radius: 0;
   }
@@ -601,7 +601,7 @@
 
   .copy-button-header:hover {
     background-color: var(--hover-bg);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-color: var(--primary-color);
   }
 
@@ -625,7 +625,7 @@
     border-radius: 4px;
     font-size: 0.78rem;
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     white-space: nowrap;
     transition:
@@ -842,7 +842,7 @@
   .segment-time {
     font-size: 12px;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-family: monospace;
     white-space: nowrap;
   }

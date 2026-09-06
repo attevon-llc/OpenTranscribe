@@ -4,6 +4,7 @@
   import { t } from '$stores/locale';
   import { hasMoreFiles, isLoadingMore, galleryViewMode } from '$stores/gallery';
   import CardGridSkeleton from '$components/ui/CardGridSkeleton.svelte';
+  import FileListSkeleton from './FileListSkeleton.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import VirtualList from '$components/gallery/VirtualList.svelte';
@@ -29,7 +30,16 @@
 </script>
 
 {#if loading}
-  <CardGridSkeleton variant="media" count={12} />
+  <!-- The placeholder must match the view the data will land in. This rendered
+       card placeholders unconditionally, so the LIST view showed a grid of
+       cards and then visibly jumped to a table once the files arrived. The
+       real content branch below already keys off `$galleryViewMode`; this one
+       simply never did. -->
+  {#if $galleryViewMode === 'list'}
+    <FileListSkeleton count={8} {isSelecting} />
+  {:else}
+    <CardGridSkeleton variant="media" count={12} />
+  {/if}
 {:else if error}
   <div class="error-state">
     <p>{$t('gallery.connectionError')}</p>

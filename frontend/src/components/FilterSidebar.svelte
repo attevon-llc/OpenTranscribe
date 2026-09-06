@@ -2,13 +2,14 @@
   import type { Tag, TagWithCount } from '$lib/types/tag';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import RangeSlider from 'svelte-range-slider-pips';
-  import { DatePicker } from '@svelte-plugins/datepicker';
-  import { format } from 'date-fns';
+  import DateRangePicker from '$components/ui/DateRangePicker.svelte';
   import axiosInstance from '../lib/axios';
   import { listTags } from '$lib/api/tags';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
+  import EmptyState from '$components/ui/EmptyState.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { createDebouncedHandler } from '$lib/utils/debounce';
@@ -75,10 +76,20 @@
     max: null
   };
 
-  // Server-provided min/max values for sliders
+  // Server-provided min/max values for sliders.
+  //
+  // ⚠️ These are PLACEHOLDERS until `/files/metadata-filters` answers, and the
+  // sliders are not rendered before then (#744). A slider drawn against the
+  // fabricated 0–3600 range emits a `durationRange` measured in a scale the
+  // library does not use: on a library of two-minute files every position of
+  // the handle matches every file, which is exactly what "the duration filter
+  // does nothing" looked like. The same applied permanently when the request
+  // FAILED — the old catch set `metadataLoaded = true` and carried on with the
+  // seed, so the control silently described a library that did not exist.
   let durationBounds = { min: 0, max: 3600 };
   let fileSizeBounds = { min: 0, max: 1024 }; // in MB
   let metadataLoaded = false;
+  let errorMetadata: string | null = null;
 
   // Slider values (two-element arrays for dual handles)
   let durationSliderValues: [number, number] = [0, 3600];
@@ -125,18 +136,34 @@
 
   /** @type {Speaker[]} */
   let allSpeakers: any[] = [];
-  let dropdownSpeakers: any[] = [];  // All speakers for multiselect dropdown
+  let dropdownSpeakers: any[] = [];  // Named speakers for multiselect dropdown
+
+  /** The string the API offers a speaker under, and the value sent back as `?speaker=`. */
+  const speakerLabel = (speaker: any): string => speaker.display_name || speaker.name;
+
+  // Named people vs. unlabeled diarization placeholders (#743).
+  //
+  // The API flags any entry no human has named with `is_unnamed`. A placeholder
+  // is scoped to ONE FILE — `SPEAKER_00` in two recordings is two different
+  // people — so these must NEVER be rendered as people. They are collapsed into
+  // a single "files with unlabeled speakers" facet below, which is a true
+  // statement about a file instead of a false one about a person.
+  $: namedSpeakers = allSpeakers.filter(speaker => !speaker.is_unnamed);
+  $: unlabeledSpeakers = allSpeakers.filter(speaker => speaker.is_unnamed);
+  $: unlabeledLabels = unlabeledSpeakers.map(speakerLabel);
+  $: unlabeledSelected =
+    unlabeledLabels.length > 0 && unlabeledLabels.every(label => selectedSpeakers.includes(label));
 
   // Reactive: Prepare dropdown speakers with proper format
-  $: dropdownSpeakers = allSpeakers.map(speaker => ({
+  $: dropdownSpeakers = namedSpeakers.map(speaker => ({
     id: speaker.uuid,
-    name: translateSpeakerLabel(speaker.display_name || speaker.name),
+    name: translateSpeakerLabel(speakerLabel(speaker)),
     count: speaker.media_count || 0
   }));
 
   // Reactive: Convert selected speaker names to IDs for multiselect
-  $: selectedSpeakerIds = allSpeakers
-    .filter(speaker => selectedSpeakers.includes(speaker.display_name || speaker.name))
+  $: selectedSpeakerIds = namedSpeakers
+    .filter(speaker => selectedSpeakers.includes(speakerLabel(speaker)))
     .map(speaker => speaker.uuid);
 
   /** @type {boolean} */
@@ -202,18 +229,15 @@
     triggerFiltersImmediate();
   }
 
-  // Date picker state
-  let datePickerOpen = false;
-  let datePickerClosing = false;
-  let dpStartDate: Date | string | null = null;
-  let dpEndDate: Date | string | null = null;
-
-  // Auto-scroll to show the full calendar when it opens
-  $: if (datePickerOpen && !datePickerClosing) {
-    tick().then(() => {
-      const cal = document.querySelector('.datepicker-wrapper .calendars-container');
-      if (cal) (cal as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
+  /**
+   * Turn a caught value into something renderable, without swallowing it.
+   *
+   * Every facet fetch below FAILS VISIBLY: an empty list is indistinguishable
+   * from "you have none of these", so a 500 used to render as a normal, empty
+   * filter with no error and no way to retry (#743a).
+   */
+  function describeError(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
   }
 
   // Fetch all tags (cached with TTL, invalidated via WebSocket push)
@@ -226,6 +250,7 @@
     } catch (err) {
       console.error('[FilterSidebar] Error fetching tags:', err);
       allTags = [];
+      errorTags = describeError(err);
     } finally {
       loadingTags = false;
     }
@@ -240,24 +265,47 @@
   // past ~500 distinct names for the same reason
   // (`services/chat/speaker_resolver.py`). `q` is optional, so calling this with
   // no argument (initial load, WebSocket-pushed re-fetch) is unchanged.
+  //
+  // `include_unnamed` asks for speakers nobody has named yet (#743). Without it
+  // the roster is people-only, so a library that has been diarized but never
+  // renamed — which is every library until someone does the work — offered
+  // nothing at all to filter by.
+  //
+  // `limit` is passed explicitly, one MORE than we display: the server caps the
+  // roster, and an over-full page is the only exact way to tell "this was cut"
+  // from "this is all of them". Previously neither was sent and a capped list
+  // silently omitted speakers (#743b).
+  const SPEAKER_FILTER_PAGE_SIZE = 200;
+  let speakersTruncated = false;
+
   async function fetchSpeakers(q = '') {
     loadingSpeakers = true;
     errorSpeakers = null;
 
     try {
-      allSpeakers = await apiCache.getOrFetch(
+      const rows = await apiCache.getOrFetch(
         cacheKey.speakers(q || undefined),
         async () => {
           const response = await axiosInstance.get('/speakers', {
-            params: { for_filter: true, q: q.trim() || undefined }
+            params: {
+              for_filter: true,
+              q: q.trim() || undefined,
+              include_unnamed: true,
+              limit: SPEAKER_FILTER_PAGE_SIZE + 1
+            }
           });
           return response.data;
         },
         CacheTTL.SPEAKERS
       );
+      const list = Array.isArray(rows) ? rows : [];
+      speakersTruncated = list.length > SPEAKER_FILTER_PAGE_SIZE;
+      allSpeakers = list.slice(0, SPEAKER_FILTER_PAGE_SIZE);
     } catch (err) {
       console.error('Error fetching speakers:', err);
       allSpeakers = [];
+      speakersTruncated = false;
+      errorSpeakers = describeError(err);
     } finally {
       loadingSpeakers = false;
     }
@@ -336,6 +384,26 @@
   }
 
   /**
+   * Toggle the "files with unlabeled speakers" facet (#743).
+   *
+   * Selects (or clears) EVERY unlabeled diarization label at once. The server
+   * ORs the `speaker` params, so this resolves to "files that still contain a
+   * speaker nobody has named" — the review question a user actually has —
+   * without ever claiming that `SPEAKER_00` is one person across files.
+   */
+  function toggleUnlabeledSpeakers() {
+    if (unlabeledSelected) {
+      selectedSpeakers = selectedSpeakers.filter(s => !unlabeledLabels.includes(s));
+    } else {
+      selectedSpeakers = [
+        ...selectedSpeakers,
+        ...unlabeledLabels.filter(label => !selectedSpeakers.includes(label))
+      ];
+    }
+    triggerFiltersImmediate();
+  }
+
+  /**
    * Handle speaker selection from multiselect dropdown
    * @param {CustomEvent} event - Event with speaker id
    */
@@ -365,23 +433,9 @@
     }
   }
 
-  /**
-   * Handle date picker range change
-   */
-  function handleDatePickerChange(event: { startDate: Date | string; endDate?: Date | string }) {
-    const start = event.startDate ? new Date(event.startDate) : null;
-    const end = event.endDate ? new Date(event.endDate) : null;
-    dateRange = {
-      from: start && !isNaN(start.getTime()) ? start : null,
-      to: end && !isNaN(end.getTime()) ? end : null,
-    };
-    if (dateRange.from && dateRange.to) {
-      datePickerClosing = true;
-      setTimeout(() => {
-        datePickerOpen = false;
-        datePickerClosing = false;
-      }, 350);
-    }
+  /** The shared picker owns its own open/closing state and date formatting. */
+  function handleDateRangeChange(event: CustomEvent<{ from: Date | null; to: Date | null }>) {
+    dateRange = { from: event.detail.from, to: event.detail.to };
     triggerFiltersImmediate();
   }
 
@@ -389,8 +443,7 @@
    * Clear date range filter
    */
   function clearDateRange() {
-    dpStartDate = null;
-    dpEndDate = null;
+    // `DateRangePicker` resets its own plugin state when both ends go null.
     dateRange = { from: null, to: null };
     triggerFiltersImmediate();
   }
@@ -398,6 +451,7 @@
   let availableLanguages: string[] = [];
 
   async function fetchMediaMetadata() {
+    errorMetadata = null;
     try {
       const data = await apiCache.getOrFetch(
         cacheKey.metadataFilters(),
@@ -432,7 +486,12 @@
       metadataLoaded = true;
     } catch (error) {
       console.error('Error fetching media metadata:', error);
-      metadataLoaded = true; // Still show sliders with defaults
+      // Deliberately NOT `metadataLoaded = true` (#744): the range sliders are
+      // meaningless without the library's real bounds, and rendering them
+      // against the 0–3600 / 0–1024 seed is what made a moved handle silently
+      // match every file. Show the failure and offer a retry instead.
+      metadataLoaded = false;
+      errorMetadata = describeError(error);
     }
   }
 
@@ -529,9 +588,6 @@
     selectedCollectionId = null;
     selectedLanguage = null;
     dateRange = { from: null, to: null };
-    dpStartDate = null;
-    dpEndDate = null;
-    datePickerOpen = false;
     durationRange = { min: null, max: null };
     fileSizeRange = { min: null, max: null };
     selectedFileTypes = [];
@@ -582,14 +638,6 @@
 
     // Listen for push-based cache invalidation from WebSocket
     window.addEventListener('cache-invalidated', handleCacheInvalidation);
-
-    // Initialize date picker from dateRange props
-    if (dateRange.from instanceof Date) {
-      dpStartDate = dateRange.from;
-    }
-    if (dateRange.to instanceof Date) {
-      dpEndDate = dateRange.to;
-    }
 
     // Restore slider positions from filter props
     if (durationRange.min !== null || durationRange.max !== null) {
@@ -648,7 +696,15 @@
     {#if loadingTags}
       <p class="loading-text">{$t('filter.loadingTags')}</p>
     {:else if errorTags}
-      <p class="empty-text">{$t('filter.noTagsAvailable')}</p>
+      <EmptyState
+        icon="⚠️"
+        title={$t('filter.tagsLoadFailed')}
+        description={$t('filter.facetLoadFailedHelp')}
+        padding="12px 0"
+      >
+        <button class="retry-button" data-testid="tags-retry" on:click={fetchTags}
+          >{$t('filter.retry')}</button>
+      </EmptyState>
     {:else if allTags.length === 0}
       <p class="empty-text">{$t('filter.noTagsCreated')}</p>
     {:else}
@@ -689,44 +745,51 @@
 
   <div class="filter-section">
     <h3>{$t('filter.speakers')}</h3>
-    <div class="speaker-search-row">
-      <input
-        type="search"
-        bind:value={speakerSearchQuery}
-        on:input={scheduleSpeakerSearch}
-        placeholder={$t('filter.searchSpeakersPlaceholder')}
-        aria-label={$t('filter.searchSpeakersPlaceholder')}
-        class="filter-input"
-        data-testid="speaker-search-input"
-      />
-      {#if searchingSpeakers}
-        <span class="speaker-search-spinner" aria-hidden="true"></span>
-      {/if}
-    </div>
+    <!-- No standalone search input here. The dropdown below already owns a
+         search box, and its `on:search` drives the same server-side fetch, so a
+         second input beside it was pure redundancy: two search fields plus the
+         quick chips, all filtering one list. -->
     {#if loadingSpeakers && !searchingSpeakers}
       <p class="loading-text">{$t('filter.loadingSpeakers')}</p>
     {:else if errorSpeakers}
-      <p class="empty-text">{$t('filter.noSpeakersAvailable')}</p>
-    {:else if allSpeakers.length === 0}
-      <p class="empty-text">
-        {speakerSearchQuery.trim() ? $t('filter.noSpeakersMatchSearch') : $t('filter.noSpeakersDetected')}
-      </p>
+      <EmptyState
+        icon="⚠️"
+        title={$t('filter.speakersLoadFailed')}
+        description={$t('filter.facetLoadFailedHelp')}
+        padding="12px 0"
+      >
+        <button
+          class="retry-button"
+          data-testid="speakers-retry"
+          on:click={() => fetchSpeakers(speakerSearchQuery)}
+        >{$t('filter.retry')}</button>
+      </EmptyState>
     {:else}
-      <div class="speakers-list">
-        {#each allSpeakers.slice(0, 4) as speaker}
-          <button
-            class="speaker-button {selectedSpeakers.includes(speaker.display_name || speaker.name) ? 'selected' : ''}"
-            on:click={() => toggleSpeaker(speaker.display_name || speaker.name)}
-            title={$t('filter.speakerTooltip', { speaker: translateSpeakerLabel(speaker.display_name || speaker.name), count: speaker.media_count ? $t('filter.speakerAppearsInFiles', { count: speaker.media_count }) : '' })}
-          >
-            {translateSpeakerLabel(speaker.display_name || speaker.name)}
-            {#if speaker.media_count}
-              <span class="speaker-count">{speaker.media_count}</span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-      {#if allSpeakers.length > 0}
+      {#if namedSpeakers.length === 0}
+        <p class="empty-text">
+          {#if speakerSearchQuery.trim()}
+            {$t('filter.noSpeakersMatchSearch')}
+          {:else if unlabeledSpeakers.length > 0}
+            {$t('filter.noNamedSpeakers')}
+          {:else}
+            {$t('filter.noSpeakersDetected')}
+          {/if}
+        </p>
+      {:else}
+        <div class="speakers-list">
+          {#each namedSpeakers.slice(0, 4) as speaker}
+            <button
+              class="speaker-button {selectedSpeakers.includes(speakerLabel(speaker)) ? 'selected' : ''}"
+              on:click={() => toggleSpeaker(speakerLabel(speaker))}
+              title={$t('filter.speakerTooltip', { speaker: translateSpeakerLabel(speakerLabel(speaker)), count: speaker.media_count ? $t('filter.speakerAppearsInFiles', { count: speaker.media_count }) : '' })}
+            >
+              {translateSpeakerLabel(speakerLabel(speaker))}
+              {#if speaker.media_count}
+                <span class="speaker-count">{speaker.media_count}</span>
+              {/if}
+            </button>
+          {/each}
+        </div>
         <div class="dropdown-section">
           <SearchableMultiSelect
             options={dropdownSpeakers}
@@ -736,8 +799,35 @@
             showCounts={true}
             on:select={handleSpeakerSelect}
             on:deselect={handleSpeakerDeselect}
+            on:search={(e) => {
+              speakerSearchQuery = e.detail.term;
+              scheduleSpeakerSearch();
+            }}
           />
+          {#if searchingSpeakers}
+            <div class="speaker-search-status"><Spinner size="small" /></div>
+          {/if}
         </div>
+      {/if}
+      <!-- Unlabeled speakers: ONE facet, never a list of pseudo-people (#743). -->
+      {#if unlabeledSpeakers.length > 0}
+        <div class="speakers-list">
+          <button
+            class="speaker-button {unlabeledSelected ? 'selected' : ''}"
+            data-testid="unlabeled-speakers-facet"
+            aria-pressed={unlabeledSelected}
+            on:click={toggleUnlabeledSpeakers}
+            title={$t('filter.unlabeledSpeakersTooltip')}
+          >
+            {$t('filter.unlabeledSpeakers')}
+          </button>
+        </div>
+        <small class="input-help">{$t('filter.unlabeledSpeakersHelp')}</small>
+      {/if}
+      {#if speakersTruncated}
+        <small class="input-help" data-testid="speakers-truncated">
+          {$t('filter.speakersTruncated', { count: SPEAKER_FILTER_PAGE_SIZE })}
+        </small>
       {/if}
     {/if}
   </div>
@@ -758,39 +848,11 @@
         </button>
       {/if}
     </div>
-    <div class="datepicker-wrapper" class:closing={datePickerClosing}>
-      <DatePicker
-        isRange
-        enableFutureDates
-        includeFont={false}
-        bind:isOpen={datePickerOpen}
-        bind:startDate={dpStartDate}
-        bind:endDate={dpEndDate}
-        onDateChange={handleDatePickerChange}
-      >
-        <button
-          type="button"
-          class="date-trigger-btn"
-          on:click={() => datePickerOpen = !datePickerOpen}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="date-icon">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
-          </svg>
-          <span class="date-text">
-            {#if dateRange.from && dateRange.to}
-              {format(dateRange.from, 'MMM d, yyyy')} — {format(dateRange.to, 'MMM d, yyyy')}
-            {:else if dateRange.from}
-              {format(dateRange.from, 'MMM d, yyyy')} — ...
-            {:else}
-              {$t('filter.selectDateRange')}
-            {/if}
-          </span>
-        </button>
-      </DatePicker>
-    </div>
+    <DateRangePicker
+      from={dateRange.from}
+      to={dateRange.to}
+      on:change={handleDateRangeChange}
+    />
   </div>
 
   <!-- File Type -->
@@ -828,45 +890,69 @@
     </div>
   {/if}
 
-  <!-- Duration Range -->
-  <div class="filter-section">
-    <h3>{$t('filter.duration')}</h3>
-    <div class="slider-labels">
-      <span>{formatClock(durationSliderValues[0])}</span>
-      <span>{formatClock(durationSliderValues[1])}</span>
+  <!-- Duration + File Size ranges.
+       Both are gated on `metadataLoaded` (#744): a range control whose bounds
+       are the hardcoded seed rather than the library's real min/max emits a
+       filter every file satisfies, which reads as "the slider does nothing". -->
+  {#if errorMetadata}
+    <div class="filter-section">
+      <h3>{$t('filter.duration')}</h3>
+      <EmptyState
+        icon="⚠️"
+        title={$t('filter.rangesLoadFailed')}
+        description={$t('filter.rangesLoadFailedHelp')}
+        padding="12px 0"
+      >
+        <button class="retry-button" data-testid="metadata-retry" on:click={fetchMediaMetadata}
+          >{$t('filter.retry')}</button>
+      </EmptyState>
     </div>
-    <div class="slider-wrapper">
-      <RangeSlider
-        bind:values={durationSliderValues}
-        min={durationBounds.min}
-        max={durationBounds.max}
-        step={durationBounds.max > 7200 ? 60 : durationBounds.max > 600 ? 30 : 10}
-        range
-        pushy
-        on:change={handleDurationSliderChange}
-      />
+  {:else if !metadataLoaded}
+    <div class="filter-section">
+      <h3>{$t('filter.duration')}</h3>
+      <p class="loading-text">{$t('filter.loadingRanges')}</p>
     </div>
-  </div>
+  {:else}
+    <!-- Duration Range -->
+    <div class="filter-section">
+      <h3>{$t('filter.duration')}</h3>
+      <div class="slider-labels">
+        <span>{formatClock(durationSliderValues[0])}</span>
+        <span>{formatClock(durationSliderValues[1])}</span>
+      </div>
+      <div class="slider-wrapper">
+        <RangeSlider
+          bind:values={durationSliderValues}
+          min={durationBounds.min}
+          max={durationBounds.max}
+          step={durationBounds.max > 7200 ? 60 : durationBounds.max > 600 ? 30 : 10}
+          range
+          pushy
+          on:change={handleDurationSliderChange}
+        />
+      </div>
+    </div>
 
-  <!-- File Size Range -->
-  <div class="filter-section">
-    <h3>{$t('filter.fileSize')}</h3>
-    <div class="slider-labels">
-      <span>{formatFileSize(fileSizeSliderValues[0])}</span>
-      <span>{formatFileSize(fileSizeSliderValues[1])}</span>
+    <!-- File Size Range -->
+    <div class="filter-section">
+      <h3>{$t('filter.fileSize')}</h3>
+      <div class="slider-labels">
+        <span>{formatFileSize(fileSizeSliderValues[0])}</span>
+        <span>{formatFileSize(fileSizeSliderValues[1])}</span>
+      </div>
+      <div class="slider-wrapper">
+        <RangeSlider
+          bind:values={fileSizeSliderValues}
+          min={fileSizeBounds.min}
+          max={fileSizeBounds.max}
+          step={fileSizeBounds.max > 10240 ? 100 : fileSizeBounds.max > 1024 ? 10 : 1}
+          range
+          pushy
+          on:change={handleFileSizeSliderChange}
+        />
+      </div>
     </div>
-    <div class="slider-wrapper">
-      <RangeSlider
-        bind:values={fileSizeSliderValues}
-        min={fileSizeBounds.min}
-        max={fileSizeBounds.max}
-        step={fileSizeBounds.max > 10240 ? 100 : fileSizeBounds.max > 1024 ? 10 : 1}
-        range
-        pushy
-        on:change={handleFileSizeSliderChange}
-      />
-    </div>
-  </div>
+  {/if}
 
   <!-- Processing Status -->
   <div class="filter-section">
@@ -1028,160 +1114,6 @@
     color: var(--text-color);
   }
 
-  /* Date picker wrapper */
-  .datepicker-wrapper {
-    position: relative;
-  }
-
-  .date-trigger-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.45rem 0.7rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--background-color);
-    color: var(--text-color);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: border-color 0.2s ease;
-    text-align: left;
-  }
-
-  .date-trigger-btn:hover {
-    border-color: var(--primary-color-light, #93c5fd);
-  }
-
-  .date-icon {
-    flex-shrink: 0;
-    color: var(--text-secondary);
-  }
-
-  .date-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Datepicker theme — inline below trigger, light/dark mode */
-  .datepicker-wrapper :global(.datepicker) {
-    font-family: inherit;
-  }
-
-  /* Core layout: render inline below trigger, fit sidebar width */
-  .datepicker-wrapper :global(.datepicker .calendars-container) {
-    position: static !important;
-    margin-top: 0.5rem;
-    width: 100% !important;
-    box-shadow: none !important;
-    border-radius: 8px;
-    opacity: 1;
-    transition: opacity 0.3s ease;
-    /* Theming */
-    --datepicker-container-background: var(--surface-color, #fff);
-    --datepicker-container-border: 1px solid var(--border-color, #e8e9ea);
-    --datepicker-container-border-radius: 8px;
-    --datepicker-container-box-shadow: none;
-    --datepicker-container-font-family: inherit;
-    --datepicker-container-width: 100%;
-    --datepicker-color: var(--text-color, #21333d);
-    --datepicker-border-color: var(--border-color, #e8e9ea);
-    --datepicker-state-active: var(--primary-color, #3b82f6);
-    --datepicker-state-hover: var(--hover-color, #e7f7fc);
-    --datepicker-font-size-base: 0.8rem;
-    /* Calendar sizing */
-    --datepicker-calendar-width: 100%;
-    --datepicker-calendar-padding: 4px 4px 12px;
-    --datepicker-calendar-day-height: 32px;
-    --datepicker-calendar-day-width: 32px;
-    --datepicker-calendar-day-padding: 2px;
-    --datepicker-calendar-day-font-size: 0.8rem;
-    --datepicker-calendar-dow-font-size: 0.75rem;
-    --datepicker-calendar-dow-margin-bottom: 6px;
-    --datepicker-calendar-header-font-size: 0.95rem;
-    --datepicker-calendar-header-padding: 8px 2px;
-    --datepicker-calendar-header-margin: 0 0 6px 0;
-    /* Colors — light mode */
-    --datepicker-calendar-day-color: var(--text-color, #232a32);
-    --datepicker-calendar-day-color-hover: var(--text-color, #232a32);
-    --datepicker-calendar-day-background-hover: var(--hover-color, #f5f5f5);
-    --datepicker-calendar-dow-color: var(--text-secondary, #8b9198);
-    --datepicker-calendar-header-color: var(--text-color, #21333d);
-    --datepicker-calendar-header-text-color: var(--text-color, #21333d);
-    --datepicker-calendar-header-month-nav-color: var(--text-color, #21333d);
-    --datepicker-calendar-header-month-nav-background-hover: var(--hover-color, #f5f5f5);
-    --datepicker-calendar-today-border: 1px solid var(--text-color, #232a32);
-    --datepicker-calendar-day-other-color: var(--text-secondary, #d1d3d6);
-  }
-
-  .datepicker-wrapper :global(.datepicker .calendars-container .calendar) {
-    width: 100% !important;
-    padding: 4px 4px 12px !important;
-  }
-
-  .datepicker-wrapper :global(.datepicker .calendars-container .calendar .month) {
-    width: 100%;
-  }
-
-  .datepicker-wrapper :global(.datepicker .calendars-container .calendar .date span) {
-    width: 32px !important;
-    height: 32px !important;
-    font-size: 0.8rem !important;
-    padding: 2px !important;
-  }
-
-  .datepicker-wrapper :global(.datepicker .calendars-container .calendar .dow) {
-    font-size: 0.75rem !important;
-  }
-
-  /* Fade out calendar on close */
-  .datepicker-wrapper.closing :global(.datepicker .calendars-container) {
-    opacity: 0;
-  }
-
-  /* Dark mode overrides */
-  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .calendars-container) {
-    --datepicker-container-background: var(--surface-color, #1e293b);
-    --datepicker-color: var(--text-color, #e2e8f0);
-    --datepicker-container-border: 1px solid var(--border-color, #334155);
-    --datepicker-border-color: var(--border-color, #334155);
-    --datepicker-state-active: var(--primary-color, #3b82f6);
-    --datepicker-state-hover: rgba(59, 130, 246, 0.15);
-    --datepicker-calendar-day-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-day-color-hover: #fff;
-    --datepicker-calendar-day-color-disabled: var(--text-secondary, #64748b);
-    --datepicker-calendar-day-background-hover: rgba(255, 255, 255, 0.1);
-    --datepicker-calendar-dow-color: var(--text-secondary, #94a3b8);
-    --datepicker-calendar-header-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-header-text-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-header-month-nav-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-header-month-nav-background-hover: rgba(255, 255, 255, 0.1);
-    --datepicker-calendar-today-border: 1px solid var(--text-color, #e2e8f0);
-    --datepicker-calendar-day-other-color: var(--text-secondary, #475569);
-    /* Range selection colors */
-    --datepicker-calendar-range-background: rgba(59, 130, 246, 0.2);
-    --datepicker-calendar-range-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-range-start-end-background: #3b82f6;
-    --datepicker-calendar-range-start-end-color: #fff;
-    --datepicker-calendar-range-included-background: rgba(59, 130, 246, 0.12);
-    --datepicker-calendar-range-included-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-range-included-box-shadow: inset 20px 0 0 rgba(59, 130, 246, 0.12);
-    /* Box-shadows behind start/end circles */
-    --datepicker-calendar-range-start-box-shadow: inset -20px 0 0 rgba(59, 130, 246, 0.15);
-    --datepicker-calendar-range-end-box-shadow: inset 20px 0 0 rgba(59, 130, 246, 0.15);
-    --datepicker-calendar-range-start-box-shadow-selected: inset -20px 0 0 var(--surface-color, #1e293b);
-    --datepicker-calendar-range-end-box-shadow-selected: inset 20px 0 0 var(--surface-color, #1e293b);
-  }
-
-  /* Invert nav arrow icons in dark mode (they're base64 black SVGs) */
-  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .icon-previous-month),
-  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .icon-next-month),
-  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .icon-next-year),
-  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .icon-previous-year) {
-    filter: invert(1);
-  }
-
   .dropdown-section {
     margin-top: 0.75rem;
   }
@@ -1231,7 +1163,7 @@
     height: 22px !important;
     border-radius: 2px !important;
     border: none !important;
-    background-color: #3b82f6 !important;
+    background-color: var(--primary-color) !important;
     box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3) !important;
     transform: none !important;
     transition: height 0.15s ease, width 0.15s ease, margin 0.15s ease !important;
@@ -1252,7 +1184,7 @@
 
   /* Range bar — same solid color as handles */
   .slider-wrapper :global(.rangeSlider .rangeBar) {
-    background-color: #3b82f6 !important;
+    background-color: var(--primary-color) !important;
   }
 
   /* Pointer cursor on the track too */
@@ -1260,32 +1192,31 @@
     cursor: pointer !important;
   }
 
-  .speaker-search-row {
+  /* Status row for the dropdown's server-side speaker search. */
+  .speaker-search-status {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.4rem;
+    justify-content: center;
+    padding: 0.35rem 0;
   }
 
-  .speaker-search-row .filter-input {
-    flex: 1;
-    min-width: 0;
+  /* Retry control for a facet whose fetch failed — an empty facet must never
+     be the way an outage looks (#743a). */
+  .retry-button {
+    margin-top: 0.5rem;
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    padding: 0.3rem 0.8rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  .speaker-search-spinner {
-    flex-shrink: 0;
-    width: 0.9rem;
-    height: 0.9rem;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: speaker-search-spin 0.7s linear infinite;
-  }
-
-  @keyframes speaker-search-spin {
-    to {
-      transform: rotate(360deg);
-    }
+  .retry-button:hover {
+    background-color: var(--hover-color);
+    border-color: var(--primary-color);
   }
 
   /* Tag and Speaker button styles */
@@ -1319,7 +1250,7 @@
 
   .tag-button.selected,
   .speaker-button.selected {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }
@@ -1355,7 +1286,7 @@
 
   .file-type-button.selected,
   .status-button.selected {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }
@@ -1387,7 +1318,7 @@
   }
 
   .ownership-button.selected {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }

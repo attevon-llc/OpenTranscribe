@@ -1509,7 +1509,7 @@
   }
 
   .add-button {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -1585,7 +1585,7 @@
   }
 
   .create-button {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -1732,17 +1732,17 @@
   /* Expiration button - blue */
   .expiration-button {
     background-color: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    color: var(--primary-on-surface);
   }
 
   .expiration-button:hover:not(:disabled) {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     transform: scale(1.05);
   }
 
   .expiration-button.active {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
   }
 
@@ -2168,7 +2168,7 @@
   }
 
   .btn-confirm {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;

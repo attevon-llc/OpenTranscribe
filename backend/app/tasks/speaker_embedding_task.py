@@ -34,6 +34,35 @@ def _set_task_progress(task_id: str, progress: float) -> None:
         update_task_status(db, task_id, "in_progress", progress=progress)
 
 
+def _close_pipeline_task(pipeline_task_id: str | None, *, error: str | None = None) -> None:
+    """Close the TRANSCRIPTION task this embedding run was delegated from.
+
+    ``transcription/postprocess.py`` deliberately leaves the transcription task at
+    ``in_progress / progress=0.90`` on the cloud-ASR + provider-diarization path
+    and delegates the terminus here. That delegation was only ever honoured for
+    the *notification*: ``pipeline_task_id`` was read for metering and benchmark
+    marks and nothing else, so the task ROW stayed at 90% forever. The
+    notification panel reads its percentage from that row, which is why a fully
+    processed file sat at "Processing speaker identification - 90%".
+
+    Every terminal path of the task below must call this, including the early
+    "no segments" return and the exception handler - an errored run that leaves
+    the row parked is the same bug wearing a different hat.
+
+    Never raises: failing to close a bookkeeping row must not fail the run.
+    """
+    if not pipeline_task_id:
+        return
+
+    from app.utils.task_utils import update_task_status
+
+    with contextlib.suppress(Exception), session_scope() as db:
+        if error:
+            update_task_status(db, pipeline_task_id, "failed", error_message=error, completed=True)
+        else:
+            update_task_status(db, pipeline_task_id, "completed", progress=1.0, completed=True)
+
+
 def _load_speaker_embedding_inputs(file_uuid: str, task_id: str) -> dict:
     """Phase 1 — read everything the extraction phase needs, then close the session.
 
@@ -306,6 +335,7 @@ def extract_speaker_embeddings_task(
             logger.warning(f"No transcript segments found for file {inputs['file_id']}")
             with session_scope() as db:
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            _close_pipeline_task(pipeline_task_id)
             return {"status": "skipped", "message": "No segments to process"}
 
         _set_task_progress(task_id, 0.2)
@@ -338,6 +368,7 @@ def extract_speaker_embeddings_task(
             cleanup_temp_audio(file_uuid)
         except Exception as cleanup_err:
             logger.debug(f"Temp audio cleanup after embedding extraction failed: {cleanup_err}")
+        _close_pipeline_task(pipeline_task_id)
         return {
             "status": "success",
             "file_id": inputs["file_id"],
@@ -354,6 +385,7 @@ def extract_speaker_embeddings_task(
             cleanup_temp_audio(file_uuid)
         except Exception as cleanup_err:
             logger.debug(f"Temp audio cleanup after embedding error failed: {cleanup_err}")
+        _close_pipeline_task(pipeline_task_id, error=str(e))
         return {"status": "error", "message": str(e)}
 
 

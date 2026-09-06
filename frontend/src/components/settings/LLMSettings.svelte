@@ -1011,7 +1011,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -1144,11 +1144,11 @@
   .test-connection-button {
     background-color: transparent;
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .test-connection-button:hover:not(:disabled) {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
   }
@@ -1160,7 +1160,7 @@
   }
 
   .edit-button:hover:not(:disabled) {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
   }
@@ -1255,7 +1255,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -1302,7 +1302,7 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(59, 130, 246, 0.12);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     margin-left: 0.5rem;
     vertical-align: middle;
   }
@@ -1384,7 +1384,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   .toggle-input:checked + .toggle-switch::after {

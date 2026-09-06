@@ -523,7 +523,7 @@
   .suggestion-add {
     font-size: 11px;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   @media (max-width: 768px) {

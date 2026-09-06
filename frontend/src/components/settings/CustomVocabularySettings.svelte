@@ -331,7 +331,7 @@
   .domain-tab:hover { color: var(--text-color); border-color: var(--border-hover, #6b7280); }
 
   .domain-tab.active {
-    background: #3b82f6;
+    background: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
   }
@@ -373,7 +373,7 @@
 
   .btn-add {
     padding: 0.45rem 1rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 6px;
@@ -445,7 +445,7 @@
   .domain-badge {
     padding: 0.1rem 0.4rem;
     background: rgba(var(--primary-color-rgb), 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-radius: 4px;
     font-size: 0.7rem;
   }
@@ -628,7 +628,7 @@
 
   .btn-import {
     padding: 0.45rem 1rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 6px;

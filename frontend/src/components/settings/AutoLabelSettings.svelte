@@ -407,7 +407,7 @@
   }
 
   .toggle-switch input:checked + .toggle-slider {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
   }
 
   .toggle-switch input:checked + .toggle-slider:before {
@@ -439,7 +439,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #3b82f6;
+    background: var(--primary-color);
     cursor: pointer;
   }
 
@@ -447,7 +447,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #3b82f6;
+    background: var(--primary-color);
     cursor: pointer;
     border: none;
   }
@@ -455,7 +455,7 @@
   .threshold-value {
     font-size: 0.85rem;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     min-width: 40px;
     text-align: right;
   }
@@ -471,7 +471,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     border: none;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     font-weight: 500;
     font-size: 0.95rem;
@@ -509,7 +509,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     border: none;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     font-weight: 500;
     font-size: 0.9rem;

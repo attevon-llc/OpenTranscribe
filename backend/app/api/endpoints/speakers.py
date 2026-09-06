@@ -38,6 +38,13 @@ logger = logging.getLogger(__name__)
 # Whitelist of fields that can be updated via the speaker update endpoint
 SPEAKER_UPDATABLE_FIELDS = {"name", "display_name", "suggested_name", "verified"}
 
+#: A ``display_name`` matching this is a **diarization placeholder**, not a human-assigned
+#: identity — as are ``NULL`` and ``""``. The distinction is deliberate and shared with the
+#: frontend's speaker plane: a placeholder is scoped to **one file**, so ``SPEAKER_00`` in
+#: recording A and ``SPEAKER_00`` in recording B are different people and must never be
+#: treated as one cross-file identity. Anything else is a name a human assigned.
+PLACEHOLDER_SPEAKER_NAME_PATTERN = r"^SPEAKER_\d+$"
+
 # Speaker suggestion constants
 SPEAKER_SUGGESTION_MIN_CONFIDENCE = 0.5
 SPEAKER_SUGGESTION_MAX_COUNT = 5
@@ -101,19 +108,18 @@ def create_speaker(
 # --- Helper functions for list_speakers ---
 
 
-def _filter_speakers_query(
-    query: Any, verified_only: bool, for_filter: bool, file_id: int | None
-) -> Any:
-    """Apply filters to the speakers query."""
+def _filter_speakers_query(query: Any, verified_only: bool, file_id: int | None) -> Any:
+    """Apply filters to the speakers query.
+
+    Note there is no ``for_filter`` branch here any more: it held a second copy
+    of the placeholder predicate (see :data:`PLACEHOLDER_SPEAKER_NAME_PATTERN`)
+    that the only caller has always passed ``False`` for, because the
+    ``for_filter=True`` fast path never reaches this function. Two definitions
+    of "is this a real name" is exactly the drift that would let one of them
+    silently stop matching the other.
+    """
     if verified_only:
         query = query.filter(Speaker.verified)
-
-    if for_filter:
-        query = query.filter(
-            Speaker.display_name.isnot(None),
-            Speaker.display_name != "",
-            ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
-        )
 
     if file_id is not None:
         query = query.filter(Speaker.media_file_id == file_id)
@@ -125,6 +131,9 @@ def _sort_speakers(speakers: list[Speaker]) -> list[Speaker]:
     """Sort speakers by SPEAKER_XX numbering for consistent ordering."""
 
     def get_speaker_number(speaker: Speaker) -> int:
+        # :data:`PLACEHOLDER_SPEAKER_NAME_PATTERN`, with the ordinal captured — this one
+        # reads the number out rather than answering the yes/no question, so it cannot
+        # reuse the constant directly. Keep the two in step.
         match = re.match(r"^SPEAKER_(\d+)$", str(speaker.name))
         return int(match.group(1)) if match else 999
 
@@ -173,6 +182,7 @@ def _get_unique_speakers_for_filter(
     limit: int = SPEAKER_FILTER_DEFAULT_LIMIT,
     profile_id: int | None = None,
     is_profile: bool | None = None,
+    include_unnamed: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Get unique speakers by display name for filter use with media file counts.
@@ -205,22 +215,52 @@ def _get_unique_speakers_for_filter(
             already resolved by the caller).
         is_profile: ``True`` = only profile-linked speakers, ``False`` = only
             unlinked, ``None`` = no filter.
+        include_unnamed: Also offer speakers **no human has named** — see the
+            note below. Off by default, so every existing caller (the chat
+            file-scope picker included) keeps a people-only roster.
 
     Returns:
-        List of dicts with uuid, name, display_name, media_count, and
-        profile_id (the profile's UUID, or ``None``).
+        List of dicts with uuid, name, display_name, media_count, is_unnamed,
+        and profile_id (the profile's UUID, or ``None``).
+
+    Unnamed speakers (issue #743)
+    ---------------------------
+    Diarization writes ``display_name=None`` and ``name='SPEAKER_00'``, so on a
+    library where nobody has renamed anyone this roster was **empty** and the
+    gallery's speaker filter had nothing to show. Dropping the "must have a
+    real display name" predicate is not the fix: this function groups across
+    files, and ``SPEAKER_00`` in one recording is a different person from
+    ``SPEAKER_00`` in another, so an unqualified entry would read as one person
+    and return a nonsense file set.
+
+    So they are opt-in and **flagged**. ``include_unnamed=True`` groups by the
+    label the caller would actually filter on — ``COALESCE(NULLIF(display_name,
+    ''), name)``, exactly what ``files/filtering.apply_speaker_filter`` matches
+    — and marks any group whose every row is unlabeled with ``is_unnamed``.
+    A caller must never render a flagged entry as a person; the filter sidebar
+    collapses them into one "files with unlabeled speakers" facet, which is a
+    true statement about a *file* rather than a false one about a person.
+    Named entries always sort ahead of unlabeled ones.
     """
+    from sqlalchemy import and_
     from sqlalchemy import func
+    from sqlalchemy import not_
     from sqlalchemy import select
 
     from app.services.permission_service import PermissionService
 
-    # Build base filters — admins see all speakers, others see accessible files only
-    base_filter = [
+    # "A human gave this speaker a real name." A raw ``SPEAKER_nn`` written into
+    # display_name (what an auto-label pass emits) is not one.
+    has_human_name = and_(
         Speaker.display_name.isnot(None),
         Speaker.display_name != "",
-        ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
-    ]
+        not_(Speaker.display_name.op("~")(PLACEHOLDER_SPEAKER_NAME_PATTERN)),
+    )
+    # The exact string this row is offered under, and sent back as ``?speaker=``.
+    label_col = func.coalesce(func.nullif(Speaker.display_name, ""), Speaker.name)
+
+    # Build base filters — admins see all speakers, others see accessible files only
+    base_filter = [] if include_unnamed else [has_human_name]
     if not current_user.is_admin:
         accessible_sq = PermissionService.get_accessible_file_ids_subquery(
             db, current_user.id, organization_id=organization_id
@@ -231,7 +271,9 @@ def _get_unique_speakers_for_filter(
     base_filter.append(~Speaker.media_file_id.in_(quarantined_ids))
 
     if q and q.strip():
-        base_filter.append(Speaker.display_name.ilike(f"%{q.strip()}%"))
+        # Search the offered label, not display_name alone — otherwise typing
+        # "SPEAKER_01" into the picker matches nothing it is showing.
+        base_filter.append(label_col.ilike(f"%{q.strip()}%"))
     if profile_id is not None:
         base_filter.append(Speaker.profile_id == profile_id)
     if is_profile is True:
@@ -241,16 +283,20 @@ def _get_unique_speakers_for_filter(
 
     bounded_limit = max(1, min(limit, SPEAKER_FILTER_MAX_LIMIT))
     media_count_col = func.count(func.distinct(Speaker.media_file_id))
+    # A group counts as unlabeled only when EVERY row in it is — a label shared
+    # with a real name is a person's entry, not a review bucket.
+    unnamed_col = func.bool_and(not_(has_human_name))
     grouped = (
         db.query(
-            Speaker.display_name,
+            label_col.label("label"),
+            unnamed_col.label("is_unnamed"),
             media_count_col.label("media_count"),
             func.min(Speaker.id).label("rep_id"),
             func.min(Speaker.profile_id).label("profile_id"),
         )
         .filter(*base_filter)
-        .group_by(Speaker.display_name)
-        .order_by(media_count_col.desc(), Speaker.display_name)
+        .group_by(label_col)
+        .order_by(unnamed_col.asc(), media_count_col.desc(), label_col)
         .limit(bounded_limit)
         .all()
     )
@@ -276,12 +322,16 @@ def _get_unique_speakers_for_filter(
         rep = reps_by_id.get(row.rep_id)
         if rep is None:
             continue
+        # An unlabeled group is projected with display_name=None so that the
+        # caller's `display_name || name` fallback yields the grouping label
+        # even when the label came from a display_name holding "SPEAKER_02".
         results.append(
             {
                 "uuid": str(rep.uuid),
-                "name": rep.name,
-                "display_name": row.display_name,
+                "name": row.label if row.is_unnamed else rep.name,
+                "display_name": None if row.is_unnamed else row.label,
                 "media_count": row.media_count,
+                "is_unnamed": bool(row.is_unnamed),
                 "profile_id": profile_uuids.get(row.profile_id) if row.profile_id else None,
             }
         )
@@ -459,10 +509,19 @@ def _compute_display_flags(
         and not speaker.display_name
     )
 
-    # Pre-compute placeholder text
-    if is_high_confidence:
-        input_placeholder = suggested_name
-    elif suggested_name and suggestion_source == "metadata_hint":
+    # Pre-compute placeholder text.
+    #
+    # ⚠️ A suggestion is ALWAYS labelled as one, however confident. The
+    # high-confidence branch used to emit the bare ``suggested_name`` — and the
+    # editor's `translatePlaceholder` passes an unrecognised placeholder through
+    # verbatim — so a >=0.75 voice match sat in the name field looking exactly
+    # like a value a human had confirmed, with only a border colour to say
+    # otherwise. Speaker-ID suggestions are never auto-applied; presenting one
+    # as an established name is the same claim by other means. Confidence is
+    # still reported, through ``is_high_confidence``/``is_medium_confidence``.
+    # (It also swallowed the metadata provenance: a confident `metadata_hint`
+    # took the bare branch and never said where the name came from.)
+    if suggested_name and suggestion_source == "metadata_hint":
         input_placeholder = f"From metadata: {suggested_name}"
     elif suggested_name:
         input_placeholder = f"Suggested: {suggested_name}"
@@ -708,6 +767,14 @@ def list_speakers(
     is_profile: bool | None = Query(
         None, description="for_filter only: restrict to profile-linked (true) or unlinked (false)"
     ),
+    include_unnamed: bool = Query(
+        False,
+        description=(
+            "for_filter only: also offer speakers nobody has named, under their diarization "
+            "label and flagged is_unnamed. They are per-file labels, not people — never "
+            "render a flagged entry as a person."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -728,8 +795,10 @@ def list_speakers(
         verified_only (bool): If true, return only verified speakers.
         file_uuid (Optional[str]): If provided, return only speakers associated with this file.
         for_filter (bool): If true, return only speakers with distinct display names for filtering.
-        q, limit, profile_id, is_profile: ``for_filter=True`` only — server-side type-to-search
-            (substring, case-insensitive), page size, and profile scoping. Ignored otherwise.
+        q, limit, profile_id, is_profile, include_unnamed: ``for_filter=True`` only —
+            server-side type-to-search (substring, case-insensitive), page size, profile
+            scoping, and whether to also offer unlabeled diarization labels (#743).
+            Ignored otherwise.
 
     Returns:
         List[dict]: Speaker objects with embedded suggestion data and profile information.
@@ -754,6 +823,7 @@ def list_speakers(
                 limit=limit,
                 profile_id=resolved_profile_id,
                 is_profile=is_profile,
+                include_unnamed=include_unnamed,
             )
 
         # Convert file_uuid to file_id if provided (tenant-gated via ctx.org_id)
@@ -779,7 +849,7 @@ def list_speakers(
             query = query.filter(Speaker.user_id == current_user.id)
             quarantined_ids = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
             query = query.filter(~Speaker.media_file_id.in_(quarantined_ids))
-        query = _filter_speakers_query(query, verified_only, False, file_id)
+        query = _filter_speakers_query(query, verified_only, file_id)
         speakers = query.all()
         speakers = _sort_speakers(speakers)
 

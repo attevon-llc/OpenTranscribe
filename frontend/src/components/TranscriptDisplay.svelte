@@ -161,7 +161,7 @@
   let updatingSegments = new Set<string>();
 
   async function handleSegmentSpeakerChange(event: CustomEvent) {
-    const { segmentUuid, speakerUuid } = event.detail;
+    const { segmentUuid, speakerUuid, speaker: createdSpeaker } = event.detail;
 
     // Prevent duplicate requests
     if (updatingSegments.has(segmentUuid)) {
@@ -184,9 +184,15 @@
     // Store original speaker for rollback and orphan detection
     const originalSpeaker = existingSegment.speaker;
 
-    // Optimistic update - find the new speaker from our speaker list
+    // Optimistic update - find the new speaker from our speaker list.
+    //
+    // `createdSpeaker` is the just-created row handed over by the dropdown's
+    // "Add speaker" flow. `speakerList` is reloaded asynchronously by the route, so
+    // it CANNOT contain a speaker created a millisecond ago — the lookup returned
+    // undefined and the segment optimistically rendered "Unknown", which is what
+    // made "Add speaker" look like it had done nothing at all (#740).
     const newSpeaker = speakerUuid
-      ? speakerList.find((s: Speaker) => s.uuid === speakerUuid)
+      ? (speakerList.find((s: Speaker) => s.uuid === speakerUuid) ?? createdSpeaker ?? null)
       : null;
 
     // `file` is bound, so these assignments reach the page — which is what makes the
@@ -440,6 +446,7 @@
       on:seekToPlayhead
       on:segmentSpeakerChange={handleSegmentSpeakerChange}
       on:speakerCreatedFromDropdown={handleSpeakerCreated}
+      on:speakerUpdate
     />
 
 

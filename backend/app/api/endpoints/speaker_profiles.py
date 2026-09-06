@@ -27,6 +27,7 @@ from app.services.permission_service import PermissionService
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.error_handlers import ErrorHandler
 from app.utils.uuid_helpers import get_speaker_by_uuid
 from app.utils.uuid_helpers import get_speaker_profile_by_uuid
@@ -387,6 +388,52 @@ def update_speaker_profile(
         raise ErrorHandler.internal_error() from e
 
 
+def _queue_retroactive_matching_after_assignment(
+    *,
+    speaker_uuid: str,
+    user_id: int,
+    speaker_id: int,
+    old_profile_id: int | None,
+    new_profile_id: int,
+    media_file_id: int,
+) -> None:
+    """Re-score the library once a speaker has been attached to a profile.
+
+    A ``SpeakerProfile`` has no voiceprint until a speaker is attached, so this
+    assignment is the moment the profile first becomes matchable. This endpoint
+    queued nothing at all, so every other recording of that voice — including the
+    other clusters of it in the same file — stayed unmatched with an empty Inbox.
+
+    ``display_name_changed=False`` is load-bearing: it routes the task to the
+    profile-change branch (``_should_rescore_after_profile_change``) rather than
+    the labeling workflow, which would re-run profile auto-creation over an
+    assignment the user just made explicitly.
+
+    Fail-open: the assignment is already committed by the time this runs, so a
+    broker error must not report the assignment as failed.
+    """
+    try:
+        process_speaker_update_background.delay(
+            speaker_uuid=speaker_uuid,
+            user_id=user_id,
+            display_name="",
+            speaker_id=speaker_id,
+            old_profile_id=old_profile_id,
+            new_profile_id=new_profile_id,
+            was_auto_labeled=False,
+            display_name_changed=False,
+            media_file_id=media_file_id,
+        )
+    except Exception:
+        logger.exception(
+            "Speaker %s was assigned to profile %s (COMMITTED) but retroactive "
+            "matching could not be queued. Cross-recording suggestions for this "
+            "profile will be missing until another speaker update runs.",
+            speaker_id,
+            new_profile_id,
+        )
+
+
 @router.post("/speakers/{speaker_uuid}/assign-profile", response_model=dict[str, Any])
 def assign_speaker_to_profile(
     speaker_uuid: str,
@@ -409,6 +456,10 @@ def assign_speaker_to_profile(
         if not file_perm:
             raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
         speaker_id = speaker.id
+        # Read before the assignment writes over it — the task's re-score gate
+        # compares old against new to tell an attach from a no-op.
+        prior_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+        media_file_id = int(speaker.media_file_id)
 
         # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
@@ -453,6 +504,14 @@ def assign_speaker_to_profile(
             # Update collections in OpenSearch
             # For now, we'll use a default collection (could be expanded)
             update_speaker_collections(speaker_uuid_str, int(profile_id), profile_uuid_str, [])
+            _queue_retroactive_matching_after_assignment(
+                speaker_uuid=speaker_uuid_str,
+                user_id=int(current_user.id),
+                speaker_id=int(speaker_id),
+                old_profile_id=prior_profile_id,
+                new_profile_id=int(profile_id),
+                media_file_id=int(media_file_id),
+            )
         except Exception:
             logger.exception(
                 "Speaker %s was assigned to profile %s and the write is COMMITTED, but "

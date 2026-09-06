@@ -152,7 +152,7 @@
   }
 
   .notice-link {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     text-decoration: underline;
     text-underline-offset: 2px;
     white-space: nowrap;

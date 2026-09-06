@@ -519,7 +519,7 @@
 
   .recovery-btn, .flower-btn {
     padding: 0.6rem 1.2rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 10px;
@@ -596,7 +596,6 @@
     opacity: 1;
   }
 
-  :global(.dark) .live-status-icon::after,
   :global([data-theme='dark']) .live-status-icon::after {
     background: rgba(255, 255, 255, 0.92);
     color: #111;
@@ -630,11 +629,11 @@
     background: var(--error-background);
   }
 
-  :global(.dark) .status-card {
+  :global([data-theme='dark']) .status-card {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
 
-  :global(.dark) .status-card:hover {
+  :global([data-theme='dark']) .status-card:hover {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
   }
 
@@ -660,7 +659,7 @@
     border: 1px solid var(--error-border);
   }
 
-  :global(.dark) .error-message {
+  :global([data-theme='dark']) .error-message {
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.3);
   }

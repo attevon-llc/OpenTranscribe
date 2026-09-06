@@ -448,7 +448,7 @@
     overflow: hidden;
   }
 
-  :global(.dark) .notifications-panel {
+  :global([data-theme='dark']) .notifications-panel {
     box-shadow:
       0 20px 25px -5px rgba(0, 0, 0, 0.4),
       0 10px 10px -5px rgba(0, 0, 0, 0.2),
@@ -480,7 +480,7 @@
   }
 
   .unread-badge {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     font-size: 11px;
     font-weight: 600;
@@ -542,7 +542,7 @@
   }
 
   .close-btn:hover {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: #3b82f6;
     color: white;
   }
@@ -583,7 +583,7 @@
     background: rgba(59, 130, 246, 0.04);
   }
 
-  :global(.dark) .notification-item.unread {
+  :global([data-theme='dark']) .notification-item.unread {
     background: rgba(59, 130, 246, 0.08);
   }
 
@@ -606,7 +606,7 @@
   }
 
   .notification-item.status-info .notification-indicator {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   .notification-item.status-warning .notification-indicator {
@@ -614,11 +614,11 @@
   }
 
   .notification-item.unread .notification-indicator {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   .notification-item.processing .notification-indicator {
-    background: #3b82f6;
+    background: var(--primary-color);
     animation: pulse 1.5s infinite;
   }
 
@@ -661,7 +661,7 @@
   .notification-item.status-info .notification-icon {
     background: rgba(59, 130, 246, 0.1);
     border-color: rgba(59, 130, 246, 0.2);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .notification-item.status-warning .notification-icon {
@@ -725,7 +725,7 @@
     display: block;
     font-size: 12px;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     text-decoration: none;
     transition: color 0.2s ease;
     white-space: nowrap;
@@ -758,6 +758,10 @@
     flex-shrink: 0;
     width: 24px;
     height: 24px;
+    /* Resets the global `button { padding: 0.6rem 1.2rem }` (38.4px), which is
+       wider than this 24px box and would clamp the content box to zero, hiding
+       the icon entirely (#746). */
+    padding: 0;
     background: none;
     border: none;
     border-radius: 4px;
@@ -805,7 +809,7 @@
 
   .progress-bar-fill {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     border-radius: 2px;
     transition: width 0.3s ease;
     animation: progress-shimmer 1.5s infinite;

@@ -249,7 +249,7 @@
   }
 
   .tab.active {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-bottom-color: var(--primary-color);
   }
 
@@ -304,7 +304,7 @@
   }
 
   .detail-value.highlight {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .detail-value.model-name {

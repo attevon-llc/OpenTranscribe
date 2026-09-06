@@ -343,7 +343,7 @@
   }
 
   .member-play-btn:hover {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border-color: var(--primary-color, #3b82f6);
     transform: none;
@@ -351,7 +351,7 @@
   }
 
   .member-play-btn.playing {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border-color: var(--primary-color, #3b82f6);
   }
@@ -462,7 +462,7 @@
     padding: 6px 14px;
     border: none;
     border-radius: 8px;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     cursor: pointer;
     font-size: 13px;

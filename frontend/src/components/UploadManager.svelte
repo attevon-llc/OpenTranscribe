@@ -275,7 +275,7 @@
 
   /* Minimized Badge */
   .upload-badge {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border-radius: 20px;
     padding: 8px 12px;
@@ -338,7 +338,7 @@
   }
 
   .panel-header {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     padding: 12px 16px;
     cursor: grab;
@@ -433,7 +433,7 @@
 
   .progress-fill {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     transition: width 0.3s ease;
   }
 
@@ -481,25 +481,25 @@
   }
 
   /* Dark mode adjustments */
-  :global(.dark) .upload-panel {
+  :global([data-theme='dark']) .upload-panel {
     background: var(--surface-color);
     border-color: var(--border-color);
   }
 
-  :global(.dark) .overall-progress {
+  :global([data-theme='dark']) .overall-progress {
     background: var(--background-color);
     border-color: var(--border-color);
   }
 
-  :global(.dark) .progress-label {
+  :global([data-theme='dark']) .progress-label {
     color: var(--text-primary);
   }
 
-  :global(.dark) .progress-percent {
+  :global([data-theme='dark']) .progress-percent {
     color: var(--text-secondary);
   }
 
-  :global(.dark) .progress-bar {
+  :global([data-theme='dark']) .progress-bar {
     background: var(--border-color);
   }
 

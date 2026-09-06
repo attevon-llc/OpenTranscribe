@@ -327,3 +327,36 @@ describe('remembering previous values', () => {
     expect(tagNames).toEqual(['meeting-notes']);
   });
 });
+
+/**
+ * Issue #739: the wizard rendered a "Skip" button beside "Next" on every
+ * optional step, and both were wired to the same `goNext()` handler — two
+ * controls, one action, so Skip communicated a choice the user did not have.
+ */
+describe('optional-step navigation (#739)', () => {
+  it('shows no Skip button beside Next on the optional tags step', async () => {
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('input[type="file"]')).not.toBeNull());
+    await selectFile(container, file({ name: 'clip.mp3', size: 1024 }));
+
+    // media -> tags, which is the first `optional: true` step.
+    await fireEvent.click(container.querySelector('.nav-next') as HTMLElement);
+
+    await waitFor(() => expect(container.querySelector('.nav-next')).not.toBeNull());
+    expect(container.querySelector('.nav-skip')).toBeNull();
+  });
+
+  it('shows no Skip button on the optional collections step either', async () => {
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('input[type="file"]')).not.toBeNull());
+    await selectFile(container, file({ name: 'clip.mp3', size: 1024 }));
+
+    // media -> tags -> collections, the second `optional: true` step.
+    await fireEvent.click(container.querySelector('.nav-next') as HTMLElement);
+    await waitFor(() => expect(container.querySelector('.nav-next')).not.toBeNull());
+    await fireEvent.click(container.querySelector('.nav-next') as HTMLElement);
+
+    await waitFor(() => expect(container.querySelector('.nav-next')).not.toBeNull());
+    expect(container.querySelector('.nav-skip')).toBeNull();
+  });
+});

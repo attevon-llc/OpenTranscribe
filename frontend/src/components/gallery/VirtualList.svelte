@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './file-list-grid.css';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { goto } from '$app/navigation';
   import { galleryStore } from '$stores/gallery';
@@ -329,7 +330,7 @@
 
   .file-list-header {
     display: grid;
-    grid-template-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+    grid-template-columns: var(--file-list-columns);
     gap: 0.5rem;
     padding: 0.75rem 1rem;
     background: var(--surface-color);
@@ -345,7 +346,7 @@
   }
 
   .file-list-header.selecting-mode {
-    grid-template-columns: 40px 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+    grid-template-columns: var(--file-list-columns-selecting);
   }
 
   .file-list-row {
@@ -371,7 +372,7 @@
     background: rgba(59, 130, 246, 0.05);
   }
 
-  :global(.dark) .file-list-row.navigating {
+  :global([data-theme='dark']) .file-list-row.navigating {
     background: rgba(59, 130, 246, 0.1);
   }
 
@@ -383,12 +384,12 @@
   }
 
   .file-list-row.selecting-mode .file-list-link {
-    grid-template-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+    grid-template-columns: var(--file-list-columns);
   }
 
   .file-list-link {
     display: grid;
-    grid-template-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+    grid-template-columns: var(--file-list-columns);
     gap: 0.5rem;
     padding: 0.5rem 1rem;
     text-decoration: none;
@@ -475,7 +476,7 @@
   }
 
   .list-cell-checkbox .file-checkbox:checked ~ .checkmark {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: #3b82f6;
   }
 
@@ -556,7 +557,7 @@
     flex: 0 0 auto;
     font-size: 0.6875rem;
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     background: var(--primary-color-alpha, rgba(59, 130, 246, 0.1));
     padding: 0.125rem 0.375rem;
     border-radius: 9999px;
@@ -667,18 +668,6 @@
 
   /* Hide speakers and size columns on tablets */
   @media (max-width: 1024px) {
-    .file-list-header {
-      grid-template-columns: 48px 1fr 90px 100px 110px;
-    }
-
-    .file-list-link {
-      grid-template-columns: 48px 1fr 90px 100px 110px;
-    }
-
-    .file-list-row.selecting-mode .file-list-link {
-      grid-template-columns: 48px 1fr 90px 100px 110px;
-    }
-
     .list-cell-speakers,
     .list-cell-size {
       display: none;
@@ -686,18 +675,6 @@
   }
 
   @media (max-width: 768px) {
-    .file-list-header {
-      grid-template-columns: 40px 1fr 80px;
-    }
-
-    .file-list-link {
-      grid-template-columns: 40px 1fr 80px;
-    }
-
-    .file-list-row.selecting-mode .file-list-link {
-      grid-template-columns: 40px 1fr 80px;
-    }
-
     .list-cell-speakers,
     .list-cell-duration,
     .list-cell-date,

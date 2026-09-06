@@ -148,11 +148,11 @@
 
   .info-button:hover {
     background-color: rgba(0, 0, 0, 0.05);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     transform: scale(1.1);
   }
 
-  :global(.dark) .info-button:hover {
+  :global([data-theme='dark']) .info-button:hover {
     background-color: rgba(255, 255, 255, 0.1);
   }
 
@@ -175,7 +175,7 @@
 
   .status-processing {
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .status-pending {
@@ -193,22 +193,22 @@
     color: #6b7280;
   }
 
-  :global(.dark) .status-completed {
+  :global([data-theme='dark']) .status-completed {
     background: rgba(16, 185, 129, 0.2);
     color: #34d399;
   }
 
-  :global(.dark) .status-processing {
+  :global([data-theme='dark']) .status-processing {
     background: rgba(59, 130, 246, 0.2);
     color: #60a5fa;
   }
 
-  :global(.dark) .status-pending {
+  :global([data-theme='dark']) .status-pending {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
   }
 
-  :global(.dark) .status-error {
+  :global([data-theme='dark']) .status-error {
     background: rgba(239, 68, 68, 0.2);
     color: #f87171;
   }
@@ -260,7 +260,7 @@
     background: var(--table-row-hover, rgba(0, 0, 0, 0.02));
   }
 
-  :global(.dark) .tasks-table tbody tr:hover {
+  :global([data-theme='dark']) .tasks-table tbody tr:hover {
     background: rgba(255, 255, 255, 0.03);
   }
 
@@ -321,7 +321,7 @@
 
   .task-status-cell .progress-bar {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     border-radius: 2px;
     transition: width 0.3s ease;
   }
@@ -358,7 +358,7 @@
     border: 1px solid var(--error-border);
   }
 
-  :global(.dark) .error-message {
+  :global([data-theme='dark']) .error-message {
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.3);
   }

@@ -333,7 +333,7 @@
   }
 
   .archive-toggle.active {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
   }
 

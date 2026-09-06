@@ -55,6 +55,21 @@
 
   function handleInput() {
     searchExecuted = false;
+
+    // Emptying the field by typing must clear results exactly like the ✕ button
+    // does (#742). Without this the page keeps rendering the previous results
+    // over an empty search box. Focus is deliberately NOT moved here — unlike
+    // handleClear(), the user is already in the input.
+    if (value === '') {
+      debouncedFetch.cleanup();
+      abortController?.abort();
+      suggestions = [];
+      showSuggestions = false;
+      selectedIndex = -1;
+      dispatch('clear');
+      return;
+    }
+
     debouncedFetch.trigger();
   }
 

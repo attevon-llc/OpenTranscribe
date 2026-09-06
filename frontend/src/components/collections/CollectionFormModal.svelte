@@ -242,7 +242,7 @@
     border-radius: 6px;
   }
 
-  :global(.dark) .modal-intro {
+  :global([data-theme='dark']) .modal-intro {
     background: rgba(59, 130, 246, 0.08);
     border-color: rgba(59, 130, 246, 0.2);
     border-left-color: var(--primary-color, #3b82f6);
@@ -317,7 +317,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;

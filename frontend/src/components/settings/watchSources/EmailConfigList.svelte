@@ -176,7 +176,7 @@
   }
   .linked-badge {
     background: rgba(99, 102, 241, 0.15);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     margin-left: 6px;
   }
   .email-name {
@@ -239,7 +239,7 @@
     border-radius: 50%;
   }
   .info-icon:hover {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     background: var(--button-hover);
     transform: none;
     box-shadow: none;

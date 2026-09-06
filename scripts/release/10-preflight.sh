@@ -305,7 +305,20 @@ fi
 # names and is not a reason to leave it: it fails silently, and in the direction that lets
 # `rehearse` run against a live stack. `65-rehearse.sh`'s `stock_containers` already avoids
 # it for exactly this reason; this is the same check and now reads the same way.
-live_stack_names="$(docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}')"
+# ⚠️ BOTH project names, not just one. A repo clone's compose project defaults to the
+# DIRECTORY name, so a dev stack started with `./opentr.sh start dev` from this checkout runs
+# under `transcribe-app`, while a curl/one-liner install runs under `opentranscribe`. The
+# container_names are hardcoded `opentranscribe-*` either way, which is exactly what makes the
+# single-label version look right and be wrong: measured 2026-09-06 with the dev stack UP,
+# `project=opentranscribe` matched 0 containers and `project=transcribe-app` matched 20 — so
+# this recorded `live-stack pass` while twenty containers were running. `rehearse` then refuses
+# (exit 3) several stages later, which is precisely the late, expensive discovery preflight
+# exists to prevent. `opentr.sh`'s straggler cleanup already knows there are two legitimate
+# names; the same two env vars are honoured here so the pair has one definition to change.
+live_stack_names="$( {
+    docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}'
+    docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}'
+} | sort -u)"
 if [ -n "$live_stack_names" ]; then
     record live-stack fail \
         "the live stack is running — the rehearse stage requires it stopped" \

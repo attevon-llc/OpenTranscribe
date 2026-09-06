@@ -6,11 +6,11 @@
       "version": "v0.5.0",
       "headline": "Ship what is already built",
       "summary": "Native diarization, corpus-scale chat, redaction and the identity overhaul, published without adding one more feature.",
-      "stage": "now",
+      "stage": "complete",
       "released": false,
       "scheduled": true,
       "total": 269,
-      "closed": 268,
+      "closed": 269,
       "areas": [
         {
           "key": "asr-engines",
@@ -888,12 +888,12 @@
           "scope": "Read-only hosted demo deployment",
           "known": true,
           "total": 1,
-          "closed": 0,
+          "closed": 1,
           "issues": [
             {
               "number": 667,
               "title": "build(release): publish the CPU-only lite image as a multi-arch (amd64 + arm64) release artifact",
-              "done": false
+              "done": true
             }
           ]
         },
@@ -1483,7 +1483,7 @@
       "version": "v0.6.0",
       "headline": "Interface polish, and chat measured",
       "summary": "A full UI pass over what v0.5.0 shipped, plus real metrics for search and chat answer quality instead of assumptions.",
-      "stage": "next",
+      "stage": "now",
       "released": false,
       "scheduled": true,
       "total": 24,
@@ -1675,7 +1675,7 @@
       "version": "v0.7.0",
       "headline": "Run it in public",
       "summary": "Publish the inert public demo once the interface is polished, so people can see the app and watch it upgrade.",
-      "stage": "later",
+      "stage": "next",
       "released": false,
       "scheduled": true,
       "total": 4,
@@ -1740,7 +1740,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 10,
+      "total": 11,
       "closed": 0,
       "areas": [
         {
@@ -1748,9 +1748,14 @@
           "name": "ASR Engines",
           "scope": "Alternative and native transcription engines",
           "known": true,
-          "total": 2,
+          "total": 3,
           "closed": 0,
           "issues": [
+            {
+              "number": 69,
+              "title": "feat(asr): live transcription with real-time speaker identification",
+              "done": false
+            },
             {
               "number": 366,
               "title": "feat(asr): NVIDIA NeMo (Parakeet / Canary) as a first-class local transcription engine",
@@ -2112,7 +2117,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 3,
+      "total": 2,
       "closed": 0,
       "areas": [
         {
@@ -2120,17 +2125,12 @@
           "name": "ASR Engines",
           "scope": "Alternative and native transcription engines",
           "known": true,
-          "total": 2,
+          "total": 1,
           "closed": 0,
           "issues": [
             {
               "number": 48,
               "title": "feat(asr): implement native Apple Silicon transcription with MLX-Whisper or whisper.cpp",
-              "done": false
-            },
-            {
-              "number": 69,
-              "title": "feat(asr): live transcription with real-time speaker identification",
               "done": false
             }
           ]

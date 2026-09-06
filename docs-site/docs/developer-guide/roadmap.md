@@ -43,6 +43,36 @@ long to ship as a result. Every release after it is deliberately sized to be fin
 **Dates come from dependencies, not from ambition.** A release is never dated before one it
 depends on. Where a date looks aggressive, argue with the scope rather than the date.
 
+## Between the themed releases: patch releases
+
+A themed `0.x.0` is 6–8 weeks apart. Dependency updates, security fixes and one-line corrections
+do not keep that schedule, and holding them until the next minor is how they rot: as of
+2026-09-06 the oldest open dependency PR was **18 days** old and one of them bundled **33 backend
+updates** into a single change, which is far harder to review and to revert than five small ones
+would have been.
+
+So `0.x.y` patch releases run **between** the minors, on their own rhythm.
+
+**What goes in a patch**
+
+- Dependency bumps, especially security ones. Small and frequent beats large and quarterly: a
+  bundle of 33 is not reviewable, and when it breaks something you cannot tell which line did it.
+- Security fixes that should not wait for a theme.
+- Defect fixes with no schema change and no new capability.
+- Documentation and packaging corrections.
+
+**What does not**
+
+- New capability. That belongs to a theme, or the version numbers stop meaning anything.
+- Alembic migrations. A patch must be safe to skip and safe to roll back; a migration is neither.
+- Anything that changes an interface a user or integration depends on.
+
+**The rule that keeps it honest:** a patch release must be **revertible by pulling the previous
+image**. If reverting needs a migration, a data fix, or a config change, it was never a patch and
+should not have been numbered as one.
+
+Cutting one uses the same `scripts/release.sh` pipeline as a minor. Nothing is hand-run.
+
 ## Requirements every release carries
 
 These are not one release's work. They apply to all of them, and a release is not done until they
@@ -73,7 +103,8 @@ search, content redaction landed across every display and export surface, and th
 local/LDAP/OIDC/SAML/PKI/MFA/SCIM identity plane arrived at once. A large share of the work went
 into speed and refinement of things that already worked.
 
-What remains is release execution, not development.
+**The tracker is empty** — the milestone closed at 285 issues. What remains is release execution,
+not development.
 
 **Exit criteria**
 
@@ -84,10 +115,18 @@ What remains is release execution, not development.
   image nobody looked at is the specific failure this gate exists to catch.
 - The upgrade and fresh-install rehearsals both pass against the published images.
 
-:::warning The one real risk left
-`setup-opentranscribe.sh` ships a user-facing `--lite` flag that pulls an image not yet published
-to Docker Hub. If this release goes out without the lite leg, every `--lite` install breaks on day
-one, and lite is the only backend an arm64 user can run.
+:::note The lite image, and why it is not an open issue
+`setup-opentranscribe.sh` ships a user-facing `--lite` flag that pulls
+`opentranscribe-backend-lite`, and that image has never been pushed — lite is also the only
+backend an arm64 user can run. It is nonetheless **not** tracked work: the build wiring is
+complete, so the remaining scope is one publish action inside the pipeline.
+
+The reminder is held by the pipeline rather than by an issue. `published-repos.sh` is sourced by
+both `90-promote.sh` and `95-finish.sh`, so if the lite image is missing, **`promote` and `finish`
+fail** rather than letting a GitHub Release go out `--latest` beside an image that is not there.
+
+An `object not found` from Docker Hub for that repository means *the release has not run yet*. It
+is not a credentials problem — `docker push` creates the repository on first push.
 :::
 
 ---

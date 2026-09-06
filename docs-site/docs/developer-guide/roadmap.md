@@ -37,8 +37,21 @@ unrelated theme it splits into a new number instead of growing. Version numbers 
 coherence is not, which is why the ladder runs past `0.9.0`. To be clear, `0.10.0` sorts *after*
 `0.9.0`. That is correct SemVer, not a typo.
 
-**Small bites, scheduled.** v0.5.0 accumulated an enormous amount of good work and took far too
-long to ship as a result. Every release after it is deliberately sized to be finishable.
+**The cadence is fixed. The scope floats.** Releases ship monthly. A release goes out with
+whatever is finished on its date; unfinished work rolls to the next one. This is the opposite of
+v0.5.0, which fixed the scope and let the date float, and took 152 days.
+
+That rule is not optional bookkeeping, it is arithmetic. Every issue on the board carries a
+**Size** (XS–XL), and summed against a one-maintainer month the current backlog is roughly **145
+weeks of work**. No ordering of it fits a monthly cadence. So each milestone is split in two on
+the project board:
+
+- **Ready** — the slice that fits the month, chosen by priority then size. This is the commitment.
+- **Backlog** — in the milestone, but expected to roll. Not a promise.
+
+A release is "on time" when its **Ready** slice ships, not when the milestone empties. If you want
+more in a release, something else has to come out of the Ready slice — that trade is the whole
+point of tracking size.
 
 **Dates come from dependencies, not from ambition.** A release is never dated before one it
 depends on. Where a date looks aggressive, argue with the scope rather than the date.

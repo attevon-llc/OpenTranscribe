@@ -58,6 +58,27 @@ while IFS=$'\t' read -r component repo; do
     REPO_FOR_COMPONENT["$component"]="$repo"
 done < <(./scripts/security-scan.sh list-repos)
 
+# An UNDERIVABLE repo list is COULD NOT CHECK, never "nothing to check".
+#
+# `done < <(cmd)` runs the reader in this shell but `cmd` in a SUBSHELL, so a
+# non-zero exit from `security-scan.sh list-repos` — or any output shape this
+# loop cannot parse — is invisible here: the loop simply reads EOF, iterates
+# zero times, and leaves REPO_FOR_COMPONENT empty. The `missing` loop below
+# then iterates over nothing, finds nothing missing, and this stage PASSES
+# having verified that zero images were built. `set -e` does not save it
+# either: the subshell's status is not the loop's.
+#
+# Same rule the two `legs_declared == 0` / `legs_verified == 0` guards apply
+# further down, and the same rule #681 established for the scanner itself —
+# "scanned, findings tolerable" and "never scanned" must stay distinguishable.
+if (( ${#REPO_FOR_COMPONENT[@]} == 0 )); then
+    echo -e "${RED}could not derive any component->repo mapping${NC}" >&2
+    echo "  './scripts/security-scan.sh list-repos' produced no usable rows." >&2
+    echo "  Refusing to report a clean scan over an empty component set." >&2
+    echo "  Check: ./scripts/security-scan.sh list-repos" >&2
+    exit 3
+fi
+
 missing=()
 for repo in "${REPO_FOR_COMPONENT[@]}"; do
     docker image inspect "${repo}:${VERSION}" >/dev/null 2>&1 || missing+=("${repo}:${VERSION}")

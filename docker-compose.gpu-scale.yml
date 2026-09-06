@@ -74,7 +74,14 @@ services:
       - GPU_CONCURRENT_REQUESTS=${GPU_SCALE_WORKERS:-${DIAR_NATIVE_MAX_INFLIGHT:-2}}
       - PRELOAD_GPU_MODELS=true
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-scaled@$$HOSTNAME"]
+      # Pool-aware healthcheck. This worker DEFAULTS to --pool=threads, for which
+      # this script degrades to exactly what `inspect ping` proved (MainProcess
+      # answered) — but the pool type is an env var, and core/celery.py explicitly
+      # recommends flipping it to prefork for --max-tasks-per-child recycling. Under
+      # `inspect ping` that flip silently bought the issue #631 blind spot: a wedged
+      # forked pool that keeps answering healthy. The script reads pool.implementation
+      # and applies the child-process checks only when they mean something.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-scaled@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3

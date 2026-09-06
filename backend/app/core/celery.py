@@ -15,6 +15,15 @@ def _int_env(key: str, default: int) -> int:
         return default
 
 
+def _float_env(key: str, default: float) -> float:
+    """Read a float env var, falling back to *default* on absence or garbage."""
+    try:
+        return float(os.getenv(key, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid float for %s; using %s", key, default)
+        return default
+
+
 _SKIP_CELERY = os.environ.get("SKIP_CELERY", "").lower() == "true"
 
 if not _SKIP_CELERY:
@@ -173,6 +182,33 @@ celery_app.conf.update(
     # visibility_timeout plus the DB-status crash recovery in tasks/recovery.py.
     task_soft_time_limit=_int_env("CELERY_SOFT_TIME_LIMIT", 10800),  # 3 h
     task_time_limit=_int_env("CELERY_HARD_TIME_LIMIT", 11700),  # 3 h 15 m
+    # How long a freshly FORKED prefork child has to send its WORKER_UP message
+    # before the parent SIGKILLs it and forks a replacement
+    # (celery/concurrency/asynpool.py: `verify_process_alive` ->
+    # `error('Timed out waiting for UP message from %r'); os.kill(pid, 9)`).
+    #
+    # Celery's default is 4.0 s and NOTHING overrode it, which is the amplifier in
+    # issue #631: any `worker_process_init` work that overruns the budget is killed
+    # before it can finish, so the replacement child runs the SAME slow code and is
+    # killed too — a self-sustaining fork/SIGKILL loop that consumes ZERO tasks and
+    # ends only when the underlying slowness does. Observed: 69,231 kills over
+    # 10 h 46 m on `cpu-processor`, at almost exactly `concurrency / 4.0` per second.
+    #
+    # 30 s is not a fix for a slow initializer (see `init_worker_process`, which no
+    # longer does I/O) — it is defence in depth so ordinary contention on a loaded
+    # host cannot start the loop at all. It stays FINITE deliberately: a genuinely
+    # dead fork must still be reaped.
+    #
+    # ⚠️ THE TIMER COVERS RESPAWNS, NOT THE INITIAL POOL. `verify_process_alive` is armed
+    # from `on_process_up` via `hub.call_later`, so it only exists once the worker has a
+    # hub. The children forked when the pool is first populated predate that, and a hub
+    # blocked in a long-running callback cannot fire it either (see `preload_models`).
+    # Consequence for whoever greps logs during the next incident: a fork stall AT STARTUP
+    # produces **no** `Timed out waiting for UP message` line at all — the worker simply
+    # sits there. Absence of the signature is not absence of the problem; check
+    # `init_worker_process`'s own "fork init started/finished" pairs, which are emitted
+    # regardless of the hub.
+    worker_proc_alive_timeout=_float_env("CELERY_PROC_ALIVE_TIMEOUT", 30.0),
     worker_send_task_events=True,  # Enable real-time task events for Flower
     task_send_sent_event=True,  # Fire event when task is dispatched to queue
     result_expires=86400,  # Expire results after 24h (prevent Redis bloat)
@@ -497,8 +533,15 @@ celery_app.set_default()
 # Apply our logging config (text/JSON per settings.LOG_FORMAT) to Celery.
 # Connecting setup_logging ALSO disables Celery's root-logger hijack
 # (worker_hijack_root_logger), so the configuration survives worker startup.
-# We deliberately use setup_logging — NOT worker_process_init, which only fires
-# in prefork child processes and never under this app's default --pool=threads.
+# We deliberately use setup_logging — NOT worker_process_init, which fires only in
+# prefork child processes and so would miss the --pool=threads workers entirely.
+# ⚠️ The inverse is ALSO false: this comment used to claim `--pool=threads` was "this
+# app's default" and that `worker_process_init` therefore never fires. FIVE of the
+# eleven worker services in docker-compose.yml pass no `--pool=` flag and are prefork
+# (celery-download-worker, celery-cpu-worker, celery-cloud-asr-worker,
+# celery-nlp-worker, celery-embedding-worker); threads is the GPU/redaction family's
+# opt-in. That misreading is very likely why the fork path went unexamined for the
+# whole of issue #631 — see `init_worker_process` below, which DOES fire, on those five.
 @setup_logging.connect
 def configure_celery_logging(**kwargs):
     """Configure structured/text logging for Celery workers and the beat."""
@@ -550,12 +593,67 @@ def start_watch_source_fs_events(**kwargs):
         logger.error(f"Watch-source FS-event supervisor could not be started: {e}")
 
 
+def publish_hf_token_to_environment() -> bool:
+    """Make ``HUGGINGFACE_TOKEN`` visible to ``huggingface_hub``, without any network I/O.
+
+    ``huggingface_hub.get_token()`` resolves in the order Colab secret -> environment
+    (``HF_TOKEN``, then ``HUGGING_FACE_HUB_TOKEN``) -> the on-disk token file, so
+    exporting ``HF_TOKEN`` gives every un-parameterised Hub call the same token that
+    ``huggingface_hub.login()`` used to install — at the cost of one dict write instead
+    of a blocking HTTPS round trip.
+
+    ⚠️ **Never call ``huggingface_hub.login()`` from here.** ``login()`` -> ``_login()``
+    -> ``whoami()`` issues ``GET {endpoint}/api/whoami-v2`` through
+    ``requests`` **with no ``timeout=``**, so a degraded network path blocks for as long
+    as the kernel's TCP/DNS retries take (the sibling fix in
+    ``app/utils/hf_hub_offline.py`` measured 23-30 s). This function runs inside every
+    forked prefork child against celery's ``worker_proc_alive_timeout`` kill timer, which
+    is what made issue #631 unrecoverable. The token round trip only *validated* the
+    token; it was never what made it usable, and every model loader in this codebase
+    already threads ``hf_token=settings.HUGGINGFACE_TOKEN`` explicitly.
+
+    Returns:
+        True when this call exported the token, False when there was nothing to export
+        or the operator had already published one.
+    """
+    hf_token = os.getenv("HUGGINGFACE_TOKEN")
+    if not hf_token:
+        return False
+    # An operator-supplied HF_TOKEN/HUGGING_FACE_HUB_TOKEN wins — overriding it would
+    # silently swap which credential gated-model downloads authenticate with.
+    if os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"):
+        return False
+    os.environ["HF_TOKEN"] = hf_token
+    return True
+
+
 # Signal handlers for proper database connection management
 @worker_process_init.connect
 def init_worker_process(**kwargs):
-    """Initialize worker process - register HF token and dispose connections."""
-    import os
+    """Initialize a forked prefork child: publish the HF token, drop inherited DB sockets.
+
+    ⚠️ **Everything in this function runs against a hard kill timer** (issue #631).
+    ``worker_process_init`` fires inside the forked child from
+    ``billiard.pool.Worker.after_fork()``, which runs *before*
+    ``on_loop_start()`` puts the ``WORKER_UP`` message on the out-queue. The parent armed
+    ``asynpool.verify_process_alive`` at fork time; if UP does not arrive within
+    ``worker_proc_alive_timeout`` the child is ``SIGKILL``ed and a replacement is forked,
+    which then runs this same function. Anything slow here is therefore not "a slow
+    start" — it is an unbounded fork/kill loop that consumes no tasks and cannot recover
+    on its own.
+
+    So: **no network calls, no locks, no model loads, no unbounded I/O in here.** The two
+    steps below are a dict write and a connection-pool reset, both microseconds.
+    """
+    import time
     import warnings
+
+    started = time.monotonic()
+    pid = os.getpid()
+    # Issue #631: an entry line with no matching "finished" line, repeating, identifies
+    # a stuck fork initializer directly from the container logs. Reconstructing that
+    # from `asynpool`'s SIGKILL lines alone took an after-the-fact investigation.
+    logger.info("Celery fork init started (pid=%s)", pid)
 
     # Suppress benign warnings from AI libraries (community models, library compat)
     warnings.filterwarnings("ignore", message=".*loss function.*", category=UserWarning)
@@ -563,21 +661,16 @@ def init_worker_process(**kwargs):
     warnings.filterwarnings("ignore", module="pytorch_lightning")
     warnings.filterwarnings("ignore", module="lightning_fabric")
 
-    # Register HuggingFace token for gated model access (e.g., pyannote)
-    # Skip in offline mode — models are pre-downloaded and no network is available
-    hf_token = os.getenv("HUGGINGFACE_TOKEN")
-    if hf_token and os.getenv("HF_HUB_OFFLINE") != "1":
-        try:
-            from huggingface_hub import login
-
-            login(token=hf_token, add_to_git_credential=False)
-            logger.info("HuggingFace token registered for gated model access")
-        except Exception as e:
-            logger.warning(f"Failed to register HuggingFace token: {e}")
+    if publish_hf_token_to_environment():
+        logger.debug("HuggingFace token published to HF_TOKEN for gated model access")
 
     from app.db.base import engine
 
     engine.dispose()
+
+    logger.info(
+        "Celery fork init finished (pid=%s, elapsed=%.3fs)", pid, time.monotonic() - started
+    )
 
 
 @worker_ready.connect
@@ -621,9 +714,24 @@ def warn_inert_max_tasks_per_child(**kwargs):
     )
 
 
+# Wall-clock bound on the CPU-lightweight Whisper warm-up (issue #631). Matched to
+# celery-cpu-worker's `start_period: 120s` in docker-compose.yml, which is both the
+# allowance the deployment declares for this load AND the window in which a frozen
+# MainProcess goes unnoticed — see the call site for why those being the same number is
+# the point.
+_CPU_WHISPER_PRELOAD_TIMEOUT_S = 120.0
+
+
 @worker_ready.connect
 def preload_models(**kwargs):
     """Preload AI models at worker startup.
+
+    ⚠️ This runs on ``worker_ready``, in the **MainProcess main thread** — the thread that
+    also runs celery's event loop, and therefore ``asynpool.verify_process_alive``. A model
+    load that stalls here does not merely delay startup: it freezes the loop, so a forked
+    child that never signals UP is neither SIGKILLed nor logged, and the respawn-storm
+    signature (``Timed out waiting for UP message``) does not appear at all. Every load
+    below must be bounded. See ``init_worker_process`` for the fork side of issue #631.
 
     GPU workers: Load Whisper + PyAnnote into VRAM (shared across threads).
     CPU-transcribe workers: Load lightweight Whisper model into RAM.
@@ -681,13 +789,52 @@ def preload_models(**kwargs):
                 f"Preloading CPU lightweight model '{cpu_config.model_name}' "
                 f"(compute_type={cpu_config.compute_type})..."
             )
-            from faster_whisper import WhisperModel
+            import faster_whisper
 
-            # Load model to warm the cache — subsequent loads are instant
-            _model = WhisperModel(
-                cpu_config.model_name,
-                device="cpu",
-                compute_type="int8",
+            from app.utils.hf_hub_offline import hf_offline_requested
+            from app.utils.hf_hub_offline import load_with_timeout
+
+            # NOT named `kwargs`: this function's own signature already binds that name.
+            load_kwargs: dict[str, bool] = {}
+            if hf_offline_requested():
+                load_kwargs["local_files_only"] = True
+
+            # Load model to warm the cache — subsequent loads are instant.
+            #
+            # ⚠️ BOUNDED, and not merely for tidiness (issue #631). `WhisperModel(...)`
+            # resolves the model through the HuggingFace Hub, and **nothing on that path
+            # sets a timeout** — the duration of a failure is whatever the client's retry
+            # chain happens to produce for that particular fault. It runs on
+            # `worker_ready`, in the **MainProcess main thread**, so a stall here freezes
+            # the worker's event loop — and that loop is what runs
+            # `asynpool.verify_process_alive`. A frozen loop means a forked child that
+            # misses its UP message is neither killed nor logged, so the respawn-storm
+            # signature never appears. Bounding this is part of making that detection
+            # trustworthy, not a separate cleanup.
+            #
+            # ⚠️ Be precise about what the bound buys. Measured in the prod image against a
+            # blackholed huggingface.co, the UNBOUNDED call returned on its own after
+            # 140.0 s and the bounded one after 125.7 s — so for *that* fault it saves
+            # about 14 s. Its value is that it is a **declared** ceiling: a TCP blackhole
+            # happens to terminate, whereas an endpoint that accepts the connection and
+            # never answers does not (there is no read timeout here either), and neither
+            # does a resolver that keeps retrying.
+            #
+            # 120 s is not a round number: it is celery-cpu-worker's own `start_period` in
+            # docker-compose.yml. That is the window during which a frozen MainProcess is
+            # INVISIBLE — outside it, a worker that cannot answer `inspect stats` already
+            # fails the healthcheck. Matching the two means the freeze cannot outlive the
+            # window in which nothing would notice it. Failing is cheap either way: this
+            # only warms a cache, and the first task loads the model anyway.
+            _model = load_with_timeout(
+                lambda: faster_whisper.WhisperModel(
+                    cpu_config.model_name,
+                    device="cpu",
+                    compute_type="int8",
+                    **load_kwargs,
+                ),
+                timeout=_CPU_WHISPER_PRELOAD_TIMEOUT_S,
+                label=f"CPU lightweight Whisper model ({cpu_config.model_name})",
             )
             del _model
             logger.info(f"CPU lightweight model '{cpu_config.model_name}' preloaded successfully")

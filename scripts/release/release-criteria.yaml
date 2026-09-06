@@ -156,6 +156,29 @@ stages:
         # after the tag exists. `SKIP_DOCS_BUILD=true` is the recorded opt-out.
         severity: blocking
 
+      - id: visual-baselines-fresh
+        description: Committed screenshot baselines are not older than the UI they describe
+        # A visual baseline is a picture of what the UI SHOULD look like. When
+        # frontend/src changes and the baselines are not re-captured, they
+        # describe an app that no longer exists — and NOTHING reported that:
+        # the images went 28 frontend commits stale, six of the ten were being
+        # skipped the whole time, and the suite stayed green throughout.
+        #
+        # This compares two git facts (last commit touching frontend/src vs
+        # last commit touching the __screenshots__ dir). It is a STALENESS
+        # alarm, not a correctness check: it says the evidence has expired,
+        # never that the UI regressed. Only running the suite against an
+        # isolated seeded stack can say that, and it needs a GPU-transcribed
+        # corpus plus a browser, so it can never run in CI.
+        #
+        # Blocking at `verify` rather than in the commit-stage suite on
+        # purpose. Stale baselines are not a defect in the running app, so
+        # failing every frontend commit until someone spends ~5 min on a
+        # capture would buy nothing and get allowlisted away. They only matter
+        # at the moment a release claims to have been verified.
+        # `SKIP_VISUAL_BASELINE_FRESHNESS=true` is the recorded opt-out.
+        severity: blocking
+
   # ─── CVE coverage of the artifacts about to be published. ───────────────
   scan:
     description: Every published container, on every architecture leg, was actually looked at

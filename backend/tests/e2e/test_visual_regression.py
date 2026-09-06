@@ -488,7 +488,16 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
     # every authenticated page. Neither is a layout fix (see module docstring
     # issue #451 note) — row/page-height drift from card count is NOT maskable
     # and is instead handled by the isolated-stack skip guard below.
-    "gallery": (".count-chip", ".notification-badge"),
+    # `.meta-line` (VirtualGrid.svelte) is the per-card "Sep 06, 2026 · 23 MB ·
+    # 4 spk" strip. Masked because it is what BOUND these baselines to a single
+    # deployment: the upload date is the day the stack was seeded, so a baseline
+    # containing it can never match a re-seeded stack, and `fresh-destroy` on
+    # the capture deployment silently retired the whole suite. That is the
+    # mechanism by which these baselines rotted for 28 frontend commits. Losing
+    # the pixel comparison of a date/size/speaker-count string costs nothing a
+    # visual baseline is for — layout, chrome, spacing and theme are still
+    # compared in full — and buys baselines that survive a re-seed on any host.
+    "gallery": (".count-chip", ".notification-badge", ".meta-line"),
     # "Last run: N minutes ago" (1 element) + per-cluster membership counts (20)
     # + the three tab counters ("13/1/11" etc, `.speakers-page .badge`) + the
     # shared navbar notification pill. Row-count drift itself is not maskable —
@@ -521,6 +530,53 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
     # module docstring) is not maskable and is handled by the skip guard below.
     "file_detail": (".notification-badge",),
 }
+
+
+#: Selectors that are CONDITIONALLY rendered, so matching nothing is normal.
+#:
+#: The "a masked surface must actually mask something" assertions below exist to
+#: catch a CLASS RENAME silently disabling masking. They implement that as "does
+#: this selector match right now", which conflates two different things: a stale
+#: selector (a real defect) and an element the app correctly chose not to render
+#: (normal). `.notification-badge` is `{#if $unreadCount > 0}` in Navbar.svelte,
+#: so on a freshly seeded stack with no notifications it renders zero elements —
+#: and `file_detail`, whose entire mask list is that one selector, therefore
+#: FAILED both themes on a clean isolated stack while passing on the shared dev
+#: stack that happened to have unread notifications. The guard was reporting the
+#: cleanliness of the stack, not the health of the selector.
+#:
+#: Membership here suppresses only the RUNTIME match requirement. The rename that
+#: the runtime check was reaching for is caught statically instead, against the
+#: frontend source, by `tests/unit/test_visual_regression_selectors.py` — which
+#: does not depend on what the app happened to render during one capture.
+_CONDITIONAL_SELECTORS: frozenset[str] = frozenset({".notification-badge"})
+
+
+def _assert_masks(page: Page, surface: str) -> list[Any]:
+    """Return mask locators for *surface*, failing if a required one matched nothing.
+
+    A selector listed in `_CONDITIONAL_SELECTORS` is allowed to match nothing;
+    every other declared selector must match, because Playwright treats an
+    unmatched locator as a silent no-op and the volatile region would drift back
+    into the baseline with nothing in the run saying so.
+    """
+    regions: list[Any] = []
+    missing: list[str] = []
+    for selector in _VOLATILE_SELECTORS.get(surface, ()):
+        locator = page.locator(selector)
+        if locator.count():
+            regions.append(locator)
+        elif selector not in _CONDITIONAL_SELECTORS:
+            missing.append(selector)
+    if missing:
+        pytest.fail(
+            f"_VOLATILE_SELECTORS[{surface!r}] declares {missing}, which matched nothing "
+            f"on the rendered page. Playwright masks nothing for an unmatched locator, so "
+            f"this capture would bake a volatile region into its baseline. Either the class "
+            f"was renamed (fix the selector) or the element is conditionally rendered (add "
+            f"it to _CONDITIONAL_SELECTORS with a reason)."
+        )
+    return regions
 
 
 #: Host:port pairs that mean "the shared dev stack", not an isolated `--fresh`
@@ -642,22 +698,18 @@ def test_visual_regression(
             _stabilize(page)
             # A masked surface must actually mask something — see the speakers
             # branch below for why this is asserted rather than assumed.
-            assert _volatile_regions(page, "gallery"), (
-                "None of _VOLATILE_SELECTORS['gallery'] matched anything on the "
-                "gallery page, so this capture masks nothing and its baseline "
-                "will absorb the live file count / navbar notification badge."
-            )
+            _assert_masks(page, "gallery")
         elif surface == "file_detail":
             page.goto(f"{base_url}/files/{transcribed_file_uuid}")
             page.wait_for_selector(".transcript-segment", timeout=30000)
             _stabilize(page)
             # A masked surface must actually mask something — see the speakers
-            # branch below for why this is asserted rather than assumed.
-            assert _volatile_regions(page, "file_detail"), (
-                "None of _VOLATILE_SELECTORS['file_detail'] matched anything on "
-                "the file-detail page, so this capture masks nothing and its "
-                "baseline will absorb the navbar notification badge."
-            )
+            # branch below for why this is asserted rather than assumed. This
+            # surface's only volatile element is the conditionally-rendered
+            # notification badge, so on a clean stack it legitimately masks
+            # nothing; `_assert_masks` allows that and the selector's continued
+            # existence is guarded statically instead.
+            _assert_masks(page, "file_detail")
         elif surface == "speakers":
             page.goto(f"{base_url}/speakers")
             page.wait_for_selector(".speakers-page", timeout=30000)
@@ -668,11 +720,7 @@ def test_visual_regression(
             # into the baseline the moment a class is renamed — and the run would
             # look identical. Asserted here rather than in a separate test
             # because it is only knowable against the rendered page.
-            assert _volatile_regions(page, "speakers"), (
-                "None of _VOLATILE_SELECTORS['speakers'] matched anything on the "
-                "speakers page, so this capture masks nothing and its baseline "
-                "will absorb the 'Last run: N ago' chip and live cluster counts."
-            )
+            _assert_masks(page, "speakers")
         elif surface == "settings":
             page.goto(base_url)
             page.wait_for_selector(".user-button", timeout=30000)
@@ -691,11 +739,7 @@ def test_visual_regression(
             # See the speakers branch above for why this assertion exists: a
             # masked surface must actually mask something, or a class rename
             # silently lets the live gauges/DB totals back into the baseline.
-            assert _volatile_regions(page, "settings"), (
-                "_VOLATILE_SELECTORS['settings'] matched nothing on the settings "
-                "modal, so this capture masks nothing and its baseline will "
-                "absorb live CPU/disk/GPU gauges and DB totals."
-            )
+            _assert_masks(page, "settings")
         elif surface == "chat_trace":
             # Resolved lazily, NOT as a test parameter: the fixture skips without
             # the mock LLM, and a declared parameter would take the other four
@@ -705,10 +749,7 @@ def test_visual_regression(
             # something. Every row's `ms` is genuinely different each run, so an
             # unmatched selector here does not merely add noise — it guarantees
             # the baseline can never pass a second time.
-            assert _volatile_regions(page, "chat_trace"), (
-                "_VOLATILE_SELECTORS['chat_trace'] matched nothing, so this capture "
-                "bakes live per-stage timings into the baseline and can never match again."
-            )
+            _assert_masks(page, "chat_trace")
             # The warm-up is only useful if it took effect. A miss here still
             # produces a plausible-looking image, and the image is the only
             # thing a reviewer sees — so the precondition is asserted rather

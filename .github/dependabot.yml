@@ -144,6 +144,26 @@ updates:
         patterns:
           - "*"
 
+  # Docs site base image (nginx + the discarded Node build stage) — issue #780.
+  #
+  # This ecosystem was MISSING entirely: the docker ecosystem only rewrites `FROM` lines, so
+  # nothing was watching docs-site/Dockerfile and it drifted onto Node 20 after it went EOL
+  # with no PR ever proposing the bump. The sibling `npm` / `/docs-site` entry below only
+  # tracks package.json/lockfile deps — it cannot see a Dockerfile `FROM` line either.
+  - package-ecosystem: "docker"
+    directory: "/docs-site"
+    schedule:
+      interval: "monthly"
+    groups:
+      docs-docker:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      docs-docker-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
   # Docs site (Docusaurus) — one grouped PR.
   #
   # This ecosystem was MISSING entirely, which is why enabling security updates

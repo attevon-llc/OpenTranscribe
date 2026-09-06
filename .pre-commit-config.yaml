@@ -128,6 +128,32 @@ repos:
         stages: [pre-push]
         verbose: true
 
+  # docs-site has no build hook at either stage today (issue #780), so a broken Docusaurus
+  # build is caught only in CI, and only by release-validate.yml's `docs` job — which fires on
+  # TAG PUSH, i.e. after the tag already exists. This hook is the same idea as frontend-build
+  # above: push-stage, not commit-stage, because a full Docusaurus build is a push-time cost,
+  # not an edit-loop one.
+  #
+  # `[ -d node_modules ] || npm ci` is required, not defensive: CI's pre-push setup-node step
+  # (.github/workflows/pre-commit.yml) caches on frontend/package-lock.json and never installs
+  # docs-site at all, so without this fallback the hook would pass locally (warm node_modules)
+  # and fail in CI (none installed) — the exact silent-coverage-loss shape this hook exists to
+  # close for the frontend build.
+  - repo: local
+    hooks:
+      - id: docs-build
+        name: Docs Build Verification (docusaurus build)
+        # The braces and the second `&&` are load-bearing. `cd X && [ -d n_m ] || npm ci; build`
+        # parses as `((cd && test) || npm ci); build`: a failed `cd` runs `npm ci` in the WRONG
+        # directory, and a failed `npm ci` still falls through to the build, reporting a
+        # confusing build error instead of the install error that caused it.
+        entry: bash -c 'cd docs-site && { [ -d node_modules ] || npm ci; } && npm run build'
+        language: system
+        files: ^docs-site/(docs|blog|src|static)/|^docs-site/(docusaurus\.config\.ts|sidebars\.ts|package\.json)$
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
+
   # Dockerfile linting — runs hadolint via its official pinned Docker image
   # (language: docker_image), so NO local hadolint binary is required; this is
   # identical in CI and for contributors (both have Docker) and can never fall

@@ -125,6 +125,10 @@ def _documented_keys() -> set[str]:
 #: one of these was invisible to the scan, which produced a false finding for
 #: GPU_SCALE_ENABLED / GPU_SCALE_DEFAULT_WORKER (``tasks/utility.py``'s ``_env_flag``)
 #: the first time this test ran against them.
+#:
+#: ⚠️ Hand-maintained, so a NEW wrapper reads as "nothing consumes this key" — a false
+#: finding whose obvious-looking fix is to delete a live variable from ``.env.example``.
+#: ``test_every_env_read_wrapper_is_registered`` below fails when one is missing.
 _ENV_READ_WRAPPER_NAMES = {
     "getenv",
     "get",
@@ -132,6 +136,7 @@ _ENV_READ_WRAPPER_NAMES = {
     "oidc_bool_env",
     "oidc_int_env",
     "_int_env",
+    "_float_env",
     "_env_flag",
 }
 
@@ -362,4 +367,68 @@ def test_compose_vars_without_defaults_are_documented():
     assert not undocumented, (
         "compose files interpolate variables with no default and no .env.example "
         f"entry: { {k: sorted(v) for k, v in undocumented.items()} }"
+    )
+
+
+def _wrapper_functions_reading_their_first_argument() -> set[str]:
+    """Names of functions under ``app/`` that read ``os.environ`` keyed by their own
+    first parameter — i.e. every local env-read wrapper, found rather than listed.
+
+    Restricted to the direct shape (``os.getenv(key, ...)`` /
+    ``os.environ.get(key, ...)``). The ``oidc_*`` family delegates through another
+    helper instead and is not discovered here, which is why
+    :data:`_ENV_READ_WRAPPER_NAMES` still carries entries this cannot regenerate.
+    """
+    found: set[str] = set()
+    for path in (REPO_ROOT / "backend" / "app").rglob("*.py"):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):  # pragma: no cover - defensive
+            continue
+        for func in ast.walk(tree):
+            if not isinstance(func, ast.FunctionDef) or not func.args.args:
+                continue
+            first_param = func.args.args[0].arg
+            for node in ast.walk(func):
+                if not isinstance(node, ast.Call) or not node.args:
+                    continue
+                target = node.func
+                if not isinstance(target, ast.Attribute) or target.attr not in {"getenv", "get"}:
+                    continue
+                receiver = target.value
+                if isinstance(receiver, ast.Name):
+                    receiver_name = receiver.id
+                elif isinstance(receiver, ast.Attribute):
+                    receiver_name = receiver.attr
+                else:
+                    receiver_name = ""
+                if receiver_name not in {"os", "environ"}:
+                    continue
+                arg = node.args[0]
+                if isinstance(arg, ast.Name) and arg.id == first_param:
+                    found.add(func.name)
+    return found
+
+
+def test_the_env_wrapper_scanner_finds_the_wrappers_we_know_exist():
+    """Guard the guard: a scanner that matches nothing would pass everything below."""
+    found = _wrapper_functions_reading_their_first_argument()
+
+    assert {"_int_env", "_float_env", "_env_flag"} <= found, sorted(found)
+
+
+def test_every_env_read_wrapper_is_registered():
+    """A new wrapper nobody adds to _ENV_READ_WRAPPER_NAMES makes every key it reads
+    look unconsumed — and the obvious-looking fix for THAT is to delete a live
+    variable from .env.example.
+
+    Caught on introduction: ``_float_env`` (``core/celery.py``, issue #631) made
+    ``CELERY_PROC_ALIVE_TIMEOUT`` — read on the very next line — report as documented
+    but consumed by nothing.
+    """
+    unregistered = _wrapper_functions_reading_their_first_argument() - _ENV_READ_WRAPPER_NAMES
+
+    assert not unregistered, (
+        f"env-read wrapper(s) missing from _ENV_READ_WRAPPER_NAMES: {sorted(unregistered)}. "
+        "Every key read through one is invisible to this module's consumption scan."
     )

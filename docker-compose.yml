@@ -358,7 +358,14 @@ services:
       # Without this, ALL workers preload Whisper + PyAnnote onto GPU (~15GB wasted).
       - PRELOAD_GPU_MODELS=true
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcription@$$HOSTNAME"]
+      # Pool-aware healthcheck. This worker DEFAULTS to --pool=threads, for which
+      # this script degrades to exactly what `inspect ping` proved (MainProcess
+      # answered) — but the pool type is an env var, and core/celery.py explicitly
+      # recommends flipping it to prefork for --max-tasks-per-child recycling. Under
+      # `inspect ping` that flip silently bought the issue #631 blind spot: a wedged
+      # forked pool that keeps answering healthy. The script reads pool.implementation
+      # and applies the child-process checks only when they mean something.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-transcription@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -403,8 +410,10 @@ services:
     healthcheck:
       # prefork pool (default, no --pool= flag): `inspect ping` is answered by the
       # MainProcess regardless of whether the forked child pool is alive, so it
-      # cannot detect a wedged pool. Prove a child process actually exists instead
-      # (see backend/scripts/celery_pool_healthcheck.py for the incident this fixes).
+      # cannot detect a wedged pool. The script checks the pool itself — both a
+      # dead pool (no children) and a RESPAWN STORM (children replaced every probe
+      # while the accepted-task counter stays frozen), which a non-empty child list
+      # reports as healthy. See backend/scripts/celery_pool_healthcheck.py (#631).
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py media-downloader@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
@@ -469,8 +478,10 @@ services:
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
       # prefork pool: `inspect ping` answers from MainProcess even with every forked
-      # child dead — this is the queue hit by the 10h46m wedge incident. Prove a
-      # child process actually exists (backend/scripts/celery_pool_healthcheck.py).
+      # child dead — this is the queue hit by the 10h46m wedge incident (#631), and
+      # that wedge was a respawn STORM, so `pool.processes` was never empty: billiard
+      # appends a child before start(). The script also compares the pid set and the
+      # accepted-task counter across probes (backend/scripts/celery_pool_healthcheck.py).
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py cpu-processor@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
@@ -536,7 +547,14 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d redaction@$$HOSTNAME"]
+      # Pool-aware healthcheck. This worker DEFAULTS to --pool=threads, for which
+      # this script degrades to exactly what `inspect ping` proved (MainProcess
+      # answered) — but the pool type is an env var, and core/celery.py explicitly
+      # recommends flipping it to prefork for --max-tasks-per-child recycling. Under
+      # `inspect ping` that flip silently bought the issue #631 blind spot: a wedged
+      # forked pool that keeps answering healthy. The script reads pool.implementation
+      # and applies the child-process checks only when they mean something.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py redaction@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -814,7 +832,14 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - ENGINE_GPU_SPLIT=true
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcribe@$$HOSTNAME"]
+      # Pool-aware healthcheck. This worker DEFAULTS to --pool=threads, for which
+      # this script degrades to exactly what `inspect ping` proved (MainProcess
+      # answered) — but the pool type is an env var, and core/celery.py explicitly
+      # recommends flipping it to prefork for --max-tasks-per-child recycling. Under
+      # `inspect ping` that flip silently bought the issue #631 blind spot: a wedged
+      # forked pool that keeps answering healthy. The script reads pool.implementation
+      # and applies the child-process checks only when they mean something.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-transcribe@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -873,7 +898,14 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - ENGINE_GPU_SPLIT=true
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-diarize@$$HOSTNAME"]
+      # Pool-aware healthcheck. This worker DEFAULTS to --pool=threads, for which
+      # this script degrades to exactly what `inspect ping` proved (MainProcess
+      # answered) — but the pool type is an env var, and core/celery.py explicitly
+      # recommends flipping it to prefork for --max-tasks-per-child recycling. Under
+      # `inspect ping` that flip silently bought the issue #631 blind spot: a wedged
+      # forked pool that keeps answering healthy. The script reads pool.implementation
+      # and applies the child-process checks only when they mean something.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-diarize@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -966,8 +998,8 @@ services:
     # "wait longer and re-check" cannot fix it, because nothing ever asks
     # again. This is NOT a --pool=threads bug: prefork workers (cpu-processor,
     # cloud-asr) lose the exact same race, and a --pool=threads worker
-    # answering its own healthcheck's `inspect ping` proves threads workers
-    # DO respond to broadcasts. --inspect_timeout below only widens the
+    # answering its own healthcheck's `inspect stats` broadcast proves threads
+    # workers DO respond to broadcasts. --inspect_timeout below only widens the
     # window for a request that explicitly asks Flower to re-broadcast (see
     # scripts/gpu-scale-smoke.sh and scripts/bulk-processing-cheatsheet.sh,
     # both of which now call /api/workers?refresh=1) — it does not make the

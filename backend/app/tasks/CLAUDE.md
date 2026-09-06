@@ -104,9 +104,41 @@ indexing → WebSocket notification.
   startup for any registered task with no `task_routes` entry.
 - Priorities are **per-queue** (`GPUPriority.X` is unrelated to `CPUPriority.X`); the scheme
   is documented in the comment block above `task_routes` in `core/celery.py`.
-- Workers run `--pool=threads`, so `worker_process_init` does not fire — logging is wired via
-  `setup_logging`. `request_id` is stamped on task headers at publish and cleared in
-  `task_postrun`; never assume a ContextVar survives into the next task.
+- ⚠️ **Not every worker runs `--pool=threads`, and assuming so cost issue #631 an entire
+  investigation.** Only the GPU family (`GPU_WORKER_POOL`), `celery-redaction`
+  (`REDACTION_WORKER_POOL`) and the gpu-scale worker (`GPU_SCALE_POOL`) default to threads.
+  **Five services pass no `--pool=` flag and are therefore PREFORK** —
+  `celery-download-worker`, `celery-cpu-worker`, `celery-cloud-asr-worker`,
+  `celery-nlp-worker`, `celery-embedding-worker` — so `worker_process_init` **does** fire on
+  them, once per forked child. Logging is still wired via `setup_logging` (which covers both
+  pool types); `worker_process_init` is not where you put logging setup.
+  **Anything you add to `core/celery.py:init_worker_process` runs inside a fork against
+  `worker_proc_alive_timeout`** — overrun it and the child is SIGKILLed before it signals UP,
+  its replacement runs the same code, and the worker enters a fork/kill loop that consumes
+  zero tasks (69,231 kills over 10 h 46 m, issue #631). No network, no locks, no model loads
+  in there.
+  **Every** worker's container healthcheck now runs `backend/scripts/celery_pool_healthcheck.py`
+  (`inspect ping` is answered by MainProcess and cannot see a wedged pool). It reads
+  `pool.implementation` and adapts: a threads pool passes on the reply alone, a prefork pool
+  must also have children **and** must not show a fully-replaced pid set with a frozen
+  accepted-task counter — that pair is the storm signature, and it is why "the child list is
+  non-empty" was not enough (billiard appends a child to the pool *before* `start()`, so a
+  pool killing children faster than they can signal UP always has pids to report).
+  ⚠️ Nothing in the compose set acts on `unhealthy`: there is no autoheal/watchtower container
+  and `restart: always` fires only when the **main** process exits. The check makes the wedge
+  visible; it does not recover from it.
+- **`Timed out waiting for UP message` covers RESPAWNS ONLY — its absence proves nothing.**
+  celery arms that kill timer from `on_process_up` via `hub.call_later`, so it exists only once
+  the worker has a hub: the children forked when the pool is **first populated** predate it, and
+  a hub blocked inside a long callback cannot fire it either. Anything slow on `worker_ready`
+  runs in the MainProcess main thread and blocks exactly that loop — which is why
+  `preload_models`' model loads are bounded (`_CPU_WHISPER_PRELOAD_TIMEOUT_S`, and the
+  `hf_hub_offline.load_with_timeout` wrappers), not just for tidiness. When a worker looks
+  wedged with **no** such line in its logs, read `init_worker_process`'s `fork init
+  started`/`fork init finished` pairs instead — those are emitted from the child and do not
+  depend on the parent's loop.
+- `request_id` is stamped on task headers at publish and cleared in `task_postrun`; never
+  assume a ContextVar survives into the next task.
 - **NEVER hold a DB session across slow non-DB work.** Three phases, always: a short read
   session returning **plain data**, the slow work with **no session open**, then a short
   write session. This is the single most repeated defect in this package — see below.
@@ -207,7 +239,7 @@ A structural "does it call session_scope" test is not enough.
   torch/whisperx, or running `@worker_ready preload_models()` synchronously in its own main
   thread (`PRELOAD_GPU_MODELS`, above), when Flower booted is absent from that endpoint
   **forever** — waiting and re-checking cannot help. **`--pool=threads` workers are NOT
-  invisible to Celery** — `celery inspect ping` reaches them fine, which is exactly what their
+  invisible to Celery** — an `inspect` broadcast reaches them fine, which is what their
   container healthchecks rely on; two prefork workers (`cpu-processor`, `cloud-asr`) lose the
   identical race, so the pool type is not the cause. Always read
   `/api/workers?refresh=1` (Flower's own documented parameter, awaited server-side), never the

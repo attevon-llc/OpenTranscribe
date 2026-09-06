@@ -223,6 +223,81 @@ still importing torch/whisperx when Flower booted is absent from it forever; see
 `celery-worker-gpu-scaled` logs during the run, and batch wall-clock is less than N times a
 single-file baseline.
 
+#### diar-native routing under gpu-scale / gpu-split — HARDWARE-GATED, last verified 2026-09-05
+
+These two rows cannot be cleared by `docker compose config` or by "a job completed": the
+PyAnnote fallback is silent by design, so an unreachable sidecar still yields correct
+transcripts ([#655](https://github.com/attevon-llc/OpenTranscribe/issues/655),
+[#711](https://github.com/attevon-llc/OpenTranscribe/issues/711)). Static wiring is enforced by
+`backend/tests/unit/test_diar_native_overlay_wiring.py`; the live proof is
+`backend/tests/integration/test_diar_native_multigpu_provider_live.py`, which is
+`integration`/`gpu`-marked and therefore **never runs in CI** — it must be run by hand on
+multi-GPU hardware:
+
+```bash
+cd backend && POSTGRES_PORT=<offset+5176> BACKEND_PORT=<offset+5174> \
+  venv/bin/python -m pytest tests/integration/test_diar_native_multigpu_provider_live.py \
+  --override-ini="addopts=" -m "integration or gpu" -v
+```
+
+⚠️ Bring up **exactly one** diarizing topology per run. With `celery-worker-gpu-scaled` and
+`celery-worker-gpu-diarize` both up, the broker picks the worker and the result is
+unattributable; the probe skips as NOT MEASURED rather than passing.
+
+| Row | Last verified | Evidence |
+|---|---|---|
+| `--gpu-scale` reaches diar-native | 2026-09-05 | `celery-worker-gpu-scaled`: `native diarization done in 2.8s`, `diarization_provider == "native"`, 0 fallback lines |
+| `--with-gpu-split` reaches diar-native | 2026-09-05 | `celery-worker-gpu-diarize`: `native diarization done in 3.3s`, 0 fallback lines; `celery-worker-gpu-transcribe` diarized nothing, i.e. it forwarded |
+
+**Criterion 5 of #711 — VERIFIED on real hardware, 2026-09-05 (cross-card).** The *device*
+relationship between the sidecar and the gpu-scale worker was the one remaining unmet
+criterion: `GPU_SCALE_DEVICE_ID` defaults to `2` while the sidecar defaults to
+`DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}`, so the shipped defaults describe a **cross-card**
+arrangement. The earlier 2026-09-05 run above had both on one card (GPU 1) because the host
+was believed to have only one usable GPU for this project; that was out of date — a second
+RTX A6000 (GPU 2) is idle and available (GPU 0 stays off limits: `tritonserver` +
+an unrelated container).
+
+`opentr.sh` gained a `--diar-native-gpu N` flag for this (applied *after* `--gpu-device`, so
+the two can differ — `--gpu-device` alone pins every `GPU_DEVICE_VARS` entry, including
+`DIAR_NATIVE_GPU`, to the same value):
+
+```bash
+./opentr.sh start dev --fresh xcard711 --gpu-scale --port-offset 300 \
+  --gpu-device 2 --diar-native-gpu 1
+# resolves to: GPU_SCALE_DEVICE_ID=2 (RTX A6000), DIAR_NATIVE_GPU=1 (RTX 3080 Ti)
+
+cd backend && POSTGRES_PORT=5476 BACKEND_PORT=5474 \
+  venv/bin/python -m pytest tests/integration/test_diar_native_cross_card_placement_live.py \
+  --override-ini="addopts=" -m "integration or gpu" -v
+```
+
+Ground truth was taken by PID, not by the `device_ids:` reservation alone: `docker top
+otfresh-xcard711-diar-native` (pid 3559215) and `docker top
+otfresh-xcard711-celery-worker-gpu-scaled` (pid 3558939) were cross-referenced against
+`nvidia-smi --query-compute-apps=pid,gpu_uuid` + `nvidia-smi --query-gpu=index,uuid` —
+the sidecar's pid held a CUDA context on `GPU-272aeadc…` (nvidia-smi index 1, RTX 3080 Ti,
+808 MiB) and the worker's pid on `GPU-5933f022…` (index 2, RTX A6000, 1318 MiB): two
+different physical cards, confirmed. Two diarizations in that arrangement both went
+through `otfresh-xcard711-celery-worker-gpu-scaled`, logged `native diarization done in
+2.6s` / `1.5s` (a third run afterward: `0.7s` / `0.6s`), `diarization_provider ==
+"native"` on both rows, and zero `falling back to pyannote` lines.
+
+**Finding: cross-card WORKS and is not measurably slower.** All four cross-card runs
+(0.6–2.6s) overlap the same-card baseline above (2.8s) — the loopback hop between two
+containers on the compose bridge network costs nothing next to GPU compute time on this
+host. This is one measurement on one host under light load, not a general throughput claim
+under contention. New live probe: `test_diar_native_cross_card_placement_live.py`
+(integration/gpu-marked, same CI exemption as its sibling); unmarked companion guard:
+`test_opentr_diar_native_gpu_override.py`.
+
+The default worker (`celery-worker`, scaled up via `GPU_SCALE_DEFAULT_WORKER=1`) is ALSO
+diarize-capable and was up alongside `celery-worker-gpu-scaled` in this environment,
+which reproduces the same broker-picks-the-worker ambiguity #764 already documented for
+gpu-scale vs. gpu-split — it was stopped with `docker stop
+otfresh-xcard711-celery-worker` (not signaled, not reconfigured) before the measurement
+above so the result stayed attributable.
+
 ### Cycle 2C — diarization providers (~20 min, can fold into 2A if VRAM allows)
 
 diar-native loads by **default** — `--no-diar-native` is what suppresses it — so Cycle 2A already

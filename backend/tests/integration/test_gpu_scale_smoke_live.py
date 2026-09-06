@@ -260,7 +260,14 @@ def test_concurrent_uploads_reach_completed_with_no_gpu_oom(admin_token: str) ->
 
     n_uploads = max(GPU_SCALE_WORKERS, 3)
     headers = {"Authorization": f"Bearer {admin_token}"}
-    start_time = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+    # Trailing "Z" is load-bearing (issue #711): `docker logs --since` parses a
+    # timestamp with no offset as the DAEMON's LOCAL time, not UTC. On a host west of
+    # UTC (e.g. America/New_York) that silently shifts the cutoff INTO THE FUTURE,
+    # so every subsequent `docker logs --since <this>` returns nothing and the OOM
+    # grep below always reports 0 hits -- passing on a host it never actually
+    # checked. Measured live: an unmarked UTC string here produced an empty log
+    # window even though the container had just written matching lines.
+    start_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     file_uuids: list[str] = []
     try:

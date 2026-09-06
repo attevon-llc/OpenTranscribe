@@ -281,6 +281,15 @@ stages:
         # section for the version. Same reasoning as preflight's changelog-section.
         severity: warn
 
+      - id: roadmap-regenerated
+        description: docs-site/src/data/roadmap.json was refreshed from the issue tracker
+        # warn, not blocking. The docs Docker image has no network, so it ships whatever
+        # snapshot is committed — regenerating here is what keeps a released image's
+        # roadmap from being months stale. But it needs `gh` and a reachable API, and a
+        # GitHub blip must not block a release over a docs data file when the live site
+        # (deploy-docs.yml, which regenerates on every deploy) is correct regardless.
+        severity: warn
+
       - id: bump-committed
         description: The rewritten version sources were staged and committed
         # Recorded as an operator-waived not-measured under NO_COMMIT=true, which

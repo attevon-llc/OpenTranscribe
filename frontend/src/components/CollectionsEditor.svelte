@@ -376,7 +376,7 @@
 
   .collection {
     background-color: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     padding: 0.35rem 0.5rem;
     border-radius: 4px;
     font-size: 0.8rem;
@@ -424,7 +424,7 @@
   }
 
   .collection-add-button {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     border-radius: 4px;
@@ -463,7 +463,7 @@
 
   .suggested-collection:hover {
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     background-color: rgba(59, 130, 246, 0.05);
   }
 
@@ -482,7 +482,7 @@
   /* Dark mode support */
   :global([data-theme='dark']) .collection {
     background: rgba(59, 130, 246, 0.2);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   :global([data-theme='dark']) .suggested-collection:hover {

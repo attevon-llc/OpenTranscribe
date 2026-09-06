@@ -100,7 +100,7 @@
     border: none;
     border-radius: 10px;
     background: rgba(59, 130, 246, 0.08);
-    color: #3b82f6;
+    color: var(--primary-on-surface);
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
@@ -123,7 +123,7 @@
   }
 
   .quick-chip.active {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }

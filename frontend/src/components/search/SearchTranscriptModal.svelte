@@ -1008,7 +1008,7 @@
     border-radius: 4px;
     font-size: 0.78rem;
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     white-space: nowrap;
     transition:
@@ -1221,7 +1221,7 @@
   .segment-time {
     font-size: 12px;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-family: monospace;
     white-space: nowrap;
   }

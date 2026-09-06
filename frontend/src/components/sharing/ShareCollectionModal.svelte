@@ -466,7 +466,7 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 1.2rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 8px;

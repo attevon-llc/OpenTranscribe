@@ -383,7 +383,7 @@
     font-weight: 500;
     height: 1.75rem;
     white-space: nowrap;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     align-self: flex-end;

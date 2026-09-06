@@ -209,7 +209,7 @@
   }
 
   .generate-summary-btn {
-    background-color: var(--primary-color, #3b82f6);
+    background-color: var(--primary-color, var(--primary-color));
     color: white;
     border: none;
     border-radius: 6px;

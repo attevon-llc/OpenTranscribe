@@ -238,7 +238,7 @@
   .drop-zone svg {
     width: 2.5rem;
     height: 2.5rem;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     margin-bottom: 0.25rem;
   }
 
@@ -258,7 +258,7 @@
   }
 
   .multi-file-hint {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.8em;
     font-weight: 500;
     margin-top: 2px;
@@ -293,7 +293,7 @@
 
   .file-info svg {
     flex-shrink: 0;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .file-name {

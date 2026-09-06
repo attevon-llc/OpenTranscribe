@@ -98,7 +98,7 @@
   }
 
   .chat-reasoning :global(.expandable-header:hover) {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .chat-reasoning :global(.expandable-content) {

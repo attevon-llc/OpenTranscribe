@@ -328,7 +328,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.8125rem;
     font-weight: 500;
     padding: 0.375rem 0.5rem;
@@ -480,7 +480,7 @@
   }
 
   .btn-inline-save {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
   }

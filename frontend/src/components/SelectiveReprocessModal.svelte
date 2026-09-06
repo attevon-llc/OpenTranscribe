@@ -802,13 +802,13 @@
 
   .step-dot.active {
     border-color: var(--primary-color, #3b82f6);
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
   }
 
   .step-dot.completed {
     border-color: var(--primary-color, #3b82f6);
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     cursor: pointer;
   }
@@ -854,7 +854,7 @@
   }
 
   .step-line.completed {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   /* Body */
@@ -891,7 +891,7 @@
   .select-all-btn {
     background: none;
     border: 1px solid var(--border-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.75rem;
     padding: 0.25rem 0.6rem;
     border-radius: 4px;
@@ -997,7 +997,7 @@
   }
 
   .stage-check-custom.checked {
-    background: #3b82f6;
+    background: var(--primary-color);
     border-color: var(--primary-color, #3b82f6);
     color: white;
   }
@@ -1172,7 +1172,7 @@
   }
 
   .warning-info svg {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   /* Speaker Settings */
@@ -1297,7 +1297,7 @@
   }
 
   .primary-button {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }

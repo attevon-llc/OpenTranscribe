@@ -480,7 +480,7 @@
   }
 
   .unread-badge {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     font-size: 11px;
     font-weight: 600;
@@ -542,7 +542,7 @@
   }
 
   .close-btn:hover {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: #3b82f6;
     color: white;
   }
@@ -606,7 +606,7 @@
   }
 
   .notification-item.status-info .notification-indicator {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   .notification-item.status-warning .notification-indicator {
@@ -614,11 +614,11 @@
   }
 
   .notification-item.unread .notification-indicator {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   .notification-item.processing .notification-indicator {
-    background: #3b82f6;
+    background: var(--primary-color);
     animation: pulse 1.5s infinite;
   }
 
@@ -661,7 +661,7 @@
   .notification-item.status-info .notification-icon {
     background: rgba(59, 130, 246, 0.1);
     border-color: rgba(59, 130, 246, 0.2);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .notification-item.status-warning .notification-icon {
@@ -725,7 +725,7 @@
     display: block;
     font-size: 12px;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     text-decoration: none;
     transition: color 0.2s ease;
     white-space: nowrap;
@@ -809,7 +809,7 @@
 
   .progress-bar-fill {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     border-radius: 2px;
     transition: width 0.3s ease;
     animation: progress-shimmer 1.5s infinite;

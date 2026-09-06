@@ -317,7 +317,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;

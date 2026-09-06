@@ -1103,13 +1103,13 @@
 
   .step-item.active .step-dot {
     border-color: var(--primary-color, #3b82f6);
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
   }
 
   .step-item.completed .step-dot {
     border-color: var(--primary-color, #3b82f6);
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
   }
 
@@ -1144,7 +1144,7 @@
     transition: background 0.25s ease;
   }
 
-  .step-line.completed { background: #3b82f6; }
+  .step-line.completed { background: var(--primary-color); }
   .step-line.visited { background: rgba(59, 130, 246, 0.4); }
 
   /* ── Step Content ── */
@@ -1190,8 +1190,8 @@
     position: relative;
   }
 
-  .tab-button:hover { color: var(--primary-color); background-color: rgba(59, 130, 246, 0.05); }
-  .tab-button.active { color: var(--primary-color); border-bottom: 2px solid var(--primary-color); }
+  .tab-button:hover { color: var(--primary-on-surface); background-color: rgba(59, 130, 246, 0.05); }
+  .tab-button.active { color: var(--primary-on-surface); border-bottom: 2px solid var(--primary-color); }
   .tab-button:disabled { opacity: 0.5; cursor: not-allowed; }
   .tab-button:disabled:hover { background: transparent; color: var(--text-secondary); }
 
@@ -1204,7 +1204,7 @@
     background: rgba(59, 130, 246, 0.1);
     border: 1px solid var(--primary-color);
     border-left: 4px solid var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .duplicate-message strong { display: block; margin-bottom: 0.25rem; font-size: 0.875rem; }
@@ -1212,7 +1212,7 @@
 
   .btn-acknowledge {
     padding: 0.375rem 0.75rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 4px;
@@ -1339,7 +1339,7 @@
   }
 
   .nav-next, .nav-submit {
-    background: #3b82f6;
+    background: var(--primary-color);
     border: 1px solid #3b82f6;
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);

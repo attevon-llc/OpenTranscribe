@@ -148,7 +148,7 @@
 
   .info-button:hover {
     background-color: rgba(0, 0, 0, 0.05);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     transform: scale(1.1);
   }
 
@@ -175,7 +175,7 @@
 
   .status-processing {
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .status-pending {
@@ -321,7 +321,7 @@
 
   .task-status-cell .progress-bar {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     border-radius: 2px;
     transition: width 0.3s ease;
   }

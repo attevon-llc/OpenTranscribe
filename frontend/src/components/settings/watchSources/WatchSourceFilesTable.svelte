@@ -177,7 +177,7 @@
     overflow-wrap: anywhere;
   }
   .file-cell a {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
   .reason-cell {
     max-width: 280px;

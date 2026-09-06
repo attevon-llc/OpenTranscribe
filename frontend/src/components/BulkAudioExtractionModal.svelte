@@ -144,7 +144,7 @@
   }
 
   .info-icon {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     margin-bottom: 1rem;
   }
 
@@ -196,7 +196,7 @@
 
   .file-item svg {
     flex-shrink: 0;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .file-name {
@@ -231,7 +231,7 @@
 
   .regular-files-notice svg {
     flex-shrink: 0;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .comparison-section {
@@ -328,7 +328,7 @@
   }
 
   .primary-button {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }

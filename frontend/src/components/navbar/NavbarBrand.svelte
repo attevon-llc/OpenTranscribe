@@ -29,7 +29,7 @@
     display: flex;
     align-items: center;
     text-decoration: none;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 600;
     font-size: 1.25rem;
     transition: transform 0.2s ease;

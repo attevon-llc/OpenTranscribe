@@ -127,7 +127,7 @@
   }
 
   .info-icon {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     margin-bottom: 0.375rem;
   }
 

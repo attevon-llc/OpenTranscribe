@@ -492,7 +492,7 @@
 
   .tag {
     background-color: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     padding: 0.35rem 0.5rem;
     border-radius: 4px;
     font-size: 0.8rem;
@@ -540,7 +540,7 @@
   }
 
   .tag-add-button {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     border-radius: 4px;
@@ -651,7 +651,7 @@
 
   .suggested-tag:hover {
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     background-color: rgba(59, 130, 246, 0.05);
   }
 

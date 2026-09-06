@@ -1002,7 +1002,7 @@
   }
 
   .inline-info-icon:hover {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .inline-tooltip {
@@ -1026,7 +1026,7 @@
   }
 
   .inline-tooltip strong {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .inline-info-icon:hover .inline-tooltip {
@@ -1137,7 +1137,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
   }
 
   .toggle-input:checked + .toggle-switch::after {
@@ -1265,7 +1265,7 @@
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: #3b82f6;
+    background: var(--primary-color);
     cursor: pointer;
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -1275,7 +1275,7 @@
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: #3b82f6;
+    background: var(--primary-color);
     cursor: pointer;
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);

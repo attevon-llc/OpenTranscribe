@@ -1163,7 +1163,7 @@
     height: 22px !important;
     border-radius: 2px !important;
     border: none !important;
-    background-color: #3b82f6 !important;
+    background-color: var(--primary-color) !important;
     box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3) !important;
     transform: none !important;
     transition: height 0.15s ease, width 0.15s ease, margin 0.15s ease !important;
@@ -1184,7 +1184,7 @@
 
   /* Range bar — same solid color as handles */
   .slider-wrapper :global(.rangeSlider .rangeBar) {
-    background-color: #3b82f6 !important;
+    background-color: var(--primary-color) !important;
   }
 
   /* Pointer cursor on the track too */
@@ -1250,7 +1250,7 @@
 
   .tag-button.selected,
   .speaker-button.selected {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }
@@ -1286,7 +1286,7 @@
 
   .file-type-button.selected,
   .status-button.selected {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }
@@ -1318,7 +1318,7 @@
   }
 
   .ownership-button.selected {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }

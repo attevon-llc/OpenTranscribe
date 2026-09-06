@@ -249,7 +249,7 @@
 
   .status-processing {
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .status-pending {

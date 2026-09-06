@@ -476,7 +476,7 @@
   .cap-badge {
     padding: 0.2rem 0.5rem;
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 500;
@@ -592,7 +592,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 
   .toggle-input:checked + .toggle-switch::after {
@@ -623,7 +623,7 @@
     padding: 0.5rem 0.875rem;
     border: none;
     color: white;
-    background: #3b82f6;
+    background: var(--primary-color);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.8125rem;
@@ -667,7 +667,7 @@
 
   .btn-save {
     padding: 0.5rem 1.25rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 6px;

@@ -346,7 +346,7 @@
 
   .subtitle {
     font-size: 1.125rem;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
     margin: 0 0 1rem 0;
   }
@@ -412,7 +412,7 @@
     flex-shrink: 0;
     width: 32px;
     height: 32px;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border-radius: 50%;
     display: flex;
@@ -525,7 +525,7 @@
   }
 
   .credit-link:hover {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     background: var(--hover-color, rgba(59, 130, 246, 0.1));
     transform: translateX(4px);
   }
@@ -548,7 +548,7 @@
   }
 
   .inline-link {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     text-decoration: none;
     font-weight: 500;
   }

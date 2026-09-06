@@ -240,7 +240,7 @@
     /* Range selection colors */
     --datepicker-calendar-range-background: rgba(59, 130, 246, 0.2);
     --datepicker-calendar-range-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-range-start-end-background: #3b82f6;
+    --datepicker-calendar-range-start-end-background: var(--primary-color);
     --datepicker-calendar-range-start-end-color: #fff;
     --datepicker-calendar-range-included-background: rgba(59, 130, 246, 0.12);
     --datepicker-calendar-range-included-color: var(--text-color, #e2e8f0);

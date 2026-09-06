@@ -1065,7 +1065,7 @@
     padding: 0.25rem 0.65rem;
     border-radius: 999px;
     background-color: rgba(var(--primary-color-rgb), 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.78rem;
     font-weight: 500;
   }
@@ -1136,7 +1136,7 @@
   }
 
   .tab.active {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-bottom-color: var(--primary-color);
   }
 
@@ -1238,7 +1238,7 @@
     padding: 8px 16px;
     border: none;
     border-radius: 8px;
-    background: var(--primary-color, #3b82f6);
+    background: var(--primary-color, var(--primary-color));
     color: white;
     cursor: pointer;
     font-size: 14px;

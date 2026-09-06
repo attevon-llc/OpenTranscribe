@@ -222,7 +222,7 @@
   }
   .searchable-option.highlighted {
     background: rgba(var(--primary-color-rgb), 0.12);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
   .searchable-status {
     display: flex;

@@ -619,7 +619,7 @@
     justify-content: center;
     gap: 6px;
     padding: 0.6rem 1.2rem;
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     border-radius: 8px;

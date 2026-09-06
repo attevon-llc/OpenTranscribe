@@ -390,7 +390,7 @@
   }
 
   .source-link {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     text-decoration: none;
     word-break: break-all;
     transition: color 0.2s ease;

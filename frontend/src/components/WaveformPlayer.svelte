@@ -35,7 +35,7 @@
     return {
       background: computedStyle.getPropertyValue('--surface-color').trim() || '#f8fafc',
       waveform: computedStyle.getPropertyValue('--text-secondary').trim() || '#64748b',
-      progress: computedStyle.getPropertyValue('--primary-color').trim() || '#3b82f6',
+      progress: computedStyle.getPropertyValue('--primary-color').trim() || 'var(--primary-color)',
       playhead: computedStyle.getPropertyValue('--primary-color').trim() || '#3b82f6'
     };
   };
@@ -476,7 +476,7 @@
 
   .retry-button {
     padding: 0.25rem 0.75rem;
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     border-radius: 4px;

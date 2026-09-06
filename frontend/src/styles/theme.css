@@ -48,8 +48,22 @@
   --z-max: 99999;
 
   /* Default Light Theme */
-  --primary-color: #3b82f6; /* Original blue color */
-  --primary-color-rgb: 59, 130, 246; /* RGB values for primary color */
+  /* ONE primary blue for both themes. It is the background of every primary
+     button, active chip, selected tab and the avatar — all of which carry WHITE
+     text — so it is bound by WCAG 2.1 AA's 4.5:1, not the 3:1 that applies to a
+     control's shape. #3b82f6 gave 3.68:1 here and #60a5fa gave 2.54:1 in dark:
+     two blues, both under the bar, drifting independently. #2563eb clears it in
+     both. Pinned by `primary-contrast.test.ts`. */
+  --primary-color: #2563eb;
+  --primary-color-rgb: 37, 99, 235; /* Keep in sync with --primary-color */
+  /* Blue used as TEXT or an icon ON a page surface — the opposite constraint to
+     `--primary-color` above, and the reason this app used to carry two different
+     blues with no name for the difference. A background carrying white text must
+     be DARK; blue text on a dark surface must be LIGHT. One token cannot be both,
+     and collapsing them regressed every blue label in dark mode to 2.0:1.
+     Pick by ROLE: filling a control -> `--primary-color`; writing in blue ->
+     this. */
+  --primary-on-surface: #1d4ed8;
   /* RGB channel triplets for the status colours below, so components can tint
      with rgba(..., alpha). Without these the inline fallback always won, so the
      tint stayed light-mode in dark mode and, for success, did not even match its
@@ -57,7 +71,7 @@
   --success-color-rgb: 16, 185, 129; /* #10b981 */
   --error-color-rgb: 239, 68, 68; /* #ef4444 */
   --warning-color-rgb: 245, 158, 11; /* #f59e0b */
-  --primary-hover: #2563eb;
+  --primary-hover: #1d4ed8; /* Hover darkens, so contrast only improves */
   --primary-light: #dbeafe; /* Light blue for button backgrounds */
   --primary-dark: #1d4ed8; /* Darker blue for button text */
   --surface-color: #ffffff;
@@ -232,12 +246,15 @@
 
 /* Dark Theme */
 [data-theme='dark'] {
-  --primary-color: #60a5fa; /* Lighter blue for dark mode */
-  --primary-color-rgb: 96, 165, 250; /* RGB values for primary color in dark mode */
+  /* Same blue as light mode — see the note on `:root`. A lighter blue here
+     looked correct against the dark surface but put white text at 2.54:1. */
+  --primary-color: #2563eb;
+  --primary-color-rgb: 37, 99, 235; /* Keep in sync with --primary-color */
+  --primary-on-surface: #93c5fd; /* Light, because the surface behind it is dark */
   --success-color-rgb: 52, 211, 153; /* #34d399 */
   --error-color-rgb: 248, 113, 113; /* #f87171 */
   --warning-color-rgb: 251, 191, 36; /* #fbbf24 */
-  --primary-hover: #3b82f6; /* Darker on hover — same blue as light-mode base. Apple HIG: hover always darkens. */
+  --primary-hover: #1d4ed8; /* Apple HIG: hover always darkens, so contrast only improves. */
   --primary-light: #1e3a8a; /* Deeper blue for button backgrounds in dark mode */
   --primary-dark: #93c5fd; /* Lighter blue for button text in dark mode (contrast on dark surfaces) */
   --surface-color: #1e293b;

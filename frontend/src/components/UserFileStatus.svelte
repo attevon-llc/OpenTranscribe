@@ -519,7 +519,7 @@
 
   .recovery-btn, .flower-btn {
     padding: 0.6rem 1.2rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 10px;

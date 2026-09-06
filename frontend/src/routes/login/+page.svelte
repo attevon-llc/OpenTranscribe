@@ -1284,7 +1284,7 @@
   }
 
   .auth-button {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     border-radius: 10px;
@@ -1339,7 +1339,7 @@
   }
 
   .auth-link {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     text-decoration: none;
     font-weight: 500;
   }
@@ -1565,7 +1565,7 @@
 
   .mfa-icon {
     margin-bottom: 1rem;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .mfa-form h2 {
@@ -1601,7 +1601,7 @@
   .text-button {
     background: none;
     border: none;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.9rem;
     cursor: pointer;
     padding: 0.5rem;

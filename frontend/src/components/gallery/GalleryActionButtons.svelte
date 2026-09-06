@@ -482,7 +482,7 @@
   .upload-btn,
   .select-all-btn,
   .process-btn {
-    background-color: var(--primary-color, #3b82f6);
+    background-color: var(--primary-color, var(--primary-color));
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 

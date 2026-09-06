@@ -249,7 +249,7 @@
   }
 
   .source-badge.source-voice {
-    background: color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
+    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 10%, transparent);
     color: var(--primary-color, #3b82f6);
   }
 

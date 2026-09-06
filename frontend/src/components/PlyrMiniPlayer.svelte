@@ -371,7 +371,7 @@
   }
 
   .plyr-mini-player.audio-mode :global(.plyr--audio .plyr__volume input[type="range"]) {
-    color: var(--primary-color) !important;
+    color: var(--primary-on-surface) !important;
   }
 
   /* Video styles */

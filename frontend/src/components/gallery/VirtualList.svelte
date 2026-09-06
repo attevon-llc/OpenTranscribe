@@ -476,7 +476,7 @@
   }
 
   .list-cell-checkbox .file-checkbox:checked ~ .checkmark {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: #3b82f6;
   }
 
@@ -557,7 +557,7 @@
     flex: 0 0 auto;
     font-size: 0.6875rem;
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     background: var(--primary-color-alpha, rgba(59, 130, 246, 0.1));
     padding: 0.125rem 0.375rem;
     border-radius: 9999px;

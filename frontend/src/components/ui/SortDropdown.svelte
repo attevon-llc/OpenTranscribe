@@ -281,7 +281,7 @@
   }
 
   .dropdown-item.active {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 600;
   }
 

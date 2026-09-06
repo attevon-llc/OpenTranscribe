@@ -478,7 +478,7 @@
   }
 
   .file-checkbox:checked ~ .checkmark {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: #3b82f6;
   }
 

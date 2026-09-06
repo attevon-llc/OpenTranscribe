@@ -74,6 +74,6 @@
     background: rgba(59, 130, 246, 0.08);
   }
   .status-chip.blue .chip-dot {
-    background: #3b82f6;
+    background: var(--primary-color);
   }
 </style>

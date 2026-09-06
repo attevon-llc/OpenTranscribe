@@ -487,7 +487,7 @@
 
   .source-db {
     background: rgba(var(--primary-color-rgb), 0.12);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
   :global([data-theme='dark']) .source-db {
     background: rgba(var(--primary-color-rgb), 0.2);
@@ -619,7 +619,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color, #3b82f6);
+    background: var(--primary-color, var(--primary-color));
   }
 
   .toggle-input:checked + .toggle-switch::after {
@@ -664,7 +664,7 @@
   }
 
   .btn-primary {
-    background: var(--primary-color, #3b82f6);
+    background: var(--primary-color, var(--primary-color));
     color: white;
     box-shadow: 0 1px 4px rgba(var(--primary-color-rgb), 0.2);
   }

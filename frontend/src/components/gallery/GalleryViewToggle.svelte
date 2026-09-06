@@ -155,7 +155,7 @@
   }
 
   .toggle-btn.active {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
   }
 

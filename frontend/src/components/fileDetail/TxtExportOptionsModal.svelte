@@ -241,7 +241,7 @@
   }
 
   .btn-primary {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }

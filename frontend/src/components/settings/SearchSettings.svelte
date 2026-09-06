@@ -783,7 +783,7 @@
 
   .progress-fill {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     border-radius: 3px;
     transition: width 0.3s;
   }
@@ -853,7 +853,7 @@
 
   .lang-badge.multilingual {
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .lang-badge.not-ready {
@@ -970,7 +970,7 @@
     gap: 0.5rem;
     font-size: 0.8125rem;
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .reindex-count {
@@ -984,7 +984,7 @@
   }
 
   .progress-bar.reindexing .progress-fill {
-    background: #3b82f6;
+    background: var(--primary-color);
     animation: pulse 1.5s ease-in-out infinite;
   }
 
@@ -1013,7 +1013,7 @@
   .reindex-eta {
     white-space: nowrap;
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .reindex-actions {
@@ -1082,7 +1082,7 @@
 
   .stats-mode.cpu {
     background: rgba(59, 130, 246, 0.12);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .btn-danger-outline {

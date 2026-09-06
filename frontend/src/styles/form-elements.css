@@ -137,7 +137,7 @@ button:active:not(:disabled) {
 }
 
 button.primary {
-  background-color: #3b82f6;
+  background-color: var(--primary-color);
   color: white !important;
   border: none;
   box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
@@ -145,7 +145,7 @@ button.primary {
 
 /* `:focus` deliberately omitted — see the `button:focus-visible` note above (#746). */
 button.primary:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: var(--primary-hover);
   color: white !important;
   transform: scale(1.02);
   box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
@@ -206,15 +206,18 @@ button:disabled {
   transform: scale(1) !important;
 }
 
-/* Submit / action buttons — exact Add Media style: #3b82f6 base → #2563eb hover + scale */
+/* Submit / action buttons — the shared primary style. The blue comes from
+   `--primary-color` / `--primary-hover` in theme.css rather than a literal:
+   these carry WHITE text, and the literal that used to sit here (#3b82f6) put
+   it at 3.68:1, under WCAG AA's 4.5:1. Pinned by `primary-contrast.test.ts`. */
 .btn-primary {
-  background-color: #3b82f6;
+  background-color: var(--primary-color);
   color: white;
   border: none;
   box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: var(--primary-hover);
   transform: scale(1.02);
   box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
 }
@@ -294,13 +297,13 @@ button:disabled {
 }
 
 .modal-primary-button {
-  background-color: #3b82f6;
+  background-color: var(--primary-color);
   color: white;
   border: none;
   box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
 }
 .modal-primary-button:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: var(--primary-hover);
   transform: scale(1.02);
   box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
 }

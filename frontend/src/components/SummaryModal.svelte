@@ -609,7 +609,7 @@
 
   .copy-button-header:hover {
     background-color: var(--hover-bg);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-color: var(--primary-color);
   }
 
@@ -643,7 +643,7 @@
   .reprocess-button-header:hover:not(:disabled) {
     background-color: var(--hover-bg);
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .reprocess-button-header:disabled {

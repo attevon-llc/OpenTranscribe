@@ -314,7 +314,7 @@
     z-index: 1;
   }
 
-  .paste-button:hover:not(:disabled) { background: var(--button-hover); color: var(--primary-color); }
+  .paste-button:hover:not(:disabled) { background: var(--button-hover); color: var(--primary-on-surface); }
   .paste-button:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* Protected Media Auth */
@@ -427,7 +427,7 @@
     transition: transform 0.2s ease;
   }
 
-  .download-toggle input:checked + .download-toggle-slider { background-color: var(--primary-color, #3b82f6); }
+  .download-toggle input:checked + .download-toggle-slider { background-color: var(--primary-color, var(--primary-color)); }
   .download-toggle input:checked + .download-toggle-slider::before { transform: translateX(16px); }
 
   .download-options-hint { font-size: 0.6875rem; color: var(--text-secondary); margin: 0; }

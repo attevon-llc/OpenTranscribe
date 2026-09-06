@@ -128,10 +128,17 @@ extract_docker_images() {
     mapfile -t INFRASTRUCTURE_IMAGES < <(extract_infrastructure_images)
 
     # Add production application images (these use 'build:' in dev, pre-built images in prod)
+    #
+    # OT_IMAGE_TAG (issue #781/N7), unset defaults to "latest" — today's behaviour, unchanged.
+    # Without it, a developer building a package for v0.5.0 after v0.6.0 has shipped has no
+    # way to pin WHICH version gets pulled/saved here: ":latest" on Docker Hub always means
+    # "newest", never "the version I'm packaging". copy_configuration()'s image-sync loop
+    # rewrites the packaged docker-compose.offline.yml to match this same tag, so what gets
+    # `docker load`ed and what the compose file asks for stay consistent.
     APPLICATION_IMAGES=(
-        "davidamacey/opentranscribe-backend:latest"
-        "davidamacey/opentranscribe-frontend:latest"
-        "davidamacey/opentranscribe-docs:latest"
+        "davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}"
+        "davidamacey/opentranscribe-frontend:${OT_IMAGE_TAG:-latest}"
+        "davidamacey/opentranscribe-docs:${OT_IMAGE_TAG:-latest}"
     )
 
     # Combine all images
@@ -373,6 +380,21 @@ copy_configuration() {
     done
 
     print_success "Infrastructure images synced (base + offline override pattern)"
+
+    # Sync application image versions too (issue #781/N7). docker-compose.offline.yml's own
+    # header explains why the file in THIS REPO stays literal `:latest`: build-offline-package
+    # `docker save`s and install-offline-package.sh `docker load`s back under the SAME tags,
+    # so `:latest` is what an air-gapped install actually has on disk when OT_IMAGE_TAG is
+    # unset. But when a developer DOES set OT_IMAGE_TAG (to pin which version got pulled and
+    # saved above), the PACKAGED copy must ask for that same tag — otherwise the package loads
+    # image `davidamacey/opentranscribe-backend:v0.5.0` and then every service definition in
+    # its own docker-compose.offline.yml still asks for `:latest`, which was never loaded, and
+    # `pull_policy: never` means compose has nowhere left to get it from.
+    for repo in opentranscribe-backend opentranscribe-frontend opentranscribe-docs; do
+        sed -i "s|davidamacey/${repo}:latest|davidamacey/${repo}:${OT_IMAGE_TAG:-latest}|g" "$temp_compose"
+    done
+
+    print_success "Application image tags synced to OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}"
 
     # Copy .env.example file (required by installation script)
     print_info "Copying .env.example..."

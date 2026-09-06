@@ -2,13 +2,18 @@
 #
 # WHAT READS IT
 #
-#   scripts/release/10-preflight.sh   stage: preflight
-#   scripts/release/30-verify.sh      stage: verify
-#   scripts/release/50-scan.sh        stage: scan        (added by #667)
-#   scripts/release/65-rehearse.sh    stage: rehearse    (added by #667)
+# Every stage script in scripts/release/NN-<stage>.sh sources
+# scripts/release/criteria-lib.sh and loads ITS OWN stage's criteria from this
+# file (STAGE_ID matches a `stages.<id>` key below). That became true of every
+# stage — not just preflight/verify/scan/rehearse — as of #416's "declare and
+# wire release criteria for all 12 stages"; this comment used to name only
+# those four and had drifted stale by the time #781/#784 landed. Do not
+# transcribe the stage list here a second time — `order:` at the bottom of
+# this file, and STAGES in scripts/release.sh, are the two places that name
+# them, and both already say a mismatch between them is a bug.
 #
-# That list is exhaustive, and it is enforced from both directions. Each of those
-# scripts loads its own stage from here and then:
+# It is enforced from both directions. Each stage script loads its own stage
+# from here and then:
 #
 #   * refuses (exit 2) to record a criterion id that this file does not define;
 #   * refuses (exit 2) to finish with a criterion defined here that it never
@@ -41,26 +46,29 @@
 #     The `test` stage runs `run-integration-tests.sh --coverage --e2e-smoke`;
 #     the full suite has never been part of it.
 #
-# So the stages that define their gates in their own scripts are deliberately
-# NOT listed here any more. `40-build.sh` checks that the images build and that
-# the version is baked in; `80-publish.sh` checks both architectures;
-# `90-promote.sh` compares digests; `95-finish.sh` checks CI and the manifest.
-# Re-adding them here as prose would recreate exactly the failure this file just
-# had, and the one root CLAUDE.md warns about: `expected-schemas.tsv` died of
-# being a hand-maintained table that nothing read.
-#
-# If a second consumer ever appears (a CI job, an AWS promotion job), add its
-# stage here and wire it the same way — bidirectionally, or not at all.
-#
-# `scan` and `rehearse` were added under that rule, not as an exception to it
-# (#667). Both scripts now source scripts/release/criteria-lib.sh, load their
-# severities from here, `record` every id, and call
+# So at the time `scan`/`rehearse` were added (#667), every OTHER stage's gate
+# still lived only in its own script's prose comments — `40-build.sh` checked
+# that images build and the version is baked in, `90-promote.sh` compared
+# digests, `95-finish.sh` checked CI and the manifest, none of it declared
+# here. Commit 2dad14a1 ("declare and wire release criteria for all 12
+# stages") closed that gap: every stage in `order:` below now has a
+# `criteria:` block here and
+# sources scripts/release/criteria-lib.sh, `record`s every id, and calls
 # `criteria_assert_all_checked` — so a criterion declared here and not checked
-# there, or checked there and not declared here, is exit 2 in both directions.
-# They are NOT prose. The shared library exists because a third and fourth
-# hand-rolled copy of that contract is itself a drift generator; 10-preflight.sh
-# and 30-verify.sh still carry their original inline copies and should be
-# migrated onto the library separately, as a change with no behaviour in it.
+# by its stage, or checked there and not declared here, is exit 2 in EITHER
+# direction, for every stage, not just scan/rehearse. Nothing here is prose.
+#
+# If a second CONSUMER of this file ever appears outside scripts/release/ (a CI
+# job, an AWS promotion job), wire it the same way — bidirectionally, or not at
+# all. Re-adding a stage's gates as free text instead would recreate exactly
+# the failure this file already had once, and the one root CLAUDE.md warns
+# about generally: `expected-schemas.tsv` died of being a hand-maintained table
+# that nothing read.
+#
+# 10-preflight.sh and 30-verify.sh still carry their own original inline copy
+# of the bidirectional-contract machinery predating criteria-lib.sh, rather
+# than sourcing it — migrating them onto the shared library is a change with
+# no behaviour in it, tracked separately from this file's content.
 #
 # SEVERITY
 #   blocking  — a failure stops the stage. Overridable only with
@@ -341,6 +349,24 @@ stages:
         description: CHANGELOG.md has a section for this version to use as the annotation body
         severity: blocking
 
+      # ─── release/<major>.<minor> branch cut (issue #784) ─────────────────
+      - id: tag-pushed
+        description: >-
+          git tag -a and git push origin $VERSION both succeeded. Split out
+          from the tag/push side-effect itself (finding N4): the file has no
+          `set -e`, so an unchecked failure here used to fall through to a
+          recorded pass.
+        severity: blocking
+
+      - id: release-branch-tracks-tag
+        description: >-
+          release/<major>.<minor> exists on ORIGIN (never just locally) and
+          $VERSION is an ancestor of it. Cut from the tag on first use;
+          confirmed, not re-cut, on the patch path. A tag pushed from
+          somewhere other than this branch — e.g. accidentally from master —
+          must fail here, which is the whole guard #784 asks for.
+        severity: blocking
+
   # ─── Publish. The first stage that writes to Docker Hub. ────────────────
   publish:
     description: Push every leg, assemble each index, and verify the published manifests
@@ -408,6 +434,29 @@ stages:
   promote:
     description: Move :latest onto the validated digest, never a rebuild
     criteria:
+      # ─── :latest regression guard (issue #784) ────────────────────────────
+      # Not in #784's own text — a hazard the patch path would otherwise
+      # CREATE. A hotfix cut from an old release/<minor> branch after a newer
+      # minor has already published would, on the standard pipeline, move
+      # :latest BACKWARDS — silently downgrading every existing user on their
+      # next pull. `imagetools create` is a manifest copy, not undoable, so
+      # this runs before the loop, not after.
+      - id: latest-target-determined
+        description: >-
+          The newest published release (git tags x Docker Hub, both backend
+          and frontend) resolved successfully. A lookup failure means "I don't
+          know whether this is a downgrade" — not a licence to move a tag
+          every user pulls — so it fails closed (exit 3), never not-measured.
+        severity: blocking
+
+      - id: latest-not-regressed
+        description: >-
+          :latest was not moved backwards. True both when $VERSION is the
+          newest (it moves forward normally) and when $VERSION is an older
+          backport (the copy is correctly SKIPPED and :latest is left alone —
+          that is a pass, not a failure).
+        severity: blocking
+
       - id: published-repo-list-derived
         description: security-scan.sh list-repos yielded a non-empty component->repo map
         severity: blocking
@@ -456,6 +505,77 @@ stages:
       - id: github-release-created
         description: gh release create --latest succeeded
         severity: blocking
+
+      # ─── Release assets (issue #781) ───────────────────────────────────
+      # The old code attached assets with a bare existence glob over
+      # dist/*.tar.gz, dist/*.zip and security-reports/*-sbom.json. Two
+      # defects, and they compounded: ABSENCE was silent (a failed scan or a
+      # relocated OT_SCAN_DIR just meant the loop appended nothing, and
+      # `gh release create` shipped a release with zero SBOMs and no error),
+      # and PRESENCE was not evidence either — security-reports/ is
+      # git-tracked and held three stale, non-arch-qualified, pre-#667 SBOMs
+      # that the glob would have attached to every future release regardless
+      # of which version they last described. Same failure shape #413/#681
+      # already fixed once: a gate reporting success when it could not do
+      # its job.
+      - id: sbom-per-published-leg
+        description: >-
+          One <component>-<arch>-sbom.json exists (in the resolved scan dir)
+          for every leg docker-build-push.sh list-platforms declares for a
+          repo that published-repos.sh says this release actually publishes.
+          blackwell is excluded — it is in the platform table but publishes
+          no vX.Y.Z tag, so it is never in the published-repos set this
+          derives from. A platform table or repo list that cannot be read
+          derives ZERO legs, which is COULD NOT CHECK, never "nothing to
+          ship" — same rule the scan stage's own legs_expected==0 branch
+          applies to the identical question.
+        severity: blocking
+
+      - id: sbom-describes-this-version
+        description: >-
+          Each present SBOM's metadata.component.name/.version (the same
+          fields Syft writes, read back the way 50-scan.sh already reads
+          Trivy's ArtifactName) names THIS release. Closes issue #781's P6:
+          a file merely existing in security-reports/ is not evidence — it
+          could be a stale report from a different version. An unreadable
+          or corrupt SBOM is treated exactly like a version mismatch, never
+          as a pass.
+        severity: blocking
+
+      - id: asset-checksums
+        description: >-
+          Every attached SBOM has a published .sha256 sidecar (plus one
+          combined SHA256SUMS), generated into a throwaway mktemp -d
+          scratch directory — never written into git-tracked
+          security-reports/. A checksum a builder already produced is
+          reused verbatim rather than recomputed, so there is only ever one
+          opinion about a given file's digest.
+        severity: blocking
+
+      # The offline (.tar.xz) and Windows (.zip via Inno Setup) packages are
+      # a standing PROJECT DECISION, not a run-time operator opt-out: they
+      # are built by a developer on their own machine and used there, never
+      # attached to a GitHub Release. (dist/opentranscribe-offline-*.tar.gz
+      # and dist/opentranscribe-windows-*.zip, which the old glob looked
+      # for, never existed — the offline package actually lands at
+      # offline-package-build/linux/*.tar.xz, and the Windows builder stages
+      # a directory for Inno Setup and produces no archive at all.) Declared
+      # `warn` so a `not-measured` here cannot block a release, and recorded
+      # `waived` — belt-and-braces on top of the severity — because this is
+      # an explicit decision, not a check that merely could not run. See
+      # releasing.md for the decision record.
+      - id: offline-package-attached
+        description: >-
+          Not attached, by design — developer-built, never distributed via
+          the GitHub Release. Recorded not-measured/waived every run.
+        severity: warn
+
+      - id: windows-package-attached
+        description: >-
+          Not attached, by design — needs Inno Setup on Windows, and is
+          developer-built and never distributed via the GitHub Release.
+          Recorded not-measured/waived every run.
+        severity: warn
 
 # Ordering. The reasoning that must not be lost:
 #

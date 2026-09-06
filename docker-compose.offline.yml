@@ -6,13 +6,22 @@
 #   - Offline mode for HuggingFace
 #   - Offline-specific volume paths
 #
-# DELIBERATELY NOT PINNED with ${OT_IMAGE_TAG}, unlike docker-compose.prod.yml.
-# scripts/build-offline-package.sh does `docker save` on the `:latest` tags and
-# install-offline-package.sh `docker load`s them back under those same tags, so
-# :latest is the only tag that exists inside an air-gapped install. Interpolating
-# OT_IMAGE_TAG here would make compose look for a tag the package never loaded
-# the moment a user's .env pins a version. The package version is controlled by
-# which package you installed, not by a tag.
+# DELIBERATELY NOT PINNED with ${OT_IMAGE_TAG} IN THIS FILE, unlike
+# docker-compose.prod.yml. scripts/build-offline-package.sh does `docker save` on the
+# `:latest` tags by default and install-offline-package.sh `docker load`s them back
+# under those same tags, so :latest is the only tag that exists inside an air-gapped
+# install by default. Interpolating OT_IMAGE_TAG at compose-interpolation time here
+# would make compose look for a tag the package never loaded the moment a user's
+# .env pins a version. The package version is controlled by which package you
+# installed, not by a tag.
+#
+# When a developer builds a package with OT_IMAGE_TAG set (issue #781/N7), so the
+# PULL/SAVE step above targets a specific version rather than whatever ":latest" is
+# on Docker Hub that day, build-offline-package.sh's copy_configuration() rewrites the
+# `davidamacey/opentranscribe-{backend,frontend,docs}:latest` lines in the COPY it
+# ships (config/docker-compose.offline.yml inside the package) to that same tag — so
+# the packaged compose file always asks for exactly what was loaded, in EITHER mode.
+# This file (the repo template) is never touched; only the packaged copy is.
 
 services:
   postgres:

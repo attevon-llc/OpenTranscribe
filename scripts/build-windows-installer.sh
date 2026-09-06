@@ -160,10 +160,23 @@ extract_docker_images() {
     mapfile -t INFRASTRUCTURE_IMAGES < <(extract_infrastructure_images)
 
     # Add production application images
+    #
+    # OT_IMAGE_TAG (issue #781/N7), unset defaults to "latest" — today's behaviour, unchanged.
+    # Same fix as build-offline-package.sh's twin: without it, a developer packaging v0.5.0
+    # after v0.6.0 has shipped has no way to pin which version gets pulled/saved here.
+    #
+    # ⚠️ Unlike the Linux packager, copy_configuration() below does not re-sync image tags in
+    # the copied docker-compose.offline.yml (it has no such loop even for infrastructure
+    # images today). So setting OT_IMAGE_TAG for a Windows build pins what gets pulled/saved,
+    # but the packaged compose file still asks for `:latest` until that sync is added — a
+    # narrower version of the exact bug this fixes on Linux. Left as a known gap rather than
+    # silently "fixed" here: extending copy_configuration was out of this change's scope
+    # (issue #781 is the SBOM/checksum gate; N7 is one adjacent fix, not a Windows packaging
+    # overhaul), and the default (OT_IMAGE_TAG unset) is unaffected either way.
     APPLICATION_IMAGES=(
-        "davidamacey/opentranscribe-backend:latest"
-        "davidamacey/opentranscribe-frontend:latest"
-        "davidamacey/opentranscribe-docs:latest"
+        "davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}"
+        "davidamacey/opentranscribe-frontend:${OT_IMAGE_TAG:-latest}"
+        "davidamacey/opentranscribe-docs:${OT_IMAGE_TAG:-latest}"
     )
 
     # Combine all images

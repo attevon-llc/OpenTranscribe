@@ -16,8 +16,12 @@
 # [stages]: comma-separated subset to resume just the remaining stages (e.g.
 # "scan,rehearse" after test/build already passed) instead of re-running
 # everything -- ALWAYS intersected against SAFE_STAGES below, so a typo or a
-# copy-pasted dangerous stage name can never slip through; if the intersection
-# is empty, every safe stage runs (the original default behavior).
+# copy-pasted dangerous stage name can never slip through. An intersection
+# that comes back EMPTY is an error (issue #784 finding N6), not a fallback to
+# running every safe stage: that used to be the behavior, and it meant a typo
+# in [stages] (or every requested stage being a dangerous one, silently
+# dropped by the intersection) launched the full 45-120 minute rehearsal
+# instead of the handful of stages actually asked for.
 #
 # [force-scan-reason]: if given, passed as --force-scan "<reason>" -- for a
 # scan finding that is real but has no available fix (e.g. a base-image OS
@@ -44,7 +48,12 @@ if [[ -n "$REQUESTED_STAGES" ]]; then
       [[ "$r" == "$s" ]] && intersected="${intersected:+$intersected,}$r"
     done
   done
-  [[ -n "$intersected" ]] && STAGES_TO_RUN="$intersected"
+  if [[ -z "$intersected" ]]; then
+    echo "release-rehearse-safe.sh: none of the requested stages ($REQUESTED_STAGES) are in" >&2
+    echo "  SAFE_STAGES ($SAFE_STAGES) -- refusing to silently fall back to running all of them" >&2
+    exit 2
+  fi
+  STAGES_TO_RUN="$intersected"
 fi
 
 if [[ -n "$FORCE_SCAN_REASON" ]]; then

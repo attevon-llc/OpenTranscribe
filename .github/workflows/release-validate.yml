@@ -20,7 +20,11 @@ on:
   push:
     tags: ['v*']
   pull_request:
-    branches: [master, main]
+    # release/** added for #784: a hotfix PR merges onto release/<major>.<minor>
+    # and produces the next tag, so its metadata needs the same CI coverage as a
+    # PR onto master (issue #784, finding N2). The paths: filter below already
+    # covers what changes on that branch.
+    branches: [master, main, 'release/**']
     paths:
       - 'VERSION'
       - 'pyproject.toml'

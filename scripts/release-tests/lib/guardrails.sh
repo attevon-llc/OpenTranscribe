@@ -168,9 +168,9 @@ gr_check_mount_path() {
 }
 
 gr_check_container_names() {
-    # Refuse if any container belonging to the live `opentranscribe` compose
-    # PROJECT is currently RUNNING. We expect the caller to have stopped the
-    # live deployment first (via ./opentr.sh stop).
+    # Refuse if any container belonging to the live `opentranscribe` OR
+    # `transcribe-app` compose PROJECT is currently RUNNING. We expect the
+    # caller to have stopped the live deployment first (via ./opentr.sh stop).
     #
     # Filtered by the compose project label, not a bare name prefix: an
     # unrelated container on this host (e.g. a homepage/dashboard app named
@@ -181,25 +181,38 @@ gr_check_container_names() {
     # opentranscribe-postgres, etc. — never opentranscribe-homepage). A naive
     # `--filter 'name=^opentranscribe-'` reports a false positive that then
     # refuses to start for a reason that was never true.
-    local running
-    running=$(docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' || true)
-    if [[ -n "$running" ]]; then
-        gr_die "live opentranscribe-* containers still running:
-$running
+    #
+    # ⚠️ BOTH project labels, not just one (issue #783 finding N1) — the SAME
+    # ${OPENTR_STOP_PROJECT_LABEL:-opentranscribe} / ${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}
+    # mechanism scripts/release/10-preflight.sh's live-stack check uses, not a
+    # second definition. A repo clone's compose project defaults to the
+    # DIRECTORY name, so `./opentr.sh start dev` from this checkout runs under
+    # `transcribe-app`, while a curl/one-liner install runs under
+    # `opentranscribe` — checking only the latter let this refuse-if-running
+    # guard pass with the dev stack fully up.
+    local running running_alt running_all
+    running=$(docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' || true)
+    running_alt=$(docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' || true)
+    running_all="$(printf '%s\n%s' "$running" "$running_alt" | sed '/^$/d' | sort -u)"
+    if [[ -n "$running_all" ]]; then
+        gr_die "live opentranscribe-*/transcribe-app-* containers still running:
+$running_all
 
 Stop them first with: ./opentr.sh stop  (preserves all data)"
     fi
     # Stopped opentranscribe-* containers (from a previous live `down`) would
     # also collide on container_name during create — flag them so the caller
     # can decide whether to remove them.
-    local stopped
-    stopped=$(docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' || true)
-    if [[ -n "$stopped" ]]; then
-        gr_warn "stopped opentranscribe-* containers exist (will collide on create):"
-        echo "$stopped" >&2
+    local stopped stopped_alt stopped_all
+    stopped=$(docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' || true)
+    stopped_alt=$(docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' || true)
+    stopped_all="$(printf '%s\n%s' "$stopped" "$stopped_alt" | sed '/^$/d' | sort -u)"
+    if [[ -n "$stopped_all" ]]; then
+        gr_warn "stopped opentranscribe-*/transcribe-app-* containers exist (will collide on create):"
+        echo "$stopped_all" >&2
         gr_warn "the test driver will 'docker rm' them in phase 0 (no data loss — bind mounts persist)"
     fi
-    gr_ok "no live opentranscribe-* containers running"
+    gr_ok "no live opentranscribe-*/transcribe-app-* containers running"
 }
 
 gr_check_volume_names() {
@@ -226,6 +239,47 @@ gr_check_ports_free() {
         gr_die "required ports already in use: ${occupied[*]}"
     fi
     gr_ok "ports free: ${TEST_PORTS:-<none>}"
+}
+
+# gr_wait_for_stock_containers_gone [TIMEOUT_S]
+#   Poll until no container carries the stock 'opentranscribe' compose project label.
+#   Used by test-upgrade.sh's multi-hop dispatcher (issue #783) between hops: every
+#   scenario deliberately ends with its stack UP on the installer's stock container
+#   names and ports 5173-5180, so the NEXT hop's preflight would refuse to start while
+#   the previous one's containers are still going away asynchronously at the docker
+#   level (a container in 'Removing' still holds its port bindings).
+#
+#   ⚠️ The filter string below is BYTE-IDENTICAL to scripts/release/65-rehearse.sh's
+#   own `stock_containers()` on purpose (test_upgrade_multi_source.py asserts this) --
+#   both are asking the exact same question ("is a stock-named opentranscribe-* stack
+#   still around"), and a second, independently-typed copy of that filter string is a
+#   second chance for the two to quietly drift apart. Deliberately NOT shared as a
+#   sourced function: 65-rehearse.sh sources only criteria-lib.sh and has no dependency
+#   on this test-harness library, and giving a release STAGE a dependency on the TEST
+#   HARNESS to save a few lines is the wrong trade.
+#
+#   Captured, never `docker ps ... | grep -q .`: this library runs under
+#   `set -euo pipefail`, and `grep -q` closes the pipe on its first match, so `docker
+#   ps` can die with SIGPIPE mid-write and turn "the stack IS still up" into a
+#   reported all-clear.
+gr_wait_for_stock_containers_gone() {
+    local timeout_s="${1:-60}"
+    local waited=0
+    local names
+    while true; do
+        names="$(docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}')"
+        if [[ -z "$names" ]]; then
+            gr_ok "stock opentranscribe-* containers gone"
+            return 0
+        fi
+        if (( waited >= timeout_s )); then
+            gr_warn "stock opentranscribe-* containers did not go away within ${timeout_s}s:"
+            echo "$names" >&2
+            return 3
+        fi
+        sleep 2
+        waited=$(( waited + 2 ))
+    done
 }
 
 gr_check_disk_space() {

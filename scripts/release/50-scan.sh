@@ -27,6 +27,14 @@ BLUE='\033[0;34m'; NC='\033[0m'
 
 RED='\033[0;31m'; GREEN='\033[0;32m'
 
+# Leave a breadcrumb naming where THIS version's reports actually landed (issue #781).
+# Written unconditionally, as soon as OUT_DIR is resolved — before any scan runs, and
+# regardless of whether the scan later passes or fails — so 95-finish.sh's asset gate can
+# find the real reports even when OT_SCAN_DIR relocated them, instead of falling back to
+# ./security-reports and silently checking (or shipping) nothing.
+mkdir -p ".release/${VERSION}"
+printf '%s\n' "$OUT_DIR" > ".release/${VERSION}/scan-dir"
+
 # Severities from release-criteria.yaml; outcomes from here. Bidirectional — see
 # criteria-lib.sh. Exit 2 from the library means the pipeline's own wiring disagrees with
 # itself, which is distinct from (and does not disturb) this stage's 0/1/3 gate contract.

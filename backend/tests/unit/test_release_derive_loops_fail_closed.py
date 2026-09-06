@@ -37,6 +37,21 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RELEASE_DIR = REPO_ROOT / "scripts" / "release"
+# issue #783: the multi-hop upgrade dispatcher's own `done < <(ver_upgrade_sources)`
+# derive loop lives in scripts/release-tests/, not scripts/release/ -- this is the
+# "small generalisation of its path resolution" the loop-coverage test needed once a
+# derive loop existed outside the one directory it originally scanned.
+RELEASE_TESTS_DIR = REPO_ROOT / "scripts" / "release-tests"
+SEARCH_DIRS = (RELEASE_DIR, RELEASE_TESTS_DIR)
+
+
+def _find_script(name: str) -> Path:
+    for d in SEARCH_DIRS:
+        candidate = d / name
+        if candidate.exists():
+            return candidate
+    return RELEASE_DIR / name  # fall through to the original location for the message
+
 
 # (script, the accumulator the loop fills, a regex proving an emptiness guard exists)
 #
@@ -61,6 +76,16 @@ GUARDED_LOOPS: list[tuple[str, str, str]] = [
     # stage that PUBLISHES is the one where "passed having checked nothing" would cost
     # the most.
     ("80-publish.sh", "CHECK_RAN", r"CHECK_RAN\[\$bucket\]\s*==\s*0"),
+    # issue #783: `ver_upgrade_sources` reads git tags via a subshell (the same
+    # `docker manifest inspect`-backed derivation hazard as the loops above); a
+    # subshell failure is invisible to the `while read` loop consuming it, and would
+    # otherwise fall through as "no candidates" and silently defer to the
+    # single-source path with no record that the derivation itself may have failed.
+    (
+        "test-upgrade.sh",
+        "_ot_sources",
+        r"_ot_sources\[@\]\}\s*==\s*0",
+    ),
 ]
 
 
@@ -68,7 +93,7 @@ GUARDED_LOOPS: list[tuple[str, str, str]] = [
 def test_derive_loop_fails_closed_on_an_empty_list(
     script: str, accumulator: str, guard_re: str
 ) -> None:
-    path = RELEASE_DIR / script
+    path = _find_script(script)
     assert path.exists(), f"{script} is missing -- did the stage get renamed?"
     source = path.read_text(encoding="utf-8")
 
@@ -106,17 +131,20 @@ def test_the_guard_scanner_would_notice_a_regression() -> None:
 def test_every_derive_loop_in_the_release_dir_is_covered() -> None:
     """The list above must not go stale as new derive loops are added.
 
-    `security-scan.sh list-repos` / `docker-build-push.sh list-platforms` are the two
-    commands whose output shape drives stage work lists. Any NEW `done < <(...)` reading
-    either of them needs its own guard and its own row above -- otherwise this test
-    silently stops covering the thing it is named for.
+    `security-scan.sh list-repos` / `docker-build-push.sh list-platforms` /
+    `ver_upgrade_sources` are the commands whose output shape drives a work list. Any
+    NEW `done < <(...)` reading one of them needs its own guard and its own row above
+    -- otherwise this test silently stops covering the thing it is named for. Scans
+    BOTH scripts/release/ and scripts/release-tests/ (issue #783: the upgrade
+    dispatcher's derive loop lives in the latter).
     """
-    derive_cmds = ("list-repos", "list-platforms")
+    derive_cmds = ("list-repos", "list-platforms", "ver_upgrade_sources")
     found: set[tuple[str, str]] = set()
-    for path in sorted(RELEASE_DIR.glob("*.sh")):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if "done < <(" in line and any(cmd in line for cmd in derive_cmds):
-                found.add((path.name, line.strip()))
+    for d in SEARCH_DIRS:
+        for path in sorted(d.glob("*.sh")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if "done < <(" in line and any(cmd in line for cmd in derive_cmds):
+                    found.add((path.name, line.strip()))
 
     covered_scripts = {script for script, _, _ in GUARDED_LOOPS}
     uncovered = sorted(f"{name}: {line}" for name, line in found if name not in covered_scripts)

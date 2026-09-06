@@ -12,7 +12,7 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   — `ar` is RTL, driven by `document.documentElement.dir` from `stores/locale.ts`). This said
   11 and called `it` the one language the UI lacked; `it.json` exists and `it` is registered in
   `lib/i18n/languages.ts`, so the count and the caveat were both stale.
-  Node pinned to 22 (`.nvmrc`).
+  Node pinned to 26 (`.nvmrc`).
   Locales are **code-split, one chunk per language** — `src/lib/i18n/index.ts` globs them
   non-eagerly and `ensureLocaleLoaded()` fetches only the active one. Never static-import a
   locale JSON: that puts all ~2.3 MB back into the entry chunk. Only the active language is

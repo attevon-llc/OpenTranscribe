@@ -12,7 +12,14 @@
 
   export let files: MediaFile[] = [];
 
-  // Derive disabled states reactively from selected file objects
+  /* Derive disabled states reactively from selected file objects.
+   *
+   * Export and Delete act ON the selection, so with none they were a no-op that
+   * looked like a working control — export wrote an empty file, delete did
+   * nothing. The Process menu already gated its entries this way, so the
+   * toolbar was applying two different rules. Add to collection and Tags are
+   * deliberately NOT gated: with no selection they open their manager instead,
+   * which is a real action. */
   $: selectedFileObjects = files.filter(f => $galleryState.selectedFiles.has(f.uuid));
   $: hasCompletedSelected = selectedFileObjects.some(f => f.status === 'completed');
   $: hasFailedSelected = selectedFileObjects.some(f => f.status === 'error');
@@ -293,6 +300,7 @@
             <button
               class="dropdown-item"
               on:click={() => handleExport('srt')}
+              disabled={!hasCompletedSelected}
               title={$t('gallery.bulk.exportSrtTooltip')}
             >
               {$t('gallery.bulk.exportSrt')}
@@ -300,6 +308,7 @@
             <button
               class="dropdown-item"
               on:click={() => handleExport('webvtt')}
+              disabled={!hasCompletedSelected}
               title={$t('gallery.bulk.exportWebvttTooltip')}
             >
               {$t('gallery.bulk.exportWebvtt')}
@@ -307,6 +316,7 @@
             <button
               class="dropdown-item"
               on:click={() => handleExport('txt')}
+              disabled={!hasCompletedSelected}
               title={$t('gallery.bulk.exportTxtTooltip')}
             >
               {$t('gallery.bulk.exportTxt')}
@@ -320,6 +330,7 @@
       <button
         class="action-btn delete-btn"
         on:click={handleDeleteSelected}
+        disabled={$selectedCount === 0}
         title={$t('gallery.bulk.deleteTooltip')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

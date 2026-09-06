@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './skeleton-shimmer.css';
   import { t } from '$stores/locale';
 
   /**
@@ -112,48 +113,6 @@
     border-radius: 8px;
   }
 
-  /* ── Shimmer effect ── */
-  .shimmer {
-    position: relative;
-    overflow: hidden;
-    background: rgba(100, 116, 139, 0.12);
-  }
-
-  :global([data-theme='dark']) .shimmer {
-    background: rgba(148, 163, 184, 0.1);
-  }
-
-  .shimmer::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.35) 50%,
-      transparent 100%
-    );
-    transform: translateX(-100%);
-    animation: shimmerSlide 1.4s ease-in-out infinite;
-  }
-
-  :global([data-theme='dark']) .shimmer::after {
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.06) 50%,
-      transparent 100%
-    );
-  }
-
-  @keyframes shimmerSlide {
-    100% { transform: translateX(100%); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .shimmer::after { animation: none; background: none; }
-    .shimmer { background: rgba(100, 116, 139, 0.15); }
-  }
 
   /* ── Responsive ── */
   @media (max-width: 640px) {

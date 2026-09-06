@@ -1,0 +1,88 @@
+/**
+ * The loading shimmer — one definition, shared by every skeleton.
+ *
+ * `CardGridSkeleton`, `ListRowSkeleton` and `FileListSkeleton` each carried a
+ * byte-identical copy of this block, so the app had three places to change and
+ * three ways to end up with placeholders pulsing at different rates.
+ *
+ * ## It slides; it does not blink
+ *
+ * A highlight starts off the left edge (`translateX(-100%)`) and travels to off
+ * the right (`translateX(100%)`), which reads as "content streaming in". An
+ * opacity pulse — the obvious cheaper alternative — reads as "something is
+ * wrong with this element", so keep the transform.
+ *
+ * ## Why the highlight is nearly opaque white
+ *
+ * It used to be `rgba(255, 255, 255, 0.35)` over a `0.12` slate base. Composited
+ * on the app's white surface that is #eef0f2 sweeping to #f6f7f8 — about eight
+ * levels of difference, which is real (a frame diff proves the pixels change)
+ * and essentially invisible to a person. Deepening the base and lightening the
+ * sweep gives roughly 15 levels, which is the point of the animation.
+ *
+ * ## Why `linear` and not `ease-in-out`
+ *
+ * The travel runs from fully off the left edge to fully off the right, so an
+ * eased curve spends its slow head and tail with the highlight OUTSIDE the
+ * element and crosses the visible middle at peak speed. The placeholder then
+ * looks static for most of every cycle with an occasional flick — which is how
+ * this read on screen even though a frame diff confirmed it was animating.
+ * Linear keeps the highlight travelling at a constant rate, so it is on the
+ * element, and moving, for the whole time it is between the edges.
+ */
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background: rgba(100, 116, 139, 0.14);
+}
+
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.85) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: shimmerSlide 1.4s linear infinite;
+}
+
+[data-theme='dark'] .shimmer {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+[data-theme='dark'] .shimmer::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.14) 50%,
+    transparent 100%
+  );
+}
+
+@keyframes shimmerSlide {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Motion is decorative here: the placeholder still communicates "loading"
+   through its shape and the `aria-busy` on its container. */
+@media (prefers-reduced-motion: reduce) {
+  .shimmer::after {
+    animation: none;
+    background: none;
+  }
+
+  .shimmer {
+    background: rgba(100, 116, 139, 0.16);
+  }
+
+  [data-theme='dark'] .shimmer {
+    background: rgba(148, 163, 184, 0.14);
+  }
+}

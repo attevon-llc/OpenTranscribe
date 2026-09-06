@@ -45,7 +45,8 @@ function svelteFiles(dir: string, out: string[] = []): string[] {
 const KNOWN_DEAD_DARK_SELECTOR_FILES = [
   'components/FileUploader.svelte',
   'components/search/SearchTranscriptModal.svelte',
-  'routes/+page.svelte',
+  // `routes/+page.svelte` left this list when its hand-rolled modal chrome was
+  // replaced by BaseModal (#739): the dead `:global(.dark)` rules went with it.
 ];
 
 describe('dark-mode selector convention', () => {

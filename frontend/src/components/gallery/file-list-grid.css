@@ -1,0 +1,46 @@
+/**
+ * Column geometry for the gallery list view — the single definition of it.
+ *
+ * Shared by `VirtualList.svelte` (the real table) and `FileListSkeleton.svelte`
+ * (its loading placeholder). Two reasons this is a file rather than repeated
+ * declarations:
+ *
+ *  1. **The skeleton must not be able to drift from the table.** A placeholder
+ *     whose columns don't line up with the rows that replace it makes the
+ *     layout jump at exactly the moment the user starts reading it.
+ *  2. **The template used to be written out nine times** — header, link, and
+ *     selecting-mode link, at each of three breakpoints. That duplication had
+ *     already produced a live bug: `.file-list-header.selecting-mode` is
+ *     specificity (0,2,0) and the breakpoint overrides were `.file-list-header`
+ *     at (0,1,0), so the more-specific rule won regardless of source order and
+ *     the header kept its 8-column desktop template while the rows below it
+ *     dropped to 5. Selecting a file on a tablet misaligned every column.
+ *     Custom properties cascade by inheritance rather than specificity, so
+ *     redefining them per breakpoint applies to both.
+ *
+ * `--file-list-columns-selecting` is the header's template in selection mode:
+ * its checkbox is a cell *inside* the header grid, whereas a row's checkbox
+ * sits outside `.file-list-link`, so only the header gains a column.
+ */
+
+.file-list {
+  --file-list-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+  --file-list-columns-selecting: 40px 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px
+    110px;
+}
+
+/* Tablet: speakers and size columns are hidden. */
+@media (max-width: 1024px) {
+  .file-list {
+    --file-list-columns: 48px 1fr 90px 100px 110px;
+    --file-list-columns-selecting: 40px 48px 1fr 90px 100px 110px;
+  }
+}
+
+/* Phone: duration and date go too. */
+@media (max-width: 768px) {
+  .file-list {
+    --file-list-columns: 40px 1fr 80px;
+    --file-list-columns-selecting: 40px 40px 1fr 80px;
+  }
+}

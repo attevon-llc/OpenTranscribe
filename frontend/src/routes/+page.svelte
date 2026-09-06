@@ -2,7 +2,6 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { get } from 'svelte/store';
 
-  import { fade, scale } from 'svelte/transition';
   import { websocketStore } from '$stores/websocket';
   import { toastStore } from '$stores/toast';
   import { uploadsStore } from '$stores/uploads';
@@ -1497,7 +1496,7 @@
     lock, focus trap and `overscroll-behavior: contain` the copy never had — the
     last of which is why scrolling the wizard used to scroll the gallery behind it.
   -->
-  <div class="upload-modal-host">
+  <div class="fixed-size-modal-host">
     <BaseModal
       isOpen={showUploadModal}
       title={$t('nav.addMedia')}
@@ -1512,116 +1511,56 @@
 
 <!-- Collections Modal -->
 {#if showTagManagerModal}
-  <!-- Same chrome as the collections dialog below, deliberately: the two are
-       siblings (both attach metadata to files) and were reading as different
-       components. Sharing the wrapper means they cannot drift on backdrop,
-       radius, header or close affordance. -->
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="modal-backdrop"
-    role="presentation"
-    transition:fade={{ duration: 400 }}
-    on:click={() => (showTagManagerModal = false)}
-    on:wheel|preventDefault|self
-    on:touchmove|preventDefault|self
-    on:keydown={(e) => e.key === 'Escape' && (() => (showTagManagerModal = false))()}
-  >
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div
-      class="modal-container tag-manager-container"
-      role="dialog"
-      aria-modal="true"
-      tabindex="-1"
-      transition:scale={{ duration: 350, start: 0.9 }}
-      on:click|stopPropagation
-      on:keydown|stopPropagation
+  <!--
+    Sibling of the collections dialog below, deliberately: both attach metadata
+    to files and were reading as different components. Both now use BaseModal,
+    so they cannot drift on backdrop, radius, header or close affordance — and
+    both share the upload wizard's fixed dialog size (see
+    `.fixed-size-modal-host` in the styles below).
+  -->
+  <div class="fixed-size-modal-host">
+    <BaseModal
+      isOpen={showTagManagerModal}
+      title={$t('tags.manager.title')}
+      maxWidth="720px"
+      onClose={() => (showTagManagerModal = false)}
     >
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>{$t('tags.manager.title')}</h2>
-          <button
-            class="modal-close"
-            on:click={() => (showTagManagerModal = false)}
-            aria-label={$t('tags.manager.closeDialog')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <TagManagerModal on:close={() => (showTagManagerModal = false)} />
-        </div>
-      </div>
-    </div>
+      <TagManagerModal on:close={() => (showTagManagerModal = false)} />
+    </BaseModal>
   </div>
 {/if}
 
+<!-- Collections Modal -->
 {#if showCollectionsModal}
-  <div
-    class="modal-backdrop"
-    role="presentation"
-    transition:fade={{ duration: 400 }}
-    on:click={() => showCollectionsModal = false}
-    on:wheel|preventDefault|self
-    on:touchmove|preventDefault|self
-    on:keydown={(e) => e.key === 'Escape' && (() => showCollectionsModal = false)()}
-  >
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <!-- svelte-ignore a11y_interactive_supports_focus -->
-    <div
-      class="modal-container"
-      role="dialog"
-      aria-modal="true"
-      transition:scale={{ duration: 350, start: 0.9 }}
-      on:click|stopPropagation
-      on:keydown|stopPropagation
+  <div class="fixed-size-modal-host">
+    <BaseModal
+      isOpen={showCollectionsModal}
+      title={$t('gallery.manageCollections')}
+      maxWidth="720px"
+      onClose={() => (showCollectionsModal = false)}
     >
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>{$t('gallery.manageCollections')}</h2>
-          <button
-            class="modal-close"
-            on:click={() => showCollectionsModal = false}
-            aria-label={$t('gallery.closeCollectionsDialog')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <CollectionsPanel
-            selectedMediaIds={Array.from(selectedFiles)}
-            viewMode={selectedFiles.size > 0 ? 'add' : 'manage'}
-            onCollectionSelect={() => {
-              // Only close modal if we're in 'add' mode and actually adding files
-              if (selectedFiles.size > 0) {
-                showCollectionsModal = false;
-                // Keep selection — user may want to add to multiple collections or perform other actions
-              }
-              // In manage mode, keep the modal open for multiple collections
+      <CollectionsPanel
+          selectedMediaIds={Array.from(selectedFiles)}
+          viewMode={selectedFiles.size > 0 ? 'add' : 'manage'}
+          onCollectionSelect={() => {
+            // Only close modal if we're in 'add' mode and actually adding files
+            if (selectedFiles.size > 0) {
+              showCollectionsModal = false;
+              // Keep selection — user may want to add to multiple collections or perform other actions
+            }
+            // In manage mode, keep the modal open for multiple collections
 
-              // Refresh collections in filter
-              if (filterPanelRef && filterPanelRef.refreshCollections) {
-                filterPanelRef.refreshCollections();
-              }
-              // Refresh files if we're filtering by collection
-              if (selectedCollectionId !== null) {
-                fetchFiles();
-              }
-            }}
-          />
-        </div>
-      </div>
-    </div>
+            // Refresh collections in filter
+            if (filterPanelRef && filterPanelRef.refreshCollections) {
+              filterPanelRef.refreshCollections();
+            }
+            // Refresh files if we're filtering by collection
+            if (selectedCollectionId !== null) {
+              fetchFiles();
+            }
+          }}
+      />
+    </BaseModal>
   </div>
 {/if}
 
@@ -1695,107 +1634,15 @@
     padding-top: 0; /* Gallery header provides top spacing */
   }
 
-  /* Modal styles */
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-modal);
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-
-  :global(.dark) .modal-backdrop {
-    background: rgba(0, 0, 0, 0.7);
-  }
-
-  /* The tag manager is a two-pane working surface (list + inspector), so it
-     needs more room than the 720px collections dialog. Everything else about
-     the chrome is deliberately identical. */
-  .tag-manager-container {
-    width: 1100px;
-  }
-
-  .modal-container {
-    background: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    max-width: 90%;
-    max-height: 90vh;
-    width: 720px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  }
-
-  :global(.dark) .modal-container {
-    background: var(--background-color);
-    border-color: var(--border-color);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-  }
-
-  .modal-content {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .modal-close {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.5rem;
-    color: var(--text-secondary);
-    transition: all 0.2s ease;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .modal-close:hover {
-    color: var(--text-color);
-    background: var(--button-hover);
-  }
-
-  .modal-body {
-    flex: 1;
-    padding: 1.5rem;
-    overflow-y: auto;
-    /* Without this, scrolling past the end of a modal's content scrolls the
-       gallery underneath it (#739). BaseModal already sets this; these
-       hand-rolled dialogs did not. */
-    overscroll-behavior: contain;
-  }
-
-  /* The upload wizard steps have very different natural heights, so a
-     content-sized dialog resized and flickered on every Next/Back (#739).
-     Pinning the height keeps the stepper, content area and footer buttons
-     stationary across all six steps. Scoped to this dialog's host so the other
-     BaseModal consumers stay content-sized. */
-  .upload-modal-host :global(.modal-container) {
+  /* One fixed dialog size for the gallery's three big modals (upload, tag
+     manager, collections). The upload wizard's steps have very different
+     natural heights, so a content-sized dialog resized and flickered on every
+     Next/Back (#739); the tag and collections dialogs had the same
+     content-driven jump. Pinning the height keeps headers, content and footer
+     controls stationary, and keeps the three reading as one component rather
+     than three. Scoped to this host class so the smaller BaseModal consumers
+     (confirmations, pickers) stay content-sized. */
+  .fixed-size-modal-host :global(.modal-container) {
     height: min(90vh, 780px);
   }
 
@@ -1815,39 +1662,6 @@
       background-color: var(--background-color);
     }
 
-    /* Upload & Collections modals: fullscreen on mobile.
-       Raise above navbar (--z-navbar) so close button is reachable. */
-    .modal-backdrop {
-      align-items: stretch;
-      z-index: var(--z-modal);
-    }
-
-    .modal-container {
-      width: 100%;
-      max-width: 100% !important;
-      max-height: 100%;
-      max-height: 100dvh;
-      border-radius: 0;
-      margin: 0;
-    }
-
-    .modal-header {
-      padding: 1rem;
-      padding-top: calc(1rem + env(safe-area-inset-top, 0px));
-    }
-
-    .modal-header h2 {
-      font-size: 1.1rem;
-    }
-
-    .modal-body {
-      padding: 1rem;
-    }
-
-    .modal-close {
-      min-width: 44px;
-      min-height: 44px;
-    }
   }
 
 

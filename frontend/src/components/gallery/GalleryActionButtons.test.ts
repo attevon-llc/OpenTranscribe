@@ -111,3 +111,52 @@ describe('GalleryActionButtons — bulk tag entries', () => {
     expect(screen.queryByRole('button', { name: 'Tags' })).toBeNull();
   });
 });
+
+describe('GalleryActionButtons — actions that need a selection are disabled without one', () => {
+  const completed = [{ uuid: 'a', status: 'completed' }] as never;
+
+  it('disables every Organize export entry when nothing is selected', async () => {
+    render(GalleryActionButtons, { props: { files: [] } });
+    await openOrganizeMenu();
+
+    // Export writes a transcript for each selected file. With none selected it
+    // produced an empty download and no error — the Process menu already gates
+    // its entries on the selection, so this read as one toolbar with two rules.
+    for (const name of ['Export SRT', 'Export WebVTT', 'Export Text']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+    }
+  });
+
+  it('enables the export entries once a completed file is selected', async () => {
+    // The control: same markup, same menu, opposite outcome driven only by the
+    // selection — so the assertion above cannot be passing on a permanently
+    // disabled button.
+    select(['a']);
+    render(GalleryActionButtons, { props: { files: completed } });
+    await openOrganizeMenu();
+
+    for (const name of ['Export SRT', 'Export WebVTT', 'Export Text']) {
+      expect(screen.getByRole('button', { name })).not.toBeDisabled();
+    }
+  });
+
+  it('leaves export disabled when the selected file has no transcript yet', async () => {
+    select(['b']);
+    render(GalleryActionButtons, {
+      props: { files: [{ uuid: 'b', status: 'processing' }] as never },
+    });
+    await openOrganizeMenu();
+
+    expect(screen.getByRole('button', { name: 'Export SRT' })).toBeDisabled();
+  });
+
+  it('disables Delete with no selection and enables it with one', async () => {
+    const { unmount } = render(GalleryActionButtons, { props: { files: [] } });
+    expect(screen.getByTitle('Permanently delete the selected files')).toBeDisabled();
+    unmount();
+
+    select(['a']);
+    render(GalleryActionButtons, { props: { files: completed } });
+    expect(screen.getByTitle('Permanently delete the selected files')).not.toBeDisabled();
+  });
+});

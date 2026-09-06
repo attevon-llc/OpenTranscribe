@@ -114,10 +114,10 @@ rather than silently ignored.
 | `build` | Local images with the version build-args — **pushes nothing** | no |
 | `scan` | Trivy/Grype against the **locally built** images | no |
 | `rehearse` | Fresh-install and upgrade scenarios | no |
-| `tag` | Annotated tag + push | **yes** |
+| `tag` | Annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
 | `publish` | Multi-arch push of `:vX.Y.Z` only | **yes** |
 | `smoke` | Install from Docker Hub; verify both architectures | no |
-| `promote` | Move `:latest` **by digest** | **yes** |
+| `promote` | Move `:latest` **by digest** — refuses to move it backwards on a backport | **yes** |
 | `finish` | GitHub release + assets | **yes** |
 
 ### Ordering rules that must not be reordered
@@ -133,6 +133,78 @@ rather than silently ignored.
 - **`:latest` moves by `docker buildx imagetools create`**, a manifest copy — so
   `:latest` and `:vX.Y.Z` are provably the same bytes, not two builds that happen
   to share a source tree.
+- **The release branch is cut at `tag`, from the tag it just pushed — never from
+  `master`.** `70-tag.sh` derives `release/<major>.<minor>` from the version
+  (`v0.5.1` → `release/0.5`) after the tag exists, then asserts the tag is an
+  ancestor of `origin/release/<major>.<minor>` — asking origin, not the local
+  ref, because that is what a hotfix operator will clone. A tag cut from
+  somewhere other than this branch fails right here.
+- **`promote` refuses to move `:latest` backwards.** It resolves the newest
+  published release from git tags × Docker Hub before touching anything; if the
+  version being promoted is OLDER than that, the copy is skipped and `:latest`
+  is left alone — a pass, not a failure. See
+  [Cutting a patch release](#cutting-a-patch-release).
+
+## Cutting a patch release
+
+Entry condition: the release must be **revertible by pulling the previous
+image** — the same rule [the roadmap states for what belongs in a
+patch](roadmap.md#between-the-themed-releases-patch-releases), linked here
+rather than restated, because a duplicated "what goes in a patch" list is
+exactly the kind of table that rotted before (`expected-schemas.tsv`). If
+reverting needs a migration, a data fix, or a config change, it was never a
+patch.
+
+**The branch.** `release/<major>.<minor>` is cut from the **tag**, by
+`70-tag.sh`, the first time a minor ships — never from `master`. It is now
+covered by the same CI as `master` (pre-commit, seam-guard, and
+`release-validate.yml` all trigger on `release/**`), and by a GitHub ruleset
+that blocks force-push, deletion, and direct pushes without a PR.
+
+**The procedure**, verbatim:
+
+```bash
+git switch release/0.5
+git switch -c hotfix/NNN-short-description
+git cherry-pick -x <sha-from-master>
+gh pr create --base release/0.5
+# ... review, merge ...
+git switch release/0.5 && git pull
+./scripts/release.sh run 0.5.1 --patch
+```
+
+**What `--patch` does.** It VERIFIES a claim, it does not declare one — there is
+no flag anywhere that says "this is a patch" (see [Version facts are derived,
+never recorded](#version-facts-are-derived-never-recorded)). `release.sh`
+resolves the version delta against the highest git tag strictly below the
+target:
+
+- If that delta is not a patch (minor, major, or no base tag at all), `--patch`
+  is **misuse** — exit 2. Nothing about the release was evaluated, so this is a
+  wrong invocation, not a gate that ran and failed.
+- If it IS a patch, the diff since the base tag is checked against a widened
+  trigger set — an Alembic migration, a `Dockerfile`, a dependency-lock file, a
+  `docker-compose*.yml`, or either installer script. Touching any of them means
+  the rehearsal runs in full, exactly as without `--patch`. Touching none of
+  them means `rehearse`'s three scenarios are WAIVED, recorded in the ledger as
+  `status=done detail=patch-rehearsal-waived: <reason>` — a stable, greppable
+  prefix distinguishable from `--skip` (`status=skipped`) and
+  `--force-rehearse` (`status=overridden`). An empty diff against the base tag
+  is treated as a derivation failure, not "nothing changed", and refuses to
+  waive.
+
+**`:latest` and backports.** If the version being promoted is older than the
+newest already-published release — a hotfix landing after a newer minor has
+shipped — `promote` leaves `:latest` alone. That is asserted as a pass, not
+skipped as a non-check: moving `:latest` backwards would silently downgrade
+every existing user on their next pull.
+
+**The back-merge.** After the release, `release/<major>.<minor>` must be merged
+back into `master` so the hotfix isn't lost the next time that branch is
+touched. ⚠️ **This step has no gate today** — it is the part of the procedure
+most likely to be forgotten, and is flagged here as a known gap rather than a
+solved one. A scheduled workflow that fails when a `release/*` branch has
+commits unreachable from `master` would close it; none exists yet.
 
 ## Criteria live in one file
 
@@ -284,6 +356,14 @@ It deliberately **does not create the GitHub release**. Images are pushed from a
 workstation after the tag, and the installer resolves "latest" from the GitHub
 Release — publishing it in CI would point new users at a version whose images do
 not exist yet. `finish` owns that, and refuses until this workflow is green.
+
+**`release/**` gets the same coverage as `master`.** A hotfix PR merges onto
+`release/<major>.<minor>`, not `master`, and that branch produces the next tag
+— it must not be able to land machine-unreviewed code. `pre-commit.yml` and
+`release-validate.yml` trigger on pull requests into `release/**`; `seam-guard.yml`
+triggers on both pull requests into it and pushes to it, matching how it already
+covers `master`. A GitHub ruleset on `release/*` additionally blocks force-push,
+branch deletion, and direct pushes without a PR.
 
 :::note[Why publishing is local]
 The backend production image is ~13.8 GB. GitHub's free runners cannot build it.

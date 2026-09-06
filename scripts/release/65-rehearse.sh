@@ -33,6 +33,10 @@ cd "$REPO_ROOT" || exit 2
 
 VERSION="${1:-${RELEASE_VERSION:-}}"
 JSON_OUT="${JSON_OUT:-false}"
+# Set by release.sh's patch_prepare() (scripts/release/patch-lib.sh) when
+# --patch resolved a waivable patch delta. Empty on every other invocation, so
+# the normal path below is completely unaffected.
+PATCH_SKIP_REASON="${OT_PATCH_SKIP_REASON:-}"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
 # Severities come from release-criteria.yaml; the pass/fail outcome comes from here. See
@@ -110,29 +114,38 @@ teardown_scenario() {
     return 0
 }
 
-echo -e "${BLUE}Scenario A — fresh install${NC}" >&2
-./scripts/release-tests/test-fresh-install.sh --yes || fresh_rc=$?
-
-teardown_scenario "Scenario A" ./scripts/release-tests/test-fresh-install.sh || upgrade_rc=$?
-
-if [[ $upgrade_rc -eq 0 ]]; then
-    echo -e "${BLUE}Scenario B — upgrade from the previous published release${NC}" >&2
-    REQUIRE_PREVIOUS=1 ./scripts/release-tests/test-upgrade.sh --yes || upgrade_rc=$?
-fi
-
-# Scenario C runs regardless of B's assertion verdict but not through a broken teardown:
-# a failed upgrade is a finding about the upgrade, and lite is an independent deployment
-# shape whose evidence is worth having either way. A stack that would not release its
-# ports, though, means C cannot bind and would fail for an unrelated reason.
-if [[ $upgrade_rc -eq 3 ]]; then
-    lite_rc=3
+if [[ -n "$PATCH_SKIP_REASON" ]]; then
+    # --patch waived the rehearsal (scripts/release/patch-lib.sh decided the
+    # diff touches none of PATCH_REHEARSAL_TRIGGERS). fresh_rc/upgrade_rc/
+    # lite_rc stay 0 from their init above, so the aggregation below is
+    # completely unaffected — this is a WAIVER, not three scenarios that
+    # happened to pass.
+    echo -e "${YELLOW}--patch: rehearsal scenarios WAIVED — ${PATCH_SKIP_REASON}${NC}" >&2
 else
-    teardown_scenario "Scenario B" ./scripts/release-tests/test-upgrade.sh || lite_rc=$?
-fi
+    echo -e "${BLUE}Scenario A — fresh install${NC}" >&2
+    ./scripts/release-tests/test-fresh-install.sh --yes || fresh_rc=$?
 
-if [[ $lite_rc -eq 0 ]]; then
-    echo -e "${BLUE}Scenario C — lite (CPU-only) deployment, mocked cloud ASR + mocked LLM${NC}" >&2
-    ./scripts/release-tests/test-lite-mode.sh --yes || lite_rc=$?
+    teardown_scenario "Scenario A" ./scripts/release-tests/test-fresh-install.sh || upgrade_rc=$?
+
+    if [[ $upgrade_rc -eq 0 ]]; then
+        echo -e "${BLUE}Scenario B — upgrade from the previous published release${NC}" >&2
+        REQUIRE_PREVIOUS=1 ./scripts/release-tests/test-upgrade.sh --yes || upgrade_rc=$?
+    fi
+
+    # Scenario C runs regardless of B's assertion verdict but not through a broken teardown:
+    # a failed upgrade is a finding about the upgrade, and lite is an independent deployment
+    # shape whose evidence is worth having either way. A stack that would not release its
+    # ports, though, means C cannot bind and would fail for an unrelated reason.
+    if [[ $upgrade_rc -eq 3 ]]; then
+        lite_rc=3
+    else
+        teardown_scenario "Scenario B" ./scripts/release-tests/test-upgrade.sh || lite_rc=$?
+    fi
+
+    if [[ $lite_rc -eq 0 ]]; then
+        echo -e "${BLUE}Scenario C — lite (CPU-only) deployment, mocked cloud ASR + mocked LLM${NC}" >&2
+        ./scripts/release-tests/test-lite-mode.sh --yes || lite_rc=$?
+    fi
 fi
 
 # Record each scenario against its declared criterion.
@@ -141,20 +154,30 @@ fi
 # teardown would not release the ports (rc 3): it did not fail, it was never attempted, and
 # against a blocking criterion the library stops the stage exactly as a failure would. A
 # declined confirmation (rc 4) is the operator's choice, so it is also not-measured rather
-# than a failure of the release.
+# than a failure of the release. A --patch waiver is the SAME "did not run" fact — rc stays
+# 0 from the init above (nothing ran to fail), so the waiver reason must override rc, or a
+# waived scenario would misreport as a pass.
 scenario_outcome() {
-    case "$1" in
+    local rc="$1" patch_reason="${2:-}"
+    if [[ -n "$patch_reason" ]]; then
+        echo not-measured
+        return
+    fi
+    case "$rc" in
         0) echo pass ;;
         3|4) echo not-measured ;;
         *) echo fail ;;
     esac
 }
-record fresh-install "$(scenario_outcome $fresh_rc)" "test-fresh-install.sh rc=$fresh_rc" \
-    "read the REPORT.md under its TEST_ROOT"
-record upgrade-from-previous "$(scenario_outcome $upgrade_rc)" "test-upgrade.sh rc=$upgrade_rc" \
-    "read the REPORT.md under its TEST_ROOT"
-record lite-mode "$(scenario_outcome $lite_rc)" "test-lite-mode.sh rc=$lite_rc" \
-    "read the REPORT.md under its TEST_ROOT"
+record fresh-install "$(scenario_outcome "$fresh_rc" "$PATCH_SKIP_REASON")" \
+    "${PATCH_SKIP_REASON:-test-fresh-install.sh rc=$fresh_rc}" \
+    "read the REPORT.md under its TEST_ROOT" "${PATCH_SKIP_REASON:+waived}"
+record upgrade-from-previous "$(scenario_outcome "$upgrade_rc" "$PATCH_SKIP_REASON")" \
+    "${PATCH_SKIP_REASON:-test-upgrade.sh rc=$upgrade_rc}" \
+    "read the REPORT.md under its TEST_ROOT" "${PATCH_SKIP_REASON:+waived}"
+record lite-mode "$(scenario_outcome "$lite_rc" "$PATCH_SKIP_REASON")" \
+    "${PATCH_SKIP_REASON:-test-lite-mode.sh rc=$lite_rc}" \
+    "read the REPORT.md under its TEST_ROOT" "${PATCH_SKIP_REASON:+waived}"
 
 # Both halves of the contract: every declared criterion was recorded above.
 criteria_assert_all_checked

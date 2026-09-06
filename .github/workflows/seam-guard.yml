@@ -22,9 +22,12 @@ name: Seam Guard
 on:
   workflow_dispatch:
   pull_request:
-    branches: [master, main, develop]
+    # release/** added for #784: a hotfix PR merges onto release/<major>.<minor>,
+    # which produces the next tag, so it must never take machine-unreviewed code
+    # (issue #784, finding N2).
+    branches: [master, main, develop, 'release/**']
   push:
-    branches: [master, main, develop]
+    branches: [master, main, develop, 'release/**']
   # Required for a merge queue. A queued entry runs its checks against
   # master-plus-the-preceding-queue, NOT against the PR branch — so a required
   # check whose workflow lacks this trigger simply never reports, and the merge

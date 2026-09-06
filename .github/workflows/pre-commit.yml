@@ -3,7 +3,10 @@ name: Pre-commit Checks
 on:
   workflow_dispatch:  # Manual triggering always available
   pull_request:
-    branches: [master, main, develop]
+    # release/** added for #784: a hotfix PR merges onto release/<major>.<minor>,
+    # not master, and that branch produces the next tag -- it must never take
+    # machine-unreviewed code (issue #784, finding N2).
+    branches: [master, main, develop, 'release/**']
   # push intentionally left off to respect runner-resource limits — PRs are the gate.
   # push:
   #   branches: [master, main, develop]

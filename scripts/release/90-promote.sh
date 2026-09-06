@@ -54,6 +54,47 @@ if (( list_rc != 0 )); then
 fi
 record published-repo-list-derived pass
 
+# ─────────────────────────────────── :latest regression guard (issue #784) ──
+#
+# Not a hazard #784's own issue text names — one it would otherwise CREATE. A
+# hotfix cut from an old release/<minor> branch, after a NEWER minor has
+# already published, would on the standard pipeline move :latest BACKWARDS —
+# silently downgrading every existing user on their next pull. `imagetools
+# create` is a manifest copy, not a rebuild, and it is not undoable, so this
+# runs before the loop touches anything.
+#
+# shellcheck source=scripts/release/patch-lib.sh
+source "$SCRIPT_DIR/patch-lib.sh"
+
+newest="$(newest_published_release)" || {
+    record latest-target-determined fail \
+        "could not resolve the newest published release from git tags x Docker Hub" \
+        "check network access / DOCKERHUB_USERNAME, then re-run promote"
+    # Not-measured, deliberately: the check below never ran either, so nothing
+    # about it is known — "I don't know whether this is a downgrade" is not a
+    # licence to move a tag every user pulls. Precondition (exit 3), not a
+    # gate that ran and found a real regression.
+    record latest-not-regressed not-measured "the newest published release is unknown"
+    echo -e "${RED}cannot determine the newest published release — refusing to move :latest blind${NC}" >&2
+    if [[ "$JSON_OUT" == "true" ]]; then
+        printf '{"stage":"promote","version":"%s","status":"fail","criteria":[%s],"next":["resolve Docker Hub / git-tag access, then re-run promote"]}\n' \
+            "$VERSION" "$(criteria_json)"
+    fi
+    exit 3
+}
+record latest-target-determined pass "newest published release: $newest"
+
+IS_BACKPORT=false
+if ver_lt "$VERSION" "$newest"; then
+    IS_BACKPORT=true
+    echo -e "${YELLOW}${VERSION} is older than the newest published release (${newest}) — this is a backport${NC}" >&2
+    echo -e "${YELLOW}  :latest will be left pointing at ${newest}; that is a PASS, not a failure${NC}" >&2
+    record latest-not-regressed pass \
+        "$VERSION < $newest — :latest is correctly left alone (backport, not a regression)"
+else
+    record latest-not-regressed pass "$VERSION >= $newest — promoting will not move :latest backwards"
+fi
+
 fail=0
 repos_seen=0
 unpublished=()      # repos with no :$VERSION on the Hub at all
@@ -71,6 +112,15 @@ while IFS=$'\t' read -r component img; do
     docker manifest inspect "${img}:${VERSION}" >/dev/null 2>&1 || {
         echo -e "${RED}FAIL  ${component}: no ${img}:${VERSION} published — cannot promote${NC}" >&2
         unpublished+=("$repo"); fail=1; continue; }
+
+    # version-tag-published is still asserted on the backport path (we just proved the tag
+    # exists, above) — only the :latest MOVE is skipped. This is the load-bearing guard: it
+    # fires even when an operator invokes `./scripts/release.sh promote vX.Y.Z --yes` directly,
+    # bypassing release.sh's own --patch bookkeeping entirely.
+    if [[ "$IS_BACKPORT" == "true" ]]; then
+        echo -e "${YELLOW}SKIP  ${repo}: ${VERSION} is a backport older than :latest (${newest}) — not moving :latest${NC}" >&2
+        continue
+    fi
 
     echo -e "${YELLOW}promoting ${img}:${VERSION} -> :latest${NC}" >&2
     docker buildx imagetools create -t "${img}:latest" "${img}:${VERSION}" || {
@@ -104,7 +154,21 @@ else
     # A repo whose :$VERSION was missing was never offered to imagetools, so it is not
     # evidence either way about the copy — reporting it as a copy failure would blame the
     # wrong step. Only a create that actually ran and failed counts.
-    if (( ${#copy_failed[@]} )); then
+    #
+    # IS_BACKPORT is checked FIRST, in EACH chain independently (not merged into one): with
+    # IS_BACKPORT=true, copy_failed/digest_mismatch are always empty (the loop `continue`s
+    # before attempting either), so falling through to the pre-existing `else` would record a
+    # PASS for a copy and a digest comparison that never ran — the "criterion recorded while
+    # nothing happened" shape #784 exists to prevent, inverted (a false pass, not a false
+    # clean scan). Keeping the two chains independent (rather than one merged if/elif) matters
+    # because a mixed run — one repo's copy failing while another repo's digest mismatches —
+    # must still report BOTH failures; a single merged chain would let a copy_failed entry
+    # mask an unrelated digest_mismatch on a different repo.
+    if [[ "$IS_BACKPORT" == "true" ]]; then
+        record latest-copied not-measured \
+            "${VERSION} is a backport older than :latest (${newest}) — imagetools create intentionally not run" \
+            "" waived
+    elif (( ${#copy_failed[@]} )); then
         record latest-copied fail "imagetools create failed for: ${copy_failed[*]}"
     elif (( ${#unpublished[@]} == repos_seen )); then
         record latest-copied not-measured "nothing was published, so no copy was attempted"
@@ -112,7 +176,11 @@ else
         record latest-copied pass
     fi
 
-    if (( ${#digest_mismatch[@]} )); then
+    if [[ "$IS_BACKPORT" == "true" ]]; then
+        record latest-digest-matches-version not-measured \
+            "${VERSION} is a backport — :latest was not touched, so there is nothing to compare" \
+            "" waived
+    elif (( ${#digest_mismatch[@]} )); then
         record latest-digest-matches-version fail \
             ":latest and :${VERSION} disagree for: ${digest_mismatch[*]}"
     elif (( ${#unpublished[@]} == repos_seen )); then
@@ -122,8 +190,8 @@ else
     fi
 fi
 
-# Both halves of the contract. Reachable on every path that gets here — the loop records an
-# outcome for all four criteria regardless of `fail`, so this cannot turn a gate failure (1)
+# Both halves of the contract. Reachable on every path that gets here — the code above records
+# an outcome for all six criteria regardless of `fail`, so this cannot turn a gate failure (1)
 # into a wiring-misuse exit (2).
 criteria_assert_all_checked
 

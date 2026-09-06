@@ -33,6 +33,8 @@
 #   ./scripts/release.sh run 0.5.0 --skip scan,rehearse
 #   ./scripts/release.sh scan 0.5.0 --force-scan "reason recorded in the ledger"
 #   ./scripts/release.sh run 0.5.0 --from build --dry-run
+#   ./scripts/release.sh run 0.5.1 --patch      # from release/0.5 — see releasing.md's
+#                                                # "Cutting a patch release"
 
 set -euo pipefail
 
@@ -42,6 +44,8 @@ cd "$REPO_ROOT"
 
 # shellcheck source=release-tests/lib/versions.sh
 source "$SCRIPT_DIR/release-tests/lib/versions.sh"
+# shellcheck source=release/patch-lib.sh
+source "$SCRIPT_DIR/release/patch-lib.sh"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
 
@@ -236,7 +240,17 @@ run_stage() {
 
     case $rc in
         0)
-            ledger_record "$version" "$stage" "done"; ok "$stage" ;;
+            # A patch's --patch waived the rehearsal scenarios rather than
+            # actually running them — record why, distinct from `--skip`
+            # (detail=--skip) and `--force-rehearse` (status=overridden). Only
+            # `rehearse` can carry this: OT_PATCH_SKIP_REASON is set by
+            # patch_prepare() specifically to control 65-rehearse.sh's own
+            # scenario guard, and is empty for every other stage.
+            local done_detail=""
+            if [[ "$stage" == "rehearse" && -n "${OT_PATCH_SKIP_REASON:-}" ]]; then
+                done_detail="patch-rehearsal-waived: ${OT_PATCH_SKIP_REASON}"
+            fi
+            ledger_record "$version" "$stage" "done" "$done_detail"; ok "$stage" ;;
         "$EXIT_MISUSE")
             ledger_record "$version" "$stage" "failed" "misuse"
             err "$stage: bad invocation" ;;
@@ -287,8 +301,42 @@ run_stage() {
     return $rc
 }
 
+# Resolves --patch exactly once, for whichever arm invoked it (`run`, which
+# loops every stage itself, or a single-stage command that calls run_stage
+# directly) — see scripts/release/patch-lib.sh for why "is this a patch" has
+# to be one answer rather than three.
+#
+# Exit MISUSE (2) when the delta is not a patch at all: nothing about the
+# release was evaluated yet, so `--patch` on e.g. a minor bump is a wrong
+# invocation, not a gate that ran and failed.
+#
+# A patch delta whose diff does NOT satisfy the (widened) waiver trigger set is
+# NOT a misuse — OT_PATCH_SKIP_REASON simply stays unset and `rehearse` runs in
+# full, identical to not passing --patch at all.
+patch_prepare() {
+    local version="$1"
+    [[ "$PATCH_MODE" == "true" ]] || return 0
+
+    local base kind
+    base="$(patch_base_tag "$version")" || base=""
+    kind="$(patch_release_kind "$version" "$base")"
+    if [[ "$kind" != "patch" ]]; then
+        err "--patch: $version is a '$kind' release relative to ${base:-<no base tag found>} — not a patch"
+        exit $EXIT_MISUSE
+    fi
+
+    local reason
+    if reason="$(patch_rehearsal_waivable "$version")"; then
+        log "--patch: rehearsal waivable — $reason"
+        export OT_PATCH_SKIP_REASON="$reason"
+    else
+        warn "--patch: rehearsal NOT waivable for $version vs $base — it will run in full"
+    fi
+}
+
 cmd_run() {
     local version="$1"; shift
+    patch_prepare "$version"
     local -a to_run=()
     local started=false
 
@@ -318,7 +366,7 @@ cmd_run() {
 COMMAND="${1:-}"; shift || true
 
 SKIP_STAGES=""; ONLY_STAGES=""; FROM_STAGE=""
-DRY_RUN=false; JSON_OUT=false; ASSUME_YES=false
+DRY_RUN=false; JSON_OUT=false; ASSUME_YES=false; PATCH_MODE=false
 POSITIONAL=()
 # stage -> the reason its failure was accepted. Consulted by run_stage.
 declare -A FORCE_REASON=()
@@ -331,6 +379,7 @@ while (( $# > 0 )); do
         --dry-run) DRY_RUN=true; shift ;;
         --json)    JSON_OUT=true; shift ;;
         --yes)     ASSUME_YES=true; shift ;;
+        --patch)   PATCH_MODE=true; shift ;;
         # --force-<stage> "reason". The reason is REQUIRED: an override with no
         # recorded justification is the thing this whole mechanism exists to
         # prevent, so there is deliberately no bare --force.
@@ -363,7 +412,9 @@ case "$COMMAND" in
         ;;
     preflight|bump|verify|test|build|scan|rehearse|tag|publish|smoke|promote|finish)
         version="${POSITIONAL[0]:-$(ver_to_version)}"
-        run_stage "$(ver_normalize "$version")" "$COMMAND"
+        version="$(ver_normalize "$version")"
+        patch_prepare "$version"
+        run_stage "$version" "$COMMAND"
         ;;
     *)
         err "unknown command: $COMMAND"

@@ -211,6 +211,11 @@ while still being wrong, because the development host could not exercise them.
   asserted.
 - Eviction and concurrency defaults cite a **measurement**, not a chosen number.
 - Image size and cold-start time are measured before and after, and published.
+- **Live transcription holds up under a real meeting, not a file replay**, and live speaker
+  identification resolves against existing profiles rather than inventing new ones. This lands
+  here because it is the payoff of the engine work, not a separate capability: it needs a
+  streaming-capable engine and real-time embedding matching, which is exactly what replacing the
+  inference stack provides.
 - Every row of the architecture-blocked verification matrix is either verified on real hardware or
   restated with the specific hardware still missing. A row may stay open. It may not stay vague.
 
@@ -345,7 +350,6 @@ other local-engine work.
 - The public API surface is documented and versioned, and breaking it requires a major bump.
 - OpenTranscribe runs natively on Apple Silicon, using the GPU and Neural Engine, without Docker
   in the inference path.
-- Live transcription holds up under a real meeting, not a file replay.
 
 ---
 

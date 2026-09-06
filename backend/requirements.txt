@@ -104,7 +104,7 @@ tqdm==4.70.0
 # whisperx ships a huggingface-hub>=1.0 compatible release.
 # Floor raised to 4.51.3 (gliner's actual "requires_dist" floor) now that gliner
 # is also --no-deps below and no longer has pip enforcing that constraint for us.
-transformers==4.57.6
+transformers==5.10.1
 huggingface-hub==0.36.2
 # Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
 # virtualenv) — pinned after the dependency-parity gate caught the venv and the

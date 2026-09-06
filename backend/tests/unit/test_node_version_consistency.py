@@ -420,16 +420,27 @@ def _vitest_scripts(package_json: Path) -> dict[str, str]:
     }
 
 
+def _webstorage_flag_findings(package_json: Path, major: int) -> list[str]:
+    """Return the vitest scripts that need the webstorage flag and lack it.
+
+    The real gate, extracted so the controls below can drive THIS function rather than
+    re-implementing its comparison. A control that asserts on `_vitest_scripts` output
+    instead proves only that the *helper* works: strip the `assert` out of the test that
+    consumes it and such a control stays green, which is the "detector that cannot fire"
+    shape `scripts/audit-tests.py` exists to reject.
+    """
+    if major < NODE_WEBSTORAGE_FIRST_AFFECTED_MAJOR:
+        return []
+    scripts = _vitest_scripts(package_json)
+    if not scripts:
+        raise AssertionError(f"found no vitest scripts in {package_json} — the detector is blind")
+    return sorted(name for name, body in scripts.items() if NODE_WEBSTORAGE_FLAG not in body)
+
+
 def test_vitest_scripts_disable_node_webstorage_when_pinned_major_needs_it() -> None:
     """On Node >=26 every vitest script must disable Node's own webstorage."""
     major = _read_nvmrc(REPO_ROOT / "frontend" / ".nvmrc")
-    scripts = _vitest_scripts(FRONTEND_PACKAGE_JSON)
-    assert scripts, "found no vitest scripts in frontend/package.json — the detector is blind"
-
-    if major < NODE_WEBSTORAGE_FIRST_AFFECTED_MAJOR:
-        return
-
-    missing = sorted(name for name, body in scripts.items() if NODE_WEBSTORAGE_FLAG not in body)
+    missing = _webstorage_flag_findings(FRONTEND_PACKAGE_JSON, major)
     assert not missing, (
         f"frontend/.nvmrc pins Node {major}, so these vitest scripts need "
         f"NODE_OPTIONS={NODE_WEBSTORAGE_FLAG}: {missing}. Without it Node's undefined "
@@ -440,21 +451,25 @@ def test_vitest_scripts_disable_node_webstorage_when_pinned_major_needs_it() -> 
 
 
 def test_vitest_flag_detector_must_fire_on_a_script_missing_the_flag(tmp_path: Path) -> None:
-    """Must-fire control: a vitest script without the flag is detectable."""
+    """Must-fire control: drives the real gate, not the helper it calls."""
     pkg = tmp_path / "package.json"
     pkg.write_text(json.dumps({"scripts": {"test": "vitest run"}}), encoding="utf-8")
-    scripts = _vitest_scripts(pkg)
-    assert scripts == {"test": "vitest run"}
-    assert NODE_WEBSTORAGE_FLAG not in scripts["test"]
+    assert _webstorage_flag_findings(pkg, NODE_WEBSTORAGE_FIRST_AFFECTED_MAJOR) == ["test"]
 
 
 def test_vitest_flag_detector_must_stay_clean_on_a_flagged_script(tmp_path: Path) -> None:
-    """Must-stay-clean control: a correctly flagged script reports nothing."""
+    """Must-stay-clean control: a correctly flagged script yields no findings."""
     pkg = tmp_path / "package.json"
     body = f"NODE_OPTIONS={NODE_WEBSTORAGE_FLAG} vitest run"
     pkg.write_text(json.dumps({"scripts": {"test": body}}), encoding="utf-8")
-    scripts = _vitest_scripts(pkg)
-    assert NODE_WEBSTORAGE_FLAG in scripts["test"]
+    assert _webstorage_flag_findings(pkg, NODE_WEBSTORAGE_FIRST_AFFECTED_MAJOR) == []
+
+
+def test_vitest_flag_gate_lapses_below_the_affected_major(tmp_path: Path) -> None:
+    """Below Node 26 the flag is unnecessary, so an unflagged script is not a finding."""
+    pkg = tmp_path / "package.json"
+    pkg.write_text(json.dumps({"scripts": {"test": "vitest run"}}), encoding="utf-8")
+    assert _webstorage_flag_findings(pkg, NODE_WEBSTORAGE_FIRST_AFFECTED_MAJOR - 1) == []
 
 
 def test_vitest_script_detector_ignores_non_vitest_scripts(tmp_path: Path) -> None:

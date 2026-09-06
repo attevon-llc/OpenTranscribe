@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from '../../stores/locale';
-  import { DatePicker } from '@svelte-plugins/datepicker';
+  import DateRangePicker from '$components/ui/DateRangePicker.svelte';
   import { format } from 'date-fns';
 
   // Two-way bound filter state (parent owns the source of truth + refetch reactivity)
@@ -11,21 +11,16 @@
   export let taskDateTo: string;
   export let fileStatus: any = null;
 
-  // Date picker state
-  let datePickerOpen = false;
-  let dpStartDate: Date | string | null = null;
-  let dpEndDate: Date | string | null = null;
+  /* The task query is keyed on `yyyy-MM-dd` strings, so the Date-based shared
+     control is converted at this boundary. Parsed at an explicit local
+     midnight: `new Date('2026-09-05')` is parsed as UTC and lands on the
+     previous day for anyone west of Greenwich. */
+  $: dateFrom = taskDateFrom ? new Date(`${taskDateFrom}T00:00:00`) : null;
+  $: dateTo = taskDateTo ? new Date(`${taskDateTo}T00:00:00`) : null;
 
-  function handleDatePickerChange(event: { startDate: Date | string; endDate?: Date | string }) {
-    const start = event.startDate ? new Date(event.startDate) : null;
-    const end = event.endDate ? new Date(event.endDate) : null;
-    if (start && !isNaN(start.getTime())) {
-      taskDateFrom = format(start, 'yyyy-MM-dd');
-    }
-    if (end && !isNaN(end.getTime())) {
-      taskDateTo = format(end, 'yyyy-MM-dd');
-      datePickerOpen = false;
-    }
+  function handleDateRangeChange(event: CustomEvent<{ from: Date | null; to: Date | null }>) {
+    taskDateFrom = event.detail.from ? format(event.detail.from, 'yyyy-MM-dd') : '';
+    taskDateTo = event.detail.to ? format(event.detail.to, 'yyyy-MM-dd') : '';
   }
 </script>
 
@@ -60,38 +55,8 @@
       <option value="older">{$t('fileStatus.older')}</option>
     </select>
 
-    <div class="date-picker-inline">
-      <DatePicker
-        isRange
-        enableFutureDates
-        includeFont={false}
-        bind:isOpen={datePickerOpen}
-        bind:startDate={dpStartDate}
-        bind:endDate={dpEndDate}
-        onDateChange={handleDatePickerChange}
-      >
-        <button
-          type="button"
-          class="date-trigger-btn"
-          on:click={() => datePickerOpen = !datePickerOpen}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
-          </svg>
-          <span class="date-text">
-            {#if taskDateFrom && taskDateTo}
-              {taskDateFrom} — {taskDateTo}
-            {:else if taskDateFrom}
-              {taskDateFrom} — ...
-            {:else}
-              {$t('filter.selectDateRange')}
-            {/if}
-          </span>
-        </button>
-      </DatePicker>
+    <div class="date-picker-host">
+      <DateRangePicker from={dateFrom} to={dateTo} on:change={handleDateRangeChange} />
     </div>
 
     {#if taskFilter !== 'all' || taskTypeFilter !== 'all' || taskAgeFilter !== 'all' || taskDateFrom || taskDateTo}
@@ -103,9 +68,6 @@
           taskAgeFilter = 'all';
           taskDateFrom = '';
           taskDateTo = '';
-          dpStartDate = null;
-          dpEndDate = null;
-          datePickerOpen = false;
         }}
         title={$t('fileStatus.clearFilters')}
       >
@@ -221,102 +183,11 @@
     outline-offset: 2px;
   }
 
-  .date-picker-inline {
-    position: relative;
-  }
-
-  .date-trigger-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    height: 30px;
-    box-sizing: border-box;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    font-size: 0.8125rem;
-    font-family: inherit;
-    cursor: pointer;
-    transition: border-color 0.15s ease;
-    white-space: nowrap;
-  }
-
-  .date-trigger-btn:hover {
-    border-color: var(--primary-color);
-  }
-
-  .date-text {
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-  }
-
-  .date-picker-inline :global(.datepicker) {
-    font-family: inherit;
-  }
-
-  .date-picker-inline :global(.datepicker .calendars-container) {
-    position: absolute !important;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 100;
-    width: 280px !important;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-    --datepicker-container-background: var(--surface-color, #fff);
-    --datepicker-container-border: 1px solid var(--border-color, #e8e9ea);
-    --datepicker-container-border-radius: 10px;
-    --datepicker-container-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-    --datepicker-color: var(--text-color, #21333d);
-    --datepicker-border-color: var(--border-color, #e8e9ea);
-    --datepicker-state-active: var(--primary-color, #3b82f6);
-    --datepicker-state-hover: var(--hover-color, #e7f7fc);
-    --datepicker-font-size-base: 0.8rem;
-    --datepicker-calendar-width: 100%;
-    --datepicker-calendar-padding: 4px 4px 12px;
-    --datepicker-calendar-day-height: 32px;
-    --datepicker-calendar-day-width: 32px;
-    --datepicker-calendar-day-font-size: 0.8rem;
-    --datepicker-calendar-dow-font-size: 0.75rem;
-    --datepicker-calendar-header-font-size: 0.95rem;
-    --datepicker-calendar-day-color: var(--text-color, #232a32);
-    --datepicker-calendar-day-background-hover: var(--hover-color, #f5f5f5);
-    --datepicker-calendar-dow-color: var(--text-secondary, #8b9198);
-    --datepicker-calendar-header-color: var(--text-color, #21333d);
-    --datepicker-calendar-header-text-color: var(--text-color, #21333d);
-    --datepicker-calendar-header-month-nav-color: var(--text-color, #21333d);
-    --datepicker-calendar-header-month-nav-background-hover: var(--hover-color, #f5f5f5);
-    --datepicker-calendar-today-border: 1px solid var(--text-color, #232a32);
-    --datepicker-calendar-day-other-color: var(--text-secondary, #d1d3d6);
-  }
-
-  .date-picker-inline :global(.datepicker .calendars-container .calendar) {
-    width: 100% !important;
-    padding: 4px 4px 12px !important;
-  }
-
-  .date-picker-inline :global(.datepicker .calendars-container .calendar .date span) {
-    width: 32px !important;
-    height: 32px !important;
-    font-size: 0.8rem !important;
-  }
-
-  :global([data-theme='dark']) .date-picker-inline :global(.datepicker .calendars-container),
-  :global([data-theme='dark']) .date-picker-inline :global(.datepicker .calendars-container) {
-    --datepicker-container-background: var(--surface-color, #1e293b);
-    --datepicker-container-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    --datepicker-color: var(--text-color, #e2e8f0);
-    --datepicker-state-hover: rgba(59, 130, 246, 0.15);
-    --datepicker-calendar-day-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-day-background-hover: rgba(255, 255, 255, 0.08);
-    --datepicker-calendar-dow-color: var(--text-secondary, #94a3b8);
-    --datepicker-calendar-header-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-header-text-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-header-month-nav-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-header-month-nav-background-hover: rgba(255, 255, 255, 0.08);
-    --datepicker-calendar-today-border: 1px solid var(--text-color, #e2e8f0);
-    --datepicker-calendar-day-other-color: var(--text-secondary, #475569);
+  /* Sizing only — the control's appearance is `ui/DateRangePicker`'s, which is
+     the point of sharing it. This panel is a horizontal toolbar rather than a
+     sidebar column, so it caps the width instead of filling one. */
+  .date-picker-host {
+    min-width: 190px;
   }
 
   .compact-clear-btn {

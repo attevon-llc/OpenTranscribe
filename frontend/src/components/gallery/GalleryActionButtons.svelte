@@ -17,9 +17,10 @@
    * Export and Delete act ON the selection, so with none they were a no-op that
    * looked like a working control — export wrote an empty file, delete did
    * nothing. The Process menu already gated its entries this way, so the
-   * toolbar was applying two different rules. Add to collection and Tags are
-   * deliberately NOT gated: with no selection they open their manager instead,
-   * which is a real action. */
+   * toolbar was applying two different rules. Add to collection and Add or
+   * Edit Tags are gated the same way for the same reason — with nothing
+   * selected they invited the user to add to, or edit, nothing. The toolbar's
+   * own Collections and Tags buttons remain ungated and open the managers. */
   $: selectedFileObjects = files.filter(f => $galleryState.selectedFiles.has(f.uuid));
   $: hasCompletedSelected = selectedFileObjects.some(f => f.status === 'completed');
   $: hasFailedSelected = selectedFileObjects.some(f => f.status === 'error');
@@ -272,6 +273,7 @@
             <button
               class="dropdown-item"
               on:click={handleAddToCollection}
+              disabled={$selectedCount === 0}
               title={$t('gallery.bulk.addToCollectionTooltip')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -284,17 +286,22 @@
             <!-- Tags sits with collections: both attach metadata to a file,
                  which is what Organize means. One entry, not add/remove — the
                  modal does both, and for a single selected file it is the full
-                 chip editor. -->
+                 chip editor. The label says so, because a bare "Tags" beside
+                 "Add to Collection" did not say what it would do.
+                 Both are gated on the selection they act on; the toolbar's own
+                 Collections and Tags buttons still open the managers, so
+                 nothing here is the only route to them. -->
             <button
               class="dropdown-item"
               on:click={handleTagsFromMenu}
+              disabled={$selectedCount === 0}
               title={$t('gallery.bulk.tagsTooltip')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
                 <line x1="7" y1="7" x2="7.01" y2="7"></line>
               </svg>
-              {$t('nav.tags')}
+              {$t('gallery.bulk.addOrEditTags')}
             </button>
             <div class="dropdown-divider"></div>
             <button

@@ -2008,6 +2008,7 @@
   "gallery.bulk.speakerId": "話者識別",
   "gallery.bulk.cancelProcessing": "処理をキャンセル",
   "gallery.bulk.tag": "タグ",
+  "gallery.bulk.addOrEditTags": "タグの追加・編集",
   "gallery.bulk.addToCollection": "コレクションに追加",
   "gallery.bulk.addTag": "タグを追加",
   "gallery.bulk.addTagTooltip": "選択したファイルにタグを追加",

@@ -2009,6 +2009,7 @@
   "gallery.bulk.speakerId": "Speaker ID",
   "gallery.bulk.cancelProcessing": "Cancel Processing",
   "gallery.bulk.tag": "Tag",
+  "gallery.bulk.addOrEditTags": "Add or Edit Tags",
   "gallery.bulk.addToCollection": "Add to Collection",
   "gallery.bulk.addTag": "Add Tag",
   "gallery.bulk.addTagTooltip": "Add a tag to the selected files",

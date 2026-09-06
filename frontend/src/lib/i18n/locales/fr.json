@@ -698,6 +698,7 @@
   "gallery.bulk.speakerId": "ID orateur",
   "gallery.bulk.cancelProcessing": "Annuler le traitement",
   "gallery.bulk.tag": "Étiqueter",
+  "gallery.bulk.addOrEditTags": "Ajouter ou modifier des étiquettes",
   "gallery.bulk.addToCollection": "Ajouter à la collection",
   "gallery.bulk.addTag": "Ajouter une étiquette",
   "gallery.bulk.addTagTooltip": "Ajouter une étiquette aux fichiers sélectionnés",

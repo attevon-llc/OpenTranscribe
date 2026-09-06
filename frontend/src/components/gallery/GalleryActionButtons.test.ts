@@ -92,23 +92,56 @@ describe('GalleryActionButtons — bulk tag entries', () => {
 
     // The modal does both add and remove (and, for a single file, the full chip
     // editor), so three doors to one dialog were three things to explain.
-    expect(screen.getByRole('button', { name: 'Tags' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add or Edit Tags' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add Tag' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Remove Tag' })).toBeNull();
   });
 
-  it('opens tagging with no selection, exactly like Add to collection', async () => {
-    // Both attach metadata to files, so they behave the same: neither is gated
-    // on a selection. With none, the manager opens instead of bulk apply.
+  it('names the tags entry for what it does to the selection', async () => {
+    // A bare "Tags" beside "Add to Collection" did not say whether it added,
+    // removed, or opened a manager. Both entries now describe the action they
+    // perform on the selected files.
     render(GalleryActionButtons, { props: { files: [] } });
     await openOrganizeMenu();
 
-    const tags = screen.getByRole('button', { name: 'Tags' });
-    expect(tags).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add or Edit Tags' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tags' })).toBeNull();
+  });
+
+  it('applies tags to the selection and closes the menu', async () => {
+    select(['a']);
+    render(GalleryActionButtons, {
+      props: { files: [{ uuid: 'a', status: 'completed' }] as never },
+    });
+    await openOrganizeMenu();
+
+    const tags = screen.getByRole('button', { name: 'Add or Edit Tags' });
     await fireEvent.click(tags);
     expect(gallery.triggerTags).toHaveBeenCalledTimes(1);
     // Choosing an entry closes the menu, like the neighbouring entries.
-    expect(screen.queryByRole('button', { name: 'Tags' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add or Edit Tags' })).toBeNull();
+  });
+
+  it('disables both metadata entries when nothing is selected', async () => {
+    // They act on the selection, so offering them with none invites the user to
+    // "add to" or "edit" nothing. The toolbar's own Collections and Tags
+    // buttons still open the managers, so nothing becomes unreachable.
+    render(GalleryActionButtons, { props: { files: [] } });
+    await openOrganizeMenu();
+
+    expect(screen.getByRole('button', { name: 'Add to Collection' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add or Edit Tags' })).toBeDisabled();
+  });
+
+  it('enables them once a file is selected', async () => {
+    select(['a']);
+    render(GalleryActionButtons, {
+      props: { files: [{ uuid: 'a', status: 'completed' }] as never },
+    });
+    await openOrganizeMenu();
+
+    expect(screen.getByRole('button', { name: 'Add to Collection' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add or Edit Tags' })).not.toBeDisabled();
   });
 });
 

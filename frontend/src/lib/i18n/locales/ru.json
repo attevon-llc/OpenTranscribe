@@ -1998,6 +1998,7 @@
   "gallery.bulk.speakerId": "ID говорящего",
   "gallery.bulk.cancelProcessing": "Отменить обработку",
   "gallery.bulk.tag": "Тег",
+  "gallery.bulk.addOrEditTags": "Добавить или изменить теги",
   "gallery.bulk.addToCollection": "Добавить в коллекцию",
   "gallery.bulk.addTag": "Добавить тег",
   "gallery.bulk.addTagTooltip": "Добавить тег к выбранным файлам",

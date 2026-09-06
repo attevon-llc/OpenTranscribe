@@ -2008,6 +2008,7 @@
   "gallery.bulk.speakerId": "说话人识别",
   "gallery.bulk.cancelProcessing": "取消处理",
   "gallery.bulk.tag": "标签",
+  "gallery.bulk.addOrEditTags": "添加或编辑标签",
   "gallery.bulk.addToCollection": "添加到合集",
   "gallery.bulk.addTag": "添加标签",
   "gallery.bulk.addTagTooltip": "为所选文件添加标签",

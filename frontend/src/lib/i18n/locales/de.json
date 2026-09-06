@@ -698,6 +698,7 @@
   "gallery.bulk.speakerId": "Sprecher-ID",
   "gallery.bulk.cancelProcessing": "Verarbeitung abbrechen",
   "gallery.bulk.tag": "Markieren",
+  "gallery.bulk.addOrEditTags": "Tags hinzufügen oder bearbeiten",
   "gallery.bulk.addToCollection": "Zur Sammlung hinzufügen",
   "gallery.bulk.addTag": "Tag hinzufügen",
   "gallery.bulk.addTagTooltip": "Den ausgewählten Dateien ein Tag hinzufügen",

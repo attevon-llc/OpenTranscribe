@@ -2009,6 +2009,7 @@
   "gallery.bulk.speakerId": "تحديد هوية المتحدث",
   "gallery.bulk.cancelProcessing": "إلغاء المعالجة",
   "gallery.bulk.tag": "وسم",
+  "gallery.bulk.addOrEditTags": "إضافة أو تعديل الوسوم",
   "gallery.bulk.addToCollection": "إضافة إلى مجموعة",
   "gallery.bulk.addTag": "إضافة وسم",
   "gallery.bulk.addTagTooltip": "إضافة وسم إلى الملفات المحددة",

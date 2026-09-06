@@ -2009,6 +2009,7 @@
   "gallery.bulk.speakerId": "화자 식별",
   "gallery.bulk.cancelProcessing": "처리 취소",
   "gallery.bulk.tag": "태그",
+  "gallery.bulk.addOrEditTags": "태그 추가 또는 편집",
   "gallery.bulk.addToCollection": "컬렉션에 추가",
   "gallery.bulk.addTag": "태그 추가",
   "gallery.bulk.addTagTooltip": "선택한 파일에 태그를 추가합니다",

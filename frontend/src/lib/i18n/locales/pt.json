@@ -2008,6 +2008,7 @@
   "gallery.bulk.speakerId": "ID do orador",
   "gallery.bulk.cancelProcessing": "Cancelar processamento",
   "gallery.bulk.tag": "Etiquetar",
+  "gallery.bulk.addOrEditTags": "Adicionar ou editar etiquetas",
   "gallery.bulk.addToCollection": "Adicionar à coleção",
   "gallery.bulk.addTag": "Adicionar etiqueta",
   "gallery.bulk.addTagTooltip": "Adicionar uma etiqueta aos ficheiros selecionados",

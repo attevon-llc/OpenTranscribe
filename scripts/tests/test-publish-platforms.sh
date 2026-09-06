@@ -677,15 +677,21 @@ for stage in 90-promote.sh 95-finish.sh; do
     # this case exists for, and the RED control below proves the check still sees it.
     stage_code="$(sed 's/#.*//' "$REPO_ROOT/scripts/release/$stage")"
     propagates=no
-    if printf '%s\n' "$stage_code" \
-         | grep -qE 'repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*exit'; then
+    # `grep -c ... -gt 0`, never `| grep -qE ...` — the rule test-scan-not-a-pass.sh states
+    # and this file is named as the sibling of. Under this script's `set -o pipefail`, grep -q
+    # exits on its first match, the producer dies with SIGPIPE, and the `if` sees FAILURE for
+    # a pattern that MATCHED. Here that inverts "the stage propagates its could-not-derive
+    # exit" into "it does not" for the first shape and then falls through to the second,
+    # i.e. a silently size-dependent check of a release gate.
+    if [ "$(printf '%s\n' "$stage_code" \
+         | grep -cE 'repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*exit')" -gt 0 ]; then
         propagates=direct
     else
         rc_var="$(printf '%s\n' "$stage_code" \
             | sed -nE 's/.*repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*([A-Za-z_][A-Za-z_0-9]*)=\$\?.*/\1/p' \
             | head -1)"
-        if [ -n "$rc_var" ] && printf '%s\n' "$stage_code" \
-             | grep -qE "(exit|fail_out)[[:space:]]+\"?\\\$(\{)?${rc_var}(\})?\"?"; then
+        if [ -n "$rc_var" ] && [ "$(printf '%s\n' "$stage_code" \
+             | grep -cE "(exit|fail_out)[[:space:]]+\"?\\\$(\{)?${rc_var}(\})?\"?")" -gt 0 ]; then
             propagates="via \$${rc_var}"
         fi
     fi
@@ -706,16 +712,19 @@ control_ok_direct='repos_tsv="$(release_published_repos_or_die)" || exit $?'
 control_ok_var='repos_tsv="$(release_published_repos_or_die)" || list_rc=$?
 exit "$list_rc"'
 check_propagation() {   # echoes yes/no for a code string
+    # Must stay byte-for-byte the same shape as the loop above, `grep -c` included: this is
+    # the control that proves that check can fail, so a divergence here means the control is
+    # exercising a different predicate than the thing it controls.
     local code="$1" rc_var
-    if printf '%s\n' "$code" \
-         | grep -qE 'repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*exit'; then
+    if [ "$(printf '%s\n' "$code" \
+         | grep -cE 'repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*exit')" -gt 0 ]; then
         echo yes; return
     fi
     rc_var="$(printf '%s\n' "$code" \
         | sed -nE 's/.*repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*([A-Za-z_][A-Za-z_0-9]*)=\$\?.*/\1/p' \
         | head -1)"
-    if [ -n "$rc_var" ] && printf '%s\n' "$code" \
-         | grep -qE "(exit|fail_out)[[:space:]]+\"?\\\$(\{)?${rc_var}(\})?\"?"; then
+    if [ -n "$rc_var" ] && [ "$(printf '%s\n' "$code" \
+         | grep -cE "(exit|fail_out)[[:space:]]+\"?\\\$(\{)?${rc_var}(\})?\"?")" -gt 0 ]; then
         echo yes; return
     fi
     echo no

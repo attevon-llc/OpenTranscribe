@@ -474,13 +474,24 @@ phase_06b_sidecar_check() {
     # capability list a CUDA-only sidecar also reports, which cannot distinguish a lite
     # CPU sidecar from a full CUDA one (the exact failure this check exists to catch;
     # see native_embedding_client.py's devices-vs-supported_devices note).
-    echo "$healthz" | grep -q '"devices":\["cpu"\]' || gr_die "diar-native /healthz does not report cpu as a LOADED device: $healthz"
+    [ "$(echo "$healthz" | grep -c '"devices":\["cpu"\]')" -gt 0 ] \
+        || gr_die "diar-native /healthz does not report cpu as a LOADED device: $healthz"
     echo "diar-native /healthz reports cpu loaded: confirmed" | tee -a "$report"
 
     local cpu_worker_name
     cpu_worker_name=$(overlay_container_name celery-cpu-worker)
     if [[ -n "$cpu_worker_name" ]]; then
-        if docker logs "$cpu_worker_name" 2>&1 | grep -q "Speaker embeddings served by the diar-native sidecar"; then
+        # `grep -c ... -gt 0`, never `| grep -q`. This script runs under `set -o pipefail`, and
+        # `grep -q` exits at its FIRST match — so `docker logs` is killed by SIGPIPE mid-stream
+        # and the pipeline reports failure precisely when the message WAS found. Measured on
+        # this host: `docker logs opentranscribe-celery-cpu-worker` is 3.9 MB, 60x the 64 KB
+        # pipe buffer, so the producer is always still writing when grep leaves. Written the
+        # old way this check could never once report success — it warned "has not yet logged
+        # the sidecar-served message" whether or not the sidecar was serving embeddings, which
+        # is the failure direction that hides a real regression behind familiar noise.
+        # `grep -c` consumes the whole stream, so there is no early exit to race.
+        if [ "$(docker logs "$cpu_worker_name" 2>&1 \
+                  | grep -c "Speaker embeddings served by the diar-native sidecar")" -gt 0 ]; then
             echo "celery-cpu-worker logged the sidecar-served message: confirmed" | tee -a "$report"
         else
             gr_warn "celery-cpu-worker has not yet logged the sidecar-served message — expected once a speaker-embedding extraction has run (phase_07 triggers one)"

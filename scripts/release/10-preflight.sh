@@ -296,7 +296,17 @@ fi
 # can share the name prefix without being this project's stack at all, and a
 # naive `grep '^opentranscribe-'` reports a false positive that then blocks
 # `rehearse` for a reason that was never true.
-if docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' | grep -q .; then
+#
+# Captured, NOT `... | grep -q .`. This script runs under `set -euo pipefail`, and `grep -q`
+# closes the pipe on its first match, so `docker ps` can die with SIGPIPE and take the whole
+# pipeline's status with it — turning a stack that IS up into a recorded `live-stack pass`.
+# The inversion is size-gated (it needs the producer still writing when grep exits, i.e. more
+# than a pipe buffer of output), which is why it does not fire against today's ~20 container
+# names and is not a reason to leave it: it fails silently, and in the direction that lets
+# `rehearse` run against a live stack. `65-rehearse.sh`'s `stock_containers` already avoids
+# it for exactly this reason; this is the same check and now reads the same way.
+live_stack_names="$(docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}')"
+if [ -n "$live_stack_names" ]; then
     record live-stack fail \
         "the live stack is running — the rehearse stage requires it stopped" \
         "./opentr.sh stop  (preserves all data)"

@@ -145,6 +145,25 @@ fi
 # deleted: the Alembic head is derived from the down_revision graph
 # (scripts/release-tests/lib/alembic-head.py), so there is nothing to forget.
 
+# The published roadmap regenerates on every docs deploy (deploy-docs.yml), so the
+# LIVE site is never stale. The committed snapshot exists for the other consumer: the
+# self-hosted docs Docker image, which has no network and no `gh`, so it ships whatever
+# is in the tree at image-build time. Refreshing it here — in the same commit as the
+# version bump — is what stops a released image carrying a months-old roadmap.
+#
+# Best-effort by design (criterion severity: warn). It needs `gh` and a reachable API,
+# and a GitHub blip must not block a release over a docs data file when the live site is
+# correct regardless.
+log "refreshing the roadmap snapshot the docs image ships"
+if python3 scripts/generate-roadmap.py >/dev/null 2>&1; then
+    record roadmap-regenerated pass "docs-site/src/data/roadmap.json refreshed from the tracker"
+    ok "roadmap.json"
+else
+    record roadmap-regenerated fail "generate-roadmap.py failed — the docs image will ship the committed snapshot" \
+        "gh auth status && python3 scripts/generate-roadmap.py"
+    log "roadmap regeneration failed — shipping the committed snapshot (see the warning above)"
+fi
+
 log "verifying the bump before committing"
 if ! python3 scripts/release/check-version-consistency.py --mode ci; then
     record post-bump-consistency fail "version sources still disagree after the bump" \
@@ -167,12 +186,20 @@ if [[ "$NO_COMMIT" == "true" ]]; then
     exit 0
 fi
 
-git add VERSION pyproject.toml frontend/package.json frontend/package-lock.json CHANGELOG.md
+# roadmap.json is staged here deliberately. Regenerating it without committing it would
+# let roadmap-regenerated report `pass` while the docs image still shipped the old
+# snapshot — a criterion that measures a write nobody keeps.
+git add VERSION pyproject.toml frontend/package.json frontend/package-lock.json CHANGELOG.md \
+        docs-site/src/data/roadmap.json
 git commit -m "chore(release): bump version to ${SEMVER}
 
 Written by scripts/release/20-bump.sh across every version source:
 VERSION, pyproject.toml, frontend/package.json, frontend/package-lock.json
 (regenerated — it carries the version twice), and CHANGELOG.md.
+
+docs-site/src/data/roadmap.json is refreshed from the issue tracker in the same
+commit: the docs Docker image has no network, so it ships whatever snapshot is
+in the tree. The live site regenerates on every deploy and is unaffected.
 
 Verified with check-version-consistency.py before committing."
 record bump-committed pass

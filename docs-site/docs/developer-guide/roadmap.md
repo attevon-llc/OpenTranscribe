@@ -43,6 +43,21 @@ long to ship as a result. Every release after it is deliberately sized to be fin
 **Dates come from dependencies, not from ambition.** A release is never dated before one it
 depends on. Where a date looks aggressive, argue with the scope rather than the date.
 
+## Requirements every release carries
+
+These are not one release's work. They apply to all of them, and a release is not done until they
+hold.
+
+- **Translation.** Any user-facing copy added or changed ships in all **12** locales, with `ar`
+  checked in RTL. `npm run check:i18n` enforces key *parity* only: a key present in all 12 files
+  with English text passes and ships untranslated. It also runs in **CI only**, not as a
+  pre-commit hook, so run it locally before pushing.
+- **Light and dark parity.** Every UI change is looked at in both themes, in a browser. A
+  type-check is not a look.
+- **The tests could fail.** New tests are watched failing before the fix. `audit-tests.py` and its
+  frontend sibling stay at zero unallowlisted findings.
+- **Docs move with the code.** A feature that ships without its docs page is not done.
+
 ---
 
 ## v0.5.0: Ship what is already built
@@ -212,6 +227,21 @@ search and chat.
 could ship, and re-landing it restores roughly 70 commits and a chain of migrations. That is a
 migration-bearing change to the data model, so it gets its own rehearsal, its own upgrade test and
 its own blast radius, rather than a slot in a release that is also doing five other things.
+
+**And it comes late on purpose.** Documents are the feature that ties everything else together:
+they land in the gallery, search, chat and the watch-source plane at once. That makes them the
+wrong thing to build on a core that has not been proven yet. The order is deliberate — get
+transcription and diarization right, get search and chat measurably right, then widen the library
+to a second content type. Adding documents while the core is still being reworked means debugging
+two moving things at once, and every document defect becomes ambiguous: core, or plane?
+
+:::warning Deferring is not free
+The `feat/doc-ingestion` branch's divergence surface overlaps the UI work scheduled ahead of it —
+the navbar, the search stores, and all 12 locale files. The branch must be merged from `master`
+weekly, and immediately after v0.6.0 and v0.8.0 ship, or this becomes a rewrite rather than a
+merge. If those merges are not going to happen, that is an argument for moving this **earlier**,
+not for accepting the rewrite. See #552 for the measured divergence and the checklist.
+:::
 
 **Exit criteria**
 

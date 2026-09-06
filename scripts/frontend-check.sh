@@ -180,6 +180,30 @@ ${eslint_output}"
         print_success "eslint passed"
     fi
 
+    # Step 0b: i18n key parity across all 12 locales.
+    # This ran in CI only (.github/workflows/pre-commit.yml), so a local commit that added a
+    # user-facing string to en.json alone looked clean and failed the PR instead. Any UI change
+    # needs the i18n check, so it belongs in the same local gate as eslint/svelte-check.
+    # NOTE: this enforces key PARITY, not translation — a key copied into all 12 files with
+    # English text passes here and ships untranslated. Parity is the floor, not the goal.
+    print_info "Running i18n parity check..."
+    local i18n_output
+    local i18n_exit=0
+    i18n_output=$(cd "$FRONTEND_DIR" && npm run check:i18n 2>&1) || i18n_exit=$?
+
+    if [ $i18n_exit -ne 0 ]; then
+        check_failed=true
+        check_output="${check_output}
+--- i18n Parity Errors ---
+${i18n_output}"
+        print_error "i18n parity check failed"
+        if [ "$VERBOSE" = true ]; then
+            echo "$i18n_output"
+        fi
+    else
+        print_success "i18n parity check passed"
+    fi
+
     # Step 1: Run svelte-check
     print_info "Running svelte-check..."
     local svelte_output

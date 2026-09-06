@@ -202,8 +202,11 @@ preflight → bump → verify → test → build → scan → rehearse
   backup/rollback tail — previously masked by a `set -e` harness bug that
   silently truncated the script at the first non-fatal-by-design digest mismatch
   (`scripts/CLAUDE.md`'s rehearsal gotchas). That is not a claim the rehearsal
-  always passes: one non-blocking residual gap remains open, see
-  `full-test-matrix.md`'s coverage table (issue #619).
+  always passes. The gap this used to name (#619) was **closed** 2026-08-28, but
+  its fix is a **best-effort settle, not a guarantee**: phases 15/17 wait for each
+  table's content digest to stop moving rather than tracking every async writer by
+  name, so a slow enough write can still land after the synchronization point. See
+  `full-test-matrix.md`'s coverage table for what each leg does and does not prove.
 - Running `test-upgrade.sh`/`test-fresh-install.sh` directly (not through
   `rehearse`) in a backgrounded or non-interactive shell needs `--yes` — the
   `I UNDERSTAND` confirmation prompt has no tty to read from and fails with
@@ -470,7 +473,8 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | RAG chat pipeline (retrieval, masking, prompting) | `backend/app/services/chat/CLAUDE.md` |
 | **RAG design: the standard patterns and what runs them** | `docs-site/docs/developer-guide/rag-design-and-validation.md` |
 | **RAG evaluation: how quality is measured, and the traps** | `docs-site/docs/developer-guide/rag-evaluation.md` |
-| **RAG/chat: what is measured, what is NOT, and what to do next** | **issue [#461](https://github.com/attevon-llc/OpenTranscribe/issues/461)** — opens with a phased execution order. Start there before touching retrieval. |
+| **RAG/chat: what is measured, what is NOT, and what to do next** | **issue [#461](https://github.com/attevon-llc/OpenTranscribe/issues/461)** — CLOSED, but still the map: read its phased execution order before touching retrieval. The measurements it deferred are the six open `epic:rag-quality` issues on **v0.6.0** (#462, #464, #506, #523, #526, #532); four of those are already BUILT behind default-off flags, so the work is running the measurement that decides whether the flag flips on. |
+| **Release themes: what each version is FOR, and its exit criteria** | `docs-site/docs/developer-guide/roadmap.md` (Developer Guide → Release Themes). The **live** issue/milestone view is the generated `/roadmap` page — never hand-edit its data, run `python3 scripts/generate-roadmap.py`. |
 | Pluggable ASR providers | `backend/app/services/asr/CLAUDE.md` |
 | Pluggable diarization providers | `backend/app/services/diarization/CLAUDE.md` |
 | OpenSearch indexing + neural/hybrid search | `backend/app/services/search/CLAUDE.md` |
@@ -561,6 +565,19 @@ subsystem, and put new subsystem detail **there**, not in this file.
 - Conventional commits: `<type>(<scope>): <summary>`.
 - `.env` is never overwritten without confirmation; `.env.example` is the editable template — keep new vars in sync.
 - Keep code files under ~300 lines; Google-style Python docstrings; light/dark mode parity for any frontend change.
+- **i18n is a requirement of EVERY release, not a task in one of them.** Any change that adds or
+  edits user-facing copy must land the string in all **12** locales
+  (`frontend/src/lib/i18n/locales`: ar de en es fr it ja ko nl pt ru zh), and `ar` is RTL — check
+  it renders, don't assume. Two traps:
+  - **`npm run check:i18n` enforces key PARITY, not translation.** A key copied into all 12 files
+    with English text passes the gate and ships untranslated. Parity is the floor, not the goal.
+  - **It is a CI-only check** (`.github/workflows/pre-commit.yml`), *not* a pre-commit hook, so a
+    local commit that breaks parity looks clean and fails the PR. Run it yourself:
+    `cd frontend && npm run check:i18n`.
+
+  This bites hardest on releases that touch a lot of copy at once, and on any long-lived branch:
+  every locale file is a shared edit surface, so a branch that sits unmerged collects conflicts in
+  all 12 at the same time.
 - No mocking in production code paths — mocks belong in test fixtures only.
 - Real integration testing: if a test depends on Redis/Postgres/OpenSearch, run against the real service or document the dependency. Don't silently skip.
 - **LLM speaker-ID suggestions are never auto-applied** — they are surfaced with confidence scores for manual verification only.

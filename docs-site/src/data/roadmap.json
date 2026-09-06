@@ -1740,7 +1740,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 8,
+      "total": 10,
       "closed": 0,
       "areas": [
         {
@@ -1813,12 +1813,22 @@
           "name": "Test Suite Health",
           "scope": "Coverage, gates, and verification matrices",
           "known": true,
-          "total": 1,
+          "total": 3,
           "closed": 0,
           "issues": [
             {
               "number": 713,
               "title": "task(testing): architecture-blocked verification matrix — what needs real arm64, Blackwell, or multi-GPU hardware",
+              "done": false
+            },
+            {
+              "number": 778,
+              "title": "perf(testing): ~96s of a ~154s backend suite is pytest collection, repeated on every worker",
+              "done": false
+            },
+            {
+              "number": 779,
+              "title": "test(quality): pay down the 33 deferred BACKLOG findings in the test auditor allowlist",
               "done": false
             }
           ]

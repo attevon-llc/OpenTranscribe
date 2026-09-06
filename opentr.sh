@@ -3408,11 +3408,11 @@ restart_backend() {
   restart_resolve_target "$@" || return $?
   echo "🔄 Restarting backend services on ${RESTART_LABEL} (backend, all celery workers, celery-beat, flower)..."
 
-  # -t "${OT_STOP_GRACE_GPU:-30}" (issue #782): compose v2.29.7's `restart` passes only
+  # -t "$OT_STOP_GRACE_GPU" (issue #782): compose v2.29.7's `restart` passes only
   # options.Timeout, so a container created before docker-compose.yml carried
   # stop_grace_period (StopTimeout still null) needs it spelled out here too.
   local rc=0
-  restart_compose restart -t "${OT_STOP_GRACE_GPU:-30}" backend \
+  restart_compose restart -t "$OT_STOP_GRACE_GPU" backend \
     celery-worker \
     celery-download-worker \
     celery-cpu-worker \
@@ -3425,7 +3425,7 @@ restart_backend() {
 
   # celery-worker-gpu-scaled is optional (scale: 0 unless --gpu-scale), so its
   # absence is genuinely not an error — unlike everything above.
-  restart_compose restart -t "${OT_STOP_GRACE_GPU:-30}" celery-worker-gpu-scaled 2>/dev/null || true
+  restart_compose restart -t "$OT_STOP_GRACE_GPU" celery-worker-gpu-scaled 2>/dev/null || true
 
   if [ "$rc" -ne 0 ]; then
     echo "❌ Backend restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
@@ -3466,10 +3466,10 @@ restart_all() {
   echo "🔄 Restarting all services on ${RESTART_LABEL} without database reset..."
 
   # Restart all services in place - docker compose handles dependency ordering.
-  # -t "${OT_STOP_GRACE_GPU:-30}" (issue #782): see restart_backend()'s comment -- `restart`
+  # -t "$OT_STOP_GRACE_GPU" (issue #782): see restart_backend()'s comment -- `restart`
   # passes only options.Timeout, so pre-recreate containers need it explicit here too.
   local rc=0
-  restart_compose restart -t "${OT_STOP_GRACE_GPU:-30}" || rc=$?
+  restart_compose restart -t "$OT_STOP_GRACE_GPU" || rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "❌ Restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
     return "$rc"
@@ -3508,7 +3508,7 @@ ot_drain_gpu_workers_by_container() {
                           } | sort -u ); do
     case "$gpu_container" in
       *celery-worker*|*celery-cpu-worker*|*celery-redaction*|*diar-native*)
-        docker stop -t "${OT_STOP_GRACE_GPU:-30}" "$gpu_container" 2>/dev/null &
+        docker stop -t "$OT_STOP_GRACE_GPU" "$gpu_container" 2>/dev/null &
         pids+=("$!")
         ;;
     esac

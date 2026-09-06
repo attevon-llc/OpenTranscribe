@@ -34,7 +34,7 @@ OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-30}"
 # seconds to hang in. Safe against an absent service name: 2>/dev/null || true.
 ot_drain_gpu_workers() {
     # shellcheck disable=SC2086
-    docker compose $COMPOSE_FILES stop -t "${OT_STOP_GRACE_GPU:-30}" \
+    docker compose $COMPOSE_FILES stop -t "$OT_STOP_GRACE_GPU" \
         celery-worker celery-worker-gpu-transcribe celery-worker-gpu-diarize \
         celery-worker-gpu-scaled celery-redaction celery-cpu-worker diar-native \
         2>/dev/null || true

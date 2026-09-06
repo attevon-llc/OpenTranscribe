@@ -34,6 +34,11 @@ OPENTR = REPO_ROOT / "opentr.sh"
 NEEDED_FUNCS = (
     "fresh_sanitize_name",
     "fresh_project_name",
+    # `fresh_read_aux` CALLS `fresh_aux_file`, so slicing the caller without the callee
+    # made the harness print `fresh_aux_file: command not found` on master too. Harmless
+    # only because nothing under `set -e` was watching -- the same class of hole as the
+    # missing defaults block in `harness_prelude` below, found alongside it.
+    "fresh_aux_file",
     "fresh_read_aux",
     "fresh_compose_chain",
     "restart_resolve_target",
@@ -55,8 +60,33 @@ def _extract(name: str, source: str) -> str:
 
 @pytest.fixture(scope="module")
 def harness_prelude() -> str:
+    """opentr.sh's real defaults block, then the sliced functions.
+
+    ⚠️ The defaults block is NOT optional scaffolding, and leaving it out was a latent
+    hole in this harness rather than a property of any one variable. `_extract` slices
+    only the functions in `NEEDED_FUNCS`; opentr.sh's top-of-file
+    `: "${VAR:=default}"` block never comes along, and `_run` executes the result under
+    `set -uo pipefail`. So the moment a function here reads a variable that block is what
+    binds -- which is exactly the contract `scripts/CLAUDE.md` documents for opentr.sh,
+    and which `test_shell_expansion_guards.py` accepts as a valid guard -- a CORRECT
+    script aborts with `unbound variable`, rc=127, and the error names the innocent
+    function rather than this harness.
+
+    Observed: adding `-t "$OT_STOP_GRACE_GPU"` to `restart_backend` (issue #782) took all
+    four tests in this file down in CI, and the failure read as a bug in opentr.sh. Every
+    future `$VAR` added to these functions would have detonated the same way. Including
+    the real block keeps the harness testing the real script instead of a subset of it.
+    """
     source = OPENTR.read_text(encoding="utf-8")
-    return "\n\n".join(_extract(name, source) for name in NEEDED_FUNCS)
+    defaults = "\n".join(re.findall(r'^: "\$\{[A-Za-z_][A-Za-z0-9_]*:=[^}]*\}"$', source, re.M))
+    # Without this, a regex that silently stops matching yields an EMPTY prelude and every
+    # test fails with the same confusing `unbound variable` this fixture exists to prevent
+    # -- a guard that stops guarding must say so, not fail as the thing it guards against.
+    assert defaults, (
+        'no `: "${VAR:=...}"` defaults found in opentr.sh -- was the prologue block moved '
+        "or reshaped? These tests run the extracted functions under `set -u` and depend on it"
+    )
+    return defaults + "\n\n" + "\n\n".join(_extract(name, source) for name in NEEDED_FUNCS)
 
 
 def _run(

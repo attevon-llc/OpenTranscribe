@@ -56,7 +56,7 @@ if ! declare -F ot_drain_gpu_workers >/dev/null 2>&1; then
     ot_drain_gpu_workers() {
         local chain="$1"
         # shellcheck disable=SC2086
-        COMPOSE_PROFILES="*" docker compose $chain stop -t "${OT_STOP_GRACE_GPU:-30}" \
+        COMPOSE_PROFILES="*" docker compose $chain stop -t "$OT_STOP_GRACE_GPU" \
             celery-worker celery-worker-gpu-transcribe celery-worker-gpu-diarize \
             celery-worker-gpu-scaled celery-redaction celery-cpu-worker diar-native \
             2>/dev/null || true

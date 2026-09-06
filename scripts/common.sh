@@ -57,7 +57,7 @@ OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-30}"
 ot_drain_gpu_workers() {
   local chain="$1"
   # shellcheck disable=SC2086
-  COMPOSE_PROFILES="*" docker compose $chain stop -t "${OT_STOP_GRACE_GPU:-30}" \
+  COMPOSE_PROFILES="*" docker compose $chain stop -t "$OT_STOP_GRACE_GPU" \
     celery-worker celery-worker-gpu-transcribe celery-worker-gpu-diarize \
     celery-worker-gpu-scaled celery-redaction celery-cpu-worker diar-native \
     2>/dev/null || true
@@ -1600,11 +1600,11 @@ restore_database() {
   # backend/celery are still connected to the database being dropped, e.g. on a
   # version-skewed install whose compose file is missing one of these service names.
   # shellcheck disable=SC2086
-  # -t "${OT_STOP_GRACE_GPU:-30}" (issue #782): celery-worker/celery-cpu-worker/celery-redaction
+  # -t "$OT_STOP_GRACE_GPU" (issue #782): celery-worker/celery-cpu-worker/celery-redaction
   # in this list are CUDA-holding services, and a restore's `stop` used to inherit
   # docker's bare 10s default -- the same SIGKILL-a-live-CUDA-context hazard `opentr.sh
   # stop` had. The `if !` fail-closed check above this comment is unchanged.
-  if ! docker compose $compose_files stop -t "${OT_STOP_GRACE_GPU:-30}" backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat; then
+  if ! docker compose $compose_files stop -t "$OT_STOP_GRACE_GPU" backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat; then
     echo "❌ Could not stop application services — refusing to proceed with restore."
     echo "   The database was NOT touched."
     [ -n "$temp_sql" ] && rm -f "$temp_sql"

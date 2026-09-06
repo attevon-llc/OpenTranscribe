@@ -120,6 +120,11 @@ show_help() {
   echo "                         Does NOT move the in-container copy of GPU_DEVICE_ID: it comes from"
   echo "                         'env_file: .env', which no shell export can reach. It only labels the"
   echo "                         admin GPU-stats panel; placement is the reservation this flag sets."
+  echo "  --diar-native-gpu N  - Move ONLY the diar-native sidecar to host GPU N, applied AFTER"
+  echo "                         --gpu-device so the two can differ (e.g. --gpu-device 2"
+  echo "                         --diar-native-gpu 1 puts gpu-scale workers on GPU 2 and the"
+  echo "                         sidecar on GPU 1) — needed to test the cross-card arrangement the"
+  echo "                         shipped defaults already describe (issue #711)."
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
   echo "  --no-diar-native     - Suppress the auto-loaded native diarization sidecar"
@@ -1647,6 +1652,7 @@ start_app() {
   GPU_SCALE_FLAG=""
   GPU_SPLIT_FLAG=""
   GPU_DEVICE_OVERRIDE=""
+  DIAR_NATIVE_GPU_OVERRIDE=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
@@ -1699,6 +1705,22 @@ start_app() {
           exit 1
         fi
         GPU_DEVICE_OVERRIDE="$1"
+        shift
+        ;;
+      --diar-native-gpu)
+        shift
+        # Deliberately NARROWER than --gpu-device: it moves only DIAR_NATIVE_GPU,
+        # leaving GPU_SCALE_DEVICE_ID / GPU_DEVICE_ID / etc. wherever .env or
+        # --gpu-device already put them. Exists to test the cross-card arrangement
+        # the shipped defaults actually describe (issue #711 criterion 5:
+        # GPU_SCALE_DEVICE_ID defaults to 2, DIAR_NATIVE_GPU defaults to
+        # GPU_DEVICE_ID, i.e. 0) -- --gpu-device alone cannot express two different
+        # cards because it pins every var in GPU_DEVICE_VARS to the same value.
+        if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
+          echo "❌ --diar-native-gpu requires a GPU index (e.g. --diar-native-gpu 1)"
+          exit 1
+        fi
+        DIAR_NATIVE_GPU_OVERRIDE="$1"
         shift
         ;;
       --nas)
@@ -2048,6 +2070,19 @@ start_app() {
   if [ -n "$GPU_DEVICE_OVERRIDE" ]; then
     apply_gpu_device_override "$GPU_DEVICE_OVERRIDE"
     warn_gpu_device_override_conflicts "$GPU_DEVICE_OVERRIDE"
+  fi
+
+  # Applied AFTER --gpu-device so a combined
+  # `--gpu-device 2 --diar-native-gpu 1` (or the reverse) can express two
+  # different cards; --gpu-device alone would have just pinned DIAR_NATIVE_GPU
+  # back to the same value as everything else.
+  if [ -n "$DIAR_NATIVE_GPU_OVERRIDE" ]; then
+    if ! [[ "$DIAR_NATIVE_GPU_OVERRIDE" =~ ^[0-9]+$ ]]; then
+      echo "❌ --diar-native-gpu must be a non-negative integer GPU index (got '$DIAR_NATIVE_GPU_OVERRIDE')"
+      exit 1
+    fi
+    export DIAR_NATIVE_GPU="$DIAR_NATIVE_GPU_OVERRIDE"
+    echo "🎯 --diar-native-gpu $DIAR_NATIVE_GPU_OVERRIDE: pinning the diar-native sidecar to host GPU $DIAR_NATIVE_GPU_OVERRIDE (overrides .env)"
   fi
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
@@ -2615,6 +2650,7 @@ reset_and_init() {
   GPU_SCALE_FLAG=""
   GPU_SPLIT_FLAG=""
   GPU_DEVICE_OVERRIDE=""
+  DIAR_NATIVE_GPU_OVERRIDE=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
@@ -2664,6 +2700,15 @@ reset_and_init() {
           exit 1
         fi
         GPU_DEVICE_OVERRIDE="$1"
+        shift
+        ;;
+      --diar-native-gpu)
+        shift
+        if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
+          echo "❌ --diar-native-gpu requires a GPU index (e.g. --diar-native-gpu 1)"
+          exit 1
+        fi
+        DIAR_NATIVE_GPU_OVERRIDE="$1"
         shift
         ;;
       --nas)
@@ -2781,6 +2826,16 @@ reset_and_init() {
   if [ -n "$GPU_DEVICE_OVERRIDE" ]; then
     apply_gpu_device_override "$GPU_DEVICE_OVERRIDE"
     warn_gpu_device_override_conflicts "$GPU_DEVICE_OVERRIDE"
+  fi
+
+  # See start_app()'s identical block for why this must come after --gpu-device.
+  if [ -n "$DIAR_NATIVE_GPU_OVERRIDE" ]; then
+    if ! [[ "$DIAR_NATIVE_GPU_OVERRIDE" =~ ^[0-9]+$ ]]; then
+      echo "❌ --diar-native-gpu must be a non-negative integer GPU index (got '$DIAR_NATIVE_GPU_OVERRIDE')"
+      exit 1
+    fi
+    export DIAR_NATIVE_GPU="$DIAR_NATIVE_GPU_OVERRIDE"
+    echo "🎯 --diar-native-gpu $DIAR_NATIVE_GPU_OVERRIDE: pinning the diar-native sidecar to host GPU $DIAR_NATIVE_GPU_OVERRIDE (overrides .env)"
   fi
 
   if [ -n "$GPU_SCALE_FLAG" ]; then

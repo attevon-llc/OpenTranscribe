@@ -25,6 +25,18 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
 - `npm run build` — production build (catches Vite-only issues svelte-check misses).
 - `npm run check` — `svelte-check` (type + a11y). `npm run lint` / `lint:fix` — ESLint.
 - `npm run test` / `test:watch` — Vitest unit/component tests (jsdom).
+  ⚠️ **Those scripts set `NODE_OPTIONS=--no-experimental-webstorage`, and it is load-bearing on
+  Node >=26.** Node 26 defines a `localStorage` accessor on `globalThis` that evaluates to
+  `undefined` without `--localstorage-file`; vitest's `populateGlobal` skips any jsdom window key
+  already present on `globalThis` (`localStorage` is in neither its KEYS nor jsdom's
+  additionalKeys), so jsdom's real `Storage` is never installed and Node's `undefined` wins —
+  15 failures in `FileUploader.test.ts` at `localStorage.clear()`. The flag removes the global so
+  jsdom installs the real thing. **Do not replace it with a hand-rolled Storage shim**:
+  `clearUserState`, `auth.logoutOrdering` and `txtExportPrefs` all `vi.spyOn(Storage.prototype, …)`,
+  which cannot hook an object that doesn't inherit from it. Measured equivalent — node:26+flag and
+  node:24 both 189 files / 1747 passed. Enforced by
+  `backend/tests/unit/test_node_version_consistency.py`, gated on `.nvmrc` so it lapses if we ever
+  drop below 26. If you run bare `npx vitest` on Node 26 you will hit this.
 - `npm run test:audit` — finds tests that pass whether the code works or not (below).
 - **Before committing**: lint + svelte-check + build + test must be green (pre-commit enforces
   it via `scripts/frontend-check.sh`).

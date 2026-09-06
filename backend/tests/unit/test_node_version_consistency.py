@@ -52,6 +52,7 @@ usable outside pytest, and pin a must-fire/must-stay-clean pair per detector.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import date
 from pathlib import Path
@@ -380,3 +381,87 @@ def test_eol_table_must_stay_clean_on_a_currently_supported_major() -> None:
     """Must-stay-clean control: a major with a comfortably future EOL date reads as fine."""
     far_future_eol = NODE_EOL[24]
     assert date.today() < far_future_eol
+
+
+# ── Node >=26 needs webstorage disabled for vitest, and the flag must not be deleted ──
+
+#: Node 26 defines a `localStorage` accessor on `globalThis` that evaluates to `undefined`
+#: unless `--localstorage-file` is passed. Vitest's `populateGlobal` refuses to install a
+#: jsdom window key that already exists on `globalThis` unless it is allowlisted, and
+#: `localStorage` is in neither its KEYS nor the jsdom env's additionalKeys — so jsdom's real
+#: `Storage` is never installed and Node's accessor wins, yielding `undefined`.
+#:
+#: Measured: `docker run --rm node:26 node -e "console.log('localStorage' in globalThis)"`
+#: prints `true` (and the value `undefined`); node:24 prints `false`. That one difference
+#: failed 15 tests in `FileUploader.test.ts` at `localStorage.clear()`.
+#:
+#: `--no-experimental-webstorage` removes the global entirely, so vitest installs jsdom's real
+#: `Storage`. That matters more than a hand-rolled shim would: three suites
+#: (`clearUserState`, `auth.logoutOrdering`, `txtExportPrefs`) call
+#: `vi.spyOn(Storage.prototype, ...)`, which cannot hook an object that does not inherit from
+#: `Storage.prototype` — a shim fixes FileUploader and breaks those three.
+#:
+#: Verified equivalent, whole suite, same node_modules: node:26 + flag = 1747/1747 passed;
+#: node:24 without the flag = 1747/1747 passed. Identical file and test counts.
+#:
+#: Gated on the pinned major so it disappears on its own if this repo ever drops below 26.
+NODE_WEBSTORAGE_FLAG = "--no-experimental-webstorage"
+FRONTEND_PACKAGE_JSON = REPO_ROOT / "frontend" / "package.json"
+NODE_WEBSTORAGE_FIRST_AFFECTED_MAJOR = 26
+
+
+def _vitest_scripts(package_json: Path) -> dict[str, str]:
+    """Return the npm scripts that invoke vitest directly."""
+    scripts = json.loads(package_json.read_text(encoding="utf-8")).get("scripts", {})
+    return {
+        name: body
+        for name, body in scripts.items()
+        if re.search(r"(?:^|\s|&&\s*)vitest(?:\s|$)", body)
+    }
+
+
+def test_vitest_scripts_disable_node_webstorage_when_pinned_major_needs_it() -> None:
+    """On Node >=26 every vitest script must disable Node's own webstorage."""
+    major = _read_nvmrc(REPO_ROOT / "frontend" / ".nvmrc")
+    scripts = _vitest_scripts(FRONTEND_PACKAGE_JSON)
+    assert scripts, "found no vitest scripts in frontend/package.json — the detector is blind"
+
+    if major < NODE_WEBSTORAGE_FIRST_AFFECTED_MAJOR:
+        return
+
+    missing = sorted(name for name, body in scripts.items() if NODE_WEBSTORAGE_FLAG not in body)
+    assert not missing, (
+        f"frontend/.nvmrc pins Node {major}, so these vitest scripts need "
+        f"NODE_OPTIONS={NODE_WEBSTORAGE_FLAG}: {missing}. Without it Node's undefined "
+        "localStorage shadows jsdom's Storage and FileUploader.test.ts fails 15 tests at "
+        "localStorage.clear(). Do not substitute a hand-rolled Storage shim — three suites "
+        "spy on Storage.prototype and a shim does not inherit from it."
+    )
+
+
+def test_vitest_flag_detector_must_fire_on_a_script_missing_the_flag(tmp_path: Path) -> None:
+    """Must-fire control: a vitest script without the flag is detectable."""
+    pkg = tmp_path / "package.json"
+    pkg.write_text(json.dumps({"scripts": {"test": "vitest run"}}), encoding="utf-8")
+    scripts = _vitest_scripts(pkg)
+    assert scripts == {"test": "vitest run"}
+    assert NODE_WEBSTORAGE_FLAG not in scripts["test"]
+
+
+def test_vitest_flag_detector_must_stay_clean_on_a_flagged_script(tmp_path: Path) -> None:
+    """Must-stay-clean control: a correctly flagged script reports nothing."""
+    pkg = tmp_path / "package.json"
+    body = f"NODE_OPTIONS={NODE_WEBSTORAGE_FLAG} vitest run"
+    pkg.write_text(json.dumps({"scripts": {"test": body}}), encoding="utf-8")
+    scripts = _vitest_scripts(pkg)
+    assert NODE_WEBSTORAGE_FLAG in scripts["test"]
+
+
+def test_vitest_script_detector_ignores_non_vitest_scripts(tmp_path: Path) -> None:
+    """A script that merely mentions vitest in another word must not be collected."""
+    pkg = tmp_path / "package.json"
+    pkg.write_text(
+        json.dumps({"scripts": {"audit": "node scripts/audit-frontend-tests.mjs"}}),
+        encoding="utf-8",
+    )
+    assert _vitest_scripts(pkg) == {}

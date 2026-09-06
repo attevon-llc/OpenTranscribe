@@ -84,8 +84,11 @@ DEFAULT_BUILDER_NAME="opentranscribe-builder"
 # meant :latest — what every existing user pulls — moved before any release test
 # had run against it.
 #
-# --load cannot export a multi-arch manifest, so local mode is single-arch by
-# necessity; the other arch is validated after publish by the arm64 smoke step.
+# --load cannot export a multi-arch manifest, so local mode is single-ARCH by
+# necessity — but not single-arch-HOST. Set PLATFORMS to one platform to choose which
+# leg local mode builds, or point DOCKER_CONTEXT at a native builder of that arch.
+# See build_platforms() for why: "the other arch is validated after publish" was the
+# standing answer here and it is what let a broken arm64 backend reach Docker Hub (#680).
 BUILD_MODE="${BUILD_MODE:-push}"
 
 # Publish the moving :latest tag alongside :vX.Y.Z. The release flow sets this to
@@ -319,9 +322,32 @@ run_security_scan() {
         return "${SCAN_EXIT_COULD_NOT_SCAN}"
     fi
 
-    print_info "Running security scan for ${component}..."
+    # Which TAG gets scanned has to match what this run actually produced, or the scan
+    # examines a different artifact than the one just built.
+    #
+    # security-scan.sh defaults IMAGE_TAG to `latest`, and this call never overrode it —
+    # so under BUILD_MODE=local, which tags `repo:vX.Y.Z` and deliberately creates no
+    # `:latest`, the scanner looked for an image that does not exist and reported
+    # COULD-NOT-SCAN for every component. Measured on the first lite build for #667:
+    # "Image not found locally: …-backend-lite:latest → Attempting to pull from registry
+    # → not found". That is the correct refusal (#681's 1-vs-2 split doing its job) over
+    # the wrong target — the image WAS there, as :v0.5.0.
+    #
+    # Registry mode is deliberately left on `latest`: that branch above literally runs
+    # `docker pull ${repo}:latest`, so scanning :vX.Y.Z there would examine an image it
+    # never fetched — the same class of mistake in the opposite direction.
+    #
+    # scripts/release/50-scan.sh already passes IMAGE_TAG="$VERSION" explicitly, which is
+    # why the release pipeline was unaffected and this stayed hidden.
+    local scan_tag="latest"
+    if [ "${SCAN_SOURCE:-registry}" = "local" ]; then
+        scan_tag="${VERSION_FULL}"
+    fi
+
+    print_info "Running security scan for ${component} (tag: ${scan_tag})..."
     local scan_rc=0
     OUTPUT_DIR="./security-reports" FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-false}" \
+        IMAGE_TAG="${scan_tag}" \
         ./scripts/security-scan.sh "${component}" || scan_rc=$?
 
     if [ "${scan_rc}" -eq 0 ]; then
@@ -354,19 +380,62 @@ run_security_scan() {
 # build functions cannot drift apart on it.
 # ---------------------------------------------------------------------------
 
-# Platforms for this run, keyed by component. Local mode is host-arch only:
-# `--load` cannot export a multi-arch manifest into the local image store.
-# PLATFORMS (if the caller set it) is an explicit override applied to every
-# component; otherwise each component's own COMPONENT_PLATFORMS entry is used.
+# Platforms for this run, keyed by component. Local mode is SINGLE-arch —
+# `--load` cannot export a multi-arch manifest into an image store — but it is no
+# longer forced to the HOST arch: an explicit single-platform PLATFORMS override
+# selects which one. PLATFORMS otherwise behaves as before (an override applied to
+# every component); with it unset, each component's COMPONENT_PLATFORMS entry wins.
+#
+# Why local mode had to grow a cross-arch case (issue #667): with it host-only, the
+# ONLY way to obtain an arm64 leg was `buildx --push`, i.e. the first time anyone
+# could inspect an arm64 artifact was after it was already on Docker Hub under a
+# moving tag. That is precisely how #680 happened — a CPU-only arm64 backend shipped
+# under the CUDA repo's :latest and was found by users, not by the pipeline. The lite
+# image is the first component whose arm64 leg is load-bearing rather than incidental,
+# so "validated after publish" is not good enough for it.
+#
+# ⚠️ Cross-arch here means the RIGHT BUILDER, not QEMU-by-accident. Two ways to get a
+# real arm64 leg, both --load, neither pushing anything:
+#   DOCKER_CONTEXT=remote-arm64 BUILD_MODE=local ./scripts/docker-build-push.sh lite
+#   PLATFORMS=linux/arm64 BUILD_MODE=local USE_REMOTE_BUILDER=true ./scripts/…  lite
+# The first loads into the native arm64 daemon, so the image can actually be RUN there;
+# the second loads an arm64 image into the local amd64 daemon, which can be inspected
+# (`docker image inspect --format '{{.Architecture}}'`) but not executed. Prefer the
+# first — a build that exits 0 proves less than you think. BuildKit does NOT reject a
+# wrong-arch base: a --platform linux/arm64 build over an amd64-only base exits 0 with
+# only an InvalidBaseImagePlatform *warning* and COPY --from still succeeds, shipping an
+# amd64 ELF in an "arm64" image that dies at runtime with `exec format error`. Verify the
+# binary, never the exit code.
 build_platforms() {
     local component="$1"
     if [ "${BUILD_MODE}" = "local" ]; then
-        docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || echo "linux/amd64"
+        # An explicit override picks the arch; otherwise follow the daemon we are
+        # pointed at, which is what makes DOCKER_CONTEXT=remote-arm64 Just Work.
+        if [ -n "${PLATFORMS}" ]; then
+            echo "${PLATFORMS}"
+        else
+            docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || echo "linux/amd64"
+        fi
     elif [ -n "${PLATFORMS}" ]; then
         echo "${PLATFORMS}"
     else
         echo "${COMPONENT_PLATFORMS[${component}]:-}"
     fi
+}
+
+# BUILD_MODE=local + a comma-separated PLATFORMS is a misuse, not a build to attempt:
+# `docker buildx --load` cannot export a multi-arch manifest, so buildx would fail deep
+# into the run after paying for the builds. Checked once, up front, in main() — NOT
+# inside build_platforms(), which is called from `$(...)` where a `return 1` only exits
+# the subshell and leaves the caller with an empty platform string.
+assert_local_mode_is_single_platform() {
+    [ "${BUILD_MODE}" = "local" ] || return 0
+    [[ "${PLATFORMS}" == *,* ]] || return 0
+    print_error "BUILD_MODE=local with PLATFORMS='${PLATFORMS}' — --load cannot export a multi-arch manifest."
+    print_info  "  Name exactly ONE platform and run once per architecture, e.g.:"
+    print_info  "    PLATFORMS=linux/amd64 BUILD_MODE=local $0 ${BUILD_TARGET}"
+    print_info  "    PLATFORMS=linux/arm64 BUILD_MODE=local USE_REMOTE_BUILDER=true $0 ${BUILD_TARGET}"
+    exit 2
 }
 
 # One platform per element, for components that build a leg per architecture.
@@ -777,25 +846,29 @@ run_parallel_scans() {
         # was never pulled and the scan below ran against whatever local image
         # carried that tag — or nothing (issue #681). A `case` with a failing
         # `*)` makes the next component that forgets a branch loud.
-        print_info "Pulling images from the registry for scanning..."
+        # Registry mode: security-scan.sh does the pulling now, ONE PULL PER ARCHITECTURE,
+        # verifying each one is the platform it asked for.
+        #
+        # This block used to `docker pull --platform linux/amd64 "${pull_repo}:latest"` for
+        # every component. For a multi-arch repo that is not a pre-fetch, it is a decision:
+        # it primes the local tag with the amd64 leg, and the scan that followed examined
+        # that leg no matter which architecture it claimed to cover. `opentranscribe-backend-lite`
+        # publishes amd64 AND arm64, and arm64 hosts run the lite image exclusively — so the
+        # arm64 leg would have shipped having never been scanned once, with an amd64 report
+        # beside it looking like coverage (issue #667).
+        #
+        # The component list is still validated here (a component with no rule must be loud,
+        # #681) — only the fetching moved, to the one place that knows the platform set.
+        print_info "Registry mode — security-scan.sh will pull and verify each architecture leg"
 
         for component in "${components[@]}"; do
-            local pull_repo
             case "$component" in
-                backend)  pull_repo="${REPO_BACKEND}" ;;
-                lite)     pull_repo="${REPO_BACKEND_LITE}" ;;
-                frontend) pull_repo="${REPO_FRONTEND}" ;;
-                docs)     pull_repo="${REPO_DOCS}" ;;
+                backend|lite|frontend|docs) ;;
                 *)
                     print_error "No registry-pull rule for component '${component}' — it would be scanned against a stale or absent local image"
                     return 1
                     ;;
             esac
-            (
-                docker rmi "${pull_repo}:latest" 2>/dev/null || true
-                docker pull --platform linux/amd64 "${pull_repo}:latest"
-            ) &
-            pids+=($!)
         done
     fi
 
@@ -1116,6 +1189,7 @@ main() {
     fi
 
     # Check prerequisites
+    assert_local_mode_is_single_platform
     check_docker
     check_docker_login
 

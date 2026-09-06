@@ -317,14 +317,27 @@ repos:
         entry: scripts/tests/test-scan-not-a-pass.sh
         language: system
         pass_filenames: false
-        files: ^scripts/(docker-build-push\.sh|security-scan\.sh|tests/test-scan-not-a-pass\.sh)$
+        files: ^scripts/(docker-build-push\.sh|security-scan\.sh|release/50-scan\.sh|tests/test-scan-not-a-pass\.sh)$
 
+      # ⚠️ This `files:` list is NOT free-form — it must select every file the suite makes
+      # an assertion about, or a change to one of them runs with the guard silent. It was
+      # exactly that stale: the suite grew sections asserting on 90-promote.sh, 95-finish.sh,
+      # published-repos.sh, Dockerfile.blackwell, setup-opentranscribe.sh and asr/factory.py
+      # while this pattern still listed only the original six paths. A change touching just
+      # 95-finish.sh — reintroducing the hardcoded repo list that let a release publish
+      # :latest with no lite image — would have sailed through with nothing running.
+      #
+      # It is kept honest from both ends by
+      # backend/tests/unit/test_precommit_hook_file_scope.py: the suite declares its own
+      # subjects in a SUBJECT_FILES array, that test asserts this regex selects every entry,
+      # AND that the array itself lists every repo path the script actually reads. Add a
+      # subject to the suite and forget either place and the unit suite fails.
       - id: publish-platforms-not-a-pass
         name: a published multi-arch tag cannot report equivalence it does not have (#680)
         entry: scripts/tests/test-publish-platforms.sh
         language: system
         pass_filenames: false
-        files: ^(backend/Dockerfile\.(prod|lite)|scripts/(docker-build-push\.sh|security-scan\.sh|lib/manifest_platform_check\.py|release/(80-publish|85-smoke)\.sh|tests/(test-publish-platforms\.sh|fixtures/manifest-fixtures\.py)))$
+        files: ^(setup-opentranscribe\.sh|backend/(Dockerfile\.(prod|lite|blackwell)|app/services/asr/factory\.py)|scripts/(docker-build-push\.sh|security-scan\.sh|lib/manifest_platform_check\.py|release/(80-publish|85-smoke|90-promote|95-finish|published-repos)\.sh|tests/(test-publish-platforms\.sh|fixtures/manifest-fixtures\.py)))$
 
   # Commit message linting (optional)
   - repo: https://github.com/compilerla/conventional-pre-commit

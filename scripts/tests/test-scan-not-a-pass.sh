@@ -40,6 +40,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD_SCRIPT="$REPO_ROOT/scripts/docker-build-push.sh"
 
+# Every repo file this suite makes an assertion ABOUT — the same declared contract
+# scripts/tests/test-publish-platforms.sh carries, read by
+# backend/tests/unit/test_precommit_hook_file_scope.py, which fails if this hook's `files:`
+# pattern in .pre-commit-config.yaml does not select every entry (or if this array omits a
+# path the script reads). This suite's pattern was already correct when the check was added;
+# the declaration exists so it CANNOT silently stop being correct, which is what happened to
+# the sibling hook.
+SUBJECT_FILES=(
+    scripts/docker-build-push.sh
+    scripts/security-scan.sh
+    scripts/release/50-scan.sh
+    scripts/tests/test-scan-not-a-pass.sh
+)
+# Must stay ABOVE every echo in this file: the contract is that this mode prints paths and
+# nothing else.
+[ "${OT_PRINT_SUBJECT_FILES:-}" = "1" ] && { printf '%s\n' "${SUBJECT_FILES[@]}"; exit 0; }
+
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
@@ -51,6 +68,22 @@ pass=0
 fail=0
 ok() { echo "  ok   - $1"; pass=$((pass + 1)); }
 bad() { echo "  FAIL - $1"; fail=$((fail + 1)); }
+
+# ⚠️ NEVER write `<producer> | grep -q ...` in an `if` in this file (or its sibling).
+#
+# These suites run under `set -o pipefail`. `grep -q` exits on the FIRST match and closes the
+# pipe; the upstream producer then dies with SIGPIPE, and pipefail reports the whole pipeline
+# as FAILED — so a MATCH is read as a non-match and the assertion silently inverts.
+#
+# It is SIZE-DEPENDENT, which is what makes it dangerous: a producer whose output fits in the
+# 64 KB pipe buffer finishes before grep exits and the bug does not appear. Measured here — the
+# same idiom worked against a ~100-line release stage and inverted against the 1428-line
+# docker-build-push.sh, reporting "the hardcoded --platform linux/amd64 pull is gone" while the
+# line was still on line 865. A must-fire case that cannot fire is the exact failure mode these
+# suites exist to prevent.
+#
+# Use `[ "$(<producer> | grep -c ...)" -gt 0 ]`: `grep -c` consumes all input, so nothing is
+# ever sent SIGPIPE and the count is honest.
 
 # Run a case function with docker-build-push.sh sourced, in an isolated subshell.
 #
@@ -296,10 +329,19 @@ else
     ok "the summary does NOT claim success for a component that was never scanned"
 fi
 
-# MUST-FIRE — the second, independent gap in the same function: the registry-pull
-# dispatch handled only backend and frontend, so docs was scanned against an
-# image that was never fetched.
-case_docs_is_pulled_from_the_registry() {
+# The second, independent gap in the same function (#681): the registry-pull dispatch handled
+# only backend and frontend, so docs was scanned against an image that was never fetched.
+#
+# ⚠️ The MECHANISM moved in #667 and this case moved with it. `run_parallel_scans` no longer
+# pulls at all: a single `docker pull --platform linux/amd64 repo:latest` cannot serve a
+# multi-arch component, because one local tag holds ONE image — priming it with amd64 is what
+# made every leg get scanned as amd64. Fetching is now per-architecture inside
+# security-scan.sh's resolve_platform_image, which also VERIFIES what it got.
+#
+# The guarantee being asserted is unchanged and is what matters: an image is never scanned
+# without first being fetched and confirmed. Only the place that enforces it changed, so the
+# assertion follows it there rather than being deleted.
+case_docs_still_validated_by_parallel_scans() {
     : > "$DOCKER_LOG"
     export SKIP_SECURITY_SCAN=false
     run_security_scan() { return 0; }  # not what this case is about
@@ -308,11 +350,30 @@ case_docs_is_pulled_from_the_registry() {
     return "$rc"
 }
 rc=0
-lib_run case_docs_is_pulled_from_the_registry || rc=$?
-if grep -q 'pull .*opentranscribe-docs:latest' "$DOCKER_LOG"; then
-    ok "the docs image is pulled from the registry before being scanned"
+lib_run case_docs_still_validated_by_parallel_scans || rc=$?
+if [ "$rc" -eq 0 ]; then
+    ok "docs is accepted by the registry dispatch (a known component is not refused)"
 else
-    bad "the docs image was never pulled — it would be scanned against a stale or absent local image"
+    bad "docs was refused by run_parallel_scans (rc=$rc) — a published component cannot be scanned"
+fi
+
+# MUST-FIRE: and the fetch-then-verify guarantee really lives in the resolver now. A repo that
+# cannot be resolved at all must return non-zero rather than handing back a name to scan.
+case_resolver_refuses_unfetchable() {
+    local rc=0
+    resolve_platform_image ot667nosuchrepo nosuchtag linux/amd64 >/dev/null 2>&1 || rc=$?
+    return "$rc"
+}
+rc=0
+( set +e
+  # shellcheck disable=SC1091
+  . "$REPO_ROOT/scripts/security-scan.sh" >/dev/null 2>&1
+  set +e
+  case_resolver_refuses_unfetchable ) || rc=$?
+if [ "$rc" -ne 0 ]; then
+    ok "the resolver refuses an image it cannot fetch, rather than naming one to scan"
+else
+    bad "the resolver returned success for an unfetchable image — it would be scanned against nothing"
 fi
 
 # MUST-FIRE — defence in depth: even if the up-front component validation is
@@ -421,6 +482,95 @@ if grep -qF "All security scans passed!" "$TMP_ROOT/all-cannot.out"; then
     bad "'all' claimed the scans passed while one component was never scanned"
 else
     ok "'all' does not claim the scans passed when a component was never scanned"
+fi
+
+echo "== every published container is scanned on EVERY architecture leg (#667) =="
+
+# The blind spot this closes: the registry-pull path hardcoded `--platform linux/amd64`, so a
+# multi-arch component's arm64 leg was never examined and the amd64 report sat beside it looking
+# like coverage. `opentranscribe-backend-lite` publishes amd64 AND arm64, and arm64 hosts run
+# the lite image exclusively — so the leg that would have shipped unscanned is the ONLY backend
+# a whole platform can install.
+#
+# Everything below is offline: it exercises the derivation and the naming, never a real pull.
+
+# shellcheck disable=SC1091  # the real script under test; main() is BASH_SOURCE-guarded
+source "$REPO_ROOT/scripts/security-scan.sh" >/dev/null 2>&1
+# ⚠️ security-scan.sh runs `set -e` at file scope and sourcing inherits it HERE. Without this,
+# the first deliberate non-zero return below kills this harness mid-suite and the run looks
+# like a hang rather than a recorded result. (Observed while writing these cases.)
+set +e
+
+# MUST-FIRE: the platform set is DERIVED, and a component with no declared platforms is
+# COULD NOT SCAN — never "no architectures to scan, therefore fine".
+missing_rc=0
+# Exported (not a bare assignment) so it is unambiguously visible to the function under test;
+# the subshell keeps it from leaking into later cases.
+( export PLATFORM_SOURCE=/bin/false; scan_component_all_platforms lite ) >/dev/null 2>&1 || missing_rc=$?
+if [ "$missing_rc" -eq 2 ]; then
+    ok "an underivable platform list is COULD NOT SCAN (rc=2), not a silent pass"
+else
+    bad "an underivable platform list exited $missing_rc; expected 2 — a broken platform table would green-light an unscanned release"
+fi
+
+# MUST-STAY-CLEAN: the real table yields the real legs. This is the assertion that fails if a
+# component's arm64 leg ever silently drops out of the scan set.
+lite_plats="$(component_platforms lite | sort | tr '\n' ' ')"
+if [ "$lite_plats" = "linux/amd64 linux/arm64 " ]; then
+    ok "lite derives BOTH legs from the platform table: ${lite_plats% }"
+else
+    bad "lite derived '${lite_plats}', expected 'linux/amd64 linux/arm64 ' — an arch fell out of the scan set"
+fi
+
+# Every scannable component must derive a non-empty platform set, or it cannot be fully
+# scanned. Derived from list-components so a newly added component is covered automatically.
+empty_plats=()
+for comp in $(scan_components); do
+    [ -n "$(component_platforms "$comp")" ] || empty_plats+=("$comp")
+done
+if [ ${#empty_plats[@]} -eq 0 ]; then
+    ok "every scannable component declares at least one platform"
+else
+    bad "components with no declared platform (cannot be scanned): ${empty_plats[*]}"
+fi
+
+# Report naming must be arch-qualified UNCONDITIONALLY. A scheme where the arch appears only
+# for multi-arch components is one where a missing leg looks like an ordinary report.
+if [ "$(scan_label lite linux/arm64)" = "lite-arm64" ] \
+   && [ "$(scan_label backend linux/amd64)" = "backend-amd64" ]; then
+    ok "report labels are arch-qualified for both multi-arch and single-arch components"
+else
+    bad "scan_label is not arch-qualified: got '$(scan_label lite linux/arm64)' / '$(scan_label backend linux/amd64)'"
+fi
+
+# MUST-FIRE: two legs of one component must not collide on a filename. If they did, the second
+# scan would overwrite the first and one arch's findings would vanish with nothing to notice.
+if [ "$(scan_label lite linux/amd64)" != "$(scan_label lite linux/arm64)" ]; then
+    ok "the two legs of a component produce DIFFERENT report stems"
+else
+    bad "both legs of lite produce the same report stem — one would overwrite the other"
+fi
+
+# The hardcoded single-platform pull must be gone from the registry path. Comments are stripped
+# because the replacement explains the old line by quoting it.
+if [ "$(sed 's/#.*//' "$BUILD_SCRIPT" | grep -cE 'docker pull --platform linux/amd64')" -gt 0 ]; then
+    bad "docker-build-push.sh still hardcodes 'docker pull --platform linux/amd64' — multi-arch legs would be scanned as amd64"
+else
+    ok "the hardcoded --platform linux/amd64 registry pull is gone"
+fi
+
+# The release scan stage must require a report PER LEG, and a missing one must fail. It
+# previously did `[[ -f "$report" ]] || continue`, which is fail-open: no report meant the
+# verification silently skipped itself.
+if [ "$(sed 's/#.*//' "$REPO_ROOT/scripts/release/50-scan.sh" | grep -cE '\[\[ -f "\$report" \]\] \|\| continue')" -gt 0 ]; then
+    bad "50-scan.sh still skips its report check when the report is missing (fail-open)"
+else
+    ok "50-scan.sh no longer skips its verification on a missing report"
+fi
+if grep -q 'legs_verified' "$REPO_ROOT/scripts/release/50-scan.sh"; then
+    ok "50-scan.sh counts verified legs and refuses a zero-leg 'clean' scan"
+else
+    bad "50-scan.sh does not count verified legs — a scan covering nothing could pass"
 fi
 
 echo ""

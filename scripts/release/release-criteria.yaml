@@ -4,6 +4,8 @@
 #
 #   scripts/release/10-preflight.sh   stage: preflight
 #   scripts/release/30-verify.sh      stage: verify
+#   scripts/release/50-scan.sh        stage: scan        (added by #667)
+#   scripts/release/65-rehearse.sh    stage: rehearse    (added by #667)
 #
 # That list is exhaustive, and it is enforced from both directions. Each of those
 # scripts loads its own stage from here and then:
@@ -49,6 +51,16 @@
 #
 # If a second consumer ever appears (a CI job, an AWS promotion job), add its
 # stage here and wire it the same way — bidirectionally, or not at all.
+#
+# `scan` and `rehearse` were added under that rule, not as an exception to it
+# (#667). Both scripts now source scripts/release/criteria-lib.sh, load their
+# severities from here, `record` every id, and call
+# `criteria_assert_all_checked` — so a criterion declared here and not checked
+# there, or checked there and not declared here, is exit 2 in both directions.
+# They are NOT prose. The shared library exists because a third and fourth
+# hand-rolled copy of that contract is itself a drift generator; 10-preflight.sh
+# and 30-verify.sh still carry their original inline copies and should be
+# migrated onto the library separately, as a change with no behaviour in it.
 #
 # SEVERITY
 #   blocking  — a failure stops the stage. Overridable only with
@@ -142,6 +154,284 @@ stages:
         # not fire on tag pushes, so a locally-skipped docs build means the slug
         # collision is found by release-validate.yml's `docs` job at tag time —
         # after the tag exists. `SKIP_DOCS_BUILD=true` is the recorded opt-out.
+        severity: blocking
+
+  # ─── CVE coverage of the artifacts about to be published. ───────────────
+  scan:
+    description: Every published container, on every architecture leg, was actually looked at
+    criteria:
+      - id: every-published-repo-scanned
+        description: Every repo from `security-scan.sh list-repos` was scanned (blackwell excluded — never published by all/auto)
+        severity: blocking
+
+      - id: every-arch-leg-scanned
+        description: Every platform from `docker-build-push.sh list-platforms` produced its own report
+        # blocking, and it must stay blocking. A multi-arch tag is an index over
+        # several artifacts; a report on one leg says nothing about the others.
+        # The registry path used to pull --platform linux/amd64 and scan only
+        # that, so lite's arm64 leg — the ONLY backend an arm64 host can install,
+        # since arm64_deployment_preflight defaults those hosts to
+        # DEPLOYMENT_MODE=lite — would have shipped unexamined (issue #667).
+        severity: blocking
+
+      - id: could-not-scan-is-not-a-pass
+        description: No leg reported COULD NOT SCAN (exit 2) — distinct from findings-present (exit 1)
+        # The distinction is the whole of issue #681 and must not be flattened
+        # into one "scan passed". FAIL_ON_SECURITY_ISSUES states which FINDINGS
+        # are acceptable to ship; it says nothing about shipping an image nobody
+        # looked at, so run_security_scan treats exit 2 as fatal regardless of it.
+        # Kept as its own criterion so a release that could not scan something is
+        # never reported as a release whose scan found nothing.
+        severity: blocking
+
+      - id: reports-describe-this-version
+        description: Each leg's Trivy report names the version under test, not whatever :latest pointed at
+        # The v0.5.0 gate once reported on the v0.4.1 image because the stage
+        # exported a variable security-scan.sh never read. Reading the tag back
+        # out of the artifact is the only check that would have caught it.
+        severity: blocking
+
+  # ─── The scenarios that prove a real user can install and upgrade. ──────
+  rehearse:
+    description: The three deployment scenarios, run under the installer's stock names and ports
+    criteria:
+      - id: live-stack-stopped
+        description: The live deployment is down, so the scenarios can bind ports 5173-5180
+        # `preflight` also reports this, deliberately as `warn` and labelled
+        # informational — it runs long before the scenarios and is a courtesy
+        # notice. HERE it is the real precondition: 65-rehearse.sh exits 3 and
+        # refuses to run anything, because taking someone's deployment down is
+        # their call, not this stage's.
+        severity: blocking
+
+      - id: fresh-install
+        description: Scenario A — a `curl | bash` install of this version comes up and transcribes
+        severity: blocking
+
+      - id: upgrade-from-previous
+        description: Scenario B — the previous published release upgrades to this one, with the rollback tail
+        severity: blocking
+
+      - id: lite-mode
+        description: Scenario C — the lite (CPU-only, cloud-ASR) deployment, against mocked ASR + mocked LLM
+        # blocking on purpose, from its first run. `docker-build-push.sh all`
+        # builds the lite image and a release publishes it, so a `warn` here
+        # would mean shipping a container with no functional evidence behind it —
+        # and on arm64 lite is the only deployment there is. An undeclared or
+        # non-blocking gate on a first-ever publish is exactly how that happens.
+        # It publishes nothing itself: test-lite-mode.sh builds locally and pins
+        # pull_policy: never.
+        severity: blocking
+
+  # ─── Version bump. Writes files and commits; publishes nothing. ─────────
+  bump:
+    description: Promote every version source to the target, verify, and commit
+    criteria:
+      - id: version-increases
+        description: The target is strictly greater than the current VERSION — never a re-release or a downgrade
+        severity: blocking
+
+      - id: all-sources-written
+        description: VERSION, pyproject [project].version and frontend/package.json were rewritten
+        severity: blocking
+
+      - id: package-lock-regenerated
+        description: npm regenerated package-lock.json, which carries the version in two places
+        severity: blocking
+
+      - id: post-bump-consistency
+        description: check-version-consistency.py --mode ci passes AFTER the writes, before committing
+        severity: blocking
+
+      - id: changelog-promoted
+        description: "[Unreleased] was promoted to [X.Y.Z]"
+        # warn HERE, matching the script: a missing [Unreleased] is a documented
+        # no-op, not a failure. 70-tag.sh is the real gate — it refuses without a
+        # section for the version. Same reasoning as preflight's changelog-section.
+        severity: warn
+
+      - id: bump-committed
+        description: The rewritten version sources were staged and committed
+        # Recorded as an operator-waived not-measured under NO_COMMIT=true, which
+        # is a documented mode; treating that as a failure would break it.
+        severity: blocking
+
+  # ─── The test gate. Runs against the live dev stack. ────────────────────
+  test:
+    description: The pre-merge integration gate, run against the live stack
+    criteria:
+      - id: dev-stack-up
+        description: Postgres answers on 5176 — this suite runs against the live stack, not a fixture
+        severity: blocking
+
+      - id: integration-gate
+        description: run-integration-tests.sh --coverage --e2e-smoke --export-capability exits 0
+        # Deliberately ONE criterion, not one per phase. run-integration-tests.sh
+        # emits no machine-readable phase list, so per-phase ids here would be a
+        # wish list rather than anything this stage can record — the exact drift
+        # that killed the previous version of this file.
+        severity: blocking
+
+  # ─── Local build of every architecture leg. Publishes nothing. ──────────
+  build:
+    description: Build every declared leg locally and prove each one knows its own version
+    criteria:
+      - id: platform-table-readable
+        description: docker-build-push.sh list-platforms yielded at least one leg
+        # An empty table is COULD NOT CHECK, not "nothing to build" — the same
+        # rule the scan stage applies to an empty platform list.
+        severity: blocking
+
+      - id: every-declared-leg-built
+        description: Every non-blackwell component x platform from the table built successfully
+        severity: blocking
+
+      - id: baked-version-host-leg
+        description: Each backend-derived host-arch leg reports APP_VERSION == the release version
+        severity: blocking
+
+      - id: host-arch-leg-present
+        description: Each backend-derived component declares a host-arch leg, so its build-arg contract could be run-checked
+        # warn, matching today's behaviour: a component with no host-arch leg
+        # prints SKIP and passes, because `docker run` cannot execute a foreign
+        # architecture. Recording it as not-measured makes the gap visible
+        # without changing the stage's contract on such a host.
+        severity: warn
+
+  # ─── Tag. Reaches outside the repo. ─────────────────────────────────────
+  tag:
+    description: Annotate and push the release tag
+    criteria:
+      - id: clean-worktree
+        description: No uncommitted changes — a tag must be reproducible from what it names
+        severity: blocking
+
+      - id: tag-absent
+        description: The version is not already tagged
+        severity: blocking
+
+      - id: version-consistency-pre-tag
+        description: check-version-consistency.py --mode pre-tag passes (ci checks plus a blocking CHANGELOG section)
+        severity: blocking
+
+      - id: changelog-section
+        description: CHANGELOG.md has a section for this version to use as the annotation body
+        severity: blocking
+
+  # ─── Publish. The first stage that writes to Docker Hub. ────────────────
+  publish:
+    description: Push every leg, assemble each index, and verify the published manifests
+    criteria:
+      - id: remote-builder-available
+        description: The multi-arch buildx builder exists and no node reports an error
+        severity: blocking
+
+      - id: images-pushed
+        description: docker-build-push.sh all (BUILD_MODE=push) succeeded
+        severity: blocking
+
+      - id: leg-declares-its-platform
+        description: Check (a) — each vX.Y.Z-<cap>-<arch> leg tag declares exactly the platform it names
+        severity: blocking
+
+      - id: index-declares-exact-platform-set
+        description: Check (b) — each vX.Y.Z index declares exactly the component's platform set; missing OR extra fails
+        severity: blocking
+
+      - id: cross-arch-equivalence
+        description: Check (c) — two-platform indexes have equal layer counts and a size ratio inside the purpose bound
+        severity: blocking
+
+  # ─── Smoke. Runs the PUBLISHED images. ──────────────────────────────────
+  smoke:
+    description: Prove the published images are the capability and architecture they claim
+    criteria:
+      - id: live-stack-stopped
+        description: No opentranscribe compose-project containers running — the Hub install smoke binds the stock ports
+        severity: blocking
+
+      - id: capability-probe-ran
+        description: The torch.version.cuda probe actually executed in every image checked
+        # Its own criterion on purpose. An image that cannot execute at all prints
+        # an empty string too, so discarding the exit status turns "could not
+        # check" into "CPU-only confirmed" — the #680 failure mode with a green
+        # tick, in the stage whose job is to catch it.
+        severity: blocking
+
+      - id: declared-capability-matches
+        description: full reports a non-empty torch.version.cuda; lite reports empty
+        severity: blocking
+
+      - id: diar-server-arch-correct
+        description: diar-server provision-models exits 5 (TOKEN_DENIED), not 126/127 — the wrong-arch ELF detector
+        severity: blocking
+
+      - id: lite-arm64-checked
+        description: The arm64 lite leg was probed over the remote arm64 docker context
+        # warn ONLY because that is today's behaviour: with no remote context the
+        # stage prints SKIP and passes. Substantively this is the weakest link in
+        # the pipeline — arm64 lite is the only backend an arm64 host can install
+        # — so raising it to blocking is the right eventual move, but it requires
+        # the operator to have the context configured and 85-smoke.sh to record
+        # not-measured instead of SKIP. Left as a visible warn rather than an
+        # invisible gap; see issue #667.
+        severity: warn
+
+      - id: hub-fresh-install
+        description: A fresh install against the published :vX.Y.Z images comes up
+        severity: blocking
+
+  # ─── Promote. Moves :latest by digest copy. ─────────────────────────────
+  promote:
+    description: Move :latest onto the validated digest, never a rebuild
+    criteria:
+      - id: published-repo-list-derived
+        description: security-scan.sh list-repos yielded a non-empty component->repo map
+        severity: blocking
+
+      - id: version-tag-published
+        description: Every derived repo has a :vX.Y.Z manifest on Docker Hub before promotion
+        severity: blocking
+
+      - id: latest-copied
+        description: imagetools create succeeded for every repo
+        severity: blocking
+
+      - id: latest-digest-matches-version
+        description: :latest and :vX.Y.Z resolve to the same non-empty digest per repo
+        severity: blocking
+
+  # ─── Finish. Publishes the GitHub Release. ──────────────────────────────
+  finish:
+    description: Publish the GitHub Release, which is what the installer resolves as "latest"
+    criteria:
+      - id: gh-cli-available
+        description: The gh CLI is installed
+        severity: blocking
+
+      - id: tag-exists
+        description: The version is tagged in this repo
+        severity: blocking
+
+      - id: all-images-published
+        description: Every repo from security-scan.sh list-repos has a :vX.Y.Z manifest on Docker Hub
+        severity: blocking
+
+      - id: ci-green-for-tag
+        description: release-validate.yml concluded success for the tag's SHA
+        # The only criterion in the pipeline with a built-in env bypass.
+        # SKIP_CI_CHECK=true records this as an operator-WAIVED not-measured, so
+        # it appears in criteria[] as an explicit opt-out rather than a pass.
+        # Recording a bypass as a pass is precisely the drift this file's header
+        # documents for remote-builder.
+        severity: blocking
+
+      - id: changelog-section
+        description: CHANGELOG.md has a section for this version to use as the release notes
+        severity: blocking
+
+      - id: github-release-created
+        description: gh release create --latest succeeded
         severity: blocking
 
 # Ordering. The reasoning that must not be lost:

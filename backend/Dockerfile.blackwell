@@ -19,17 +19,14 @@
 
 FROM nvcr.io/nvidia/pytorch:26.07-py3
 
-# Bake the release version into the image so /health and /system/stats report
-# it without a repo checkout or env plumbing (version.py: file -> env -> unknown).
-# Passed by scripts/docker-build-push.sh from the repo-root VERSION file.
-ARG APP_VERSION=unknown
-ENV APP_VERSION=${APP_VERSION}
-
 # Make CUDA ordinals match nvidia-smi, NVML and Docker's `device_ids` (issue #719).
 # This image reserves `count: all` for celery-cpu-worker exactly as the prod overlay
 # does, so the multi-visible-device case it guards is reachable here too.
+#
+# Deliberately kept HERE while the identity ARGs moved down past the app COPY (#667):
+# this value is constant, so it costs no cache; APP_VERSION/GIT_SHA/BUILD_TIME change
+# every build and would invalidate everything below them from this position.
 ENV CUDA_DEVICE_ORDER=PCI_BUS_ID
-
 LABEL org.opencontainers.image.title="OpenTranscribe Backend (Blackwell)" \
       org.opencontainers.image.description="AI-powered transcription backend for NVIDIA Blackwell/DGX Spark" \
       org.opencontainers.image.vendor="OpenTranscribe" \
@@ -169,6 +166,19 @@ ENV HF_HOME=/home/user/.cache/huggingface \
 # Copy application code
 # ---------------------------------------------------------------------------
 COPY . .
+
+# Build identity, baked in so /version, /health and /system/stats can report what this
+# image actually is. See backend/Dockerfile.lite for the full note — identical rationale:
+# the build context is ./backend so the repo-root VERSION file is absent, all three are
+# passed by build_backend_identity_args(), and the position AFTER `COPY . .` is what keeps
+# the per-build BUILD_TIME churn from invalidating the CUDA/pip layers above it.
+# This image previously declared APP_VERSION alone and reported GIT_SHA=BUILD_TIME=unknown.
+ARG APP_VERSION=unknown
+ENV APP_VERSION=${APP_VERSION}
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+ARG BUILD_TIME=unknown
+ENV BUILD_TIME=${BUILD_TIME}
 
 EXPOSE 8080
 

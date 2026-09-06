@@ -116,15 +116,13 @@ RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements-
 # -----------------------------------------------------------------------------
 FROM python:3.13-slim-trixie
 
-# Bake the release version into the image so /health and /system/stats report
-# it without a repo checkout or env plumbing (version.py: file -> env -> unknown).
-# Passed by scripts/docker-build-push.sh from the repo-root VERSION file.
-ARG APP_VERSION=unknown
-ENV APP_VERSION=${APP_VERSION}
-
 # Make CUDA ordinals match nvidia-smi, NVML and Docker's `device_ids` (issue #719).
 # Harmless on this CPU-only image, and kept identical to Dockerfile.prod so the
 # lite/CUDA pair cannot drift on device selection if lite ever gains a GPU path.
+#
+# Deliberately kept HERE while the identity ARGs moved down past the app COPY (#667):
+# this value is constant, so it costs no cache; APP_VERSION/GIT_SHA/BUILD_TIME change
+# every build and would invalidate everything below them from this position.
 ENV CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 # OCI annotations for container metadata and compliance
@@ -241,6 +239,31 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
 
 # Copy application code
 COPY --chown=appuser:appuser . .
+
+# Build identity, baked in so /version, /health and /system/stats can report what this
+# image actually is without a repo checkout. version.py resolves file -> env -> "unknown",
+# and the build context is ./backend, so the repo-root VERSION file is NOT in the image —
+# these three ENVs are the only source a running lite container has for its own identity.
+# All three are passed by scripts/docker-build-push.sh's build_backend_identity_args().
+#
+# Until this block existed, Dockerfile.lite declared APP_VERSION alone: buildx warned
+# ("InvalidDefaultArgInFrom"/unconsumed build arg) on the other two and every published
+# lite image reported GIT_SHA=unknown, BUILD_TIME=unknown from GET /version. Dockerfile.prod
+# has carried all three since #680.
+#
+# ⚠️ POSITION IS LOAD-BEARING — keep this AFTER the `COPY . .` above, never at the top of
+# the runtime stage where APP_VERSION used to sit. GIT_SHA and BUILD_TIME change on EVERY
+# build, and an ENV layer invalidates the whole remainder of its stage. Higher up, they
+# re-ran apt-get, the useradd, and the ~GB `COPY --from=builder /root/.local` on every
+# single build. Nothing below reads them at build time — they are consumed at RUNTIME by
+# app/core/version.py — so position affects only cache reuse. Same rationale, and the same
+# placement relative to the app COPY, as backend/Dockerfile.prod.
+ARG APP_VERSION=unknown
+ENV APP_VERSION=${APP_VERSION}
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+ARG BUILD_TIME=unknown
+ENV BUILD_TIME=${BUILD_TIME}
 
 # Reserve the pipeline's shared-volume mount point so a freshly created named volume
 # inherits appuser rather than root — see Dockerfile.prod for the full note (issue #661 E2:

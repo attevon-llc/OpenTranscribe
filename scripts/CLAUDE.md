@@ -345,6 +345,31 @@ this file is for.
   `reset <version>` clears rehearsal history — do it before a real run, or the
   status table reports stale state as current.
   Full guide: `docs-site/docs/developer-guide/releasing.md`.
+  - ⚠️ **Every stage's gates are DECLARED in `release/release-criteria.yaml` and RECORDED by
+    the stage script, bidirectionally — never one without the other.** `release/criteria-lib.sh`
+    exits **2** on either half breaking: an id recorded that the file does not declare, or an id
+    declared that the script never checked (`criteria_assert_all_checked`). That 2 is
+    pipeline-misuse, deliberately distinct from a gate failure — so it never gets read as a
+    statement about the release. `10-preflight.sh`/`30-verify.sh` predate the library and carry
+    their own inline copies; anything else must source it. The severity (`blocking`/`warn`) is the
+    **file's** decision, so `record` accepts only `pass|fail|not-measured` — passing `warn` as an
+    outcome is exit 2, because a caller choosing its own severity is how the two drifted before.
+  - **`not-measured` is not a pass and not a failure.** Against a blocking criterion it stops the
+    stage exactly as a failure does; a fifth `waived` argument downgrades it to a warning, and
+    that is for an EXPLICIT operator opt-out only (`NO_COMMIT=true`, `SKIP_CI_CHECK=true`) — never
+    for a check that merely could not run. Same rule as `security-scan.sh`'s 1-vs-2 (#681).
+  - **Adding a criterion does NOT change a stage's exit code, and must not.** Every gate keeps its
+    existing early `exit N` where it was; `record` is called at the check site and the criteria
+    emitted through a per-stage `fail_out` that exits the ORIGINAL code.
+    `criteria_assert_all_checked` is reachable only on the fall-through path — on an early exit
+    the later criteria genuinely were not checked, and the library's exit 2 would rewrite a gate
+    failure (1) or an unmet precondition (3) into misuse.
+  - `backend/tests/unit/test_release_criteria_wiring.py` asserts the same contract **statically**,
+    because most stages cannot run on a developer machine (they need multi-GB images, a pushed
+    tag, or Docker Hub credentials) and a mis-wired criterion would otherwise surface during a
+    real release. It matches a **literal** `record <id>`, so a helper that calls
+    `record "$criterion"` is invisible to it — `80-publish.sh`'s `check_verdict` returns the
+    verdict for the call site to record, rather than recording it itself, for exactly that reason.
 - **Harness self-test** — `release-tests/selftest-cleanup.sh` (25 cases). Run it
   after ANY change to `lib/guardrails.sh`: it exercises the code that deletes
   volumes, and caught the live-data marker check deleting a volume it should have
@@ -588,6 +613,39 @@ aux-file record.
   component print `All security scans completed successfully!` — and `docs` was already in that
   state, since it was in `BUILT_COMPONENTS` with a `security-scan.sh` arm but no registry-pull
   branch, so the default path "scanned" an image it never fetched.
+- ⚠️ **The scan unit is a LEG, not a component** (issue #667). A multi-arch tag is an index over
+  several artifacts, and a CVE report on one leg says nothing about the others. The registry
+  path used to `docker pull --platform linux/amd64` and scan that, so `lite`'s arm64 leg — the
+  **only** backend an arm64 host can install, since `opentranscribe.sh` defaults arm64 to
+  `DEPLOYMENT_MODE=lite` — would have shipped never having been looked at, with an amd64 report
+  beside it looking like coverage. `security-scan.sh <component>` now scans **every platform the
+  component declares** (7 legs across the 4 published components today); `SCAN_PLATFORM=linux/arm64`
+  narrows to one for iteration. The platform set is read from `docker-build-push.sh list-platforms`,
+  never transcribed.
+  - **Reports are keyed `<component>-<arch>-<tool>`, unconditionally** — including for
+    single-platform components. A scheme where the arch appears only sometimes is one where a
+    missing leg looks like an ordinary report.
+  - **`resolve_platform_image` VERIFIES what it got, and that is the point.** `docker pull
+    --platform linux/arm64` against a tag with no arm64 leg does **not** reliably fail: measured
+    against `opentranscribe-backend:latest` (amd64+arm64 only), requesting `linux/s390x`
+    proceeded to download a multi-GB image of a *different* architecture. Scanning that and
+    filing it as `-s390x` is worse than not scanning — it manufactures evidence. A registry
+    pre-flight (`docker manifest inspect`) refuses an undeclared platform before downloading;
+    the post-pull `{{.Os}}/{{.Architecture}}` comparison is the authoritative check. An empty
+    platform list is **COULD NOT SCAN (2)**, never "no architectures to scan".
+  - Local resolution searches leg tags (`repo:vX.Y.Z-<cap>-<arch>`), not just the bare tag:
+    building several legs locally leaves `repo:vX.Y.Z` pointing at whichever built **last**, so
+    checking only that tag makes which leg gets scanned depend on iteration order.
+  - `40-build.sh` builds every declared leg (one invocation per leg — `--load` cannot export a
+    multi-arch manifest) so `50-scan.sh` has something to scan; the baked-version `docker run`
+    check applies only to the **host-arch** leg, by its leg tag.
+- ⚠️ **Never `<producer> | grep -q ...` in these suites.** They run under `set -o pipefail`;
+  `grep -q` exits on first match, the producer dies with SIGPIPE, and the pipeline reports
+  FAILURE — so a match reads as a non-match and the assertion **silently inverts**. It is
+  size-dependent (output under the 64 KB pipe buffer is unaffected), which is why the idiom
+  worked against a ~100-line stage file and inverted against the 1428-line
+  `docker-build-push.sh`, reporting a hardcoded line as removed while it sat on line 865. Use
+  `[ "$(<producer> | grep -c ...)" -gt 0 ]`.
 - **The scannable component list has exactly one home**: the `SCAN_COMPONENT_*` tables in
   `security-scan.sh`, exposed as `./scripts/security-scan.sh list-components` (and
   `list-repos`, `component<TAB>repo`, which `scripts/release/50-scan.sh` derives its

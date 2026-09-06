@@ -113,13 +113,21 @@ validate_system() {
             print_success "GPU detected: $gpu_info"
 
             # Check NVIDIA Container Toolkit (check for package, not by running container)
-            if dpkg -l | grep -q nvidia-container-toolkit; then
-                local toolkit_version
-                toolkit_version=$(dpkg -l | grep nvidia-container-toolkit | awk '{print $3}')
+            #
+            # `grep -c ... -gt 0`, never `| grep -q`. This script runs under `set -o pipefail`,
+            # and `grep -q` exits at its FIRST match, killing the producer with SIGPIPE — so the
+            # pipeline reports failure exactly when the package WAS found. Measured on this host:
+            # `dpkg -l` is 447 KB, ~7x the 64 KB pipe buffer, so the producer is still writing
+            # when grep leaves; `rpm -qa` is the same order on an RPM host. Written the old way,
+            # an installed toolkit is reported as missing and the installer tells the operator
+            # OpenTranscribe "will fall back to CPU mode" on a perfectly good GPU host.
+            # `grep -c` reads the whole stream, so there is no early exit to race.
+            local toolkit_version
+            if [ "$(dpkg -l 2>/dev/null | grep -c nvidia-container-toolkit)" -gt 0 ]; then
+                toolkit_version=$(dpkg -l 2>/dev/null | grep nvidia-container-toolkit | awk '{print $3}' | head -1)
                 print_success "NVIDIA Container Toolkit installed: $toolkit_version"
-            elif rpm -qa | grep -q nvidia-container-toolkit; then
-                local toolkit_version
-                toolkit_version=$(rpm -qa | grep nvidia-container-toolkit | head -1)
+            elif [ "$(rpm -qa 2>/dev/null | grep -c nvidia-container-toolkit)" -gt 0 ]; then
+                toolkit_version=$(rpm -qa 2>/dev/null | grep nvidia-container-toolkit | head -1)
                 print_success "NVIDIA Container Toolkit installed: $toolkit_version"
             else
                 print_warning "NVIDIA GPU detected but Container Toolkit not installed"
@@ -455,7 +463,16 @@ create_env_file() {
 
     if command_exists nvidia-smi && nvidia-smi > /dev/null 2>&1; then
         # Check if NVIDIA Container Toolkit is installed (package check, not container run)
-        if dpkg -l 2>/dev/null | grep -q nvidia-container-toolkit || rpm -qa 2>/dev/null | grep -q nvidia-container-toolkit; then
+        #
+        # `grep -c ... -gt 0`, never `| grep -q` — see the same check in check_gpu_support()
+        # above for the measurement. This is the site where it costs the most: under
+        # `set -o pipefail` a SIGPIPE'd `dpkg -l` makes the first arm fail when the package
+        # IS installed, `||` then tries `rpm -qa` (absent on a Debian host, so it fails too),
+        # and the whole offline install is silently configured `use_gpu=false` / `cpu` /
+        # `int8` on a working GPU machine — reported to the operator as "GPU support enabled"
+        # never appearing, with no error anywhere.
+        if [ "$(dpkg -l 2>/dev/null | grep -c nvidia-container-toolkit)" -gt 0 ] \
+           || [ "$(rpm -qa 2>/dev/null | grep -c nvidia-container-toolkit)" -gt 0 ]; then
             use_gpu="true"
             torch_device="cuda"
             compute_type="float16"

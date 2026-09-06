@@ -1594,7 +1594,6 @@
     background: rgba(59, 130, 246, 0.04);
   }
 
-  :global([data-theme='dark']) .config-item.shared,
   :global([data-theme='dark']) .config-item.shared {
     background: rgba(96, 165, 250, 0.06);
   }
@@ -1612,7 +1611,6 @@
     letter-spacing: 0.02em;
   }
 
-  :global([data-theme='dark']) .share-badge,
   :global([data-theme='dark']) .share-badge {
     background: rgba(96, 165, 250, 0.15);
     color: #60a5fa;
@@ -1631,7 +1629,6 @@
     letter-spacing: 0.02em;
   }
 
-  :global([data-theme='dark']) .admin-badge,
   :global([data-theme='dark']) .admin-badge {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
@@ -1648,7 +1645,6 @@
     color: var(--primary-on-surface);
   }
 
-  :global([data-theme='dark']) .shared-section-header h4,
   :global([data-theme='dark']) .shared-section-header h4 {
     color: #60a5fa;
   }
@@ -1672,7 +1668,6 @@
     color: var(--primary-on-surface);
   }
 
-  :global([data-theme='dark']) .tag-pill,
   :global([data-theme='dark']) .tag-pill {
     background: rgba(var(--primary-color-rgb), 0.2);
     color: #60a5fa;

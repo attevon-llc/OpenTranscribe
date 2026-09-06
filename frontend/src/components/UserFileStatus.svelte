@@ -596,7 +596,6 @@
     opacity: 1;
   }
 
-  :global([data-theme='dark']) .live-status-icon::after,
   :global([data-theme='dark']) .live-status-icon::after {
     background: rgba(255, 255, 255, 0.92);
     color: #111;

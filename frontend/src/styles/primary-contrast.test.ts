@@ -87,6 +87,18 @@ describe('primary blue carries white text at AA contrast', () => {
     }
   });
 
+  it('--primary-dark is an alias, not a second copy of the same colour', () => {
+    // It held #1d4ed8 / #93c5fd — byte-identical to --primary-on-surface, for
+    // the identical job — under a name that reads as a lie in dark mode, where
+    // "dark" resolves to a LIGHT blue. Two copies of one value drift; one of
+    // them was already the reason this theme carried two primary blues.
+    for (const selector of [':root', "[data-theme='dark']"]) {
+      const block = css.slice(css.indexOf(selector));
+      const m = block.match(/--primary-dark:\s*([^;]+);/)!;
+      expect(m[1].trim()).toBe('var(--primary-on-surface)');
+    }
+  });
+
   it('control: the previous values would have failed this gate', () => {
     // Proves the threshold discriminates rather than passing anything blue.
     expect(contrast(hexToRgb('#3b82f6'), WHITE)).toBeLessThan(AA_NORMAL_TEXT);

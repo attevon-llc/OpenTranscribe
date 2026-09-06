@@ -73,7 +73,12 @@
   --warning-color-rgb: 245, 158, 11; /* #f59e0b */
   --primary-hover: #1d4ed8; /* Hover darkens, so contrast only improves */
   --primary-light: #dbeafe; /* Light blue for button backgrounds */
-  --primary-dark: #1d4ed8; /* Darker blue for button text */
+  /* Alias of --primary-on-surface, kept for the call sites that already use it.
+     It held the identical value for the identical job, and its name is actively
+     misleading: in dark mode below it resolves to a LIGHT blue, because blue
+     text on a dark surface must be light. Prefer --primary-on-surface, which
+     says what the colour is FOR rather than which direction it was nudged. */
+  --primary-dark: var(--primary-on-surface);
   --surface-color: #ffffff;
   --background-color: #f8fafc;
   --text-color: #1e293b;
@@ -256,7 +261,7 @@
   --warning-color-rgb: 251, 191, 36; /* #fbbf24 */
   --primary-hover: #1d4ed8; /* Apple HIG: hover always darkens, so contrast only improves. */
   --primary-light: #1e3a8a; /* Deeper blue for button backgrounds in dark mode */
-  --primary-dark: #93c5fd; /* Lighter blue for button text in dark mode (contrast on dark surfaces) */
+  --primary-dark: var(--primary-on-surface); /* See the note on :root */
   --surface-color: #1e293b;
   --background-color: #0f172a;
   --text-color: #f8fafc;

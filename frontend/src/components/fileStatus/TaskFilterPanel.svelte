@@ -106,7 +106,6 @@
     white-space: nowrap;
   }
 
-  :global([data-theme='dark']) .quick-chip,
   :global([data-theme='dark']) .quick-chip {
     background: rgba(96, 165, 250, 0.12);
     color: #93c5fd;
@@ -117,7 +116,6 @@
     transform: translateY(-1px);
   }
 
-  :global([data-theme='dark']) .quick-chip:hover,
   :global([data-theme='dark']) .quick-chip:hover {
     background: rgba(96, 165, 250, 0.2);
   }

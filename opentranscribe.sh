@@ -40,6 +40,29 @@ if [ -f ./scripts/common.sh ]; then
     . ./scripts/common.sh
 fi
 
+# Grace period (seconds) for CUDA-holding services on stop/down/restart (issue #782).
+# `:=` is safe to run whether or not common.sh (above) already assigned it -- unlike a
+# function, a variable needs no `declare -F` guard to avoid clobbering the value common.sh
+# set. Kept in sync with docker-compose.yml's `${OT_STOP_GRACE_GPU:-30}s` default by
+# backend/tests/unit/test_stop_grace_period_wiring.py.
+: "${OT_STOP_GRACE_GPU:=30}"
+
+# Fallback definition: common.sh is sourced conditionally above (an install predating
+# release-manifest.txt:52 may not have it), and every command that tears the stack down
+# must keep working without it. Identical body to common.sh's ot_drain_gpu_workers();
+# common.sh's wins when present. Same standalone-shipping rationale as
+# CONTAINER_UID_GID/read_env_value above.
+if ! declare -F ot_drain_gpu_workers >/dev/null 2>&1; then
+    ot_drain_gpu_workers() {
+        local chain="$1"
+        # shellcheck disable=SC2086
+        COMPOSE_PROFILES="*" docker compose $chain stop -t "$OT_STOP_GRACE_GPU" \
+            celery-worker celery-worker-gpu-transcribe celery-worker-gpu-diarize \
+            celery-worker-gpu-scaled celery-redaction celery-cpu-worker diar-native \
+            2>/dev/null || true
+    }
+fi
+
 # Fallback definition: common.sh is sourced conditionally above (an install predating
 # release-manifest.txt:52 may not have it), and every non-DB command must keep working
 # without it. Identical body; common.sh's wins when present. Same standalone-shipping
@@ -1135,6 +1158,10 @@ preflight_upgrade_env() {
 compose_down_for_upgrade() {
     local compose_files="$1"
 
+    # Drain CUDA-holding workers before `down` reaches them (issue #782) -- the upgrade
+    # path this function exists for is exactly the case named in that issue.
+    ot_drain_gpu_workers "$compose_files"
+
     # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
     if docker compose $compose_files down; then
         return 0
@@ -1499,6 +1526,7 @@ case "${1:-help}" in
         pin_diar_native_image_for_blackwell
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
+        ot_drain_gpu_workers "$compose_files"
         docker compose $compose_files down
         echo -e "${GREEN}✅ OpenTranscribe stopped${NC}"
         ;;
@@ -1512,6 +1540,7 @@ case "${1:-help}" in
         pin_diar_native_image_for_blackwell
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
+        ot_drain_gpu_workers "$compose_files"
         docker compose $compose_files down
         docker compose $compose_files up -d
         echo -e "${GREEN}✅ OpenTranscribe restarted!${NC}"
@@ -1926,6 +1955,7 @@ case "${1:-help}" in
             pin_diar_native_image_for_blackwell
             pin_gpu_split_profile
             compose_files=$(get_compose_files)
+            ot_drain_gpu_workers "$compose_files"
             docker compose $compose_files down -v
             echo -e "${GREEN}✅ All data removed${NC}"
         else

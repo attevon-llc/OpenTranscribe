@@ -312,6 +312,31 @@ services:
   celery-worker:
     container_name: opentranscribe-celery-worker
     restart: always
+    # Grace period before SIGKILL on `docker stop`/`down`/`restart` (issue #782). Compose
+    # v2.29.7 bakes this into the container's Config.StopTimeout at CREATE time, and the
+    # daemon honours it even for a bare `docker stop` — the primary fix. `worker_shutdown`
+    # (app/core/worker_shutdown.py) releases the transcriber/diarizer/CUDA context on
+    # SIGTERM, so this window only needs to cover that release, not a full task.
+    #
+    # 30s is MEASURED, not guessed. Isolated stack on an idle RTX A6000 (GPU 2), models
+    # preloaded, `docker stop --time 120` so the ceiling could not clip the result:
+    #
+    #   rep   wall     exit   handler release
+    #   1     3.90s    0      1.400s
+    #   2     4.44s    0      1.413s
+    #   3     3.98s    0      1.510s
+    #
+    # Worst clean stop 4.44s; the release itself is ~1.5s of that, the rest is celery's
+    # warm shutdown joining the pool. 30s is ~6.7x the worst observed case.
+    #
+    # ⚠️ Deliberately NOT larger, and the reason is measured too: a SIGTERM that arrives
+    # while the worker is still BOOTING is never handled — celery logs a warm shutdown and
+    # then never exits, so the container burns the entire grace period and is SIGKILLed
+    # anyway (observed: stop at T+2s => 31.09s wall, exit 137; stop when ready => 4.55s,
+    # exit 0). A longer window does not rescue that case, it only lengthens the hang. This
+    # is the "trades a wedged GPU for a stop that hangs" trade-off issue #782 warns about,
+    # and it is why this is 30s rather than the 3600s the issue floats.
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
     env_file:
       - path: .env
         required: false
@@ -428,6 +453,9 @@ services:
   celery-cpu-worker:
     container_name: opentranscribe-celery-cpu-worker
     restart: always
+    # CUDA-holding: `count: all` GPU reservation below. Same grace period as celery-worker
+    # — see the comment there for the full rationale (issue #782).
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
     env_file:
       - path: .env
         required: false
@@ -507,6 +535,9 @@ services:
   celery-redaction:
     container_name: opentranscribe-celery-redaction
     restart: always
+    # CUDA-holding: REDACTION_DEVICE=auto can open a CUDA context. Same grace period as
+    # celery-worker (issue #782).
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
     env_file:
       - path: .env
         required: false
@@ -790,6 +821,8 @@ services:
     profiles:
       - gpu-split
     restart: always
+    # CUDA-holding gpu-split worker. Same grace period as celery-worker (issue #782).
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
     env_file:
       - path: .env
         required: false
@@ -856,6 +889,8 @@ services:
     profiles:
       - gpu-split
     restart: always
+    # CUDA-holding gpu-split worker. Same grace period as celery-worker (issue #782).
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
     env_file:
       - path: .env
         required: false
@@ -927,6 +962,10 @@ services:
       - gpu-scale  # Only activated with --gpu-scale flag
     scale: 0  # Disabled by default, gpu-scale.yml sets scale: 1
     restart: always
+    # CUDA-holding gpu-scale worker. Same grace period as celery-worker (issue #782).
+    # Inert while scale: 0 (docker-compose.lite.yml) -- the key applies at container
+    # CREATE time, and lite mode creates none.
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
     env_file:
       - path: .env
         required: false

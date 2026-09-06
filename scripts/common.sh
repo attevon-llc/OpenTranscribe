@@ -25,6 +25,44 @@
 # the moment a path needs group-write between two identities, the wrong GID becomes a bug.
 CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"
 
+# Grace period (seconds) given to CUDA-holding services on `docker stop`/`down`/`restart`
+# before the daemon SIGKILLs them (issue #782). Ships to end users
+# (release-manifest.txt:102), so this is the ONE source both front ends read; opentr.sh's
+# own defaults block ALSO carries a `: "${OT_STOP_GRACE_GPU:=30}"` (required by
+# backend/tests/unit/test_shell_env_var_guards.py's contract, and it is what makes this
+# name visible to opentranscribe.sh in the drift-guard scan even though that script does
+# not source this assignment at all — see its own fallback definition for the real
+# production path). Kept in sync with the `${OT_STOP_GRACE_GPU:-30}s` compose default by
+# backend/tests/unit/test_stop_grace_period_wiring.py.
+OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-30}"
+
+# Give the CUDA-holding services a chance to release VRAM cleanly BEFORE any
+# down/stop/restart reaches them (issue #782). Compose v2.29.7 bakes
+# `stop_grace_period` into each container's `Config.StopTimeout` at CREATE time and the
+# daemon honours it even for this bare `stop` — that is the PRIMARY fix, already declared
+# in docker-compose.yml. The explicit `-t` here is the migration bridge: a container
+# created before that key existed keeps `StopTimeout=null` until it is recreated, and this
+# is what covers it in the meantime.
+#
+# Scoped to the CUDA-holding SERVICES ONLY — deliberately never a global `down -t N`,
+# which would also hand OpenSearch/Postgres/MinIO N seconds to hang in and make an IDLE
+# stop slower (issue #782 AC#3). `COMPOSE_PROFILES="*"` so a chain that does not happen to
+# activate the gpu-scale/gpu-split profile for THIS invocation still reaches a service
+# defined under it — the same reasoning `fresh_destroy()`'s `down` call already uses.
+#
+# $1 is a pre-split "-f a.yml -f b.yml" compose-files chain, unquoted at the call site on
+# purpose (the same word-splitting idiom every other compose call in this file relies on).
+# Safe to call against a chain/project where none of these services are defined or
+# running: `stop` on an absent service name is a no-op under `2>/dev/null || true`.
+ot_drain_gpu_workers() {
+  local chain="$1"
+  # shellcheck disable=SC2086
+  COMPOSE_PROFILES="*" docker compose $chain stop -t "$OT_STOP_GRACE_GPU" \
+    celery-worker celery-worker-gpu-transcribe celery-worker-gpu-diarize \
+    celery-worker-gpu-scaled celery-redaction celery-cpu-worker diar-native \
+    2>/dev/null || true
+}
+
 #######################
 # UTILITY FUNCTIONS
 #######################
@@ -1562,7 +1600,11 @@ restore_database() {
   # backend/celery are still connected to the database being dropped, e.g. on a
   # version-skewed install whose compose file is missing one of these service names.
   # shellcheck disable=SC2086
-  if ! docker compose $compose_files stop backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat; then
+  # -t "$OT_STOP_GRACE_GPU" (issue #782): celery-worker/celery-cpu-worker/celery-redaction
+  # in this list are CUDA-holding services, and a restore's `stop` used to inherit
+  # docker's bare 10s default -- the same SIGKILL-a-live-CUDA-context hazard `opentr.sh
+  # stop` had. The `if !` fail-closed check above this comment is unchanged.
+  if ! docker compose $compose_files stop -t "$OT_STOP_GRACE_GPU" backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat; then
     echo "❌ Could not stop application services — refusing to proceed with restore."
     echo "   The database was NOT touched."
     [ -n "$temp_sql" ] && rm -f "$temp_sql"

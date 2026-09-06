@@ -45,6 +45,12 @@ fi
 # per the contract this block documents.
 : "${PKI_HTTPS_PORT:=}"
 : "${PKI_HTTP_PORT:=}"
+# Grace period (seconds) for CUDA-holding services on stop/down/restart (issue #782).
+# scripts/common.sh (sourced above) already assigns this with `${OT_STOP_GRACE_GPU:-30}`,
+# which satisfies `set -u` on its own — this entry exists for the drift-guard contract
+# test_stop_grace_period_wiring.py enforces (opentr.sh's defaults block, common.sh's
+# assignment, and the compose `${OT_STOP_GRACE_GPU:-Ns}` default must all agree on 30).
+: "${OT_STOP_GRACE_GPU:=30}"
 # Snapshot of the .env value, taken before any `--gpu-device` override replaces
 # it. The containers read GPU_DEVICE_ID from `env_file: .env` (not from this
 # shell), so the override has to be able to say which value they will still see.
@@ -1480,6 +1486,9 @@ fresh_stop() {
   local chain
   chain="$(fresh_compose_chain "$name")"
   echo "🛑 Stopping fresh deployment '${name}' (project ${proj})..."
+  # Drain CUDA-holding workers before `down` reaches them (issue #782) -- same reasoning
+  # as the main dev stack's stop path, scoped to this isolated project only.
+  COMPOSE_PROJECT_NAME="$proj" ot_drain_gpu_workers "$chain"
   # --remove-orphans so an aux container from an earlier start with a --with-*
   # flag that is no longer recorded still comes down. Safe: the project is
   # isolated by construction, so nothing outside this deployment can be hit.
@@ -1618,6 +1627,9 @@ fresh_destroy() {
   # Exactly the class of leak #347 closed for `--with-llm-test`'s vLLM container --
   # profile-gated services need the same treatment here, generically, rather than
   # enumerating every profile this repo happens to define today.
+  # Drain CUDA-holding workers before the destructive `down -v` below (issue #782).
+  COMPOSE_PROJECT_NAME="$proj" ot_drain_gpu_workers "$chain"
+
   # shellcheck disable=SC2086
   local _down_rc=0
   COMPOSE_PROJECT_NAME="$proj" COMPOSE_PROFILES="*" docker compose $chain down -v --remove-orphans 2>/dev/null || _down_rc=$?
@@ -3265,6 +3277,8 @@ reset_and_init() {
   fi
 
   echo "🛑 Stopping all containers and removing volumes..."
+  # Drain CUDA-holding workers before the destructive `down -v` below (issue #782).
+  ot_drain_gpu_workers "$COMPOSE_FILES"
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES down -v
 
@@ -3394,8 +3408,11 @@ restart_backend() {
   restart_resolve_target "$@" || return $?
   echo "🔄 Restarting backend services on ${RESTART_LABEL} (backend, all celery workers, celery-beat, flower)..."
 
+  # -t "$OT_STOP_GRACE_GPU" (issue #782): compose v2.29.7's `restart` passes only
+  # options.Timeout, so a container created before docker-compose.yml carried
+  # stop_grace_period (StopTimeout still null) needs it spelled out here too.
   local rc=0
-  restart_compose restart backend \
+  restart_compose restart -t "$OT_STOP_GRACE_GPU" backend \
     celery-worker \
     celery-download-worker \
     celery-cpu-worker \
@@ -3408,7 +3425,7 @@ restart_backend() {
 
   # celery-worker-gpu-scaled is optional (scale: 0 unless --gpu-scale), so its
   # absence is genuinely not an error — unlike everything above.
-  restart_compose restart celery-worker-gpu-scaled 2>/dev/null || true
+  restart_compose restart -t "$OT_STOP_GRACE_GPU" celery-worker-gpu-scaled 2>/dev/null || true
 
   if [ "$rc" -ne 0 ]; then
     echo "❌ Backend restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
@@ -3427,6 +3444,9 @@ restart_frontend() {
   restart_resolve_target "$@" || return $?
   echo "🔄 Restarting frontend service on ${RESTART_LABEL}..."
 
+  # No -t/drain here (issue #782): the frontend holds no CUDA context, so the default
+  # grace period is correct as-is. See backend/tests/unit/test_teardown_call_sites_drain.py's
+  # allowlist entry for this exact line.
   local rc=0
   restart_compose restart frontend || rc=$?
   if [ "$rc" -ne 0 ]; then
@@ -3445,9 +3465,11 @@ restart_all() {
   restart_resolve_target "$@" || return $?
   echo "🔄 Restarting all services on ${RESTART_LABEL} without database reset..."
 
-  # Restart all services in place - docker compose handles dependency ordering
+  # Restart all services in place - docker compose handles dependency ordering.
+  # -t "$OT_STOP_GRACE_GPU" (issue #782): see restart_backend()'s comment -- `restart`
+  # passes only options.Timeout, so pre-recreate containers need it explicit here too.
   local rc=0
-  restart_compose restart || rc=$?
+  restart_compose restart -t "$OT_STOP_GRACE_GPU" || rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "❌ Restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
     return "$rc"
@@ -3460,17 +3482,67 @@ restart_all() {
 }
 
 # Helper: stop all containers from both dev and prod compose chains, plus stragglers
+# Drain (b): container-driven counterpart to ot_drain_gpu_workers() (scripts/common.sh),
+# for stop_all_containers() specifically -- it runs BOTH a dev and a prod compose chain
+# below, so no single chain is guaranteed to be the one that actually started a given
+# service (e.g. after an overlay changed between the run that created a container and
+# this one). Reads the SAME overridable project labels the straggler loop in
+# stop_all_containers() uses, for the identical reason (issue #693): a bare name-prefix
+# match previously stopped-and-removed an unrelated container ("opentranscribe-homepage",
+# a dashboard app from a different compose project sharing the name prefix by
+# coincidence) on this host. Matches by NAME SUBSTRING, not prefix, so it also reaches
+# gpu-scale's celery-worker-gpu-scaled, gpu-split's celery-worker-gpu-{transcribe,diarize},
+# a --fresh project's otfresh-<name>-celery-worker, and diar-native's default
+# project-prefixed name (e.g. transcribe-app-diar-native-1) -- none of which carry the
+# bare "opentranscribe-celery-worker" name a literal match would assume. Backgrounded +
+# `wait` so N workers drain in PARALLEL, not N times OT_STOP_GRACE_GPU serially.
+#
+# ⚠️ A LABEL-based selector (e.g. com.opentranscribe.gpu=true) is tempting and WRONG:
+# labels are also baked at container CREATE time, so it would miss exactly the
+# pre-upgrade containers this helper exists to reach.
+ot_drain_gpu_workers_by_container() {
+  local pids=()
+  local gpu_container
+  for gpu_container in $( { docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' 2>/dev/null
+                            docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' 2>/dev/null
+                          } | sort -u ); do
+    case "$gpu_container" in
+      *celery-worker*|*celery-cpu-worker*|*celery-redaction*|*diar-native*)
+        docker stop -t "$OT_STOP_GRACE_GPU" "$gpu_container" 2>/dev/null &
+        pids+=("$!")
+        ;;
+    esac
+  done
+  local pid
+  for pid in "${pids[@]:-}"; do
+    [ -n "$pid" ] && wait "$pid" 2>/dev/null
+  done
+}
+
 stop_all_containers() {
-  # Dev compose chain
-  docker compose -f docker-compose.yml -f docker-compose.override.yml \
+  # Drain CUDA-holding workers before EITHER `down`/stop chain below reaches them
+  # (issue #782) -- see ot_drain_gpu_workers_by_container()'s docstring for why this is
+  # container-driven rather than chain-driven here specifically.
+  ot_drain_gpu_workers_by_container
+
+  # Dev compose chain. -f docker-compose.gpu-split.yml -f docker-compose.diar-native.yml
+  # and COMPOSE_PROFILES="*" close issue #782's N5 finding: without them, this chain never
+  # named the services gpu-split/diar-native define, so celery-worker-gpu-{transcribe,
+  # diarize}, -gpu-scaled and diar-native were reachable only by the straggler loop below
+  # (same fix shape fresh_destroy() already uses for the identical class of profile leak).
+  # shellcheck disable=SC2086
+  COMPOSE_PROFILES="*" docker compose -f docker-compose.yml -f docker-compose.override.yml \
     -f docker-compose.gpu.yml -f docker-compose.blackwell.yml \
-    -f docker-compose.gpu-scale.yml \
+    -f docker-compose.gpu-scale.yml -f docker-compose.gpu-split.yml \
+    -f docker-compose.diar-native.yml \
     -f docker-compose.nas.yml "$@" 2>/dev/null || true
 
-  # Prod compose chain
-  docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  # Prod compose chain. Same N5 fix as the dev chain above.
+  # shellcheck disable=SC2086
+  COMPOSE_PROFILES="*" docker compose -f docker-compose.yml -f docker-compose.prod.yml \
     -f docker-compose.local.yml -f docker-compose.gpu.yml \
     -f docker-compose.blackwell.yml -f docker-compose.gpu-scale.yml \
+    -f docker-compose.gpu-split.yml -f docker-compose.diar-native.yml \
     -f docker-compose.nas.yml \
     -f docker-compose.nginx.yml -f docker-compose.pki.yml "$@" 2>/dev/null || true
 
@@ -3992,6 +4064,9 @@ case "$1" in
 
         # Stop any running bench stack cleanly
         echo "🛑 Stopping any running bench stack..."
+        # Drain otbench-celery-worker before `down` reaches it (issue #782) -- a real GPU
+        # worker, not a mock.
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         # Use 'down' (not 'stop') so containers are removed before volume rm.
         # docker volume rm fails silently when stopped containers still reference it.
@@ -4033,6 +4108,7 @@ case "$1" in
 
       stop)
         echo "🛑 Stopping bench stack..."
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE stop
         echo "✅ Bench stack stopped. Volumes preserved. Use 'bench clean' to wipe."
@@ -4040,6 +4116,7 @@ case "$1" in
 
       clean)
         echo "🗑  Stopping bench stack and wiping all bench volumes..."
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE down --remove-orphans 2>/dev/null || true
         docker volume rm \
@@ -4145,6 +4222,7 @@ case "$1" in
 
         # Wipe bench volumes for a clean slate
         echo "🗑  Wiping bench volumes for clean run..."
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE down --remove-orphans 2>/dev/null || true
         docker volume rm \
@@ -4220,6 +4298,7 @@ case "$1" in
         echo "   GPU idle between tasks (conc=3):  <  5 s"
         echo ""
         echo "🛑 Stopping bench stack (volumes kept for inspection)..."
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE stop
         ;;

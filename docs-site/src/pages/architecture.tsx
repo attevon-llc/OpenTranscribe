@@ -45,7 +45,7 @@ const GROUPS: Group[] = [
         id: 'celery-queues',
         title: 'Celery Queues',
         description:
-          "The 8 real queues behind “Celery Workers” — gpu, cpu, nlp, embedding, redaction, utility, download, and the dynamic cloud-asr/cpu-transcribe queues — with what runs on each and why.",
+          'The 8 real queues behind "Celery Workers": gpu, cpu, nlp, embedding, redaction, utility, download, and the dynamic cloud-asr/cpu-transcribe queues, with what runs on each and why.',
       },
     ],
   },
@@ -99,7 +99,7 @@ const GROUPS: Group[] = [
         id: 'backend-modules',
         title: 'Backend Module Map',
         description:
-          'How backend/app/{api,auth,schemas,services,tasks,models,db,core,utils} actually relate — one services/ layer called by both the API and Celery.',
+          'How backend/app/{api,auth,schemas,services,tasks,models,db,core,utils} actually relate: one services/ layer called by both the API and Celery.',
       },
       {
         id: 'frontend-modules',
@@ -169,7 +169,7 @@ export default function Architecture(): JSX.Element {
       <header className={styles.hero}>
         <h1 className={styles.title}>Architecture</h1>
         <p className={styles.subtitle}>
-          Interactive diagrams built from the real codebase — pan, zoom, search, and click
+          Interactive diagrams built from the real codebase. Pan, zoom, search, and click
           through guided views inside each one. Not hand-drawn illustrations: every diagram is a
           validated spec checked against the actual routers, Celery queue routes, and directory
           structure.

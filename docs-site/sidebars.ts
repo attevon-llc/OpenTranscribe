@@ -115,6 +115,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Developer Guide',
       items: [
+        'developer-guide/roadmap',
         'developer-guide/architecture',
         'developer-guide/diarization-boundary-correction',
         'developer-guide/watch-sources',

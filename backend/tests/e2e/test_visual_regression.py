@@ -484,10 +484,20 @@ THEMES = ["light", "dark"]
 _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
     # `.count-chip` (GalleryCountChip.svelte) renders the true library total /
     # loaded-count, which reflows the grid on every upload elsewhere in the
-    # stack; `.notification-badge` (Navbar.svelte) is the unread-count pill on
-    # every authenticated page. Neither is a layout fix (see module docstring
+    # stack; `.notifications-btn` (Navbar.svelte) is the navbar bell on every
+    # authenticated page. Neither is a layout fix (see module docstring
     # issue #451 note) — row/page-height drift from card count is NOT maskable
     # and is instead handled by the isolated-stack skip guard below.
+    #
+    # ⚠️ Mask the BUTTON, not the `.notification-badge` pill inside it. The pill
+    # is `{#if $unreadCount > 0}`, so it exists in one notification state and not
+    # the other — and a mask that only sometimes applies produces two different
+    # baselines for identical UI (absent: real navbar pixels; present: a magenta
+    # box). A single unread notification on the capture stack would silently
+    # invalidate every surface. `.notifications-btn` is unconditional and
+    # encloses the pill, so the masked region is identical either way. The cost
+    # is that a regression in the 20x20 bell glyph is no longer compared — cheap
+    # next to a baseline whose validity depends on nobody having notifications.
     # `.meta-line` (VirtualGrid.svelte) is the per-card "Sep 06, 2026 · 23 MB ·
     # 4 spk" strip. Masked because it is what BOUND these baselines to a single
     # deployment: the upload date is the day the stack was seeded, so a baseline
@@ -497,7 +507,7 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
     # the pixel comparison of a date/size/speaker-count string costs nothing a
     # visual baseline is for — layout, chrome, spacing and theme are still
     # compared in full — and buys baselines that survive a re-seed on any host.
-    "gallery": (".count-chip", ".notification-badge", ".meta-line"),
+    "gallery": (".count-chip", ".notifications-btn", ".meta-line"),
     # "Last run: N minutes ago" (1 element) + per-cluster membership counts (20)
     # + the three tab counters ("13/1/11" etc, `.speakers-page .badge`) + the
     # shared navbar notification pill. Row-count drift itself is not maskable —
@@ -506,16 +516,16 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
         ".last-clustered-chip",
         ".member-count",
         ".speakers-page .badge",
-        ".notification-badge",
+        ".notifications-btn",
     ),
     # Users/files/tasks/throughput/queue/model/CPU/mem/disk/GPU cards — live
     # telemetry and DB totals, all inside one wrapper (see comment above). The
     # settings modal is captured with `full_page=False` over the gallery page
     # underneath it, which leaks `.count-chip` and the navbar's
-    # `.notification-badge` into the corner of the capture — `_volatile_regions`
+    # `.notifications-btn` into the corner of the capture — `_volatile_regions`
     # is keyed per-surface, so those two must be listed again here even though
     # `gallery` already lists them.
-    "settings": (".settings-modal .stats-grid", ".count-chip", ".notification-badge"),
+    "settings": (".settings-modal .stats-grid", ".count-chip", ".notifications-btn"),
     # Every trace node renders the real wall-clock cost of its stage (GH #514).
     # Those milliseconds differ on EVERY run by construction — that is the whole
     # point of measuring them — so a baseline containing them would be
@@ -528,7 +538,7 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
     # Shared navbar notification pill — the only volatile element on this
     # surface; the two different-file problem (see issue #451 note in the
     # module docstring) is not maskable and is handled by the skip guard below.
-    "file_detail": (".notification-badge",),
+    "file_detail": (".notifications-btn",),
 }
 
 
@@ -538,18 +548,24 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
 #: catch a CLASS RENAME silently disabling masking. They implement that as "does
 #: this selector match right now", which conflates two different things: a stale
 #: selector (a real defect) and an element the app correctly chose not to render
-#: (normal). `.notification-badge` is `{#if $unreadCount > 0}` in Navbar.svelte,
-#: so on a freshly seeded stack with no notifications it renders zero elements —
-#: and `file_detail`, whose entire mask list is that one selector, therefore
-#: FAILED both themes on a clean isolated stack while passing on the shared dev
-#: stack that happened to have unread notifications. The guard was reporting the
-#: cleanliness of the stack, not the health of the selector.
+#: (normal). `.notification-badge` was the case that exposed this: it is
+#: `{#if $unreadCount > 0}` in Navbar.svelte, so on a freshly seeded stack it
+#: renders zero elements — and `file_detail`, whose entire mask list was that one
+#: selector, FAILED both themes on a clean isolated stack while passing on the
+#: shared dev stack that happened to have unread notifications. The guard was
+#: reporting the cleanliness of the stack, not the health of the selector.
 #:
-#: Membership here suppresses only the RUNTIME match requirement. The rename that
-#: the runtime check was reaching for is caught statically instead, against the
-#: frontend source, by `tests/unit/test_visual_regression_selectors.py` — which
+#: **This set is deliberately EMPTY.** Exempting the badge would have made the
+#: suite pass while leaving the real hazard in place: a mask that applies in one
+#: notification state and not the other yields two different baselines for
+#: identical UI. The fix was to mask its unconditional parent `.notifications-btn`
+#: instead, so no exemption is needed. Prefer that shape — find a stable ancestor
+#: — before adding an entry here.
+#:
+#: Membership suppresses only the RUNTIME match requirement, never the static
+#: existence check in `tests/unit/test_visual_regression_selectors.py`, which
 #: does not depend on what the app happened to render during one capture.
-_CONDITIONAL_SELECTORS: frozenset[str] = frozenset({".notification-badge"})
+_CONDITIONAL_SELECTORS: frozenset[str] = frozenset()
 
 
 def _assert_masks(page: Page, surface: str) -> list[Any]:
@@ -705,10 +721,10 @@ def test_visual_regression(
             _stabilize(page)
             # A masked surface must actually mask something — see the speakers
             # branch below for why this is asserted rather than assumed. This
-            # surface's only volatile element is the conditionally-rendered
-            # notification badge, so on a clean stack it legitimately masks
-            # nothing; `_assert_masks` allows that and the selector's continued
-            # existence is guarded statically instead.
+            # surface's only volatile element is the navbar bell, which is
+            # unconditional — masking the button rather than the conditional
+            # badge inside it is what lets this assertion be meaningful here at
+            # all (see `_CONDITIONAL_SELECTORS`).
             _assert_masks(page, "file_detail")
         elif surface == "speakers":
             page.goto(f"{base_url}/speakers")

@@ -34,8 +34,6 @@ import ast
 import re
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 VISUAL_TEST = REPO_ROOT / "backend" / "tests" / "e2e" / "test_visual_regression.py"
 FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
@@ -140,28 +138,36 @@ def test_conditional_selectors_are_a_subset_of_declared_ones() -> None:
     )
 
 
-def test_notification_badge_is_genuinely_conditional() -> None:
-    """The one exemption we carry must stay justified by the source.
+def test_the_conditional_notification_badge_is_never_masked_directly() -> None:
+    """Regression guard for the specific bug this module was written for.
 
-    If the badge ever renders unconditionally, the exemption becomes a hole: a
-    rename of `.notification-badge` would then stop masking a region that IS
-    always on screen, and nothing would fail.
+    `.notification-badge` is `{#if $unreadCount > 0}`. Masking it directly means
+    the mask applies in one notification state and not the other, so the SAME UI
+    yields two different baselines — real navbar pixels when there are no unread
+    notifications, a magenta box when there are. One notification arriving on the
+    capture stack silently invalidates every surface that masks it.
+
+    Masking its unconditional parent `.notifications-btn` is stable in both
+    states. This test fails if anyone reintroduces the direct badge mask, which
+    reads as a harmless one-word edit and is not.
     """
-    if ".notification-badge" not in _conditional_selectors():
-        pytest.skip("the badge is no longer exempted — nothing to justify")
+    offenders = [s for s in _declared_selectors() if "notification-badge" in s]
+    assert not offenders, (
+        f"{offenders} mask the conditionally-rendered `.notification-badge` "
+        "directly. Mask `.notifications-btn` (its unconditional parent) instead: "
+        "a mask that only sometimes applies produces two different baselines for "
+        "identical UI, and a single unread notification invalidates the capture."
+    )
 
     navbar = FRONTEND_SRC / "components" / "Navbar.svelte"
-    assert navbar.exists(), f"{navbar} moved — re-verify why the badge is exempt"
+    assert navbar.exists(), f"{navbar} moved — re-verify the badge's render condition"
     source = navbar.read_text(encoding="utf-8")
-
-    guarded = re.search(
-        r"\{#if\s+\$unreadCount\s*>\s*0\s*\}\s*.*?notification-badge",
-        source,
-        re.S,
+    still_conditional = re.search(
+        r"\{#if\s+\$unreadCount\s*>\s*0\s*\}\s*.*?notification-badge", source, re.S
     )
-    assert guarded, (
-        "`.notification-badge` is exempted from the runtime mask check on the "
-        "grounds that it is conditionally rendered, but Navbar.svelte no longer "
-        "guards it with `{#if $unreadCount > 0}`. Either restore the guard or "
-        "drop the exemption — as written the check now passes vacuously."
+    assert still_conditional, (
+        "Navbar.svelte no longer guards `.notification-badge` with "
+        "`{#if $unreadCount > 0}`. If the badge is now unconditional this test's "
+        "premise is stale — re-derive it rather than deleting it, because the "
+        "`.notifications-btn` mask above was chosen on the strength of that guard."
     )

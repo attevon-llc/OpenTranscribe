@@ -308,8 +308,11 @@ phase_03_pin_and_layer_overlays() {
     cp "$REPO_ROOT/docker-compose.mock-asr.yml" "$target/docker-compose.mock-asr.yml"
     cp "$REPO_ROOT/docker-compose.mock-llm.yml" "$target/docker-compose.mock-llm.yml"
     # Native diarization sidecar (issue #660): lite's speaker embeddings come from
-    # its CPU-EP /embed_window, not an in-process PyAnnote model (which the lite
-    # image no longer ships as of the requirements-lite.txt shrink). Copied in the
+    # its CPU-EP /embed_window, not from an in-process PyAnnote model. Note the lite
+    # image DOES still ship pyannote.audio — #660 briefly removed it and then restored
+    # it, because lite must be able to EXPORT the sidecar's ONNX/PLDA graphs itself
+    # (see requirements-lite.txt's RESTORED block). Routing, not absence, is what makes
+    # this the sidecar path. Copied in the
     # same way as the lite/mock overlays above — this is one of the two places
     # (here and opentr.sh) allowed to reference docker-compose.diar-native.yml
     # under lite; see the header comment and the exemption in
@@ -454,8 +457,12 @@ phase_06_topology_check() {
 
 phase_06b_sidecar_check() {
     # Issue #660: prove lite's speaker embeddings actually come from the CPU-EP
-    # sidecar running the LITE image, not a full-image sidecar or an in-process
-    # PyAnnote model that Step 7's shrink was supposed to remove.
+    # sidecar running the LITE image, rather than a full-image sidecar or an
+    # in-process PyAnnote model. ⚠️ pyannote.audio IS present in the lite image by
+    # design (requirements-lite.txt's RESTORED block) — so this must be proven by
+    # ROUTING (sidecar image tag, /healthz devices, the worker's log line), never by
+    # asserting the package is absent. Asserting absence is what previously made this
+    # phase hard-fail a correct image.
     local report="$TEST_ROOT/topology.txt"
 
     local sidecar_name
@@ -500,12 +507,49 @@ phase_06b_sidecar_check() {
         gr_warn "celery-cpu-worker container not found by name filter — cannot check its log"
     fi
 
-    # The measured fact that makes the shrink real, not merely asserted: pyannote.audio
-    # must be ABSENT from the lite image's site-packages post-Step-7.
-    if docker exec "$cpu_worker_name" python3 -c 'import pyannote.audio' >/dev/null 2>&1; then
-        gr_die "pyannote.audio is still importable inside celery-cpu-worker — the lite image was not rebuilt after requirements-lite.txt's Step 7 shrink, or the shrink regressed"
+    # ⚠️ This block used to `gr_die` when `import pyannote.audio` SUCCEEDED, on the premise
+    # that #660 Step 7 had shrunk it out of the lite image. That premise is dead: #660
+    # briefly removed torchaudio/pyannote.audio/the ONNX export toolchain and then
+    # **RESTORED** them, and `backend/requirements-lite.txt` says so at the pin
+    # (`pyannote.audio==4.0.7`) with the reason — lite serves embeddings from the
+    # diar-native sidecar, but the sidecar cannot start from nothing: its ONNX/PLDA graphs
+    # are non-redistributable derivatives of gated weights and must be EXPORTED on the
+    # machine that will serve them, by scripts `diar-server` carries but whose Python
+    # imports it cannot.
+    #
+    # So the old assertion inverted the invariant: it hard-failed the whole lite rehearsal
+    # on the image being CORRECT, with a message blaming "the shrink regressed". Measured
+    # 2026-09-06 against a freshly built v0.5.0-cpu-arm64 lite image — pyannote.audio
+    # imports, exactly as requirements-lite.txt intends.
+    #
+    # What lite ACTUALLY has to satisfy is two things, so assert those instead:
+    #   1. it is CPU-only (that is what "lite" means — issue #680's capability invariant), and
+    #   2. it can self-provision the sidecar's models (that was #660's real headline, and the
+    #      one missing import — onnxruntime — is what made it undeliverable last time).
+    local torch_cuda
+    torch_cuda=$(docker exec "$cpu_worker_name" python3 -c \
+        'import torch; print(torch.version.cuda or "")' 2>/dev/null) || torch_cuda="__unreadable__"
+    if [[ "$torch_cuda" == "__unreadable__" ]]; then
+        gr_die "could not read torch.version.cuda in celery-cpu-worker — this is COULD NOT CHECK, not 'CPU-only confirmed'"
     fi
-    echo "pyannote.audio is NOT importable in celery-cpu-worker: confirmed (issue #660 Step 7)" | tee -a "$report"
+    [[ -z "$torch_cuda" ]] \
+        || gr_die "lite image reports torch.version.cuda='$torch_cuda' — a CUDA build is published under the lite (cpu) repo (issue #680)"
+    echo "lite torch is CPU-only (torch.version.cuda empty): confirmed" | tee -a "$report"
+
+    # Derived from the binary, never trimmed by eye — requirements-lite.txt's own warning:
+    # the previous hand-written list named 4 of the 11 imports and missed `onnxruntime`,
+    # which is the one that mattered.
+    local missing_export_deps
+    missing_export_deps=$(docker exec "$cpu_worker_name" python3 -c '
+import importlib.util as u
+mods = ["pyannote.audio", "torchaudio", "onnx", "onnxruntime", "onnxscript", "onnxslim", "onnxconverter_common"]
+print(",".join(m for m in mods if u.find_spec(m) is None))' 2>/dev/null) || missing_export_deps="__unreadable__"
+    if [[ "$missing_export_deps" == "__unreadable__" ]]; then
+        gr_die "could not probe the ONNX export toolchain in celery-cpu-worker — COULD NOT CHECK, not a pass"
+    fi
+    [[ -z "$missing_export_deps" ]] \
+        || gr_die "lite image cannot self-provision the diar-native models — missing: ${missing_export_deps} (see requirements-lite.txt's RESTORED block; #660)"
+    echo "lite carries the full ONNX export toolchain (can self-provision): confirmed" | tee -a "$report"
 }
 
 phase_07_pipeline_assertions() {

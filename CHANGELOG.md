@@ -363,6 +363,49 @@ A tag was either yours alone or published to the whole deployment, so giving one
 
 ### Fixed
 
+- **GPU workers were SIGKILLed 10 seconds into a stop, with no shutdown handler** (#782).
+  `opentr.sh stop` gave a CUDA-holding worker Docker's default 10-second grace period and no
+  chance to release the device, so a stop during transcription could leave the GPU wedged. A
+  `worker_shutting_down` handler now releases GPU resources before the drain, and every
+  CUDA-holding service carries `stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s`. The 30 seconds
+  is measured, not guessed — worst clean stop across three runs on an idle A6000 was 4.44 s.
+  It is deliberately not larger: a SIGTERM arriving during **boot** is never handled, so the
+  container burns the whole window and is SIGKILLed anyway (31.09 s at T+2s versus 4.55 s once
+  ready), and a longer value only lengthens that hang.
+  ⚠️ **This covers an idle or between-stages worker, not one mid-decode** (#809). With
+  `--pool=threads`, `executor.shutdown(wait=True)` blocks the shutdown signal until the running
+  task returns, so no handler can preempt an in-flight transcription; it still runs to the
+  ceiling and is SIGKILLed. Releasing earlier instead would free VRAM under a live CUDA kernel,
+  which is worse. Stopping a worker mid-transcription therefore remains unsafe.
+- **The docs image shipped on end-of-life Node 20** (#780). Dependabot's Docker ecosystem
+  rewrites `FROM` lines and nothing else, so a bump moved the frontend to `node:26-alpine` and
+  left `.nvmrc`, three workflow literals, and `docs-site/` behind — and `/docs-site` was never
+  a bump candidate at all. Every Node build stage is now pinned from one source and gated
+  against future drift, including an EOL-date check so three files agreeing on an obsolete
+  major cannot pass. Running the frontend suite on the version the image actually ships also
+  surfaced a real incompatibility: Node ≥26 predefines a `localStorage` global that shadows
+  jsdom's, which vitest then declines to install, so every test touching storage saw
+  `undefined`.
+- **Release assets had no checksums, and the SBOM was attached by glob** (#781). `finish`
+  attached artifacts with a bare existence glob, which was vacuous in both directions: three
+  stale `*-sbom.json` files are git-tracked, so presence proved only that `git checkout` had
+  run, while the offline package was globbed from `dist/*.tar.gz` when the builder writes
+  `offline-package-build/linux/*.tar.xz` — wrong directory and wrong extension, so it had
+  never been attached to any release. The asset set is now derived per published leg and
+  checksummed.
+- **`FROM_VERSIONS` was documented but never implemented** (#783), so the upgrade rehearsal
+  silently ignored it and always tested the derived single hop. It now overrides the
+  derivation, and the skip-version upgrade policy is stated rather than implied.
+- **No patch/hotfix path existed** (#784), despite four of the last five minor releases needing
+  one within 24 hours. Hotfixes now branch from `release/<major>.<minor>`, and release
+  validation runs on those branches so a hotfix PR gets the same metadata CI as one onto
+  `master`.
+- **Chat retention tests depended on the contents of the developer's database.** The sweep
+  selects by age across the whole table, so asserting on the returned delete count also counted
+  whatever real conversations happened to be older than the window — failing locally, on a
+  machine whose dev data had simply aged, for a reason unrelated to the code. CI never saw it,
+  because each job gets a fresh Postgres. The test population is now normalised inside the test
+  transaction rather than the assertions being loosened.
 - **Pre-release UI defect wave** (#739–#746, #649). Eight defects found by a UX/UI review of
   the release candidate, plus an audit of every path sharing their root cause. The upload
   wizard had a dead Skip button and resized between steps; its fixed-height body now fills so

@@ -6,11 +6,11 @@
       "version": "v0.5.0",
       "headline": "Ship what is already built",
       "summary": "Native diarization, corpus-scale chat, redaction and the identity overhaul, published without adding one more feature.",
-      "stage": "now",
+      "stage": "complete",
       "released": false,
       "scheduled": true,
       "total": 275,
-      "closed": 270,
+      "closed": 275,
       "areas": [
         {
           "key": "asr-engines",
@@ -48,7 +48,7 @@
           "scope": "Docs site, release pipeline, repo tooling",
           "known": true,
           "total": 6,
-          "closed": 2,
+          "closed": 6,
           "issues": [
             {
               "number": 772,
@@ -58,22 +58,22 @@
             {
               "number": 780,
               "title": "build(docs): docs image ships on EOL Node 20 while the frontend is on 26",
-              "done": false
+              "done": true
             },
             {
               "number": 781,
               "title": "fix(release): release assets have no checksums, and the SBOM is attached by glob rather than gated",
-              "done": false
+              "done": true
             },
             {
               "number": 783,
               "title": "fix(release): FROM_VERSIONS is documented but never implemented, and no skip-version upgrade policy is stated",
-              "done": false
+              "done": true
             },
             {
               "number": 784,
               "title": "task(release): no patch/hotfix path exists — 4 of the last 5 minors needed one within 24 hours",
-              "done": false
+              "done": true
             },
             {
               "number": 800,
@@ -403,7 +403,7 @@
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
           "total": 101,
-          "closed": 100,
+          "closed": 101,
           "issues": [
             {
               "number": 21,
@@ -908,7 +908,7 @@
             {
               "number": 782,
               "title": "fix(gpu): opentr.sh stop SIGKILLs GPU workers after 10s — no grace period, no shutdown handler",
-              "done": false
+              "done": true
             }
           ]
         },
@@ -1513,7 +1513,7 @@
       "version": "v0.6.0",
       "headline": "Interface polish, and chat measured",
       "summary": "A full UI pass over what v0.5.0 shipped, plus real metrics for search and chat answer quality instead of assumptions.",
-      "stage": "next",
+      "stage": "now",
       "released": false,
       "scheduled": true,
       "total": 29,
@@ -1740,7 +1740,7 @@
       "version": "v0.7.0",
       "headline": "Run it in public",
       "summary": "Publish the inert public demo, and put in place the spend limits, alerting and dependency hygiene you only miss once strangers are using it.",
-      "stage": "later",
+      "stage": "next",
       "released": false,
       "scheduled": true,
       "total": 9,

@@ -3,11 +3,11 @@
 import logging
 from typing import Any
 
-from app.core.constants import get_speaker_index
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_active_speaker_index
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
+from app.services.opensearch_service.client import query_embedding_dimension_mismatch
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.opensearch_service.repair import _repair_index
 
@@ -76,6 +76,13 @@ def find_matching_speaker(
         # Ensure indices exist before searching
         ensure_indices_exist()
 
+        active_index = get_active_speaker_index()
+        if query_embedding_dimension_mismatch(active_index, embedding):
+            # A dimension mismatch means this is a stale query embedding
+            # against a mid-migration index; a real query will simply have
+            # come from the wrong model. Fail closed (no match) but visibly.
+            return None
+
         # Build filter conditions - use accessible user IDs for shared profile scope
         filters: list[dict[str, Any]]
         if accessible_user_ids:
@@ -110,7 +117,7 @@ def find_matching_speaker(
         }
 
         # Execute search
-        response = _client.opensearch_client.search(index=get_speaker_index(), body=query)
+        response = _client.opensearch_client.search(index=get_active_speaker_index(), body=query)
 
         # Check if we have a match
         if len(response["hits"]["hits"]) > 0:
@@ -126,10 +133,10 @@ def find_matching_speaker(
             logger.warning(
                 "Index corruption detected during speaker matching, attempting repair..."
             )
-            if _repair_index(get_speaker_index()):
+            if _repair_index(get_active_speaker_index()):
                 try:
                     response = _client.opensearch_client.search(
-                        index=get_speaker_index(), body=query
+                        index=get_active_speaker_index(), body=query
                     )
                     if len(response["hits"]["hits"]) > 0:
                         match = _extract_speaker_match(response["hits"]["hits"][0], threshold)
@@ -171,13 +178,21 @@ def batch_find_matching_speakers(
         # Ensure indices exist before searching
         ensure_indices_exist()
 
+        active_index = get_active_speaker_index()
+        # All queries in this batch share one index; check the first embedding's
+        # dimension once rather than per-item (a mismatch here means every item
+        # in the batch is about to silently return zero hits).
+        first_embedding: list[float] | None = embeddings[0].get("embedding") if embeddings else None
+        if first_embedding and query_embedding_dimension_mismatch(active_index, first_embedding):
+            return [{"input_id": e["id"], "matches": []} for e in embeddings]
+
         # Use multi-search for efficient batch processing
         msearch_body: list[dict[str, Any]] = []
         org_clauses = _speaker_org_filter_clauses(organization_id)
 
         for emb_data in embeddings:
             # Add search header
-            msearch_body.append({"index": get_speaker_index()})
+            msearch_body.append({"index": active_index})
 
             # Add search query with self-exclusion
             query_body: dict[str, Any] = {
@@ -261,6 +276,11 @@ def msearch_speaker_similarities(
         import json
 
         active_index = get_active_speaker_index()
+        first_embedding: list[float] | None = (
+            speaker_data[0].get("embedding") if speaker_data else None
+        )
+        if first_embedding and query_embedding_dimension_mismatch(active_index, first_embedding):
+            return [[] for _ in speaker_data]
         all_results: list[list[dict]] = []
         org_clauses = _speaker_org_filter_clauses(organization_id)
 

@@ -89,7 +89,10 @@ services:
       # TEMP_DIR (hardcoded to /app/temp there, not user-configurable).
       - ${TEMP_DIR_HOST:-./temp}:/app/temp
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcription@$$HOSTNAME"]
+      # Pool-aware healthcheck (issue #631) — mirrors the base stack. Threads pool:
+      # a stats reply from MainProcess is the same proof `inspect ping` gave. Prefork
+      # (GPU_WORKER_POOL=prefork): the child-process and respawn-storm checks apply.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-transcription@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3

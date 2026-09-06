@@ -8,6 +8,7 @@ defaulting to v4 for new installations.
 
 import contextlib
 import logging
+import time
 from typing import TYPE_CHECKING
 from typing import Literal
 
@@ -25,6 +26,18 @@ EmbeddingMode = Literal["v3", "v4"]
 MODE_V3: EmbeddingMode = "v3"
 MODE_V4: EmbeddingMode = "v4"
 
+# Redis key holding the shared mode cache (issue #657, defect 3). A classvar
+# cache was cleared only in whichever single worker ran finalize's `finally`
+# block — every other API process and Celery worker kept serving the stale
+# mode until restart, writing at the wrong dimension. Redis is shared by
+# every process, so an invalidation here is visible everywhere immediately.
+_REDIS_MODE_CACHE_KEY = "embedding_mode:cached_mode"
+# Short TTL so a Redis outage (or a deployment with no Redis reachable from
+# this call site) self-heals within seconds rather than needing an explicit
+# invalidation to ever be seen — same reasoning as the 30s active-index
+# cache in aliases.py.
+_REDIS_MODE_CACHE_TTL_SECONDS = 30
+
 
 class EmbeddingModeService:
     """Service for detecting and managing speaker embedding mode (v3 vs v4).
@@ -34,8 +47,11 @@ class EmbeddingModeService:
     For existing installations, it preserves the existing mode based on the stored
     embedding dimensions.
 
-    Attributes:
-        _cached_mode: Cached embedding mode to avoid repeated OpenSearch queries.
+    The cache is Redis-backed (``_REDIS_MODE_CACHE_KEY``) so an invalidation in
+    ``clear_cache()`` is visible to every process, not just the one that called
+    it. ``_local_cache`` is a same-TTL in-process fallback used only when Redis
+    itself is unreachable, so a Redis outage degrades to "re-detect every
+    request" rather than "cache forever, unaware of migration state".
 
     Example:
         >>> mode = EmbeddingModeService.detect_mode()
@@ -44,7 +60,44 @@ class EmbeddingModeService:
         ...     # Embedding is valid for current mode
     """
 
-    _cached_mode: EmbeddingMode | None = None
+    # (mode, cached_at_monotonic) — Redis-outage fallback only. Never trusted
+    # ahead of Redis; see _get_cached_mode / _set_cached_mode.
+    _local_cache: tuple[EmbeddingMode, float] | None = None
+
+    @classmethod
+    def _get_cached_mode(cls) -> EmbeddingMode | None:
+        """Read the shared mode cache, preferring Redis over the local fallback."""
+        try:
+            from app.core.redis import get_redis
+
+            value = get_redis().get(_REDIS_MODE_CACHE_KEY)
+        except Exception as e:
+            logger.debug(f"Redis unavailable for embedding-mode cache read: {e}")
+        else:
+            if value is not None:
+                decoded = value.decode() if isinstance(value, bytes) else value
+                if decoded in (MODE_V3, MODE_V4):
+                    return decoded  # type: ignore[return-value]
+
+        if cls._local_cache is not None:
+            mode, cached_at = cls._local_cache
+            if time.monotonic() - cached_at < _REDIS_MODE_CACHE_TTL_SECONDS:
+                return mode
+        return None
+
+    @classmethod
+    def _set_cached_mode(cls, mode: EmbeddingMode) -> None:
+        """Write the shared mode cache to Redis and the local fallback."""
+        cls._local_cache = (mode, time.monotonic())
+        try:
+            from app.core.redis import get_redis
+
+            get_redis().setex(_REDIS_MODE_CACHE_KEY, _REDIS_MODE_CACHE_TTL_SECONDS, mode)
+        except Exception as e:
+            logger.warning(
+                f"Could not write embedding-mode cache to Redis (other processes "
+                f"will re-detect independently until Redis recovers): {e}"
+            )
 
     @classmethod
     def _dimension_to_mode(cls, dimension: int, source: str = "index") -> EmbeddingMode | None:
@@ -107,8 +160,10 @@ class EmbeddingModeService:
             The detected embedding mode ("v3" or "v4").
         """
         # Return cached mode if available and not forcing refresh
-        if cls._cached_mode is not None and not force_refresh:
-            return cls._cached_mode
+        if not force_refresh:
+            cached = cls._get_cached_mode()
+            if cached is not None:
+                return cached
 
         # Import here to avoid circular imports and allow lazy initialization
         from app.services.opensearch_service import get_opensearch_client
@@ -116,8 +171,8 @@ class EmbeddingModeService:
         client = get_opensearch_client()
         if client is None:
             logger.warning("OpenSearch client not available, defaulting to v4 embedding mode")
-            cls._cached_mode = MODE_V4
-            return cls._cached_mode
+            cls._set_cached_mode(MODE_V4)
+            return MODE_V4
 
         try:
             index_name = get_speaker_index()
@@ -137,15 +192,16 @@ class EmbeddingModeService:
                     f"Speaker index '{resolved_index}' does not exist, "
                     "new installation detected, using v4 mode"
                 )
-                cls._cached_mode = MODE_V4
-                return cls._cached_mode
+                cls._set_cached_mode(MODE_V4)
+                return MODE_V4
 
             # Try to get dimension from index mapping first
             dimension = cls._get_dimension_from_mapping(client, resolved_index)
             if dimension is not None:
                 mode = cls._dimension_to_mode(dimension, "index mapping")
-                cls._cached_mode = mode if mode is not None else MODE_V4
-                return cls._cached_mode
+                resolved = mode if mode is not None else MODE_V4
+                cls._set_cached_mode(resolved)
+                return resolved
 
             # Fall back to sampling existing documents
             logger.info("Could not determine dimension from mapping, checking existing documents")
@@ -153,20 +209,20 @@ class EmbeddingModeService:
             if dimension is not None:
                 mode = cls._dimension_to_mode(dimension, "documents")
                 if mode is not None:
-                    cls._cached_mode = mode
-                    return cls._cached_mode
+                    cls._set_cached_mode(mode)
+                    return mode
 
             # Default to v4 for new installations or if detection fails
             logger.info("No existing embeddings found, defaulting to v4 mode for new installation")
-            cls._cached_mode = MODE_V4
-            return cls._cached_mode
+            cls._set_cached_mode(MODE_V4)
+            return MODE_V4
 
         except Exception as e:
             logger.error(
                 f"Error detecting embedding mode from OpenSearch: {e}, defaulting to v4 mode"
             )
-            cls._cached_mode = MODE_V4
-            return cls._cached_mode
+            cls._set_cached_mode(MODE_V4)
+            return MODE_V4
 
     @classmethod
     def _detect_dimension_from_documents(
@@ -286,12 +342,25 @@ class EmbeddingModeService:
     @classmethod
     def clear_cache(cls) -> None:
         """
-        Clear the cached embedding mode.
+        Clear the cached embedding mode everywhere (issue #657, defect 3).
 
-        This is useful when the OpenSearch index has been recreated or modified
-        and the mode needs to be re-detected.
+        Deletes the Redis-shared key so every process — not just the caller —
+        re-detects on its next call, and clears the local same-process
+        fallback too. This is useful when the OpenSearch index has been
+        recreated or modified (e.g. v4 migration finalize) and the mode
+        needs to be re-detected.
         """
-        cls._cached_mode = None
+        cls._local_cache = None
+        try:
+            from app.core.redis import get_redis
+
+            get_redis().delete(_REDIS_MODE_CACHE_KEY)
+        except Exception as e:
+            logger.warning(
+                f"Could not clear shared embedding-mode cache in Redis (other "
+                f"processes will keep serving the stale mode until their "
+                f"{_REDIS_MODE_CACHE_TTL_SECONDS}s TTL expires): {e}"
+            )
         logger.info("Embedding mode cache cleared")
 
     @classmethod

@@ -20,6 +20,7 @@ import contextlib
 import datetime
 import json
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
@@ -196,6 +197,9 @@ def _count_embeddable_speakers_per_file(file_ids: list[int]) -> dict[int, int]:
         return {int(fid): cnt for fid, cnt in rows}
 
 
+_ALREADY_MIGRATED_COMPOSITE_PAGE_SIZE = 10000
+
+
 def _get_already_migrated_file_ids() -> set[int]:
     """Return set of media_file_id values fully migrated in the v4 index."""
     from app.services.opensearch_service import get_opensearch_client
@@ -209,22 +213,37 @@ def _get_already_migrated_file_ids() -> set[int]:
         return set()
 
     try:
-        response = client.search(
-            index=v4_index,
-            body={
-                "size": 0,
-                "aggs": {
-                    "file_ids": {
-                        "terms": {
-                            "field": "media_file_id",
-                            "size": 50000,
-                        }
-                    }
+        # Issue #657, defect 6: a plain `terms` agg caps at `size` buckets -
+        # 50,000 - and silently UNDER-reports past that, which re-processes
+        # already-migrated files rather than erroring loudly. `composite`
+        # pages through every distinct media_file_id via `after`, with no
+        # cap on the total number of buckets visited.
+        v4_counts: dict[int, int] = {}
+        after: dict[str, Any] | None = None
+        page_size = _ALREADY_MIGRATED_COMPOSITE_PAGE_SIZE
+        while True:
+            composite_agg: dict[str, Any] = {
+                "size": page_size,
+                "sources": [{"media_file_id": {"terms": {"field": "media_file_id"}}}],
+            }
+            if after is not None:
+                composite_agg["after"] = after
+            response = client.search(
+                index=v4_index,
+                body={
+                    "size": 0,
+                    "aggs": {"file_ids": {"composite": composite_agg}},
                 },
-            },
-        )
-        buckets = response.get("aggregations", {}).get("file_ids", {}).get("buckets", [])
-        v4_counts = {int(b["key"]): b["doc_count"] for b in buckets}
+            )
+            file_ids_agg = response.get("aggregations", {}).get("file_ids", {})
+            buckets = file_ids_agg.get("buckets", [])
+            if not buckets:
+                break
+            for b in buckets:
+                v4_counts[int(b["key"]["media_file_id"])] = b["doc_count"]
+            after = file_ids_agg.get("after_key")
+            if after is None or len(buckets) < page_size:
+                break
     except Exception as e:
         logger.warning(f"Could not query v4 index for skip logic: {e}")
         return set()
@@ -385,7 +404,20 @@ def _embedding_result_writer(
         )
 
     if docs:
-        _bulk_write_v4_embeddings(docs)
+        written = _bulk_write_v4_embeddings(docs)
+        # Issue #657, defect 5: the return value used to be ignored here, so
+        # a total bulk-write failure (_bulk_write_v4_embeddings returns 0 on
+        # any exception, or on a client-unavailable early return) still
+        # reported `len(docs)` written. process_batch_pipelined's caller
+        # unconditionally calls on_file_success() after this returns, so
+        # that file was marked done with NOTHING actually indexed. Raise
+        # instead — process_batch_pipelined's except clause routes a raised
+        # exception to on_file_failure(), which is the real outcome here.
+        if written < len(docs):
+            raise RuntimeError(
+                f"v4 bulk write wrote {written}/{len(docs)} speaker embedding "
+                f"document(s) for media_file_id={prepared.media_file_id}"
+            )
 
     return len(docs)
 
@@ -475,6 +507,19 @@ def migrate_speaker_embeddings_v4_task(
 
         # Start progress tracking
         migration_progress.start_migration(total_files=total_files, task_id=task_id)
+
+        # Acquire the migration lock (issue #657, defect 4). Previously this
+        # docstring claimed the lock was acquired here and it never was -
+        # migration_lock_service.py had zero production callers. Live
+        # transcription and this migration's GPU batches both resolve the
+        # embedding model through the same (mode, model_name)-keyed cache
+        # (speaker_embedding_service.get_cached_embedding_service); with no
+        # lock, the two race it and pay a 40-60s reload on every alternation.
+        # A transcription pause point (_process_speaker_embeddings) checks
+        # this lock and waits briefly rather than racing it.
+        from app.services.migration_lock_service import migration_lock
+
+        migration_lock.activate()
 
         # Initialize unified progress tracker for ETA
         from app.services.progress_tracker import ProgressTracker
@@ -774,6 +819,143 @@ def extract_v4_embeddings_task(
 _PROFILE_DOC_QUERY = {"query": {"term": {"document_type": "profile"}}}
 
 
+def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
+    """Backfill v4 profile-voiceprint documents from already-migrated v4 speakers.
+
+    Defect 1 of issue #657: the streaming per-file writer (
+    ``_embedding_result_writer``) only ever produced speaker documents, never
+    ``document_type: "profile"`` docs. Profile voiceprints are consolidated
+    centroids that live only in the ``speakers`` alias's dual-write path
+    (``store_profile_embedding``/``store_profile_embedding_v4``), so any
+    profile not touched by a file transcribed *during* the migration window
+    would have no v4 counterpart at all, and ``swap_speaker_alias`` would
+    silently strand its voiceprint in the (soon inactive) v3 index.
+
+    This recomputes every profile's centroid directly from the v4 speaker
+    documents that already carry a ``profile_uuid`` — the only source of a
+    256-dim vector for that profile, since a v3 512-dim profile embedding
+    cannot be reused at a different dimension without re-running the model.
+    A profile with zero migrated v4 speakers is therefore still not
+    recoverable here; that is a hard requirement of the dimension change, not
+    an oversight, and is why this is called *before* the finalize profile-
+    count guard, which will then correctly refuse the swap if any profile
+    still cannot be accounted for.
+
+    Args:
+        client: OpenSearch client.
+        v4_index: Concrete v4 index to read speakers from / write profiles to.
+
+    Returns:
+        Number of profile documents written.
+    """
+    import numpy as np
+
+    profiles: dict[str, dict] = {}
+
+    try:
+        response = client.search(
+            index=v4_index,
+            body={
+                "size": 500,
+                "query": {
+                    "bool": {
+                        "must": [{"exists": {"field": "profile_uuid"}}],
+                        "must_not": [{"exists": {"field": "document_type"}}],
+                    }
+                },
+                "_source": [
+                    "profile_id",
+                    "profile_uuid",
+                    "user_id",
+                    "organization_id",
+                    "segment_count",
+                    "embedding",
+                ],
+            },
+            scroll="2m",
+        )
+        scroll_id = response.get("_scroll_id")
+        hits = response["hits"]["hits"]
+        # Hard bound on scroll pages: a malformed/unexpected response shape
+        # (e.g. missing "_scroll_id") must not spin forever re-scrolling.
+        max_pages = 10_000
+        pages = 0
+        while hits and pages < max_pages:
+            pages += 1
+            for hit in hits:
+                source = hit["_source"]
+                profile_uuid = source.get("profile_uuid")
+                if not profile_uuid:
+                    continue
+                weight = max(1, int(source.get("segment_count") or 1))
+                entry = profiles.setdefault(
+                    profile_uuid,
+                    {
+                        "profile_id": source.get("profile_id"),
+                        "user_id": source.get("user_id"),
+                        "organization_id": source.get("organization_id"),
+                        "vectors": [],
+                        "weights": [],
+                        "speaker_count": 0,
+                    },
+                )
+                entry["vectors"].append(source["embedding"])
+                entry["weights"].append(weight)
+                entry["speaker_count"] += 1
+            if not scroll_id:
+                break
+            response = client.scroll(scroll_id=scroll_id, scroll="2m")
+            scroll_id = response.get("_scroll_id")
+            hits = response["hits"]["hits"]
+    except Exception as e:
+        logger.error(f"Failed to scroll v4 speaker docs for profile backfill: {e}")
+        return 0
+
+    if not profiles:
+        return 0
+
+    from app.models.media import SpeakerProfile
+    from app.services.opensearch_service import store_profile_embedding_v4
+
+    profile_ids = [e["profile_id"] for e in profiles.values() if e.get("profile_id")]
+    profile_names: dict[int, str] = {}
+    if profile_ids:
+        with session_scope() as db:
+            rows = (
+                db.query(SpeakerProfile.id, SpeakerProfile.name)
+                .filter(SpeakerProfile.id.in_(profile_ids))
+                .all()
+            )
+            profile_names = {row.id: row.name for row in rows}
+
+    written = 0
+    for profile_uuid, entry in profiles.items():
+        try:
+            vectors = np.array(entry["vectors"], dtype=float)
+            weights = np.array(entry["weights"], dtype=float)
+            weighted = np.average(vectors, axis=0, weights=weights)
+            norm = np.linalg.norm(weighted)
+            if norm > 0:
+                weighted = weighted / norm
+
+            ok = store_profile_embedding_v4(
+                profile_id=entry["profile_id"],
+                profile_uuid=profile_uuid,
+                profile_name=profile_names.get(entry["profile_id"], ""),
+                embedding=weighted.tolist(),
+                speaker_count=entry["speaker_count"],
+                user_id=entry["user_id"],
+                organization_id=entry.get("organization_id"),
+            )
+            if ok:
+                written += 1
+        except Exception as e:
+            logger.error(f"Failed to backfill v4 profile {profile_uuid}: {e}")
+
+    logger.info(f"Profile backfill: wrote {written}/{len(profiles)} v4 profile documents")
+    return written
+
+
 def _count_profile_docs(client, index: str) -> int | None:
     """Count `document_type: "profile"` docs in an index.
 
@@ -853,6 +1035,16 @@ def finalize_v4_migration_task(self, user_id: int = 1):
                 ),
             }
 
+        # ---- Backfill profile documents into v4 (defect 1 of issue #657) ----
+        # The streaming per-file writer never produced profile docs; recompute
+        # every profile's centroid from its already-migrated v4 speakers before
+        # the guard below counts them. A profile with zero migrated speakers
+        # cannot be recovered here (no v3->v4 dimension-preserving copy exists)
+        # and will correctly fail the guard that follows.
+        backfilled = migrate_profile_documents_to_v4(client, v4_index)
+        if backfilled:
+            logger.info(f"Finalize: backfilled {backfilled} v4 profile document(s)")
+
         # ---- Profile-voiceprint guard (fail-closed, issue #657) ----
         # The total-doc-count ratio above cannot catch a profile-only loss:
         # v3 legitimately holds more docs than v4 for unrelated reasons, so
@@ -916,6 +1108,13 @@ def finalize_v4_migration_task(self, user_id: int = 1):
         return result
 
     finally:
-        # ALWAYS clear caches, even on error
+        # ALWAYS clear caches and release the migration lock, even on error.
+        # deactivate() is safe to call even if activate() was never reached
+        # for this run (e.g. a manual /force-complete with no orchestrator
+        # run in between) - it floors the ref count at 0 rather than going
+        # negative.
+        from app.services.migration_lock_service import migration_lock
+
         EmbeddingModeService.clear_cache()
         migration_progress.clear_status()
+        migration_lock.deactivate()

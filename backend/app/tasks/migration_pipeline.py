@@ -53,6 +53,22 @@ from app.services.speaker_analysis_models import SegmentResult
 
 logger = logging.getLogger(__name__)
 
+
+class PermanentFileError(Exception):
+    """A file cannot be migrated and retrying will not help (issue #657, defect 5).
+
+    Distinct from ``prepare_file`` returning ``None``, which means "this file
+    legitimately has nothing to migrate" (no speakers, or speakers with no
+    assigned segments) — a real skip that is correctly counted as processed.
+    A missing MinIO object or a NULL ``storage_path`` is a FAILURE: the
+    caller must route it to ``increment_processed(success=False)``/
+    ``failed_files``, not silently count it as done. Before this, both cases
+    returned ``None`` and were indistinguishable, so a permanently-missing
+    file was retried forever by ``/retry-failed`` and its 512-d voiceprint
+    was silently orphaned by the eventual alias swap.
+    """
+
+
 # I/O thread pool size — enough to keep ffmpeg extractions overlapping
 DEFAULT_IO_WORKERS = 16
 
@@ -100,10 +116,11 @@ def prepare_file(
 ) -> PreparedFile | None:
     """Prepare a file for processing: query DB + generate presigned URL.
 
-    Returns PreparedFile (session-independent) or None if:
-    - File has no speakers
-    - File has no storage_path (permanent)
-    - MinIO object doesn't exist (permanent)
+    Returns PreparedFile (session-independent), or ``None`` for a legitimate
+    skip (no speakers, or speakers with no assigned segments — nothing to
+    migrate). Raises ``PermanentFileError`` — never returns ``None`` — for a
+    real failure the caller must count as failed: no ``storage_path``, or
+    the MinIO object is missing.
 
     Args:
         file_uuid: UUID of the media file.
@@ -179,29 +196,35 @@ def prepare_file(
         logger.info("%s has speakers but no assigned segments — skipping", file_uuid[:12])
         return None
 
-    # Guard: NULL or empty storage_path
+    # Guard: NULL or empty storage_path — a FAILURE, not a skip: this file has
+    # speakers/segments to migrate and cannot, ever, at this storage_path.
     if not storage_path:
-        logger.warning("%s has no storage_path — skipping (permanent)", file_uuid[:12])
-        return None
+        raise PermanentFileError(f"{file_uuid} has no storage_path")
 
-    # Guard: check MinIO object exists
+    # Guard: check MinIO object exists — also a FAILURE for the same reason.
     from app.services.minio_service import minio_client
 
     try:
         minio_client.stat_object(settings.MEDIA_BUCKET_NAME, storage_path)
-    except Exception:
-        logger.warning(
-            "%s MinIO object missing (%s) — skipping (permanent)",
-            file_uuid[:12],
-            storage_path,
-        )
-        return None
+    except Exception as e:
+        raise PermanentFileError(f"{file_uuid} MinIO object missing ({storage_path}): {e}") from e
 
-    # Generate presigned URL — ffmpeg will seek directly into MinIO
+    # Generate presigned URL — ffmpeg will seek directly into MinIO.
+    #
+    # Issue #657, defect 6: this used to be a flat 2h regardless of the
+    # deployment's actual signing-credential lifetime, while ALL 25 files in
+    # a batch are presigned upfront (submit_segment_fetches, below) and
+    # processed sequentially — a slow batch can outlive its own last file's
+    # URL. clamp_presigned_expiry() uses the deployment's real ceiling
+    # (PRESIGNED_URL_MAX_SECONDS, 6h default) instead of a value picked with
+    # no relation to it, which does not fix a batch slower than the ceiling
+    # but at minimum stops leaving 4 of those 6 hours unused for free.
+    from app.services.storage_backend import max_presigned_seconds
+
     audio_source = minio_client.presigned_get_object(
         bucket_name=settings.MEDIA_BUCKET_NAME,
         object_name=storage_path,
-        expires=datetime.timedelta(hours=2),
+        expires=datetime.timedelta(seconds=max_presigned_seconds()),
     )
 
     return PreparedFile(

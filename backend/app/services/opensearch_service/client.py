@@ -246,6 +246,50 @@ def _get_index_embedding_dimension(index_name: str) -> int | None:
         return None
 
 
+def query_embedding_dimension_mismatch(index_name: str, query_embedding: list[float]) -> bool:
+    """Detect a kNN read whose query vector dimension disagrees with the index.
+
+    Mirrors the write-side dimension guards in ``speaker_write.py`` (which
+    refuse to *index* a mismatched vector) on the read side, which previously
+    had no guard at all: a mismatched kNN query is simply caught by
+    OpenSearch and returns an empty hit list, indistinguishable from "no
+    match found" (issue #657, defect 2).
+
+    Args:
+        index_name: The concrete index (or alias) about to be queried.
+        query_embedding: The vector about to be sent as the kNN query.
+
+    Returns:
+        True when the index's declared dimension is known and disagrees with
+        ``len(query_embedding)``. False when they agree OR the dimension
+        could not be determined (fail-open on *detection* only — the guard
+        is a visibility improvement, not a new way to refuse a legitimate
+        query when the index is simply unreachable for the mapping check).
+    """
+    if not query_embedding:
+        return False
+    try:
+        concrete = _resolve_concrete_index(index_name)
+        dimension = _get_index_embedding_dimension(concrete)
+    except OpenSearchUnavailableError:
+        return False
+    if dimension is None:
+        return False
+    if len(query_embedding) != dimension:
+        logger.error(
+            "EMBEDDING_DIMENSION_MISMATCH: query vector has %d dims but index "
+            "'%s' (resolved from '%s') declares %d. This kNN read will silently "
+            "return zero hits — almost certainly a v3/v4 migration in progress "
+            "(issue #657).",
+            len(query_embedding),
+            concrete,
+            index_name,
+            dimension,
+        )
+        return True
+    return False
+
+
 def _resolve_concrete_index(name: str) -> str:
     """Resolve *name* to the concrete index a mapping response is keyed by.
 

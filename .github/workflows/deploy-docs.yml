@@ -11,12 +11,25 @@ on:
       # The homepage version badge is read from VERSION at build time, so a release
       # bump has to redeploy the site or the badge stays on the previous version.
       - 'VERSION'
+  # The roadmap page is DERIVED from the issue tracker and regenerated in the build
+  # below, so the published page goes stale whenever issues move without anything
+  # under `paths:` changing — which is most days. A daily redeploy keeps it at most a
+  # day behind. This cron replaces the one in the deleted roadmap.yml, which tried to
+  # achieve the same thing by opening a PR against the committed data and could not:
+  # the org forbids Actions from creating pull requests, so four consecutive scheduled
+  # runs failed at `gh pr create` after successfully regenerating and pushing.
+  schedule:
+    - cron: '17 6 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  # generate-roadmap.py reads `gh issue list`. Projects v2 would need a PAT; issues
+  # do not, which is why the roadmap is derived from milestones and `epic:*` labels
+  # rather than from the org board.
+  issues: read
 
 concurrency:
   group: "pages"
@@ -48,6 +61,28 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Regenerate, never commit. src/pages/roadmap.tsx imports the JSON at build time,
+      # so generating it here means the PUBLISHED page is derived from the tracker at
+      # the moment it deploys — drift is impossible rather than merely repaired.
+      #
+      # The file stays checked in for one reason: the self-hosted docs Docker image has
+      # no network and no `gh`, so it cannot generate at image-build time. That copy is a
+      # per-release snapshot; this step is what keeps the live site ahead of it.
+      #
+      # NON-FATAL on failure, deliberately. A GitHub API blip must not fail a docs
+      # deploy — the committed file is a working fallback. But a silent fallback is how
+      # stale data hides, so it annotates the run rather than passing quietly.
+      - name: Regenerate the roadmap from the issue tracker
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if python3 scripts/generate-roadmap.py; then
+            echo "Roadmap regenerated from the live tracker."
+          else
+            echo "::warning::generate-roadmap.py failed — deploying the COMMITTED roadmap.json, which may be stale. The page still builds; re-run this workflow once the API is reachable."
+          fi
 
       - name: Build documentation
         run: npm run build

@@ -85,24 +85,58 @@ if (( rc >= 2 )); then
     rc=1
 fi
 
-# Assert the reports describe the image we meant to scan. Reading the tag back
-# out of the artifact is the only thing that would have caught the bug above --
-# the run looked completely normal while measuring the wrong release.
-for comp in "${!REPO_FOR_COMPONENT[@]}"; do
-    report="$OUT_DIR/${comp}-trivy.json"
-    [[ -f "$report" ]] || continue
-    scanned=$(python3 -c "
-import json,sys
+# Assert the reports describe the image we meant to scan — ONE REPORT PER ARCHITECTURE LEG.
+# Reading the tag back out of the artifact is the only thing that would have caught the
+# wrong-release bug above; requiring a report per leg is what stops a missing architecture
+# from looking like a passing one (issue #667).
+#
+# ⚠️ A MISSING report is now a FAILURE. This loop used to read
+#
+#     report="$OUT_DIR/${comp}-trivy.json"
+#     [[ -f "$report" ]] || continue
+#
+# which is fail-OPEN: if the scan never produced a report the verification silently skipped
+# itself and the stage passed. Per-arch naming would have made that `continue` fire for every
+# component at once — the entire assertion quietly deleted, with a green stage.
+legs_verified=0
+while IFS=$'\t' read -r comp _capability platforms; do
+    [[ "$comp" == "blackwell" ]] && continue
+    [[ -n "${REPO_FOR_COMPONENT[$comp]:-}" ]] || continue
+    IFS=',' read -r -a plats <<< "$platforms"
+    for platform in "${plats[@]}"; do
+        [[ -n "$platform" ]] || continue
+        label="${comp}-${platform#linux/}"
+        report="$OUT_DIR/${label}-trivy.json"
+        if [[ ! -f "$report" ]]; then
+            echo -e "${RED}no scan report for ${label} (${report}) — that leg was NOT SCANNED${NC}" >&2
+            rc=1
+            continue
+        fi
+        scanned=$(python3 -c "
+import json
 try: print(json.load(open('$report')).get('ArtifactName',''))
 except Exception: print('')
 " 2>/dev/null)
-    if [[ "$scanned" != *":${VERSION}" ]]; then
-        echo -e "${RED}report mismatch: ${comp}-trivy.json describes '${scanned}', not :${VERSION}${NC}" >&2
-        rc=1
-    else
-        echo -e "${GREEN}  ${comp}: scanned ${scanned}${NC}" >&2
-    fi
-done
+        # The scanner scans an arch-qualified local re-tag (repo:VERSION-scanleg-<arch>), so
+        # match the version prefix rather than requiring the bare tag to be the suffix.
+        if [[ "$scanned" != *":${VERSION}"* ]]; then
+            echo -e "${RED}report mismatch: ${label}-trivy.json describes '${scanned}', not :${VERSION}${NC}" >&2
+            rc=1
+        else
+            echo -e "${GREEN}  ${label}: scanned ${scanned}${NC}" >&2
+            legs_verified=$((legs_verified + 1))
+        fi
+    done
+done < <(./scripts/docker-build-push.sh list-platforms)
+
+# Zero verified legs is COULD NOT CHECK, never "nothing to check" — the same rule the
+# scanner's own empty-platform-list branch applies.
+if (( legs_verified == 0 )); then
+    echo -e "${RED}verified 0 architecture legs — refusing to report a clean scan${NC}" >&2
+    rc=1
+else
+    echo -e "${GREEN}verified ${legs_verified} architecture leg report(s)${NC}" >&2
+fi
 
 if [[ "$JSON_OUT" == "true" ]]; then
     printf '{"stage":"scan","version":"%s","status":"%s","reports":"%s","next":%s}\n' \

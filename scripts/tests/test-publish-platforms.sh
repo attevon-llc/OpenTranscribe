@@ -76,7 +76,7 @@ echo "== 1. list-platforms declares all legs with capability =="
 plat_out="$(cd "$REPO_ROOT" && ./scripts/docker-build-push.sh list-platforms)"
 # RED: prove this fails when a component is missing capability/platforms by
 # checking a component list-platforms is NOT supposed to have any entry for.
-if echo "$plat_out" | grep -q "^nonexistent-component"; then
+if [ "$(echo "$plat_out" | grep -c "^nonexistent-component")" -gt 0 ]; then
     bad "sanity: list-platforms should not know a made-up component (this would be the red state if it did)"
 else
     ok "RED confirmed: list-platforms has no entry for a nonexistent component"
@@ -203,7 +203,7 @@ if grep -q 'check-ratio' "$REPO_ROOT/scripts/release/80-publish.sh"; then
         # A cross-purpose call would reference two DIFFERENT $repo/$component
         # variables on one line; every real call in 80-publish.sh instead uses the
         # SAME $component-scoped leg variables for both arguments.
-        if echo "$line" | grep -qE '\$\{?REPO_BACKEND\}?.*\$\{?REPO_BACKEND_LITE\}?|\$\{?REPO_BACKEND_LITE\}?.*\$\{?REPO_BACKEND\}?'; then
+        if [ "$(echo "$line" | grep -cE '\$\{?REPO_BACKEND\}?.*\$\{?REPO_BACKEND_LITE\}?|\$\{?REPO_BACKEND_LITE\}?.*\$\{?REPO_BACKEND\}?')" -gt 0 ]; then
             bad_pairs=$((bad_pairs + 1))
         fi
     done < <(grep 'check-ratio' "$REPO_ROOT/scripts/release/80-publish.sh")
@@ -562,8 +562,8 @@ else
 fi
 # MUST-STAY-CLEAN: with PLATFORMS unset, local mode must still follow the daemon, or
 # pointing DOCKER_CONTEXT at a native arm64 builder would stop working.
-if grep -A12 '^build_platforms()' "$REPO_ROOT/scripts/docker-build-push.sh" \
-     | grep -q "docker version --format"; then
+if [ "$(grep -A12 '^build_platforms()' "$REPO_ROOT/scripts/docker-build-push.sh" \
+     | grep -c "docker version --format")" -gt 0 ]; then
     ok "with PLATFORMS unset, local mode still derives the arch from the daemon it is pointed at"
 else
     bad "local mode no longer falls back to the daemon's arch — DOCKER_CONTEXT=remote-arm64 would break"
@@ -581,7 +581,7 @@ if [ "$rc" -eq 2 ]; then
 else
     bad "multi-platform local build exited $rc, expected 2 — it would fail inside buildx after building"
 fi
-if echo "$out" | grep -q "cannot export a multi-arch manifest"; then
+if [ "$(echo "$out" | grep -c "cannot export a multi-arch manifest")" -gt 0 ]; then
     ok "the refusal names the actual reason"
 else
     bad "the refusal does not explain why (operator has to read the source)"
@@ -605,7 +605,7 @@ for stage in 90-promote.sh 95-finish.sh; do
     # Strip comments before grepping: both files QUOTE the old hardcoded loops in the
     # comment explaining why they are gone, and matching those would make the check
     # permanently red for documenting itself.
-    if sed 's/#.*//' "$REPO_ROOT/scripts/release/$stage" | grep -qE 'for repo in [a-z]'; then
+    if [ "$(sed 's/#.*//' "$REPO_ROOT/scripts/release/$stage" | grep -cE 'for repo in [a-z]')" -gt 0 ]; then
         bad "$stage still hardcodes its repo list — it will drift from the component table again"
     else
         ok "$stage has no hardcoded 'for repo in ...' list in executable code"
@@ -618,12 +618,12 @@ for stage in 90-promote.sh 95-finish.sh; do
 done
 # The derivation must actually yield lite, and must NOT yield blackwell.
 derived="$(cd "$REPO_ROOT" && source ./scripts/release/published-repos.sh && release_published_repos)"
-if echo "$derived" | grep -qE '^lite	.*opentranscribe-backend-lite$'; then
+if [ "$(echo "$derived" | grep -cE '^lite	.*opentranscribe-backend-lite$')" -gt 0 ]; then
     ok "the derived list includes lite -> opentranscribe-backend-lite"
 else
     bad "the derived list does not include the lite repo — finish would pass with no lite image published"
 fi
-if echo "$derived" | grep -q '^blackwell	'; then
+if [ "$(echo "$derived" | grep -c '^blackwell	')" -gt 0 ]; then
     bad "the derived list includes blackwell, which publishes no :vX.Y.Z tag — every release would fail"
 else
     ok "blackwell is excluded (it publishes a :blackwell tag, not a versioned one)"
@@ -659,8 +659,8 @@ fi
 for stage in 90-promote.sh 95-finish.sh; do
     # Comments stripped: 95-finish.sh quotes the broken `done < <(...)` form in the note
     # explaining why it is not used, and matching that would make this permanently red.
-    if sed 's/#.*//' "$REPO_ROOT/scripts/release/$stage" \
-         | grep -qE 'done[[:space:]]*<[[:space:]]*<\([[:space:]]*release_published_repos'; then
+    if [ "$(sed 's/#.*//' "$REPO_ROOT/scripts/release/$stage" \
+         | grep -cE 'done[[:space:]]*<[[:space:]]*<\([[:space:]]*release_published_repos')" -gt 0 ]; then
         bad "$stage pipes the helper in via process substitution — its exit 3 cannot reach the stage, so an underivable list PASSES"
     else
         ok "$stage does not consume the helper through a subshell"
@@ -704,7 +704,7 @@ else
 fi
 # MUST-STAY-CLEAN: --help must still work and must advertise --lite.
 help_out="$("$INSTALLER" --help 2>&1)"
-if echo "$help_out" | grep -q -- '--lite'; then
+if [ "$(echo "$help_out" | grep -c -- '--lite')" -gt 0 ]; then
     ok "--help advertises --lite"
 else
     bad "--lite is undocumented in --help, so nobody will find it"

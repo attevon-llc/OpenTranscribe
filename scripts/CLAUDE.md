@@ -588,6 +588,39 @@ aux-file record.
   component print `All security scans completed successfully!` — and `docs` was already in that
   state, since it was in `BUILT_COMPONENTS` with a `security-scan.sh` arm but no registry-pull
   branch, so the default path "scanned" an image it never fetched.
+- ⚠️ **The scan unit is a LEG, not a component** (issue #667). A multi-arch tag is an index over
+  several artifacts, and a CVE report on one leg says nothing about the others. The registry
+  path used to `docker pull --platform linux/amd64` and scan that, so `lite`'s arm64 leg — the
+  **only** backend an arm64 host can install, since `opentranscribe.sh` defaults arm64 to
+  `DEPLOYMENT_MODE=lite` — would have shipped never having been looked at, with an amd64 report
+  beside it looking like coverage. `security-scan.sh <component>` now scans **every platform the
+  component declares** (7 legs across the 4 published components today); `SCAN_PLATFORM=linux/arm64`
+  narrows to one for iteration. The platform set is read from `docker-build-push.sh list-platforms`,
+  never transcribed.
+  - **Reports are keyed `<component>-<arch>-<tool>`, unconditionally** — including for
+    single-platform components. A scheme where the arch appears only sometimes is one where a
+    missing leg looks like an ordinary report.
+  - **`resolve_platform_image` VERIFIES what it got, and that is the point.** `docker pull
+    --platform linux/arm64` against a tag with no arm64 leg does **not** reliably fail: measured
+    against `opentranscribe-backend:latest` (amd64+arm64 only), requesting `linux/s390x`
+    proceeded to download a multi-GB image of a *different* architecture. Scanning that and
+    filing it as `-s390x` is worse than not scanning — it manufactures evidence. A registry
+    pre-flight (`docker manifest inspect`) refuses an undeclared platform before downloading;
+    the post-pull `{{.Os}}/{{.Architecture}}` comparison is the authoritative check. An empty
+    platform list is **COULD NOT SCAN (2)**, never "no architectures to scan".
+  - Local resolution searches leg tags (`repo:vX.Y.Z-<cap>-<arch>`), not just the bare tag:
+    building several legs locally leaves `repo:vX.Y.Z` pointing at whichever built **last**, so
+    checking only that tag makes which leg gets scanned depend on iteration order.
+  - `40-build.sh` builds every declared leg (one invocation per leg — `--load` cannot export a
+    multi-arch manifest) so `50-scan.sh` has something to scan; the baked-version `docker run`
+    check applies only to the **host-arch** leg, by its leg tag.
+- ⚠️ **Never `<producer> | grep -q ...` in these suites.** They run under `set -o pipefail`;
+  `grep -q` exits on first match, the producer dies with SIGPIPE, and the pipeline reports
+  FAILURE — so a match reads as a non-match and the assertion **silently inverts**. It is
+  size-dependent (output under the 64 KB pipe buffer is unaffected), which is why the idiom
+  worked against a ~100-line stage file and inverted against the 1428-line
+  `docker-build-push.sh`, reporting a hardcoded line as removed while it sat on line 865. Use
+  `[ "$(<producer> | grep -c ...)" -gt 0 ]`.
 - **The scannable component list has exactly one home**: the `SCAN_COMPONENT_*` tables in
   `security-scan.sh`, exposed as `./scripts/security-scan.sh list-components` (and
   `list-repos`, `component<TAB>repo`, which `scripts/release/50-scan.sh` derives its

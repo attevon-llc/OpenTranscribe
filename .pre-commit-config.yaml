@@ -317,7 +317,7 @@ repos:
         entry: scripts/tests/test-scan-not-a-pass.sh
         language: system
         pass_filenames: false
-        files: ^scripts/(docker-build-push\.sh|security-scan\.sh|tests/test-scan-not-a-pass\.sh)$
+        files: ^scripts/(docker-build-push\.sh|security-scan\.sh|release/50-scan\.sh|tests/test-scan-not-a-pass\.sh)$
 
       # ⚠️ This `files:` list is NOT free-form — it must select every file the suite makes
       # an assertion about, or a change to one of them runs with the guard silent. It was

@@ -846,25 +846,29 @@ run_parallel_scans() {
         # was never pulled and the scan below ran against whatever local image
         # carried that tag — or nothing (issue #681). A `case` with a failing
         # `*)` makes the next component that forgets a branch loud.
-        print_info "Pulling images from the registry for scanning..."
+        # Registry mode: security-scan.sh does the pulling now, ONE PULL PER ARCHITECTURE,
+        # verifying each one is the platform it asked for.
+        #
+        # This block used to `docker pull --platform linux/amd64 "${pull_repo}:latest"` for
+        # every component. For a multi-arch repo that is not a pre-fetch, it is a decision:
+        # it primes the local tag with the amd64 leg, and the scan that followed examined
+        # that leg no matter which architecture it claimed to cover. `opentranscribe-backend-lite`
+        # publishes amd64 AND arm64, and arm64 hosts run the lite image exclusively — so the
+        # arm64 leg would have shipped having never been scanned once, with an amd64 report
+        # beside it looking like coverage (issue #667).
+        #
+        # The component list is still validated here (a component with no rule must be loud,
+        # #681) — only the fetching moved, to the one place that knows the platform set.
+        print_info "Registry mode — security-scan.sh will pull and verify each architecture leg"
 
         for component in "${components[@]}"; do
-            local pull_repo
             case "$component" in
-                backend)  pull_repo="${REPO_BACKEND}" ;;
-                lite)     pull_repo="${REPO_BACKEND_LITE}" ;;
-                frontend) pull_repo="${REPO_FRONTEND}" ;;
-                docs)     pull_repo="${REPO_DOCS}" ;;
+                backend|lite|frontend|docs) ;;
                 *)
                     print_error "No registry-pull rule for component '${component}' — it would be scanned against a stale or absent local image"
                     return 1
                     ;;
             esac
-            (
-                docker rmi "${pull_repo}:latest" 2>/dev/null || true
-                docker pull --platform linux/amd64 "${pull_repo}:latest"
-            ) &
-            pids+=($!)
         done
     fi
 

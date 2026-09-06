@@ -1735,14 +1735,34 @@
     },
     {
       "version": "v0.8.0",
-      "headline": "Small GPUs and native diarization",
-      "summary": "Retire the in-process PyTorch diarizer, which is what makes a 4 GB card viable, and prove it with VRAM calibration rather than magic numbers.",
+      "headline": "Native inference, and small GPUs",
+      "summary": "Replace the Python/PyTorch inference stack end to end, and prove it on the cards people actually have.",
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 6,
+      "total": 8,
       "closed": 0,
       "areas": [
+        {
+          "key": "asr-engines",
+          "name": "ASR Engines",
+          "scope": "Alternative and native transcription engines",
+          "known": true,
+          "total": 2,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 366,
+              "title": "feat(asr): NVIDIA NeMo (Parakeet / Canary) as a first-class local transcription engine",
+              "done": false
+            },
+            {
+              "number": 776,
+              "title": "feat(asr): native Rust transcription backend as a sidecar container, in the diar-native shape",
+              "done": false
+            }
+          ]
+        },
         {
           "key": "native-diarizer",
           "name": "Native Diarizer",
@@ -2082,7 +2102,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 5,
+      "total": 3,
       "closed": 0,
       "areas": [
         {
@@ -2090,7 +2110,7 @@
           "name": "ASR Engines",
           "scope": "Alternative and native transcription engines",
           "known": true,
-          "total": 4,
+          "total": 2,
           "closed": 0,
           "issues": [
             {
@@ -2101,16 +2121,6 @@
             {
               "number": 69,
               "title": "feat(asr): live transcription with real-time speaker identification",
-              "done": false
-            },
-            {
-              "number": 366,
-              "title": "feat(asr): NVIDIA NeMo (Parakeet / Canary) as a first-class local transcription engine",
-              "done": false
-            },
-            {
-              "number": 776,
-              "title": "feat(asr): native Rust transcription backend as a sidecar container, in the diar-native shape",
               "done": false
             }
           ]

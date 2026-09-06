@@ -73,9 +73,9 @@ RELEASES: dict[str, tuple[str, str]] = {
         'see the app and watch it upgrade.',
     ),
     'v0.8.0': (
-        'Small GPUs and native diarization',
-        'Retire the in-process PyTorch diarizer, which is what makes a 4 GB card '
-        'viable, and prove it with VRAM calibration rather than magic numbers.',
+        'Native inference, and small GPUs',
+        'Replace the Python/PyTorch inference stack end to end, and prove it on the '
+        'cards people actually have.',
     ),
     'v0.9.0': (
         'Federal government and FIPS',

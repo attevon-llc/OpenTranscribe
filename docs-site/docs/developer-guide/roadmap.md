@@ -125,18 +125,22 @@ The demo runs the CPU-only lite image, so it cannot be stood up until that image
 
 ---
 
-## v0.8.0: Small GPUs and native diarization
+## v0.8.0: Native inference, and small GPUs
 
-**Theme:** run well on the GPU people actually have.
+**Theme:** get the Python/PyTorch stack out of the inference path.
 
-**Goal:** retire the in-process PyTorch diarizer, which is what makes a small card viable, and
-prove it with measurement rather than assumption.
+**Goal:** replace local inference end to end, and prove the result on the cards people actually
+have.
 
-These are one release because they are one problem. The tuning constants were chosen on a 12 GB
-card and generalized by assumption; removing the PyTorch diarization path is the single largest
-reduction in resident VRAM available, and the small-card tier is how we demonstrate it worked.
-This release also carries the verification backlog of things that can build successfully and test
-green while still being wrong, because the development host could not exercise them.
+These belong in one release because they are one problem. Diarization and transcription both run
+through a resident PyTorch process today, and that single fact drives image size, cold start,
+CUDA-version coupling and VRAM headroom. Replacing diarization alone leaves the larger half in
+place, so this release covers both, plus an alternative local engine, and then demonstrates the
+win rather than asserting it: tuning constants chosen on a 12 GB card get replaced with
+measurements, and a 4 GB tier proves the headroom is real.
+
+It also carries the verification backlog of things that can build successfully and test green
+while still being wrong, because the development host could not exercise them.
 
 **Exit criteria**
 
@@ -144,9 +148,15 @@ green while still being wrong, because the development host could not exercise t
   hardware requirements page.
 - No PyAnnote code path remains reachable in any deployment shape, including `gpu-scale`,
   `gpu-split` and `lite`, where it has historically survived as the de-facto engine.
+- Any replacement transcription engine reports **WER and word-timing accuracy** against the
+  current one, not just a speed number. Word timings feed boundary correction, diarization
+  alignment and the transcript editor, so a faster engine with worse timings is a regression.
+- Language coverage does not regress. The current stack claims 100+ languages; an engine that
+  only does well in English is not an optimization.
 - The speaker-index migration can be **rolled back** on a live install, demonstrated rather than
   asserted.
 - Eviction and concurrency defaults cite a **measurement**, not a chosen number.
+- Image size and cold-start time are measured before and after, and published.
 - Every row of the architecture-blocked verification matrix is either verified on real hardware or
   restated with the specific hardware still missing. A row may stay open. It may not stay vague.
 
@@ -252,13 +262,21 @@ what changed.
 
 **Goal:** run natively on the hardware people own, transcribe live, and stand behind a stable API.
 
+:::note Why Apple Silicon waits for the desktop app
+Native Mac transcription is **blocked on the standalone application**, not on the engine work in
+v0.8.0. Docker on Apple Silicon cannot reach the GPU: there is no Metal passthrough to a Linux
+container, so a containerised deployment is CPU-only on a Mac no matter which engine it runs.
+Reaching the Neural Engine and the GPU at all requires a process running natively on macOS, which
+is what the desktop app provides. That is why the two ship together here rather than with the
+other local-engine work.
+:::
+
 **Exit criteria**
 
 - The public API surface is documented and versioned, and breaking it requires a major bump.
-- OpenTranscribe runs natively on Apple Silicon without Docker GPU passthrough.
-- Any alternative transcription engine reports **WER and word-timing accuracy** against the
-  current engine, not just a speed number. Word timings feed boundary correction, diarization
-  alignment and the transcript editor, so a faster engine with worse timings is a regression.
+- OpenTranscribe runs natively on Apple Silicon, using the GPU and Neural Engine, without Docker
+  in the inference path.
+- Live transcription holds up under a real meeting, not a file replay.
 
 ---
 

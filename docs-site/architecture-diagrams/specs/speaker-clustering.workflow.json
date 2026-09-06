@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OpenTranscribe — Speaker Clustering & Naming",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "auto-match", "label": "Automatic matching", "focus": ["voiceprint", "match", "assigned"], "note": "A new speaker's voiceprint is compared against every known profile before anything reaches a human." },
+      { "id": "clustering", "label": "Unmatched -> cluster", "focus": ["match", "cluster", "review"], "note": "Speakers with no confident match group into clusters across files, waiting for a human to name them." },
+      { "id": "promote", "label": "Cluster -> named profile", "focus": ["review", "profile"], "note": "Merge, split, or promote — a cluster becomes a durable, reusable SpeakerProfile only when a person confirms it." }
+    ]
+  },
+  "lanes": [
+    { "id": "embed", "label": "Embedding" },
+    { "id": "match", "label": "Matching" },
+    { "id": "cluster", "label": "Clustering" },
+    { "id": "user", "label": "Human Review" }
+  ],
+  "phases": [
+    { "id": "auto", "label": "Automatic", "fromCol": 0, "toCol": 2, "variant": "emphasis" },
+    { "id": "human", "label": "Human-in-the-loop", "fromCol": 3, "toCol": 4, "variant": "dashed" }
+  ],
+  "mainPath": ["voiceprint", "match", "cluster", "review", "profile"],
+  "nodes": [
+    { "id": "voiceprint", "lane": "embed", "col": 0, "type": "backend", "label": "Voiceprint", "sublabel": "new speaker embedding", "width": 132 },
+    { "id": "match", "lane": "match", "col": 1, "type": "database", "label": "Match", "sublabel": "cosine vs known profiles", "width": 132 },
+    { "id": "assigned", "lane": "match", "col": 2, "type": "backend", "label": "Auto-assign", "sublabel": "above threshold", "width": 132 },
+    { "id": "cluster", "lane": "cluster", "col": 2, "type": "backend", "label": "Cluster", "sublabel": "no match — group across files", "width": 132 },
+    { "id": "review", "lane": "user", "col": 3, "type": "external", "label": "Review", "sublabel": "merge / split / verify", "width": 132 },
+    { "id": "profile", "lane": "cluster", "col": 4, "type": "database", "label": "Profile", "sublabel": "named, reusable SpeakerProfile", "width": 132 }
+  ],
+  "edges": [
+    { "id": "embed-match", "from": "voiceprint", "to": "match", "variant": "emphasis" },
+    { "id": "match-assigned", "from": "match", "to": "assigned", "label": "match found", "variant": "emphasis" },
+    { "id": "match-cluster", "from": "match", "to": "cluster", "label": "no match", "variant": "dashed" },
+    { "id": "cluster-review", "from": "cluster", "to": "review", "variant": "emphasis" },
+    { "id": "review-profile", "from": "review", "to": "profile", "label": "promote", "variant": "emphasis" },
+    { "id": "profile-match", "from": "profile", "to": "match", "label": "feeds future matches", "variant": "dashed", "fromSide": "top", "toSide": "top" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Threshold gates automation", "items": ["Confident matches auto-assign to an existing profile — no human needed", "Everything below threshold becomes an unverified speaker, never guessed"] },
+    { "dot": "rose", "title": "Clustering is cross-file", "items": ["find_or_create_cluster groups similar unverified speakers across the whole library, not per-file", "batch_recluster can re-run this after embeddings change (e.g. a model upgrade)"] },
+    { "dot": "emerald", "title": "Promotion is the only way to a name", "items": ["merge_clusters / split_cluster let a reviewer correct grouping mistakes first", "promote_cluster_to_profile is the one step that creates a durable, reusable identity"] }
+  ]
+}

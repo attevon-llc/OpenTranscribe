@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "OpenTranscribe — RAG Chat Retrieval",
+    "viewBox": [900, 610],
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "retrieve", "label": "Plan + retrieve", "focus": ["user", "router", "retrieval", "opensearch"], "note": "The router resolves scope, then retrieval pulls transcript chunks/digests." },
+      { "id": "guard", "label": "Local vs remote guard", "focus": ["retrieval", "redactor", "llm"], "note": "Local models get unmasked text; remote providers always get masked text." },
+      { "id": "answer", "label": "Answer + citations", "focus": ["llm", "output_redactor", "user"], "note": "Output redaction is a separate display-layer pass, independent of the egress mask." }
+    ]
+  },
+  "participants": [
+    { "id": "user", "type": "frontend", "label": "Chat UI", "sublabel": "browser" },
+    { "id": "router", "type": "backend", "label": "Chat Router", "sublabel": "plan + scope" },
+    { "id": "retrieval", "type": "backend", "label": "Retrieval", "sublabel": "chunks + digests" },
+    { "id": "opensearch", "type": "database", "label": "OpenSearch", "sublabel": "hybrid/neural search" },
+    { "id": "redactor", "type": "security", "label": "Redactor", "sublabel": "mask if remote" },
+    { "id": "llm", "type": "external", "label": "LLM", "sublabel": "local or remote" },
+    { "id": "output_redactor", "type": "security", "label": "Output Mask", "sublabel": "display-layer mask" }
+  ],
+  "segments": [
+    { "from": 150, "to": 280, "label": "Plan" },
+    { "from": 296, "to": 500, "label": "Retrieve + guard" },
+    { "from": 516, "to": 545, "label": "Generate + answer" }
+  ],
+  "messages": [
+    { "from": "user", "to": "router", "y": 180, "label": "ask question", "variant": "emphasis" },
+    { "from": "router", "to": "retrieval", "y": 222, "label": "resolve scope + plan", "variant": "emphasis" },
+    { "from": "retrieval", "to": "opensearch", "y": 264, "label": "kNN + keyword query", "variant": "default" },
+    { "from": "opensearch", "to": "retrieval", "y": 306, "label": "ranked chunks/digests", "variant": "return" },
+    { "from": "retrieval", "to": "redactor", "y": 348, "label": "mask_chunks / mask_digests", "variant": "emphasis" },
+    { "from": "redactor", "to": "llm", "y": 400, "label": "unmasked (local) or masked (remote)", "variant": "security" },
+    { "from": "llm", "to": "output_redactor", "y": 452, "label": "draft answer", "variant": "return" },
+    { "from": "output_redactor", "to": "user", "y": 494, "label": "answer + citations (SSE)", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "router", "from": 174, "to": 246, "type": "backend" },
+    { "participant": "retrieval", "from": 216, "to": 372, "type": "backend" },
+    { "participant": "opensearch", "from": 258, "to": 312, "type": "database" },
+    { "participant": "redactor", "from": 342, "to": 406, "type": "security" },
+    { "participant": "llm", "from": 394, "to": 458, "type": "cloud" },
+    { "participant": "output_redactor", "from": 446, "to": 500, "type": "security" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Two independent masks", "items": ["Egress mask (redactor): keyed on provider locality, decides what the LLM sees", "Output mask (output_redactor): display-layer, independent of the egress policy"] },
+    { "dot": "rose", "title": "Fail-closed", "items": ["Any ambiguity in provider classification reads as remote", "An admin's force_redact_before_llm lock always wins the local exemption"] },
+    { "dot": "emerald", "title": "Two retrieval units", "items": ["mask_chunks addresses text by time range", "mask_digests addresses text by provenance (segment_ids) — not interchangeable"] }
+  ]
+}

@@ -54,7 +54,10 @@ from celery.signals import setup_logging  # noqa: E402
 from celery.signals import task_postrun  # noqa: E402
 from celery.signals import task_prerun  # noqa: E402
 from celery.signals import worker_process_init  # noqa: E402
+from celery.signals import worker_process_shutdown  # noqa: E402
 from celery.signals import worker_ready  # noqa: E402
+from celery.signals import worker_shutdown  # noqa: E402
+from celery.signals import worker_shutting_down  # noqa: E402
 from kombu import Queue  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
@@ -947,3 +950,50 @@ def close_session_after_task(**kwargs):
     # Clear the request_id adopted in task_prerun so it can't leak into the next
     # task that reuses this thread/process (threads pool reuses workers).
     set_request_id("")
+
+
+# Graceful GPU worker shutdown (issue #782). Logic lives in app.core.worker_shutdown, not
+# here, so it stays unit-testable without importing this module (and therefore torch) at
+# all. These three shims are intentionally thin — the same shape preload_models() already
+# uses toward ModelManager.
+@worker_shutting_down.connect
+def arm_worker_shutdown_flag(**kwargs):
+    """Mark that a shutdown signal has arrived.
+
+    ⚠️ Fires INSIDE celery's signal handler, in the MainProcess, BEFORE the task pool has
+    drained the in-flight task — releasing a model here would free VRAM (and tear down the
+    CUDA context) under a live CUDA kernel. Delegates to
+    ``app.core.worker_shutdown.mark_shutting_down()``, which does nothing but set a flag.
+    Do not add anything else to this handler.
+    """
+    from app.core.worker_shutdown import mark_shutting_down
+
+    mark_shutting_down()
+
+
+@worker_shutdown.connect
+def release_gpu_resources_on_worker_shutdown(**kwargs):
+    """Release the transcriber, diarizer, PII pool, and CUDA context before the worker
+    process exits.
+
+    Fires in the MainProcess AFTER ``_shutdown(warm=True)`` has joined the pool, so no
+    task is still running — this is what makes releasing models here safe. See
+    ``app.core.worker_shutdown.release_worker_resources`` for the release order and why
+    each step is gated on ``sys.modules`` rather than an import.
+    """
+    from app.core.worker_shutdown import release_worker_resources
+
+    release_worker_resources()
+
+
+@worker_process_shutdown.connect
+def release_embedding_cache_on_process_shutdown(**kwargs):
+    """Per-forked-child cleanup at reap time.
+
+    Only ``celery-embedding-worker`` (the sole PREFORK service that populates the
+    embedding cache) has anything to release here — every other prefork child's copy is
+    always empty, and the GPU/redaction threads-pool workers never fork at all.
+    """
+    from app.core.worker_shutdown import release_embedding_cache_only
+
+    release_embedding_cache_only()

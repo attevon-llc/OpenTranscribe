@@ -257,11 +257,16 @@ def throwaway_containers():
     created: list[str] = []
 
     def _make(name: str, project_label: str | None) -> str:
-        cmd = ["docker", "run", "-d", "--name", name]
+        # --platform linux/amd64: this host's cached `alpine:3.20` is an s390x image
+        # (measured 2026-09-06), which exits immediately with an exec-format error on an
+        # amd64 host -- the container would never actually be Running, which the GPU
+        # drain's stop/no-stop assertions below need to observe. The pre-existing
+        # `_container_exists` (existence-only) tests never depended on this.
+        cmd = ["docker", "run", "-d", "--platform", "linux/amd64", "--name", name]
         if project_label is not None:
             cmd += ["--label", f"com.docker.compose.project={project_label}"]
         cmd += ["alpine:3.20", "sleep", "300"]
-        subprocess.run(cmd, capture_output=True, check=True, timeout=30)
+        subprocess.run(cmd, capture_output=True, check=True, timeout=60)
         created.append(name)
         return name
 
@@ -452,3 +457,236 @@ def test_an_unlabeled_container_sharing_the_name_prefix_survives(
     _run_real_loop(straggler_loop_only, throwaway_project_namespace)
 
     assert _container_exists(bare), "an unlabeled container was removed on name prefix alone"
+
+
+# --------------------------------------------------------------------------
+# ot_drain_gpu_workers_by_container() (issue #782) -- the container-driven GPU drain
+# stop_all_containers() calls before EITHER of its two `down` chains. Same #693 hazard,
+# same three-layer guard shape as the straggler loop above: it reads the identical
+# OPENTR_STOP_PROJECT_LABEL{,_ALT} overrides, so it gets the identical fail-at-setup
+# fixture and the identical fake-docker + real-docker containment proof.
+# --------------------------------------------------------------------------
+
+
+def _extract_gpu_drain_function() -> str:
+    """The full `ot_drain_gpu_workers_by_container() { ... }` definition, unmodified --
+    only ever run this under a fake `docker`, or through `gpu_drain_function_only`."""
+    return _function_body(OPENTR.read_text(encoding="utf-8"), "ot_drain_gpu_workers_by_container")
+
+
+@pytest.fixture
+def raw_gpu_drain_function() -> str:
+    return _extract_gpu_drain_function()
+
+
+@pytest.fixture
+def gpu_drain_function_only() -> str:
+    """Same safety precondition as `straggler_loop_only`, applied to the GPU drain
+    helper: fails at SETUP if its project-label filters are not overridable -- a
+    hardcoded filter would let every real-docker test below stop live CUDA-holding
+    containers on a real host (issue #693's exact hazard, for a second call site)."""
+    body = _extract_gpu_drain_function()
+
+    expansions = _project_label_expansions(body)
+    if not expansions:
+        pytest.fail(
+            "no 'label=com.docker.compose.project=' filter found in "
+            "ot_drain_gpu_workers_by_container() -- it may have regressed to a bare "
+            "name-prefix match, or moved"
+        )
+    hardcoded = [e for e in expansions if not e.startswith("${")]
+    if hardcoded:
+        pytest.fail(
+            "ot_drain_gpu_workers_by_container() hardcodes a compose project label "
+            f"({hardcoded!r}) instead of reading ${{{PROJECT_LABEL_VAR}}}/"
+            f"${{{PROJECT_LABEL_ALT_VAR}}}. Refusing to run it: executing this function "
+            "unscoped can stop live CUDA-holding containers on a real host (issue #693)."
+        )
+    return body
+
+
+def _container_is_running(name: str) -> bool:
+    result = subprocess.run(
+        ["docker", "inspect", "-f", "{{.State.Running}}", name],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def _run_real_gpu_drain(function_text: str, namespace: tuple[str, str]) -> None:
+    """Run the real function against the real daemon, scoped to `namespace`, with a
+    short grace period so a genuinely-drained container doesn't slow the test down."""
+    primary, alternate = namespace
+    script = f"{function_text}\not_drain_gpu_workers_by_container\n"
+    subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        timeout=60,
+        env=_env_without_overrides(
+            **{
+                PROJECT_LABEL_VAR: primary,
+                PROJECT_LABEL_ALT_VAR: alternate,
+                "OT_STOP_GRACE_GPU": "1",
+            }
+        ),
+        check=False,
+    )
+
+
+def test_the_gpu_drain_function_reads_its_project_labels_from_overridable_variables(
+    raw_gpu_drain_function,
+):
+    """Fail-closed precondition for the second call site: every compose-project filter
+    in ot_drain_gpu_workers_by_container() must be an overridable ${...} expansion."""
+    expansions = _project_label_expansions(raw_gpu_drain_function)
+    assert expansions, (
+        "no 'label=com.docker.compose.project=' filter found in "
+        "ot_drain_gpu_workers_by_container() -- it may have regressed to a bare "
+        "name-prefix match, or moved"
+    )
+    assert [e for e in expansions if not e.startswith("${")] == [], (
+        "ot_drain_gpu_workers_by_container() hardcodes a compose project label instead "
+        f"of reading ${{{PROJECT_LABEL_VAR}}}/${{{PROJECT_LABEL_ALT_VAR}}} -- executing "
+        "it unscoped can stop live CUDA-holding containers on a real host (issue #693)"
+    )
+
+
+def test_the_gpu_drain_function_can_only_select_containers_in_the_configured_namespace(
+    raw_gpu_drain_function, throwaway_project_namespace, tmp_path
+):
+    primary, alternate = throwaway_project_namespace
+    script = f"{raw_gpu_drain_function}\not_drain_gpu_workers_by_container"
+    calls = _run_loop_with_fake_docker(
+        script,
+        tmp_path,
+        overrides={
+            PROJECT_LABEL_VAR: primary,
+            PROJECT_LABEL_ALT_VAR: alternate,
+            "OT_STOP_GRACE_GPU": "1",
+        },
+        # A poisoned selection: if the function ever ignored its own filters, this is
+        # the name it would act on.
+        ps_output="opentranscribe-celery-worker",
+    )
+
+    selections = [call for call in calls if call and call[0] == "ps"]
+    assert len(selections) == 2, f"expected exactly two container selections, got {selections!r}"
+    project_filters = {
+        arg for call in selections for arg in call if arg.startswith(LABEL_FILTER_PREFIX)
+    }
+    assert project_filters == {
+        f"{LABEL_FILTER_PREFIX}{primary}",
+        f"{LABEL_FILTER_PREFIX}{alternate}",
+    }, (
+        "ot_drain_gpu_workers_by_container() queried docker for a compose project "
+        f"outside this test's namespace -- it can reach real containers: {project_filters!r}"
+    )
+
+    stop_calls = [call for call in calls if call and call[0] == "stop"]
+    assert any("opentranscribe-celery-worker" in call for call in stop_calls), (
+        f"the function selected a matching container but never issued `docker stop` "
+        f"for it: {calls!r}"
+    )
+    assert any("-t" in call and "1" in call for call in stop_calls), (
+        f'the drain\'s `docker stop` did not carry -t "$OT_STOP_GRACE_GPU": {stop_calls!r}'
+    )
+
+
+def test_with_the_override_unset_the_gpu_drain_function_targets_the_real_project_names(
+    raw_gpu_drain_function, tmp_path
+):
+    """Production default, unchanged: with neither override exported, the function
+    filters on exactly the two real compose project names it always did."""
+    script = f"{raw_gpu_drain_function}\not_drain_gpu_workers_by_container"
+    calls = _run_loop_with_fake_docker(script, tmp_path, overrides={"OT_STOP_GRACE_GPU": "1"})
+
+    selections = [call for call in calls if call and call[0] == "ps"]
+    project_filters = {
+        arg for call in selections for arg in call if arg.startswith(LABEL_FILTER_PREFIX)
+    }
+    assert project_filters == {
+        f"{LABEL_FILTER_PREFIX}{REAL_PROJECT_LABEL}",
+        f"{LABEL_FILTER_PREFIX}{REAL_PROJECT_LABEL_ALT}",
+    }, (
+        "parameterising the project label changed ot_drain_gpu_workers_by_container()'s "
+        f"default behaviour -- got {project_filters!r}"
+    )
+
+
+def test_the_gpu_drain_function_ignores_a_non_matching_service_name(
+    raw_gpu_drain_function, throwaway_project_namespace, tmp_path
+):
+    """The name-substring filter: a real, correctly-labeled container whose name matches
+    none of celery-worker*/celery-cpu-worker*/celery-redaction*/diar-native* (e.g.
+    postgres) must never be issued a `docker stop` -- this helper only drains
+    CUDA-holding services, not the whole project."""
+    primary, alternate = throwaway_project_namespace
+    script = f"{raw_gpu_drain_function}\not_drain_gpu_workers_by_container"
+    calls = _run_loop_with_fake_docker(
+        script,
+        tmp_path,
+        overrides={
+            PROJECT_LABEL_VAR: primary,
+            PROJECT_LABEL_ALT_VAR: alternate,
+            "OT_STOP_GRACE_GPU": "1",
+        },
+        ps_output=f"{primary}-postgres\n{primary}-backend",
+    )
+
+    stop_calls = [call for call in calls if call and call[0] == "stop"]
+    assert stop_calls == [], (
+        f"the drain issued `docker stop` against a non-CUDA-holding service name: {stop_calls!r}"
+    )
+
+
+@requires_docker
+def test_gpu_drain_stops_a_real_matching_container(
+    gpu_drain_function_only, throwaway_project_namespace, throwaway_containers
+):
+    primary, _ = throwaway_project_namespace
+    name = throwaway_containers(f"{primary}-celery-worker", project_label=primary)
+
+    _run_real_gpu_drain(gpu_drain_function_only, throwaway_project_namespace)
+
+    assert not _container_is_running(name), (
+        "a genuinely labeled, name-matching CUDA-holding container was not stopped by "
+        "the GPU drain helper"
+    )
+
+
+@requires_docker
+def test_gpu_drain_does_not_touch_a_non_matching_service_in_the_same_project(
+    gpu_drain_function_only, throwaway_project_namespace, throwaway_containers
+):
+    primary, _ = throwaway_project_namespace
+    name = throwaway_containers(f"{primary}-postgres", project_label=primary)
+
+    _run_real_gpu_drain(gpu_drain_function_only, throwaway_project_namespace)
+
+    assert _container_is_running(name), (
+        "the GPU drain helper stopped a container whose name does not match any "
+        "CUDA-holding service pattern -- it must only touch celery-worker*/"
+        "celery-cpu-worker*/celery-redaction*/diar-native* names"
+    )
+
+
+@requires_docker
+def test_gpu_drain_does_not_touch_a_name_matching_container_in_a_different_project(
+    gpu_drain_function_only, throwaway_project_namespace, throwaway_containers
+):
+    """The exact #693 defect shape, reproduced for the second drain helper: a container
+    that only shares the name substring, but belongs to a DIFFERENT compose project,
+    must not be touched."""
+    primary, _ = throwaway_project_namespace
+    name = throwaway_containers(
+        f"{primary}-celery-worker-unrelated", project_label="some-other-app"
+    )
+
+    _run_real_gpu_drain(gpu_drain_function_only, throwaway_project_namespace)
+
+    assert _container_is_running(name), (
+        "a container that only shares the name substring, but belongs to a DIFFERENT "
+        "compose project, was stopped -- this is the #693 defect shape"
+    )

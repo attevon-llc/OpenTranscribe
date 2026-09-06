@@ -167,6 +167,11 @@ services:
     # never claim a device the rest of the stack decided not to use. Loading this file
     # alone is the CPU path, and is correct rather than degraded on a GPU-less host.
     restart: unless-stopped   # supervisor: auto-restart (known upstream teardown crash)
+    # Deliberately SHORT and NOT tied to OT_STOP_GRACE_GPU (issue #782). This sidecar
+    # already carries a known upstream crash-on-teardown (see the restart comment above);
+    # a long grace period only lengthens a crash this repo cannot fix. 20s gives the
+    # non-crashing shutdown path room to close its ORT sessions cleanly.
+    stop_grace_period: 20s
     # The backend exports the model set from its FastAPI lifespan and only becomes
     # healthy once that finishes (app/transcription/native_provision.py). Waiting for it
     # is what stops this container starting against an empty /models, where it exits 8

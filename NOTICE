@@ -64,7 +64,7 @@ Third-party software attribution (Apache-2.0)
 - diar-native — the Rust sidecar itself (the harness around `speakrs` and the ONNX/PLDA
   model export tooling) is also licensed under the Apache License, Version 2.0.
 
-Third-party software attribution (permissive: MIT / BSD-2-Clause)
+Third-party software attribution (permissive: MIT / BSD-2-Clause / BSD-3-Clause)
 ---------------------------------------------------------------------
 
 The following components are used under permissive licenses that do not require source
@@ -76,5 +76,16 @@ installed metadata: `pip show <package>`):
 - CTranslate2 — https://github.com/OpenNMT/CTranslate2 — MIT license.
 - ONNX Runtime — https://github.com/microsoft/onnxruntime — MIT license.
 
-None of the above requires attribution as a condition of use, but crediting them here keeps
-this NOTICE an accurate map of what OpenTranscribe runs.
+- OpenBLAS — https://github.com/OpenMathLib/OpenBLAS — BSD-3-Clause license.
+  Copyright (c) 2011-2014, The OpenBLAS Project. All rights reserved.
+
+  Listed separately because, unlike the four above, BSD-3-Clause **does** require the
+  copyright notice to be reproduced in binary redistributions — and OpenTranscribe's
+  backend images redistribute OpenBLAS in binary form twice over: once as the Debian
+  `libopenblas0` package, and once as an explicit copy of `libopenblasp-r0.3.26.so` at
+  `/opt/diar-native/lib`, which `diar-server` loads via DT_RPATH (issue #721). That second
+  copy is upstream diar-native's own validated build, carried alongside the binary so the
+  tested pairing travels with it; see `docs/diarization-openblas-der/README.md`.
+
+Crediting the permissive components here keeps this NOTICE an accurate map of what
+OpenTranscribe runs.

@@ -171,9 +171,12 @@ def test_start_migration_writes_full_status_and_clears_completion_flag(svc, redi
     assert status["completed_at"] is None
     # The stale completion flag from an earlier run must not leak forward.
     assert redis_container.get(svc._get_key("completed")) is None
-    # 24h safety-net TTL is actually set on the status key.
+    # Safety-net TTL is actually set on the status key (issue #657, defect 6:
+    # raised from 24h to MIGRATION_STATUS_TTL_SECONDS, currently 72h).
+    from app.services.migration_progress_service import MIGRATION_STATUS_TTL_SECONDS
+
     ttl = redis_container.ttl(svc._get_key("status"))
-    assert 0 < ttl <= 86400
+    assert 0 < ttl <= MIGRATION_STATUS_TTL_SECONDS
 
 
 # =============================================================================

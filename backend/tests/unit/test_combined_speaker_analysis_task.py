@@ -129,7 +129,9 @@ class FakeRedis:
         return True
 
     def eval(self, script: str, numkeys: int, *args: Any) -> int:
-        key, file_uuid, is_failure_flag, now = args
+        # Issue #657, defect 6: the real Lua script now takes the TTL as a
+        # 5th ARGV (MIGRATION_STATUS_TTL_SECONDS) instead of a bare literal.
+        key, file_uuid, is_failure_flag, now, _ttl = args
         raw = self.store.get(key)
         if not raw:
             return 0

@@ -37,14 +37,17 @@ class TestGetAlreadyMigratedFileIds:
 
         mock_client = MagicMock()
         mock_client.indices.exists.return_value = True
+        # Composite aggregation shape (issue #657, defect 6: replaced the
+        # 50,000-bucket-capped `terms` agg with a paginated `composite` one).
         mock_client.search.return_value = {
             "aggregations": {
                 "file_ids": {
                     "buckets": [
-                        {"key": 10, "doc_count": 3},
-                        {"key": 25, "doc_count": 1},
-                        {"key": 42, "doc_count": 5},
-                    ]
+                        {"key": {"media_file_id": 10}, "doc_count": 3},
+                        {"key": {"media_file_id": 25}, "doc_count": 1},
+                        {"key": {"media_file_id": 42}, "doc_count": 5},
+                    ],
+                    "after_key": {"media_file_id": 42},
                 }
             }
         }
@@ -66,9 +69,10 @@ class TestGetAlreadyMigratedFileIds:
             "aggregations": {
                 "file_ids": {
                     "buckets": [
-                        {"key": 10, "doc_count": 2},  # Only 2 of 5 migrated
-                        {"key": 25, "doc_count": 3},  # All 3 migrated
-                    ]
+                        {"key": {"media_file_id": 10}, "doc_count": 2},  # Only 2 of 5 migrated
+                        {"key": {"media_file_id": 25}, "doc_count": 3},  # All 3 migrated
+                    ],
+                    "after_key": {"media_file_id": 25},
                 }
             }
         }
@@ -280,6 +284,7 @@ class TestEmbeddingResultWriter:
         from app.services.speaker_analysis_models import SegmentResult
         from app.tasks.embedding_migration_v4 import _embedding_result_writer
 
+        mock_bulk.return_value = 1  # 1 doc written == 1 doc submitted (full success)
         speaker = self._make_speaker(1, "sp-uuid", "Alice")
         prepared = self._make_prepared(
             [speaker],
@@ -313,6 +318,7 @@ class TestEmbeddingResultWriter:
         from app.services.speaker_analysis_models import SegmentResult
         from app.tasks.embedding_migration_v4 import _embedding_result_writer
 
+        mock_bulk.return_value = 2  # both docs written (full success)
         alice = self._make_speaker(1, "sp-alice", "Alice")
         bob = self._make_speaker(2, "sp-bob", "Bob")
         prepared = self._make_prepared(
@@ -360,6 +366,7 @@ class TestEmbeddingResultWriter:
         from app.services.speaker_analysis_models import SegmentResult
         from app.tasks.embedding_migration_v4 import _embedding_result_writer
 
+        mock_bulk.return_value = 1  # full success
         speaker = self._make_speaker(1, "sp-1", "Alice")
         prepared = self._make_prepared([speaker], speaker_profiles={1: None})
 
@@ -505,6 +512,8 @@ class TestFinalizeV4MigrationProfileGuard:
         client = MagicMock()
         client.indices.exists.return_value = True
         client.indices.flush.return_value = {}
+        # No v4 speaker docs to backfill profiles from -- migrate_profile_documents_to_v4 returns immediately.
+        client.search.return_value = {"hits": {"hits": []}}
         mock_active_index.return_value = "speakers_v3"
 
         def count_side_effect(index, body=None):
@@ -539,6 +548,8 @@ class TestFinalizeV4MigrationProfileGuard:
         client = MagicMock()
         client.indices.exists.return_value = True
         client.indices.flush.return_value = {}
+        # No v4 speaker docs to backfill profiles from -- migrate_profile_documents_to_v4 returns immediately.
+        client.search.return_value = {"hits": {"hits": []}}
         mock_active_index.return_value = "speakers_v3"
 
         def count_side_effect(index, body=None):
@@ -571,6 +582,8 @@ class TestFinalizeV4MigrationProfileGuard:
         client = MagicMock()
         client.indices.exists.return_value = True
         client.indices.flush.return_value = {}
+        # No v4 speaker docs to backfill profiles from -- migrate_profile_documents_to_v4 returns immediately.
+        client.search.return_value = {"hits": {"hits": []}}
         mock_active_index.return_value = "speakers_v3"
         mock_swap.return_value = {"status": "success"}
 

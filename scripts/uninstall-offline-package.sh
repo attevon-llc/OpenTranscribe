@@ -21,10 +21,10 @@ BACKUP_DIR="$INSTALL_DIR/backups"
 
 # Grace period (seconds) for CUDA-holding services on stop/down (issue #782). This script
 # ships standalone inside the offline package and sources nothing else, so it carries its
-# own copy of the default -- same value as docker-compose.yml's `${OT_STOP_GRACE_GPU:-60}s`
+# own copy of the default -- same value as docker-compose.yml's `${OT_STOP_GRACE_GPU:-30}s`
 # and scripts/common.sh's OT_STOP_GRACE_GPU, checked by
 # backend/tests/unit/test_stop_grace_period_wiring.py.
-OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-60}"
+OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-30}"
 
 # Give the CUDA-holding services a chance to release VRAM cleanly before `down` reaches
 # them. Compose v2.29.7 bakes `stop_grace_period` into the container's Config.StopTimeout
@@ -34,7 +34,7 @@ OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-60}"
 # seconds to hang in. Safe against an absent service name: 2>/dev/null || true.
 ot_drain_gpu_workers() {
     # shellcheck disable=SC2086
-    docker compose $COMPOSE_FILES stop -t "$OT_STOP_GRACE_GPU" \
+    docker compose $COMPOSE_FILES stop -t "${OT_STOP_GRACE_GPU:-30}" \
         celery-worker celery-worker-gpu-transcribe celery-worker-gpu-diarize \
         celery-worker-gpu-scaled celery-redaction celery-cpu-worker diar-native \
         2>/dev/null || true

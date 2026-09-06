@@ -43,9 +43,9 @@ fi
 # Grace period (seconds) for CUDA-holding services on stop/down/restart (issue #782).
 # `:=` is safe to run whether or not common.sh (above) already assigned it -- unlike a
 # function, a variable needs no `declare -F` guard to avoid clobbering the value common.sh
-# set. Kept in sync with docker-compose.yml's `${OT_STOP_GRACE_GPU:-60}s` default by
+# set. Kept in sync with docker-compose.yml's `${OT_STOP_GRACE_GPU:-30}s` default by
 # backend/tests/unit/test_stop_grace_period_wiring.py.
-: "${OT_STOP_GRACE_GPU:=60}"
+: "${OT_STOP_GRACE_GPU:=30}"
 
 # Fallback definition: common.sh is sourced conditionally above (an install predating
 # release-manifest.txt:52 may not have it), and every command that tears the stack down
@@ -56,7 +56,7 @@ if ! declare -F ot_drain_gpu_workers >/dev/null 2>&1; then
     ot_drain_gpu_workers() {
         local chain="$1"
         # shellcheck disable=SC2086
-        COMPOSE_PROFILES="*" docker compose $chain stop -t "$OT_STOP_GRACE_GPU" \
+        COMPOSE_PROFILES="*" docker compose $chain stop -t "${OT_STOP_GRACE_GPU:-30}" \
             celery-worker celery-worker-gpu-transcribe celery-worker-gpu-diarize \
             celery-worker-gpu-scaled celery-redaction celery-cpu-worker diar-native \
             2>/dev/null || true

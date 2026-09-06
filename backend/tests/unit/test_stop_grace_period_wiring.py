@@ -1,16 +1,27 @@
 """`stop_grace_period` must exist on every CUDA-holding service, and every source that
 carries the default value must agree with the others (issue #782).
 
-Three independent files declare the same number today: `docker-compose.yml`'s
-`${OT_STOP_GRACE_GPU:-Ns}` compose default, `scripts/common.sh`'s
-`OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-N}"` assignment, and `opentr.sh`'s
-`: "${OT_STOP_GRACE_GPU:=N}"` prologue default (required so `set -u` survives a checkout
-with no `.env` — see `test_shell_env_var_guards.py`). Nothing enforces they stay in sync;
-a future edit to only one of them would silently make the shell's *documented* default
-diverge from what the container actually gets created with. **The drift guard below is
-the most valuable test in this file** — everything else here would still pass with a
-container that has no grace period at all if the drift guard did not exist to notice a
-mismatched, still-present key.
+**Five files DECLARE the number and ~11 sites SPELL it**, and there are two drift guards
+below because those are two different claims:
+
+* `test_every_default_source_agrees` — the five declarations: `docker-compose.yml`'s
+  `${OT_STOP_GRACE_GPU:-Ns}` compose default, `scripts/common.sh`'s
+  `OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-N}"`, `opentr.sh`'s
+  `: "${OT_STOP_GRACE_GPU:=N}"` prologue default (required so `set -u` survives a checkout
+  with no `.env` — see `test_shell_env_var_guards.py`), and the standalone fallback copies
+  in `opentranscribe.sh` and `scripts/uninstall-offline-package.sh`.
+* `test_every_shell_literal_agrees_with_the_compose_default` — every *use* site too. Each
+  carries its own `:-30` because an undefaulted `"$OT_STOP_GRACE_GPU"` is an
+  unbound-variable abort under `set -u` for any caller that did not run the prologue; that
+  is not hypothetical, it took `test_opentr_restart_fresh_scoping.py` down with exit 127 in
+  CI. Defaulting at every use site is the repo standard AND a drift farm — the two are only
+  compatible because that second guard checks all of them.
+
+Nothing else enforces they stay in sync; an edit to only some would silently make the
+shell's *documented* default diverge from what the container is actually created with.
+**These two are the most valuable tests in this file** — everything else here would still
+pass against a container with no grace period at all, if the drift guards did not exist to
+notice a mismatched, still-present key.
 
 The compose key is the PRIMARY fix (issue #782, premise P2): compose v2.29.7 bakes
 `stop_grace_period` into the container's `Config.StopTimeout` at CREATE time, and the
@@ -214,29 +225,151 @@ def _opentr_sh_prologue_default() -> int:
     return int(match.group(1))
 
 
-@pytest.mark.unit
-def test_the_three_default_sources_agree():
-    compose_default = _compose_default()
-    common_default = _common_sh_default()
-    opentr_default = _opentr_sh_prologue_default()
+def _standalone_fallback_defaults() -> dict[str, int]:
+    """The integer in each standalone script's own fallback copy of the default.
 
-    assert compose_default == common_default == opentr_default, (
-        "OT_STOP_GRACE_GPU's default has drifted between the three sources that declare "
-        f"it: docker-compose.yml={compose_default}, scripts/common.sh={common_default}, "
-        f"opentr.sh={opentr_default}. A container is created against the compose value; "
-        "the shell values are what an operator (and this test suite) believes that value "
-        "to be -- a mismatch here means the documentation lies about the deployed behaviour."
+    `opentranscribe.sh` (the shipped production front end) and
+    `scripts/uninstall-offline-package.sh` both carry their OWN copy, because neither can
+    rely on `scripts/common.sh` being present -- a curl install predating the manifest
+    entry, and a standalone uninstaller respectively. That makes them real drift surfaces,
+    and they were missed by the first version of this guard: the measured value was applied
+    to three sources and these two silently kept the placeholder, which is exactly the
+    failure the guard exists to prevent, one file over.
+
+    The two use DIFFERENT shapes -- `: "${OT_STOP_GRACE_GPU:=30}"` and
+    `OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-30}"` -- so this matches the brace expansion
+    itself rather than either assignment form, and reads only NON-COMMENT lines: both files
+    also *name* the default in a "kept in sync with" comment, and a regex that accepted
+    those would happily read the stale number out of the prose while the code said something
+    else.
+    """
+    found: dict[str, int] = {}
+    for rel in ("opentranscribe.sh", "scripts/uninstall-offline-package.sh"):
+        path = REPO_ROOT / rel
+        code = "\n".join(
+            line.split("#", 1)[0] for line in path.read_text(encoding="utf-8").splitlines()
+        )
+        values = set(re.findall(r"\$\{OT_STOP_GRACE_GPU:[-=](\d+)\}", code))
+        assert values, f"{rel} carries no OT_STOP_GRACE_GPU fallback default outside comments"
+        assert len(values) == 1, (
+            f"{rel} declares MULTIPLE different OT_STOP_GRACE_GPU defaults {sorted(values)} "
+            "-- one file cannot disagree with itself about the value it ships"
+        )
+        found[rel] = int(next(iter(values)))
+    return found
+
+
+#: Every shell file that names OT_STOP_GRACE_GPU at all -- declaration or use.
+SHELL_FILES_USING_THE_KNOB = (
+    "opentr.sh",
+    "opentranscribe.sh",
+    "scripts/common.sh",
+    "scripts/uninstall-offline-package.sh",
+)
+
+
+def _every_shell_literal() -> dict[str, set[int]]:
+    """EVERY `${OT_STOP_GRACE_GPU:-N}` / `:=N` literal in the shell scripts, per file.
+
+    Not just the declaration sites. Each USE site carries its own `:-30` fallback,
+    because this repo's standard (`test_shell_expansion_guards.py`) is that every `$VAR`
+    in these scripts is defaulted where it is used -- an undefaulted one is an
+    unbound-variable abort under `set -u` for any caller that did not run the prologue,
+    which is not hypothetical: `test_opentr_restart_fresh_scoping.py` extracts
+    `restart_backend`/`restart_all` and runs them in a minimal environment, and a bare
+    `"$OT_STOP_GRACE_GPU"` took that suite down with `line 90: OT_STOP_GRACE_GPU:
+    unbound variable` (exit 127) in CI.
+
+    That standard multiplies the number into ~11 places, which is a drift farm unless
+    something checks them ALL -- so this does. Defaulting-at-use and one-true-value are
+    only compatible because of this function; drop it and the next edit to the measured
+    value silently updates some subset.
+    """
+    found: dict[str, set[int]] = {}
+    for rel in SHELL_FILES_USING_THE_KNOB:
+        path = REPO_ROOT / rel
+        code = "\n".join(
+            line.split("#", 1)[0] for line in path.read_text(encoding="utf-8").splitlines()
+        )
+        values = {int(v) for v in re.findall(r"\$\{OT_STOP_GRACE_GPU:[-=](\d+)\}", code)}
+        assert values, f"{rel} names OT_STOP_GRACE_GPU nowhere outside comments"
+        found[rel] = values
+    return found
+
+
+@pytest.mark.unit
+def test_every_default_source_agrees():
+    sources = {
+        "docker-compose.yml": _compose_default(),
+        "scripts/common.sh": _common_sh_default(),
+        "opentr.sh": _opentr_sh_prologue_default(),
+        **_standalone_fallback_defaults(),
+    }
+
+    assert len(set(sources.values())) == 1, (
+        "OT_STOP_GRACE_GPU's default has drifted between the sources that declare it: "
+        f"{sources}. A container is created against the compose value; the shell values "
+        "are what an operator (and this test suite) believes that value to be -- a "
+        "mismatch means the documentation lies about the deployed behaviour."
     )
 
 
 @pytest.mark.unit
-def test_the_measured_placeholder_marker_is_still_present():
-    """B2 (the real-hardware measurement) has not landed in this unit yet -- the compose
-    comment must still say so, or a reader has no way to know 60s is a guess rather than a
-    measured value. Delete this test in the same commit that removes the TODO."""
+def test_the_compose_comment_carries_the_measurement_not_a_guess():
+    """The successor to this file's `TODO(measure #782)` placeholder test.
+
+    While the value was a guess, the marker's PRESENCE was the assertion -- a reader had to
+    be able to tell 60s was unmeasured. Now that B2 has run, the assertion inverts: the
+    marker must be gone AND the comment must carry the evidence. Deleting the old test
+    without adding this one would have left the number with no guard at all, so a later
+    edit could put back an unmeasured value and nothing would notice.
+    """
     text = COMPOSE_YML.read_text(encoding="utf-8")
-    assert "TODO(measure #782)" in text, (
-        "the TODO(measure #782) placeholder marker is gone from docker-compose.yml but "
-        "the grace period is still 60 -- either the value was measured (update this test "
-        "and the comment together) or the marker was deleted by mistake"
+    assert "TODO(measure #782)" not in text, (
+        "the TODO(measure #782) placeholder is back in docker-compose.yml -- if the value "
+        "is a guess again, say so here rather than leaving both claims in the tree"
+    )
+    assert "is MEASURED, not guessed" in text, (
+        "docker-compose.yml no longer claims the grace period was measured. Either restore "
+        "the measurement table beside stop_grace_period, or re-add the TODO marker and the "
+        "test that asserted it -- an unlabelled number is the state issue #782 started in"
+    )
+    assert "handler release" in text, (
+        "the per-rep measurement table is gone from docker-compose.yml's grace-period "
+        "comment; 'MEASURED' with no numbers beside it is an assertion, not evidence"
+    )
+
+
+@pytest.mark.unit
+def test_every_shell_literal_agrees_with_the_compose_default():
+    """The stronger half of the drift guard: EVERY literal, not just the declarations.
+
+    `test_every_default_source_agrees` above checks the five places that *declare* the
+    default. This checks every place that *spells* it -- ~11 sites once each use carries
+    its own `:-30` fallback for `set -u`. A `docker stop -t` left on the old number while
+    the compose key moved is exactly the shape the shell path exists to bridge (containers
+    created before the compose key existed), so a stale one there is silently wrong in
+    precisely the deployment this fix is for.
+    """
+    compose_default = _compose_default()
+    per_file = _every_shell_literal()
+
+    disagreeing = {
+        rel: sorted(values - {compose_default})
+        for rel, values in per_file.items()
+        if values - {compose_default}
+    }
+    assert not disagreeing, (
+        f"docker-compose.yml's OT_STOP_GRACE_GPU default is {compose_default}, but these "
+        f"shell literals disagree: {disagreeing}. Every `${{OT_STOP_GRACE_GPU:-N}}` in "
+        f"{list(SHELL_FILES_USING_THE_KNOB)} must spell the same measured number -- a "
+        "`docker stop -t` on a stale value is silently wrong for exactly the pre-upgrade "
+        "containers the shell drain exists to cover."
+    )
+
+    total = sum(len(v) for v in per_file.values())
+    assert total == len(per_file), (
+        f"expected one distinct value per file, got {per_file} -- the assertion above "
+        "compares against the compose default, so this is the guard that a file has not "
+        "quietly grown two DIFFERENT numbers that both happen to match"
     )

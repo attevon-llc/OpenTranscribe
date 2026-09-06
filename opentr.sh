@@ -46,11 +46,11 @@ fi
 : "${PKI_HTTPS_PORT:=}"
 : "${PKI_HTTP_PORT:=}"
 # Grace period (seconds) for CUDA-holding services on stop/down/restart (issue #782).
-# scripts/common.sh (sourced above) already assigns this with `${OT_STOP_GRACE_GPU:-60}`,
+# scripts/common.sh (sourced above) already assigns this with `${OT_STOP_GRACE_GPU:-30}`,
 # which satisfies `set -u` on its own — this entry exists for the drift-guard contract
 # test_stop_grace_period_wiring.py enforces (opentr.sh's defaults block, common.sh's
-# assignment, and the compose `${OT_STOP_GRACE_GPU:-Ns}` default must all agree on 60).
-: "${OT_STOP_GRACE_GPU:=60}"
+# assignment, and the compose `${OT_STOP_GRACE_GPU:-Ns}` default must all agree on 30).
+: "${OT_STOP_GRACE_GPU:=30}"
 # Snapshot of the .env value, taken before any `--gpu-device` override replaces
 # it. The containers read GPU_DEVICE_ID from `env_file: .env` (not from this
 # shell), so the override has to be able to say which value they will still see.
@@ -3408,11 +3408,11 @@ restart_backend() {
   restart_resolve_target "$@" || return $?
   echo "🔄 Restarting backend services on ${RESTART_LABEL} (backend, all celery workers, celery-beat, flower)..."
 
-  # -t "$OT_STOP_GRACE_GPU" (issue #782): compose v2.29.7's `restart` passes only
+  # -t "${OT_STOP_GRACE_GPU:-30}" (issue #782): compose v2.29.7's `restart` passes only
   # options.Timeout, so a container created before docker-compose.yml carried
   # stop_grace_period (StopTimeout still null) needs it spelled out here too.
   local rc=0
-  restart_compose restart -t "$OT_STOP_GRACE_GPU" backend \
+  restart_compose restart -t "${OT_STOP_GRACE_GPU:-30}" backend \
     celery-worker \
     celery-download-worker \
     celery-cpu-worker \
@@ -3425,7 +3425,7 @@ restart_backend() {
 
   # celery-worker-gpu-scaled is optional (scale: 0 unless --gpu-scale), so its
   # absence is genuinely not an error — unlike everything above.
-  restart_compose restart -t "$OT_STOP_GRACE_GPU" celery-worker-gpu-scaled 2>/dev/null || true
+  restart_compose restart -t "${OT_STOP_GRACE_GPU:-30}" celery-worker-gpu-scaled 2>/dev/null || true
 
   if [ "$rc" -ne 0 ]; then
     echo "❌ Backend restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
@@ -3466,10 +3466,10 @@ restart_all() {
   echo "🔄 Restarting all services on ${RESTART_LABEL} without database reset..."
 
   # Restart all services in place - docker compose handles dependency ordering.
-  # -t "$OT_STOP_GRACE_GPU" (issue #782): see restart_backend()'s comment -- `restart`
+  # -t "${OT_STOP_GRACE_GPU:-30}" (issue #782): see restart_backend()'s comment -- `restart`
   # passes only options.Timeout, so pre-recreate containers need it explicit here too.
   local rc=0
-  restart_compose restart -t "$OT_STOP_GRACE_GPU" || rc=$?
+  restart_compose restart -t "${OT_STOP_GRACE_GPU:-30}" || rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "❌ Restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
     return "$rc"
@@ -3508,7 +3508,7 @@ ot_drain_gpu_workers_by_container() {
                           } | sort -u ); do
     case "$gpu_container" in
       *celery-worker*|*celery-cpu-worker*|*celery-redaction*|*diar-native*)
-        docker stop -t "$OT_STOP_GRACE_GPU" "$gpu_container" 2>/dev/null &
+        docker stop -t "${OT_STOP_GRACE_GPU:-30}" "$gpu_container" 2>/dev/null &
         pids+=("$!")
         ;;
     esac

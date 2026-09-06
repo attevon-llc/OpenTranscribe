@@ -8,6 +8,46 @@
 # YELLOW/NC, EXIT_PRECONDITION, and the mode booleans (RUN_BACKEND/RUN_E2E/ALL_OVERLAYS/
 # NO_OVERLAYS/WITH_GPU_SCALE).
 
+# ── Bringing a stack up, with its diagnostics KEPT ───────────────────────────────
+#
+# Every caller here ran `opentr.sh start dev ... >/dev/null 2>&1` and, on failure, told
+# the operator to re-run it by hand "to see why". That discarded the only evidence:
+# `opentr.sh start` prints `compose ps` plus 50 lines of service logs on exactly that
+# path, specifically so somebody can read them. Observed: a --full gate exited 3 after
+# ~20 minutes having never reached a test, and its entire log was six lines with no
+# cause in it.
+#
+# Re-running by hand is not a substitute, which is why this is a shared helper rather
+# than three copies of a fix. The one real occurrence was a Keycloak start that wedged
+# under the concurrent `--build` I/O of a 10-file overlay chain and then came up in
+# 28.6s once the machine was quiet — a manual re-run would have shown a healthy stack
+# and no cause at all. The advice in the old error message destroys the evidence it asks
+# for.
+#
+# Args: $1 = human description used in the error line
+#       $2 = log basename (no extension)
+#       $@ = flags passed through to `opentr.sh start dev`
+start_stack_or_die() {
+    local what="$1" logname="$2"
+    shift 2
+    # REPORT_DIR is run-dev-tests.sh's per-run mktemp dir, so this lands beside the phase
+    # logs. Falls back to $TMPDIR for any other caller of this library.
+    local log="${REPORT_DIR:-${TMPDIR:-/tmp}}/${logname}.log"
+    if "$REPO_ROOT/opentr.sh" start dev "$@" >"$log" 2>&1; then
+        return 0
+    fi
+    echo -e "${RED}error:${NC} failed to bring up ${what}" >&2
+    echo "--- last 40 lines of $log ---" >&2
+    tail -40 "$log" >&2
+    echo "--- full output: $log ---" >&2
+    # Which container is unhealthy is the first question every time, and compose's own
+    # output does not always name it.
+    echo "--- containers not running/healthy ---" >&2
+    docker ps -a --format '{{.Names}}\t{{.Status}}' | grep -Ev 'Up .*healthy|Up [0-9]' >&2 || true
+    exit "$EXIT_PRECONDITION"
+}
+
+
 # ---------------------------------------------------------------- overlay table (issue #630)
 #
 # Model: opentr.sh's own leg-table convention (scripts/test-matrix.sh's LEGS array) — one
@@ -368,11 +408,7 @@ setup_overlays() {
         local with_flags=() f
         for f in "${OVERLAYS_NEEDED[@]}"; do with_flags+=("--with-$f"); done
         echo -e "${YELLOW}==>${NC} bringing up overlays in one batched call: ${with_flags[*]}"
-        if ! "$REPO_ROOT/opentr.sh" start dev "${with_flags[@]}" >/dev/null 2>&1; then
-            echo -e "${RED}error:${NC} failed to bring up overlays (${with_flags[*]}) — run" \
-                 "'./opentr.sh start dev ${with_flags[*]}' manually to see why" >&2
-            exit "$EXIT_PRECONDITION"
-        fi
+        start_stack_or_die "overlays (${with_flags[*]})" "overlay-bringup" "${with_flags[@]}"
         for f in "${OVERLAYS_TO_START[@]}"; do
             OVERLAYS_STARTED_BY_US+=("$f")
             local svc="${OVERLAY_SERVICE[$f]}"

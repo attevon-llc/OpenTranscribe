@@ -94,6 +94,38 @@ def _exists(db, conversation_id: int) -> bool:
     )
 
 
+@pytest.fixture(autouse=True)
+def _only_this_tests_rows_are_sweepable(db_session):
+    """Age every pre-existing conversation forward, so the sweep can only see ours.
+
+    The sweep selects by AGE across the WHOLE table — no user filter, no test
+    scoping — so on a shared database every assertion on ``result["deleted"]``
+    silently counts whatever real conversations happen to be older than the
+    window too. Against a dev stack that is not a hypothetical: this file failed
+    three tests with ``assert 9 == 1`` and ``assert 8 == 0`` purely because the
+    database held 8 aged conversations of its own, and the cap test's second
+    sweep found more rows waiting than the 2 it created. CI never noticed because
+    it gets a fresh Postgres; the failures land only on a developer's machine,
+    for a reason that has nothing to do with the code under test.
+
+    A baseline-delta assertion would fix the first two but not the cap test,
+    whose whole subject is how a bounded run splits a KNOWN population across
+    ticks. Normalising the population is what makes all three independent of what
+    the database happens to contain.
+
+    Safe, and it does not touch real data: ``db_session`` runs each test inside a
+    savepoint that is rolled back at teardown, and ``_run_sweep`` points the sweep
+    at that same session — so these writes live and die inside the test, exactly
+    like the deletions the sweep itself performs.
+    """
+    now = datetime.now(UTC)
+    db_session.query(ChatConversation).update(
+        {ChatConversation.created_at: now, ChatConversation.last_message_at: now},
+        synchronize_session=False,
+    )
+    db_session.commit()
+
+
 # --- the safety property -----------------------------------------------------
 
 

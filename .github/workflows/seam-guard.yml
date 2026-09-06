@@ -25,6 +25,12 @@ on:
     branches: [master, main, develop]
   push:
     branches: [master, main, develop]
+  # Required for a merge queue. A queued entry runs its checks against
+  # master-plus-the-preceding-queue, NOT against the PR branch — so a required
+  # check whose workflow lacks this trigger simply never reports, and the merge
+  # hangs forever. Added BEFORE the queue is enabled, deliberately: it is inert
+  # until then, and enabling the queue first is how a repo bricks its own merges.
+  merge_group:
 
 permissions:
   contents: read

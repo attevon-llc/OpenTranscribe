@@ -30,6 +30,23 @@ x-dev-environment: &dev-environment
 # (VERSION file / `git rev-parse --short HEAD`, with a "-dirty" suffix for an
 # uncommitted tree). One anchor keeps all 13 blocks in sync — a copy-pasted
 # args: block would silently drift as services are added.
+#
+# Every `image:` tag below is `${OT_DEV_IMAGE_TAG:-latest}`, never a bare `:latest`.
+# Docker image tags are a NAMESPACE THIS FILE OWNS and `--fresh` isolation (projects,
+# named volumes, ports, container_names) does none of it for you: a `docker build`
+# writes to the tag string in this file regardless of which compose PROJECT ran it.
+# Before this var existed, `./opentr.sh start dev --fresh <name>` — including an
+# IMPLICIT build triggered by an unbuilt `--with-*` overlay, no `--build` flag
+# needed — rebuilt and re-tagged the SAME `opentranscribe-backend:latest` the main
+# dev stack's containers were already resolved to. Running containers keep their
+# already-resolved image ID and are unaffected, so the hazard is invisible until
+# the next `./opentr.sh restart-backend`, which then silently runs another branch's
+# code. `opentr.sh`'s `--fresh` block exports `OT_DEV_IMAGE_TAG=$FRESH_PROJECT`
+# (e.g. `otfresh-tagiso`) before any build/up, so a fresh build writes
+# `opentranscribe-backend:otfresh-tagiso` and the shared `:latest` is never
+# touched. The non-fresh path leaves the var unset and gets `:latest` exactly as
+# before. `backend/tests/unit/test_opentr_fresh_image_tag_isolation.py` enforces
+# this never regresses.
 x-backend-build: &backend-build
   context: ./backend
   dockerfile: Dockerfile.prod
@@ -41,7 +58,7 @@ services:
   # All backend services share the same image to save disk space
   # Image is built once and reused by all backend-based services
   backend:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     build:
       <<: *backend-build
     volumes:
@@ -78,7 +95,7 @@ services:
       APP_VERSION: ${APP_VERSION:-}
 
   celery-worker:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -92,7 +109,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
 
   celery-download-worker:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -104,7 +121,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
 
   celery-cpu-worker:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -114,7 +131,7 @@ services:
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   celery-redaction:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -126,7 +143,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
 
   celery-cloud-asr-worker:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -136,7 +153,7 @@ services:
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   celery-nlp-worker:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -146,7 +163,7 @@ services:
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   celery-embedding-worker:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -157,7 +174,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
 
   celery-beat:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -167,7 +184,7 @@ services:
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   frontend:
-    image: opentranscribe-frontend:latest
+    image: opentranscribe-frontend:${OT_DEV_IMAGE_TAG:-latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev  # Use development Dockerfile
@@ -190,7 +207,7 @@ services:
       start_period: 30s
 
   flower:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -203,7 +220,7 @@ services:
       - flower_data:/app/temp
 
   docs:
-    image: opentranscribe-docs:latest
+    image: opentranscribe-docs:${OT_DEV_IMAGE_TAG:-latest}
     build:
       context: ./docs-site
       dockerfile: Dockerfile
@@ -215,7 +232,7 @@ services:
 
   # GPU Scaled Worker - Development build (only active with --gpu-scale flag)
   celery-worker-gpu-scaled:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -233,7 +250,7 @@ services:
   # Base provides command/env/healthcheck via the gpu-split profile; these blocks
   # only supply the local image/build/volumes (mirrors celery-worker-gpu-scaled).
   celery-worker-gpu-transcribe:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:
@@ -248,7 +265,7 @@ services:
       - pipeline_scratch:/scratch/opentranscribe
 
   celery-worker-gpu-diarize:
-    image: opentranscribe-backend:latest
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
     environment:
       <<: *dev-environment
     build:

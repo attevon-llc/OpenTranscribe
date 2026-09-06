@@ -754,10 +754,13 @@ add_diar_native_overlay() {
 
       # The overlay defaults to the PUBLISHED backend image, which is correct for a
       # self-hosted deployment but wrong in this checkout — dev builds the image
-      # locally as opentranscribe-backend:latest and never pushes it. Point the
-      # sidecar at the local build so it matches the workers it serves.
+      # locally as opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest} and never pushes it.
+      # Point the sidecar at the local build so it matches the workers it serves — reading
+      # OT_DEV_IMAGE_TAG (unset -> "latest" outside --fresh) keeps this in lockstep with the
+      # tag docker-compose.override.yml's other 13 services resolve to, so a --fresh stack's
+      # sidecar never ends up paired against the MAIN stack's :latest image.
       if [ "$ENVIRONMENT" = "dev" ]; then
-        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:latest}"
+        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}}"
       fi
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
       echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
@@ -1978,6 +1981,20 @@ start_app() {
     FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" ${_aux_services[@]+"${_aux_services[@]}"})"
     export COMPOSE_PROJECT_NAME="$FRESH_PROJECT"
 
+    # --fresh isolates the compose PROJECT, named volumes, ports and container_names —
+    # it does NOT touch the docker IMAGE TAG a build writes to, and docker-compose.override.yml
+    # hard-codes bare `opentranscribe-backend:latest` (and frontend/docs) for every dev service.
+    # A build can happen here with NO --build flag: an unbuilt --with-* overlay (e.g.
+    # --with-diar-native) triggers one implicitly. Left unset, that build re-tags the SAME
+    # `:latest` the MAIN dev stack's already-running containers resolved to — invisible until
+    # its next restart-backend silently picks up this fresh deployment's code. Exporting
+    # OT_DEV_IMAGE_TAG here (docker-compose.override.yml interpolates
+    # `${OT_DEV_IMAGE_TAG:-latest}`) makes a fresh build write `opentranscribe-backend:otfresh-<name>`
+    # instead — same pattern as DIAR_NATIVE_MODELS_DIR a few lines above: force it unconditionally,
+    # not merely `:-`, because an ambient OT_DEV_IMAGE_TAG left over from a previous fresh shell
+    # session must not leak into THIS one.
+    export OT_DEV_IMAGE_TAG="$FRESH_PROJECT"
+
     echo ""
     echo "🧪 FRESH DEPLOYMENT '${FRESH_NAME}': isolated project + volumes; NAS overlay IGNORED; real data untouched."
     echo "   Project: ${FRESH_PROJECT}  (containers: ${FRESH_PROJECT}-*)"
@@ -2006,6 +2023,16 @@ start_app() {
     if [ -n "$NO_BINDMOUNT_FLAG" ]; then
       echo "⚠️  --no-bindmount is only honored in fresh mode (--fresh); ignoring."
     fi
+
+    # Mirror image: the --fresh branch above unconditionally pins OT_DEV_IMAGE_TAG to
+    # this deployment's own project. This non-fresh branch must be equally
+    # unconditional in the OTHER direction — reset it to "latest" rather than leaving
+    # it unset, or an OT_DEV_IMAGE_TAG left exported in the invoking shell (a prior
+    # `--fresh` session, a CI job, a wrapper script) would silently carry over and
+    # make a plain `start dev` build/run the SHARED opentranscribe-backend against a
+    # stale fresh tag instead of :latest — the same cross-contamination this file
+    # exists to prevent, just mirrored.
+    export OT_DEV_IMAGE_TAG="latest"
   fi
 
   if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
@@ -2449,6 +2476,7 @@ start_app() {
     echo ""
     echo "🔎 DRY RUN — no containers started."
     echo "   COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-opentranscribe (default)}"
+    echo "   OT_DEV_IMAGE_TAG: ${OT_DEV_IMAGE_TAG:-latest} (fresh and non-fresh both set this explicitly)"
     echo "   Compose files:"
     # shellcheck disable=SC2086
     for _f in $COMPOSE_FILES; do

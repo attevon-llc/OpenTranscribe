@@ -61,11 +61,16 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-#: The Dockerfiles that build a Node stage. `docs-site/Dockerfile`'s Node stage is discarded
-#: by `COPY --from=build` into an nginx runtime image; `frontend/Dockerfile.dev` and
-#: `frontend/Dockerfile.prod`'s build stage both ship in what they produce. All three must
-#: still agree — a discarded stage is invisible to a vulnerability scan, not to a developer
-#: reading three Dockerfiles that disagree about "the" Node version.
+#: The Dockerfiles that build a Node stage. TWO of the three discard it: both
+#: `docs-site/Dockerfile` and `frontend/Dockerfile.prod` are multi-stage into an nginx runtime
+#: image (`COPY --from=build`), so neither ships a node binary. Only `frontend/Dockerfile.dev`
+#: is single-stage and actually runs Node at runtime.
+#:
+#: That asymmetry is precisely why this gate exists rather than a scanner. A discarded stage is
+#: invisible to Trivy/Grype — `security-reports/docs-sbom.json` contains zero node packages —
+#: so the two Dockerfiles that matter most for supply-chain drift are the two nothing was
+#: watching. All three must still agree: "invisible to a scan" is not "invisible to a developer
+#: reading three Dockerfiles that disagree about the Node version".
 NODE_DOCKERFILES: tuple[Path, ...] = (
     REPO_ROOT / "docs-site" / "Dockerfile",
     REPO_ROOT / "frontend" / "Dockerfile.prod",

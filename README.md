@@ -22,6 +22,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 <p align="center"><em>Complete workflow: Login → Upload → Process → Transcribe → Speaker Identification → AI Tags & Collections</em></p>
 
 > 📚 **For detailed screenshots and visual guides**, see the [Complete Documentation](https://docs.opentranscribe.app)
+>
+> 🗺️ **Where this is going:** the [Roadmap](https://docs.opentranscribe.app/roadmap) shows what is in each release and how far along it is, generated from the issue tracker. [Release Themes](https://docs.opentranscribe.app/docs/developer-guide/roadmap) explains what each version is *for* and the exit criteria it has to meet.
 
 ## ✨ Key Features
 

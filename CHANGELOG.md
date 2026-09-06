@@ -7,27 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Consolidated pipeline scratch volumes** (issue #661): the per-file MinIO-replacement copy,
-  the Stage 1→Stage 2 engine handoff WAV, and the diar-native sidecar's own-copy fallback
-  previously lived on three separate Docker volumes (`pipeline_scratch`, `transcription-temp`,
-  and `diar-native-tmp`) with a fourth in-container overlayfs copy. They now share a single
-  `pipeline_scratch` volume mounted at `/scratch/opentranscribe`, split into three namespaces
-  (`<file_uuid>/audio.wav`, `engine/<task_id>.wav`, `diar/diar_<hex>.wav`); the engine handoff
-  copy is an `os.link` of the per-file copy, so it costs an inode, not a copy. The volume now
-  reaches all 8 pipeline-touching workers, including three (`celery-cloud-asr-worker`,
-  `celery-embedding-worker`, `backend`) that previously had no mount at all.
-  ⚠️ **Upgrade note:** this removes the `transcription-temp` and `diar-native-tmp` volumes and
-  changes the diar-native sidecar's mount set. A plain restart is **not** sufficient — an
-  already-running `diar-native` container keeps its old mounts and will silently degrade to the
-  PyAnnote failover on every request (handoff WAV not found → own-copy write into a directory it
-  also can't see → PyAnnote fallback), with no error surfaced. Run
-  `docker compose up -d --force-recreate diar-native` (or `./opentr.sh start dev` for the full
-  dev stack) after pulling this change.
-
-## [0.5.0] - 2026-08-29
-
 ### Overview
 
 This is OpenTranscribe's largest release to date, spanning the full transcription
@@ -384,6 +363,55 @@ A tag was either yours alone or published to the whole deployment, so giving one
 
 ### Fixed
 
+- **Pre-release UI defect wave** (#739–#746, #649). Eight defects found by a UX/UI review of
+  the release candidate, plus an audit of every path sharing their root cause. The upload
+  wizard had a dead Skip button and resized between steps; its fixed-height body now fills so
+  the footer anchors to the dialog bottom. "Add speaker" silently created an auto-named
+  speaker before the name was entered (the name is now taken first), and unconfirmed LLM
+  suggestions rendered as if they were the confirmed speaker name. Clearing the search box
+  left stale results on screen. The gallery duration filter never applied, and the speaker
+  filter was empty unless speakers had been manually labelled, so unlabeled speakers are now
+  surfaced. The transcript modal header scrolled away and took the match counter with it.
+  Icon buttons went invisible in one theme, which a light/dark parity audit fixed along with
+  the placeholder and modal shapes that did not match what replaced them. #649's
+  premature-interaction timing races were audited across the remaining interactive paths and
+  removed, and a `VideoPlayer` `seekToTime` regression was caught by live verification rather
+  than by the suite.
+- **Speaker and search index consistency** (#657, #666, #674, #675, #698, #702). Editing
+  transcript text never reindexed OpenSearch, so search served the pre-edit text
+  indefinitely; mutation now triggers a reindex and the corpus-version cache key is derived
+  rather than assumed. Assigning a speaker to a profile now re-scores the library.
+  `semantic_confidence` was comparing three different score spaces against one threshold. The
+  v3→v4 embedding migration lost profile voiceprints and cross-file links: failures were
+  counted as successes, the migration lock did not correspond to a real transcription pause
+  point, profile voiceprints are now backfilled into v4 before finalize behind a fail-closed
+  guard, kNN reads carry a dimension guard, the embedding-mode cache moved into Redis, and
+  three scale limits and the UI ETA formula were corrected. Speaker and profile embeddings
+  are now purged after commit rather than inside the transaction, and backup/restore covers
+  the OpenSearch speaker embeddings that previously lived nowhere else (#658).
+- **Celery prefork pool death spiral** (#631). Forked children failed to boot for 10h46m
+  without the pool ever reporting unhealthy. The unbounded Hugging Face Hub call was removed
+  from the fork initializer, the CPU-Whisper preload is now bounded so a stalled Hub cannot
+  freeze the loop, and the healthcheck detects a respawn storm instead of counting a
+  perpetually-restarting worker as alive.
+- **Diarization sidecar correctness** (#661, #669, #721). `diar-server` ran against OpenBLAS
+  0.3.29, outside the range upstream validates, and now bundles the validated build; the DER
+  risk was measured on amd64 and the arm64 gap recorded rather than assumed away. A stale
+  `ENGINE_SHARED_VOLUME_PATH` silently killed the Stage 1 to Stage 2 handoff. Diarize inputs
+  are converted to `ndarray` before indexing. Runtime CUDA device selection is now
+  deterministic and honours the environment. The claim that embeddings are bit-identical
+  across devices was tested and found false, and the code no longer relies on it.
+- **Install and image publishing** (#680, #723, #770, #772, #768, #759). The one-line install
+  was broken for every published release because the manifest was read from a different ref
+  than the files it lists. Published images are now tagged by capability rather than
+  architecture alone, the publish gate is fed per-platform manifests instead of the index,
+  and the capability tag scheme is reachable from the install path. The lite rehearsal
+  hard-failed on a correct lite image. `fresh-destroy` leaked profile-gated services, their
+  volumes, project-scoped image tags, and the compose network, the last of which accumulated
+  11 networks and exhausted Docker's address pool host-wide. `restart-*` ignored `--fresh`
+  and restarted the live stack while reporting success, `--fresh` dev image tags now stay
+  isolated from the shared `:latest`, and three live checks were inverted by `| grep -q`
+  under `pipefail`.
 - **Concurrent-session cap could never shrink an existing backlog back down** (#632). The
   `terminate_oldest` policy revoked exactly one session per login while minting exactly one —
   a conservation law once the active count already sat at or above the configured cap, proven
@@ -1583,6 +1611,22 @@ Also fixed: the E2E API session never sent a CSRF token, so every mutation retur
 
 ### Changed
 
+- **Consolidated pipeline scratch volumes** (issue #661): the per-file MinIO-replacement copy,
+  the Stage 1→Stage 2 engine handoff WAV, and the diar-native sidecar's own-copy fallback
+  previously lived on three separate Docker volumes (`pipeline_scratch`, `transcription-temp`,
+  and `diar-native-tmp`) with a fourth in-container overlayfs copy. They now share a single
+  `pipeline_scratch` volume mounted at `/scratch/opentranscribe`, split into three namespaces
+  (`<file_uuid>/audio.wav`, `engine/<task_id>.wav`, `diar/diar_<hex>.wav`); the engine handoff
+  copy is an `os.link` of the per-file copy, so it costs an inode, not a copy. The volume now
+  reaches all 8 pipeline-touching workers, including three (`celery-cloud-asr-worker`,
+  `celery-embedding-worker`, `backend`) that previously had no mount at all.
+  ⚠️ **Upgrade note:** this removes the `transcription-temp` and `diar-native-tmp` volumes and
+  changes the diar-native sidecar's mount set. A plain restart is **not** sufficient — an
+  already-running `diar-native` container keeps its old mounts and will silently degrade to the
+  PyAnnote failover on every request (handoff WAV not found → own-copy write into a directory it
+  also can't see → PyAnnote fallback), with no error surfaced. Run
+  `docker compose up -d --force-recreate diar-native` (or `./opentr.sh start dev` for the full
+  dev stack) after pulling this change.
 - **Chat retrieval defaults: `final_chunks` 12 → 40, `max_chunks_per_file` 4 → 12** (#531).
   Measured on two corpora (AMI-81 and ELITR-Bench) against a calibrated answer judge
   (Cohen's κ 0.857): ~1.8–2× the answer-content recall of the old defaults, with negative
@@ -1733,6 +1777,23 @@ Also fixed: the E2E API session never sent a CSRF token, so every mutation retur
 
 ### Security
 
+- **Export lock was enforced for subtitles only** (#673). `export_locked` gated the subtitle
+  path while every other transcript export format ignored it, so an admin lock could be
+  walked around by choosing a different format. It is now enforced for every format, and the
+  owner's reveal state is threaded into the export request rather than re-derived.
+- **Transcript segment update accepted arbitrary fields** (#722). The endpoint let a client
+  rewrite the row's primary key. Mutable fields are now allow-listed.
+- **LLM connection-test and model-discovery handlers were unauthenticated outbound fetchers**
+  (#676) and are now rate limited.
+- **Deleting a user left their objects behind** (#695, #689). Object storage and avatars are
+  now reclaimed on user deletion, and admin user-deletion no longer bulk-deletes `MediaFile`
+  rows without the accompanying storage cleanup.
+- **nginx hardening** (#668): `robots.txt` and `X-Robots-Tag` are now served so a
+  reverse-proxied install is not indexed by default.
+- **Release scanning could report a pass over an image it never scanned** (#681). The scan
+  stage passed when its repository list could not be derived, and only pulled
+  `--platform linux/amd64`, so a multi-arch index could publish with an unscanned leg. Every
+  published container is now scanned on every architecture leg.
 - **security:** Gladia's `result_url` — a value the vendor's own API returns in its response and
   is then polled up to 720 times over ~2 hours, with the user's API key attached — was fetched
   unconditionally, with no SSRF validation and no redirect protection. The existing SSRF guard

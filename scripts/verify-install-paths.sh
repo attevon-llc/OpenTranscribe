@@ -85,14 +85,25 @@ is_unsupported() {
     [[ "$oldest" == "${1#v}" && "${1#v}" != "${MIN_SUPPORTED_RELEASE#v}" ]]
 }
 
+# Retries, because a single transient API call must never fail a release gate. Observed
+# 2026-09-06: this gate failed on PR #799 and passed on a re-run of the SAME job with no
+# code change, because the release lookup came back empty and Path 4 reported that empty
+# string as a verdict. A gate that cries wolf is worse than no gate -- the next time it is
+# correctly reporting a broken install path, the reflex is "it's flaky, re-run", and that
+# is exactly how the 22-day install outage in #683 would ship again.
 gh_api() {
-    local url="$1"
-    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        curl -fsSL --connect-timeout 10 --max-time 30 \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" "$url"
-    else
-        curl -fsSL --connect-timeout 10 --max-time 30 "$url"
-    fi
+    local url="$1" attempt rc=0
+    for attempt in 1 2 3; do
+        rc=0
+        if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+            curl -fsSL --connect-timeout 10 --max-time 30 \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" "$url" && return 0 || rc=$?
+        else
+            curl -fsSL --connect-timeout 10 --max-time 30 "$url" && return 0 || rc=$?
+        fi
+        [[ $attempt -lt 3 ]] && sleep $((attempt * 3))
+    done
+    return "$rc"
 }
 
 # Pull one shell function out of a script so it can be run in isolation. Same approach as
@@ -310,6 +321,13 @@ check_default_install_resolves_latest() {
 
     if [[ "$got" == "${expected}|${expected}" ]]; then
         pass "default 'curl | bash' resolves to ${expected} and pins images to it"
+    elif [[ -z "${got//|/}" ]]; then
+        # Empty on BOTH sides means resolve_install_ref exited non-zero rather than
+        # resolving something wrong -- in practice, the GitHub API call inside it failed.
+        # Report that as what it is. Saying "resolved ''" invites the reader to hunt for a
+        # value bug that is not there, and the real finding (a user's install dies when the
+        # API blips) gets missed.
+        fail "default 'curl | bash' could not resolve a release at all — resolve_install_ref exited non-zero (GitHub API unreachable or rate-limited). A real install would fail here too."
     else
         fail "default 'curl | bash' resolved '${got}', expected '${expected}|${expected}'"
     fi

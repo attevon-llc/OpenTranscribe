@@ -4,13 +4,13 @@
   "releases": [
     {
       "version": "v0.5.0",
-      "headline": "Deployment and release hardening",
-      "summary": "Release tooling, deployment shapes, and the security and correctness work that came out of a full rehearsal.",
-      "stage": "complete",
+      "headline": "Ship what is already built",
+      "summary": "Native diarization, corpus-scale chat, redaction and the identity overhaul, published without adding one more feature.",
+      "stage": "now",
       "released": false,
       "scheduled": true,
-      "total": 220,
-      "closed": 220,
+      "total": 275,
+      "closed": 269,
       "areas": [
         {
           "key": "asr-engines",
@@ -43,6 +43,46 @@
           ]
         },
         {
+          "key": "docs-release-ops",
+          "name": "Docs & Release Ops",
+          "scope": "Docs site, release pipeline, repo tooling",
+          "known": true,
+          "total": 6,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 772,
+              "title": "fresh-destroy leaks the compose network, silently — 11 accumulated and exhausted Docker's address pool",
+              "done": true
+            },
+            {
+              "number": 780,
+              "title": "build(docs): docs image ships on EOL Node 20 while the frontend is on 26",
+              "done": false
+            },
+            {
+              "number": 781,
+              "title": "fix(release): release assets have no checksums, and the SBOM is attached by glob rather than gated",
+              "done": false
+            },
+            {
+              "number": 783,
+              "title": "fix(release): FROM_VERSIONS is documented but never implemented, and no skip-version upgrade policy is stated",
+              "done": false
+            },
+            {
+              "number": 784,
+              "title": "task(release): no patch/hotfix path exists — 4 of the last 5 minors needed one within 24 hours",
+              "done": false
+            },
+            {
+              "number": 800,
+              "title": "fix(ci): the install-path release gate fails intermittently on identical code",
+              "done": false
+            }
+          ]
+        },
+        {
           "key": "document-ingestion",
           "name": "Document Ingestion",
           "scope": "Documents as first-class library items",
@@ -62,8 +102,8 @@
           "name": "Frontend & UI",
           "scope": "App surfaces, admin screens, and interface defects",
           "known": true,
-          "total": 20,
-          "closed": 20,
+          "total": 28,
+          "closed": 28,
           "issues": [
             {
               "number": 174,
@@ -164,6 +204,46 @@
               "number": 645,
               "title": "Waveform seek can stall ~10-30s on a fresh page load before media metadata is ready",
               "done": true
+            },
+            {
+              "number": 649,
+              "title": "Audit other interactive UI paths for the same premature-interaction timing bug class as #645",
+              "done": true
+            },
+            {
+              "number": 739,
+              "title": "fix(upload): upload wizard has a dead Skip button, resizes between steps, and chains scroll",
+              "done": true
+            },
+            {
+              "number": 740,
+              "title": "fix(transcript): \"Add speaker\" silently creates an auto-named speaker with no name entry",
+              "done": true
+            },
+            {
+              "number": 741,
+              "title": "fix(transcript): unconfirmed LLM speaker suggestions render as the speaker's name and overflow",
+              "done": true
+            },
+            {
+              "number": 742,
+              "title": "fix(search): clearing the search box leaves stale results on screen",
+              "done": true
+            },
+            {
+              "number": 744,
+              "title": "fix(gallery): the duration range filter does not apply",
+              "done": true
+            },
+            {
+              "number": 745,
+              "title": "fix(search): transcript modal header scrolls away, hiding the match count and prev/next",
+              "done": true
+            },
+            {
+              "number": 746,
+              "title": "fix(frontend): light/dark parity audit — icon buttons invisible in one theme",
+              "done": true
             }
           ]
         },
@@ -187,8 +267,8 @@
           "name": "Native Diarizer",
           "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
           "known": true,
-          "total": 8,
-          "closed": 8,
+          "total": 25,
+          "closed": 25,
           "issues": [
             {
               "number": 193,
@@ -229,6 +309,91 @@
               "number": 621,
               "title": "fix(frontend): local diarization settings/About/reprocess text still credit PyAnnote as primary, not diar-native",
               "done": true
+            },
+            {
+              "number": 639,
+              "title": "Diarization backend defaults to native (diar-native sidecar) but the sidecar is never distributed to self-hosted installs — perpetual silent-ish PyAnnote fallback",
+              "done": true
+            },
+            {
+              "number": 654,
+              "title": "task(models): add a download-models diar-native group — the export four files already claim exists",
+              "done": true
+            },
+            {
+              "number": 655,
+              "title": "bug(docker): diar-native sidecar is unwired in gpu-scale, gpu-split, lite, offline, Windows, --fresh and CPU-only topologies",
+              "done": true
+            },
+            {
+              "number": 656,
+              "title": "task(asr): sidecar-unavailable retry policy, bounded timeout and status surface before the PyAnnote fallback is removed",
+              "done": true
+            },
+            {
+              "number": 657,
+              "title": "bug(search): v4 embedding migration loses profile voiceprints and crosses index dimensions mid-run",
+              "done": true
+            },
+            {
+              "number": 660,
+              "title": "task(asr): --lite adopts the diar-native CPU execution provider for speaker embeddings",
+              "done": true
+            },
+            {
+              "number": 661,
+              "title": "perf(pipeline): collapse the audio handoff — four decodes and ~2.1 GB of one signal per job",
+              "done": true
+            },
+            {
+              "number": 662,
+              "title": "bug(config): .env.example ships DIAR_NATIVE_GPU=0, restoring the bare-device-0 pin the compose comment exists to prevent",
+              "done": true
+            },
+            {
+              "number": 663,
+              "title": "docs(legal): add a NOTICE file — the native diarizer's weights are CC-BY-4.0 and still require pyannote attribution",
+              "done": true
+            },
+            {
+              "number": 665,
+              "title": "fix(gpu): overlap-diarization gate keys off the configured backend, not sidecar reachability — transcriber is never released on the PyAnnote fallback path",
+              "done": true
+            },
+            {
+              "number": 669,
+              "title": "task(testing): diarization test + gate coverage survives the PyAnnote removal (several would go green measuring nothing)",
+              "done": true
+            },
+            {
+              "number": 670,
+              "title": "bug(deploy): upgrading into a mandatory-sidecar release degrades silently instead of refusing",
+              "done": true
+            },
+            {
+              "number": 671,
+              "title": "docs(backend): transcription/ and services/diarization/ CLAUDE.md still describe PyAnnote as the engine",
+              "done": true
+            },
+            {
+              "number": 672,
+              "title": "bug(config): PYANNOTE_MODEL means two different things, the admin panel misreports the diarizer, and four diarizer symbols are dead",
+              "done": true
+            },
+            {
+              "number": 679,
+              "title": "Adopt diar-native 0.3.0: self-provisioning models, CPU/GPU routing, /readyz, and structured logs",
+              "done": true
+            },
+            {
+              "number": 700,
+              "title": "rebuild-backend drops the diar-native overlay: celery-worker loses /tmp/diar-native and diarization silently falls back to PyAnnote",
+              "done": true
+            },
+            {
+              "number": 711,
+              "title": "task(gpu): diar-native routing under gpu-scale and gpu-split is wired but never verified on real multi-GPU hardware",
+              "done": true
             }
           ]
         },
@@ -237,8 +402,8 @@
           "name": "Platform & Operations",
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
-          "total": 95,
-          "closed": 95,
+          "total": 101,
+          "closed": 100,
           "issues": [
             {
               "number": 21,
@@ -711,8 +876,53 @@
               "done": true
             },
             {
+              "number": 631,
+              "title": "Celery prefork pool death spiral: 10h46m of forked children failing to signal UP, root cause unknown",
+              "done": true
+            },
+            {
               "number": 640,
               "title": "setup-opentranscribe.sh doesn't read release-manifest.txt — fresh installs never get docker-compose.blackwell.yml or docker-compose.backup.yml despite the manifest's own header claiming it's a consumer",
+              "done": true
+            },
+            {
+              "number": 680,
+              "title": "bug(docker): the published arm64 backend image is not equivalent to amd64 — 765 MB vs 4,454 MB, dependency layer 8.4x smaller",
+              "done": true
+            },
+            {
+              "number": 681,
+              "title": "bug(ci-cd): an unscannable component yields \"All security scans completed successfully!\" — docs is already in this state",
+              "done": true
+            },
+            {
+              "number": 683,
+              "title": "[BUG] Can't install due to \"❌ Failed to download release-manifest.txt from v0.4.1\" - 404: Not Found",
+              "done": true
+            },
+            {
+              "number": 693,
+              "title": "bug(testing): running the backend suite DESTROYS a live dev stack — test_opentr_stop_container_scoping executes the real docker stop/rm loop",
+              "done": true
+            },
+            {
+              "number": 782,
+              "title": "fix(gpu): opentr.sh stop SIGKILLs GPU workers after 10s — no grace period, no shutdown handler",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "public-demo",
+          "name": "Public Demo",
+          "scope": "Read-only hosted demo deployment",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 667,
+              "title": "build(release): publish the CPU-only lite image as a multi-arch (amd64 + arm64) release artifact",
               "done": true
             }
           ]
@@ -912,8 +1122,8 @@
           "name": "Search Infrastructure",
           "scope": "Indexing, reindex correctness, index drift",
           "known": true,
-          "total": 21,
-          "closed": 21,
+          "total": 27,
+          "closed": 27,
           "issues": [
             {
               "number": 363,
@@ -1016,8 +1226,38 @@
               "done": true
             },
             {
+              "number": 627,
+              "title": "fix(search): admin \"Reindex all\" only re-indexes the admin's own files, not the whole corpus",
+              "done": true
+            },
+            {
               "number": 638,
               "title": "Offline model registration (file://) is dead in every deployment mode: missing opensearch-ml volume mount + missing config.json",
+              "done": true
+            },
+            {
+              "number": 658,
+              "title": "bug(operations): speaker voiceprints live only in OpenSearch and no backup covers them",
+              "done": true
+            },
+            {
+              "number": 666,
+              "title": "fix(search): a transcript text edit never reindexes OpenSearch — search, RAG retrieval and citations serve pre-edit text indefinitely",
+              "done": true
+            },
+            {
+              "number": 691,
+              "title": "fix(search): reindex/stop is still per-owner while reindex now fans out corpus-wide — an admin cannot cancel what they started",
+              "done": true
+            },
+            {
+              "number": 692,
+              "title": "fix(search): index_health logs 'dispatched' but the helper returns 'reindex_users' — the repair log always reads 0 owners",
+              "done": true
+            },
+            {
+              "number": 698,
+              "title": "fix(search): semantic_confidence compares three different score spaces against one absolute threshold",
               "done": true
             }
           ]
@@ -1027,8 +1267,8 @@
           "name": "Security & Compliance",
           "scope": "Hardening, data protection, certification",
           "known": true,
-          "total": 30,
-          "closed": 30,
+          "total": 36,
+          "closed": 36,
           "issues": [
             {
               "number": 188,
@@ -1179,6 +1419,36 @@
               "number": 633,
               "title": "refresh_token rows accumulate unbounded on admin@example.com (5,504+ observed)",
               "done": true
+            },
+            {
+              "number": 664,
+              "title": "fix(security): retention sweep and purge_media_file have no legal_hold guard — a legal-held file can be permanently deleted",
+              "done": true
+            },
+            {
+              "number": 668,
+              "title": "security(deploy): nginx/reverse-proxy hardening — trusted-proxy rate-limit collapse, pre-auth body buffering, missing robots.txt",
+              "done": true
+            },
+            {
+              "number": 673,
+              "title": "fix(redaction): export_locked is enforced only for subtitles — the admin forced-redacted-export policy is bypassable via every other export format",
+              "done": true
+            },
+            {
+              "number": 676,
+              "title": "security(api): LLM connection-test and model-discovery handlers make user-supplied outbound requests with no rate limit",
+              "done": true
+            },
+            {
+              "number": 689,
+              "title": "fix(security): admin user-deletion bulk-deletes MediaFile rows with no legal_hold guard — a held file can still be destroyed",
+              "done": true
+            },
+            {
+              "number": 695,
+              "title": "fix(storage): deleting a user orphans every one of their objects — media_file rows go, MinIO objects stay forever",
+              "done": true
             }
           ]
         },
@@ -1187,8 +1457,8 @@
           "name": "Speaker Intelligence",
           "scope": "Voiceprints, personas, cross-file identity",
           "known": true,
-          "total": 4,
-          "closed": 4,
+          "total": 9,
+          "closed": 9,
           "issues": [
             {
               "number": 512,
@@ -1209,6 +1479,31 @@
               "number": 605,
               "title": "Live speaker chunk-index label drifts from canonical_speaker_label() resolver (speaker_id=74070)",
               "done": true
+            },
+            {
+              "number": 674,
+              "title": "fix(speakers): auto-accept threshold is passed as OpenSearch min_score in cosinesimil space — the effective gate is raw cosine 0.50, not 0.75",
+              "done": true
+            },
+            {
+              "number": 675,
+              "title": "fix(search): speaker profile rename never propagates to transcript_chunks — the one rename path that skips dispatch_speaker_rename",
+              "done": true
+            },
+            {
+              "number": 690,
+              "title": "fix(speakers): SimilarityService clamps cosine to [0,1] in two methods but not a third, and boost_recent is a documented no-op",
+              "done": true
+            },
+            {
+              "number": 702,
+              "title": "chore(speakers): delete SimilarityService.batch_cosine_similarity — no production caller",
+              "done": true
+            },
+            {
+              "number": 743,
+              "title": "fix(speakers): the speaker filter is empty unless speakers have been manually renamed",
+              "done": true
             }
           ]
         }
@@ -1216,21 +1511,36 @@
     },
     {
       "version": "v0.6.0",
-      "headline": "Answer quality and interface polish",
-      "summary": "Make what already ships correct — grounded answers, searchable summaries, an interface pass, and the fixes that affect running deployments today.",
-      "stage": "now",
+      "headline": "Interface polish, and chat measured",
+      "summary": "A full UI pass over what v0.5.0 shipped, plus real metrics for search and chat answer quality instead of assumptions.",
+      "stage": "next",
       "released": false,
       "scheduled": true,
-      "total": 30,
-      "closed": 0,
+      "total": 29,
+      "closed": 1,
       "areas": [
+        {
+          "key": "docs-release-ops",
+          "name": "Docs & Release Ops",
+          "scope": "Docs site, release pipeline, repo tooling",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 758,
+              "title": "docs(site): homepage polish — install copy button, comparison table, hero blurb",
+              "done": false
+            }
+          ]
+        },
         {
           "key": "frontend-ui",
           "name": "Frontend & UI",
           "scope": "App surfaces, admin screens, and interface defects",
           "known": true,
-          "total": 5,
-          "closed": 0,
+          "total": 18,
+          "closed": 1,
           "issues": [
             {
               "number": 569,
@@ -1248,13 +1558,78 @@
               "done": false
             },
             {
-              "number": 649,
-              "title": "Audit other interactive UI paths for the same premature-interaction timing bug class as #645",
+              "number": 682,
+              "title": "fix(frontend): UI bug backlog for the v0.6.0 UI refresh (filters, modal styling, button states)",
+              "done": true
+            },
+            {
+              "number": 747,
+              "title": "feat(gallery): redesign the gallery/list toolbar into a two-row layout",
               "done": false
             },
             {
-              "number": 682,
-              "title": "fix(frontend): UI bug backlog for the v0.6.0 UI refresh (filters, modal styling, button states)",
+              "number": 748,
+              "title": "feat(file-detail): reorganize the file detail page around speaker editing",
+              "done": false
+            },
+            {
+              "number": 749,
+              "title": "feat(gallery): list-view typography, alignment, and status-icon pass",
+              "done": false
+            },
+            {
+              "number": 750,
+              "title": "feat(gallery): filter panel overhaul — spacing, quick chips, keyboard dates, ownership search",
+              "done": false
+            },
+            {
+              "number": 751,
+              "title": "feat(upload): upload wizard content, sizing and labelling pass",
+              "done": false
+            },
+            {
+              "number": 752,
+              "title": "feat(upload): auto-surface upload progress in a collapsible bottom-right tray",
+              "done": false
+            },
+            {
+              "number": 753,
+              "title": "feat(notifications): notification panel duration chip and icon parity pass",
+              "done": false
+            },
+            {
+              "number": 754,
+              "title": "feat(navbar): navbar restyle, ordering, and \"AI chat\" labelling",
+              "done": false
+            },
+            {
+              "number": 755,
+              "title": "feat(search): consolidate the transcript modal onto the file-detail transcript components",
+              "done": false
+            },
+            {
+              "number": 757,
+              "title": "feat(ui): multi-select parity across tags/collections + settings sidebar audit",
+              "done": false
+            },
+            {
+              "number": 785,
+              "title": "fix(a11y): the axe baseline permanently accepts WCAG AA failures, and 4 of 5 main screens are unscanned",
+              "done": false
+            },
+            {
+              "number": 786,
+              "title": "fix(ux): preprocessing failures show users a raw ffmpeg exception instead of a diagnosis",
+              "done": false
+            },
+            {
+              "number": 787,
+              "title": "fix(transcript): unsaved speaker and transcript edits are lost silently on navigation",
+              "done": false
+            },
+            {
+              "number": 788,
+              "title": "feat(ux): frontend ignores Retry-After, so rate limits surface as generic errors",
               "done": false
             }
           ]
@@ -1270,71 +1645,6 @@
             {
               "number": 644,
               "title": "Admin LLM provider setup: surface discoverable local base URLs instead of requiring manual Docker hostname entry",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "native-diarizer",
-          "name": "Native Diarizer",
-          "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
-          "known": true,
-          "total": 5,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 655,
-              "title": "bug(docker): diar-native sidecar is unwired in gpu-scale, gpu-split, lite, offline, Windows, --fresh and CPU-only topologies",
-              "done": false
-            },
-            {
-              "number": 662,
-              "title": "bug(config): .env.example ships DIAR_NATIVE_GPU=0, restoring the bare-device-0 pin the compose comment exists to prevent",
-              "done": false
-            },
-            {
-              "number": 665,
-              "title": "fix(gpu): overlap-diarization gate keys off the configured backend, not sidecar reachability — transcriber is never released on the PyAnnote fallback path",
-              "done": false
-            },
-            {
-              "number": 671,
-              "title": "docs(backend): transcription/ and services/diarization/ CLAUDE.md still describe PyAnnote as the engine",
-              "done": false
-            },
-            {
-              "number": 672,
-              "title": "bug(config): PYANNOTE_MODEL means two different things, the admin panel misreports the diarizer, and four diarizer symbols are dead",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "platform-ops",
-          "name": "Platform & Operations",
-          "scope": "Build, deploy, workers, GPU tuning, governance",
-          "known": true,
-          "total": 4,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 631,
-              "title": "Celery prefork pool death spiral: 10h46m of forked children failing to signal UP, root cause unknown",
-              "done": false
-            },
-            {
-              "number": 680,
-              "title": "bug(docker): the published arm64 backend image is not equivalent to amd64 — 765 MB vs 4,454 MB, dependency layer 8.4x smaller",
-              "done": false
-            },
-            {
-              "number": 681,
-              "title": "bug(ci-cd): an unscannable component yields \"All security scans completed successfully!\" — docs is already in this state",
-              "done": false
-            },
-            {
-              "number": 683,
-              "title": "[BUG] Can't install due to \"❌ Failed to download release-manifest.txt from v0.4.1\" - 404: Not Found",
               "done": false
             }
           ]
@@ -1384,52 +1694,12 @@
           "name": "Search Infrastructure",
           "scope": "Indexing, reindex correctness, index drift",
           "known": true,
-          "total": 3,
+          "total": 1,
           "closed": 0,
           "issues": [
             {
-              "number": 627,
-              "title": "fix(search): admin \"Reindex all\" only re-indexes the admin's own files, not the whole corpus",
-              "done": false
-            },
-            {
-              "number": 658,
-              "title": "bug(operations): speaker voiceprints live only in OpenSearch and no backup covers them",
-              "done": false
-            },
-            {
-              "number": 666,
-              "title": "fix(search): a transcript text edit never reindexes OpenSearch — search, RAG retrieval and citations serve pre-edit text indefinitely",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "compliance",
-          "name": "Security & Compliance",
-          "scope": "Hardening, data protection, certification",
-          "known": true,
-          "total": 4,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 664,
-              "title": "fix(security): retention sweep and purge_media_file have no legal_hold guard — a legal-held file can be permanently deleted",
-              "done": false
-            },
-            {
-              "number": 668,
-              "title": "security(deploy): nginx/reverse-proxy hardening — trusted-proxy rate-limit collapse, pre-auth body buffering, missing robots.txt",
-              "done": false
-            },
-            {
-              "number": 673,
-              "title": "fix(redaction): export_locked is enforced only for subtitles — the admin forced-redacted-export policy is bypassable via every other export format",
-              "done": false
-            },
-            {
-              "number": 676,
-              "title": "security(api): LLM connection-test and model-discovery handlers make user-supplied outbound requests with no rate limit",
+              "number": 760,
+              "title": "feat(search): multi-select result sources on the search page — title, transcript, summary, speaker",
               "done": false
             }
           ]
@@ -1439,17 +1709,27 @@
           "name": "Speaker Intelligence",
           "scope": "Voiceprints, personas, cross-file identity",
           "known": true,
-          "total": 2,
+          "total": 1,
           "closed": 0,
           "issues": [
             {
-              "number": 674,
-              "title": "fix(speakers): auto-accept threshold is passed as OpenSearch min_score in cosinesimil space — the effective gate is raw cosine 0.50, not 0.75",
+              "number": 756,
+              "title": "feat(speakers): speaker management surface pass — banner, gender labels, \"Review\" rename",
               "done": false
-            },
+            }
+          ]
+        },
+        {
+          "key": "test-suite-health",
+          "name": "Test Suite Health",
+          "scope": "Coverage, gates, and verification matrices",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
             {
-              "number": 675,
-              "title": "fix(search): speaker profile rename never propagates to transcript_chunks — the one rename path that skips dispatch_speaker_rename",
+              "number": 789,
+              "title": "test(coverage): the ratchet sits 36 points below actual, and the frontend has no threshold",
               "done": false
             }
           ]
@@ -1458,12 +1738,350 @@
     },
     {
       "version": "v0.7.0",
-      "headline": "Documents, speakers, and providers",
-      "summary": "Widen the library beyond audio, deepen cross-file speaker identity, and add provider breadth.",
-      "stage": "next",
+      "headline": "Run it in public",
+      "summary": "Publish the inert public demo, and put in place the spend limits, alerting and dependency hygiene you only miss once strangers are using it.",
+      "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 22,
+      "total": 9,
+      "closed": 1,
+      "areas": [
+        {
+          "key": "frontend-ui",
+          "name": "Frontend & UI",
+          "scope": "App surfaces, admin screens, and interface defects",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 794,
+              "title": "feat(frontend): no performance budget — a bundle-size regression cannot be caught",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "platform-ops",
+          "name": "Platform & Operations",
+          "scope": "Build, deploy, workers, GPU tuning, governance",
+          "known": true,
+          "total": 4,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 468,
+              "title": "task(governance): set up Contributor License Agreement (CLA) enforcement",
+              "done": false
+            },
+            {
+              "number": 566,
+              "title": "task(config): move UI-worthy env vars into the admin UI, then drop them from .env.example",
+              "done": false
+            },
+            {
+              "number": 791,
+              "title": "feat(ops): monitoring is instrumented but inert — no alert rules, unused readiness probe, correlation IDs off by default",
+              "done": false
+            },
+            {
+              "number": 792,
+              "title": "task(deps): infrastructure images are unwatched, and the deferral policy cites a closed issue",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "public-demo",
+          "name": "Public Demo",
+          "scope": "Read-only hosted demo deployment",
+          "known": true,
+          "total": 2,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 628,
+              "title": "feat(deploy): public read-only demo deployment (Immich-style inert demo instance)",
+              "done": false
+            },
+            {
+              "number": 790,
+              "title": "feat(llm): LLM spend is measured but unbounded — no cap, and self-hosters cannot see it",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "compliance",
+          "name": "Security & Compliance",
+          "scope": "Hardening, data protection, certification",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 559,
+              "title": "security(dependencies): evaluate replacing Perl exiftool (16 of 20 CRITICAL CVEs) — ffprobe-only vs exiftool-rs",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "test-suite-health",
+          "name": "Test Suite Health",
+          "scope": "Coverage, gates, and verification matrices",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 793,
+              "title": "fix(ci): shell/compose changes skip the tests that guard them, and docs are never built on a PR",
+              "done": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v0.8.0",
+      "headline": "Native inference, and small GPUs",
+      "summary": "Replace the Python/PyTorch inference stack end to end, and prove it on the cards people actually have.",
+      "stage": "later",
+      "released": false,
+      "scheduled": true,
+      "total": 11,
+      "closed": 0,
+      "areas": [
+        {
+          "key": "asr-engines",
+          "name": "ASR Engines",
+          "scope": "Alternative and native transcription engines",
+          "known": true,
+          "total": 3,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 69,
+              "title": "feat(asr): live transcription with real-time speaker identification",
+              "done": false
+            },
+            {
+              "number": 366,
+              "title": "feat(asr): NVIDIA NeMo (Parakeet / Canary) as a first-class local transcription engine",
+              "done": false
+            },
+            {
+              "number": 776,
+              "title": "feat(asr): native Rust transcription backend as a sidecar container, in the diar-native shape",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "native-diarizer",
+          "name": "Native Diarizer",
+          "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
+          "known": true,
+          "total": 3,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 511,
+              "title": "perf(gpu): build and measure a 4 GB laptop GPU tier for native diarization",
+              "done": false
+            },
+            {
+              "number": 572,
+              "title": "task(asr): roadmap for removing PyTorch/PyAnnote diarization once native diar-native has parity",
+              "done": false
+            },
+            {
+              "number": 659,
+              "title": "feat(search): a real rollback path for the v3→v4 speaker-index alias swap",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "platform-ops",
+          "name": "Platform & Operations",
+          "scope": "Build, deploy, workers, GPU tuning, governance",
+          "known": true,
+          "total": 2,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 274,
+              "title": "build(docker): Blackwell base image upgrade (nvidia/pytorch 26.x) — needs a torchaudio strategy + hardware validation",
+              "done": false
+            },
+            {
+              "number": 369,
+              "title": "perf(gpu): calibrate transcriber eviction + concurrency from measurement, not magic numbers (limited-VRAM cards)",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "test-suite-health",
+          "name": "Test Suite Health",
+          "scope": "Coverage, gates, and verification matrices",
+          "known": true,
+          "total": 3,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 713,
+              "title": "task(testing): architecture-blocked verification matrix — what needs real arm64, Blackwell, or multi-GPU hardware",
+              "done": false
+            },
+            {
+              "number": 778,
+              "title": "perf(testing): ~96s of a ~154s backend suite is pytest collection, repeated on every worker",
+              "done": false
+            },
+            {
+              "number": 779,
+              "title": "test(quality): pay down the 33 deferred BACKLOG findings in the test auditor allowlist",
+              "done": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v0.9.0",
+      "headline": "Federal government and FIPS",
+      "summary": "The compliance posture public-sector deployment requires: HIPAA, SOC 2, GDPR, and real FIPS 140-3 module validation.",
+      "stage": "later",
+      "released": false,
+      "scheduled": true,
+      "total": 5,
+      "closed": 0,
+      "areas": [
+        {
+          "key": "compliance",
+          "name": "Security & Compliance",
+          "scope": "Hardening, data protection, certification",
+          "known": true,
+          "total": 5,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 98,
+              "title": "security(compliance): HIPAA, SOC 2, and GDPR certification requirements",
+              "done": false
+            },
+            {
+              "number": 574,
+              "title": "task(security): achieve real FIPS 140-3/140-2 module validation (not just approved algorithms) for FedRAMP High/DoD IL4+",
+              "done": false
+            },
+            {
+              "number": 775,
+              "title": "security(dependencies): standing accepted risk — unfixed CRITICAL CVEs from libimage-exiftool-perl (supersedes #415, #559)",
+              "done": false
+            },
+            {
+              "number": 795,
+              "title": "security(release): published images are unsigned with no provenance, behind a curl-pipe-bash installer",
+              "done": false
+            },
+            {
+              "number": 796,
+              "title": "feat(gdpr): Article 17 erasure is mature but Article 20 portability does not exist",
+              "done": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v0.10.0",
+      "headline": "Bring your own model, and your own format",
+      "summary": "Use the LLM you already pay for, and get transcripts out in the shape your workflow wants.",
+      "stage": "later",
+      "released": false,
+      "scheduled": true,
+      "total": 7,
+      "closed": 0,
+      "areas": [
+        {
+          "key": "document-ingestion",
+          "name": "Document Ingestion",
+          "scope": "Documents as first-class library items",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 797,
+              "title": "feat(import): no way to bring an existing transcript in — migration from Otter/Rev/Fireflies is impossible",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "frontend-ui",
+          "name": "Frontend & UI",
+          "scope": "App surfaces, admin screens, and interface defects",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 564,
+              "title": "feat(export): Markdown-file export format",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "llm-providers",
+          "name": "LLM Providers",
+          "scope": "Provider integrations and configuration",
+          "known": true,
+          "total": 5,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 378,
+              "title": "feat(llm): Add Tinfoil confidential-computing LLM provider",
+              "done": false
+            },
+            {
+              "number": 379,
+              "title": "feat(llm): Add Google Gemini as a first-class LLM provider",
+              "done": false
+            },
+            {
+              "number": 380,
+              "title": "feat(llm): Add Groq as a first-class LLM provider (low-latency inference)",
+              "done": false
+            },
+            {
+              "number": 382,
+              "title": "feat(llm): Add GCP Vertex AI as an SDK-based enterprise LLM provider (Bedrock-style)",
+              "done": false
+            },
+            {
+              "number": 562,
+              "title": "feat(llm): custom note templates per meeting type (standup/1:1/interview)",
+              "done": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v0.11.0",
+      "headline": "Document ingestion",
+      "summary": "Re-land the document vertical as a release of its own, and make documents first-class in the gallery, search and chat.",
+      "stage": "later",
+      "released": false,
+      "scheduled": true,
+      "total": 4,
       "closed": 0,
       "areas": [
         {
@@ -1491,137 +2109,34 @@
             },
             {
               "number": 552,
-              "title": "task(documents): re-land the document-ingestion vertical from feat/doc-ingestion for v0.6.0",
+              "title": "task(documents): re-land the document-ingestion vertical from feat/doc-ingestion",
               "done": false
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "version": "v0.12.0",
+      "headline": "The library knows things",
+      "summary": "Intelligence across the corpus rather than within one file: who speaks, about what, how much, and what changed.",
+      "stage": "later",
+      "released": false,
+      "scheduled": true,
+      "total": 4,
+      "closed": 0,
+      "areas": [
         {
           "key": "frontend-ui",
           "name": "Frontend & UI",
           "scope": "App surfaces, admin screens, and interface defects",
           "known": true,
-          "total": 2,
+          "total": 1,
           "closed": 0,
           "issues": [
             {
               "number": 20,
               "title": "feat(analytics): add analytics dashboard to gallery view",
-              "done": false
-            },
-            {
-              "number": 564,
-              "title": "feat(export): Markdown-file export format",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "llm-providers",
-          "name": "LLM Providers",
-          "scope": "Provider integrations and configuration",
-          "known": true,
-          "total": 4,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 378,
-              "title": "feat(llm): Add Tinfoil confidential-computing LLM provider",
-              "done": false
-            },
-            {
-              "number": 379,
-              "title": "feat(llm): Add Google Gemini as a first-class LLM provider",
-              "done": false
-            },
-            {
-              "number": 380,
-              "title": "feat(llm): Add Groq as a first-class LLM provider (low-latency inference)",
-              "done": false
-            },
-            {
-              "number": 382,
-              "title": "feat(llm): Add GCP Vertex AI as an SDK-based enterprise LLM provider (Bedrock-style)",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "native-diarizer",
-          "name": "Native Diarizer",
-          "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
-          "known": true,
-          "total": 2,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 661,
-              "title": "perf(pipeline): collapse the audio handoff — four decodes and ~2.1 GB of one signal per job",
-              "done": false
-            },
-            {
-              "number": 679,
-              "title": "Adopt diar-native 0.3.0: self-provisioning models, CPU/GPU routing, /readyz, and structured logs",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "platform-ops",
-          "name": "Platform & Operations",
-          "scope": "Build, deploy, workers, GPU tuning, governance",
-          "known": true,
-          "total": 3,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 369,
-              "title": "perf(gpu): calibrate transcriber eviction + concurrency from measurement, not magic numbers (limited-VRAM cards)",
-              "done": false
-            },
-            {
-              "number": 468,
-              "title": "task(governance): set up Contributor License Agreement (CLA) enforcement",
-              "done": false
-            },
-            {
-              "number": 566,
-              "title": "task(config): move UI-worthy env vars into the admin UI, then drop them from .env.example",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "public-demo",
-          "name": "Public Demo",
-          "scope": "Read-only hosted demo deployment",
-          "known": true,
-          "total": 2,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 628,
-              "title": "feat(deploy): public read-only demo deployment (Immich-style inert demo instance)",
-              "done": false
-            },
-            {
-              "number": 667,
-              "title": "build(release): publish the CPU-only lite image as a multi-arch (amd64 + arm64) release artifact",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "rag-quality",
-          "name": "RAG & Chat Quality",
-          "scope": "Retrieval, grounding, citations, summary search",
-          "known": true,
-          "total": 1,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 562,
-              "title": "feat(llm): custom note templates per meeting type (standup/1:1/interview)",
               "done": false
             }
           ]
@@ -1637,21 +2152,6 @@
             {
               "number": 46,
               "title": "feat(transcript): transcript version control and change tracking",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "compliance",
-          "name": "Security & Compliance",
-          "scope": "Hardening, data protection, certification",
-          "known": true,
-          "total": 1,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 559,
-              "title": "security(dependencies): evaluate replacing Perl exiftool (16 of 20 CRITICAL CVEs) — ffprobe-only vs exiftool-rs",
               "done": false
             }
           ]
@@ -1679,85 +2179,13 @@
       ]
     },
     {
-      "version": "v0.8.0",
-      "headline": "Native diarization",
-      "summary": "Retire the in-process PyTorch diarizer for the native Rust/ONNX engine, including the voiceprint migration it depends on.",
+      "version": "v0.13.0",
+      "headline": "OpenTranscribe in your workflow",
+      "summary": "Meetings arrive on their own, and other software can ask OpenTranscribe questions.",
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 10,
-      "closed": 0,
-      "areas": [
-        {
-          "key": "native-diarizer",
-          "name": "Native Diarizer",
-          "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
-          "known": true,
-          "total": 10,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 572,
-              "title": "task(asr): roadmap for removing PyTorch/PyAnnote diarization once native diar-native has parity",
-              "done": false
-            },
-            {
-              "number": 639,
-              "title": "Diarization backend defaults to native (diar-native sidecar) but the sidecar is never distributed to self-hosted installs — perpetual silent-ish PyAnnote fallback",
-              "done": false
-            },
-            {
-              "number": 654,
-              "title": "task(models): add a download-models diar-native group — the export four files already claim exists",
-              "done": false
-            },
-            {
-              "number": 656,
-              "title": "task(asr): sidecar-unavailable retry policy, bounded timeout and status surface before the PyAnnote fallback is removed",
-              "done": false
-            },
-            {
-              "number": 657,
-              "title": "bug(search): v4 embedding migration loses profile voiceprints and crosses index dimensions mid-run",
-              "done": false
-            },
-            {
-              "number": 659,
-              "title": "feat(search): a real rollback path for the v3→v4 speaker-index alias swap",
-              "done": false
-            },
-            {
-              "number": 660,
-              "title": "task(asr): --lite adopts the diar-native CPU execution provider for speaker embeddings",
-              "done": false
-            },
-            {
-              "number": 663,
-              "title": "docs(legal): add a NOTICE file — the native diarizer's weights are CC-BY-4.0 and still require pyannote attribution",
-              "done": false
-            },
-            {
-              "number": 669,
-              "title": "task(testing): diarization test + gate coverage survives the PyAnnote removal (several would go green measuring nothing)",
-              "done": false
-            },
-            {
-              "number": 670,
-              "title": "bug(deploy): upgrading into a mandatory-sidecar release degrades silently instead of refusing",
-              "done": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "version": "v0.9.0",
-      "headline": "Meetings and extensibility",
-      "summary": "Bring meetings in automatically and open the pipeline to external tooling.",
-      "stage": "later",
-      "released": false,
-      "scheduled": true,
-      "total": 7,
+      "total": 6,
       "closed": 0,
       "areas": [
         {
@@ -1786,21 +2214,6 @@
           ]
         },
         {
-          "key": "native-diarizer",
-          "name": "Native Diarizer",
-          "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
-          "known": true,
-          "total": 1,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 511,
-              "title": "perf(gpu): build and measure a 4 GB laptop GPU tier for native diarization",
-              "done": false
-            }
-          ]
-        },
-        {
           "key": "platform-ops",
           "name": "Platform & Operations",
           "scope": "Build, deploy, workers, GPU tuning, governance",
@@ -1809,13 +2222,13 @@
           "closed": 0,
           "issues": [
             {
-              "number": 274,
-              "title": "build(docker): Blackwell base image upgrade (nvidia/pytorch 26.x) — needs a torchaudio strategy + hardware validation",
+              "number": 561,
+              "title": "feat(backend): plugin/post-processing hook architecture for transcription pipeline",
               "done": false
             },
             {
-              "number": 561,
-              "title": "feat(backend): plugin/post-processing hook architecture for transcription pipeline",
+              "number": 798,
+              "title": "task(api): the API is unversioned, and MCP/Recall/hooks ship before any stability commitment",
               "done": false
             }
           ]
@@ -1839,12 +2252,12 @@
     },
     {
       "version": "v1.0.0",
-      "headline": "Platform maturity",
-      "summary": "Alternative transcription engines, a desktop application, live transcription, and formal compliance validation.",
+      "headline": "Commit to it",
+      "summary": "Interfaces, platform support and performance become promises: native engines, live transcription, and a desktop application.",
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 6,
+      "total": 2,
       "closed": 0,
       "areas": [
         {
@@ -1852,22 +2265,12 @@
           "name": "ASR Engines",
           "scope": "Alternative and native transcription engines",
           "known": true,
-          "total": 3,
+          "total": 1,
           "closed": 0,
           "issues": [
             {
               "number": 48,
               "title": "feat(asr): implement native Apple Silicon transcription with MLX-Whisper or whisper.cpp",
-              "done": false
-            },
-            {
-              "number": 69,
-              "title": "feat(asr): live transcription with real-time speaker identification",
-              "done": false
-            },
-            {
-              "number": 366,
-              "title": "feat(asr): NVIDIA NeMo (Parakeet / Canary) as a first-class local transcription engine",
               "done": false
             }
           ]
@@ -1883,53 +2286,6 @@
             {
               "number": 283,
               "title": "feat(desktop): cross-platform standalone desktop app (Tauri + SQLite/sqlite-vec + local inference core)",
-              "done": false
-            }
-          ]
-        },
-        {
-          "key": "compliance",
-          "name": "Security & Compliance",
-          "scope": "Hardening, data protection, certification",
-          "known": true,
-          "total": 2,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 98,
-              "title": "security(compliance): HIPAA, SOC 2, and GDPR certification requirements",
-              "done": false
-            },
-            {
-              "number": 574,
-              "title": "task(security): achieve real FIPS 140-3/140-2 module validation (not just approved algorithms) for FedRAMP High/DoD IL4+",
-              "done": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "version": "unscheduled",
-      "headline": "",
-      "summary": "",
-      "stage": "",
-      "released": false,
-      "scheduled": false,
-      "total": 1,
-      "closed": 0,
-      "areas": [
-        {
-          "key": "compliance",
-          "name": "Security & Compliance",
-          "scope": "Hardening, data protection, certification",
-          "known": true,
-          "total": 1,
-          "closed": 0,
-          "issues": [
-            {
-              "number": 415,
-              "title": "security(dependencies): accepted risk — 16 CRITICAL perl CVEs via libimage-exiftool-perl, re-check when Debian ships fixes",
               "done": false
             }
           ]

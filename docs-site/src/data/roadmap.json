@@ -10,7 +10,7 @@
       "released": false,
       "scheduled": true,
       "total": 275,
-      "closed": 269,
+      "closed": 270,
       "areas": [
         {
           "key": "asr-engines",
@@ -48,7 +48,7 @@
           "scope": "Docs site, release pipeline, repo tooling",
           "known": true,
           "total": 6,
-          "closed": 1,
+          "closed": 2,
           "issues": [
             {
               "number": 772,
@@ -78,7 +78,7 @@
             {
               "number": 800,
               "title": "fix(ci): the install-path release gate fails intermittently on identical code",
-              "done": false
+              "done": true
             }
           ]
         },

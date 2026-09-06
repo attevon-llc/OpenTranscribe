@@ -457,6 +457,77 @@ stages:
         description: gh release create --latest succeeded
         severity: blocking
 
+      # ─── Release assets (issue #781) ───────────────────────────────────
+      # The old code attached assets with a bare existence glob over
+      # dist/*.tar.gz, dist/*.zip and security-reports/*-sbom.json. Two
+      # defects, and they compounded: ABSENCE was silent (a failed scan or a
+      # relocated OT_SCAN_DIR just meant the loop appended nothing, and
+      # `gh release create` shipped a release with zero SBOMs and no error),
+      # and PRESENCE was not evidence either — security-reports/ is
+      # git-tracked and held three stale, non-arch-qualified, pre-#667 SBOMs
+      # that the glob would have attached to every future release regardless
+      # of which version they last described. Same failure shape #413/#681
+      # already fixed once: a gate reporting success when it could not do
+      # its job.
+      - id: sbom-per-published-leg
+        description: >-
+          One <component>-<arch>-sbom.json exists (in the resolved scan dir)
+          for every leg docker-build-push.sh list-platforms declares for a
+          repo that published-repos.sh says this release actually publishes.
+          blackwell is excluded — it is in the platform table but publishes
+          no vX.Y.Z tag, so it is never in the published-repos set this
+          derives from. A platform table or repo list that cannot be read
+          derives ZERO legs, which is COULD NOT CHECK, never "nothing to
+          ship" — same rule the scan stage's own legs_expected==0 branch
+          applies to the identical question.
+        severity: blocking
+
+      - id: sbom-describes-this-version
+        description: >-
+          Each present SBOM's metadata.component.name/.version (the same
+          fields Syft writes, read back the way 50-scan.sh already reads
+          Trivy's ArtifactName) names THIS release. Closes issue #781's P6:
+          a file merely existing in security-reports/ is not evidence — it
+          could be a stale report from a different version. An unreadable
+          or corrupt SBOM is treated exactly like a version mismatch, never
+          as a pass.
+        severity: blocking
+
+      - id: asset-checksums
+        description: >-
+          Every attached SBOM has a published .sha256 sidecar (plus one
+          combined SHA256SUMS), generated into a throwaway mktemp -d
+          scratch directory — never written into git-tracked
+          security-reports/. A checksum a builder already produced is
+          reused verbatim rather than recomputed, so there is only ever one
+          opinion about a given file's digest.
+        severity: blocking
+
+      # The offline (.tar.xz) and Windows (.zip via Inno Setup) packages are
+      # a standing PROJECT DECISION, not a run-time operator opt-out: they
+      # are built by a developer on their own machine and used there, never
+      # attached to a GitHub Release. (dist/opentranscribe-offline-*.tar.gz
+      # and dist/opentranscribe-windows-*.zip, which the old glob looked
+      # for, never existed — the offline package actually lands at
+      # offline-package-build/linux/*.tar.xz, and the Windows builder stages
+      # a directory for Inno Setup and produces no archive at all.) Declared
+      # `warn` so a `not-measured` here cannot block a release, and recorded
+      # `waived` — belt-and-braces on top of the severity — because this is
+      # an explicit decision, not a check that merely could not run. See
+      # releasing.md for the decision record.
+      - id: offline-package-attached
+        description: >-
+          Not attached, by design — developer-built, never distributed via
+          the GitHub Release. Recorded not-measured/waived every run.
+        severity: warn
+
+      - id: windows-package-attached
+        description: >-
+          Not attached, by design — needs Inno Setup on Windows, and is
+          developer-built and never distributed via the GitHub Release.
+          Recorded not-measured/waived every run.
+        severity: warn
+
 # Ordering. The reasoning that must not be lost:
 #
 #   build -> scan -> rehearse -> publish

@@ -82,9 +82,10 @@
       "Bash(./scripts/release.sh publish:*)",
       "Bash(./scripts/release.sh promote:*)",
       "Bash(./scripts/release.sh finish:*)",
-      "Bash(./scripts/release/70-publish.sh:*)",
-      "Bash(./scripts/release/80-promote.sh:*)",
-      "Bash(./scripts/release/90-finish.sh:*)"
+      "Bash(./scripts/release/70-tag.sh:*)",
+      "Bash(./scripts/release/80-publish.sh:*)",
+      "Bash(./scripts/release/90-promote.sh:*)",
+      "Bash(./scripts/release/95-finish.sh:*)"
     ],
     "allow": [
       "Bash(git push:*)",

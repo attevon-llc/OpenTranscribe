@@ -22,6 +22,18 @@
   export let isOpen = false;
   export let title = '';
   export let maxWidth = '600px';
+  /**
+   * Optional fixed dialog height, e.g. `min(90vh, 780px)`.
+   *
+   * Applied INLINE, like `maxWidth` — deliberately not left to the call site's
+   * stylesheet. A caller that pinned this with
+   * `.host :global(.modal-container) { height: … }` had the rule silently stop
+   * applying: the host's only child is this component, so the descendant half
+   * of that selector crosses a component boundary, and svelte-check reports no
+   * unused-selector warning to say so. Empty means content-sized, which is what
+   * every smaller consumer (confirmations, pickers) wants.
+   */
+  export let height = '';
   /** CSS z-index value. Defaults to the shared `--z-modal` tier (H5) — pass a
    *  higher value (e.g. a toast/critical tier) only for a modal that must
    *  layer above another modal it can be opened from. */
@@ -76,7 +88,7 @@
   <div class="modal-backdrop" style="z-index: {zIndex}; --modal-instance-z-index: {zIndex};" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
     <div
       class="modal-container"
-      style="max-width: {maxWidth}"
+      style="max-width: {maxWidth}{height ? `; height: ${height}` : ''}"
       role="dialog"
       aria-modal="true"
       aria-labelledby={$$slots.header ? undefined : titleId}

@@ -1,4 +1,17 @@
 <script lang="ts">
+  /**
+   * One dialog size for the gallery's three big modals (upload, tag manager,
+   * collections). The upload wizard's six steps have very different natural
+   * heights, so a content-sized dialog resized and flickered on every Next/Back
+   * (#739); the tag and collections dialogs had the same content-driven jump.
+   * Pinning it keeps headers, content and footer controls stationary, and keeps
+   * the three reading as one component rather than three.
+   *
+   * Passed as a prop rather than set from this component's stylesheet: the
+   * previous `.host :global(.modal-container)` rule crossed a component
+   * boundary and silently stopped applying, with no unused-selector warning.
+   */
+  const GALLERY_MODAL_HEIGHT = 'min(90vh, 780px)';
   import { onMount, onDestroy, tick } from 'svelte';
   import { get } from 'svelte/store';
 
@@ -1496,47 +1509,45 @@
     lock, focus trap and `overscroll-behavior: contain` the copy never had — the
     last of which is why scrolling the wizard used to scroll the gallery behind it.
   -->
-  <div class="fixed-size-modal-host">
-    <BaseModal
+  <BaseModal
       isOpen={showUploadModal}
       title={$t('nav.addMedia')}
       maxWidth="720px"
+      height={GALLERY_MODAL_HEIGHT}
       closeOnBackdropClick={false}
       onClose={toggleUploadModal}
     >
       <FileUploader on:uploadComplete={handleUploadComplete} />
     </BaseModal>
-  </div>
 {/if}
 
-<!-- Collections Modal -->
+<!-- Tag Manager Modal -->
 {#if showTagManagerModal}
   <!--
     Sibling of the collections dialog below, deliberately: both attach metadata
     to files and were reading as different components. Both now use BaseModal,
     so they cannot drift on backdrop, radius, header or close affordance — and
     both share the upload wizard's fixed dialog size (see
-    `.fixed-size-modal-host` in the styles below).
+    `GALLERY_MODAL_HEIGHT` at the top of this file).
   -->
-  <div class="fixed-size-modal-host">
-    <BaseModal
+  <BaseModal
       isOpen={showTagManagerModal}
       title={$t('tags.manager.title')}
       maxWidth="720px"
+      height={GALLERY_MODAL_HEIGHT}
       onClose={() => (showTagManagerModal = false)}
     >
       <TagManagerModal on:close={() => (showTagManagerModal = false)} />
     </BaseModal>
-  </div>
 {/if}
 
 <!-- Collections Modal -->
 {#if showCollectionsModal}
-  <div class="fixed-size-modal-host">
-    <BaseModal
+  <BaseModal
       isOpen={showCollectionsModal}
       title={$t('gallery.manageCollections')}
       maxWidth="720px"
+      height={GALLERY_MODAL_HEIGHT}
       onClose={() => (showCollectionsModal = false)}
     >
       <CollectionsPanel
@@ -1561,7 +1572,6 @@
           }}
       />
     </BaseModal>
-  </div>
 {/if}
 
 <!-- Confirmation Modal -->
@@ -1632,18 +1642,6 @@
     overflow-y: auto;
     padding: 1rem;
     padding-top: 0; /* Gallery header provides top spacing */
-  }
-
-  /* One fixed dialog size for the gallery's three big modals (upload, tag
-     manager, collections). The upload wizard's steps have very different
-     natural heights, so a content-sized dialog resized and flickered on every
-     Next/Back (#739); the tag and collections dialogs had the same
-     content-driven jump. Pinning the height keeps headers, content and footer
-     controls stationary, and keeps the three reading as one component rather
-     than three. Scoped to this host class so the smaller BaseModal consumers
-     (confirmations, pickers) stay content-sized. */
-  .fixed-size-modal-host :global(.modal-container) {
-    height: min(90vh, 780px);
   }
 
   /* Responsive design */

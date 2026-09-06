@@ -106,3 +106,46 @@ describe('BaseModal backdrop dismissal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('BaseModal height prop', () => {
+  /**
+   * The gallery's three big dialogs must all be the same size, so the upload
+   * wizard stops resizing between its six steps (#739).
+   *
+   * That was first done from the call site, as
+   * `.host :global(.modal-container) { height: … }`. It stopped applying: the
+   * host's only child is the `<BaseModal>` COMPONENT, so the descendant half of
+   * that selector crosses a component boundary, and svelte-check reported no
+   * unused-selector warning to say so. Measured live, all three dialogs were
+   * back to content height (548 / 462 / 655 px).
+   *
+   * `height` is now a prop applied inline, exactly as `maxWidth` already was —
+   * no cascade, no specificity, no boundary to cross.
+   */
+  it('applies a supplied height inline on the container', () => {
+    const { container } = render(BaseModal, {
+      props: { isOpen: true, title: 'Sized', height: 'min(90vh, 780px)' },
+    });
+    const el = container.querySelector('.modal-container') as HTMLElement;
+    expect(el.style.height).toBe('min(90vh, 780px)');
+  });
+
+  it('sets no height at all when none is supplied', () => {
+    // The control: smaller consumers (confirmations, pickers) must stay
+    // content-sized, so the prop has to be genuinely optional.
+    const { container } = render(BaseModal, {
+      props: { isOpen: true, title: 'Unsized' },
+    });
+    const el = container.querySelector('.modal-container') as HTMLElement;
+    expect(el.style.height).toBe('');
+  });
+
+  it('still applies maxWidth alongside it', () => {
+    const { container } = render(BaseModal, {
+      props: { isOpen: true, title: 'Both', maxWidth: '720px', height: '780px' },
+    });
+    const el = container.querySelector('.modal-container') as HTMLElement;
+    expect(el.style.maxWidth).toBe('720px');
+    expect(el.style.height).toBe('780px');
+  });
+});

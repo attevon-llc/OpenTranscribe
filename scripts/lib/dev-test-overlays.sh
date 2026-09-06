@@ -368,9 +368,28 @@ setup_overlays() {
         local with_flags=() f
         for f in "${OVERLAYS_NEEDED[@]}"; do with_flags+=("--with-$f"); done
         echo -e "${YELLOW}==>${NC} bringing up overlays in one batched call: ${with_flags[*]}"
-        if ! "$REPO_ROOT/opentr.sh" start dev "${with_flags[@]}" >/dev/null 2>&1; then
-            echo -e "${RED}error:${NC} failed to bring up overlays (${with_flags[*]}) — run" \
-                 "'./opentr.sh start dev ${with_flags[*]}' manually to see why" >&2
+        # Capture rather than discard. `>/dev/null 2>&1` here threw away the ONLY
+        # evidence of why a bring-up failed, and `opentr.sh start` prints `compose ps`
+        # plus 50 lines of logs on failure precisely so someone can read them. The
+        # error then told the operator to re-run the whole thing by hand — a rebuild
+        # across a 10-file overlay chain — to see output that had already been
+        # produced and dropped. Worse, a re-run does not reproduce a transient: the
+        # one real occurrence was a Keycloak start that wedged under concurrent
+        # `--build` I/O and came up in 28s once the machine was quiet, so the manual
+        # re-run would have shown a healthy stack and no cause.
+        # REPORT_DIR is run-dev-tests.sh's per-run mktemp dir, so the bring-up log lands
+        # beside the phase logs. Falls back to $TMPDIR for any other caller of this lib.
+        local overlay_log="${REPORT_DIR:-${TMPDIR:-/tmp}}/overlay-bringup.log"
+        if ! "$REPO_ROOT/opentr.sh" start dev "${with_flags[@]}" >"$overlay_log" 2>&1; then
+            echo -e "${RED}error:${NC} failed to bring up overlays (${with_flags[*]})" >&2
+            echo "--- last 40 lines of $overlay_log ---" >&2
+            tail -40 "$overlay_log" >&2
+            echo "--- full output: $overlay_log ---" >&2
+            # Which container is unhealthy is the first question every time, and it is
+            # not always in compose's own output.
+            echo "--- containers not running/healthy ---" >&2
+            docker ps -a --format '{{.Names}}\t{{.Status}}' \
+                | grep -Ev 'Up .*healthy|Up [0-9]' >&2 || true
             exit "$EXIT_PRECONDITION"
         fi
         for f in "${OVERLAYS_TO_START[@]}"; do

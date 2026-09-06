@@ -1589,8 +1589,20 @@ fresh_destroy() {
     return 0
   fi
 
+  # COMPOSE_PROFILES="*" (supported since Compose v2.24) is load-bearing here, not
+  # cosmetic: `docker compose down` only tears down services whose profile is ACTIVE
+  # for THIS invocation, not services that merely exist in the project. A --fresh
+  # deployment started with --gpu-scale (or --with-gpu-split / any other
+  # `profiles:`-gated service, e.g. celery-worker-gpu-scaled) leaves that container
+  # AND its named volumes running after a `fresh-destroy` that printed success —
+  # reproduced live 2026-09-05: `otfresh-xcard711-celery-worker-gpu-scaled` stayed
+  # "Up" and `otfresh-xcard711_pipeline_scratch` stayed mounted after this function
+  # reported "destroyed", because the down call carried no COMPOSE_PROFILES at all.
+  # Exactly the class of leak #347 closed for `--with-llm-test`'s vLLM container --
+  # profile-gated services need the same treatment here, generically, rather than
+  # enumerating every profile this repo happens to define today.
   # shellcheck disable=SC2086
-  COMPOSE_PROJECT_NAME="$proj" docker compose $chain down -v --remove-orphans 2>/dev/null || true
+  COMPOSE_PROJECT_NAME="$proj" COMPOSE_PROFILES="*" docker compose $chain down -v --remove-orphans 2>/dev/null || true
   # Catch any stragglers the compose chain didn't own.
   if [ -n "$vols" ]; then
     echo "$vols" | xargs -r docker volume rm 2>/dev/null || true

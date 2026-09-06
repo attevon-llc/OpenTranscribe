@@ -1579,6 +1579,18 @@ fresh_destroy() {
     echo "   Isolated diar-native models directory to remove:"
     echo "     - $diar_dir"
   fi
+  # Project-scoped IMAGE TAGS (#759). A --fresh build writes
+  # `opentranscribe-{backend,frontend,docs}:otfresh-<name>` because start_app() exports
+  # OT_DEV_IMAGE_TAG="$FRESH_PROJECT"; without reclaiming them here, every fresh
+  # deployment that ever built leaves multi-GB images behind forever. Matched on the
+  # TAG being exactly this project's name, so `:latest` and every other deployment's
+  # tag are structurally unreachable from here.
+  local imgs
+  imgs="$(docker images --filter "reference=*:${proj}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | sort -u || true)"
+  if [ -n "$imgs" ]; then
+    echo "   Project-scoped image tags to remove:"
+    echo "$imgs" | sed 's/^/     - /'
+  fi
   echo ""
   echo "   This touches ONLY this isolated project and its own directories — no LIVE"
   echo "   bind paths, no other stack."
@@ -1606,6 +1618,18 @@ fresh_destroy() {
   # Catch any stragglers the compose chain didn't own.
   if [ -n "$vols" ]; then
     echo "$vols" | xargs -r docker volume rm 2>/dev/null || true
+  fi
+  # Reclaim the project-scoped image tags (#759). `docker compose down --rmi local` is NOT
+  # a substitute: it removes images the compose chain can still see, and a fresh deployment
+  # whose overlay has already been deleted, or which was built and then stopped, leaves tags
+  # the chain no longer resolves. Re-resolved here rather than reusing the `$imgs` captured
+  # before the confirmation prompt, so a build that finished in between is still caught.
+  # `docker rmi` on a tag UNTAGS when other tags share the image id, so this cannot delete
+  # an image `:latest` still points at.
+  local imgs_now
+  imgs_now="$(docker images --filter "reference=*:${proj}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | sort -u || true)"
+  if [ -n "$imgs_now" ]; then
+    echo "$imgs_now" | xargs -r docker rmi 2>/dev/null || true
   fi
   rm -f "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}.offset" \
         "${FRESH_OVERLAY_DIR}/${name}.aux" \

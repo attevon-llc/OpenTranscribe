@@ -74,3 +74,63 @@ def test_fresh_destroy_still_removes_a_stray_volume_as_a_backstop() -> None:
         "this fix AND that backstop, a stray named volume from a removed overlay would "
         "have no removal path left at all"
     )
+
+
+def test_fresh_destroy_removes_project_scoped_image_tags() -> None:
+    """The third thing a --fresh deployment owns, after containers and volumes.
+
+    PR #759 made a ``--fresh`` build write ``opentranscribe-*:otfresh-<name>`` instead
+    of clobbering the shared ``:latest`` -- which fixed cross-contamination but created
+    an accumulation: nothing reclaimed those tags, so every fresh deployment that ever
+    built left multi-GB images behind permanently. Observed after the xcard711 teardown:
+    ``opentranscribe-backend:otfresh-xcard711`` still present with containers, volumes
+    and generated files all correctly gone.
+    """
+    body = _fresh_destroy_body()
+    assert "docker rmi" in body, (
+        "fresh_destroy() never removes the project-scoped image tags a --fresh build "
+        "creates (opentranscribe-{backend,frontend,docs}:otfresh-<name>, written because "
+        'start_app() exports OT_DEV_IMAGE_TAG="$FRESH_PROJECT" -- PR #759). Without '
+        "this, every fresh deployment that built anything leaks its images forever."
+    )
+
+
+def test_fresh_destroy_image_removal_is_scoped_to_this_projects_tag() -> None:
+    """The safety property: this must be structurally unable to reach ``:latest``.
+
+    ``fresh-destroy`` promises it touches ONLY the isolated project. An image filter
+    that matched on the REPOSITORY (``opentranscribe-backend``) rather than the TAG
+    would delete the shared ``:latest`` the main dev stack runs on -- a far worse bug
+    than the leak being fixed. Assert the filter is anchored to ``:${proj}``.
+    """
+    body = _fresh_destroy_body()
+    rmi_lines = [ln for ln in body.splitlines() if "docker rmi" in ln or "docker images" in ln]
+    assert rmi_lines, "no image-removal lines found in fresh_destroy()"
+    joined = "\n".join(rmi_lines)
+    assert "reference=*:${proj}" in joined, (
+        "fresh_destroy()'s image lookup is not anchored to this project's TAG "
+        "(reference=*:${proj}). Matching on the repository instead would make "
+        "fresh-destroy delete the shared :latest image the MAIN dev stack runs on."
+    )
+    assert "latest" not in joined, (
+        "fresh_destroy()'s image-removal lines mention 'latest' -- the shared tag must "
+        "be unreachable from here by construction, not by a filter that happens to exclude it"
+    )
+
+
+def test_fresh_destroy_lists_image_tags_before_the_confirmation_prompt() -> None:
+    """Destroy is the one destructive fresh op; it must show what it will delete.
+
+    The prompt already enumerates containers, volumes, generated files and the
+    diar-native export directory. Images are multi-GB and must not be the one category
+    removed without the operator seeing it first.
+    """
+    body = _fresh_destroy_body()
+    prompt_idx = body.find("Proceed?")
+    assert prompt_idx != -1, "fresh_destroy() no longer has a 'Proceed?' confirmation prompt"
+    preamble = body[:prompt_idx]
+    assert "image tags to remove" in preamble.lower(), (
+        "fresh_destroy() removes project-scoped image tags but does not list them before "
+        "the confirmation prompt -- every other destroyed category (containers, volumes, "
+        "generated files, the diar-native export dir) is shown first"
+    )

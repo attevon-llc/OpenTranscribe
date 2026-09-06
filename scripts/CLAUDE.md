@@ -345,6 +345,31 @@ this file is for.
   `reset <version>` clears rehearsal history — do it before a real run, or the
   status table reports stale state as current.
   Full guide: `docs-site/docs/developer-guide/releasing.md`.
+  - ⚠️ **Every stage's gates are DECLARED in `release/release-criteria.yaml` and RECORDED by
+    the stage script, bidirectionally — never one without the other.** `release/criteria-lib.sh`
+    exits **2** on either half breaking: an id recorded that the file does not declare, or an id
+    declared that the script never checked (`criteria_assert_all_checked`). That 2 is
+    pipeline-misuse, deliberately distinct from a gate failure — so it never gets read as a
+    statement about the release. `10-preflight.sh`/`30-verify.sh` predate the library and carry
+    their own inline copies; anything else must source it. The severity (`blocking`/`warn`) is the
+    **file's** decision, so `record` accepts only `pass|fail|not-measured` — passing `warn` as an
+    outcome is exit 2, because a caller choosing its own severity is how the two drifted before.
+  - **`not-measured` is not a pass and not a failure.** Against a blocking criterion it stops the
+    stage exactly as a failure does; a fifth `waived` argument downgrades it to a warning, and
+    that is for an EXPLICIT operator opt-out only (`NO_COMMIT=true`, `SKIP_CI_CHECK=true`) — never
+    for a check that merely could not run. Same rule as `security-scan.sh`'s 1-vs-2 (#681).
+  - **Adding a criterion does NOT change a stage's exit code, and must not.** Every gate keeps its
+    existing early `exit N` where it was; `record` is called at the check site and the criteria
+    emitted through a per-stage `fail_out` that exits the ORIGINAL code.
+    `criteria_assert_all_checked` is reachable only on the fall-through path — on an early exit
+    the later criteria genuinely were not checked, and the library's exit 2 would rewrite a gate
+    failure (1) or an unmet precondition (3) into misuse.
+  - `backend/tests/unit/test_release_criteria_wiring.py` asserts the same contract **statically**,
+    because most stages cannot run on a developer machine (they need multi-GB images, a pushed
+    tag, or Docker Hub credentials) and a mis-wired criterion would otherwise surface during a
+    real release. It matches a **literal** `record <id>`, so a helper that calls
+    `record "$criterion"` is invisible to it — `80-publish.sh`'s `check_verdict` returns the
+    verdict for the call site to record, rather than recording it itself, for exactly that reason.
 - **Harness self-test** — `release-tests/selftest-cleanup.sh` (25 cases). Run it
   after ANY change to `lib/guardrails.sh`: it exercises the code that deletes
   volumes, and caught the live-data marker check deleting a volume it should have

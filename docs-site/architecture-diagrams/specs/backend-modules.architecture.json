@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "OpenTranscribe — Backend Module Map",
+    "quality_profile": "showcase",
+    "viewBox": [1340, 650],
+    "views": [
+      { "id": "request-path", "label": "A request's path", "focus": ["api", "auth", "schemas", "services", "models"], "note": "FastAPI routers validate with schemas, call services, services touch models — the layering pyreverse couldn't see." },
+      { "id": "async-path", "label": "Async work's path", "focus": ["tasks", "services", "models", "core"], "note": "Celery tasks reuse the same services layer as the API, not a separate copy of the logic." },
+      { "id": "foundation", "label": "Shared foundation", "focus": ["core", "db", "utils"], "note": "Config, DB session management, and shared helpers used by every other package." }
+    ]
+  },
+  "components": [
+    { "id": "api", "type": "backend", "label": "api/", "sublabel": "~45 routers", "pos": [80, 120], "size": [150, 64] },
+    { "id": "auth", "type": "security", "label": "auth/", "sublabel": "sessions, MFA, SSO", "pos": [440, 120], "size": [150, 64] },
+    { "id": "schemas", "type": "backend", "label": "schemas/", "sublabel": "Pydantic contracts", "pos": [800, 120], "size": [150, 64] },
+    { "id": "services", "type": "backend", "label": "services/", "sublabel": "asr, chat, search + 6 more", "pos": [440, 280], "size": [150, 70] },
+    { "id": "tasks", "type": "messagebus", "label": "tasks/", "sublabel": "Celery jobs", "pos": [80, 280], "size": [150, 64] },
+    { "id": "models", "type": "database", "label": "models/", "sublabel": "SQLAlchemy ORM", "pos": [440, 440], "size": [150, 64] },
+    { "id": "db", "type": "database", "label": "db/", "sublabel": "session + base", "pos": [800, 440], "size": [150, 64] },
+    { "id": "core", "type": "backend", "label": "core/", "sublabel": "config, celery.py", "pos": [80, 440], "size": [150, 64] },
+    { "id": "utils", "type": "backend", "label": "utils/", "sublabel": "shared helpers", "pos": [800, 280], "size": [150, 64] }
+  ],
+  "connections": [
+    { "id": "api-auth", "from": "api", "to": "auth", "variant": "default" },
+    { "id": "api-schemas", "from": "api", "to": "schemas", "label": "validate", "variant": "dashed", "fromSide": "top", "toSide": "top" },
+    { "id": "api-services", "from": "api", "to": "services", "variant": "emphasis" },
+    { "id": "tasks-services", "from": "tasks", "to": "services", "label": "reuse", "variant": "emphasis", "labelDy": 46 },
+    { "id": "services-models", "from": "services", "to": "models", "variant": "emphasis" },
+    { "id": "services-utils", "from": "services", "to": "utils", "variant": "dashed" },
+    { "id": "models-db", "from": "models", "to": "db", "variant": "default" },
+    { "id": "tasks-core", "from": "tasks", "to": "core", "label": "queue config", "variant": "dashed", "labelDy": 24 },
+    { "id": "api-core", "from": "api", "to": "core", "variant": "dashed", "fromSide": "left", "toSide": "top" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Two callers, one services layer", "items": ["FastAPI routers (sync request) and Celery tasks (async job) both call into services/ — no duplicated business logic", "This is exactly the layering pyreverse's astroid crash prevented it from ever showing"] },
+    { "dot": "rose", "title": "auth/ is not just another router group", "items": ["Sessions, MFA, OIDC/LDAP/SCIM, privilege model — role∈{user,admin,super_admin} is the sole authz truth repo-wide"] },
+    { "dot": "emerald", "title": "9 top-level packages, not 1 flat api/", "items": ["services/ alone has 9 subpackages (asr, chat, search, redaction, watch_sources, diarization, documents, ingest_artifacts, opensearch_service)"] }
+  ]
+}

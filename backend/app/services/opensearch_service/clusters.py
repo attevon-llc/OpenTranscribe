@@ -6,6 +6,7 @@ import logging
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_active_speaker_index
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
+from app.services.opensearch_service.client import query_embedding_dimension_mismatch
 from app.services.opensearch_service.indices import ensure_indices_exist
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,19 @@ def store_cluster_embedding(
             ensure_indices_exist()
             _indices_verified = True
         active_index = get_active_speaker_index()
+
+        # get_active_speaker_index() is a READ resolver that can disagree with
+        # get_write_index() mid-migration (issue #657, defect 2) — it is used
+        # here anyway because a cluster centroid must live beside the speaker
+        # docs it clusters, which are read through the active index too. Guard
+        # the dimension explicitly rather than let a mismatched write succeed
+        # silently and get caught only much later, on read.
+        if query_embedding_dimension_mismatch(active_index, embedding):
+            logger.error(
+                f"Refusing to store cluster {cluster_uuid}: embedding dimension "
+                f"does not match active index '{active_index}' (mid-migration?)."
+            )
+            return False
 
         doc = {
             "document_type": "cluster",
@@ -130,6 +144,8 @@ def find_matching_clusters(
 
     try:
         active_index = get_active_speaker_index()
+        if query_embedding_dimension_mismatch(active_index, embedding):
+            return []
         query = {
             "size": k,
             "query": {

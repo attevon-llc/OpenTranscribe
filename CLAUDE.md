@@ -27,10 +27,16 @@ Instead:
 - To free a GPU, stop the worker container — never signal the process inside it.
 - If a task looks stuck, read `./opentr.sh logs celery-worker` first. A long transcription is
   usually still running.
-- **Ask before anything destructive.** GPU 1 (RTX 3080 Ti) is this project's only GPU. GPU 0
-  genuinely runs unrelated work (`tritonserver`) and must never be touched. GPU 2 was measured
-  available and in active use by this project's own test runs (2026-09-05) — it is not reserved
-  for unrelated work the way GPU 0 is.
+- **Ask before anything destructive.** GPU 1 (RTX 3080 Ti) is this project's primary card.
+  ⛔ GPU 0 genuinely runs unrelated work (`tritonserver`, plus a standalone `b3c` /
+  `diar-server:issue1` container) and **must never be touched**. **GPU 2 (RTX A6000) IS usable
+  by this project** — it generally hosts this machine's vLLM, but that is not always running.
+  **Check `nvidia-smi`; if GPU 2 is idle, USE IT and run the multi-GPU tests** rather than
+  skipping them (owner's instruction, 2026-09-05).
+  ⚠️ Treating this host as single-GPU is a documented cost, not a safe default: it left #711's
+  cross-card verification unrun for weeks and made #713 record a *hardware* blocker for
+  something that only needed an idle card. `--gpu-scale`, `gpu-split`, `-m gpu`,
+  `run-diarization-gpu-tests.sh` and the `--with-llm-test` legs all belong on GPU 1 + GPU 2.
 
 ## ⚠️ CRITICAL: Local Code vs Docker Hub Images
 

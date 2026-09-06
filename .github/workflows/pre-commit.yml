@@ -7,6 +7,36 @@ on:
   # push intentionally left off to respect runner-resource limits — PRs are the gate.
   # push:
   #   branches: [master, main, develop]
+  # Required for a merge queue. A queued entry runs its checks against
+  # master-plus-the-preceding-queue, NOT against the PR branch — so a required
+  # check whose workflow lacks this trigger simply never reports, and the merge
+  # hangs forever. This workflow supplies THREE of the four required checks
+  # (Run Pre-commit Hooks, Backend Tests, Frontend Unit Tests), so it is the
+  # load-bearing one. Added BEFORE the queue is enabled, deliberately: it is
+  # inert until then, and enabling the queue first is how a repo bricks its
+  # own merges.
+  merge_group:
+
+# Cancel a superseded run the moment a new commit lands on the same PR.
+#
+# Without this, pushing a fix (or merging master up, which this repo does often
+# because `strict` is false on branch protection and staleness is caught by
+# discipline rather than by GitHub) left the PREVIOUS run going: `Backend Tests
+# (pytest)` alone is ~16 minutes, so a stale-base merge-up meant two full runs
+# on a runner where only the second one's verdict could ever be used.
+#
+# Keyed on the PR number (`github.event.pull_request.number`), falling back to
+# `github.ref` for `workflow_dispatch`, so concurrent DIFFERENT PRs never cancel
+# each other — only successive pushes to the same one.
+concurrency:
+  group: pre-commit-${{ github.event.pull_request.number || github.ref }}
+  # Cancel ONLY on pull_request. A merge_group run must never be cancelled:
+  # its verdict is what lets the queue merge, so cancelling one stalls the
+  # queue behind a check that will never report. `github.ref` is already
+  # unique per queue entry (refs/heads/gh-readonly-queue/...), so entries
+  # would not cancel each other anyway — this makes the intent explicit
+  # rather than relying on that.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   pre-commit:

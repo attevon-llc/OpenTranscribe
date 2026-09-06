@@ -14,6 +14,7 @@
   let migrationInProgress = false;
   let v3DocumentCount = 0;
   let v4DocumentCount = 0;
+  let completedFileCount = 0;
 
   // Progress tracking state
   let totalFiles = 0;
@@ -116,6 +117,10 @@
       migrationNeeded = data.migration_needed;
       v3DocumentCount = data.v3_document_count || 0;
       v4DocumentCount = data.v4_document_count || 0;
+      // Issue #657, defect 6: completed_file_count is FILES, not speaker
+      // documents - v3DocumentCount overcounts by however many speakers
+      // the average file has, and the ETA is per-file work.
+      completedFileCount = data.completed_file_count || 0;
       // Detect stalled migration
       stalled = data.stalled || false;
       if (data.stalled_info) {
@@ -123,7 +128,7 @@
       }
 
       // Estimate migration time: ~0.6s/file with pipelined multi-model extraction
-      const fileCount = v3DocumentCount || 0;
+      const fileCount = completedFileCount || 0;
       estimatedMinutes = Math.max(1, Math.ceil((fileCount * 0.6 + 60) / 60));
 
       // Share bundled consistency status with sibling component (avoids extra API call)
@@ -364,11 +369,11 @@
             <p class="migration-note">
               {$t('settings.embeddingMigration.migrationNote')}
             </p>
-            {#if v3DocumentCount > 0}
+            {#if completedFileCount > 0}
               <p class="migration-estimate">
                 {$t('settings.embeddingMigration.migrationEstimate', {
                   minutes: estimatedMinutes,
-                  count: v3DocumentCount
+                  count: completedFileCount
                 })}
               </p>
             {/if}

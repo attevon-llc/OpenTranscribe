@@ -183,9 +183,13 @@ show_help() {
   echo "                  (.sql, .dump, .sql.gpg, or .dump.gpg; --from-s3 fetches by name first) — destructive"
   echo ""
   echo "Development Commands:"
-  echo "  restart-backend     - Restart backend, all celery workers, celery-beat & flower without database reset"
-  echo "  restart-frontend    - Restart frontend without affecting backend services"
-  echo "  restart-all         - Restart all services without resetting database"
+  echo "  restart-backend [--fresh <name>]"
+  echo "                      - Restart backend, all celery workers, celery-beat & flower without database reset"
+  echo "  restart-frontend [--fresh <name>]"
+  echo "                      - Restart frontend without affecting backend services"
+  echo "  restart-all [--fresh <name>]"
+  echo "                      - Restart all services without resetting database"
+  echo "                        (--fresh targets an isolated deployment; without it, the default stack)"
   echo "  rebuild-backend [--nas] [--with-diar-native|--no-diar-native]"
   echo "                           - Rebuild backend services with code changes. The"
   echo "                             diar-native overlay is kept automatically when this"
@@ -256,6 +260,7 @@ show_help() {
   echo "  ./opentr.sh reset dev --lite                 # Reset in cloud-only ASR mode"
   echo "  ./opentr.sh logs backend                     # View backend logs"
   echo "  ./opentr.sh restart-backend                  # Restart backend services only"
+  echo "  ./opentr.sh restart-backend --fresh test1    # ...on the isolated 'test1' deployment"
   echo ""
 }
 
@@ -3282,12 +3287,73 @@ reset_and_init() {
 # common.sh is sourced at the top of this file, so both functions are already in scope.
 
 # Function to restart backend services (backend, all celery workers, flower) without database reset
-restart_backend() {
-  echo "🔄 Restarting backend services (backend, all celery workers, celery-beat, flower)..."
+# Resolve which deployment the restart-* commands act on.
+#
+# The restart-* dispatch arms used to take NO arguments and call bare
+# `docker compose restart`, which resolves the DEFAULT compose project. So
+# `restart-backend --fresh <name>` did not merely ignore `--fresh` — it silently
+# restarted the main dev stack instead, printed "restarted successfully", and then
+# printed the default project's (often empty) container table. Two stacks, one of
+# them live, and no message distinguishing them.
+#
+# Sets RESTART_CHAIN / RESTART_PROJECT / RESTART_LABEL for the caller. Same
+# COMPOSE_PROJECT_NAME + fresh_compose_chain idiom fresh_stop/fresh_status use.
+restart_resolve_target() {
+  RESTART_CHAIN=""
+  RESTART_PROJECT=""
+  RESTART_LABEL="the default deployment"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --fresh)
+        shift
+        if [ $# -eq 0 ] || [ -z "${1:-}" ]; then
+          echo "❌ --fresh needs a deployment name (see: ./opentr.sh fresh-list)" >&2
+          return 2
+        fi
+        local _name
+        _name="$(fresh_sanitize_name "$1")"
+        if [ ! -f "${FRESH_OVERLAY_DIR}/${_name}.yml" ]; then
+          # Refuse rather than fall through to the default project — falling
+          # through is what restarted the live stack on a typo'd name.
+          echo "❌ No fresh deployment '${_name}' (no ${FRESH_OVERLAY_DIR}/${_name}.yml)." >&2
+          echo "   Known deployments: ./opentr.sh fresh-list" >&2
+          return 2
+        fi
+        RESTART_PROJECT="$(fresh_project_name "$_name")"
+        RESTART_CHAIN="$(fresh_compose_chain "$_name")"
+        RESTART_LABEL="fresh deployment '${_name}' (project ${RESTART_PROJECT})"
+        shift
+        ;;
+      *)
+        echo "❌ Unknown option for restart: $1" >&2
+        return 2
+        ;;
+    esac
+  done
+  return 0
+}
 
-  # Restart backend and all celery services in place
-  # Note: celery-worker-gpu-scaled is optional (scale: 0 by default) so we ignore errors for it
-  docker compose restart backend \
+# Run `docker compose` against the resolved target. Stderr is NOT discarded and the
+# exit status IS returned: the old code sent both to /dev/null, so "✅ restarted
+# successfully" printed whether or not anything had been restarted.
+restart_compose() {
+  if [ -n "$RESTART_PROJECT" ]; then
+    # shellcheck disable=SC2086
+    COMPOSE_PROJECT_NAME="$RESTART_PROJECT" docker compose $RESTART_CHAIN "$@"
+  else
+    # No --fresh: bare `docker compose`, which in a repo clone auto-loads
+    # docker-compose.override.yml. Byte-identical to the previous behaviour, so
+    # the default path is unchanged by this fix.
+    docker compose "$@"
+  fi
+}
+
+restart_backend() {
+  restart_resolve_target "$@" || return $?
+  echo "🔄 Restarting backend services on ${RESTART_LABEL} (backend, all celery workers, celery-beat, flower)..."
+
+  local rc=0
+  restart_compose restart backend \
     celery-worker \
     celery-download-worker \
     celery-cpu-worker \
@@ -3296,44 +3362,59 @@ restart_backend() {
     celery-nlp-worker \
     celery-embedding-worker \
     celery-beat \
-    flower 2>/dev/null
+    flower || rc=$?
 
-  # Try to restart gpu-scaled worker if it exists (optional service)
-  docker compose restart celery-worker-gpu-scaled 2>/dev/null || true
+  # celery-worker-gpu-scaled is optional (scale: 0 unless --gpu-scale), so its
+  # absence is genuinely not an error — unlike everything above.
+  restart_compose restart celery-worker-gpu-scaled 2>/dev/null || true
 
-  echo "✅ Backend services restarted successfully."
+  if [ "$rc" -ne 0 ]; then
+    echo "❌ Backend restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
+    echo "   Nothing above was necessarily restarted — do not read this as a success." >&2
+    return "$rc"
+  fi
+  echo "✅ Backend services restarted successfully on ${RESTART_LABEL}."
 
   # Display container status
   echo "📊 Container status:"
-  docker compose ps
+  restart_compose ps
 }
 
 # Function to restart frontend only
 restart_frontend() {
-  echo "🔄 Restarting frontend service..."
+  restart_resolve_target "$@" || return $?
+  echo "🔄 Restarting frontend service on ${RESTART_LABEL}..."
 
-  # Restart frontend in place
-  docker compose restart frontend
-
-  echo "✅ Frontend service restarted successfully."
+  local rc=0
+  restart_compose restart frontend || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "❌ Frontend restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
+    return "$rc"
+  fi
+  echo "✅ Frontend service restarted successfully on ${RESTART_LABEL}."
 
   # Display container status
   echo "📊 Container status:"
-  docker compose ps
+  restart_compose ps
 }
 
 # Function to restart all services without resetting the database
 restart_all() {
-  echo "🔄 Restarting all services without database reset..."
+  restart_resolve_target "$@" || return $?
+  echo "🔄 Restarting all services on ${RESTART_LABEL} without database reset..."
 
   # Restart all services in place - docker compose handles dependency ordering
-  docker compose restart
-
-  echo "✅ All services restarted successfully."
+  local rc=0
+  restart_compose restart || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "❌ Restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
+    return "$rc"
+  fi
+  echo "✅ All services restarted successfully on ${RESTART_LABEL}."
 
   # Display container status
   echo "📊 Container status:"
-  docker compose ps
+  restart_compose ps
 }
 
 # Helper: stop all containers from both dev and prod compose chains, plus stragglers
@@ -3645,15 +3726,18 @@ case "$1" in
     ;;
 
   restart-backend)
-    restart_backend
+    shift
+    restart_backend "$@"
     ;;
 
   restart-frontend)
-    restart_frontend
+    shift
+    restart_frontend "$@"
     ;;
 
   restart-all)
-    restart_all
+    shift
+    restart_all "$@"
     ;;
 
   rebuild-backend)

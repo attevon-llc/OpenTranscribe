@@ -18,11 +18,26 @@ VERSION="${1:-${RELEASE_VERSION:-}}"
 JSON_OUT="${JSON_OUT:-false}"
 RED='\033[0;31m'; BLUE='\033[0;34m'; NC='\033[0m'
 
+# Severities from release-criteria.yaml; outcomes from here. Bidirectional — see
+# criteria-lib.sh. Exported because the consumer lives across a file boundary.
+export STAGE_ID=test
+# shellcheck source=scripts/release/criteria-lib.sh
+source "$SCRIPT_DIR/criteria-lib.sh"
+
 if ! (exec 3<>/dev/tcp/127.0.0.1/5176) 2>/dev/null; then
+    record dev-stack-up fail "nothing answering on 127.0.0.1:5176" "./opentr.sh start dev"
     echo -e "${RED}The dev stack must be running for the test stage.${NC}" >&2
     echo "  ./opentr.sh start dev" >&2
+    if [[ "$JSON_OUT" == "true" ]]; then
+        printf '{"stage":"test","version":"%s","status":"fail","criteria":[%s],"next":["./opentr.sh start dev"]}\n' \
+            "$VERSION" "$(criteria_json)"
+    fi
+    # Exit 3 (precondition unmet) as before. Deliberately NOT via criteria_assert_all_checked:
+    # the gate genuinely never ran, and reporting that as wiring drift (2) would both bury the
+    # real reason and change this stage's exit contract.
     exit 3
 fi
+record dev-stack-up pass
 
 echo -e "${BLUE}Running the canonical pre-merge gate${NC}" >&2
 rc=0
@@ -35,9 +50,20 @@ rc=0
 # never counted as a pass) rather than failing the release outright.
 ./scripts/run-integration-tests.sh --coverage --e2e-smoke --export-capability || rc=$?
 
+if (( rc == 0 )); then
+    record integration-gate pass
+else
+    record integration-gate fail "run-integration-tests.sh exited $rc" \
+        "read the per-phase output above; re-run ./scripts/run-integration-tests.sh"
+fi
+
+# Both halves of the contract. Reachable on both outcomes — the gate above always records
+# one — so this cannot convert a test failure (1) into a wiring-misuse exit (2).
+criteria_assert_all_checked
+
 if [[ "$JSON_OUT" == "true" ]]; then
-    printf '{"stage":"test","version":"%s","status":"%s","next":%s}\n' \
-        "$VERSION" "$([[ $rc -eq 0 ]] && echo pass || echo fail)" \
+    printf '{"stage":"test","version":"%s","status":"%s","criteria":[%s],"next":%s}\n' \
+        "$VERSION" "$([[ $rc -eq 0 ]] && echo pass || echo fail)" "$(criteria_json)" \
         "$([[ $rc -eq 0 ]] && echo '["build"]' || echo '["fix the failing suites"]')"
 fi
 exit $rc

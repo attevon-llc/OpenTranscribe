@@ -665,13 +665,71 @@ for stage in 90-promote.sh 95-finish.sh; do
     else
         ok "$stage does not consume the helper through a subshell"
     fi
-    if grep -qE 'repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*exit' \
-         "$REPO_ROOT/scripts/release/$stage"; then
-        ok "$stage captures the list and propagates the could-not-derive exit"
+    # The rc must REACH an exit. Two shapes are legitimate and the check accepts both,
+    # because pinning the literal `|| exit $?` would have failed a change that is strictly
+    # better: both stages now capture the rc so they can `record` the criterion that says
+    # WHY the list could not be derived, and then exit that same rc.
+    #
+    #   repos_tsv="$(release_published_repos_or_die)" || exit $?
+    #   repos_tsv="$(release_published_repos_or_die)" || list_rc=$?   ... exit "$list_rc"
+    #
+    # What is NOT accepted is a bare capture with no `||` at all — that is the regression
+    # this case exists for, and the RED control below proves the check still sees it.
+    stage_code="$(sed 's/#.*//' "$REPO_ROOT/scripts/release/$stage")"
+    propagates=no
+    if printf '%s\n' "$stage_code" \
+         | grep -qE 'repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*exit'; then
+        propagates=direct
+    else
+        rc_var="$(printf '%s\n' "$stage_code" \
+            | sed -nE 's/.*repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*([A-Za-z_][A-Za-z_0-9]*)=\$\?.*/\1/p' \
+            | head -1)"
+        if [ -n "$rc_var" ] && printf '%s\n' "$stage_code" \
+             | grep -qE "(exit|fail_out)[[:space:]]+\"?\\\$(\{)?${rc_var}(\})?\"?"; then
+            propagates="via \$${rc_var}"
+        fi
+    fi
+    if [ "$propagates" != no ]; then
+        ok "$stage captures the list and propagates the could-not-derive exit ($propagates)"
     else
         bad "$stage does not propagate the helper's exit status — an underivable list would not fail the stage"
     fi
 done
+
+# MUST-FIRE control for the check above. Without it, a mistake in that multi-branch regex
+# reports "propagates" for every shape, including the bare capture that started this — and a
+# check that cannot fail is worse here than no check, because the thing it guards (a release
+# proceeding over an underivable image list) is silent by construction.
+control_bad='repos_tsv="$(release_published_repos_or_die)"
+while IFS= read -r line; do :; done <<< "$repos_tsv"'
+control_ok_direct='repos_tsv="$(release_published_repos_or_die)" || exit $?'
+control_ok_var='repos_tsv="$(release_published_repos_or_die)" || list_rc=$?
+exit "$list_rc"'
+check_propagation() {   # echoes yes/no for a code string
+    local code="$1" rc_var
+    if printf '%s\n' "$code" \
+         | grep -qE 'repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*exit'; then
+        echo yes; return
+    fi
+    rc_var="$(printf '%s\n' "$code" \
+        | sed -nE 's/.*repos_tsv="\$\(release_published_repos_or_die\)"[[:space:]]*\|\|[[:space:]]*([A-Za-z_][A-Za-z_0-9]*)=\$\?.*/\1/p' \
+        | head -1)"
+    if [ -n "$rc_var" ] && printf '%s\n' "$code" \
+         | grep -qE "(exit|fail_out)[[:space:]]+\"?\\\$(\{)?${rc_var}(\})?\"?"; then
+        echo yes; return
+    fi
+    echo no
+}
+if [ "$(check_propagation "$control_bad")" = no ]; then
+    ok "RED confirmed: a bare capture with no || is reported as NOT propagating"
+else
+    bad "the propagation check passes a bare capture — it would not catch the original bug"
+fi
+if [ "$(check_propagation "$control_ok_direct")" = yes ] && [ "$(check_propagation "$control_ok_var")" = yes ]; then
+    ok "both legitimate propagation shapes are accepted"
+else
+    bad "the propagation check rejects a shape that does propagate the exit status"
+fi
 
 echo "== 25. the installer can select the lite deployment, and rejects what it cannot do (#667) =="
 INSTALLER="$REPO_ROOT/setup-opentranscribe.sh"

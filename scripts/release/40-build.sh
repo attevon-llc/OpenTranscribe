@@ -22,6 +22,25 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
 
 : "${VERSION:?40-build.sh needs a version}"
 
+# Severities from release-criteria.yaml; outcomes from here. Bidirectional — see
+# criteria-lib.sh. Exported because the consumer lives across a file boundary.
+export STAGE_ID=build
+# shellcheck source=scripts/release/criteria-lib.sh
+source "$SCRIPT_DIR/criteria-lib.sh"
+
+# Emits the criteria recorded SO FAR and exits the ORIGINAL code. Not
+# criteria_assert_all_checked: on an early exit the later criteria genuinely were not
+# checked, and the library exits 2 for that, which would turn this stage's gate failure (1)
+# into a pipeline-misuse code.
+build_fail_out() {
+    local rc="$1"
+    if [[ "$JSON_OUT" == "true" ]]; then
+        printf '{"stage":"build","version":"%s","status":"fail","criteria":[%s],"next":["fix the build, then re-run: ./scripts/release.sh build %s"]}\n' \
+            "$VERSION" "$(criteria_json)" "$VERSION"
+    fi
+    exit "$rc"
+}
+
 echo -e "${BLUE}Building ${VERSION} locally (nothing will be pushed)${NC}" >&2
 
 # EVERY declared architecture leg is built, not just the host's (issue #667).
@@ -39,6 +58,7 @@ echo -e "${BLUE}Building ${VERSION} locally (nothing will be pushed)${NC}" >&2
 HOST_PLATFORM="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || echo linux/amd64)"
 
 legs_built=0
+legs_declared=0
 while IFS=$'\t' read -r component _capability platforms; do
     # blackwell is never part of a release build (built only on request, publishes no
     # versioned tag) — same exclusion 50-scan.sh applies.
@@ -46,6 +66,7 @@ while IFS=$'\t' read -r component _capability platforms; do
     IFS=',' read -r -a plats <<< "$platforms"
     for platform in "${plats[@]}"; do
         [[ -n "$platform" ]] || continue
+        legs_declared=$((legs_declared + 1))
         echo -e "${BLUE}  building ${component} for ${platform}${NC}" >&2
         use_remote="${USE_REMOTE_BUILDER:-false}"
         [[ "$platform" != "$HOST_PLATFORM" ]] && use_remote=true
@@ -54,16 +75,29 @@ while IFS=$'\t' read -r component _capability platforms; do
              USE_REMOTE_BUILDER="$use_remote" \
                 ./scripts/docker-build-push.sh "$component"; then
             echo -e "${RED}build failed: ${component} ${platform}${NC}" >&2
-            exit 1
+            record platform-table-readable pass "$legs_declared leg(s) declared"
+            record every-declared-leg-built fail \
+                "${component} ${platform} failed after ${legs_built} leg(s) built" \
+                "read the build output above; USE_REMOTE_BUILDER=true is required for a non-host arch"
+            build_fail_out 1
         fi
         legs_built=$((legs_built + 1))
     done
 done < <(./scripts/docker-build-push.sh list-platforms)
 
-if (( legs_built == 0 )); then
+# Zero declared legs is COULD NOT CHECK, never "nothing to build" — the same rule the scan
+# stage applies to an empty platform list. A silently empty table would otherwise let this
+# stage pass having built nothing, and `scan` would then find nothing to scan.
+if (( legs_declared == 0 )); then
+    record platform-table-readable not-measured \
+        "docker-build-push.sh list-platforms yielded no legs" \
+        "./scripts/docker-build-push.sh list-platforms"
+    record every-declared-leg-built not-measured "no legs were declared"
     echo -e "${RED}no legs built — could not derive the platform table${NC}" >&2
-    exit 1
+    build_fail_out 1
 fi
+record platform-table-readable pass "$legs_declared leg(s) declared"
+record every-declared-leg-built pass "$legs_built leg(s) built"
 echo -e "${GREEN}built ${legs_built} architecture leg(s)${NC}" >&2
 
 # The image must be able to state what it is. This is the check that would have
@@ -83,6 +117,9 @@ declare -A REPO_FOR_COMPONENT=(
 
 status=pass
 declare -A baked_by_component=()
+baked_checked=0
+baked_wrong=()
+no_host_leg=()
 while IFS=$'\t' read -r component capability platforms; do
     repo="${REPO_FOR_COMPONENT[${component}]:-}"
     [ -n "$repo" ] || continue
@@ -100,6 +137,7 @@ while IFS=$'\t' read -r component capability platforms; do
     # platform and cross-arch size equivalence.
     if [[ ",${platforms}," != *",${HOST_PLATFORM},"* ]]; then
         echo -e "${BLUE}SKIP  ${component}: no ${HOST_PLATFORM} leg to run here (declares ${platforms})${NC}" >&2
+        no_host_leg+=("${component} (declares ${platforms})")
         continue
     fi
     leg_tag="${repo}:${VERSION}-${capability}-${HOST_PLATFORM#linux/}"
@@ -109,14 +147,45 @@ while IFS=$'\t' read -r component capability platforms; do
         -c 'echo "$APP_VERSION"' 2>/dev/null | tr -d '\r')
     baked_by_component["$component"]="$baked"
 
+    baked_checked=$((baked_checked + 1))
     if [[ "$baked" != "$VERSION" ]]; then
         echo -e "${RED}FAIL  ${component} image reports '${baked:-<empty>}', expected ${VERSION}${NC}" >&2
         echo "      the --build-arg APP_VERSION contract is broken for ${component}" >&2
+        baked_wrong+=("${component} reports '${baked:-<empty>}'")
         status=fail
     else
         echo -e "${GREEN}PASS  ${component} image reports ${baked}${NC}" >&2
     fi
 done < <(./scripts/docker-build-push.sh list-platforms)
+
+if (( ${#baked_wrong[@]} )); then
+    record baked-version-host-leg fail "${baked_wrong[*]}" \
+        "rebuild with --build-arg APP_VERSION=$VERSION — see the Dockerfile's ARG block"
+elif (( baked_checked == 0 )); then
+    # No backend-derived component had a host-arch leg to run. That is COULD NOT CHECK for
+    # the baked-version contract, not a pass: the whole point of this assertion is that an
+    # image reporting "unknown" must never ship (issue #411).
+    record baked-version-host-leg not-measured \
+        "no backend-derived component declares a ${HOST_PLATFORM} leg" \
+        "build on a host matching one of the declared platforms, or check it after publish"
+    status=fail
+else
+    record baked-version-host-leg pass "$baked_checked image(s) report $VERSION"
+fi
+
+# warn severity, matching today's behaviour: a component with no host-arch leg prints SKIP and
+# the stage passes, because `docker run` cannot execute a foreign architecture. Recording it
+# makes the gap visible in criteria[] rather than only in a SKIP line nobody greps.
+if (( ${#no_host_leg[@]} )); then
+    record host-arch-leg-present not-measured \
+        "not run-checked on this host: ${no_host_leg[*]}" \
+        "80-publish.sh verifies those legs' platform and size equivalence after publish"
+else
+    record host-arch-leg-present pass
+fi
+
+# Both halves of the contract. Reachable on every path that gets here.
+criteria_assert_all_checked
 
 if [[ "$JSON_OUT" == "true" ]]; then
     artifacts="{"
@@ -127,8 +196,8 @@ if [[ "$JSON_OUT" == "true" ]]; then
         artifacts+="\"${component}_baked_version\":\"${baked_by_component[$component]}\""
     done
     artifacts+="}"
-    printf '{"stage":"build","version":"%s","status":"%s","artifacts":%s,"next":%s}\n' \
-        "$VERSION" "$status" "$artifacts" \
+    printf '{"stage":"build","version":"%s","status":"%s","artifacts":%s,"criteria":[%s],"next":%s}\n' \
+        "$VERSION" "$status" "$artifacts" "$(criteria_json)" \
         "$([[ "$status" == pass ]] && echo '["scan"]' || echo '["fix the build-arg contract and rebuild"]')"
 fi
 

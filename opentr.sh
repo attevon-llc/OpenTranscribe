@@ -1619,7 +1619,49 @@ fresh_destroy() {
   # profile-gated services need the same treatment here, generically, rather than
   # enumerating every profile this repo happens to define today.
   # shellcheck disable=SC2086
-  COMPOSE_PROJECT_NAME="$proj" COMPOSE_PROFILES="*" docker compose $chain down -v --remove-orphans 2>/dev/null || true
+  local _down_rc=0
+  COMPOSE_PROJECT_NAME="$proj" COMPOSE_PROFILES="*" docker compose $chain down -v --remove-orphans 2>/dev/null || _down_rc=$?
+
+  # The NETWORK is the third leak in this function (issue #772), and it was the one
+  # resource with no explicit reclaim step: volumes and image tags each get one below,
+  # the network got only whatever `down` managed. `down`'s failure was discarded by
+  # `2>/dev/null || true`, so a network it could not remove was indistinguishable from
+  # one it did — and unlike a leaked container, nothing later makes the leak visible.
+  #
+  # It is not hypothetical and it is not cheap: ELEVEN accumulated on this host, each
+  # holding a /16 out of Docker's default pool (172.17-172.31), until
+  # `docker network create` began failing HOST-WIDE with "all predefined address pools
+  # have been fully subnetted" — blocking unrelated projects and a release task, with
+  # nothing pointing back here.
+  #
+  # ⚠️ Removal genuinely can fail for a reason we cannot fix: Docker reports
+  # `has active endpoints` while the network shows `containers=0` and no container,
+  # running or stopped, is attached. That is a stale endpoint record and it survives
+  # teardown; only a daemon restart clears it. So the goal here is NOT to guarantee
+  # removal — it is to make the failure LOUD and name the cost, while the operator can
+  # still act, instead of discovering it weeks later as an unrelated host-wide error.
+  local _net="${proj}_default"
+  if docker network inspect "$_net" >/dev/null 2>&1; then
+    if docker network rm "$_net" >/dev/null 2>&1; then
+      echo "  removed leftover network ${_net}"
+    else
+      echo "⚠️  network ${_net} could NOT be removed and is now leaked." >&2
+      echo "    It still holds a subnet from Docker's default pool. Enough of these and" >&2
+      echo "    \`docker network create\` fails host-wide for every project on this machine." >&2
+      echo "    Check: docker network inspect ${_net} --format '{{len .Containers}}'" >&2
+      echo "    If that prints 0, the endpoints are stale and only a Docker daemon restart" >&2
+      echo "    clears them — \`docker network prune\` uses the same path and will also fail." >&2
+    fi
+  fi
+
+  # A non-zero `down` is worth saying out loud even when the network came away cleanly:
+  # it means something in the teardown did not do what it said, and every check below
+  # this point is then reporting on a partial teardown.
+  if [ "$_down_rc" -ne 0 ]; then
+    echo "⚠️  \`docker compose down\` exited ${_down_rc} for ${proj} — teardown may be incomplete." >&2
+    echo "    Re-run: ./opentr.sh fresh-destroy ${name}   (or inspect: docker ps -a --filter label=com.docker.compose.project=${proj})" >&2
+  fi
+
   # Catch any stragglers the compose chain didn't own.
   if [ -n "$vols" ]; then
     echo "$vols" | xargs -r docker volume rm 2>/dev/null || true

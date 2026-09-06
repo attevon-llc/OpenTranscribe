@@ -8,6 +8,21 @@ on:
   # push:
   #   branches: [master, main, develop]
 
+# Cancel a superseded run the moment a new commit lands on the same PR.
+#
+# Without this, pushing a fix (or merging master up, which this repo does often
+# because `strict` is false on branch protection and staleness is caught by
+# discipline rather than by GitHub) left the PREVIOUS run going: `Backend Tests
+# (pytest)` alone is ~16 minutes, so a stale-base merge-up meant two full runs
+# on a runner where only the second one's verdict could ever be used.
+#
+# Keyed on the PR number (`github.event.pull_request.number`), falling back to
+# `github.ref` for `workflow_dispatch`, so concurrent DIFFERENT PRs never cancel
+# each other — only successive pushes to the same one.
+concurrency:
+  group: pre-commit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pre-commit:
     name: Run Pre-commit Hooks

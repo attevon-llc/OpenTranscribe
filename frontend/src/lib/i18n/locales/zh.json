@@ -3254,6 +3254,8 @@
   "speakers.noInbox": "没有未验证的说话人。所有说话人已审核完毕。",
   "speakers.inbox.accept": "接受",
   "speakers.inbox.skip": "跳过",
+  "speakers.inbox.assignToProfile": "分配到语音档案…",
+  "speakers.inbox.assigned": "已将说话人分配到语音档案",
   "speakers.inbox.suggestion": "建议：",
   "speakers.inbox.source.profile_match": "档案匹配",
   "speakers.inbox.source.voice_match": "语音匹配",

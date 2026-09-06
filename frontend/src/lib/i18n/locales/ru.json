@@ -3244,6 +3244,8 @@
   "speakers.noInbox": "Нет неверифицированных дикторов. Все дикторы проверены.",
   "speakers.inbox.accept": "Принять",
   "speakers.inbox.skip": "Пропустить",
+  "speakers.inbox.assignToProfile": "Назначить профиль…",
+  "speakers.inbox.assigned": "Говорящий назначен профилю",
   "speakers.inbox.suggestion": "Предложение",
   "speakers.inbox.source.profile_match": "Совпадение с профилем",
   "speakers.inbox.source.voice_match": "Совпадение по голосу",

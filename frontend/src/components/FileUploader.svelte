@@ -1279,7 +1279,15 @@
     flex-shrink: 0;
     position: relative;
     z-index: 1;
-    background: var(--background-color);
+    /* Transparent, NOT `var(--background-color)`. That token is the PAGE
+       background (#0f172a in dark), while the dialog surface is
+       `--surface-color` (#1e293b) — so the footer painted a visibly different,
+       inset band across the bottom of the modal in dark mode. In light the two
+       are #f8fafc vs #ffffff, near-identical, which is why it went unnoticed.
+       Transparent simply adopts whatever surface the wizard is placed on, and
+       is safe now that `.step-body` scrolls its own overflow so no content can
+       pass beneath this bar. */
+    background: transparent;
   }
 
   .nav-left, .nav-right {

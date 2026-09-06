@@ -758,6 +758,10 @@
     flex-shrink: 0;
     width: 24px;
     height: 24px;
+    /* Resets the global `button { padding: 0.6rem 1.2rem }` (38.4px), which is
+       wider than this 24px box and would clamp the content box to zero, hiding
+       the icon entirely (#746). */
+    padding: 0;
     background: none;
     border: none;
     border-radius: 4px;

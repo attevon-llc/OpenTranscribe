@@ -755,8 +755,10 @@
 
   // --- Inbox ---
 
-  async function handleInboxAction(e: CustomEvent<{ type: string; speaker_uuid: string }>) {
-    const { type, speaker_uuid } = e.detail;
+  async function handleInboxAction(
+    e: CustomEvent<{ type: string; speaker_uuid: string; profile_uuid?: string }>
+  ) {
+    const { type, speaker_uuid, profile_uuid } = e.detail;
     if (inboxActionInProgress.has(speaker_uuid)) return;
     inboxActionInProgress.add(speaker_uuid);
     inboxActionInProgress = inboxActionInProgress; // trigger reactivity
@@ -767,6 +769,16 @@
         inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
         inboxTotal = Math.max(0, inboxTotal - 1);
         toastStore.success($t('speakers.inbox.accepted'));
+        beginRenamePropagation();
+      } else if (type === 'assign' && profile_uuid) {
+        // Attaching an inbox speaker to an EXISTING profile. `batchVerifySpeakers`
+        // and the backend already implemented this action; the inbox simply never
+        // offered a control for it, so an item with no `suggested_name` could only
+        // be skipped (#740-adjacent inbox gap).
+        await batchVerifySpeakers([speaker_uuid], 'assign', profile_uuid);
+        inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
+        inboxTotal = Math.max(0, inboxTotal - 1);
+        toastStore.success($t('speakers.inbox.assigned'));
         beginRenamePropagation();
       } else if (type === 'skip') {
         await batchVerifySpeakers([speaker_uuid], 'skip');

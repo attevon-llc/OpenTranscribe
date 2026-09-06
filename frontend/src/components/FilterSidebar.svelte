@@ -786,20 +786,10 @@
 
   <div class="filter-section">
     <h3>{$t('filter.speakers')}</h3>
-    <div class="speaker-search-row">
-      <input
-        type="search"
-        bind:value={speakerSearchQuery}
-        on:input={scheduleSpeakerSearch}
-        placeholder={$t('filter.searchSpeakersPlaceholder')}
-        aria-label={$t('filter.searchSpeakersPlaceholder')}
-        class="filter-input"
-        data-testid="speaker-search-input"
-      />
-      {#if searchingSpeakers}
-        <Spinner size="small" />
-      {/if}
-    </div>
+    <!-- No standalone search input here. The dropdown below already owns a
+         search box, and its `on:search` drives the same server-side fetch, so a
+         second input beside it was pure redundancy: two search fields plus the
+         quick chips, all filtering one list. -->
     {#if loadingSpeakers && !searchingSpeakers}
       <p class="loading-text">{$t('filter.loadingSpeakers')}</p>
     {:else if errorSpeakers}
@@ -850,7 +840,14 @@
             showCounts={true}
             on:select={handleSpeakerSelect}
             on:deselect={handleSpeakerDeselect}
+            on:search={(e) => {
+              speakerSearchQuery = e.detail.term;
+              scheduleSpeakerSearch();
+            }}
           />
+          {#if searchingSpeakers}
+            <div class="speaker-search-status"><Spinner size="small" /></div>
+          {/if}
         </div>
       {/if}
       <!-- Unlabeled speakers: ONE facet, never a list of pseudo-people (#743). -->
@@ -1418,16 +1415,12 @@
     cursor: pointer !important;
   }
 
-  .speaker-search-row {
+  /* Status row for the dropdown's server-side speaker search. */
+  .speaker-search-status {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.4rem;
-  }
-
-  .speaker-search-row .filter-input {
-    flex: 1;
-    min-width: 0;
+    justify-content: center;
+    padding: 0.35rem 0;
   }
 
   /* Retry control for a facet whose fetch failed — an empty facet must never

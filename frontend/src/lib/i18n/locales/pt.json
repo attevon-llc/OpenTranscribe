@@ -3254,6 +3254,8 @@
   "speakers.noInbox": "Nenhum falante não verificado. Todos os falantes foram revisados.",
   "speakers.inbox.accept": "Aceitar",
   "speakers.inbox.skip": "Pular",
+  "speakers.inbox.assignToProfile": "Atribuir a perfil…",
+  "speakers.inbox.assigned": "Orador atribuído ao perfil",
   "speakers.inbox.suggestion": "Sugestão:",
   "speakers.inbox.source.profile_match": "Correspondência de perfil",
   "speakers.inbox.source.voice_match": "Correspondência de voz",

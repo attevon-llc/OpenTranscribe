@@ -19,6 +19,14 @@
     tag.name.toLowerCase().includes(filterQuery.toLowerCase())
   );
 
+  /**
+   * Reactive so the checkboxes actually follow the selection — see the same note
+   * in UploadStepCollections. `checked={isSelected(name)}` named a function, so
+   * Svelte never tracked `selectedTags` as a dependency and the checkbox kept a
+   * stale state after a chip was removed.
+   */
+  $: selectedTagNames = new Set(selectedTags);
+
   function isSelected(name: string): boolean {
     return selectedTags.includes(name);
   }
@@ -95,7 +103,7 @@
         <label class="item-row">
           <input
             type="checkbox"
-            checked={isSelected(tag.name)}
+            checked={selectedTagNames.has(tag.name)}
             on:change={() => toggleTag(tag.name)}
           />
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

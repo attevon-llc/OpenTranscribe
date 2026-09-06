@@ -3258,6 +3258,8 @@
   "speakers.noInbox": "검토되지 않은 화자가 없습니다. 모든 화자가 검토되었습니다.",
   "speakers.inbox.accept": "수락",
   "speakers.inbox.skip": "건너뛰기",
+  "speakers.inbox.assignToProfile": "프로필에 할당…",
+  "speakers.inbox.assigned": "화자를 프로필에 할당했습니다",
   "speakers.inbox.suggestion": "제안",
   "speakers.inbox.source.profile_match": "프로필 일치",
   "speakers.inbox.source.voice_match": "음성 일치",

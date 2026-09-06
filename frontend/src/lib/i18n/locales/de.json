@@ -3261,6 +3261,8 @@
   "speakers.inbox.similar": "ähnlich",
   "speakers.inbox.accept": "Akzeptieren",
   "speakers.inbox.skip": "Überspringen",
+  "speakers.inbox.assignToProfile": "Profil zuweisen…",
+  "speakers.inbox.assigned": "Sprecher dem Profil zugewiesen",
   "speakers.inbox.acceptTitle": "Vorschlag akzeptieren",
   "speakers.inbox.skipTitle": "Überspringen",
   "speakers.inbox.accepted": "Sprecher verifiziert",

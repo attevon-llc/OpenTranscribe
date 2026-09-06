@@ -3258,6 +3258,8 @@
   "speakers.noInbox": "Nessun parlante non verificato. Tutti i parlanti sono stati revisionati.",
   "speakers.inbox.accept": "Accetta",
   "speakers.inbox.skip": "Salta",
+  "speakers.inbox.assignToProfile": "Assegna a profilo…",
+  "speakers.inbox.assigned": "Interlocutore assegnato al profilo",
   "speakers.inbox.suggestion": "Suggerimento",
   "speakers.inbox.source.profile_match": "Corrispondenza profilo",
   "speakers.inbox.source.voice_match": "Corrispondenza vocale",

@@ -8,6 +8,7 @@
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import BaseModal from '$components/ui/BaseModal.svelte';
+  import { portal } from '$lib/actions/portal';
   import {
     isPlaceholderSpeakerName,
     nextPlaceholderSpeakerName,
@@ -673,12 +674,24 @@
   </button>
 </div>
 
-<BaseModal
-  isOpen={showCreateModal}
-  title={$t('speaker.newSpeakerTitle')}
-  maxWidth="420px"
-  onClose={closeCreateSpeakerModal}
->
+<!--
+  Portaled to <body> deliberately. This component renders inside a transcript
+  segment's `<button class="segment-content">`, so an in-place dialog is both
+  invalid HTML (interactive content inside a button) and visually broken: the
+  backdrop's `position: fixed` resolved `width/height: 100%` against the 548px
+  segment row, not the viewport, so the dialog rendered as a strip wedged into
+  the transcript row with no backdrop and no way to use it (#740).
+
+  `closeOnBackdropClick={false}` because the dialog holds a half-typed name.
+-->
+<div use:portal>
+  <BaseModal
+    isOpen={showCreateModal}
+    title={$t('speaker.newSpeakerTitle')}
+    maxWidth="420px"
+    closeOnBackdropClick={false}
+    onClose={closeCreateSpeakerModal}
+  >
   <label class="new-speaker-field">
     <span class="new-speaker-label">{$t('speaker.newSpeakerNameLabel')}</span>
     <!-- svelte-ignore a11y-autofocus -->
@@ -718,6 +731,7 @@
     </button>
   </svelte:fragment>
 </BaseModal>
+</div>
 
 <style>
   .speaker-dropdown-container {

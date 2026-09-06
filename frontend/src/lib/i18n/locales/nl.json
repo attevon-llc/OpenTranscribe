@@ -3258,6 +3258,8 @@
   "speakers.noInbox": "Geen ongeverifieerde sprekers. Alle sprekers zijn beoordeeld.",
   "speakers.inbox.accept": "Accepteren",
   "speakers.inbox.skip": "Overslaan",
+  "speakers.inbox.assignToProfile": "Toewijzen aan profiel…",
+  "speakers.inbox.assigned": "Spreker toegewezen aan profiel",
   "speakers.inbox.suggestion": "Suggestie",
   "speakers.inbox.source.profile_match": "Profielovereenkomst",
   "speakers.inbox.source.voice_match": "Stemovereenkomst",

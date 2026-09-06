@@ -427,6 +427,13 @@
     justify-content: center;
     width: 32px;
     height: 32px;
+    /* MUST reset the global button padding (#746). `form-elements.css` sets
+       `button { padding: 0.6rem 1.2rem }` = 38.4px horizontal, which is wider
+       than this 32px box; with `box-sizing: border-box` the content box clamps
+       to ZERO and the 16px icon inside is squashed to `width: 0` — a button
+       that renders as an empty outline in BOTH themes. That "both themes" part
+       is the tell that it is a sizing bug, not a contrast one. */
+    padding: 0;
     background: none;
     border: 1px solid var(--border-color);
     border-radius: 4px;

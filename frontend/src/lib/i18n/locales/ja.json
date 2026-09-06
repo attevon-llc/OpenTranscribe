@@ -3254,6 +3254,8 @@
   "speakers.noInbox": "未確認の話者はありません。すべての話者が確認済みです。",
   "speakers.inbox.accept": "承認",
   "speakers.inbox.skip": "スキップ",
+  "speakers.inbox.assignToProfile": "プロファイルに割り当て…",
+  "speakers.inbox.assigned": "話者をプロファイルに割り当てました",
   "speakers.inbox.suggestion": "提案：",
   "speakers.inbox.source.profile_match": "プロファイル一致",
   "speakers.inbox.source.voice_match": "音声一致",

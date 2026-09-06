@@ -3258,6 +3258,8 @@
   "speakers.noInbox": "No unverified speakers. All speakers have been reviewed.",
   "speakers.inbox.accept": "Accept",
   "speakers.inbox.skip": "Skip",
+  "speakers.inbox.assignToProfile": "Assign to profile…",
+  "speakers.inbox.assigned": "Speaker assigned to profile",
   "speakers.inbox.suggestion": "Suggestion",
   "speakers.inbox.source.profile_match": "Profile Match",
   "speakers.inbox.source.voice_match": "Voice Match",

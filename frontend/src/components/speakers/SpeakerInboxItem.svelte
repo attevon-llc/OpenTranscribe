@@ -6,6 +6,24 @@
 
   export let item: InboxItemType;
   export let actionInProgress = false;
+  /**
+   * Existing profiles this speaker can be attached to.
+   *
+   * Without this the inbox was a dead end whenever the matcher produced no
+   * `suggested_name`: the row rendered ONLY "Skip", so a speaker the user could
+   * plainly identify had no route to a profile. That is the common case for a
+   * voice that fluctuates and gets split across several detections — exactly the
+   * situation the inbox exists to resolve.
+   */
+  export let profiles: Array<{ uuid: string; name: string }> = [];
+
+  let assignTo = '';
+
+  function assignToProfile() {
+    if (!assignTo) return;
+    dispatch('action', { type: 'assign', speaker_uuid: item.speaker_uuid, profile_uuid: assignTo });
+    assignTo = '';
+  }
 
   const dispatch = createEventDispatcher();
 
@@ -92,6 +110,23 @@
         >
           {$t('speakers.inbox.accept')}
         </button>
+      {/if}
+      {#if profiles.length > 0}
+        <!-- The backend and API client already supported `assign` + profile_uuid;
+             only this control was missing. -->
+        <select
+          class="assign-select"
+          bind:value={assignTo}
+          disabled={actionInProgress}
+          on:change={assignToProfile}
+          aria-label={$t('speakers.inbox.assignToProfile')}
+          title={$t('speakers.inbox.assignToProfile')}
+        >
+          <option value="">{$t('speakers.inbox.assignToProfile')}</option>
+          {#each profiles as profile}
+            <option value={profile.uuid}>{profile.name}</option>
+          {/each}
+        </select>
       {/if}
       <button
         class="action-btn skip"
@@ -253,11 +288,15 @@
 
   .item-actions {
     display: flex;
+    align-items: center;
     gap: 6px;
     flex-shrink: 0;
   }
 
   .action-btn {
+    /* Never let a one-word action wrap. Adding the assign dropdown to this row
+       squeezed Skip until it broke across two lines as "Ski"/"p". */
+    white-space: nowrap;
     padding: 4px 12px;
     border-radius: 6px;
     border: 1px solid var(--border-color, #d1d5db);
@@ -291,6 +330,24 @@
     opacity: 0.9;
     transform: none;
     box-shadow: none;
+  }
+
+  .assign-select {
+    max-width: 170px;
+    min-width: 0;
+    flex-shrink: 1;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+
+  .assign-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .action-btn.skip {

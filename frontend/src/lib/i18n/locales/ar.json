@@ -3258,6 +3258,8 @@
   "speakers.noInbox": "لا يوجد متحدثون غير موثّقين. تمت مراجعة جميع المتحدثين.",
   "speakers.inbox.accept": "قبول",
   "speakers.inbox.skip": "تخطي",
+  "speakers.inbox.assignToProfile": "إسناد إلى ملف تعريف…",
+  "speakers.inbox.assigned": "تم إسناد المتحدث إلى الملف التعريفي",
   "speakers.inbox.suggestion": "اقتراح",
   "speakers.inbox.source.profile_match": "تطابق الملف الشخصي",
   "speakers.inbox.source.voice_match": "تطابق صوتي",

@@ -3261,6 +3261,8 @@
   "speakers.inbox.similar": "similares",
   "speakers.inbox.accept": "Aceptar",
   "speakers.inbox.skip": "Omitir",
+  "speakers.inbox.assignToProfile": "Asignar a perfil…",
+  "speakers.inbox.assigned": "Hablante asignado al perfil",
   "speakers.inbox.acceptTitle": "Aceptar sugerencia",
   "speakers.inbox.skipTitle": "Omitir",
   "speakers.inbox.accepted": "Hablante verificado",

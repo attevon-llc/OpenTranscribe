@@ -316,6 +316,10 @@
     justify-content: center;
     width: 28px;
     height: 28px;
+    /* Resets the global `button { padding: 0.6rem 1.2rem }` (38.4px), which is
+       wider than this 28px box and would clamp the content box to zero, hiding
+       the icon entirely (#746). */
+    padding: 0;
     border: none;
     background: transparent;
     border-radius: 6px;

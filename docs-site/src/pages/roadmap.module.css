@@ -36,6 +36,12 @@
 /* ── Timeline ─────────────────────────────────────────────────────────────── */
 
 .timeline {
+  /* width:100% is load-bearing, not redundant with max-width. The parent is a flex
+     container, so without it this column shrink-wraps to its content: collapsed it
+     measured 772px, and expanding a release's issue list pushed it to the 52rem cap
+     at 832px. Being centred, that 60px split both ways and the whole timeline
+     visibly shifted left and right on every toggle. */
+  width: 100%;
   max-width: 52rem;
   margin: 0 auto;
   padding: 1rem 1rem 5rem;

@@ -49,6 +49,8 @@ EPICS: dict[str, tuple[str, str]] = {
     'public-demo': ('Public Demo', 'Read-only hosted demo deployment'),
     'asr-engines': ('ASR Engines', 'Alternative and native transcription engines'),
     'desktop': ('Desktop App', 'Standalone cross-platform application'),
+    'test-suite-health': ('Test Suite Health', 'Coverage, gates, and verification matrices'),
+    'docs-release-ops': ('Docs & Release Ops', 'Docs site, release pipeline, repo tooling'),
 }
 
 #: Release -> (headline, one-sentence summary). Keep the summary to a single
@@ -56,33 +58,53 @@ EPICS: dict[str, tuple[str, str]] = {
 #: and the long-form rationale belongs in the linked issues, not here.
 RELEASES: dict[str, tuple[str, str]] = {
     'v0.5.0': (
-        'Deployment and release hardening',
-        'Release tooling, deployment shapes, and the security and correctness work '
-        'that came out of a full rehearsal.',
+        'Ship what is already built',
+        'Native diarization, corpus-scale chat, redaction and the identity overhaul, '
+        'published without adding one more feature.',
     ),
     'v0.6.0': (
-        'Answer quality and interface polish',
-        'Make what already ships correct — grounded answers, searchable summaries, '
-        'an interface pass, and the fixes that affect running deployments today.',
+        'Interface polish, and chat measured',
+        'A full UI pass over what v0.5.0 shipped, plus real metrics for search and '
+        'chat answer quality instead of assumptions.',
     ),
     'v0.7.0': (
-        'Documents, speakers, and providers',
-        'Widen the library beyond audio, deepen cross-file speaker identity, and add '
-        'provider breadth.',
+        'Run it in public',
+        'Publish the inert public demo once the interface is polished, so people can '
+        'see the app and watch it upgrade.',
     ),
     'v0.8.0': (
-        'Native diarization',
-        'Retire the in-process PyTorch diarizer for the native Rust/ONNX engine, '
-        'including the voiceprint migration it depends on.',
+        'Small GPUs and native diarization',
+        'Retire the in-process PyTorch diarizer, which is what makes a 4 GB card '
+        'viable, and prove it with VRAM calibration rather than magic numbers.',
     ),
     'v0.9.0': (
-        'Meetings and extensibility',
-        'Bring meetings in automatically and open the pipeline to external tooling.',
+        'Federal government and FIPS',
+        'The compliance posture public-sector deployment requires: HIPAA, SOC 2, '
+        'GDPR, and real FIPS 140-3 module validation.',
+    ),
+    'v0.10.0': (
+        'Bring your own model, and your own format',
+        'Use the LLM you already pay for, and get transcripts out in the shape your '
+        'workflow wants.',
+    ),
+    'v0.11.0': (
+        'Document ingestion',
+        'Re-land the document vertical as a release of its own, and make documents '
+        'first-class in the gallery, search and chat.',
+    ),
+    'v0.12.0': (
+        'The library knows things',
+        'Intelligence across the corpus rather than within one file: who speaks, '
+        'about what, how much, and what changed.',
+    ),
+    'v0.13.0': (
+        'OpenTranscribe in your workflow',
+        'Meetings arrive on their own, and other software can ask OpenTranscribe questions.',
     ),
     'v1.0.0': (
-        'Platform maturity',
-        'Alternative transcription engines, a desktop application, live transcription, '
-        'and formal compliance validation.',
+        'Commit to it',
+        'Interfaces, platform support and performance become promises: native engines, '
+        'live transcription, and a desktop application.',
     ),
 }
 

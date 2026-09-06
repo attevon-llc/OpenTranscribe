@@ -162,14 +162,25 @@ Each future release follows the same flow. Only one file needs an edit:
 - **TO** comes from the `VERSION` file. It cannot come from anywhere else: when
   the scenarios run, the new tag does not exist yet and the new images are not on
   Docker Hub.
-- **FROM** is the newest git tag below TO that *also* has published Docker Hub
-  images. A tag with no images is not something a user could be running, so it is
-  not a valid upgrade source.
+- **FROM** is DERIVED as a **set** (issue #783), not a single tag: the newest
+  git tag with published Docker Hub images from each of the last
+  `OT_UPGRADE_SOURCE_MINORS` (default **2**) minor series strictly below TO —
+  for v0.5.0, `{v0.4.1, v0.3.3}`. A tag with no images is not something a user
+  could be running, so it is never a valid upgrade source. A patch TO
+  collapses to a single hop (a patch adds no Alembic revisions, so a second
+  hop would re-measure the identical chain at full price).
 
-Overrides still work — `FROM_VERSION`, `TO_VERSION`, and `FROM_VERSIONS` (plural,
-space-separated) to run the scenario once per source. Use `FROM_VERSIONS` on
-minor/major releases to keep the oldest supported hop exercised: once
-auto-detection moves FROM forward, the older path stops being tested otherwise.
+`test-upgrade.sh` **re-execs itself once per derived source**, tearing down
+between hops so the next one can bind the stock names/ports the previous one
+is still holding. Run `./test-upgrade.sh --list-sources` to see the set that
+would be used without starting anything.
+
+Overrides still work — `FROM_VERSION` (singular) pins exactly one hop and
+skips the dispatcher; `TO_VERSION` overrides the target; `FROM_VERSIONS`
+(plural, space-separated) REPLACES the derived set outright and still runs
+once per listed source. `FROM_VERSIONS` is an override of the derivation —
+the derivation itself is what keeps the oldest supported hop exercised as
+auto-detection moves FROM forward; it needs no env var to "turn on".
 
 `REQUIRE_PREVIOUS=1` turns "no published previous release" into a failure instead
 of a skip; the release gate sets it, a first-ever release does not.
@@ -197,7 +208,7 @@ See the dedicated section in the planning doc and the `Edge Cases & Mitigations`
 
 - **GPU contention**: tests default to CPU. Pass `CUDA_VISIBLE_DEVICES=2` (or whichever slot is free) before invoking if you want GPU acceleration. Do not steal the GPU the live workers are using.
 - **Disk space**: each scenario needs ~20 GB free under `$TEST_ROOT` and ~10 GB on the docker root.
-- **Docker Hub rate limits**: an unauthenticated pull is limited to 100/6h per IP. Login (`docker login`) if you're iterating.
+- **Docker Hub rate limits**: an unauthenticated pull is limited to 100/6h per IP. Login (`docker login`) if you're iterating. `ver_upgrade_sources`'s manifest *probes* are memoized (`OT_HUB_CACHE_DIR`, ~4 calls total for the default 2-series derivation) and shared across a multi-hop dispatch, but each hop still *pulls* its own FROM images — that cost is per hop, not memoized, so a multi-hop run against an unauthenticated IP is more likely to hit the limit than a single-hop one.
 - **Public test URLs may decay**: edit `fixtures/test-urls.txt` if archive.org links 404.
 - **The Alembic migration chain is one-way, and the scenario refuses to run
   when FROM is not strictly older than TO** — that constraint is real and

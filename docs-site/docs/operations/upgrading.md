@@ -117,6 +117,53 @@ it cannot, it refuses (exit 1) and tells you to restore a pre-upgrade backup
 first. Override with `--force-downgrade` if you are certain.
 :::
 
+## Skipping Versions
+
+**You do not need to stop at every intermediate release.** The Alembic migration
+chain is linear and cumulative — upgrading straight from an older release to a
+newer one replays every revision in between in order, the same way a run
+through each intermediate version would. No intermediate stop is required.
+
+That said, "supported in principle" and "tested" are different claims, and this
+project is explicit about which is which: **the only upgrade paths exercised by
+the release rehearsal are jumps from the newest published release of each of the
+last 2 minor series below the target** (`OT_UPGRADE_SOURCE_MINORS`, default `2`,
+in `scripts/release-tests/lib/versions.sh`). For a v0.5.0 release that means
+v0.4.1 → v0.5.0 and v0.3.3 → v0.5.0 are both rehearsed before the release ships.
+**Every other starting version is untested** — not unsupported in principle
+(the migration chain does not care where it starts), but genuinely never run by
+anyone before you. Treat that distinction as real: a jump through an untested
+source can surface a migration ordering issue, a stale bootstrap assumption, or
+an old schema shape that nothing has looked at recently. `./scripts/release-tests/
+test-upgrade.sh --list-sources` prints the exact pair a given release rehearsed.
+
+If you are further back than the newest tested source in your series, **hop
+through the newest release of that series first** rather than jumping straight
+to the target from further back — e.g. from v0.4.0, upgrade to v0.4.1 (or
+straight to the target, if v0.4.0's own series was one of the tested sources),
+not from three minors back in one leap. This keeps your upgrade inside the set
+that was actually rehearsed, rather than outside it.
+
+**Back up before every leg**, not just the first — see
+[Pre-Upgrade Checklist](#pre-upgrade-checklist) and
+[Backup & Restore](./backup-restore.md). A multi-version jump that fails partway
+through should be recoverable from the backup taken immediately before it, not
+from one taken several versions ago.
+
+**What skipping versions does NOT carry you past:**
+
+1. **Manual, one-time steps that ship in an intermediate release and are not
+   themselves a migration.** The clearest example is the `speakers_v3` →
+   `speakers_v4` voiceprint embedding migration (see
+   [Embedding Migration (v3 to v4)](#embedding-migration-v3-to-v4) below) — it is
+   run **from the Admin Settings UI**, not from Alembic, so skipping past the
+   release that introduced it means you still need to open Admin Settings and run
+   it after you land, exactly as if you had stopped there.
+2. **`.env` variables added in a version you skipped.** Diff your `.env` against
+   the **current** `.env.example` *after* upgrading, not before — a variable
+   added three versions ago has a coded default that keeps the app running, but
+   you may want to set it deliberately rather than silently inherit the default.
+
 ## Database Migrations
 
 ### How Migrations Work

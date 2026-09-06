@@ -49,15 +49,34 @@
 # version of that same proof.
 #
 # Future releases need NO edits: FROM and TO are discovered (see the Tunables
-# block). FROM_VERSION / TO_VERSION override; FROM_VERSIONS (plural) runs the
-# scenario once per source, for multi-hop / oldest-supported coverage.
+# block). FROM_VERSION / TO_VERSION override a single hop.
+#
+# MULTI-HOP (issue #783): when FROM_VERSION is unset, lib/versions.sh's
+# ver_upgrade_sources() DERIVES a set of sources — the newest Hub-published
+# release of each of the last OT_UPGRADE_SOURCE_MINORS (default 2) minor series
+# strictly below TO — and this script RE-EXECS itself once per source (a patch
+# TO collapses to one hop; see ver_upgrade_sources' own header for why). Each
+# hop is a complete, independent run under $RUN_ROOT/from-<version>/, torn down
+# before the next one starts; a roll-up REPORT.md + hops.tsv lands at
+# $RUN_ROOT (== the top-level TEST_ROOT of the invocation that triggered the
+# dispatch). FROM_VERSIONS (plural, space-separated) OVERRIDES the derivation
+# with an explicit list — still one hop per entry, still re-exec, no Hub/git
+# validation of the list itself (each entry is validated where it is used, one
+# hop at a time). `--list-sources` prints the derived (or overridden) list and
+# exits, starting nothing.
 #
 # Exit codes — the contract scripts/release.sh and scripts/test-matrix.sh share:
-#   0 every assertion PASSed · 1 an assertion FAILed or a guardrail refused ·
-#   2 misuse (unknown argument, --only-rollback without a completed TEST_ROOT) ·
-#   4 operator abort (declined the I UNDERSTAND prompt)
+#   0 every assertion PASSed (every hop, for a multi-hop dispatch) ·
+#   1 an assertion FAILed or a guardrail refused (in any hop) ·
+#   2 misuse (unknown argument, --only-rollback without a completed TEST_ROOT,
+#     or --only-rollback against a dispatch of more than one source) ·
+#   4 operator abort (declined the I UNDERSTAND prompt, in any hop)
 # Preconditions that a real operator can clear (live containers up, ports bound, disk
 # space) currently exit 1 rather than the contract's 3 — see gr_die in lib/guardrails.sh.
+# Multi-hop aggregates across hops with precedence 4 -> 2 -> 3 -> 1 -> 0 (a hop that
+# never got to run, because an earlier one aborted or left ports bound, records 3 --
+# "never attempted" is a different fact from "ran and failed" and the aggregate must
+# not conflate them).
 
 set -euo pipefail
 
@@ -83,19 +102,29 @@ TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 #
 # TO   = the VERSION file (the release being cut; its tag does not exist yet and
 #        its images are not on Hub, so nothing else can name it).
-# FROM = the newest git tag below TO that ALSO has published Docker Hub images.
-#        A tag with no images is not something a user could be running, so it is
-#        not a valid upgrade source.
+# FROM = when pinned, used as-is (Hub-verified). Otherwise DERIVED by
+#        lib/versions.sh's ver_upgrade_sources(): the newest Hub-published
+#        release of each of the last OT_UPGRADE_SOURCE_MINORS minor series
+#        below TO (default 2 -> {newest patch of TO's predecessor minor,
+#        newest patch of the minor before that}; a patch TO collapses to one
+#        hop). A tag with no Hub images is not something a user could be
+#        running, so it is never a valid upgrade source.
 #
-# Both remain overridable. FROM_VERSIONS (plural, space-separated) runs the whole
-# scenario once per source, which is how the oldest-supported hop keeps being
-# exercised after auto-detection moves FROM forward.
+# Both remain overridable. FROM_VERSIONS (plural, space-separated) REPLACES the
+# derived set outright and runs the scenario once per listed source — set it to
+# pin an exact multi-hop set (e.g. for a --list-sources negative test), not to
+# "enable" multi-hop, which the derivation already does on its own.
 FROM_VERSION="${FROM_VERSION:-}"
 FROM_VERSIONS="${FROM_VERSIONS:-}"
 LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-}"
 # Set REQUIRE_PREVIOUS=1 to turn "no published previous release" into a failure
 # rather than a skip. The release gate sets it; a first-ever release does not.
 REQUIRE_PREVIOUS="${REQUIRE_PREVIOUS:-0}"
+# How many of the most recent minor series below TO to derive an upgrade source
+# from. See lib/versions.sh's ver_upgrade_sources() for the full derivation and
+# why 2 (not "previous + oldest", not "previous + previous-minor's .0").
+OT_UPGRADE_SOURCE_MINORS="${OT_UPGRADE_SOURCE_MINORS:-2}"
+export OT_UPGRADE_SOURCE_MINORS
 
 # GPU policy: default to GPU 1 (RTX 3080 Ti, free on this host).
 TEST_USE_GPU="${TEST_USE_GPU:-true}"
@@ -134,6 +163,7 @@ TEST_MEDIA_MAX_SIZE="${TEST_MEDIA_MAX_SIZE:-100M}"
 DO_CLEANUP=0
 DO_FORCE=0
 ONLY_ROLLBACK=0
+LIST_SOURCES=0
 # ROLLBACK_REHEARSAL gates phases 13-17 (issue #598): the backup/restore +
 # `update --rollback` tail. Defaults ON — it is part of what a release
 # rehearsal is now expected to prove — with an explicit opt-out for anyone who
@@ -144,6 +174,14 @@ ROLLBACK_REHEARSAL="${ROLLBACK_REHEARSAL:-1}"
 # leg that silently asserts nothing looks exactly like a leg that passes.
 # Modes: truncate | no-damage | stale-oracle (see phases 14/15). Unset = off.
 ROLLBACK_INJECT_FAULT="${ROLLBACK_INJECT_FAULT:-}"
+
+# Captured BEFORE the arg-parsing loop below consumes "$@", so the multi-hop
+# dispatcher (issue #783) can re-exec a child with the SAME flags an operator
+# passed at the top level -- --force and --no-rollback need to reach every hop,
+# not just the first (--yes and ROLLBACK_INJECT_FAULT are env vars, already
+# `export`ed below, so every child inherits them regardless).
+ORIGINAL_ARGS=("$@")
+
 while (( $# > 0 )); do
     case "$1" in
         --cleanup) DO_CLEANUP=1 ;;
@@ -151,9 +189,10 @@ while (( $# > 0 )); do
         --yes)     export OT_RELEASE_TEST_YES=1 ;;
         --no-rollback)   ROLLBACK_REHEARSAL=0 ;;
         --only-rollback) ONLY_ROLLBACK=1 ;;
+        --list-sources)  LIST_SOURCES=1 ;;
         --help|-h)
             cat <<EOF
-Usage: $0 [--cleanup] [--force] [--yes] [--no-rollback|--only-rollback]
+Usage: $0 [--cleanup] [--force] [--yes] [--no-rollback|--only-rollback] [--list-sources]
 
 Prerequisite: stop the live deployment first with \`./opentr.sh stop\`.
 This scenario runs under the one-liner's stock container names and ports so it
@@ -161,11 +200,23 @@ exercises what a real user gets; it cannot run alongside the live stack.
 After the test, restart it with \`./opentr.sh start dev\` (or whichever
 mode you were using).
 
+MULTI-HOP: when FROM_VERSION is unset, FROM is DERIVED as a SET (not a single
+value) by lib/versions.sh's ver_upgrade_sources() -- the newest Hub-published
+release of each of the last OT_UPGRADE_SOURCE_MINORS minor series below TO --
+and this script re-execs itself once per derived source, tearing its own stack
+down between hops. FROM_VERSIONS (plural) overrides the derived set outright.
+--list-sources prints the set that would be used and exits, starting nothing.
+
 Env:
   TEST_PROJECT_NAME      default ot-reltest-upgrade  (used as label namespace)
   TEST_ROOT              default /mnt/nvm/opentranscribe-test-runs/<name>-<ts>
-  FROM_VERSION           auto: newest git tag below TO that has Docker Hub images
-  FROM_VERSIONS          space-separated list; runs the scenario once per source
+                         (multi-hop: the ROLL-UP root; each hop gets its own
+                         TEST_ROOT/from-<version>/ beneath it)
+  FROM_VERSION           pins exactly one hop; unset = derive/dispatch (below)
+  FROM_VERSIONS          space-separated list; OVERRIDES the derived set and
+                         runs the scenario once per listed source
+  OT_UPGRADE_SOURCE_MINORS  default 2 -- how many minor series below TO to derive
+                         an upgrade source from (see lib/versions.sh)
   TO_VERSION             auto: the VERSION file
   LOCAL_IMAGE_TAG        alias for TO_VERSION (locally built tag for the "after" stack)
   REQUIRE_PREVIOUS       1 = fail instead of skip when no previous release exists
@@ -176,7 +227,13 @@ Env:
   --no-rollback          same as ROLLBACK_REHEARSAL=0
   --only-rollback        resume at phase 12, reusing an already-completed
                          TEST_ROOT's phase-00..11 markers (run the full
-                         scenario first; this does not fabricate that state)
+                         scenario first; this does not fabricate that state).
+                         Not valid against a multi-hop dispatch of more than
+                         one source -- pin TEST_ROOT and FROM_VERSION to the
+                         one hop being resumed instead.
+  --list-sources         print the derived (or FROM_VERSIONS-overridden) set of
+                         upgrade sources and exit; starts nothing (no docker,
+                         no containers -- only Docker Hub manifest lookups)
 EOF
             exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -225,17 +282,228 @@ if (( DO_CLEANUP == 1 )); then
     exit 0
 fi
 
-# ─── Resolve FROM / TO ──────────────────────────────────────────────────────
+# ─── Resolve TO ─────────────────────────────────────────────────────────────
 #
 # Done here, after the libs are sourced and before any phase runs, so a bad
-# assumption fails in seconds rather than 40 minutes into the scenario.
-
+# assumption fails in seconds rather than 40 minutes into the scenario. Hoisted
+# ahead of the multi-hop dispatcher below (rather than left where FROM used to
+# be resolved beside it) because the dispatcher and --list-sources both need TO
+# to derive a source list, and ver_upgrade_sources() reads it via ver_to_version()
+# -- which only sees the LOCAL_IMAGE_TAG alias once it has been folded into
+# $TO_VERSION, exactly as this block does.
 if [[ -z "$LOCAL_IMAGE_TAG" ]]; then
     LOCAL_IMAGE_TAG="$(ver_to_version)"
 fi
 LOCAL_IMAGE_TAG="$(ver_normalize "$LOCAL_IMAGE_TAG")"
 TO_VERSION="$LOCAL_IMAGE_TAG"
+export TO_VERSION
 
+if (( LIST_SOURCES == 1 )); then
+    ver_upgrade_sources
+    exit 0
+fi
+
+# ─── Multi-hop dispatcher (issue #783) ─────────────────────────────────────
+#
+# RE-EXEC per source, never an in-process loop: gr_die is `exit 1` from ~100 call
+# sites across the libraries this script sources, so an in-process loop would
+# terminate at the first hop that dies -- losing exactly the evidence about the
+# OTHER source this feature exists to produce. Making that survivable in-process
+# means a subshell per hop, at which point you have re-exec's isolation with none
+# of its cleanliness: as_pass/as_fail/as_skip, AC_* token state, TEST_REPORT_FILE,
+# the `tee` redirect and PHASE_DIR all need manual per-hop reset, and every one is
+# a silent-wrong-answer if missed. Re-exec gets a clean PHASE_DIR, counters, log
+# redirect and OT_TEST_IMAGE_TAG for free -- phase_01_build_local_images
+# short-circuits on `docker image inspect`, so hop 2 pays only two inspect calls
+# for the "already built" fast path.
+#
+# Guarded by FROM_VERSION being unset: a re-exec'd child always launches with it
+# set (below), so this can never recurse. FROM_VERSIONS is cleared on the same
+# child invocation -- belt and braces on the identical property.
+# Per-hop assertion counts for the roll-up, printed as `P | F | S` (three
+# already-separated markdown cells).
+#
+# Parsed back OUT of the hop's own REPORT.md — the `| PASS | label | detail |`
+# rows lib/assertions.sh's as_record appends — and deliberately NOT read from
+# as_pass/as_fail/as_skip. Those counters live in the CHILD process; a parent
+# that reported them would be reporting its own, permanently zero, which is
+# indistinguishable from a hop that asserted nothing. Reading the artifact means
+# the number in the roll-up is the number in the hop's report, by construction.
+#
+# A missing report (a hop that never ran, or died before phase 00 opened it) is
+# `- | - | -`, never `0 | 0 | 0`: "no evidence" and "measured zero" are the
+# distinction this whole roll-up exists to keep.
+_ot_hop_assertion_counts() {
+    local report="$1"
+    if [[ ! -f "$report" ]]; then
+        printf -- '- | - | -'
+        return 0
+    fi
+    local p f s
+    p="$(grep -c '^| PASS |' "$report" || true)"
+    f="$(grep -c '^| FAIL |' "$report" || true)"
+    s="$(grep -c '^| SKIP |' "$report" || true)"
+    printf '%s | %s | %s' "${p:-0}" "${f:-0}" "${s:-0}"
+}
+
+_ot_dispatch_multi_hop_upgrade() {
+    local run_root="$1"; shift
+    local -a sources=("$@")
+    local -a hop_rc=()
+    local -a hop_dir=()
+    local src hop rc teardown_rc stop_remaining=0
+
+    if (( ONLY_ROLLBACK == 1 )); then
+        echo "--only-rollback cannot resume a multi-hop dispatch across ${#sources[@]} sources." >&2
+        echo "Pin TEST_ROOT to one hop's own directory and FROM_VERSION to that hop's" >&2
+        echo "source, then re-run against that single source directly." >&2
+        exit 2
+    fi
+
+    mkdir -p "$run_root"
+    exec > >(tee -a "$run_root/run.log") 2>&1
+    echo "OpenTranscribe Release Test — Scenario B multi-hop (${#sources[@]} sources -> ${TO_VERSION})"
+    echo "Sources: ${sources[*]}"
+    echo "Started: $(date -Iseconds)"
+    echo
+
+    # Hops share one Hub-lookup memo so probing v0.4.0 costs nothing once v0.4.1
+    # has already answered for series 0.4, across process boundaries too.
+    export OT_HUB_CACHE_DIR="$run_root"
+
+    for src in "${sources[@]}"; do
+        hop="$run_root/from-${src}"
+        echo -e "\n═══ hop ${src} -> ${TO_VERSION} ═══"
+        rc=0
+        FROM_VERSION="$src" FROM_VERSIONS='' TEST_ROOT="$hop" OT_HUB_CACHE_DIR="$run_root" \
+            "$0" "${ORIGINAL_ARGS[@]}" || rc=$?
+        hop_rc+=("$rc")
+        hop_dir+=("$hop")
+        echo "═══ hop ${src}: rc=${rc} ═══"
+
+        if [[ "$src" != "${sources[-1]}" ]]; then
+            # Teardown between hops is mandatory, not hygiene: every scenario
+            # deliberately ends with its stack UP on the installer's stock names
+            # and ports 5173-5180, so hop N+1's preflight would refuse to start
+            # otherwise. Point the cleanup child's TEST_ROOT at a THROWAWAY path,
+            # never the hop's own directory -- gr_cleanup's step 4 deletes
+            # TEST_ROOT, and the hop's REPORT.md/run.log/snapshots are the
+            # evidence this run exists to produce.
+            teardown_rc=0
+            TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ot-reltest-hop-cleanup.XXXXXX")" \
+                "$0" --cleanup --yes || teardown_rc=$?
+            if (( teardown_rc == 0 )); then
+                gr_wait_for_stock_containers_gone 60 || teardown_rc=$?
+            fi
+            # N8: nothing in this repo has ever run `git worktree prune`, and
+            # phase 03 adds one worktree per hop -- N hops leak N registrations
+            # without this.
+            git -C "$REPO_ROOT" worktree remove --force "$hop/worktree-${src}" >/dev/null 2>&1 || true
+            git -C "$REPO_ROOT" worktree prune
+
+            if (( teardown_rc != 0 )); then
+                echo "hop ${src}'s teardown would not release the ports -- the remaining hops would fail for a reason that is not about the release; stopping" >&2
+                stop_remaining=1
+            fi
+        fi
+
+        # rc 4 = operator declined the `I UNDERSTAND` prompt; they will decline
+        # the next one too. A teardown that will not release its ports means the
+        # NEXT hop would fail for a reason unrelated to the release. Every other
+        # outcome (0, 1, 2, 3) lets the remaining hops still run: a v0.3.3
+        # failure and a v0.4.1 success are two different, both-useful facts.
+        if (( rc == 4 )); then
+            stop_remaining=1
+        fi
+        (( stop_remaining == 1 )) && break
+    done
+
+    # Remaining (never-attempted) hops are recorded rc=3 -- "never ran" and "ran
+    # and failed" are different facts, and the roll-up must not conflate them.
+    while (( ${#hop_rc[@]} < ${#sources[@]} )); do
+        hop_rc+=(3)
+        hop_dir+=("$run_root/from-${sources[${#hop_rc[@]}-1]}")
+    done
+
+    # Aggregate precedence 4 -> 2 -> 3 -> 1 -> 0, mirroring 65-rehearse.sh's own
+    # scenario aggregation so the result lands correctly in scenario_outcome()
+    # there (0=pass, 3|4=not-measured, else=fail) when this whole scenario is one
+    # leg of the rehearse stage.
+    local agg=0
+    for rc in "${hop_rc[@]}"; do
+        case "$rc" in
+            4) agg=4; break ;;
+            2) (( agg != 4 )) && agg=2 ;;
+            3) (( agg != 4 && agg != 2 )) && agg=3 ;;
+            1) (( agg == 0 )) && agg=1 ;;
+        esac
+    done
+    RELEASE_TEST_EXIT_CODE="$agg"
+
+    {
+        echo "# Upgrade scenario — multi-hop roll-up"
+        echo
+        echo "Target (TO): $TO_VERSION"
+        echo
+        echo "| Source | Verdict | rc | PASS | FAIL | SKIP | Report |"
+        echo "|---|---|---|---|---|---|---|"
+        local i verdict counts
+        for i in "${!sources[@]}"; do
+            case "${hop_rc[$i]}" in
+                0) verdict=PASS ;;
+                3) verdict=SKIP ;;
+                4) verdict=ABORT ;;
+                *) verdict=FAIL ;;
+            esac
+            counts="$(_ot_hop_assertion_counts "${hop_dir[$i]}/REPORT.md")"
+            echo "| ${sources[$i]} | $verdict | ${hop_rc[$i]} | ${counts} | ${hop_dir[$i]}/REPORT.md |"
+        done
+    } > "$run_root/REPORT.md"
+    {
+        printf 'source\trc\tdir\n'
+        local j
+        for j in "${!sources[@]}"; do
+            printf '%s\t%s\t%s\n' "${sources[$j]}" "${hop_rc[$j]}" "${hop_dir[$j]}"
+        done
+    } > "$run_root/hops.tsv"
+
+    echo
+    echo "Done. Roll-up report: $run_root/REPORT.md"
+    exit "$RELEASE_TEST_EXIT_CODE"
+}
+
+if [[ -z "$FROM_VERSION" ]]; then
+    if [[ -n "${FROM_VERSIONS:-}" ]]; then
+        gr_log "FROM_VERSIONS override in effect: ${FROM_VERSIONS} (replaces the derived source set)"
+    else
+        gr_log "deriving upgrade sources (OT_UPGRADE_SOURCE_MINORS=${OT_UPGRADE_SOURCE_MINORS})"
+    fi
+    declare -a _ot_sources=()
+    while IFS= read -r _ot_src; do
+        [[ -n "$_ot_src" ]] && _ot_sources+=("$_ot_src")
+    done < <(ver_upgrade_sources)
+
+    if (( ${#_ot_sources[@]} == 0 )); then
+        # A derive-command subshell failure reads as EOF here, same hazard
+        # backend/tests/unit/test_release_derive_loops_fail_closed.py guards for
+        # scripts/release/*.sh's list-repos/list-platforms loops. Falling through
+        # is safe (not silent): the single-source resolution just below
+        # independently re-derives the previous release via ver_previous_version
+        # and applies REQUIRE_PREVIOUS, so "derived nothing" here can never read
+        # as "verified nothing" -- it reads as "let the existing, already-gated
+        # single-source path decide".
+        gr_warn "ver_upgrade_sources derived zero candidates -- falling back to single-source resolution"
+    elif (( ${#_ot_sources[@]} > 1 )); then
+        _ot_dispatch_multi_hop_upgrade "$TEST_ROOT" "${_ot_sources[@]}"
+        # _ot_dispatch_multi_hop_upgrade always exits; unreachable.
+    fi
+fi
+
+# ─── Resolve FROM ───────────────────────────────────────────────────────────
+#
+# Reached directly (FROM_VERSION pre-set by the caller), after a zero/one-source
+# dispatcher fall-through, or inside a re-exec'd child with FROM_VERSION already
+# pinned to its one hop.
 if [[ -z "$FROM_VERSION" ]]; then
     if FROM_VERSION="$(TO_VERSION="$TO_VERSION" ver_previous_version)"; then
         ver_warn_if_unreleased "$FROM_VERSION"
@@ -465,8 +733,14 @@ phase_03_prepare_v033_compose() {
     # incompatibility between an older script and a newer compose file.
     # REHEARSAL_ALIGNMENT_PLAN.md finding C.
     #
-    # scripts/common.sh is FEATURE-DETECTED, not version-gated: FROM releases before
-    # issue #613 have no such file and their opentranscribe.sh does not source it.
+    # scripts/common.sh itself exists at every tag back to v0.1.0 (verified: `git show
+    # v0.1.0:scripts/common.sh` succeeds) -- issue #783 corrected this comment, which
+    # previously claimed the file postdates issue #613. What #613 actually changed is
+    # that opentranscribe.sh started SOURCING it (for backup/restore); the FROM
+    # release's own opentranscribe.sh already decides whether it wants the file via
+    # _manager_source_for's feature-detection below, so this `-f` guard is just
+    # defensive (tolerating a hypothetical FROM release that removed the file again),
+    # not a version-gate on when the file appeared.
     [[ -f "$worktree/opentranscribe.sh" ]] \
         || gr_die "$FROM_VERSION worktree has no opentranscribe.sh — that release had no shipped management script, so this scenario cannot represent a real user of it"
     cp "$worktree/opentranscribe.sh" "$stage/opentranscribe.sh"

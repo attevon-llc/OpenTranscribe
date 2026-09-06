@@ -53,10 +53,25 @@ source "$SCRIPT_DIR/criteria-lib.sh"
 # live-stack check for why a naive prefix match false-positives on unrelated
 # containers (e.g. "opentranscribe-homepage").
 #
+# ⚠️ BOTH project labels, not just one (issue #783 finding N1) -- reusing the SAME
+# ${OPENTR_STOP_PROJECT_LABEL:-opentranscribe} / ${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}
+# mechanism 10-preflight.sh's live-stack check already uses, not a second definition of
+# "what are the two legitimate project names" to drift out of sync. A repo clone's
+# compose project defaults to the DIRECTORY name, so `./opentr.sh start dev` from this
+# checkout runs under `transcribe-app` while a curl/one-liner install runs under
+# `opentranscribe`. Checking only the latter recorded `live-stack-stopped` PASS with the
+# dev stack fully up (measured 2026-09-06: 0 matches for `opentranscribe`, 20 for
+# `transcribe-app`), and this stage then died several minutes later in
+# gr_check_ports_free with a message about ports instead of the real cause.
+#
 # Captured rather than piped into `grep -q`: under `set -o pipefail`, grep -q closes the
 # pipe on its first match and `docker ps` can die with SIGPIPE, turning "the stack IS up"
 # into a reported all-clear.
-if [[ -n "$(docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}')" ]]; then
+live_stack_names="$( {
+    docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}'
+    docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}'
+} | sort -u)"
+if [[ -n "$live_stack_names" ]]; then
     record live-stack-stopped fail "the live stack is running" "./opentr.sh stop"
     echo -e "${RED}The live stack is running; the scenarios cannot run beside it.${NC}" >&2
     echo -e "${YELLOW}  ./opentr.sh stop     # preserves all data${NC}" >&2

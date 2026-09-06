@@ -18,7 +18,11 @@ so the file that called itself "the single source of truth for the schema versio
 of each release" was wrong and no one noticed for four months.
 
 Every rule below is either **derived at run time** or **enforced by a check**.
-Nothing depends on remembering.
+Nothing depends on remembering. The same failure shape recurred once more
+(issue #783): `FROM_VERSIONS` was documented as running the upgrade scenario
+once per source, and did nothing — assigned into a variable, read by no loop.
+It is now the derivation described under [The two rehearsal scenarios](#the-two-rehearsal-scenarios)
+below, guarded by a test that fails on any documented knob nothing reads.
 :::
 
 ## The command
@@ -233,18 +237,35 @@ rehearsal is meant to keep accurate.
 
 - **TO** comes from the `VERSION` file. It has to: when they run, the new tag
   does not exist yet and the new images are not on Docker Hub.
-- **FROM** is the newest git tag below TO that **also has published Docker Hub
-  images**. A tag with no images is not something a user could be running, so it
-  is not a valid upgrade source.
+- **FROM** is DERIVED as a **set**, not a single value (issue #783): the newest
+  git tag with published Docker Hub images from each of the last
+  `OT_UPGRADE_SOURCE_MINORS` (default **2**) minor series strictly below TO. For
+  v0.5.0 that set is `{v0.4.1, v0.3.3}`. A patch TO collapses to a single hop —
+  a patch adds no Alembic revisions, so a second hop would re-measure the same
+  migration chain at full price for no extra coverage.
 
 This is deliberate. GitLab deleted their equivalent CI job because it read the
 previous version from a checked-in file that went stale, and silently validated
 an upgrade nobody was performing.
 
-Overrides: `FROM_VERSION`, `TO_VERSION`, and `FROM_VERSIONS` (plural,
-space-separated) to run the scenario once per source. Use `FROM_VERSIONS` on
-minor and major releases to keep the **oldest supported** upgrade exercised —
-once auto-detection moves FROM forward, the older path stops being tested.
+`test-upgrade.sh` **re-execs itself once per derived source** (never an
+in-process loop — a `gr_die` in any hop must not lose the evidence about the
+*other* hops), tearing its own stack down between hops so the next one can bind
+the same stock names and ports. Each hop's evidence lands under its own
+`TEST_ROOT/from-<version>/`; a roll-up `REPORT.md` + `hops.tsv` land at the
+top-level `TEST_ROOT`. `./scripts/release-tests/test-upgrade.sh --list-sources`
+prints the set that would be used and starts nothing (no docker, no
+containers — only Docker Hub manifest lookups), so you can sanity-check the
+derivation before committing to a multi-hour run.
+
+Overrides: `FROM_VERSION` (singular) pins exactly one hop and disables the
+dispatcher entirely; `TO_VERSION` overrides the target; `FROM_VERSIONS`
+(plural, space-separated) REPLACES the derived set outright and still runs
+once per listed source. `FROM_VERSIONS` is an override of the derivation, not
+what "enables" multi-hop — the derivation runs on its own, is what keeps the
+**oldest supported** upgrade path exercised as auto-detection moves FROM
+forward, and is the mechanism that closed the second half of this
+pattern (see the admonition above): a documented feature that did not exist.
 
 :::warning[The live stack must be stopped]
 The scenarios run under the installer's stock container names and ports

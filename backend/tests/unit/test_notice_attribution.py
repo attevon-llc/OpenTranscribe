@@ -39,6 +39,11 @@ REQUIRED_CREDITS = {
     "WhisperX": r"whisperx",
     "faster-whisper / CTranslate2": r"faster-whisper|ctranslate2",
     "ONNX Runtime": r"onnx runtime|onnxruntime",
+    # BSD-3-Clause, so unlike the four above its copyright notice MUST be reproduced in a
+    # binary redistribution -- and both backend images redistribute it twice: as Debian's
+    # libopenblas0, and as the explicit /opt/diar-native/lib copy diar-server loads via
+    # DT_RPATH (issue #721).
+    "OpenBLAS": r"openblas",
 }
 
 

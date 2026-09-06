@@ -103,8 +103,21 @@ search, content redaction landed across every display and export surface, and th
 local/LDAP/OIDC/SAML/PKI/MFA/SCIM identity plane arrived at once. A large share of the work went
 into speed and refinement of things that already worked.
 
-**The tracker is empty** — the milestone closed at 285 issues. What remains is release execution,
-not development.
+The feature milestone closed at 285 issues. What remains is **release integrity**: five items
+found by an engineering review on 2026-09-06, kept in this release because each one changes what
+the release ships or what upgrading into it does to a user.
+
+- The docs image builds on **EOL Node 20** and is a published, scanned artifact.
+- Release assets carry **no checksums**, and the SBOM is attached by glob rather than gated — so a
+  missing SBOM ships silently.
+- `./opentr.sh stop` **SIGKILLs GPU workers after 10 seconds**, which is the wedged-CUDA incident
+  this project's own safety rules exist to prevent, reached through the command those rules
+  prescribe.
+- `FROM_VERSIONS` is documented as keeping the oldest upgrade path tested and is **dead code**, and
+  no document states whether a user may skip versions.
+- There is **no patch path**, and four of the last five minors needed one within 24 hours.
+
+Nothing here is new capability. Each is either a one-line change or a written policy.
 
 **Exit criteria**
 
@@ -159,7 +172,14 @@ never measured. This release is that wake and nothing else.
 **Theme:** operating OpenTranscribe as a service someone else can touch.
 
 **Goal:** with the interface polished, publish an inert public demo so people can see the app and
-watch it upgrade.
+watch it upgrade — and put in place the things you only miss once strangers are using it.
+
+Going public is what turns several latent gaps into live ones, so they belong here rather than
+scattered: **LLM spend is measured but unbounded** (a demo pointed at a metered provider with no
+ceiling is how you get a surprise bill), **monitoring is instrumented but inert** (no alert rules
+at all, so the disk filling overnight tells nobody), **dependabot does not watch the images
+holding the data**, **shell and compose changes skip the tests written to guard them**, and there
+is **no frontend performance budget** on the page that is now a first impression.
 
 The demo comes straight after the UI pass on purpose. A demo of an unpolished interface argues
 against the project. This release also does the configuration and governance cleanup that makes

@@ -6,10 +6,10 @@
       "version": "v0.5.0",
       "headline": "Ship what is already built",
       "summary": "Native diarization, corpus-scale chat, redaction and the identity overhaul, published without adding one more feature.",
-      "stage": "complete",
+      "stage": "now",
       "released": false,
       "scheduled": true,
-      "total": 269,
+      "total": 274,
       "closed": 269,
       "areas": [
         {
@@ -47,13 +47,33 @@
           "name": "Docs & Release Ops",
           "scope": "Docs site, release pipeline, repo tooling",
           "known": true,
-          "total": 1,
+          "total": 5,
           "closed": 1,
           "issues": [
             {
               "number": 772,
               "title": "fresh-destroy leaks the compose network, silently — 11 accumulated and exhausted Docker's address pool",
               "done": true
+            },
+            {
+              "number": 780,
+              "title": "build(docs): docs image ships on EOL Node 20 while the frontend is on 26",
+              "done": false
+            },
+            {
+              "number": 781,
+              "title": "fix(release): release assets have no checksums, and the SBOM is attached by glob rather than gated",
+              "done": false
+            },
+            {
+              "number": 783,
+              "title": "fix(release): FROM_VERSIONS is documented but never implemented, and no skip-version upgrade policy is stated",
+              "done": false
+            },
+            {
+              "number": 784,
+              "title": "task(release): no patch/hotfix path exists — 4 of the last 5 minors needed one within 24 hours",
+              "done": false
             }
           ]
         },
@@ -377,7 +397,7 @@
           "name": "Platform & Operations",
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
-          "total": 100,
+          "total": 101,
           "closed": 100,
           "issues": [
             {
@@ -879,6 +899,11 @@
               "number": 693,
               "title": "bug(testing): running the backend suite DESTROYS a live dev stack — test_opentr_stop_container_scoping executes the real docker stop/rm loop",
               "done": true
+            },
+            {
+              "number": 782,
+              "title": "fix(gpu): opentr.sh stop SIGKILLs GPU workers after 10s — no grace period, no shutdown handler",
+              "done": false
             }
           ]
         },
@@ -1483,10 +1508,10 @@
       "version": "v0.6.0",
       "headline": "Interface polish, and chat measured",
       "summary": "A full UI pass over what v0.5.0 shipped, plus real metrics for search and chat answer quality instead of assumptions.",
-      "stage": "now",
+      "stage": "next",
       "released": false,
       "scheduled": true,
-      "total": 24,
+      "total": 29,
       "closed": 1,
       "areas": [
         {
@@ -1509,7 +1534,7 @@
           "name": "Frontend & UI",
           "scope": "App surfaces, admin screens, and interface defects",
           "known": true,
-          "total": 14,
+          "total": 18,
           "closed": 1,
           "issues": [
             {
@@ -1580,6 +1605,26 @@
             {
               "number": 757,
               "title": "feat(ui): multi-select parity across tags/collections + settings sidebar audit",
+              "done": false
+            },
+            {
+              "number": 785,
+              "title": "fix(a11y): the axe baseline permanently accepts WCAG AA failures, and 4 of 5 main screens are unscanned",
+              "done": false
+            },
+            {
+              "number": 786,
+              "title": "fix(ux): preprocessing failures show users a raw ffmpeg exception instead of a diagnosis",
+              "done": false
+            },
+            {
+              "number": 787,
+              "title": "fix(transcript): unsaved speaker and transcript edits are lost silently on navigation",
+              "done": false
+            },
+            {
+              "number": 788,
+              "title": "feat(ux): frontend ignores Retry-After, so rate limits surface as generic errors",
               "done": false
             }
           ]
@@ -1668,25 +1713,55 @@
               "done": false
             }
           ]
+        },
+        {
+          "key": "test-suite-health",
+          "name": "Test Suite Health",
+          "scope": "Coverage, gates, and verification matrices",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 789,
+              "title": "test(coverage): the ratchet sits 36 points below actual, and the frontend has no threshold",
+              "done": false
+            }
+          ]
         }
       ]
     },
     {
       "version": "v0.7.0",
       "headline": "Run it in public",
-      "summary": "Publish the inert public demo once the interface is polished, so people can see the app and watch it upgrade.",
-      "stage": "next",
+      "summary": "Publish the inert public demo, and put in place the spend limits, alerting and dependency hygiene you only miss once strangers are using it.",
+      "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 4,
+      "total": 9,
       "closed": 1,
       "areas": [
+        {
+          "key": "frontend-ui",
+          "name": "Frontend & UI",
+          "scope": "App surfaces, admin screens, and interface defects",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 794,
+              "title": "feat(frontend): no performance budget — a bundle-size regression cannot be caught",
+              "done": false
+            }
+          ]
+        },
         {
           "key": "platform-ops",
           "name": "Platform & Operations",
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
-          "total": 2,
+          "total": 4,
           "closed": 0,
           "issues": [
             {
@@ -1698,6 +1773,16 @@
               "number": 566,
               "title": "task(config): move UI-worthy env vars into the admin UI, then drop them from .env.example",
               "done": false
+            },
+            {
+              "number": 791,
+              "title": "feat(ops): monitoring is instrumented but inert — no alert rules, unused readiness probe, correlation IDs off by default",
+              "done": false
+            },
+            {
+              "number": 792,
+              "title": "task(deps): infrastructure images are unwatched, and the deferral policy cites a closed issue",
+              "done": false
             }
           ]
         },
@@ -1706,12 +1791,17 @@
           "name": "Public Demo",
           "scope": "Read-only hosted demo deployment",
           "known": true,
-          "total": 1,
+          "total": 2,
           "closed": 0,
           "issues": [
             {
               "number": 628,
               "title": "feat(deploy): public read-only demo deployment (Immich-style inert demo instance)",
+              "done": false
+            },
+            {
+              "number": 790,
+              "title": "feat(llm): LLM spend is measured but unbounded — no cap, and self-hosters cannot see it",
               "done": false
             }
           ]
@@ -1728,6 +1818,21 @@
               "number": 559,
               "title": "security(dependencies): evaluate replacing Perl exiftool (16 of 20 CRITICAL CVEs) — ffprobe-only vs exiftool-rs",
               "done": true
+            }
+          ]
+        },
+        {
+          "key": "test-suite-health",
+          "name": "Test Suite Health",
+          "scope": "Coverage, gates, and verification matrices",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 793,
+              "title": "fix(ci): shell/compose changes skip the tests that guard them, and docs are never built on a PR",
+              "done": false
             }
           ]
         }
@@ -1847,7 +1952,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 3,
+      "total": 5,
       "closed": 0,
       "areas": [
         {
@@ -1855,7 +1960,7 @@
           "name": "Security & Compliance",
           "scope": "Hardening, data protection, certification",
           "known": true,
-          "total": 3,
+          "total": 5,
           "closed": 0,
           "issues": [
             {
@@ -1872,6 +1977,16 @@
               "number": 775,
               "title": "security(dependencies): standing accepted risk — unfixed CRITICAL CVEs from libimage-exiftool-perl (supersedes #415, #559)",
               "done": false
+            },
+            {
+              "number": 795,
+              "title": "security(release): published images are unsigned with no provenance, behind a curl-pipe-bash installer",
+              "done": false
+            },
+            {
+              "number": 796,
+              "title": "feat(gdpr): Article 17 erasure is mature but Article 20 portability does not exist",
+              "done": false
             }
           ]
         }
@@ -1884,9 +1999,24 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 6,
+      "total": 7,
       "closed": 0,
       "areas": [
+        {
+          "key": "document-ingestion",
+          "name": "Document Ingestion",
+          "scope": "Documents as first-class library items",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 797,
+              "title": "feat(import): no way to bring an existing transcript in — migration from Otter/Rev/Fireflies is impossible",
+              "done": false
+            }
+          ]
+        },
         {
           "key": "frontend-ui",
           "name": "Frontend & UI",
@@ -1974,7 +2104,7 @@
             },
             {
               "number": 552,
-              "title": "task(documents): re-land the document-ingestion vertical from feat/doc-ingestion for v0.6.0",
+              "title": "task(documents): re-land the document-ingestion vertical from feat/doc-ingestion",
               "done": false
             }
           ]
@@ -2050,7 +2180,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 5,
+      "total": 6,
       "closed": 0,
       "areas": [
         {
@@ -2083,12 +2213,17 @@
           "name": "Platform & Operations",
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
-          "total": 1,
+          "total": 2,
           "closed": 0,
           "issues": [
             {
               "number": 561,
               "title": "feat(backend): plugin/post-processing hook architecture for transcription pipeline",
+              "done": false
+            },
+            {
+              "number": 798,
+              "title": "task(api): the API is unversioned, and MCP/Recall/hooks ship before any stability commitment",
               "done": false
             }
           ]

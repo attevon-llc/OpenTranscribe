@@ -69,8 +69,8 @@ RELEASES: dict[str, tuple[str, str]] = {
     ),
     'v0.7.0': (
         'Run it in public',
-        'Publish the inert public demo once the interface is polished, so people can '
-        'see the app and watch it upgrade.',
+        'Publish the inert public demo, and put in place the spend limits, alerting and '
+        'dependency hygiene you only miss once strangers are using it.',
     ),
     'v0.8.0': (
         'Native inference, and small GPUs',

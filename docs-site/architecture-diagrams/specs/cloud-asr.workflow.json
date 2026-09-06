@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OpenTranscribe — Cloud ASR & Voiceprinting",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "provider-choice", "label": "Provider dispatch", "focus": ["upload", "dispatch", "cloud_transcribe"], "note": "One of 8 cloud providers or the local engine, chosen per user/admin settings." },
+      { "id": "diarization-merge", "label": "Diarization merge", "focus": ["cloud_transcribe", "merge"], "note": "Some providers return their own speaker labels; others return none and rely on local diarization merged in afterward." },
+      { "id": "voiceprint-gap", "label": "Voiceprinting for cloud audio", "focus": ["merge", "voiceprint_cpu", "match"], "note": "This already exists today — a dedicated CPU-queue task, not a gap." }
+    ]
+  },
+  "lanes": [
+    { "id": "web", "label": "API / Web" },
+    { "id": "provider", "label": "Cloud ASR Provider" },
+    { "id": "identity", "label": "Speaker Identity" }
+  ],
+  "phases": [
+    { "id": "transcribe", "label": "Transcribe", "fromCol": 0, "toCol": 2, "variant": "emphasis" },
+    { "id": "identify", "label": "Voiceprint + match", "fromCol": 3, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["upload", "dispatch", "cloud_transcribe", "merge", "voiceprint_cpu", "match"],
+  "nodes": [
+    { "id": "upload", "lane": "web", "col": 0, "type": "external", "label": "Upload", "sublabel": "user's audio/video", "width": 132 },
+    { "id": "dispatch", "lane": "web", "col": 1, "type": "backend", "label": "Provider Factory", "sublabel": "pick configured provider", "width": 132 },
+    { "id": "cloud_transcribe", "lane": "provider", "col": 2, "type": "cloud", "label": "Cloud ASR", "sublabel": "AssemblyAI / AWS / Azure / etc.", "width": 132 },
+    { "id": "merge", "lane": "web", "col": 3, "type": "backend", "label": "Merge", "sublabel": "cloud transcript + speaker turns", "width": 132 },
+    { "id": "voiceprint_cpu", "lane": "identity", "col": 4, "type": "backend", "label": "Voiceprint", "sublabel": "CPU-queue embedding extraction", "tag": "dedicated task", "width": 132 },
+    { "id": "match", "lane": "identity", "col": 5, "type": "database", "label": "Match", "sublabel": "same pipeline as local ASR", "width": 132 }
+  ],
+  "edges": [
+    { "id": "upload-dispatch", "from": "upload", "to": "dispatch", "variant": "emphasis" },
+    { "id": "dispatch-cloud", "from": "dispatch", "to": "cloud_transcribe", "variant": "emphasis" },
+    { "id": "cloud-merge", "from": "cloud_transcribe", "to": "merge", "label": "transcript (+ speaker labels, if any)", "variant": "emphasis" },
+    { "id": "merge-voiceprint", "from": "merge", "to": "voiceprint_cpu", "label": "downloaded audio still available", "variant": "emphasis" },
+    { "id": "voiceprint-match", "from": "voiceprint_cpu", "to": "match", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Voiceprinting already covers cloud ASR", "items": ["No native PyAnnote centroids from a cloud transcription, so extract_speaker_embeddings_task runs on the CPU queue instead", "Same downstream matching/clustering pipeline either way — see the Speaker Clustering diagram"] },
+    { "dot": "rose", "title": "Not every provider diarizes", "items": ["Providers that return speaker labels: merged in directly", "Providers that don't: local PyAnnote diarization still runs on the downloaded audio to produce turns"] },
+    { "dot": "emerald", "title": "8 providers behind one factory", "items": ["AssemblyAI, AWS, Azure, Deepgram, Gladia, Google, OpenAI, Speechmatics — plus local", "Swapping providers doesn't change anything downstream of Merge"] }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "OpenTranscribe — System Architecture",
+    "quality_profile": "showcase",
+    "viewBox": [1340, 650]
+  },
+  "components": [
+    { "id": "user", "type": "external", "label": "User", "sublabel": "Browser", "pos": [40, 300], "size": [120, 60] },
+    { "id": "minio", "type": "database", "label": "MinIO", "sublabel": "media/object storage", "pos": [250, 150], "size": [130, 60] },
+    { "id": "frontend", "type": "frontend", "label": "SvelteKit SPA", "sublabel": "frontend/src", "pos": [250, 300], "size": [140, 60] },
+    { "id": "nginx", "type": "cloud", "label": "Nginx", "sublabel": "reverse proxy", "pos": [470, 300], "size": [130, 60] },
+    { "id": "opensearch", "type": "database", "label": "OpenSearch", "sublabel": "hybrid/neural search", "pos": [690, 150], "size": [140, 60] },
+    { "id": "backend", "type": "backend", "label": "FastAPI Backend", "sublabel": "backend/app/api", "pos": [690, 300], "size": [140, 60] },
+    { "id": "redis", "type": "messagebus", "label": "Redis", "sublabel": "broker + cache", "pos": [690, 460], "size": [130, 60] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "primary DB", "pos": [910, 300], "size": [130, 60] },
+    { "id": "celery", "type": "backend", "label": "Celery Workers", "sublabel": "8 queues — see next tab", "pos": [910, 460], "size": [160, 70] },
+    { "id": "llm", "type": "external", "label": "LLM Provider", "sublabel": "local or remote", "pos": [1150, 460], "size": [150, 70] }
+  ],
+  "connections": [
+    { "id": "user-frontend", "from": "user", "to": "frontend", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "frontend-minio", "from": "frontend", "to": "minio", "label": "presigned GET/PUT", "fromSide": "top", "toSide": "bottom" },
+    { "id": "frontend-nginx", "from": "frontend", "to": "nginx", "label": "fetch (cookie auth)", "fromSide": "right", "toSide": "left", "labelDy": -24 },
+    { "id": "nginx-backend", "from": "nginx", "to": "backend", "label": "proxy_pass", "fromSide": "right", "toSide": "left" },
+    { "id": "backend-opensearch", "from": "backend", "to": "opensearch", "label": "search query", "fromSide": "top", "toSide": "bottom" },
+    { "id": "backend-postgres", "from": "backend", "to": "postgres", "label": "SQL", "fromSide": "right", "toSide": "left" },
+    { "id": "backend-redis", "from": "backend", "to": "redis", "label": "enqueue task", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "redis-celery", "from": "redis", "to": "celery", "label": "dispatch", "fromSide": "right", "toSide": "left", "labelDy": -24 },
+    { "id": "celery-postgres", "from": "celery", "to": "postgres", "label": "write results", "fromSide": "top", "toSide": "bottom" },
+    { "id": "celery-opensearch", "from": "celery", "to": "opensearch", "label": "index transcript", "fromSide": "right", "toSide": "right", "via": [[1090, 495], [1090, 180], [830, 180]], "labelAt": [1030, 374] },
+    { "id": "celery-llm", "from": "celery", "to": "llm", "label": "chat / summarize", "variant": "dashed", "fromSide": "right", "toSide": "left", "labelAt": [1120, 544] },
+    { "id": "celery-minio", "from": "celery", "to": "minio", "label": "read/write media", "fromSide": "right", "toSide": "top", "via": [[1130, 495], [1130, 30], [315, 30]], "labelAt": [700, 20] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Web tier", "items": ["SvelteKit SPA, httpOnly-cookie auth, no JS-readable token", "Nginx terminates TLS, proxies /api and /ws", "Frontend media reads/writes go via presigned MinIO URLs — the backend only generates the presign URL string, Celery workers do the actual streaming"] },
+    { "dot": "emerald", "title": "Backend + async pipeline", "items": ["FastAPI routers under backend/app/api", "8 real Celery queues (gpu, cpu, nlp, embedding, redaction, utility, download, cloud-asr) — full breakdown on the Celery Queues tab", "ASR is local (WhisperX) or one of 8 cloud providers — see the Cloud ASR tab"] },
+    { "dot": "rose", "title": "Data + retrieval", "items": ["Postgres is system of record", "OpenSearch does hybrid/neural transcript search", "MinIO holds original media + derived artifacts"] }
+  ]
+}

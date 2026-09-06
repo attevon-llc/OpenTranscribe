@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "OpenTranscribe — Frontend Module Map",
+    "quality_profile": "showcase",
+    "viewBox": [1340, 650],
+    "views": [
+      { "id": "render-path", "label": "A page's render path", "focus": ["routes", "components", "stores", "lib"], "note": "Routes compose components, both read/write stores, stores call lib/api for network." },
+      { "id": "seam", "label": "Community vs cloud seam", "focus": ["lib", "cloud"], "note": "$lib/cloud holds stub components in the OSS repo — the real implementation lives in the private commercial overlay." },
+      { "id": "state", "label": "State layer", "focus": ["stores", "components", "routes"], "note": "Svelte stores are the single source of truth read by both routes and components." }
+    ]
+  },
+  "components": [
+    { "id": "routes", "type": "frontend", "label": "routes/", "sublabel": "SvelteKit pages", "pos": [440, 120], "size": [150, 64] },
+    { "id": "components", "type": "frontend", "label": "components/", "sublabel": "75 shared UI components", "pos": [80, 280], "size": [150, 70] },
+    { "id": "stores", "type": "backend", "label": "stores/", "sublabel": "Svelte state", "pos": [440, 280], "size": [150, 64] },
+    { "id": "lib", "type": "backend", "label": "lib/api, lib/axios", "sublabel": "HTTP client + endpoints", "pos": [800, 280], "size": [160, 64] },
+    { "id": "cloud", "type": "cloud", "label": "lib/cloud/", "sublabel": "stub seam, code is private", "pos": [800, 440], "size": [160, 64] },
+    { "id": "backend_api", "type": "external", "label": "Backend API", "sublabel": "FastAPI", "pos": [1100, 280], "size": [140, 64] }
+  ],
+  "connections": [
+    { "id": "routes-components", "from": "routes", "to": "components", "variant": "emphasis" },
+    { "id": "routes-stores", "from": "routes", "to": "stores", "variant": "emphasis" },
+    { "id": "components-stores", "from": "components", "to": "stores", "variant": "dashed", "fromSide": "bottom", "toSide": "left" },
+    { "id": "stores-lib", "from": "stores", "to": "lib", "label": "fetch/post", "variant": "emphasis" },
+    { "id": "lib-backend", "from": "lib", "to": "backend_api", "variant": "emphasis" },
+    { "id": "lib-cloud", "from": "lib", "to": "cloud", "label": "isCloudEdition gate", "variant": "dashed", "labelDy": 24 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Why madge couldn't show this reliably", "items": ["madge silently failed to parse the largest route file (2,493 lines) — a real, confirmed parser limitation, not a config issue", "This diagram is hand-verified against the actual directory listing instead"] },
+    { "dot": "rose", "title": "The cloud seam is real, not aspirational", "items": ["lib/cloud/ components are committed stub files ('replaced wholesale by the commercial overlay at image-build time')", "Every usage is additionally gated by isCloudEdition, so community builds tree-shake it out entirely"] },
+    { "dot": "emerald", "title": "One HTTP client, not several", "items": ["lib/axios.ts is the single axios instance — httpOnly cookie auth, no JS-readable token", "stores/auth.ts imports it back via a dynamic import specifically to break a load-order cycle (see Findings)"] }
+  ]
+}

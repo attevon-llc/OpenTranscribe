@@ -37,6 +37,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO_ROOT / "scripts"
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 BACKEND_TESTS = REPO_ROOT / "backend" / "tests"
 
 pytestmark = pytest.mark.skipif(
@@ -94,12 +95,60 @@ _PENDING: dict[str, str] = {
 }
 
 
+#: `GATES=(` / `SUITES+=(` — an array assignment whose `)` is on a LATER line.
+_ARRAY_OPEN = re.compile(r"(?:^|[\s;&|])([A-Za-z_][A-Za-z0-9_]*)\+?=\(")
+
+
 def _segments(line: str) -> list[list[str]]:
     """Split a shell line into command segments, each tokenised on whitespace."""
     if line.lstrip().startswith("#"):
         return []
     parts = re.split(r"[;&|]+", line)
     return [_CASE_LABEL.sub("", part, count=1).split() for part in parts]
+
+
+def _logical_lines(text: str) -> list[str]:
+    """Join a multi-line ``NAME=( ... )`` array assignment into ONE line.
+
+    ⚠️ Without this the tokeniser is blind to an array written **one variable per line**:
+
+        GATES=(
+            RUN_PKI_TESTS=true
+            RUN_MFA_TESTS=true
+        )
+
+    Each of those middle lines tokenises to a SINGLE token, and `_claimed_gates_from_text`
+    skips single-token lines on purpose — a bare `RUN_GPU=true` is a shell-local phase flag
+    that reaches no test process. So every gate in the array read as a local, and the whole
+    detector reported nothing.
+
+    That was not hypothetical safety margin: the array this module exists to catch survives
+    today in `run-mutation-tests.sh`, and it is only *visible* because that file happens to
+    write 2-3 variables per line. Reformatting it — the sort of thing a formatter or a tidy-up
+    does without comment — would have silently blinded all seven dead-gate detections, and
+    `test_the_pending_exemptions_are_all_real` would then have declared the exemptions stale
+    and invited someone to delete them. A parser that matches nothing reports a clean tree.
+    """
+    out: list[str] = []
+    pending: list[str] | None = None
+    for raw in text.splitlines():
+        if pending is not None:
+            pending.append(raw.strip())
+            if ")" in raw:
+                out.append(" ".join(pending))
+                pending = None
+            continue
+        match = _ARRAY_OPEN.search(raw)
+        # Only an array whose closing paren is on a LATER line needs joining; anything
+        # balanced on one line is already correct, and `case` arms / `$( )` must not be
+        # mistaken for an unterminated array.
+        if match and ")" not in raw[match.end() :]:
+            pending = [raw.strip()]
+            continue
+        out.append(raw)
+    if pending is not None:  # unterminated array: scan what we have rather than drop it
+        out.append(" ".join(pending))
+    return out
 
 
 def _claimed_gates_from_text(text: str) -> set[str]:
@@ -110,7 +159,7 @@ def _claimed_gates_from_text(text: str) -> set[str]:
     a command prefix, or an element of an array destined to be splatted into ``env``) is.
     """
     claimed: set[str] = set()
-    for line in text.splitlines():
+    for line in _logical_lines(text):
         for tokens in _segments(line):
             if len(tokens) <= 1:
                 continue  # nothing to run: a local assignment
@@ -123,6 +172,31 @@ def _claimed_gates_from_text(text: str) -> set[str]:
 
 def _claimed_gates(script: Path) -> set[str]:
     return _claimed_gates_from_text(script.read_text(encoding="utf-8"))
+
+
+#: A `RUN_*: 'true'` key inside a GitHub Actions `env:` mapping. Workflow `env` is exported
+#: into the step's process exactly as `export` is, so it is the same claim in a different
+#: syntax — and the seven dead gates lived in BOTH halves. Deliberately regex, not YAML: this
+#: module already parses shell by hand, the shape is unambiguous, and a `pyyaml` import would
+#: put a third-party dependency in the fast unit suite for four lines of matching.
+_YAML_GATE = re.compile(r"^\s*(RUN_[A-Z0-9_]+)\s*:\s*['\"]?(?:true|1|yes|on)['\"]?\s*$", re.I)
+
+
+def _claimed_gates_from_yaml(text: str) -> set[str]:
+    return {
+        match.group(1)
+        for line in text.splitlines()
+        if not line.lstrip().startswith("#")
+        for match in [_YAML_GATE.match(line)]
+        if match
+    }
+
+
+def _claimed_gates_in(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    if path.suffix in (".yml", ".yaml"):
+        return _claimed_gates_from_yaml(text)
+    return _claimed_gates_from_text(text)
 
 
 def _live_reads(source: str) -> set[str]:
@@ -168,7 +242,15 @@ def _all_live_reads() -> set[str]:
 
 
 def _gate_scripts() -> list[Path]:
-    return sorted(SCRIPTS.rglob("*.sh"))
+    """Every source that can hand a `RUN_*` to a test process.
+
+    ⚠️ The workflows belong here, and their absence was not an oversight anyone had reasoned
+    about: `.github/workflows/pre-commit.yml` exported the SAME seven dead variables as
+    `run-integration-tests.sh`, in a step named "Run security-gated suites". The local half
+    was removed and the CI twin was not, so the mechanism this module exists to describe went
+    on being claimed by the one gate contributors actually see on a PR.
+    """
+    return sorted(SCRIPTS.rglob("*.sh")) + sorted(WORKFLOWS.glob("*.y*ml"))
 
 
 # --------------------------------------------------------------------------------------
@@ -179,11 +261,16 @@ def _gate_scripts() -> list[Path]:
 def test_the_scan_finds_scripts_and_gates_at_all():
     scripts = _gate_scripts()
     assert len(scripts) >= 50, (
-        f"only {len(scripts)} shell scripts found under scripts/ (there are ~100) — the "
-        "recursive glob has stopped reaching most of the tree, and the check below would "
-        "pass by examining almost nothing"
+        f"only {len(scripts)} sources found (there are ~100 shell scripts under scripts/ "
+        "plus the workflows) — the recursive glob has stopped reaching most of the tree, "
+        "and the check below would pass by examining almost nothing"
     )
-    claimed = {var for s in scripts for var in _claimed_gates(s)}
+    assert any(p.parent == WORKFLOWS for p in scripts), (
+        "no GitHub Actions workflow reached the scan. CI exports these variables too, and "
+        "its copy of the dead seven outlived the local one precisely because nothing "
+        "looked there."
+    )
+    claimed = {var for s in scripts for var in _claimed_gates_in(s)}
     #: The two the gate script sets ITSELF, so this fails if the parser stops matching the
     #: exact shape it exists to read. A parser that matches nothing reports zero dead gates,
     #: which is indistinguishable from a clean tree.
@@ -213,7 +300,7 @@ def test_every_run_gate_a_script_sets_is_read_by_some_test():
     live = _all_live_reads()
     dead: list[str] = []
     for script in _gate_scripts():
-        for var in sorted(_claimed_gates(script)):
+        for var in sorted(_claimed_gates_in(script)):
             if var in live:
                 continue
             key = f"{script.name}::{var}"
@@ -236,7 +323,7 @@ def test_the_pending_exemptions_are_all_real():
     by_key = {
         f"{script.name}::{var}"
         for script in _gate_scripts()
-        for var in _claimed_gates(script)
+        for var in _claimed_gates_in(script)
         if var not in live
     }
     stale = sorted(set(_PENDING) - by_key)
@@ -309,6 +396,64 @@ def test_an_array_of_gates_is_read_as_a_claim():
         "RUN_C_TESTS",
         "RUN_D_TESTS",
     }
+
+
+def test_an_array_written_one_variable_per_line_is_still_a_claim():
+    """The formatting the parser used to be blind to.
+
+    Every middle line here is a single token, and a single token is how a shell-LOCAL flag
+    looks — so the parser skipped all four and reported a clean tree. The surviving array in
+    `run-mutation-tests.sh` is only visible today because it happens to be written 2-3 per
+    line; reformatting it would have silently deleted all seven dead-gate findings and made
+    `test_the_pending_exemptions_are_all_real` demand their exemptions be removed.
+    """
+    text = "GATES=(\n    RUN_A_TESTS=true\n    RUN_B_TESTS=true\n    RUN_C_TESTS=true\n)\n"
+    assert _claimed_gates_from_text(text) == {"RUN_A_TESTS", "RUN_B_TESTS", "RUN_C_TESTS"}
+
+    # ...and the closing paren sharing the last element's line is the same shape.
+    trailing = "SUITES+=(\n    RUN_D_TESTS=true\n    RUN_E_TESTS=true)\n"
+    assert _claimed_gates_from_text(trailing) == {"RUN_D_TESTS", "RUN_E_TESTS"}
+
+
+def test_joining_arrays_does_not_swallow_the_rest_of_the_file():
+    """The must-stay-clean half: a `case` arm and a `$( )` are not unterminated arrays.
+
+    If either were mistaken for one, the joiner would absorb every following line until the
+    next `)` — silently merging unrelated commands, and (worse) hiding real assignments from
+    the tokeniser in a detector whose failure mode is reporting nothing.
+    """
+    text = (
+        'case "$1" in\n'
+        "    --full) RUN_BACKEND=true ;;\n"
+        "esac\n"
+        "x=\"$(docker ps --format '{{.Names}}')\"\n"
+        "export RUN_REAL_TESTS=true\n"
+    )
+    assert _claimed_gates_from_text(text) == {"RUN_REAL_TESTS"}
+
+
+def test_a_workflow_env_block_is_read_as_a_claim():
+    """CI exports these too, and its copy of the dead seven outlived the local one.
+
+    `.github/workflows/pre-commit.yml` had a step named "Run security-gated suites" whose
+    `env:` block set all seven variables no test reads. Because the scan looked only at
+    `scripts/**/*.sh`, removing the shell half left the claim standing in the one gate every
+    contributor sees on a PR.
+    """
+    workflow = (
+        "      - name: Run security-gated suites\n"
+        "        env:\n"
+        "          RUN_PKI_TESTS: 'true'\n"
+        '          RUN_MFA_TESTS: "1"\n'
+        "          FIPS_MODE: 'true'\n"
+        "          # RUN_SEARCH_QUALITY_TESTS deliberately omitted\n"
+        "        run: pytest tests/\n"
+    )
+    assert _claimed_gates_from_yaml(workflow) == {"RUN_PKI_TESTS", "RUN_MFA_TESTS"}
+
+    # A commented-out gate is not a claim, and neither is a false one.
+    assert _claimed_gates_from_yaml("          # RUN_PKI_TESTS: 'true'\n") == set()
+    assert _claimed_gates_from_yaml("          RUN_PKI_TESTS: 'false'\n") == set()
 
 
 def test_a_shell_variable_that_merely_starts_with_run_is_not_a_gate():

@@ -24,7 +24,9 @@
 #   ./scripts/run-backend-tests.sh --require-fresh --summary
 #                                                   # ...but refuse if the saved run is from a
 #                                                   # different commit or older than
-#                                                   # OT_SUMMARY_MAX_AGE_S (default 7200)
+#                                                   # OT_SUMMARY_MAX_AGE_S (default 7200).
+#                                                   # Accepted in ANY position, with an
+#                                                   # optional explicit <sha> after it.
 #   ./scripts/run-backend-tests.sh --failures       # list failures, no re-run
 #   ./scripts/run-backend-tests.sh --log            # path to the full log
 
@@ -156,24 +158,53 @@ else:
 PY
 }
 
-# `--require-fresh [<sha>]` before `--summary`: assert the saved artifact describes this tree.
-# Defaults to HEAD when no sha is given.
-if [[ "${1:-}" == "--require-fresh" ]]; then
-    shift
-    if [[ -n "${1:-}" && "${1:-}" != --* ]]; then
-        REQUIRE_FRESH_SHA="$1"; shift
-    else
-        REQUIRE_FRESH_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null)"
-        [[ -n "$REQUIRE_FRESH_SHA" ]] || {
-            echo -e "${RED}--require-fresh: not a git checkout and no sha given${NC}" >&2; exit 2; }
-    fi
+# `--require-fresh [<sha>]`: assert the saved artifact describes this tree. It may appear
+# ANYWHERE in the argument list.
+#
+# It used to be honoured only as `$1`. So `--summary --require-fresh` — the natural order to
+# write, and the one that reads as "summarise, and require it fresh" — parsed as a bare
+# `--summary`, silently re-reporting an artifact of any age from any commit. A guard whose
+# activation depends on argument ORDER is a guard that is sometimes simply absent, and the
+# absence is invisible: the output of a run with the flag ignored is identical to the output
+# of a run that passed it.
+#
+# The optional sha must LOOK like one (7-40 hex). Otherwise `--require-fresh tests/unit`
+# consumes the path as a commit and then runs the whole suite instead of the subset asked for.
+REQUIRE_FRESH=false
+_ARGV=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --require-fresh)
+            REQUIRE_FRESH=true
+            shift
+            if [[ "${1:-}" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+                REQUIRE_FRESH_SHA="$1"; shift
+            fi
+            ;;
+        *)  _ARGV+=("$1"); shift ;;
+    esac
+done
+set -- ${_ARGV[@]+"${_ARGV[@]}"}
+
+if $REQUIRE_FRESH && [[ -z "${REQUIRE_FRESH_SHA:-}" ]]; then
+    REQUIRE_FRESH_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null)"
+    [[ -n "$REQUIRE_FRESH_SHA" ]] || {
+        echo -e "${RED}--require-fresh: not a git checkout and no sha given${NC}" >&2; exit 2; }
 fi
 
 case "${1:-}" in
     --summary)  report_summary; exit $? ;;
     --failures) report_failures; exit $? ;;
     --log)      echo "$LOG"; exit 0 ;;
-    -h|--help)  sed -n '2,28p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    # Print the WHOLE leading comment block, so a usage line added below is documented the day
+    # it lands. This was `sed -n '2,28p' "$0"`, which was broken two ways at once: `$0` is
+    # whatever the caller typed and this script has already `cd`-ed to backend/, so
+    # `scripts/run-backend-tests.sh --help` died with "sed: can't read"; and the hardcoded
+    # upper bound had already fallen behind the block it names, hiding `--log`.
+    -h|--help)
+        awk 'NR > 1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' \
+            "$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+        exit 0 ;;
 esac
 
 # ── Interpreter resolution (only needed to RUN; the modes above do not) ────
@@ -270,17 +301,46 @@ rc=${PIPESTATUS[0]}
 
 # Publish atomically, only now that this run is complete.
 mv -f "$RUN_LOG" "$LOG"
-[[ -f "$RUN_XML" ]] && mv -f "$RUN_XML" "$XML"
-# Provenance, so `--summary --require-fresh` can tell whether this describes the current tree.
-printf 'sha=%s\nepoch=%s\n' \
-    "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)" \
-    "$(date +%s)" > "$META"
+
+# ⚠️ THE EVIDENCE AND ITS PROVENANCE ARE PUBLISHED TOGETHER OR NOT AT ALL.
+#
+# `last.meta` used to be stamped unconditionally, one line below a `last.xml` that was
+# published only `[[ -f "$RUN_XML" ]]`. Any run whose pytest produced no XML — a usage error,
+# a collection crash, an OOM'd worker, a `-p` plugin failure — therefore left the PREVIOUS
+# run's `last.xml` sitting under a FRESH sha and a fresh epoch. `--require-fresh --summary`
+# (scripts/test-matrix.sh leg 1.2, which runs no tests at all) then passed, on another run's
+# evidence, with provenance that this script had just forged for it. That is exactly the P0
+# `--require-fresh` was added to close, reopened from the other end.
+#
+# On the no-XML path the stale `last.xml` is deliberately LEFT (it is a real artifact of a
+# real earlier run, and `--failures` over it is still useful) while its freshness claim is
+# DESTROYED, so the only thing that can no longer happen is a fresh-looking pass.
+PUBLISHED_XML=false
+if [[ -f "$RUN_XML" ]]; then
+    mv -f "$RUN_XML" "$XML"
+    printf 'sha=%s\nepoch=%s\n' \
+        "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)" \
+        "$(date +%s)" > "$META"
+    PUBLISHED_XML=true
+else
+    rm -f "$META"
+    echo >&2
+    echo -e "${RED}NOT MEASURED: pytest wrote no JUnit XML to $RUN_XML, so this run produced" >&2
+    echo -e "  no evidence. Removed $META: a stale $XML must not" >&2
+    echo -e "  inherit this run's commit and timestamp. Full output: $LOG${NC}" >&2
+fi
 
 echo
-report_summary
+# Never summarise from an artifact this run did not produce — a tally that belongs to the
+# previous run is the "green result you cannot attribute" this whole script exists to prevent.
+if $PUBLISHED_XML; then
+    report_summary
+fi
 echo
 if [[ $rc -ne 0 ]]; then
-    report_failures
+    # Same rule as the summary above: an XML this run did not write describes someone else's
+    # failures, and listing them under a fresh run's exit code is worse than listing none.
+    $PUBLISHED_XML && report_failures
     echo
     echo -e "${RED}Full output: $LOG${NC}"
     echo -e "${YELLOW}Re-report without re-running: $0 --failures${NC}"

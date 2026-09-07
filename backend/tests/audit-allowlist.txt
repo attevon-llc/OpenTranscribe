@@ -159,9 +159,18 @@ unit/test_auth_config_validation.py::test_every_category_has_keys_to_filter_on::
 # moved to ACCEPTED above with a per-test reason — in each, the function returns None
 # and the outgoing call IS the behaviour.
 
-# --- failure-masking (3)
+# --- failure-masking
+# No deferred entries: every finding in this category is ACCEPTED above, each with the
+# narrowing that made it correct. The header carried a literal "(3)" over an empty section —
+# see the "(13)" note below for why no count is written here now.
 
-# --- error-swallowed (13)
+# --- error-swallowed
+# ⚠️ No count in this header, deliberately. It said "(13)" over 10 entries, which is the same
+# defect this file's own preamble records about the literal "166": a number transcribed into a
+# comment is a measurement that rots, and nothing recomputes it. Read the totals off the
+# auditor — `python3 scripts/audit-tests.py backend/tests` prints the deferred count on every
+# single run, and a stale entry fails the run outright, so the list cannot silently disagree
+# with reality the way a hand-written tally can.
 api/test_files_prepare_complete_upload.py::test_prepare_then_complete_round_trip::error-swallowed  # BACKLOG(#431): `except ...: pass`/return/log inside a test body — the assertions in the `try` silently stop running and nobody is told. Needs the exception to propagate or be asserted on. UNTRIAGED.
 integration/test_redaction_pipeline.py::test_detect_and_mask::error-swallowed  # BACKLOG(#431): `except ...: pass`/return/log inside a test body — the assertions in the `try` silently stop running and nobody is told. Needs the exception to propagate or be asserted on. UNTRIAGED.
 test_embedding_migration_integration.py::test_throughput_benchmark::error-swallowed  # BACKLOG(#431): `except ...: pass`/return/log inside a test body — the assertions in the `try` silently stop running and nobody is told. Needs the exception to propagate or be asserted on. UNTRIAGED.

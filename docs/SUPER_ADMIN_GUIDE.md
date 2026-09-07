@@ -322,7 +322,10 @@ In Keycloak Admin Console:
 2. Create new client: `opentranscribe` (or your chosen name)
 3. Set Access Type: `confidential`
 4. Enable `Standard Flow Enabled` and `Direct Access Grants Enabled`
-5. Set Valid Redirect URIs: `https://your-domain.com/api/auth/oidc/callback`
+5. Set Valid Redirect URIs: `https://your-domain.com/login` — the **frontend login page**, not a
+   backend `/api/...` route. The provider navigates the browser here, and `/api/auth/oidc/callback`
+   returns JSON rather than a page, so registering it strands users on a JSON document after a
+   successful sign-in. See [OIDC_SETUP.md](OIDC_SETUP.md) for the full list of origins to register.
 6. Set Web Origins: `https://your-domain.com`
 7. Go to Credentials tab
 8. Copy the `Client Secret` (you'll need this)

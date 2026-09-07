@@ -362,6 +362,14 @@ phase_03_pin_local_image() {
     else
         cp_force_pull_policy "$target/docker-compose.prod.yml" never
         gr_ok "OT_IMAGE_TAG pinned to :${LOCAL_IMAGE_TAG}, pull_policy=never, label injected"
+        # pull_policy=never means "run whatever carries this tag on this host" — which is
+        # only a rehearsal of THIS release if that image was built from THIS commit. It
+        # was not, on 2026-09-07: a 315-commit-old v0.5.0 was rehearsed and its missing
+        # features were reported as product bugs. Hub mode is exempt by design — there the
+        # published artifact IS the subject.
+        gr_assert_image_is_the_code_under_test \
+            "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" \
+            "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
     fi
 
     # Also label the base file's services for cleanup symmetry

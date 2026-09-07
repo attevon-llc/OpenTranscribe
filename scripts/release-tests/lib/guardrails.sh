@@ -576,6 +576,75 @@ gr_live_marker_reason() {
     esac
 }
 
+# ─── The image under test must BE the code under test (2026-09-07) ──────────
+#
+# In local-image mode a scenario runs whatever is tagged :vX.Y.Z on this host. It does
+# not build that image — the release pipeline's `build` stage does, earlier in the same
+# run. Run `rehearse` on its own (or with `--from`, which the ledger explicitly allows)
+# and there is nothing to stop it rehearsing a stale build.
+#
+# Measured, not hypothetical: the 2026-09-07 rehearsal ran against a
+# davidamacey/opentranscribe-backend:v0.5.0 built seven days and **315 commits**
+# earlier. Both scenarios failed their diarization-provenance assertion — correctly,
+# because that image contains ZERO occurrences of `diarization_provider`; the plumbing
+# postdates it. The failure was read as a product bug in the release. It was a
+# statement about an artifact nobody intended to test.
+#
+# This is the same shape as run-backend-tests.sh --summary passing off a two-day-old
+# junit artifact from a different commit (scripts/CLAUDE.md), and it gets the same
+# answer: missing provenance is a REFUSAL, not a pass.
+GR_IMAGE_REVISION_LABEL="org.opencontainers.image.revision"
+
+# gr_assert_image_is_the_code_under_test IMAGE EXPECTED_SHA
+#   Refuses unless IMAGE's revision label equals EXPECTED_SHA.
+gr_assert_image_is_the_code_under_test() {
+    local image="$1" expected="$2"
+    local actual
+
+    if [[ -z "$expected" ]]; then
+        gr_die "gr_assert_image_is_the_code_under_test: no expected commit supplied —
+           cannot verify '$image' is the code under test, and an unverifiable image
+           is exactly what this check exists to refuse"
+    fi
+
+    # Captured into a variable, never piped into a short-circuiting reader: this file
+    # runs under `set -euo pipefail` (see the SIGPIPE rule in scripts/CLAUDE.md).
+    if ! actual="$(docker image inspect "$image" \
+                    --format "{{index .Config.Labels \"$GR_IMAGE_REVISION_LABEL\"}}" 2>/dev/null)"
+    then
+        gr_die "cannot inspect '$image' to confirm it is the code under test.
+           Build it first (./scripts/release.sh build <version>) rather than
+           rehearsing whatever image happens to carry that tag."
+    fi
+
+    if [[ -z "$actual" || "$actual" == "<no value>" ]]; then
+        gr_die "'$image' carries no $GR_IMAGE_REVISION_LABEL label, so it CANNOT be shown
+           to be the code under test. Refusing — an unattributable image is not
+           evidence about this release."
+    fi
+
+    if [[ "$actual" != "$expected" ]]; then
+        local behind=""
+        if behind="$(git -C "${REPO_ROOT:-.}" rev-list --count "$actual..$expected" 2>/dev/null)"; then
+            behind=" (${behind} commits behind)"
+        else
+            behind=""
+        fi
+        if [[ "${OT_RELEASE_TEST_ALLOW_STALE_IMAGE:-}" == "1" ]]; then
+            gr_warn "OT_RELEASE_TEST_ALLOW_STALE_IMAGE=1 — rehearsing '$image' built from
+           ${actual}${behind}, NOT ${expected}. Every result below describes that
+           older artifact, not this release."
+            return 0
+        fi
+        gr_die "'$image' was built from ${actual}${behind}, not ${expected}.
+           Rehearsing it measures an artifact nobody is releasing — on 2026-09-07 this
+           produced two 'product bug' failures that were purely image staleness.
+           Rebuild (./scripts/release.sh build <version>), or set
+           OT_RELEASE_TEST_ALLOW_STALE_IMAGE=1 to say so deliberately."
+    fi
+    gr_ok "$image is built from the code under test (${expected:0:12})"
+}
+
 gr_stamp_owned_resources() {
     local proj="${GR_STOCK_PROJECT:-opentranscribe}"
     local dir

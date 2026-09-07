@@ -28,6 +28,7 @@ import pytest
 import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
 # URLs come from the `base_url` / `backend_url` fixtures in tests/e2e/conftest.py rather than
@@ -149,7 +150,7 @@ def _login_browser(page: Page, base_url: str, email: str, password: str):
     page.click("button[type=submit]")
 
 
-def _wait_for_gallery(page: Page, timeout: int = 15000):
+def _wait_for_gallery(page: Page, timeout: int = APP_SHELL_READY_MS):
     """Wait for the app to be READY after login, not merely past the login form.
 
     The previous check — "#email is absent or not visible" — becomes true the instant the
@@ -159,8 +160,14 @@ def _wait_for_gallery(page: Page, timeout: int = 15000):
     spinner wait passed *because the whole panel had gone* (`querySelector` returns null
     either way), and the caller's `text_content` then timed out against a stable, correct
     app. Waiting for real gallery chrome closes the window.
+
+    The budget was written `timeout * 2` against a `timeout=15000` default — the same 30 s
+    every other app-shell wait uses, spelled as arithmetic on an unrelated number, so no
+    grep for the real value could find it and no revision of the shared budget could reach
+    it. Every caller took the default; nothing passed a `timeout`. It is now the named
+    constant, same effective value.
     """
-    page.wait_for_selector(".gallery-action-buttons", state="visible", timeout=timeout * 2)
+    page.wait_for_selector(".gallery-action-buttons", state="visible", timeout=timeout)
 
 
 def _open_security_settings(page: Page):

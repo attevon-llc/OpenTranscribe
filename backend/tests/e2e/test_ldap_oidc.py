@@ -45,6 +45,7 @@ from ldap_fixture_users import LLDAP_ADMIN_PASSWORD
 from ldap_fixture_users import LLDAP_ADMIN_USER
 from ldap_fixture_users import LLDAP_BASE_DN
 from ldap_fixture_users import LLDAP_BIND_DN
+from playwright.sync_api import Page
 from playwright.sync_api import expect
 
 from tests.env_gate import gate_enabled
@@ -107,6 +108,18 @@ KC_REALM = "opentranscribe"
 KC_CLIENT_ID = "opentranscribe-app"
 KC_CLIENT_SECRET = "opentranscribe-secret"
 
+#: How long a hop through the IdP may take. Each of these was a bare `15000` beside a
+#: `try/except Exception` that converted the timeout into a skip or a `pass`, so the number
+#: never had to be right — it only had to expire. Now that expiring FAILS the test, the
+#: budget is named and stated once.
+#:
+#: `OIDC_REDIRECT_MS` covers login page -> `/api/auth/oidc/login` -> `window.location` ->
+#: Keycloak's authorize endpoint. `OIDC_CALLBACK_MS` covers Keycloak's credential POST ->
+#: `/api/auth/oidc/callback` (a server-side token exchange plus a JIT user provision) ->
+#: back into the SPA, so it is the larger of the two.
+OIDC_REDIRECT_MS = 15_000
+OIDC_CALLBACK_MS = 30_000
+
 
 # ---------------------------------------------------------------------------
 # Infrastructure helpers
@@ -153,6 +166,52 @@ def _lldap_get_token() -> str:
     resp = urllib.request.urlopen(req)
     result = cast(dict, json.loads(resp.read()))
     return cast(str, result["token"])
+
+
+def _app_oidc_enabled(backend_url: str) -> bool:
+    """Does the APP advertise OIDC as an enabled auth method right now?
+
+    ``GET /api/auth/methods`` is unauthenticated and reports the deployment's auth topology,
+    which is the exact precondition the OIDC login tests need: the SSO button only renders
+    when this says ``oidc_enabled``. Asking it turns "the button isn't there" from an
+    untriageable skip into a two-way decision — configuration absent (skip, with the reason)
+    versus configuration present and the button missing anyway (a real regression, fail).
+    """
+    with urllib.request.urlopen(f"{backend_url}/api/auth/methods", timeout=10) as resp:
+        payload = cast(dict, json.loads(resp.read()))
+    return bool(payload.get("oidc_enabled"))
+
+
+def _start_oidc_login(page: Page, backend_url: str) -> None:
+    """Click the SSO button and assert the browser lands on Keycloak.
+
+    Every OIDC login test below opened with the same three-step preamble, and each step
+    swallowed its own failure: an absent button skipped with "not visible", and a redirect
+    that never happened was caught as a bare ``except Exception`` and turned into either a
+    skip or a ``pass``. Both are the "reports success without testing anything" shape — with
+    the module's autouse ``ensure_keycloak_running`` fixture already asserting the IdP is up
+    and the realm/client/users exist, a missing redirect can only be a defect in the app's
+    OIDC configuration or its authorize-URL construction, which is what these tests are for.
+
+    The one genuine environmental precondition — the app not having OIDC turned on — is now
+    checked explicitly and narrowly against ``/api/auth/methods`` instead of being inferred
+    from an exception.
+    """
+    if not _app_oidc_enabled(backend_url):
+        pytest.skip(
+            "App reports oidc_enabled=false at /api/auth/methods — start the IdP overlay "
+            "(./opentr.sh start dev --with-keycloak-test) and let "
+            "TestOIDCConfiguration::test_configure_oidc_settings run first"
+        )
+
+    kc_button = page.locator("button.oidc-button")
+    # OIDC is enabled server-side, so the button is a contract, not a maybe.
+    expect(kc_button).to_be_visible(timeout=OIDC_REDIRECT_MS)
+    kc_button.click()
+
+    # Failing here means the app did not send the browser to the IdP. That is the
+    # regression these tests exist to catch; it must not degrade to a skip.
+    expect(page).to_have_url(re.compile(r"/realms/"), timeout=OIDC_REDIRECT_MS)
 
 
 def _keycloak_admin_token() -> str:
@@ -744,133 +803,94 @@ class TestOIDCConfiguration:
 class TestOIDCLogin:
     """Test Keycloak OIDC login flow through the frontend."""
 
-    def test_oidc_redirect_flow(self, browser_context, base_url: str):
+    def test_oidc_redirect_flow(self, browser_context, base_url: str, backend_url: str):
         """Clicking the SSO button should redirect to the provider's login page."""
         page = browser_context.new_page()
-        page.goto(f"{base_url}/login")
-        page.wait_for_load_state("networkidle")
-
-        # Use the specific CSS class for the Keycloak button
-        kc_button = page.locator("button.oidc-button")
-
-        if kc_button.count() == 0:
-            pytest.skip(
-                "Keycloak login button not visible - OIDC may not be enabled in auth methods yet"
-            )
-
-        # Click and wait for the redirect (frontend calls API then does window.location.href)
-        kc_button.click()
-
-        # Wait for URL to change away from login page (API call + redirect)
         try:
-            page.wait_for_url("**/realms/**", timeout=15000)
-        except Exception:
-            pass  # URL check below will catch the failure
+            page.goto(f"{base_url}/login")
+            page.wait_for_load_state("networkidle")
 
-        assert "keycloak" in page.url.lower() or "8180" in page.url or "/realms/" in page.url, (
-            f"Expected redirect to Keycloak, got {page.url}"
-        )
-        page.close()
+            _start_oidc_login(page, backend_url)
 
-    def test_oidc_admin_login_full_flow(self, browser_context, base_url: str):
+            assert "/realms/" in page.url, f"Expected redirect to Keycloak, got {page.url}"
+        finally:
+            page.close()
+
+    def test_oidc_admin_login_full_flow(self, browser_context, base_url: str, backend_url: str):
         """Complete the full Keycloak OIDC login flow with the admin user."""
         page = browser_context.new_page()
-        page.goto(f"{base_url}/login")
-        page.wait_for_load_state("networkidle")
-
-        kc_button = page.locator("button.oidc-button")
-
-        if kc_button.count() == 0:
-            pytest.skip("Keycloak login button not visible")
-
-        kc_button.click()
-
-        # Wait for Keycloak login page
         try:
-            page.wait_for_url("**/realms/**", timeout=15000)
-        except Exception:
-            pytest.skip(f"Did not redirect to Keycloak, URL: {page.url}")
+            page.goto(f"{base_url}/login")
+            page.wait_for_load_state("networkidle")
 
-        # Fill in Keycloak login form
-        page.fill("#username", KC_ADMIN_USER)
-        page.fill("#password", KC_ADMIN_PASSWORD)
-        page.click("#kc-login")
+            _start_oidc_login(page, backend_url)
 
-        # Wait for redirect back to the app after Keycloak auth
-        try:
-            page.wait_for_url(f"{base_url}/**", timeout=15000)
-        except Exception:
-            pass
+            # Fill in Keycloak login form
+            page.fill("#username", KC_ADMIN_USER)
+            page.fill("#password", KC_ADMIN_PASSWORD)
+            page.click("#kc-login")
 
-        # Auto-wait for the post-callback redirect off /login instead of a fixed 3 s
-        # (issue #431).
-        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
-        assert "/login" not in page.url, f"Keycloak login did not complete, still at {page.url}"
-        page.close()
+            # Back on the app after the callback. This wait is load-bearing and must NOT be
+            # folded into the `/login` check below: Keycloak's own rejection page lives at
+            # `/realms/<realm>/login-actions/authenticate`, which contains the substring
+            # `/login`, so `not_to_have_url(r"/login")` alone would pass while the browser
+            # was still sitting on the IdP.
+            expect(page).to_have_url(
+                re.compile(rf"^{re.escape(base_url)}(/|$)"), timeout=OIDC_CALLBACK_MS
+            )
+            expect(page).not_to_have_url(re.compile(r"/login"), timeout=OIDC_CALLBACK_MS)
+            assert "/login" not in page.url, f"Keycloak login did not complete, still at {page.url}"
+        finally:
+            page.close()
 
-    def test_keycloak_regular_user_login(self, browser_context, base_url: str):
+    def test_keycloak_regular_user_login(self, browser_context, base_url: str, backend_url: str):
         """Regular Keycloak user can log in via OIDC flow."""
         page = browser_context.new_page()
-        page.goto(f"{base_url}/login")
-        page.wait_for_load_state("networkidle")
-
-        kc_button = page.locator("button.oidc-button")
-
-        if kc_button.count() == 0:
-            pytest.skip("Keycloak login button not visible")
-
-        kc_button.click()
-
         try:
-            page.wait_for_url("**/realms/**", timeout=15000)
-        except Exception:
-            pytest.skip(f"Did not redirect to Keycloak, URL: {page.url}")
+            page.goto(f"{base_url}/login")
+            page.wait_for_load_state("networkidle")
 
-        page.fill("#username", KC_REGULAR_USER)
-        page.fill("#password", KC_REGULAR_PASSWORD)
-        page.click("#kc-login")
+            _start_oidc_login(page, backend_url)
 
-        try:
-            page.wait_for_url(f"{base_url}/**", timeout=15000)
-        except Exception:
-            pass
+            page.fill("#username", KC_REGULAR_USER)
+            page.fill("#password", KC_REGULAR_PASSWORD)
+            page.click("#kc-login")
 
-        # Auto-wait for the post-callback redirect off /login instead of a fixed 3 s
-        # (issue #431).
-        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
-        assert "/login" not in page.url, f"Keycloak regular user login failed, still at {page.url}"
-        page.close()
+            # See test_oidc_admin_login_full_flow for why both URL assertions are needed.
+            expect(page).to_have_url(
+                re.compile(rf"^{re.escape(base_url)}(/|$)"), timeout=OIDC_CALLBACK_MS
+            )
+            expect(page).not_to_have_url(re.compile(r"/login"), timeout=OIDC_CALLBACK_MS)
+            assert "/login" not in page.url, (
+                f"Keycloak regular user login failed, still at {page.url}"
+            )
+        finally:
+            page.close()
 
-    def test_keycloak_wrong_credentials_rejected(self, browser_context, base_url: str):
+    def test_keycloak_wrong_credentials_rejected(
+        self, browser_context, base_url: str, backend_url: str
+    ):
         """Wrong Keycloak credentials should show error on Keycloak login page."""
         page = browser_context.new_page()
-        page.goto(f"{base_url}/login")
-        page.wait_for_load_state("networkidle")
-
-        kc_button = page.locator("button.oidc-button")
-
-        if kc_button.count() == 0:
-            pytest.skip("Keycloak login button not visible")
-
-        kc_button.click()
-
         try:
-            page.wait_for_url("**/realms/**", timeout=15000)
-        except Exception:
-            pytest.skip(f"Did not redirect to Keycloak, URL: {page.url}")
+            page.goto(f"{base_url}/login")
+            page.wait_for_load_state("networkidle")
 
-        page.fill("#username", KC_ADMIN_USER)
-        page.fill("#password", "wrongpassword")
-        page.click("#kc-login")
-        # Settle on Keycloak's rejected form POST; the assertion is that we did NOT
-        # leave the IdP login page, which no locator can auto-wait for (issue #431).
-        page.wait_for_load_state("networkidle")
+            _start_oidc_login(page, backend_url)
 
-        # Should still be on the Keycloak login page with an error
-        assert "/realms/" in page.url or "8180" in page.url, (
-            f"Wrong credentials should keep user on Keycloak login page, got {page.url}"
-        )
-        page.close()
+            page.fill("#username", KC_ADMIN_USER)
+            page.fill("#password", "wrongpassword")
+            page.click("#kc-login")
+            # Settle on Keycloak's rejected form POST; the assertion is that we did NOT
+            # leave the IdP login page, which no locator can auto-wait for (issue #431).
+            page.wait_for_load_state("networkidle")
+
+            # Should still be on the Keycloak login page with an error
+            assert "/realms/" in page.url, (
+                f"Wrong credentials should keep user on Keycloak login page, got {page.url}"
+            )
+        finally:
+            page.close()
 
 
 # ---------------------------------------------------------------------------

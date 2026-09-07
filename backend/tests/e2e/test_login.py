@@ -19,6 +19,7 @@ import re
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
 
@@ -109,7 +110,7 @@ class TestLoginSuccess:
         # The gallery/dashboard is the SPA root — assert the navigation actually left
         # /login, then assert the gallery toolbar rendered.
         expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
-        expect(page.locator(".gallery-action-buttons")).to_be_visible(timeout=15000)
+        expect(page.locator(".gallery-action-buttons")).to_be_visible(timeout=APP_SHELL_READY_MS)
 
     def test_login_shows_user_info(self, page: Page, base_url: str):
         """Test logged in state shows user information."""

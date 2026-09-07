@@ -32,3 +32,19 @@ from __future__ import annotations
 #: (``.gallery-action-buttons``, ``.gallery-header-right``) and ``test_search.py``'s
 #: ``.search-page``. Reaching it still means a real failure, and one worth 30 s of evidence.
 LOGIN_FORM_READY_MS = 30_000
+
+#: How long to wait for the authenticated app shell to paint — ``.gallery-action-buttons``,
+#: ``.gallery-header-right``, ``.search-page`` and the other post-login landmarks.
+#:
+#: **The drift this file was created to stop had already recurred by the time it landed.**
+#: ``#email`` was centralised above, but the two other app-shell selectors stayed raw literals
+#: at *three different values across 23 call sites*: 10000 in ``conftest.py``'s shared fixture,
+#: 15000 in ``test_gallery_actions.py`` / ``test_responsive.py`` / ``test_search.py``, and 30000
+#: everywhere else. ``test_search.py:42`` was raised to 30000 at some point and ``:361`` was
+#: not — which is the drift, visible in one file.
+#:
+#: The budget is the same shape as ``LOGIN_FORM_READY_MS`` and for the same reason: these
+#: selectors sit behind ``+layout.svelte``'s ``{#if $authReady}``, so reaching them costs the
+#: app shell plus ``initAuth()``'s ``GET /auth/session``. Anything under that is not measuring
+#: the page, it is measuring how loaded the machine is.
+APP_SHELL_READY_MS = 30_000

@@ -37,6 +37,7 @@ from conftest import delete_media_file
 from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
 # The `gallery` marker is REGISTERED in e2e/pytest.ini and root CLAUDE.md documents
@@ -137,7 +138,7 @@ def auth_storage_state(browser, base_url: str, api_token: str):  # type: ignore[
     # library being non-empty, which is exactly the ambient-data assumption this
     # module's other fixtures (`api_owned_file_uuid`) exist to avoid. An empty
     # `--fresh` instance has zero file cards until a test uploads its own.
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
 
     # Save storage state to a temp file
     fd, state_file = tempfile.mkstemp(suffix=".json")
@@ -165,7 +166,7 @@ def gallery_page(browser, auth_storage_state: str, base_url: str):  # type: igno
     page.goto(base_url)
     # Already authenticated via stored cookies, just wait for gallery. See
     # `auth_storage_state` above for why this no longer waits on a file card.
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     yield page
     page.close()
     context.close()
@@ -299,8 +300,20 @@ class TestNormalModeButtons:
         expect(gallery_page.locator(".collections-btn")).not_to_be_visible(timeout=3000)
 
     def test_sort_and_view_controls_visible(self, gallery_page: Page) -> None:
-        """Sort dropdown, view toggle, and count chip should be on the right."""
-        expect(gallery_page.locator(".gallery-header-right")).to_be_visible(timeout=5000)
+        """Sort dropdown, view toggle, and count chip should be on the right.
+
+        Budget is the shared app-shell one even though `gallery_page` has already waited on
+        `.gallery-action-buttons`, so the shell is provably up by the time this runs and 5 s
+        "ought to be enough". That is exactly the reasoning that produced 5000/10000/15000/
+        30000 for these three selectors across 23 sites: each local shortening is individually
+        plausible and collectively is the drift. The only thing a shorter budget buys is a
+        faster *failure*, and under the full gate (48 pytest workers, 3 Playwright workers,
+        one backend) a sub-30 s wait on a shell landmark measures machine load rather than
+        the page. See tests/e2e/timeouts.py.
+        """
+        expect(gallery_page.locator(".gallery-header-right")).to_be_visible(
+            timeout=APP_SHELL_READY_MS
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -749,7 +762,7 @@ class TestBulkActions:
         name2 = file2["filename"]
 
         self.page.reload()
-        self.page.wait_for_selector(".gallery-action-buttons", timeout=15000)
+        self.page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         self.page.click(".select-btn")
         self.page.wait_for_selector(".select-all-btn", timeout=5000)
 
@@ -1135,7 +1148,7 @@ class TestFileSelectionUI:
             for _ in range(3 - existing):
                 owned_media_factory(api_token)
             self.page.reload()
-            self.page.wait_for_selector(".gallery-action-buttons", timeout=15000)
+            self.page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
             self.page.wait_for_selector(".file-card", timeout=15000)
         assert cards.count() >= 3, "Need at least 3 files for range selection test"
 

@@ -35,6 +35,7 @@ import pytest
 from ldap_fixture_users import LDAP_ADMIN
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
 from tests.env_gate import gate_enabled
@@ -250,7 +251,7 @@ class TestLocalLogin:
         # one and a crash page, so the test's only assertion could not fail. The gallery
         # is the thing named in the test id: assert the toolbar it renders, and the user
         # menu that only appears once the session is real.
-        expect(page.locator(".gallery-action-buttons")).to_be_visible(timeout=15000)
+        expect(page.locator(".gallery-action-buttons")).to_be_visible(timeout=APP_SHELL_READY_MS)
         expect(page.locator(".user-button").first).to_be_visible(timeout=15000)
 
     def test_local_login_invalid_password(self, page: Page, base_url: str):

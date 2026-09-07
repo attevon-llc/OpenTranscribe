@@ -14,6 +14,7 @@ Run:
 
 import pytest
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
 pytestmark = pytest.mark.responsive
@@ -90,12 +91,12 @@ class TestGalleryResponsive:
 
     def test_gallery_renders(self, sized_page, base_url: str):
         sized_page.goto(base_url)
-        sized_page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+        sized_page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         expect(sized_page.locator(".gallery-action-buttons")).to_be_visible()
 
     def test_navbar_adapts(self, sized_page, base_url: str):
         sized_page.goto(base_url)
-        sized_page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+        sized_page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         toggle = sized_page.locator(".mobile-toggle")
         name = sized_page._viewport_name  # type: ignore[attr-defined]
         if name == "mobile":
@@ -107,7 +108,7 @@ class TestGalleryResponsive:
 
     def test_no_horizontal_overflow(self, sized_page, base_url: str):
         sized_page.goto(base_url)
-        sized_page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+        sized_page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         # Kept deliberately: the assertion is the ABSENCE of horizontal overflow, measured
         # by an evaluate() that does not poll. Measuring before thumbnails/lazy content
         # have laid out would pass for the wrong reason (issue #431).
@@ -200,5 +201,5 @@ class TestSearchResponsive:
 
     def test_search_input_renders(self, sized_page, base_url: str):
         sized_page.goto(f"{base_url}/search")
-        sized_page.wait_for_selector(".search-page", timeout=15000)
+        sized_page.wait_for_selector(".search-page", timeout=APP_SHELL_READY_MS)
         expect(sized_page.locator(".search-input")).to_be_visible()

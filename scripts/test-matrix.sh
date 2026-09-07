@@ -56,6 +56,9 @@ MODE_LIST=false
 MODE_DRY_RUN=false
 JSON_OUT=false
 ASSUME_YES=false
+# ⚠️ DEFAULT OFF, AND DELIBERATELY NOT IMPLIED BY --yes. See check_stage3_precondition.
+AUTO_STOP_STACK=false
+STACK_WAS_STOPPED_BY_US=false
 ONLY=""
 STAGE_ARG=""
 
@@ -131,6 +134,14 @@ Usage: scripts/test-matrix.sh <1|2|3|4|all> [options]
   --json        Machine-readable {stage, leg, status, criteria[], next[]} lines
   --dry-run     Print every command that would run, execute nothing
   --yes         Bypass confirmation prompts (required for stage 3)
+  --auto-stop-stack
+                Let stage 3 run `./opentr.sh stop` when the dev stack is up.
+                DEFAULT OFF, and NOT implied by --yes. Stage 2 requires the dev
+                stack UP and stage 3 requires it STOPPED, so without this flag
+                `test-matrix.sh all` reports every stage-3 leg BLOCKED — by
+                design, because stopping an operator's running deployment is not
+                a decision this script gets to make silently. The restart command
+                is printed when it stops the stack and again in the summary.
 
 Exit codes: 0 pass, 1 gate failed, 2 misuse, 3 precondition unmet, 4 operator abort.
 EOF
@@ -144,6 +155,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run) MODE_DRY_RUN=true; shift ;;
         --json) JSON_OUT=true; shift ;;
         --yes) ASSUME_YES=true; shift ;;
+        --auto-stop-stack) AUTO_STOP_STACK=true; shift ;;
         --only) ONLY="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*) err "unknown option: $1"; usage; exit $EXIT_MISUSE ;;
@@ -235,6 +247,37 @@ check_stage2_precondition() {
 
 check_stage3_precondition() {
     local id="${1:-}"
+
+    # ── The UP/STOPPED deadlock, and why the escape hatch is EXPLICIT ────────────────────
+    #
+    # Stage 2 requires the dev stack reachable on 5174 (check_stage2_precondition) and leaves
+    # it running — `run-dev-tests.sh` does not stop what it did not start. Stage 3 requires it
+    # STOPPED, because the release-test scenarios bind the stock 5173-5180 ports under the
+    # stock `opentranscribe-*` names, deliberately, so the run exercises what a real user's
+    # install produces.
+    #
+    # So `test-matrix.sh all` could never finish: leg `3` hit the refusal below and legs
+    # `3-lite`/`3-pki` then found 5174 still reachable (the release-test cleanup they run
+    # first correctly refuses to touch a LIVE stack) and reported BLOCKED too. Three legs,
+    # every run, structurally.
+    #
+    # ⚠️ It is `--auto-stop-stack`, default OFF, and NOT implied by `--yes`. `--yes` says "I
+    # accept the hours and the image rebuilds"; it does not say "you may stop the deployment
+    # I am using". Those are different consents and one must not be spent on the other. The
+    # restart command is printed at the moment of stopping, not only at the end, because the
+    # thing that follows takes hours.
+    if [[ "$AUTO_STOP_STACK" == "true" ]] && service_reachable localhost 5174; then
+        info ""
+        info "${YELLOW}--auto-stop-stack: stopping the dev stack so stage 3 can bind the stock ports${NC}"
+        info "${YELLOW}  restart it afterwards with: ./opentr.sh start dev${NC}"
+        ./opentr.sh stop >/dev/null 2>&1 || info "  ${YELLOW}warn${NC}: ./opentr.sh stop reported a problem; continuing to the port check"
+        for _ in $(seq 1 30); do
+            service_reachable localhost 5174 || break
+            sleep 2
+        done
+        STACK_WAS_STOPPED_BY_US=true
+    fi
+
     if service_reachable localhost 5174; then
         # Leg "3" (scripts/release/65-rehearse.sh, Scenario B = test-upgrade.sh) deliberately
         # leaves its stack running afterward "for inspection" — the right default when a human
@@ -275,6 +318,7 @@ check_stage3_precondition() {
         fi
         if service_reachable localhost 5174; then
             err "Stage 3 requires the dev stack STOPPED (it rebuilds and rehearses against prod images). Run: ./opentr.sh stop"
+            err "  (or pass --auto-stop-stack to let this script do it; it is deliberately not implied by --yes)"
             return $EXIT_PRECONDITION
         fi
     fi
@@ -475,6 +519,14 @@ if [[ "$MODE_DRY_RUN" != "true" ]]; then
             info "${YELLOW}Exiting ${EXIT_NOT_MEASURED} (NOT MEASURED), not 0.${NC}"
             RC=$EXIT_NOT_MEASURED
         fi
+    fi
+    # Say it again at the end: --auto-stop-stack's banner scrolled past hours ago, and a
+    # stopped dev stack is the kind of side effect that gets discovered by something else
+    # failing rather than by being remembered.
+    if [[ "$STACK_WAS_STOPPED_BY_US" == "true" ]]; then
+        info ""
+        info "${YELLOW}--auto-stop-stack stopped your dev stack. Restart it with:${NC}"
+        info "${YELLOW}  ./opentr.sh start dev${NC}"
     fi
     info "Report: $REPORT_FILE"
 fi

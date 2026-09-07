@@ -154,6 +154,11 @@ err()  {{ echo "ERR: $*" >&2; }}
 info() {{ echo "INFO: $*" >&2; }}
 MODE_DRY_RUN=false
 ASSUME_YES=true
+# Default OFF, deliberately: this file's subject is the leg-aware release-test cleanup, and
+# --auto-stop-stack (test_test_matrix_auto_stop_stack.py) must not be what makes it pass. See
+# that file for why `--yes` does not imply it.
+AUTO_STOP_STACK=false
+STACK_WAS_STOPPED_BY_US=false
 SKIP_COUNT=0
 declare -a SKIPPED_LEGS=()
 LEDGER_DIR="{fake_repo}/.test-matrix"
@@ -253,6 +258,8 @@ def test_leg_3_itself_is_not_torn_down_by_its_own_precondition_check(tmp_path: P
     snippet = f"""
 set -uo pipefail
 EXIT_PRECONDITION=3
+AUTO_STOP_STACK=false
+STACK_WAS_STOPPED_BY_US=false
 err()  {{ echo "ERR: $*" >&2; }}
 info() {{ echo "INFO: $*" >&2; }}
 service_reachable() {{ [ -f "{state_file}" ]; }}

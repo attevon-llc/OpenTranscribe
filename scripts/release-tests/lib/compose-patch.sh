@@ -167,6 +167,7 @@ cp_pin_image_tag() {
     local service="$2"
     local tag="$3"
     python3 - "$file" "$service" "$tag" <<'PY'
+import re
 import sys
 from pathlib import Path
 
@@ -180,8 +181,46 @@ if svc is None:
 image = svc.get("image")
 if not image:
     sys.exit(f"service '{service}' has no image key in {path}")
-repo = image.split(":", 1)[0]
-svc["image"] = f"{repo}:{tag}"
+
+
+def repo_of(value: str) -> str:
+    """The repository half of a compose `image:`, including the interpolated form.
+
+    ⚠️ `value.split(":", 1)[0]` is WRONG whenever the image is a compose variable
+    expression, and every backend service in docker-compose.prod.yml is one:
+
+        ${BACKEND_IMAGE:-davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}}
+
+    The first colon there belongs to `:-`, so the naive split produced
+    `${BACKEND_IMAGE` and this function wrote `${BACKEND_IMAGE:v0.5.0` — an unparseable
+    expression that fails the whole stack at `compose up` with
+
+        invalid interpolation format for services.celery-worker.image
+
+    Latent until 2026-09-07: lite-mode could not build an image at all (a shadowed
+    ARG TARGETARCH), so it never reached `compose up` to hit this.
+    """
+    if "${" not in value:
+        return value.split(":", 1)[0]
+
+    outer = re.match(r"^\$\{[A-Za-z_][A-Za-z0-9_]*:-(.*)\}$", value, re.S)
+    if not outer:
+        sys.exit(
+            f"service '{service}' in {path} has image {value!r}, which is a compose "
+            "expression this cannot resolve a repository from. Refusing rather than "
+            "writing a malformed image that fails at `compose up`."
+        )
+    # Drop the nested ${...} (the tag) so the remaining text is repo + trailing colon.
+    inner = re.sub(r"\$\{[^{}]*\}", "", outer.group(1)).rstrip(":")
+    if not inner or "$" in inner or "{" in inner:
+        sys.exit(
+            f"service '{service}' in {path}: could not resolve a repository from "
+            f"{value!r} (got {inner!r}). Refusing."
+        )
+    return inner
+
+
+svc["image"] = f"{repo_of(image)}:{tag}"
 Path(path).write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
 PY
 }

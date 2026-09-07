@@ -744,37 +744,15 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
             # silently fell back to BM25 keyword matching). Without this
             # check the heap-too-small bug from v0.3.x can ship undetected.
             #
-            # Polled, not checked once: a fresh install is strictly colder than
-            # an upgrade (no registered model in the OpenSearch volume, empty
-            # /ml-models/ mount), and registering+deploying a ~92MB model can
-            # take 30s+ on its own. A one-shot check here measured a real
-            # v0.5.0 run failing at ~35s elapsed while the model was still
-            # mid-registration -- hybrid search itself passed via BM25
-            # fallback the whole time. Unlike test-upgrade.sh (180s poll,
-            # warmer stack), a fresh install can never seed the shared
-            # opensearch-ml cache -- mc_seed_cache's live-cache source
-            # deliberately skips it as "container-specific" (see the
-            # comment beside its call in test-upgrade.sh's own seeding),
-            # so /ml-models/ is always empty and registration always goes
-            # the cold remote-download route, whose duration depends on
-            # network conditions rather than local disk. Measured: even
-            # 300s (ml_model_service._REGISTRATION_MAX_WAIT) was not
-            # always enough on this host under concurrent build/scan
-            # load. 600s gives real headroom for that variance; costs
-            # nothing on a healthy run -- exits on the first successful poll.
-            local ml_deployed=0 ml_wait=0
-            while [ "$ml_wait" -lt 600 ]; do
-                ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
-                    'http://localhost:9200/_plugins/_ml/models/_search' \
-                    -H 'Content-Type: application/json' \
-                    -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
-                    2>/dev/null \
-                    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
-                    2>/dev/null || echo 0)
-                [ "$ml_deployed" -ge 1 ] && break
-                sleep 10
-                ml_wait=$((ml_wait + 10))
-            done
+            # Polled, not checked once: registration+deployment of a ~92MB model is an async
+            # background task, and a one-shot check here measured a real v0.5.0 run failing
+            # at ~35s elapsed while the model was still mid-registration -- hybrid search
+            # itself passed via BM25 fallback the whole time. The budget lives in
+            # ML_DEPLOY_TIMEOUT_S (lib/api-client.sh) with its own derivation; it is no
+            # longer a per-scenario literal, which is how test-upgrade.sh came to sit at 180
+            # against this file's 600.
+            local ml_deployed=0
+            ml_deployed=$(ac_wait_for_ml_model_deployed) || true
             as_assert_ge "OpenSearch ML model deployed (neural search active)" "$ml_deployed" 1
         fi
     fi

@@ -1672,24 +1672,13 @@ PY
     # BM25. The v0.3.x heap-too-small regression we fixed must not be able
     # to ship undetected via the upgrade path.
     #
-    # Neural search registration + deployment runs as an ASYNC background
-    # task after backend startup, so we poll for up to 3 minutes rather than
-    # checking once immediately. This matches realistic user expectations:
-    # "backend is up, wait a moment, then neural search is live".
+    # Registration + deployment is an ASYNC background task after backend startup, so this
+    # polls. The budget (ML_DEPLOY_TIMEOUT_S, lib/api-client.sh) used to be 180 here against
+    # 600 in both sibling scenarios, justified by a "warmer stack" claim that MEASUREMENT
+    # refutes — the shared cache's opensearch-ml tree is empty and mc_seed_cache skips it, so
+    # this stack registers from cold like the others. See the constant's own header.
     local ml_deployed=0
-    local ml_wait=0
-    while [ "$ml_wait" -lt 180 ]; do
-        ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
-            'http://localhost:9200/_plugins/_ml/models/_search' \
-            -H 'Content-Type: application/json' \
-            -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
-            2>/dev/null \
-            | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
-            2>/dev/null || echo 0)
-        [ "$ml_deployed" -ge 1 ] && break
-        sleep 10
-        ml_wait=$((ml_wait + 10))
-    done
+    ml_deployed=$(ac_wait_for_ml_model_deployed) || true
     as_assert_ge "OpenSearch ML model deployed post-upgrade (neural search active)" "$ml_deployed" 1
 
     # Hybrid search smoke — confirm the seeded transcript is still queryable

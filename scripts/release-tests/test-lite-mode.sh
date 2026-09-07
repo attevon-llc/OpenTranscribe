@@ -713,19 +713,9 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
         # test-fresh-install.sh's identical fix for the full measurement and
         # why 600s (not 300s): the shared opensearch-ml cache is never
         # seeded, so this always cold-downloads from the network.
-        local ml_deployed=0 ml_wait=0
-        while [ "$ml_wait" -lt 600 ]; do
-            ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
-                'http://localhost:9200/_plugins/_ml/models/_search' \
-                -H 'Content-Type: application/json' \
-                -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
-                2>/dev/null \
-                | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
-                2>/dev/null || echo 0)
-            [ "$ml_deployed" -ge 1 ] && break
-            sleep 10
-            ml_wait=$((ml_wait + 10))
-        done
+        # Budget lives in ML_DEPLOY_TIMEOUT_S (lib/api-client.sh), not as a literal here.
+        local ml_deployed=0
+        ml_deployed=$(ac_wait_for_ml_model_deployed) || true
         as_assert_ge "OpenSearch ML model deployed (neural search active)" "$ml_deployed" 1
 
         # Chat via the mocked LLM, grounded in the mocked-ASR transcript.

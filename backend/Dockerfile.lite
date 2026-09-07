@@ -38,7 +38,16 @@
 # with "exec format error" at container start. Fixed by selecting the real per-arch
 # diar-native CPU tag via TARGETARCH, still pinned by digest so the binary is
 # reproducible — just the correct (CPU) image, and now built for both architectures.
-ARG TARGETARCH
+# ⚠️ Do NOT add `ARG TARGETARCH` here. BuildKit supplies TARGETARCH to the global
+# scope automatically for use in FROM; declaring it explicitly with no default
+# SHADOWS the built-in with an empty string, and `FROM diar-native-bin-${TARGETARCH}`
+# below then resolves to the literal `diar-native-bin-`:
+#     ERROR: failed to solve: failed to parse stage name
+#            "diar-native-bin-": invalid reference format
+# That is not hypothetical — it failed the whole lite-mode rehearsal scenario on
+# 2026-09-07, and reproduces on demand (see
+# backend/tests/unit/test_dockerfile_targetarch_stage_selection.py, which BUILDS
+# both forms rather than reading them).
 FROM davidamacey/diar-native@sha256:b00b4bb5999d0b5cc353dae27c07b17fe61b232517f250aaf3ef03536c610879 AS diar-native-bin-amd64
 FROM davidamacey/diar-native@sha256:63e7a7275aada3da8c4840cbc5e2b4e498605a6658086355c62b84af75232d64 AS diar-native-bin-arm64
 # This FROM selects one of the two DIGEST-PINNED stages immediately above by ARG

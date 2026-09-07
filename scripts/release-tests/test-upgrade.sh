@@ -665,10 +665,14 @@ phase_01b_build_docs_image() {
 
 phase_02_verify_from_version() {
     gr_log "verifying davidamacey/opentranscribe-*:${FROM_VERSION} exists on Docker Hub"
-    if ! docker manifest inspect "davidamacey/opentranscribe-backend:${FROM_VERSION}" >/dev/null 2>&1; then
+    # Through ver_hub_has_release, not two more bare `docker manifest inspect` calls: those
+    # asked Docker Hub the same question `ver_hub_has` had already asked and memoized while
+    # detecting FROM_VERSION, against a 100-pulls-per-6h anonymous budget. Same two images
+    # (backend + frontend), same failure, one fewer copy of the question.
+    if ! ver_hub_has backend "$FROM_VERSION"; then
         gr_die "Docker Hub does not have davidamacey/opentranscribe-backend:${FROM_VERSION}; cannot run upgrade test from a non-existent release"
     fi
-    if ! docker manifest inspect "davidamacey/opentranscribe-frontend:${FROM_VERSION}" >/dev/null 2>&1; then
+    if ! ver_hub_has frontend "$FROM_VERSION"; then
         gr_die "Docker Hub does not have davidamacey/opentranscribe-frontend:${FROM_VERSION}"
     fi
     gr_ok "${FROM_VERSION} images present on Docker Hub"

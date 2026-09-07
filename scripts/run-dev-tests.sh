@@ -49,7 +49,8 @@
 # Requires: ./opentr.sh start dev (live stack up) for any phase but --frontend-only.
 #
 # Exit codes (matches scripts/release.sh / scripts/test-matrix.sh):
-#   0 pass · 1 gate failed · 2 misuse · 3 precondition unmet
+#   0 pass · 1 gate failed · 2 misuse · 3 precondition unmet · 5 NOT MEASURED
+# 5, not 4: under the standard contract 4 already means operator abort — see EXIT_NOT_MEASURED.
 
 # shellcheck disable=SC2034
 # VENV_PY, AUTH_CONFIG_CLI, and ALL_OVERLAYS below are consumed by scripts/lib/dev-test-overlays.sh,
@@ -103,6 +104,16 @@ WITH_PIPELINE_SMOKE=false
 # calling run-integration-tests.sh separately and losing this script's overlay orchestration.
 SEARCH_QUALITY=false
 
+# `--no-coverage`: drop --coverage from the backend gate.
+#
+# NOT the default, and the measurement is why. Measured on this host, 13,558 tests, idle,
+# same tree: without --cov **168.1 s**, with --cov **173.7 s** — the instrumentation costs
+# **5.6 s**, about 3% of the unit phase and well under 1% of a --full run. That is inside the
+# run-to-run noise this suite is documented to have (root CLAUDE.md records 21-28 s of
+# same-config variation), so flipping the default would trade a report produced every run for
+# a saving that cannot reliably be observed. The flag is for tight iteration on one phase.
+NO_COVERAGE=false
+
 usage() {
     cat <<'EOF'
 Usage:
@@ -124,6 +135,9 @@ Overlay flags:
                       gate (self-seeding 6-meeting corpus; several extra minutes). This is
                       what full-test-matrix.md's Cycle 2A leg 1 asks for, so the matrix can
                       run that leg through this script and keep its overlay orchestration
+  --no-coverage       drop --coverage from the backend gate. Measured cost of coverage:
+                      5.6 s of a 168 s unit phase (168.1 -> 173.7), inside this suite's
+                      run-to-run noise — for tight iteration, not a default worth changing
   --no-overlays       escape hatch: assume the stack is already configured as desired,
                       skip all overlay auto-detection/starting/DB reconciliation
   --list-overlays     print the resolved overlay set and exit, start nothing
@@ -173,6 +187,7 @@ while [[ $# -gt 0 ]]; do
         --all-overlays)  ALL_OVERLAYS=true ;;
         --with-gpu-scale) WITH_GPU_SCALE=true ;;
         --search-quality) SEARCH_QUALITY=true ;;
+        --no-coverage)   NO_COVERAGE=true ;;
         --no-overlays)   NO_OVERLAYS=true ;;
         --list-overlays) LIST_OVERLAYS=true ;;
         --dry-run)       DRY_RUN=true ;;
@@ -392,7 +407,7 @@ if [[ "$RUN_BACKEND" == "true" ]]; then
     backend_flags=(--cleanup)
     if [[ "$E2E_SMOKE" == "true" ]]; then
         backend_flags=(--e2e-smoke "${backend_flags[@]}")
-    else
+    elif [[ "$NO_COVERAGE" != "true" ]]; then
         backend_flags=(--coverage "${backend_flags[@]}")
     fi
     $SEARCH_QUALITY && backend_flags=(--search-quality "${backend_flags[@]}")

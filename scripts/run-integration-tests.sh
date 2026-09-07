@@ -120,11 +120,16 @@ fi
 GATES=(RUN_PKI_TESTS=true RUN_MFA_TESTS=true RUN_LLM_TESTS=true
        RUN_FEDRAMP_TESTS=true RUN_FIPS_TESTS=true
        RUN_AUTH_CONFIG_TESTS=true RUN_ADVANCED_ADMIN_TESTS=true)
+# ⚠️ Every file here must carry a RUN_* gate, or it runs THREE times per gate — once in the
+# ungated Unit/API phase and once in each of the two FIPS passes. tests/test_admin_endpoints.py
+# was in this list with no gate at all (`rg RUN_ tests/test_admin_endpoints.py` -> nothing), so
+# its 8 tests ran 24 times per gate and the gated phases' counts overstated what the RUN_*
+# variables actually unlock. It is covered by the Unit/API phase, which is where an ungated file
+# belongs.
 GATED_FILES=(tests/test_pki_auth.py tests/test_mfa_security.py
              tests/test_llm_settings.py tests/test_fedramp_compliance.py
              tests/test_fedramp_controls.py tests/test_fips_140_3.py
-             tests/test_auth_config_service.py tests/test_admin_security.py
-             tests/test_admin_endpoints.py)
+             tests/test_auth_config_service.py tests/test_admin_security.py)
 
 # --- diar-native "sidecar expected" predicate --------------------------------
 #
@@ -503,17 +508,30 @@ run_phase "DB session lifetime (no transaction across slow work)" \
 # collection that varies with time, locale, filesystem order or a stray environment read.
 # Lives here rather than in the fast suite: two full collections cost ~30 s, and this branch
 # spent a lot of effort getting that suite down to ~2 min.
+# ⚠️ TWO PROCESSES, run in PARALLEL. Keeping them as two separate processes IS the
+# measurement — collapsing them into one collection compared against itself would prove
+# nothing. But they are independent, so running them one after the other only doubled the wall
+# clock: measured 78.3 s serial for a single collection of 39.3 s.
 run_phase "Collection determinism (two processes, same test ids)" \
     bash -c '
         set -uo pipefail
         a=$(mktemp) && b=$(mktemp)
         trap "rm -f $a $b" EXIT
         "'"$VENV_PY"'" -m pytest --collect-only -q -o addopts= -p no:cacheprovider \
-            2>/dev/null | grep "::" | sort > "$a"
+            2>/dev/null | grep "::" | sort > "$a" &
+        pid_a=$!
         "'"$VENV_PY"'" -m pytest --collect-only -q -o addopts= -p no:cacheprovider \
-            2>/dev/null | grep "::" | sort > "$b"
-        if [[ ! -s $a ]]; then
-            echo "collected nothing — the probe did not run" >&2
+            2>/dev/null | grep "::" | sort > "$b" &
+        pid_b=$!
+        # Wait on both regardless of order, and do not let a crashed collector look like an
+        # empty-but-equal pair — the emptiness check below is the backstop for that.
+        wait "$pid_a" || true
+        wait "$pid_b" || true
+        if [[ ! -s $a || ! -s $b ]]; then
+            # BOTH, now that they run concurrently: one collector dying leaves an empty file,
+            # and two empty files diff clean. "Identical" over nothing is the silent-skip trap
+            # wearing a determinism check as a hat.
+            echo "collected nothing — a probe did not run (a=$(wc -l < "$a") b=$(wc -l < "$b"))" >&2
             exit 1
         fi
         if ! diff -u "$a" "$b" > /tmp/ot-collection-diff.txt; then
@@ -547,11 +565,17 @@ if $SEARCH_QUALITY; then
         env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py -o addopts="" -q --tb=short
 fi
 
-# 9. Optional: browser smoke tests against the live stack
+# 9. Optional: browser smoke tests against the live stack.
+#
+# Through scripts/e2e/run-e2e-smoke.sh rather than a bare pytest, for two reasons that are
+# really one: this file listed the same four e2e files as that script, so the list had two
+# homes and could drift — and because the gate bypassed run-e2e.sh, it also bypassed
+# `resolve_phase`, the workers, and the stack preflight. Notably, the gate's own bypass is
+# WHY nobody noticed that run-e2e-smoke.sh always exited non-zero (its phase 2 collects no
+# `visual` test, exits 5, and only resolve_phase forgives that) — see run-e2e.sh's comment.
+# Running the smoke the way a developer runs it is the point of a smoke phase.
 if $E2E_SMOKE; then
-    run_phase "E2E smoke (browser)" \
-        "$VENV_PY" -m pytest tests/e2e/test_settings_modal.py tests/e2e/test_a11y.py \
-            tests/e2e/test_file_detail_transcript.py tests/e2e/test_media_download.py -q --tb=short
+    run_phase "E2E smoke (browser)" "$SCRIPT_DIR/e2e/run-e2e-smoke.sh"
 fi
 
 # 10. Optional: orphaned test-user report (dry run — pass --execute manually to apply)

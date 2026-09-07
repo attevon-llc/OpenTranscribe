@@ -23,6 +23,19 @@ Every pytest phase in the gate now runs with **`-rs`** and writes `--junitxml` i
 21 + 18 + 78 + 56 skips had **no recorded reason anywhere** — diagnosing them meant re-running a
 733-second phase by hand.
 
+Two more things the gate does differently, both measured:
+
+- **`GATED_FILES` entries must carry a `RUN_*` gate.** `test_admin_endpoints.py` sat there with
+  none, so its 8 tests ran **three times per gate** (the ungated Unit/API phase plus both FIPS
+  passes) and inflated the gated phases' counts with tests that say nothing about what those
+  variables unlock: 399 passed / 3 skipped -> 392 / 2 per pass, wall unchanged (36.6 -> 36.8 s,
+  noise). `unit/test_gated_files_all_have_gates.py` fails on any ungated entry.
+- **`--e2e-smoke` goes through `scripts/e2e/run-e2e-smoke.sh`**, not a bare pytest listing the
+  same four files. The old bypass meant the gate skipped `resolve_phase`, the 3 workers and the
+  stack preflight — and it is *why* nobody noticed that `run-e2e-smoke.sh` always exited
+  non-zero (its phase 2 collects no `visual` test, exits 5, and only `resolve_phase` forgives
+  that). Same 39 passed / 1 skipped, 174.4 s -> 158.3 s.
+
 ## Purpose
 
 `./scripts/run-integration-tests.sh` is **THE pre-merge gate**: ungated suite → all `RUN_*`

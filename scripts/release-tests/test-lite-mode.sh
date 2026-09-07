@@ -552,6 +552,38 @@ print(",".join(m for m in mods if u.find_spec(m) is None))' 2>/dev/null) || miss
     echo "lite carries the full ONNX export toolchain (can self-provision): confirmed" | tee -a "$report"
 }
 
+#: How long to wait for a recreated mock-asr to report healthy. Its healthcheck is
+#: `interval: 10s` (docker-compose.mock-asr.yml), so 30 s is three probes — generous for a
+#: stdlib HTTP server, and bounded so a genuinely broken container fails here by name rather
+#: than as a confusing assertion failure three steps later.
+LM_MOCK_ASR_HEALTHY_TIMEOUT_S="${LM_MOCK_ASR_HEALTHY_TIMEOUT_S:-30}"
+LM_MOCK_ASR_POLL_S="${LM_MOCK_ASR_POLL_S:-1}"
+
+# Wait for the mock-asr container to report healthy after a --force-recreate.
+#
+# Replaces a bare `sleep 3` at the first recreate and NOTHING AT ALL at the second. Both are
+# the shape backend/tests/CLAUDE.md calls out: a fixed budget calibrated on an idle machine,
+# when the rehearsal IS the load. The container already declares a healthcheck; poll that
+# rather than guessing, and say so out loud if it never arrives.
+_lm_wait_for_mock_asr_healthy() {
+    local name="${MOCK_ASR_CONTAINER_NAME:-opentranscribe-mock-asr}"
+    local deadline=$(( $(date +%s) + LM_MOCK_ASR_HEALTHY_TIMEOUT_S ))
+    local state=""
+    while (( $(date +%s) < deadline )); do
+        state="$(docker inspect --format '{{.State.Health.Status}}' "$name" 2>/dev/null || echo "")"
+        if [[ "$state" == "healthy" ]]; then
+            return 0
+        fi
+        sleep "$LM_MOCK_ASR_POLL_S"
+    done
+    # Non-fatal on purpose, like the rest of this phase's degradations: the assertions below
+    # report their own verdict, and a hard die here would replace a specific failure with a
+    # generic one. But it must not be silent — an unhealthy mock is the likeliest cause of
+    # whatever fails next.
+    gr_warn "$name did not report healthy within ${LM_MOCK_ASR_HEALTHY_TIMEOUT_S}s (last state: '${state:-unknown}') — the assertions after this may fail for that reason"
+    return 0
+}
+
 phase_07_pipeline_assertions() {
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
     export API_BASE
@@ -754,7 +786,7 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
         -f docker-compose.mock-asr.yml -f docker-compose.mock-llm.yml \
         up -d --force-recreate --no-deps mock-asr
     popd >/dev/null
-    sleep 3
+    _lm_wait_for_mock_asr_healthy
 
     local error_file_uuid=""
     if error_file_uuid=$(ac_upload_file "$TEST_SAMPLE_WAV"); then
@@ -797,6 +829,9 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
         -f docker-compose.mock-asr.yml -f docker-compose.mock-llm.yml \
         up -d --force-recreate --no-deps mock-asr
     popd >/dev/null
+    # This recreate had NO wait at all, not even a sleep. Everything after it runs against a
+    # mock-asr that may still be starting.
+    _lm_wait_for_mock_asr_healthy
 
     # as_summary deliberately returns 1 when any assertion FAILed. Under
     # set -euo pipefail, a non-zero return from either stage of

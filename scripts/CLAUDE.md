@@ -313,6 +313,19 @@ this file is for.
   against mocked cloud ASR + mocked LLM), with `lib/guardrails.sh` as the
   safety firewall and `lib/{compose-patch,api-client,assertions,versions,model-cache}.sh`.
 
+  ⚠️ **The Docker Hub tag memo (`lib/versions.sh`'s `ver_hub_has`) lives in
+  `${OT_HUB_CACHE_DIR:-$XDG_CACHE_HOME/opentranscribe}/hub-tags` and entries EXPIRE
+  (`OT_HUB_CACHE_TTL_S`, default 6 h).** It used to be `${TEST_ROOT:-${TMPDIR:-/tmp}}/.hub-tags`,
+  wrong in both directions at once: `TEST_ROOT` is a per-run timestamped directory, so a
+  rehearsal re-probed every tag and the memo saved nothing in the case it exists for; and with
+  `TEST_ROOT` unset (`release.sh status`, `90-promote.sh`) it fell back to a bare `/tmp` file
+  that **never expired**, so a cached "no" for a tag published five minutes later stayed "no"
+  forever — which makes a real published release invisible to the tooling that decides what to
+  rehearse against. Entries are `<image> <yes|no> <epoch>`; a stampless (pre-TTL) entry is
+  treated as expired, not fresh. `backend/tests/unit/test_hub_tag_cache_ttl.py` sources the real
+  function against a fake `docker` and counts probes — a grep for the TTL variable would pass
+  against a version that defines it and never reads it.
+
   ⚠️ **NEVER hardlink `nltk_data` when seeding the model cache — seed through
   `lib/model-cache.sh`.** Both scenarios used `rsync -a --link-dest=<src> <src> <dst>`, which
   hardlinks every file. That is correct and free for the HuggingFace/torch/sentence-transformers

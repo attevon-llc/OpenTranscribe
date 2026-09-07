@@ -76,6 +76,7 @@ from _visual_diff import diff_fraction as _diff_fraction
 from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
 pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet stack)
@@ -187,27 +188,36 @@ def api_token(backend_url: str) -> str:
 
 
 @pytest.fixture(scope="module")
-def transcribed_file_uuid(api_token: str, backend_url: str) -> str:
-    """Discover a completed file that has transcript segments (or skip)."""
-    listing = requests.get(
-        f"{backend_url}/api/files",
-        headers={"Authorization": f"Bearer {api_token}"},
-        params={"page": "1", "page_size": "100", "sort_by": "upload_time", "sort_order": "desc"},
-        timeout=30,
-    )
-    items: list[dict[str, Any]] = listing.json().get("items", listing.json().get("files", []))
-    for f in items:
-        if f.get("status") != "completed":
-            continue
-        detail = requests.get(
-            f"{backend_url}/api/files/{f['uuid']}",
-            headers={"Authorization": f"Bearer {api_token}"},
-            timeout=30,
-        ).json()
-        if detail.get("transcript_segments"):
-            return str(f["uuid"])
-    pytest.skip("No completed transcribed file in dev dataset — required for file-detail capture")
-    return ""  # unreachable, satisfies typing
+def transcribed_file_uuid(owned_transcribed_file: dict[str, Any]) -> str:
+    """The file the ``file_detail`` capture is taken of — owned, not discovered.
+
+    This used to list ``/api/files``, take the NEWEST completed entry with segments,
+    and ``pytest.skip`` when there was none. Two problems:
+
+    * It was a **parameter of the parametrized test**, so it was constructed for all
+      eight surface x theme combinations. On a library with no transcript it therefore
+      skipped ``settings`` and ``chat_trace`` as well — two surfaces that have nothing
+      to do with a transcript and are the only ones that run on a shared stack at all.
+      The test body now resolves it lazily, inside the ``file_detail`` branch.
+    * "Newest completed file" is by construction not reproducible. The module docstring
+      answers that with "run against a ``--fresh --seed-benchmark`` stack, where nothing
+      else can upload" — true, but it makes the baseline a property of the seeding
+      script rather than of the UI. ``owned_transcribed_file`` is the committed 10 s
+      clip through the real pipeline: the same audio, the same transcript, on any stack.
+
+    ⚠️ **The committed ``file_detail-{light,dark}`` baselines predate this change** and
+    were captured from a seeded recording. Refresh them deliberately, with a human
+    looking at the images::
+
+        UPDATE_SCREENSHOTS=1 pytest backend/tests/e2e/test_visual_regression.py \
+            -k file_detail --base-url=... --backend-url=...
+
+    against the isolated stack this module requires. Nothing goes red in the meantime:
+    ``_skip_unless_isolated_stack`` deselects ``file_detail`` on the shared dev stack
+    that ``scripts/e2e/run-e2e.sh`` drives, so no comparison against the stale baseline
+    happens there.
+    """
+    return str(owned_transcribed_file["uuid"])
 
 
 #: HOST-side probe port — see the same constant in `test_chat_trace_panel.py`.
@@ -693,7 +703,6 @@ def test_visual_regression(
     browser: Any,
     theme: str,
     surface: str,
-    transcribed_file_uuid: str,
     base_url: str,
     request: pytest.FixtureRequest,
 ) -> None:
@@ -710,14 +719,17 @@ def test_visual_regression(
 
         if surface == "gallery":
             page.goto(base_url)
-            page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+            page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
             page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
             _stabilize(page)
             # A masked surface must actually mask something — see the speakers
             # branch below for why this is asserted rather than assumed.
             _assert_masks(page, "gallery")
         elif surface == "file_detail":
-            page.goto(f"{base_url}/files/{transcribed_file_uuid}")
+            # Resolved HERE, not as a test parameter: as a parameter it was built for
+            # every surface, so a stack with no transcript skipped `settings` and
+            # `chat_trace` too. See the fixture's docstring.
+            page.goto(f"{base_url}/files/{request.getfixturevalue('transcribed_file_uuid')}")
             page.wait_for_selector(".transcript-segment", timeout=30000)
             _stabilize(page)
             # A masked surface must actually mask something — see the speakers

@@ -2,21 +2,27 @@
 E2E smoke tests for the file-detail transcript view.
 
 Regression safety net ahead of the frontend component refactor
-(branch: refactor/frontend-overhaul). These are deliberately *tolerant*
-(Playwright auto-waiting, data-discovered file, benign console-error
-filtering) rather than brittle — they guard the high-value surfaces:
+(branch: refactor/frontend-overhaul). Tolerant where the UI is genuinely
+free to vary (Playwright auto-waiting, benign console-error filtering) and
+strict about the data, which the suite now owns rather than discovers —
+they guard the high-value surfaces:
 
 - The file-detail page renders a transcript (at least one segment).
 - The transcript Export control opens and lists txt/json/csv/srt/vtt
   (guards the formatter + export refactor).
-- The "Edit Speakers" affordance opens the speaker editor when the file
-  has diarization.
+- The "Edit Speakers" affordance opens the speaker editor. The owned
+  transcript has two speakers, so this is required, not conditional.
+- A transcript longer than one 500-segment page scrolls in completely and
+  renders no segment twice.
 
 Requirements:
 - Dev environment running: ./opentr.sh start dev
-- At least one completed, transcribed file in the dev dataset
 - Frontend at localhost:5173, Backend at localhost:5174
   (admin@example.com / password)
+
+The suite supplies its own transcripts (``owned_corpus.py``) and deletes them at
+session teardown; it reads nothing out of the dev library and asserts on nothing
+a developer put there.
 
 Run (headless):
     pytest backend/tests/e2e/test_file_detail_transcript.py -v
@@ -86,52 +92,39 @@ def api_token(backend_url: str) -> str:
 
 
 @pytest.fixture(scope="module")
-def transcribed_file(api_token: str, backend_url: str) -> dict[str, Any]:
-    """Discover a completed file that actually has transcript segments.
+def transcribed_file(api_token: str, backend_url: str, owned_diarized_transcript_file) -> dict:
+    """The suite's OWN multi-speaker transcript — never the dev library's.
 
-    Prefers a file with diarization (>1 distinct speaker) so the
-    speaker-editor assertion has something to exercise; falls back to any
-    transcribed file. Skips (rather than fails) if the dev dataset has none.
+    This used to list ``/api/files``, pick a ``completed`` entry, prefer one with
+    more than one speaker, and ``pytest.skip`` when the deployment had none. Three
+    things were wrong with that, and they compound:
+
+    * On an empty or ``--fresh`` stack every test in this module skipped, and the
+      E2E runner reported success. A suite that proves nothing must not read green.
+    * On a populated stack the tests asserted against whichever recording happened
+      to be newest, so what they exercised changed under the developer, and the
+      speaker-editor assertions ran or did not run depending on that file's
+      diarization.
+    * ``test_edit_segment_cancel_preserves_text`` types into a *real* recording's
+      transcript. It cancels, and cancelling is genuinely safe — but the file being
+      typed into was someone's actual data.
+
+    ``owned_diarized_transcript_file`` (``owned_corpus.py``) supplies two speakers
+    and twelve segments, injected through the production corpus-injection tool and
+    deleted at session teardown.
+
+    Returns:
+        The full ``GET /api/files/{uuid}`` payload for the owned file.
     """
-    listing = requests.get(
-        f"{backend_url}/api/files",
+    detail = requests.get(
+        f"{backend_url}/api/files/{owned_diarized_transcript_file['uuid']}",
         headers={"Authorization": f"Bearer {api_token}"},
-        params={"page": "1", "page_size": "100", "sort_by": "upload_time", "sort_order": "desc"},
         timeout=30,
     )
-    items: list[dict[str, Any]] = listing.json().get("items", listing.json().get("files", []))
-    completed = [f for f in items if f.get("status") == "completed"]
-    if not completed:
-        pytest.skip("No completed file in dev dataset — required for transcript E2E tests")
-
-    best: dict[str, Any] | None = None
-    fallback: dict[str, Any] | None = None
-    for f in completed:
-        detail = requests.get(
-            f"{backend_url}/api/files/{f['uuid']}",
-            headers={"Authorization": f"Bearer {api_token}"},
-            timeout=30,
-        ).json()
-        segments = detail.get("transcript_segments") or []
-        if not segments:
-            continue
-        fallback = fallback or detail
-        speakers = {
-            (s.get("speaker") or {}).get("display_name")
-            or (s.get("speaker") or {}).get("name")
-            or s.get("speaker_label")
-            for s in segments
-        }
-        speakers.discard(None)
-        if len(speakers) > 1:
-            best = detail
-            break
-
-    target = best or fallback
-    if not target:
-        pytest.skip("No completed file has transcript segments — required for transcript E2E tests")
-    assert target is not None  # narrowed for mypy (pytest.skip above raises)
-    return target
+    assert detail.status_code == 200, f"could not read the owned transcript: {detail.text[:300]}"
+    payload: dict[str, Any] = detail.json()
+    assert payload.get("transcript_segments"), "the owned transcript came back with no segments"
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -266,11 +259,12 @@ class TestExportControl:
 class TestSegmentEditing:
     """Inline segment editing (issue #123 Phase 4) — cancel path, and a real save+reload.
 
-    The cancel test uses ``detail_page`` (an ambient dev-dataset file) and never saves:
-    dev-environment transcripts must not be mutated by a test that only exercises
-    cancellation. The save test below needs the opposite guarantee — a real, persisted
-    write — so it uses its OWN ephemeral file (``owned_media_factory``, issue #541)
-    rather than touching ambient data.
+    The cancel test uses ``detail_page`` — now the suite's own injected transcript
+    (``owned_diarized_transcript_file``), not an ambient dev-dataset file — and never
+    saves. The save test below needs the opposite guarantee: a real, persisted write
+    through the REAL pipeline, so it uses ``owned_media_factory`` for a per-test
+    upload (issue #541) rather than writing into the shared injected fixture that
+    every other test in this module is reading.
     """
 
     def test_edit_segment_cancel_preserves_text(self, detail_page: Page) -> None:
@@ -280,9 +274,11 @@ class TestSegmentEditing:
         assert original, "Segment under edit must have text"
 
         first_segment.hover()
+        # Was `if edit_btn.count() == 0: pytest.skip(...)`. The segment being hovered
+        # now belongs to a transcript this suite created, so the edit affordance is
+        # either there or the feature is broken — there is no third case to skip for.
         edit_btn = first_segment.locator(".edit-button")
-        if edit_btn.count() == 0:
-            pytest.skip("Segment edit affordance not available on this view")
+        expect(edit_btn.first).to_be_visible(timeout=5000)
         edit_btn.first.click()
 
         textarea = detail_page.locator(".segment-textarea")
@@ -323,9 +319,10 @@ class TestSegmentEditing:
             assert unique_text != original, "the edit must actually change the text"
 
             first_segment.hover()
+            # Same reasoning as the cancel-path sibling: `media` is this test's own
+            # upload, so a missing edit affordance is a failure, not a skip.
             edit_btn = first_segment.locator(".edit-button")
-            if edit_btn.count() == 0:
-                pytest.skip("Segment edit affordance not available on this view")
+            expect(edit_btn.first).to_be_visible(timeout=5000)
             edit_btn.first.click()
 
             textarea = page.locator(".segment-textarea")
@@ -351,11 +348,14 @@ class TestSpeakerEditor:
     """The Edit Speakers affordance opens the speaker editor when diarized."""
 
     def test_edit_speakers_opens_editor(self, detail_page: Page) -> None:
-        """If diarization is present, Edit Speakers reveals the speaker editor."""
-        edit_btn = detail_page.locator(".edit-speakers-button")
-        if edit_btn.count() == 0:
-            pytest.skip("File has no diarization (no Edit Speakers affordance)")
+        """Edit Speakers reveals the speaker editor.
 
+        The "if diarization is present" hedge — and the skip under it — existed
+        because the file came from the dev library and might have had one speaker.
+        ``owned_diarized_transcript_file`` carries two by construction, so the
+        affordance is required.
+        """
+        edit_btn = detail_page.locator(".edit-speakers-button")
         expect(edit_btn).to_be_visible(timeout=10000)
         edit_btn.click()
         editor = detail_page.locator(".speaker-editor-container")
@@ -381,8 +381,7 @@ class TestSpeakerRenameRepaint:
 
     def test_rename_repaints_transcript_without_reload(self, detail_page: Page) -> None:
         edit_btn = detail_page.locator(".edit-speakers-button")
-        if edit_btn.count() == 0:
-            pytest.skip("File has no diarization (no Edit Speakers affordance)")
+        expect(edit_btn).to_be_visible(timeout=10000)
 
         new_name = "E2E Repaint Check"
 
@@ -401,9 +400,10 @@ class TestSpeakerRenameRepaint:
         expect(detail_page.locator(".speaker-editor-container")).to_be_visible(timeout=10000)
 
         # Rename the first speaker whose label input is editable.
+        # The owned transcript has two speakers, so the editor must expose an input;
+        # `expect` also waits for it, which `.count()` never did.
         name_input = detail_page.locator(".speaker-editor-container input").first
-        if name_input.count() == 0:
-            pytest.skip("Speaker editor exposes no name input")
+        expect(name_input).to_be_visible(timeout=10000)
         name_input.fill(new_name)
 
         save_btn = detail_page.locator(".save-speakers-button")
@@ -425,35 +425,36 @@ class TestSpeakerRenameRepaint:
 
 
 @pytest.fixture(scope="module")
-def paginated_file(api_token: str, backend_url: str) -> dict[str, Any]:
-    """Discover a file with more segments than one page (>500).
+def paginated_file(api_token: str, backend_url: str, owned_long_transcript_file) -> dict[str, Any]:
+    """The suite's OWN transcript, longer than one 500-segment page.
 
-    Skips when the dev dataset has none — the pagination invariants below cannot be
-    exercised without a genuinely paginated transcript.
+    A transcript that long is not something a developer's library reliably holds —
+    ten-minute recordings do not reach 500 segments — so this skipped on essentially
+    every stack, including this one (measured 2026-09-07: the only skip in the whole
+    module). The pagination invariants it guards are real: the "N of M loaded"
+    counter that advanced while rendering nothing, and the duplicate
+    ``overlap_group_id`` that made Svelte throw and took down the entire transcript
+    list. Neither has been exercised by an E2E run in a long time.
+
+    ``owned_long_transcript_file`` injects 560 segments in about two seconds — no
+    ASR, no media — and deletes them at session teardown.
+
+    Returns:
+        A mapping carrying at least ``uuid``, matching the shape the test reads.
     """
-    listing = requests.get(
-        f"{backend_url}/api/files",
+    total = requests.get(
+        f"{backend_url}/api/files/{owned_long_transcript_file['uuid']}/segments",
         headers={"Authorization": f"Bearer {api_token}"},
-        params={"page": "1", "page_size": "100"},
+        params={"segment_limit": "1"},
         timeout=30,
     )
-    items: list[dict[str, Any]] = listing.json().get("items", listing.json().get("files", []))
-    target: dict[str, Any] | None = None
-    for f in (x for x in items if x.get("status") == "completed"):
-        page_one = requests.get(
-            f"{backend_url}/api/files/{f['uuid']}/segments",
-            headers={"Authorization": f"Bearer {api_token}"},
-            params={"segment_limit": "1"},
-            timeout=30,
-        ).json()
-        if page_one.get("total_segments", 0) > 500:
-            target = f
-            break
-
-    if not target:
-        pytest.skip("No file with >500 segments in dev dataset — required for pagination E2E")
-    assert target is not None  # narrowed for mypy (pytest.skip above raises)
-    return target
+    assert total.status_code == 200, f"could not read owned segments: {total.text[:300]}"
+    reported = total.json().get("total_segments", 0)
+    assert reported > 500, (
+        f"the owned transcript reports {reported} segments through the API; the "
+        "pagination invariants need more than one 500-segment page"
+    )
+    return {"uuid": owned_long_transcript_file["uuid"], "total_segments": reported}
 
 
 class TestTranscriptPagination:

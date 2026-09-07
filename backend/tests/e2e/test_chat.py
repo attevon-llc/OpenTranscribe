@@ -37,6 +37,7 @@ from conftest import TEST_ADMIN_PASSWORD
 from conftest import unique_conversation_title
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 
 pytestmark = pytest.mark.chat
 
@@ -190,20 +191,15 @@ def _llm_configured(api_session: requests.Session, backend_url: str) -> bool:
         return False
 
 
-def _has_completed_file(api_session: requests.Session, backend_url: str) -> bool:
-    try:
-        response = api_session.get(
-            f"{backend_url}/api/files",
-            params={"status": "completed", "page_size": "1"},
-            timeout=20,
-        )
-        if not response.ok:
-            return False
-        data = response.json()
-        items = data.get("items", data if isinstance(data, list) else [])
-        return len(items) > 0
-    except (requests.RequestException, ValueError):
-        return False
+# ``_has_completed_file`` used to live here: it listed ``/api/files?status=completed``
+# and three tests skipped on it with "Requires at least one completed transcript".
+# That made the whole grounded-answer surface — the actual value of this feature —
+# silently unexercised on any deployment whose library happened to be empty, while
+# the run still reported success. The precondition is now supplied instead of
+# tested for: ``owned_transcribed_file`` (``owned_corpus.py``) uploads the committed
+# clip, waits for the real pipeline and for OpenSearch to hold its chunks, and
+# deletes it at session teardown. A test that needs retrieval to find something
+# depends on that fixture and asserts unconditionally.
 
 
 def _open_chat(page: Page, base_url: str) -> None:
@@ -311,12 +307,11 @@ def test_send_message_streams_answer_with_citations(
     cleanup_conversations: list[str],
     base_url: str,
     backend_url: str,
+    owned_transcribed_file: dict,
 ):
     """The end-to-end value of the feature: a grounded, cited answer."""
     if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
-    if not _has_completed_file(api_session, backend_url):
-        pytest.skip("Requires at least one completed transcript")
 
     _open_chat(gallery_page, base_url)
 
@@ -353,12 +348,11 @@ def test_citation_navigates_to_transcript_at_timestamp(
     cleanup_conversations: list[str],
     base_url: str,
     backend_url: str,
+    owned_transcribed_file: dict,
 ):
     """Clicking a citation opens the recording at the moment it came from."""
     if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
-    if not _has_completed_file(api_session, backend_url):
-        pytest.skip("Requires at least one completed transcript")
 
     _open_chat(gallery_page, base_url)
     gallery_page.locator('[data-testid="chat-composer-input"]').fill("Summarise the key points.")
@@ -493,11 +487,14 @@ def test_file_picker_scopes_the_conversation(
     cleanup_conversations: list[str],
     base_url: str,
     backend_url: str,
+    owned_transcribed_file: dict,
 ):
-    """Selecting recordings replaces 'All transcripts' with an explicit scope."""
-    if not _has_completed_file(api_session, backend_url):
-        pytest.skip("Requires at least one completed transcript")
+    """Selecting recordings replaces 'All transcripts' with an explicit scope.
 
+    ``owned_transcribed_file`` guarantees the picker has at least one row; the
+    checkbox it ticks is whichever the picker lists first, which is all this
+    assertion is about.
+    """
     _open_chat(gallery_page, base_url)
     gallery_page.locator('[data-testid="chat-add-context"]').click()
 
@@ -511,12 +508,19 @@ def test_file_picker_scopes_the_conversation(
     expect(gallery_page.locator('[data-testid="chat-scope-all"]')).to_have_count(0)
 
 
-def test_gallery_chat_with_selection_hands_off_context(gallery_page: Page):
-    """'Chat with N' carries the gallery selection into a scoped conversation."""
-    checkbox = gallery_page.locator('.file-card input[type="checkbox"]').first
-    if checkbox.count() == 0:
-        pytest.skip("No files in the gallery to select")
+def test_gallery_chat_with_selection_hands_off_context(
+    gallery_page: Page, owned_transcribed_file: dict
+):
+    """'Chat with N' carries the gallery selection into a scoped conversation.
 
+    Was ``if checkbox.count() == 0: pytest.skip("No files in the gallery to
+    select")`` — a skip that fired on an empty library and, because ``.count()``
+    does not auto-wait, could also fire simply because the grid had not painted
+    yet. ``owned_transcribed_file`` puts a card in the gallery, so the checkbox is
+    waited for rather than counted.
+    """
+    checkbox = gallery_page.locator('.file-card input[type="checkbox"]').first
+    expect(checkbox).to_be_attached(timeout=15_000)
     checkbox.check()
     gallery_page.locator('[data-testid="gallery-chat-with-selected"]').click()
 
@@ -602,7 +606,7 @@ def test_chat_settings_section_saves(gallery_page: Page, base_url: str):
 
     # Reach the settings modal the same way a user does.
     gallery_page.goto(f"{base_url}/")
-    gallery_page.wait_for_selector(".gallery-action-buttons", timeout=30_000)
+    gallery_page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     gallery_page.evaluate(
         "() => window.dispatchEvent(new CustomEvent('open-settings', { detail: 'chat' }))"
     )

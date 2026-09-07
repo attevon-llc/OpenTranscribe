@@ -68,6 +68,7 @@ if _backend_dir not in sys.path:
 # same env vars this dev stack exposes) — imported here for its **module-level side effects
 # only** (setting `os.environ` before any `app.*` import happens), not registered as a plugin,
 # so its own fixtures / its own `pytest_plugins` entries don't leak into this rootdir.
+from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
 import tests.conftest  # noqa: F401,E402 — side effects only, see above
@@ -80,7 +81,13 @@ import tests.conftest  # noqa: F401,E402 — side effects only, see above
 # (vs. root conftest's bare ``fixtures.search_corpus_stack``) is required because root conftest's
 # own sys.path entry point is ``backend/tests``, while this file put ``backend/`` on sys.path
 # instead (see above), so the module lives at ``tests.fixtures.search_corpus_stack`` from here.
-pytest_plugins = ["tests.fixtures.search_corpus_stack"]
+#
+# ``owned_corpus`` is registered by its bare module name because it lives beside this
+# file, in the rootdir ``e2e/pytest.ini`` establishes — the same reason sibling modules
+# say ``from conftest import ...`` rather than ``from tests.e2e.conftest import ...``.
+# It owns every artifact the suite asserts on, so that no test reads the dev library
+# (see its module docstring and ``backend/tests/CLAUDE.md``).
+pytest_plugins = ["tests.fixtures.search_corpus_stack", "owned_corpus"]
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -400,7 +407,7 @@ def shared_auth_state(browser, base_url: str):
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
 
     fd, state_file = tempfile.mkstemp(suffix=".json")
     os.close(fd)
@@ -437,7 +444,7 @@ def gallery_page(browser, shared_auth_state, base_url: str):
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     # `.gallery-action-buttons` renders unconditionally, independent of the `GET
     # /api/files` fetch — so a test could act (select-all, read header geometry)
     # before the file list has actually landed. `.gallery-header-right`
@@ -448,7 +455,7 @@ def gallery_page(browser, shared_auth_state, base_url: str):
     # main file-grid fetch, so it is not a substitute here.) On a genuinely empty
     # library this will time out; the tests using this fixture already assume ambient
     # content, same as before this fixture existed.
-    page.wait_for_selector(".gallery-header-right", timeout=30000)
+    page.wait_for_selector(".gallery-header-right", timeout=APP_SHELL_READY_MS)
     yield page
     page.close()
     context.close()
@@ -869,7 +876,7 @@ def second_user_auth_state(browser, base_url: str, second_user: dict[str, str]):
     page.fill("#password", second_user["password"])
     page.click("button[type=submit]")
     try:
-        page.wait_for_selector(".gallery-action-buttons", timeout=10000)
+        page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     except Exception:
         page.wait_for_url(lambda url: "/login" not in url, timeout=30000)
 

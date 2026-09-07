@@ -107,13 +107,25 @@ def test_admin_policy_force_pii(api_helper, backend_url, token):
         assert cleared.get("force_pii") is False
 
 
-def test_transcript_redact_toggle_if_file_exists(api_helper):
-    """If a completed file exists, the redact toggle must be owner-honored."""
-    files = api_helper.get("/api/files?limit=1")
-    items = files.get("items") or files.get("media_files") or []
-    if not items:
-        pytest.skip("no files available to exercise the transcript redact toggle")
-    file_uuid = items[0].get("uuid") or items[0].get("id")
-    # Owner can request the original (redact=false) without error.
+def test_transcript_redact_toggle_is_owner_honored(api_helper, token, owned_transcribed_file):
+    """The owner can request the unredacted original of a file this suite created.
+
+    Two things were wrong with the previous version, and the second hid the first.
+
+    It listed ``/api/files?limit=1`` and skipped when the deployment had none — the
+    dev-data dependency this suite is being cured of. But it also never requested the
+    ``token`` fixture, so ``api_helper`` carried no bearer credential: the listing came
+    back 401, ``items`` was empty, and the test **skipped on every run against a stack
+    that was full of files**. It has therefore never exercised the redact toggle at all.
+
+    Depending on ``owned_transcribed_file`` fixes both: the file is one this session
+    uploaded and will delete, and its presence is a fixture guarantee rather than
+    something to branch on. ``token`` is requested explicitly so ``api_helper`` is
+    authenticated — without it this reverts to asserting on an error body.
+    """
+    file_uuid = owned_transcribed_file["uuid"]
     detail = api_helper.get(f"/api/files/{file_uuid}?redact=false")
-    assert "transcript_segments" in detail or "id" in detail
+    assert detail.get("uuid") == file_uuid, f"redact=false did not return the file: {detail}"
+    assert detail.get("transcript_segments"), (
+        "the owner asking for the unredacted original must receive the transcript"
+    )

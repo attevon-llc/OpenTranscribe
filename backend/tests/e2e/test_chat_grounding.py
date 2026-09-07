@@ -96,22 +96,6 @@ def api_session(backend_url: str) -> requests.Session:
     return session
 
 
-def _completed_transcripts_exist(api_session: requests.Session, backend_url: str) -> bool:
-    try:
-        response = api_session.get(
-            f"{backend_url}/api/files",
-            params={"status": "completed", "page_size": "1"},
-            timeout=20,
-        )
-        if not response.ok:
-            return False
-        data = response.json()
-        items = data.get("items", data if isinstance(data, list) else [])
-        return len(items) > 0
-    except (requests.RequestException, ValueError):
-        return False
-
-
 @pytest.fixture
 def llm_config_factory(api_session: requests.Session, backend_url: str) -> Iterator:
     """Create mock-LLM configs with a chosen context window; delete them after.
@@ -242,10 +226,32 @@ def conversation_factory(api_session: requests.Session, backend_url: str) -> Ite
 
 
 def _requirements_or_skip(api_session: requests.Session, backend_url: str) -> None:
+    """Skip only for the mock LLM — a deployment overlay this suite cannot start.
+
+    "Is there a completed transcript for retrieval to find" used to be checked here
+    too, by listing ``/api/files`` and skipping when the developer's library was
+    empty. This suite exists to prove the #384 invariant — that the citations a user
+    can click are exactly the excerpts the model was given — and that claim is
+    vacuous with nothing to retrieve, so an empty library made the whole file skip
+    while the run reported green. It is supplied now; see :func:`retrieval_corpus`.
+    """
     if not _mock_llm_running():
         pytest.skip("Requires the mock LLM: ./opentr.sh start dev --with-mock-llm")
-    if not _completed_transcripts_exist(api_session, backend_url):
-        pytest.skip("Requires at least one completed transcript for retrieval to find")
+
+
+@pytest.fixture(autouse=True)
+def retrieval_corpus(request: pytest.FixtureRequest) -> dict | None:
+    """Guarantee retrieval has something to find, without paying for it needlessly.
+
+    Autouse so every test gets the guarantee without a signature change apiece, but
+    resolved through ``getfixturevalue`` *after* the mock-LLM probe rather than as a
+    declared parameter: a declared one would be constructed during setup even for a
+    run with no LLM overlay, where every test skips anyway and a ~38 s upload would
+    buy nothing.
+    """
+    if not _mock_llm_running():
+        return None
+    return dict(request.getfixturevalue("owned_transcribed_file"))
 
 
 def _ask(page: Page, base_url: str, conversation_uuid: str, question: str) -> None:

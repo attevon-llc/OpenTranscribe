@@ -73,22 +73,6 @@ def api_session(backend_url: str) -> requests.Session:
     return session
 
 
-def _completed_transcripts_exist(api_session: requests.Session, backend_url: str) -> bool:
-    try:
-        response = api_session.get(
-            f"{backend_url}/api/files",
-            params={"status": "completed", "page_size": "1"},
-            timeout=20,
-        )
-        if not response.ok:
-            return False
-        data = response.json()
-        items = data.get("items", data if isinstance(data, list) else [])
-        return len(items) > 0
-    except (requests.RequestException, ValueError):
-        return False
-
-
 def _trace_enabled(api_session: requests.Session, backend_url: str) -> bool:
     """The panel is gated; without the flag there is nothing to assert on."""
     try:
@@ -99,12 +83,36 @@ def _trace_enabled(api_session: requests.Session, backend_url: str) -> bool:
 
 
 def _requirements_or_skip(api_session: requests.Session, backend_url: str) -> None:
+    """Skip only for things this suite genuinely cannot supply for itself.
+
+    The mock LLM and ``chat.trace_enabled`` are deployment switches — an overlay
+    the runner starts, and an admin setting. "Is there a transcript for retrieval
+    to find" was NOT in that class, and it used to be checked here the same way:
+    ``_completed_transcripts_exist`` listed ``/api/files`` and skipped when the
+    developer's library was empty. That silently disabled the entire trace panel
+    surface on a ``--fresh`` stack while the run still reported success.
+
+    It is now supplied instead — see :func:`retrieval_corpus` below.
+    """
     if not _mock_llm_running():
         pytest.skip("Requires the mock LLM: ./opentr.sh start dev --with-mock-llm")
-    if not _completed_transcripts_exist(api_session, backend_url):
-        pytest.skip("Requires at least one completed transcript for retrieval to find")
     if not _trace_enabled(api_session, backend_url):
         pytest.skip("Requires chat.trace_enabled")
+
+
+@pytest.fixture(autouse=True)
+def retrieval_corpus(request: pytest.FixtureRequest) -> dict | None:
+    """Guarantee retrieval has something to find, without paying for it needlessly.
+
+    Autouse so every test in the module gets the guarantee without ten identical
+    signature changes, but resolved through ``getfixturevalue`` *after* the mock-LLM
+    probe rather than as a declared parameter: a declared one would be constructed
+    during setup even for a run with no LLM overlay, where every test skips anyway
+    and a ~38 s upload would buy nothing.
+    """
+    if not _mock_llm_running():
+        return None
+    return dict(request.getfixturevalue("owned_transcribed_file"))
 
 
 @pytest.fixture

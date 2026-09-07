@@ -29,6 +29,7 @@ import uuid
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 
 pytestmark = [pytest.mark.e2e, pytest.mark.tags]
 
@@ -95,7 +96,7 @@ def tags_page(browser, shared_auth_state, base_url):
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     _open_manager(page)
     yield page
     page.close()
@@ -105,7 +106,7 @@ def tags_page(browser, shared_auth_state, base_url):
 def _reload_tags(page: Page) -> None:
     """Re-fetch the list by reopening the modal."""
     page.reload()
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     _open_manager(page)
 
 
@@ -156,7 +157,7 @@ class TestTagManagerRoute:
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
 
         page.goto(base_url)
-        page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+        page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         _open_manager(page)
         expect(page.locator(".list-skeleton")).to_have_count(0, timeout=10000)
 
@@ -357,16 +358,20 @@ class TestTagManagerThemes:
 class TestGalleryBulkTagEntry:
     """The Tags button routes by selection — the core of the modal design."""
 
-    def _enter_selection_mode(self, page: Page) -> bool:
-        """Select the first file. Returns False when the library is empty.
+    def _enter_selection_mode(self, page: Page) -> None:
+        """Select the first file.
 
         Checkboxes only exist in selection mode, which `.select-btn` enters.
         Looking for them without clicking it found nothing and skipped the test
         while 18 files sat in the library — a skip that read as coverage.
+
+        This used to return ``False`` for an empty library and the callers skipped
+        on it. They now depend on ``owned_transcribed_file``, so there is always a
+        card to select and an empty grid is a real failure — of the fixture, or of
+        the gallery — rather than a reason to stop testing.
         """
         page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
-        if page.locator(".file-card").count() == 0:
-            return False
+        expect(page.locator(".file-card").first).to_be_visible(timeout=30000)
         page.click(".select-btn")
         # The input is `opacity: 0` and sized to fill its label, so Playwright
         # never sees it as visible. The label is what a user clicks, and it
@@ -375,35 +380,35 @@ class TestGalleryBulkTagEntry:
         selector.wait_for(state="visible", timeout=10000)
         selector.click()
         expect(page.locator(".organize-btn")).to_contain_text("(1)", timeout=5000)
-        return True
 
     def test_tags_button_opens_the_manager_with_nothing_selected(self, gallery_page: Page):
         gallery_page.click(".tags-btn")
 
         expect(gallery_page.locator(".tags-manager")).to_be_visible()
 
-    def test_tags_button_opens_bulk_apply_with_a_selection(self, gallery_page: Page):
+    def test_tags_button_opens_bulk_apply_with_a_selection(
+        self, gallery_page: Page, owned_transcribed_file: dict
+    ):
         """A selection must reach the bulk flow, not the library manager."""
-        if not self._enter_selection_mode(gallery_page):
-            pytest.skip("no media files in this deployment to select")
-
+        self._enter_selection_mode(gallery_page)
         _open_tags_from_organize(gallery_page)
 
         # The bulk modal, addressed by its own field; the manager must NOT open.
         expect(gallery_page.get_by_label("Tag name")).to_be_visible()
         expect(gallery_page.locator(".tags-manager")).to_have_count(0)
 
-    def test_bulk_apply_reaches_the_backend_and_is_reversible(self, gallery_page: Page, tag_api):
+    def test_bulk_apply_reaches_the_backend_and_is_reversible(
+        self, gallery_page: Page, tag_api, owned_transcribed_file: dict
+    ):
         """Apply a test tag across a selection, verify via API, then undo it.
 
-        The only test here that writes to a dev media file. It is reversible by
-        construction: the tag is `e2e-tag-` prefixed and the teardown deletes
-        the tag row, which takes its associations with it — so even a mid-test
-        failure leaves the file's own tags untouched.
+        This used to be "the only test here that writes to a dev media file",
+        relying on the tag teardown to make that harmless. It now writes to a file
+        the suite uploaded and will delete, so the write is not merely reversible
+        — it never touches a developer's recording in the first place. The
+        `e2e-tag-` prefixed teardown stays as the second line of defence.
         """
-        if not self._enter_selection_mode(gallery_page):
-            pytest.skip("no media files in this deployment to select")
-
+        self._enter_selection_mode(gallery_page)
         name = _unique_tag_name()
         _open_tags_from_organize(gallery_page)
         gallery_page.get_by_label("Tag name").fill(name)
@@ -476,12 +481,30 @@ class TestTagFileList:
 
         expect(tags_page.locator(".detail-pane")).to_contain_text("No files", timeout=10000)
 
-    def test_a_used_tag_lists_its_files(self, tags_page: Page, tag_api):
-        """A seeded tag that real media carries must name that media."""
-        listed = tag_api.get("/api/tags")
-        used = [t for t in listed if t.get("usage_count", 0) > 0]
-        if not used:
-            pytest.skip("no tag in this deployment carries a file")
+    def test_a_used_tag_lists_its_files(
+        self, tags_page: Page, tag_api, owned_transcribed_file: dict
+    ):
+        """A tag that media carries must name that media.
+
+        The tag and the file are both this suite's own. Previously this scanned
+        ``/api/tags`` for anything with ``usage_count > 0`` and skipped when the
+        deployment had none — so on a fresh stack the "used" branch of the detail
+        pane, which is the whole point of the test, was never rendered.
+        """
+        name = _unique_tag_name()
+        # `POST /api/tags/files/{uuid}/tags` creates the tag if the caller lacks it,
+        # so this is the attach AND the create in one call.
+        attached = tag_api.post(
+            f"/api/tags/files/{owned_transcribed_file['uuid']}/tags", {"name": name}
+        )
+        assert attached.get("name") == name, (
+            f"could not attach {name} to the owned file: {attached}"
+        )
+        used = [t for t in tag_api.get("/api/tags") if t["name"] == name]
+        assert used and used[0].get("usage_count", 0) > 0, (
+            f"tag {name} was created but reports no usage: {used}"
+        )
+        _reload_tags(tags_page)
 
         _row(tags_page, used[0]["name"]).first.click()
         tags_page.wait_for_selector(".detail-pane", timeout=10000)

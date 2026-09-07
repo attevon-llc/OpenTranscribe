@@ -51,13 +51,21 @@ bad()  { echo -e "  \033[0;31mFAIL\033[0m  $*"; FAIL=$((FAIL + 1)); }
 
 vol_exists() { docker volume inspect "$1" >/dev/null 2>&1; }
 
+# ⚠️ Every statement needs `|| true`, and the function must end `return 0`.
+# guardrails.sh sets `set -e`, which is STILL ACTIVE inside an EXIT trap: removing
+# a volume that a given run never created exits 1, which aborts the rest of the
+# cleanup AND becomes the script's exit status. Measured 2026-09-07 — this script
+# printed "25 passed, 0 failed" and exited 1, so a caller reading the exit code saw
+# a failing self-test with nothing failing in it. (It can only manufacture false
+# FAILURES, never a false pass, but a gate nobody trusts is a gate nobody runs.)
 cleanup_all() {
-    docker volume rm "${GR_STOCK_PROJECT}_postgres_data" >/dev/null 2>&1
-    docker volume rm "${GR_STOCK_PROJECT}_minio_data"    >/dev/null 2>&1
-    docker rm -f otselftest-pg-fake >/dev/null 2>&1
-    docker volume rm otselftest_pgdata >/dev/null 2>&1
-    rm -f "$GR_OWNED_STAMP" /tmp/ot-selftest-backups-env
-    rm -rf /tmp/ot-selftest-backups-probe "$TEST_ROOT/opentr-stage-selftest"
+    docker volume rm "${GR_STOCK_PROJECT}_postgres_data" >/dev/null 2>&1 || true
+    docker volume rm "${GR_STOCK_PROJECT}_minio_data"    >/dev/null 2>&1 || true
+    docker rm -f otselftest-pg-fake >/dev/null 2>&1 || true
+    docker volume rm otselftest_pgdata >/dev/null 2>&1 || true
+    rm -f "$GR_OWNED_STAMP" /tmp/ot-selftest-backups-env || true
+    rm -rf /tmp/ot-selftest-backups-probe "$TEST_ROOT/opentr-stage-selftest" || true
+    return 0
 }
 trap cleanup_all EXIT
 
@@ -92,7 +100,7 @@ fi
 # data must survive.
 echo "3. stamped but carries .opentranscribe-live-data"
 docker volume create "${GR_STOCK_PROJECT}_minio_data" >/dev/null
-docker run --rm -v "${GR_STOCK_PROJECT}_minio_data:/v" alpine \
+gr_run_in_probe_image "${GR_STOCK_PROJECT}_minio_data:/v" \
     touch /v/.opentranscribe-live-data >/dev/null 2>&1
 printf 'volume=%s_minio_data\n' "$GR_STOCK_PROJECT" > "$GR_OWNED_STAMP"
 out="$(gr_cleanup_owned_stock_resources 2>&1)"
@@ -199,15 +207,24 @@ docker volume rm "${GR_STOCK_PROJECT}_preexisting_data" >/dev/null 2>&1
 # ── Case 8: gr_assert_target_is_test_database refuses on any of its four
 # independent conditions failing (issue #598) ───────────────────────────────
 echo "8. gr_assert_target_is_test_database"
+# Same pin as gr_run_in_probe_image, for the same reason: a stale linux/arm64
+# `alpine:latest` in the local store makes `sleep 60` die instantly with
+# `exec format error`, so the container this case needs RUNNING is already gone
+# and the happy path reports a refusal that is about the image, not the guard.
+selftest_run_fake_pg() {  # selftest_run_fake_pg <extra docker args...>
+    local platform platform_args=()
+    if platform="$(gr_host_platform)"; then platform_args=(--platform "$platform"); fi
+    docker run -d --rm --name otselftest-pg-fake "${platform_args[@]}" "$@" \
+        -v otselftest_pgdata:/var/lib/postgresql/data \
+        "$GR_PROBE_IMAGE" sleep 60 >/dev/null
+}
+
 env_ok="/tmp/ot-selftest-backups-env"
 docker volume create otselftest_pgdata >/dev/null
 docker rm -f otselftest-pg-fake >/dev/null 2>&1
 printf 'POSTGRES_DB=opentranscribe\n' > "$env_ok"
 
-docker run -d --rm --name otselftest-pg-fake \
-    --label "com.opentranscribe.release-test=selftest" \
-    -v otselftest_pgdata:/var/lib/postgresql/data \
-    alpine sleep 60 >/dev/null
+selftest_run_fake_pg --label "com.opentranscribe.release-test=selftest"
 if ( gr_assert_target_is_test_database otselftest-pg-fake opentranscribe "$env_ok" ) >/dev/null 2>&1; then
     ok "a well-formed test container/volume/env is accepted"
 else
@@ -216,9 +233,7 @@ fi
 docker rm -f otselftest-pg-fake >/dev/null 2>&1
 
 # (a) no release-test label
-docker run -d --rm --name otselftest-pg-fake \
-    -v otselftest_pgdata:/var/lib/postgresql/data \
-    alpine sleep 60 >/dev/null
+selftest_run_fake_pg
 if ( gr_assert_target_is_test_database otselftest-pg-fake opentranscribe "$env_ok" ) >/dev/null 2>&1; then
     bad "a container with NO release-test label was accepted"
 else
@@ -227,10 +242,7 @@ fi
 docker rm -f otselftest-pg-fake >/dev/null 2>&1
 
 # (b) the volume is on the PRE-EXISTING list — someone else's database
-docker run -d --rm --name otselftest-pg-fake \
-    --label "com.opentranscribe.release-test=selftest" \
-    -v otselftest_pgdata:/var/lib/postgresql/data \
-    alpine sleep 60 >/dev/null
+selftest_run_fake_pg --label "com.opentranscribe.release-test=selftest"
 printf 'preexisting=otselftest_pgdata\n' > "$GR_OWNED_STAMP"
 if ( gr_assert_target_is_test_database otselftest-pg-fake opentranscribe "$env_ok" ) >/dev/null 2>&1; then
     bad "a volume on the PRE-EXISTING list was accepted as this run's own database"
@@ -240,14 +252,14 @@ fi
 rm -f "$GR_OWNED_STAMP"
 
 # (c) the volume carries the live-data marker
-docker run --rm -v otselftest_pgdata:/probe alpine \
+gr_run_in_probe_image otselftest_pgdata:/probe \
     touch /probe/.opentranscribe-live-data >/dev/null 2>&1
 if ( gr_assert_target_is_test_database otselftest-pg-fake opentranscribe "$env_ok" ) >/dev/null 2>&1; then
     bad "a volume carrying the live-data marker was accepted"
 else
     ok "a volume carrying the live-data marker is refused"
 fi
-docker run --rm -v otselftest_pgdata:/probe alpine \
+gr_run_in_probe_image otselftest_pgdata:/probe \
     rm -f /probe/.opentranscribe-live-data >/dev/null 2>&1
 
 # (d) the staged .env's POSTGRES_DB does not match what the caller expects

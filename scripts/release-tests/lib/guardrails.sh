@@ -465,9 +465,12 @@ gr_check_stale_stock_volumes() {
     for vol in "${found[@]}"; do
         # Probed from inside a container: the Mountpoint is root-owned, so a
         # host-side test silently reports "no marker" for every volume.
-        if gr_volume_has_live_marker "$vol"; then
-            gr_die "$vol carries the .opentranscribe-live-data marker — REFUSING to remove it.
-           This is a live deployment's storage, not release-test residue."
+        local marker_rc
+        if gr_volume_has_live_marker "$vol"; then marker_rc=0; else marker_rc=$?; fi
+        if [[ $marker_rc -ne 1 ]]; then
+            gr_die "REFUSING to remove $vol — $(gr_live_marker_reason "$marker_rc").
+           If the probe could not run, fix the probe rather than the volume: a
+           broken probe refuses every volume and is not evidence about any of them."
         fi
     done
     for vol in "${found[@]}"; do
@@ -504,20 +507,72 @@ GR_OWNED_STAMP="${GR_OWNED_STAMP:-/mnt/nvm/opentranscribe-test-runs/.owned-stock
 # returns false — indistinguishable from "no marker". The self-test caught this
 # doing precisely the wrong thing: it deleted a volume that WAS marked live.
 #
-# Returns 0 = marker present (or undetermined). FAILS CLOSED: if docker cannot
-# tell us, we claim the marker is there, because the cost of a false positive
-# is a volume left behind and the cost of a false negative is data loss.
+# Returns 0 = marker present, 1 = ran cleanly and there is no marker,
+# 2 = COULD NOT CHECK. Both 0 and 2 must be treated as "do not delete" — the
+# tri-state exists so the caller can say WHICH it was, not so it can relax.
+# FAILS CLOSED: the cost of a false positive is a volume left behind; the cost
+# of a false negative is data loss.
+#
+# ⚠️ The image is pinned AND `--platform` is passed, and both halves are
+# load-bearing (2026-09-07). This host's multi-arch build work had left an
+# `alpine:latest` in the local store that was linux/arm64; on this amd64 host
+# `docker run alpine` selected it, `test` died with `exec format error`, and
+# docker returned 255. Every volume then read as undetermined, so the rehearsal
+# refused all three scenarios at phase 00 and could never proceed. `--platform`
+# is what makes it immune to whatever a previous build left behind; the pin
+# keeps `:latest` from reintroducing it.
+GR_PROBE_IMAGE="${GR_PROBE_IMAGE:-alpine:3.20}"
+
+gr_host_platform() {
+    local p
+    p="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null)"
+    [[ -n "$p" && "$p" != "/" ]] && { printf '%s\n' "$p"; return 0; }
+    return 1
+}
+
+# Run a throwaway command in the pinned probe image with one volume mounted.
+#   gr_run_in_probe_image <volume-spec> <cmd> [args...]
+# Every caller in this repo goes through here so no second site can reintroduce
+# a bare, unpinned, un-platformed `docker run alpine`.
+gr_run_in_probe_image() {
+    local mount="$1"; shift
+    local platform platform_args=()
+    if platform="$(gr_host_platform)"; then
+        platform_args=(--platform "$platform")
+    fi
+    docker run --rm "${platform_args[@]}" -v "$mount" "$GR_PROBE_IMAGE" "$@"
+}
+
+# ⚠️ `if ...; then rc=0; else rc=$?; fi`, never `cmd; rc=$?`. This file runs under
+# `set -e`, where a bare failing simple command ABORTS the script before the next
+# line can read `$?` — the "ABORT" half of the pipefail/SIGPIPE class fixed
+# elsewhere on this branch. A condition context is what suspends `set -e`, and it
+# is the only reason this function can observe a non-zero status at all.
 gr_volume_has_live_marker() {
     local vol="$1" rc
-    docker run --rm -v "$vol:/probe:ro" alpine \
-        test -e /probe/.opentranscribe-live-data >/dev/null 2>&1
-    rc=$?
+    if gr_run_in_probe_image "$vol:/probe:ro" \
+           test -e /probe/.opentranscribe-live-data >/dev/null 2>&1; then
+        rc=0
+    else
+        rc=$?
+    fi
     case "$rc" in
         0) return 0 ;;   # marker present
         1) return 1 ;;   # ran cleanly, no marker
         *)               # could not run the probe at all
-           gr_warn "could not probe $vol for the live-data marker (docker rc=$rc) — assuming it IS live"
-           return 0 ;;
+           gr_warn "could not probe $vol for the live-data marker (docker rc=$rc, image $GR_PROBE_IMAGE)"
+           return 2 ;;
+    esac
+}
+
+# The shared refusal message, so no call site can describe an undetermined
+# probe as a positive marker find — which is exactly what the four call sites
+# used to do, printing "carries the .opentranscribe-live-data marker" for a
+# volume whose marker had never been read.
+gr_live_marker_reason() {
+    case "$1" in
+        0) printf 'it carries the .opentranscribe-live-data marker' ;;
+        *) printf 'its live-data marker COULD NOT BE CHECKED (failing closed)' ;;
     esac
 }
 
@@ -615,7 +670,7 @@ gr_cleanup_owned_stock_resources() {
         return 0
     fi
 
-    local vol net users proj="" line
+    local vol net users proj="" line marker_rc
     local preexisting=()
     while IFS= read -r line; do
         case "$line" in
@@ -641,8 +696,9 @@ gr_cleanup_owned_stock_resources() {
         done < <(docker volume ls -q 2>/dev/null | grep "^${proj}_" || true)
 
         for vol in ${candidates[@]+"${candidates[@]}"}; do
-            if gr_volume_has_live_marker "$vol"; then
-                gr_warn "refusing to remove $vol — carries the live-data marker"
+            if gr_volume_has_live_marker "$vol"; then marker_rc=0; else marker_rc=$?; fi
+            if [[ $marker_rc -ne 1 ]]; then
+                gr_warn "refusing to remove $vol — $(gr_live_marker_reason "$marker_rc")"
                 continue
             fi
             users=$(docker ps -a --filter "volume=$vol" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')
@@ -662,8 +718,9 @@ gr_cleanup_owned_stock_resources() {
                 vol="${line#volume=}"
                 docker volume inspect "$vol" >/dev/null 2>&1 || continue
 
-                if gr_volume_has_live_marker "$vol"; then
-                    gr_warn "refusing to remove $vol — carries the live-data marker"
+                if gr_volume_has_live_marker "$vol"; then marker_rc=0; else marker_rc=$?; fi
+                if [[ $marker_rc -ne 1 ]]; then
+                    gr_warn "refusing to remove $vol — $(gr_live_marker_reason "$marker_rc")"
                     continue
                 fi
 
@@ -760,9 +817,11 @@ gr_assert_target_is_test_database() {
     # gr_volume_has_live_marker's own doc comment (a host-side stat on the
     # root-owned mountpoint would silently report "no marker" for every
     # volume, which is the exact mistake that once deleted a live one).
-    if gr_volume_has_live_marker "$vol"; then
-        gr_die "gr_assert_target_is_test_database: volume '$vol' carries the
-           .opentranscribe-live-data marker — REFUSING a destructive operation"
+    local marker_rc
+    if gr_volume_has_live_marker "$vol"; then marker_rc=0; else marker_rc=$?; fi
+    if [[ $marker_rc -ne 1 ]]; then
+        gr_die "gr_assert_target_is_test_database: REFUSING a destructive operation on
+           volume '$vol' — $(gr_live_marker_reason "$marker_rc")"
     fi
 
     # (d) the resolved POSTGRES_DB must match the staged .env this run wrote

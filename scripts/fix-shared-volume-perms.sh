@@ -21,6 +21,20 @@ PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}"
 # this script diverged from one created fresh by the image itself (issue #580).
 UID_GID="${SHARED_VOLUME_OWNER:-1000:999}"
 
+# Pin the helper image's PLATFORM as well as its tag. This host's multi-arch build
+# work left a linux/arm64 `alpine:latest` in the local store; on this amd64 host a
+# bare `docker run alpine` selected it and every command died with
+# `exec format error` (rc=255). `alpine:3` happened to be amd64 here, so this
+# script survived by luck rather than by design. `--platform` removes the luck.
+HELPER_IMAGE="alpine:3"
+HELPER_PLATFORM="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || true)"
+helper_run() {  # helper_run <volume-spec> <cmd...>
+  local mount="$1"; shift
+  local args=()
+  [[ -n "$HELPER_PLATFORM" && "$HELPER_PLATFORM" != "/" ]] && args=(--platform "$HELPER_PLATFORM")
+  docker run --rm "${args[@]}" -v "$mount" "$HELPER_IMAGE" "$@"
+}
+
 # Issue #661 E2: the pipeline consolidated onto ONE volume, pipeline_scratch, with three
 # namespaces (<file_uuid>/, engine/, diar/) — transcription-temp and diar-native-tmp no
 # longer exist on a fresh install. Only pipeline_scratch may satisfy the "fixed -eq 0"
@@ -39,14 +53,14 @@ for vol in "${VOLUMES[@]}"; do
     echo "  $full: absent (created on first use — nothing to repair)"
     continue
   fi
-  before=$(docker run --rm -v "$full":/v alpine:3 stat -c '%u:%g %a' /v)
-  docker run --rm -v "$full":/v alpine:3 chown -R "$UID_GID" /v
+  before=$(helper_run "$full":/v stat -c '%u:%g %a' /v)
+  helper_run "$full":/v chown -R "$UID_GID" /v
   # chmod the two reserved namespace subdirs too (issue #661 E2) so a fresh
   # `os.makedirs(exist_ok=True)` under a repaired-but-not-yet-created parent inherits
   # correctly; `mkdir -p` here is a no-op if the runtime already created them.
-  docker run --rm -v "$full":/v alpine:3 sh -c \
+  helper_run "$full":/v sh -c \
     'mkdir -p /v/engine /v/diar && chown "'"$UID_GID"'" /v/engine /v/diar && chmod 775 /v/engine /v/diar'
-  after=$(docker run --rm -v "$full":/v alpine:3 stat -c '%u:%g %a' /v)
+  after=$(helper_run "$full":/v stat -c '%u:%g %a' /v)
   echo "  $full: $before -> $after"
   fixed=$((fixed + 1))
 done
@@ -56,9 +70,9 @@ for vol in "${LEGACY_VOLUMES[@]}"; do
   if ! docker volume inspect "$full" >/dev/null 2>&1; then
     continue
   fi
-  before=$(docker run --rm -v "$full":/v alpine:3 stat -c '%u:%g %a' /v)
-  docker run --rm -v "$full":/v alpine:3 chown -R "$UID_GID" /v
-  after=$(docker run --rm -v "$full":/v alpine:3 stat -c '%u:%g %a' /v)
+  before=$(helper_run "$full":/v stat -c '%u:%g %a' /v)
+  helper_run "$full":/v chown -R "$UID_GID" /v
+  after=$(helper_run "$full":/v stat -c '%u:%g %a' /v)
   echo "  $full: $before -> $after (legacy volume, repaired but not counted)"
 done
 

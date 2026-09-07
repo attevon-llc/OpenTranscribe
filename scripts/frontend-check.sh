@@ -1,15 +1,31 @@
 #!/bin/bash
 # Frontend Build Verification Script
-# Runs svelte-check and vite build with optional Claude Code auto-fix
+# Runs eslint, i18n parity, svelte-check, vitest, the test-quality auditors, and vite build,
+# with optional Claude Code auto-fix
 #
 # Usage:
 #   ./scripts/frontend-check.sh [OPTIONS]
 #
 # Options:
 #   --no-claude      Skip Claude auto-fix on failure
-#   --check-only     Only run svelte-check, skip vite build
+#   --check-only     Skip the vite build. Everything else still runs — see the note below.
 #   --verbose        Show full output from checks
 #   -h, --help       Show this help message
+#
+# ⚠️ vitest is INSIDE --check-only, deliberately.
+#
+# 189 test files and ~1,750 tests ran in NO local gate at all: `npm run test`,
+# `test:audit` and `test:audit:selftest` appeared only in .github/workflows/pre-commit.yml.
+# `run-dev-tests.sh --full` and `test-matrix.sh` leg 1.4 both call this script with
+# --check-only, so putting them outside that flag would have left them exactly as unrun as
+# they were — a green `--full` saying nothing about the entire frontend suite, and a
+# pre-release rehearsal equally blind.
+#
+# --check-only's exclusion is specifically the `vite build`, whose `prebuild` downloads fonts
+# and shells out to `docker buildx` for the FFmpeg.wasm core (measured 91.8 s of a 328 s
+# whole-tree pre-commit run, issue #688). Measured on this host 2026-09-07: vitest 29.6 s,
+# test:audit:selftest 0.8 s, test:audit 1.4 s — a third of the build's cost, for the only
+# evidence in this script that the frontend actually WORKS rather than merely compiles.
 
 set -euo pipefail
 
@@ -45,7 +61,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            sed -n '2,13p' "$0" | sed 's/^# \?//'
+            sed -n '2,14p' "$0" | sed 's/^# \?//'
             exit 0
             ;;
         *)
@@ -153,151 +169,125 @@ Instructions:
     return 0
 }
 
-# Main execution
-main() {
-    check_node_modules
-    check_svelte_kit
+# Accumulated across every step of one pass. Set by run_step, read by run_all_checks.
+CHECK_FAILED=false
+CHECK_OUTPUT=""
 
-    local check_output=""
-    local check_failed=false
+# Run one check, in FRONTEND_DIR, recording its output if it fails.
+#
+# ⚠️ A step must be declared HERE and nowhere else. The recheck-after-Claude-fix path used to
+# carry its own hand-written copy of svelte-check + vite build, so any step added to the first
+# pass and not to that copy would be silently dropped the moment Claude's fix succeeded: the
+# recheck would pass on the two steps it knew about and `return 0` with
+# "All frontend checks passed after Claude auto-fix". Adding vitest to a duplicated list is
+# how a failing test suite gets reported as a passing gate, so the duplication is gone.
+#
+# $1 = human label, $2 = grep -E pattern for a one-line failure summary ("" for none),
+# $3.. = the command.
+run_step() {
+    local label="$1"; shift
+    local summary_pattern="$1"; shift
 
-    # Step 0: Run ESLint (lint gate — passes on warnings, fails only on errors)
-    print_info "Running eslint..."
-    local eslint_output
-    local eslint_exit=0
-    eslint_output=$(cd "$FRONTEND_DIR" && npm run lint 2>&1) || eslint_exit=$?
+    print_info "Running $label..."
+    local output
+    local exit_code=0
+    output=$(cd "$FRONTEND_DIR" && "$@" 2>&1) || exit_code=$?
 
-    if [ $eslint_exit -ne 0 ]; then
-        check_failed=true
-        check_output="${check_output}
---- ESLint Errors ---
-${eslint_output}"
-        print_error "eslint failed"
+    if [ $exit_code -ne 0 ]; then
+        CHECK_FAILED=true
+        CHECK_OUTPUT="${CHECK_OUTPUT}
+--- ${label} failures ---
+${output}"
+        print_error "$label failed"
+        if [ -n "$summary_pattern" ]; then
+            local summary
+            summary=$(echo "$output" | grep -E "$summary_pattern" | head -5 || true)
+            if [ -n "$summary" ]; then
+                echo "$summary"
+            fi
+        fi
         if [ "$VERBOSE" = true ]; then
-            echo "$eslint_output"
+            echo "$output"
         fi
     else
-        print_success "eslint passed"
+        print_success "$label passed"
+        if [ "$VERBOSE" = true ]; then
+            echo "$output"
+        fi
     fi
+}
 
-    # Step 0b: i18n key parity across all 12 locales.
+# The complete check set, in one place, run identically on the first pass and on the
+# recheck after a Claude auto-fix.
+run_all_checks() {
+    CHECK_FAILED=false
+    CHECK_OUTPUT=""
+
+    # ESLint (lint gate — passes on warnings, fails only on errors)
+    run_step "eslint" "" npm run lint
+
+    # i18n key parity across all 12 locales.
     # This ran in CI only (.github/workflows/pre-commit.yml), so a local commit that added a
     # user-facing string to en.json alone looked clean and failed the PR instead. Any UI change
     # needs the i18n check, so it belongs in the same local gate as eslint/svelte-check.
     # NOTE: this enforces key PARITY, not translation — a key copied into all 12 files with
     # English text passes here and ships untranslated. Parity is the floor, not the goal.
-    print_info "Running i18n parity check..."
-    local i18n_output
-    local i18n_exit=0
-    i18n_output=$(cd "$FRONTEND_DIR" && npm run check:i18n 2>&1) || i18n_exit=$?
+    run_step "i18n parity check" "" npm run check:i18n
 
-    if [ $i18n_exit -ne 0 ]; then
-        check_failed=true
-        check_output="${check_output}
---- i18n Parity Errors ---
-${i18n_output}"
-        print_error "i18n parity check failed"
-        if [ "$VERBOSE" = true ]; then
-            echo "$i18n_output"
-        fi
-    else
-        print_success "i18n parity check passed"
-    fi
+    run_step "svelte-check" "svelte-check found|Error:" \
+        npx svelte-check --tsconfig ./tsconfig.json --threshold warning
 
-    # Step 1: Run svelte-check
-    print_info "Running svelte-check..."
-    local svelte_output
-    local svelte_exit=0
-    svelte_output=$(cd "$FRONTEND_DIR" && npx svelte-check --tsconfig ./tsconfig.json --threshold warning 2>&1) || svelte_exit=$?
+    # The vitest suite — 189 files, ~1,750 tests — plus the frontend test auditor.
+    #
+    # These three were invoked by NOTHING outside .github/workflows/pre-commit.yml, so
+    # `run-dev-tests.sh --full` and `test-matrix.sh`'s pre-release rehearsal were both green
+    # while saying nothing whatsoever about the frontend suite. svelte-check proves the code
+    # COMPILES; only this proves it works.
+    #
+    # Self-test FIRST, and the order is not cosmetic: the auditor's detectors are themselves
+    # code that can silently stop matching, and a detector that matches nothing reports zero
+    # findings — indistinguishable from a clean suite. Its 27 cases have already caught two
+    # dead detectors. Same order CI uses.
+    run_step "vitest" "Tests +[0-9]+ failed|Test Files +[0-9]+ failed" npm run test
+    run_step "frontend test-auditor self-test" "" npm run test:audit:selftest
+    run_step "frontend test-quality audit" "" npm run test:audit
 
-    if [ $svelte_exit -ne 0 ]; then
-        check_failed=true
-        check_output="$svelte_output"
-        local summary
-        summary=$(echo "$svelte_output" | grep -E "svelte-check found|Error:" | head -5 || true)
-        print_error "svelte-check failed"
-        if [ -n "$summary" ]; then
-            echo "$summary"
-        fi
-        if [ "$VERBOSE" = true ]; then
-            echo "$svelte_output"
-        fi
-    else
-        print_success "svelte-check passed"
-        if [ "$VERBOSE" = true ]; then
-            echo "$svelte_output"
-        fi
-    fi
-
-    # Step 2: Run vite build
+    # vite build — the ONE step --check-only skips. Its `prebuild` downloads fonts and shells
+    # out to `docker buildx`; measured at 91.8 s of a 328 s whole-tree run (issue #688), which
+    # is why it lives at pre-push stage rather than commit stage.
     if [ "$BUILD_ENABLED" = true ]; then
-        print_info "Running vite build..."
-        local build_output
-        local build_exit=0
-        build_output=$(cd "$FRONTEND_DIR" && npm run build 2>&1) || build_exit=$?
-
-        if [ $build_exit -ne 0 ]; then
-            check_failed=true
-            check_output="${check_output}
---- Vite Build Errors ---
-${build_output}"
-            print_error "Vite build failed"
-            if [ "$VERBOSE" = true ]; then
-                echo "$build_output"
-            fi
-        else
-            print_success "Vite build passed"
-            if [ "$VERBOSE" = true ]; then
-                echo "$build_output"
-            fi
-        fi
+        run_step "vite build" "" npm run build
     fi
+}
+
+# Main execution
+main() {
+    check_node_modules
+    check_svelte_kit
+
+    run_all_checks
 
     # If everything passed, done
-    if [ "$check_failed" = false ]; then
+    if [ "$CHECK_FAILED" = false ]; then
         print_success "All frontend checks passed"
         return 0
     fi
 
+    local check_output="$CHECK_OUTPUT"
+
     # Checks failed — attempt Claude fix if enabled
     if [ "$CLAUDE_FIX_ENABLED" = true ]; then
         if attempt_claude_fix "$check_output"; then
-            # Re-run checks after Claude fix
+            # Re-run the SAME set after the Claude fix — not a subset. See run_step's header.
             print_info "Re-running checks after Claude fix..."
+            run_all_checks
 
-            local recheck_failed=false
-
-            local recheck_output
-            local recheck_exit=0
-            recheck_output=$(cd "$FRONTEND_DIR" && npx svelte-check --tsconfig ./tsconfig.json --threshold warning 2>&1) || recheck_exit=$?
-
-            if [ $recheck_exit -ne 0 ]; then
-                recheck_failed=true
-                print_error "svelte-check still failing after Claude fix"
-                echo "$recheck_output"
-            else
-                print_success "svelte-check passed after fix"
-            fi
-
-            if [ "$BUILD_ENABLED" = true ] && [ "$recheck_failed" = false ]; then
-                local rebuild_output
-                local rebuild_exit=0
-                rebuild_output=$(cd "$FRONTEND_DIR" && npm run build 2>&1) || rebuild_exit=$?
-
-                if [ $rebuild_exit -ne 0 ]; then
-                    recheck_failed=true
-                    print_error "Vite build still failing after Claude fix"
-                    echo "$rebuild_output"
-                else
-                    print_success "Vite build passed after fix"
-                fi
-            fi
-
-            if [ "$recheck_failed" = false ]; then
+            if [ "$CHECK_FAILED" = false ]; then
                 print_success "All frontend checks passed after Claude auto-fix"
                 return 0
             fi
 
+            check_output="$CHECK_OUTPUT"
             print_error "Claude auto-fix was unable to resolve all issues"
         fi
     fi

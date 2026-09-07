@@ -107,8 +107,17 @@ STAGE_ARG=""
 LEGS=(
     "1.1|1|safe-precommit full run|scripts/safe-precommit.sh run --all-files|standard"
     "1.2|1|backend test summary|scripts/run-backend-tests.sh --require-fresh --summary|standard"
-    "1.3|1|backend + frontend test-quality audits|python3 scripts/audit-tests.py backend/tests|standard"
-    "1.4|1|frontend check (no rebuild)|scripts/frontend-check.sh --no-claude --check-only|standard"
+    # ⚠️ Named "backend + frontend test-quality audits" until 2026-09-07, with a command that
+    # had no frontend half — and this leg name was the ONLY place the matrix claimed to run the
+    # frontend auditor, so the rehearsal read as covering it while running nothing. Renamed
+    # rather than extended: `npm run test:audit` and `test:audit:selftest` are now steps inside
+    # frontend-check.sh, so leg 1.4 below executes both. Adding them here as well would be a
+    # second execution of a check already covered — the same duplication removed from
+    # run-integration-tests.sh's FIPS-off phase in the same change.
+    "1.3|1|backend test-quality audit|python3 scripts/audit-tests.py backend/tests|standard"
+    # Runs eslint, check:i18n, svelte-check, **vitest**, the frontend test auditor and its
+    # self-test. --check-only skips only the vite build.
+    "1.4|1|frontend check + vitest (no rebuild)|scripts/frontend-check.sh --no-claude --check-only|standard"
     "1.5|1|docs-site build|cd docs-site && npm run build|standard"
     "1.6|1|deployment matrix validation|scripts/validate-deployments.sh --json|standard"
     "1.7|1|version consistency|python3 scripts/release/check-version-consistency.py|standard"

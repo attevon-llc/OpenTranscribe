@@ -20,7 +20,6 @@
 # Usage:
 #   ./scripts/run-backend-tests.sh                  # full suite (no e2e)
 #   ./scripts/run-backend-tests.sh tests/unit       # a subset
-#   ./scripts/run-backend-tests.sh --gated          # + the RUN_*-gated suites
 #   ./scripts/run-backend-tests.sh --summary        # re-report, no re-run
 #   ./scripts/run-backend-tests.sh --require-fresh --summary
 #                                                   # ...but refuse if the saved run is from a
@@ -249,29 +248,21 @@ fi
 
 # ── Run ────────────────────────────────────────────────────────────────────
 
-GATED=false
-ARGS=()
-for arg in "$@"; do
-    case "$arg" in
-        --gated) GATED=true ;;
-        *) ARGS+=("$arg") ;;
-    esac
-done
+# ⚠️ `--gated` is GONE, and re-adding it is a regression. It exported
+# RUN_PKI_TESTS / RUN_MFA_TESTS / RUN_LLM_TESTS / RUN_FEDRAMP_TESTS / RUN_FIPS_TESTS /
+# RUN_AUTH_CONFIG_TESTS / RUN_ADVANCED_ADMIN_TESTS — seven variables that **no test reads**.
+# The module-level `skipif` gates were removed from all eight security suites (each now opens
+# `# Runs by DEFAULT. This module was gated behind RUN_<X>_TESTS...`) and the flag was left
+# behind, so `--gated` and a bare run selected exactly the same tests while the extra output
+# line claimed otherwise. Those suites are ordinary members of `tests/` now and need no flag.
+# `backend/tests/unit/test_gate_run_env_vars_are_live.py` fails if any script in this family
+# sets a `RUN_*` variable that no test reads through a live expression.
+ARGS=("$@")
 [[ ${#ARGS[@]} -gt 0 ]] || ARGS=(tests/ --ignore=tests/e2e)
 
 echo -e "${BLUE}Running the backend suite once; artifacts in $OUT_DIR${NC}" >&2
 
-env_prefix=()
-if $GATED; then
-    # Same set scripts/run-integration-tests.sh enables.
-    env_prefix=(env
-        RUN_PKI_TESTS=true RUN_MFA_TESTS=true RUN_LLM_TESTS=true
-        RUN_FEDRAMP_TESTS=true RUN_FIPS_TESTS=true
-        RUN_AUTH_CONFIG_TESTS=true RUN_ADVANCED_ADMIN_TESTS=true)
-    echo -e "${BLUE}  (RUN_*-gated security suites enabled)${NC}" >&2
-fi
-
-"${env_prefix[@]}" "${PY_CMD[@]}" "${ARGS[@]}" \
+"${PY_CMD[@]}" "${ARGS[@]}" \
     -p no:warnings \
     --junitxml="$RUN_XML" \
     2>&1 | tee "$RUN_LOG"

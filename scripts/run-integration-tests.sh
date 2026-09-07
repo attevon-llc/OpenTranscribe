@@ -2,8 +2,8 @@
 # OpenTranscribe — canonical local test gate (issue #21)
 #
 # Runs the COMPLETE backend test suite against the live dev stack:
-#   1. ungated unit/API tests (includes S3/OpenSearch tests via auto-detection)
-#   2. the security-gated suites (RUN_* env vars) in both FIPS modes
+#   1. unit/API tests (includes S3/OpenSearch tests via auto-detection)
+#   2. the security suites re-run under FIPS_MODE=true (phase 1 already ran them with it off)
 #   3. integration-marked tests (-m integration)
 #   4. gpu-marked tests (-m gpu) — deselected everywhere else, so this is their
 #      only run; each module keeps its own runtime skip guard for CPU-only hosts
@@ -114,22 +114,31 @@ if $COVERAGE; then
     COV_ARGS=(--cov=app --cov-report=term-missing)
 fi
 
-# NOTE: RUN_SCHEMA_DRIFT_TESTS is deliberately NOT in this array — it gates a file that is
-# not in GATED_FILES, so setting it here would look like coverage while changing nothing.
-# It gets its own phase below.
-GATES=(RUN_PKI_TESTS=true RUN_MFA_TESTS=true RUN_LLM_TESTS=true
-       RUN_FEDRAMP_TESTS=true RUN_FIPS_TESTS=true
-       RUN_AUTH_CONFIG_TESTS=true RUN_ADVANCED_ADMIN_TESTS=true)
-# ⚠️ Every file here must carry a RUN_* gate, or it runs THREE times per gate — once in the
-# ungated Unit/API phase and once in each of the two FIPS passes. tests/test_admin_endpoints.py
-# was in this list with no gate at all (`rg RUN_ tests/test_admin_endpoints.py` -> nothing), so
-# its 8 tests ran 24 times per gate and the gated phases' counts overstated what the RUN_*
-# variables actually unlock. It is covered by the Unit/API phase, which is where an ungated file
-# belongs.
-GATED_FILES=(tests/test_pki_auth.py tests/test_mfa_security.py
-             tests/test_llm_settings.py tests/test_fedramp_compliance.py
-             tests/test_fedramp_controls.py tests/test_fips_140_3.py
-             tests/test_auth_config_service.py tests/test_admin_security.py)
+# The security suites re-run under FIPS_MODE=true.
+#
+# ⚠️ There is deliberately NO `GATES=(RUN_PKI_TESTS=true ...)` array here any more, and
+# re-adding one is a regression. It exported seven `RUN_*` variables that **no test read**:
+# the module-level `skipif` gates were removed from all eight files (each now opens
+# `# Runs by DEFAULT. This module was gated behind RUN_<X>_TESTS...`) and the array was left
+# behind. Setting a variable nothing reads is not coverage — it is a phase name that describes
+# a mechanism that no longer exists.
+#
+# `tests/unit/test_gate_run_env_vars_are_live.py` fails on any `RUN_*` this script sets that
+# no test reads through a LIVE expression. Its predecessor could not catch this: it matched the
+# variable name as a plain substring over the whole file, and every one of these files still
+# *mentions* its dead variable in the comment quoted above — a guard that could not fail, in
+# the file written to prevent tests that cannot fail.
+#
+# ⚠️ `FIPS_MODE=true` IS live (`app/core/config.py` reads it at import), so the FIPS pass below
+# is a real claim and stays. What went with the dead variables is the *second* pass: with the
+# gates gone these files are ordinary members of the Unit/API suite, so a FIPS-**off** pass over
+# them re-ran, byte for byte, tests phase 1 had just run. Measured on the 2026-09-07 gate's own
+# junit artifacts: all 394 ids in `gated-fips-off.xml` also appear in `unit.xml` — 0 missing —
+# so deleting that phase removed 394 duplicate EXECUTIONS and zero tests.
+FIPS_MODE_SUITES=(tests/test_pki_auth.py tests/test_mfa_security.py
+                  tests/test_llm_settings.py tests/test_fedramp_compliance.py
+                  tests/test_fedramp_controls.py tests/test_fips_140_3.py
+                  tests/test_auth_config_service.py tests/test_admin_security.py)
 
 # --- diar-native "sidecar expected" predicate --------------------------------
 #
@@ -205,6 +214,58 @@ INTEGRATION_SKIP_CEILING="${INTEGRATION_SKIP_CEILING:-7}"
 #: test_worker_shutdown_vram 1) — they need /.dockerenv and /app fixtures, and their real
 #: entry point is ./scripts/run-diarization-gpu-tests.sh.
 GPU_SKIP_CEILING="${GPU_SKIP_CEILING:-12}"
+
+#: ⚠️ EVERY pytest phase in this script needs a ceiling, and for a long time only two had one.
+#: The three biggest — Unit/API (13,622 tests), the FIPS pass (394) and the drift phase (3) —
+#: went through plain `run_phase`, so **99% of the gate by test count could mass-skip and still
+#: print `✓ Unit/API suite passed`**. That is the same silent-skip trap the integration phase's
+#: ceiling exists for, on twenty times the surface. `tests/unit/test_gate_phase_skip_accounting.py`
+#: now fails if a pytest-invoking phase is added here without one.
+#:
+#: All three numbers below are DERIVED from the junit artifacts of the 2026-09-07 gate run
+#: (`$GATE_ARTIFACT_DIR/*.xml`, 05:55-06:40, host load average 15.9), not chosen. Re-derive with:
+#:   python3 -c "import xml.etree.ElementTree as E,sys;r=E.parse(sys.argv[1]).getroot();
+#:               print(sum(int(t.get('skipped')) for t in r.iter('testsuite')))" /tmp/ot-integration-gate/unit.xml
+#: Never raise one to make a phase pass.
+
+#: Unit/API: 13,622 collected, **151 skipped**, every one attributed by `-rs`:
+#:   38  RUN_SEARCH_QUALITY_TESTS  — corpus harness, has its own opt-in phase (--search-quality)
+#:   73  route-coverage backlog    — "No frontend call site found" (33 + 26 + 8 + 4 + 2)
+#:   14  HF_TOKEN / HUGGINGFACE_TOKEN not set
+#:    7  need live Redis+OpenSearch+MinIO from outside the pytest conftest
+#:    4  need backend/venv-eval + an OpenAI-compatible server on :5195
+#:    3  RUN_SCHEMA_DRIFT_TESTS    — has its own phase below
+#:    3  AUDIT_LOG_TO_OPENSEARCH=false, forced off by conftest (savepoints can't undo index writes)
+#:    3  Redis cache db=1 / real eviction not reachable
+#:    2  an OpenAI-compatible server on :5195
+#:    2  release stages that predate criteria-lib.sh and carry inline copies
+#:    1  MinIO reachable, so the real storage path is covered elsewhere
+#:    1  no CUDA device on this host
+#: A DEGRADED stack pushes this over the ceiling on purpose: with MinIO or OpenSearch down,
+#: dozens of suites skip and exit 0, which is precisely the outcome that must not read as a pass.
+#:
+#: ⚠️ It is EXACT-today, like the other two ceilings, so the first new skip trips it. That is
+#: deliberate and the correct response is to look, not to add one. The volatile component is the
+#: 73-skip route-coverage backlog: adding an API route with no frontend caller legitimately adds
+#: a skip here. The fix for that class is the one backend/tests/CLAUDE.md already prescribes —
+#: give a permanently-skipping test a NAMED marker and DESELECT it, so it is visibly absent
+#: rather than silently counted toward this number — not a bigger ceiling.
+UNIT_SKIP_CEILING="${UNIT_SKIP_CEILING:-151}"
+
+#: FIPS pass: 394 collected, **2 skipped** — both the AUDIT_LOG_TO_OPENSEARCH pair above.
+#: Identical in the FIPS-off artifact, so this is a property of the suites, not of FIPS mode.
+FIPS_SKIP_CEILING="${FIPS_SKIP_CEILING:-2}"
+
+#: Model-vs-schema drift: 3 tests, and the phase SETS the variable that gates them, so a skip
+#: here means the gate it opens has stopped working. Zero is the only honest ceiling — this
+#: phase's whole purpose is that `RUN_SCHEMA_DRIFT_TESTS` used to be set nowhere pre-merge.
+SCHEMA_DRIFT_SKIP_CEILING="${SCHEMA_DRIFT_SKIP_CEILING:-0}"
+
+#: Search quality (opt-in, --search-quality): same shape — the phase sets
+#: RUN_SEARCH_QUALITY_TESTS itself, so any skip is the gate failing to open. The suite
+#: self-seeds its own corpus (tests/fixtures/search_corpus.py), so it does not depend on
+#: whatever happens to be in the deployment.
+SEARCH_QUALITY_SKIP_CEILING="${SEARCH_QUALITY_SKIP_CEILING:-0}"
 
 #: Tests that cannot run on THIS deployment are DESELECTED by marker, not skipped: a
 #: deselected test is visibly absent from the count, a skipped one silently inflates it
@@ -305,16 +366,25 @@ else
         "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-data.py" --execute-unambiguous
 fi
 
-# 1. Ungated suite (default config: -n auto, -m 'not integration')
-run_phase "Unit/API suite" "$VENV_PY" -m pytest tests/ "${COV_ARGS[@]}" "${SKIP_REASONS[@]}" \
+# 1. The main suite (default config: -n auto, -m 'not integration and not gpu')
+#
+# ⚠️ `run_phase_watching_skips`, not `run_phase`. This is 13,622 of the gate's ~14,200 tests and
+# it had NO skip ceiling at all, so a stack outage that made thousands of suites skip still
+# printed `✓ Unit/API suite passed` and exited 0. It is also the phase whose `-rs` output is the
+# only attribution any of those skips has.
+PHASE_SKIP_CEILING="$UNIT_SKIP_CEILING" run_phase_watching_skips "Unit/API suite" \
+    "$VENV_PY" -m pytest tests/ "${COV_ARGS[@]}" "${SKIP_REASONS[@]}" \
     --junitxml="$GATE_ARTIFACT_DIR/unit.xml"
 
-# 2. Security-gated suites — non-FIPS then FIPS mode
-run_phase "Gated security suites (FIPS off)" \
-    env "${GATES[@]}" "$VENV_PY" -m pytest "${GATED_FILES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short \
-    "${SKIP_REASONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/gated-fips-off.xml"
-run_phase "Gated security suites (FIPS_MODE=true)" \
-    env "${GATES[@]}" FIPS_MODE=true "$VENV_PY" -m pytest "${GATED_FILES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short \
+# 2. The security suites again, this time under FIPS_MODE=true.
+#
+# ONE pass, not two. `FIPS_MODE` is read at import by app/core/config.py, so "these suites behave
+# the same in both FIPS modes" is a real claim — but phase 1 above IS the FIPS-off half of it,
+# since these files carry no gate and are ordinary members of tests/. The separate FIPS-off phase
+# that used to sit here re-executed 394 tests phase 1 had already run (proved by node-id diff of
+# the two junit artifacts: 0 of 394 absent from unit.xml) under `env` variables no test reads.
+PHASE_SKIP_CEILING="$FIPS_SKIP_CEILING" run_phase_watching_skips "Security suites (FIPS_MODE=true)" \
+    env FIPS_MODE=true "$VENV_PY" -m pytest "${FIPS_MODE_SUITES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short \
     "${SKIP_REASONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/gated-fips-on.xml"
 
 # 3. Integration-marked tests (need the live stack)
@@ -378,7 +448,11 @@ else
     # two files under tests/integration/ carry BOTH `integration` and `gpu` markers
     # (test_diar_native_smoke_live.py, test_gpu_scale_smoke_live.py), so this phase
     # legitimately needs real device visibility and must stay in that set.
-    run_phase_watching_skips "Integration-marked tests" \
+    # The ceiling is passed EXPLICITLY even though this phase is the one whose number is the
+    # dispatcher's fallback. An implicit ceiling is invisible at the call site, and "no prefix
+    # means the integration number" is exactly the coupling that had to be broken the moment
+    # the GPU phase needed a different one.
+    PHASE_SKIP_CEILING="$INTEGRATION_SKIP_CEILING" run_phase_watching_skips "Integration-marked tests" \
         "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         -o addopts="" -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
         --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
@@ -478,11 +552,17 @@ fi
 # A model or column that exists on one side only raises at runtime; catching it after the
 # release candidate is built is too late.
 #
-# Its two tests spawn ./scripts/check-schema-drift.py, which resolves the DB from the repo
+# Its three tests spawn ./scripts/check-schema-drift.py, which resolves the DB from the repo
 # root, so this phase runs from anywhere the rest of the gate does.
-run_phase "Model-vs-schema drift" \
+#
+# ⚠️ `-rs` and a ceiling of 0, both missing until now. This phase SETS the very variable that
+# unblocks its three tests, so a skip here does not mean "not applicable" — it means the gate
+# this phase exists to close has quietly stopped opening, which is exactly the state it was
+# already in for months. Without `-rs` the skip would also have had no recorded reason: the
+# `-o addopts=""` drops pyproject's flags, and this phase never restored them.
+PHASE_SKIP_CEILING="$SCHEMA_DRIFT_SKIP_CEILING" run_phase_watching_skips "Model-vs-schema drift" \
     env RUN_SCHEMA_DRIFT_TESTS=true "$VENV_PY" -m pytest tests/unit/test_schema_drift.py \
-    -o addopts="" -q --tb=short
+    -o addopts="" -q --tb=short "${SKIP_REASONS[@]}"
 
 # 5b. DB session lifetime. A session held across slow non-DB work keeps a transaction open,
 # and a plain SELECT holds ACCESS SHARE for its life — so it queues ALTER TABLE (an Alembic
@@ -560,9 +640,14 @@ run_phase "Mutation ratchet (last run vs baselines)" \
     "$SCRIPT_DIR/run-mutation-tests.sh" --check-baseline
 
 # 8. Optional: corpus-dependent search relevance harness
+#
+# Same treatment as the drift phase: this one sets RUN_SEARCH_QUALITY_TESTS itself, so a skip is
+# the gate failing to open, not a legitimate abstention. `-rs` was missing here too.
 if $SEARCH_QUALITY; then
-    run_phase "Search quality harness (corpus-dependent)" \
-        env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py -o addopts="" -q --tb=short
+    PHASE_SKIP_CEILING="$SEARCH_QUALITY_SKIP_CEILING" \
+        run_phase_watching_skips "Search quality harness (corpus-dependent)" \
+        env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py \
+        -o addopts="" -q --tb=short "${SKIP_REASONS[@]}"
 fi
 
 # 9. Optional: browser smoke tests against the live stack.

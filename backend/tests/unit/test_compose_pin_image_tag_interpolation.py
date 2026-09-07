@@ -128,3 +128,33 @@ def test_the_real_prod_compose_still_uses_the_form_this_handles():
         "docker-compose.prod.yml no longer declares images as ${BACKEND_IMAGE:-...}; this "
         "module (and cp_pin_image_tag's interpolation handling) should be re-checked"
     )
+
+
+def test_a_literal_repo_with_an_interpolated_tag_is_pinned_not_refused(tmp_path: Path):
+    """The third shape, and the one the first fix got wrong.
+
+    `davidamacey/opentranscribe-frontend:${OT_IMAGE_TAG:-latest}` has a LITERAL repository
+    and an interpolated tag only. Keying the unwrap on "contains ${" rather than "starts
+    with ${" made the helper refuse every frontend/docs service, which failed the lite-mode
+    scenario at phase 03 — an over-strict guard, caught by the rehearsal on its next run.
+    """
+    text = "services:\n  frontend:\n    image: 'davidamacey/opentranscribe-frontend:${OT_IMAGE_TAG:-latest}'\n"
+    result, target = _pin(text, "frontend", "v0.5.0", tmp_path)
+    assert result.returncode == 0, (
+        f"a literal repo with an interpolated tag was refused:\n{result.stderr}"
+    )
+    pinned = yaml.safe_load(target.read_text(encoding="utf-8"))["services"]["frontend"]["image"]
+    assert pinned == "davidamacey/opentranscribe-frontend:v0.5.0", (
+        f"expected the literal repository to survive; got {pinned!r}"
+    )
+
+
+def test_the_real_prod_compose_still_uses_the_literal_repo_form_too():
+    """Prove the second premise as well, so neither branch of repo_of goes untested."""
+    if not PROD_COMPOSE.is_file():
+        pytest.skip("docker-compose.prod.yml is not in this checkout")
+    text = PROD_COMPOSE.read_text(encoding="utf-8")
+    assert "opentranscribe-frontend:${OT_IMAGE_TAG" in text, (
+        "docker-compose.prod.yml no longer has a literal-repo/interpolated-tag image; the "
+        "second branch of repo_of is now untested by this module"
+    )

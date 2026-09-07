@@ -1082,6 +1082,17 @@ _stage_manager_at() {
     cp "$script_src/opentranscribe.sh" "$dst/opentranscribe.sh"
     chmod +x "$dst/opentranscribe.sh"
     cp "$script_src/scripts/common.sh" "$dst/scripts/common.sh"
+    # common.sh resolves its helpers relative to ITS OWN directory
+    # (voiceprint_helper_path), so staging common.sh alone gives a manager that fails at
+    # run time. Observed 2026-09-07: `./opentranscribe.sh backup` aborted the upgrade hop
+    # at phase 06b because scripts/voiceprint-backup.py was not staged beside it — and the
+    # reason was invisible, since that error went to stdout inside the artifact redirect.
+    # Copied conditionally: an older tag legitimately predates the helper.
+    # backend/tests/unit/test_upgrade_manager_stage_helpers.py fails if common.sh ever
+    # gains a sibling dependency that is not staged here.
+    if [[ -f "$script_src/scripts/voiceprint-backup.py" ]]; then
+        cp "$script_src/scripts/voiceprint-backup.py" "$dst/scripts/voiceprint-backup.py"
+    fi
     cp "$src_stage/docker-compose.yml" "$dst/docker-compose.yml"
     [[ -f "$src_stage/docker-compose.prod.yml" ]] \
         || gr_die "$src_stage missing docker-compose.prod.yml — opentranscribe.sh's " \

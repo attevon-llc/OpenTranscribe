@@ -200,7 +200,15 @@ def repo_of(value: str) -> str:
     Latent until 2026-09-07: lite-mode could not build an image at all (a shadowed
     ARG TARGETARCH), so it never reached `compose up` to hit this.
     """
-    if "${" not in value:
+    # Three shapes occur in this repo, and only the third needs unwrapping:
+    #   repo:tag                                    -> split on the first colon
+    #   repo:${OT_IMAGE_TAG:-latest}                -> ALSO split on the first colon;
+    #       the repo is literal and only the TAG interpolates. Missing this case made
+    #       the first version of this function refuse every frontend/docs service.
+    #   ${BACKEND_IMAGE:-repo:${OT_IMAGE_TAG:-...}} -> unwrap the ${VAR:-default} below
+    # The discriminator is whether the value STARTS with `${`, not whether it contains
+    # one anywhere.
+    if not value.startswith("${"):
         return value.split(":", 1)[0]
 
     outer = re.match(r"^\$\{[A-Za-z_][A-Za-z0-9_]*:-(.*)\}$", value, re.S)

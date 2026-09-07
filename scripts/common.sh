@@ -1046,9 +1046,15 @@ _voiceprint_run() {
   local helper
   helper="$(voiceprint_helper_path)"
   if [ ! -f "$helper" ]; then
-    echo "❌ voiceprint $mode: helper not found at $helper"
-    echo "   Re-download it (release-manifest.txt lists scripts/voiceprint-backup.py) —"
-    echo "   without it, speaker voiceprints are NOT covered by this backup."
+    # ⚠️ stderr, NOT stdout. In `export` mode this function's stdout IS the artifact:
+    # os_export_speaker_indices runs it as `_voiceprint_run ... > "$out_file"` and then
+    # `rm -f "$out_file"` on failure. Echoing the reason to stdout wrote it into the
+    # artifact and deleted it, so the operator saw only "Voiceprint export failed" with
+    # the explanation destroyed. Observed 2026-09-07: a rehearsal upgrade hop failed here
+    # and the cause (this very message) was unrecoverable from the logs.
+    echo "❌ voiceprint $mode: helper not found at $helper" >&2
+    echo "   Re-download it (release-manifest.txt lists scripts/voiceprint-backup.py) —" >&2
+    echo "   without it, speaker voiceprints are NOT covered by this backup." >&2
     return 1
   fi
 

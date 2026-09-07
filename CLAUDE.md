@@ -284,6 +284,20 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 > files you are not touching — and restore it when the run ends. What you staged is irrelevant:
 > the stash happens *before any hook runs* and covers the whole tree.
 >
+> **The hazard is CONCURRENCY, not who is committing.** Read this as a rule about how many
+> writers share the checkout, and do not over-apply it into "a subagent may never commit" —
+> that costs a pointless round trip on solo work and gets ignored as obviously too strict:
+>
+> | Shape | Commit? | Why |
+> |---|---|---|
+> | A **lone** writer — one agent, sole occupant of the checkout | ✅ yes | Nothing else in flight to stash |
+> | An agent in **its own worktree** | ✅ yes | Separate index and stash; no cross-lane exposure |
+> | The orchestrator, after **every** dispatched writer has reported | ✅ yes | Tree is quiet |
+> | **Two or more writers on one branch**, each committing | ⛔ **never** | Each run stashes the other N−1 mid-edit |
+>
+> Only the last row is forbidden — but it is the one that keeps happening, because each writer
+> individually looks safe to itself.
+>
 > This paragraph used to recommend `--files` or "just commit" as the safe alternative. **That
 > advice was wrong and caused the incident below.** There is no safe alternative for a tree with
 > unrelated unstaged work in progress; there is only waiting for a quiet tree. The wrapper above
@@ -298,6 +312,15 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 > in-flight agents' work the moment it ran. There is no "but these are my own subagents and I'm
 > scoping the commit" exception. Wait for every dispatched writer to report done, review, THEN
 > run one clean commit/precommit pass.
+>
+> ⚠️ **A test run is a writer's victim too, and the damage is silent.** Never start a gate, a
+> suite, or a timing measurement while any writer is active. An e2e phase run against a mutating
+> tree produced 20 meaningless failures — 17 of them fixture `ERROR`s, the signature of a
+> `conftest.py` changing mid-suite — and they were nearly filed as real defects. Contention also
+> invalidates *timings*: two agents running `pytest --collect-only` at once on this 48-core host
+> makes both numbers unusable, and comparing a loaded "before" against a quiet "after"
+> manufactures an improvement out of nothing. Confirm zero writers **and** a clean `git status`
+> before any run whose output you intend to treat as evidence.
 >
 > Three failure modes, all observed here:
 >
@@ -664,4 +687,10 @@ subsystem, and put new subsystem detail **there**, not in this file.
   file: `git add` it first, then commit with the pathspec.
 - **Every `.py` edit under `backend/app/` restarts the hot-reloading dev backend, and startup
   dispatches `search_index_maintenance`.** That corrupted three reindexes in one day. Batch app-file
-  edits, and announce a measurement or reindex window before starting one.
+  edits, and announce a measurement or reindex window before starting one. ⚠️ Until 2026-09-07 this
+  was worse than the sentence says: `./backend:/app` is bind-mounted and the command was a bare
+  `uvicorn --reload`, so **any `.py` anywhere under `backend/` restarted the API** — including
+  `backend/tests/e2e/*`, i.e. editing a *test* file took the backend down for ~15 s mid-run (the
+  reloader parent holds the listening socket, so the port stays open and answers nothing, which is
+  the blank-SPA shape behind most `wait_for_selector` e2e timeouts). Fixed by `--reload-dir app` in
+  `docker-compose.override.yml`; the sentence above is now literally true.

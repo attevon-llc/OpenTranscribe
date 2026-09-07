@@ -25,11 +25,29 @@ Every pytest phase in the gate now runs with **`-rs`** and writes `--junitxml` i
 
 Two more things the gate does differently, both measured:
 
-- **`GATED_FILES` entries must carry a `RUN_*` gate.** `test_admin_endpoints.py` sat there with
-  none, so its 8 tests ran **three times per gate** (the ungated Unit/API phase plus both FIPS
-  passes) and inflated the gated phases' counts with tests that say nothing about what those
-  variables unlock: 399 passed / 3 skipped -> 392 / 2 per pass, wall unchanged (36.6 -> 36.8 s,
-  noise). `unit/test_gated_files_all_have_gates.py` fails on any ungated entry.
+- **Every `RUN_*` a gate script sets must be READ by a test — and there is no `GATED_FILES`
+  list any more.** ⚠️ This bullet used to describe a `GATED_FILES` array whose entries had to
+  carry a `RUN_*` gate, policed by `unit/test_gated_files_all_have_gates.py`. **Both are
+  gone**; neither name appears anywhere in `scripts/` or `backend/` today, so do not go
+  looking for them. What happened: the module-level `skipif` gates were deleted from all
+  eight security suites (each now opens `# Runs by DEFAULT. This module was gated behind
+  RUN_<X>_TESTS…`) while `run-integration-tests.sh` kept exporting seven variables —
+  `RUN_PKI_TESTS RUN_MFA_TESTS RUN_LLM_TESTS RUN_FEDRAMP_TESTS RUN_FIPS_TESTS
+  RUN_AUTH_CONFIG_TESTS RUN_ADVANCED_ADMIN_TESTS` — that **no test read**. A phase named
+  "Gated security suites" was setting variables that changed nothing.
+  The old guard could not catch it: it substring-matched the variable name over the whole
+  file, and all eight files still *mention* their dead variable in that very comment. It
+  passed while describing a mechanism that no longer existed — a test that cannot fail, in
+  the file written to prevent tests that cannot fail. `unit/test_gate_run_env_vars_are_live.py`
+  replaces it and matches **structurally** (AST: the name must be a call argument, a subscript
+  index, or an assignment value), so prose cannot satisfy it.
+- **ONE FIPS phase, not two.** `FIPS_MODE=true` *is* live (`app/core/config.py` reads it at
+  import), so `Security suites (FIPS_MODE=true)` is a real claim and stays. The **FIPS-off**
+  half was deleted: with the gates gone those eight files are ordinary members of the Unit/API
+  suite, so that phase re-ran, byte for byte, tests phase 1 had just run. Measured on the
+  2026-09-07 gate's own junit artifacts — all **394** ids in `gated-fips-off.xml` also appear
+  in `unit.xml`, **0 missing** — so removing it removed 394 duplicate *executions* and zero
+  tests. `FIPS_MODE_SUITES` in `run-integration-tests.sh` is the current list.
 - **`--e2e-smoke` goes through `scripts/e2e/run-e2e-smoke.sh`**, not a bare pytest listing the
   same four files. The old bypass meant the gate skipped `resolve_phase`, the 3 workers and the
   stack preflight — and it is *why* nobody noticed that `run-e2e-smoke.sh` always exited
@@ -38,8 +56,10 @@ Two more things the gate does differently, both measured:
 
 ## Purpose
 
-`./scripts/run-integration-tests.sh` is **THE pre-merge gate**: ungated suite → all `RUN_*`
-suites in **both FIPS modes** → `-m integration`. Needs the live stack
+`./scripts/run-integration-tests.sh` is **THE pre-merge gate**: Unit/API suite → the security
+suites under `FIPS_MODE=true` (**one** pass — see above; there is no FIPS-off phase and no
+`RUN_*`-gated phase any more) → `-m integration` → `-m gpu` → model-vs-schema drift. Needs the
+live stack
 (`./opentr.sh start dev`) plus `backend/venv`. GitHub Actions `backend-tests` is a safety net
 only — fresh Postgres, CPU-only `backend/requirements-ci.txt` (**never `requirements-dev` in
 CI**), `SKIP_S3`/`SKIP_OPENSEARCH` forced `True`. E2E is local-only: `./scripts/e2e/run-e2e.sh`
@@ -123,18 +143,24 @@ what it appears to. A green one from the wrong schema is worse.
   the block deliberately does not use `os.environ.setdefault`. Tests: `unit/test_cuda_device_guard.py`.
 - `@pytest.mark.models` = needs Presidio/GLiNER/toxicity weights; those modules also
   `importorskip` + `preload()`-skip, so fast CI passes without weights.
-- Module-level `skipif` env gates → suite: `RUN_PKI_TESTS`→`test_pki_auth`, `RUN_MFA_TESTS`→
-  `test_mfa_security`, `RUN_LLM_TESTS`→`test_llm_settings`, `RUN_FEDRAMP_TESTS`→
-  `test_fedramp_compliance`+`_controls`, `RUN_FIPS_TESTS`→`test_fips_140_3`,
-  `RUN_AUTH_CONFIG_TESTS`→`test_auth_config_service`, `RUN_ADVANCED_ADMIN_TESTS`→
-  `test_admin_security`, `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (self-seeding — injects
+- Module-level `skipif` env gates → suite. ⚠️ **The seven security-suite gates that used to
+  head this list are GONE** (`RUN_PKI_TESTS`, `RUN_MFA_TESTS`, `RUN_LLM_TESTS`,
+  `RUN_FEDRAMP_TESTS`, `RUN_FIPS_TESTS`, `RUN_AUTH_CONFIG_TESTS`, `RUN_ADVANCED_ADMIN_TESTS`).
+  All eight files run by DEFAULT now, and each still *mentions* its dead variable in a header
+  comment — which is exactly what let a substring-matching guard pass over a mechanism that no
+  longer existed. **Grep for `gate_enabled("<VAR>")`, never for the bare name**, and see
+  `unit/test_gate_run_env_vars_are_live.py`. Verified 2026-09-07: those seven have **zero**
+  `gate_enabled` call sites in `backend/tests`. What remains live:
+  `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (self-seeding — injects
   its own 6-meeting corpus via `app/scripts/corpus_injection` through a throwaway `searchqual-`
   user, see `tests/fixtures/search_corpus.py`; still deliberately never in CI, since CI forces
   `SKIP_OPENSEARCH=True`), `RUN_SCHEMA_DRIFT_TESTS`→`unit/test_schema_drift` (needs the live
   migrated DB; now its own phase in `run-integration-tests.sh` — it was previously set only by
   the release pipeline's `warn`-severity `schema-drift` criterion, so it never ran pre-merge),
   `RUN_AUTH_E2E`→`e2e/test_ldap_oidc` + LDAP half of
-  `e2e/test_auth_buttons`, `RUN_PKI_E2E`→`e2e/test_pki`.
+  `e2e/test_auth_buttons`, `RUN_PKI_E2E`→`e2e/test_pki`, `RUN_INDEX_AUDIT`→
+  `integration/test_speaker_label_index_drift`, `RUN_EXPORT_CAPABILITY_TEST`→
+  `integration/test_export_toolchain_in_shipped_images`.
 - **MinIO/OpenSearch tests auto-enable by TCP probe.** Root conftest `_service_reachable`
   (0.3 s) `setdefault`s `SKIP_S3` from `localhost:5178` and `SKIP_OPENSEARCH` from
   `localhost:5180`, then points the clients at those host ports; an explicit shell value wins.

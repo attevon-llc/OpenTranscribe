@@ -54,6 +54,22 @@ there is no server-side rendering of app data.
   ⚠️ That flag must be set in a **`finally`** — this `onMount` body has no try/catch of its own,
   so gating the UI on a request that can reject would strand the page on its placeholder and
   turn a transient backend blip into "nobody can sign in". Fail **open** to the local form.
+  ⚠️ **The `finally` is necessary but NOT sufficient: NOTHING in `onMount` may throw before it
+  is reached.** Gating the render made every earlier statement in that function load-bearing —
+  a throw above the `try` skips the fetch, skips the `finally`, leaves `authMethodsLoaded`
+  false **forever**, and pins the user to the spinner with no way to sign in _at all_, not even
+  with local credentials. Before the gate the identical throw was survivable, because the form
+  was already painted; the gate is what converts it into a lockout. This was real, not
+  theoretical: the OIDC-callback preamble ran ahead of the `try` and calls
+  `sessionStorage.getItem()` unconditionally, and merely _touching_ `sessionStorage` throws
+  `SecurityError` in a browser configured to block site storage (`setItem` also throws on
+  quota) — neither is under our control, and the affected user is one returning from their
+  IdP. That preamble now has its own `try/catch` that logs, clears `oidcLoading`, toasts
+  `auth.loginFailed` and falls through to the credential form. **If you add anything to this
+  `onMount` above the fetch, it needs the same treatment.** `page.test.ts`'s
+  `login/+page — the auth-methods gate` describe pins all four paths (gate opens, fetch
+  rejects, OIDC preamble throws, `sessionStorage` blocked); each has a demonstrated failing
+  control, so none can pass vacuously.
 - This is a static SPA — `+page.ts` load runs in the browser; data-loading routes set `ssr = false`.
   Don't add server `load` functions expecting a Node server; there is none in production.
 - `+error.svelte` is the catch-all for unmatched routes (no real 404 from a server).

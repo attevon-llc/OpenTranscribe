@@ -84,15 +84,29 @@ this file is for.
   (default 7200) — missing metadata is a refusal, not a pass. The run path writes `last.meta`
   (`sha=`/`epoch=`) when it publishes.
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
-  Runs the ungated suite, then all `RUN_*`-gated security suites twice (FIPS off, then `FIPS_MODE=true`),
-  then `-m integration`, then `-m gpu`, then **model-vs-schema drift**
-  (`RUN_SCHEMA_DRIFT_TESTS=true tests/unit/test_schema_drift.py`). That last phase is new: the
+  Runs the Unit/API suite, then the security suites **once** under `FIPS_MODE=true`, then
+  `-m integration`, then `-m gpu`, then **model-vs-schema drift**
+  (`RUN_SCHEMA_DRIFT_TESTS=true tests/unit/test_schema_drift.py`), then the dependency-parity,
+  session-lifetime, collection-determinism and mutation-ratchet phases. The drift phase's
   variable used to be set in exactly ONE place — the release pipeline's `schema-drift`
   criterion, at severity `warn` — so the check never ran pre-merge at all, and its warn
-  justification ("4 known pre-existing offenders") was stale. It is deliberately NOT in the
-  `GATES` array: that array's variables are exported for the `GATED_FILES` pytest run, which
-  does not include the drift file, so adding it there would have looked like coverage and
-  changed nothing.
+  justification ("4 known pre-existing offenders") was stale.
+  ⚠️ **There is no `GATES` array and no `GATED_FILES` run any more, and re-adding either is a
+  regression.** This bullet used to explain that the drift file was deliberately kept out of
+  `GATES`; that reasoning is void because the array is gone. It exported seven `RUN_*`
+  variables that **no test read** — the module-level `skipif` gates had been deleted from all
+  eight security suites and the array was left behind, so a phase named "Gated security
+  suites" set variables that changed nothing. The **FIPS-off** half went with it: with no
+  gates those files are ordinary members of the Unit/API suite, and that phase re-ran, byte
+  for byte, tests phase 1 had just run. Measured on the 2026-09-07 gate's own junit artifacts:
+  all **394** ids in `gated-fips-off.xml` also appear in `unit.xml`, **0 missing**. The
+  `FIPS_MODE=true` pass stays — `app/core/config.py` reads that at import, so it is a real
+  claim. `backend/tests/unit/test_gate_run_env_vars_are_live.py` now fails on any `RUN_*` a
+  gate script sets that no test reads through a **live** expression; its predecessor
+  `test_gated_files_all_have_gates.py` is **deleted**, because it substring-matched the
+  variable name over the whole file and every one of those files still mentions its dead
+  variable in a comment — a guard that could not fail, in the file written to prevent tests
+  that cannot fail.
 - **GPU diarization suites** — `run-diarization-gpu-tests.sh` (issue #577). The gate's `-m gpu`
   phase runs in `backend/venv`, so the three container-only diarization suites SKIP there; this
   is the only thing that executes them. It builds `opentranscribe-backend-test:latest` from
@@ -668,13 +682,54 @@ aux-file record.
   - `40-build.sh` builds every declared leg (one invocation per leg — `--load` cannot export a
     multi-arch manifest) so `50-scan.sh` has something to scan; the baked-version `docker run`
     check applies only to the **host-arch** leg, by its leg tag.
-- ⚠️ **Never `<producer> | grep -q ...` in these suites.** They run under `set -o pipefail`;
-  `grep -q` exits on first match, the producer dies with SIGPIPE, and the pipeline reports
-  FAILURE — so a match reads as a non-match and the assertion **silently inverts**. It is
-  size-dependent (output under the 64 KB pipe buffer is unaffected), which is why the idiom
-  worked against a ~100-line stage file and inverted against the 1428-line
-  `docker-build-push.sh`, reporting a hardcoded line as removed while it sat on line 865. Use
-  `[ "$(<producer> | grep -c ...)" -gt 0 ]`.
+- ⚠️ **Never pipe a producer into a reader that stops before EOF — `grep -q`, `grep -m1`,
+  `head -N`, `sed '…q'` — anywhere under `set -o pipefail`.** The reader exits at its first
+  match, the producer dies of SIGPIPE (141), and `pipefail` makes 141 the *pipeline's* status.
+  Two distinct failures, and both have shipped here:
+  - **in a condition** (`if`/`while`/`!`/`&&`), a match reads as a **non-match** — the
+    assertion silently inverts. `set -e` does not protect you; a failing condition is not an
+    error.
+  - **in an assignment** under `set -e` (`x="$(producer | head -1)"`), the captured value is
+    correct and the script then **aborts on the assignment**, truncating every phase after it
+    with no error trace. That is the #617/#618 family, and it is how
+    `mc_assert_no_hardlinks` produced a bare unexplained `exit 141` in precisely the case it
+    exists to report (`lib/model-cache.sh`, fixed 2026-09-07).
+
+  ⚠️ **THIS IS NOT SIZE-DEPENDENT. The "output under the 64 KB pipe buffer is unaffected" rule
+  this file used to state was MEASURED AND REFUTED on 2026-09-07**, and eight sites had been
+  exempted on it. The governing variable is **whether the producer still has a write to make
+  after the reader leaves** — a question about ELAPSED TIME between the matching write and the
+  producer's final one, not about bytes. Measured on this host:
+
+  | producer | result |
+  |---|---|
+  | 40 bytes, 2 ms between its two writes | **300 / 300 inverted** |
+  | the same 40 bytes written back-to-back | 0 / 3000 |
+  | real `docker info` — **1,609 B, ~40x UNDER the buffer** | **12 / 3000 (~1 in 250)** |
+  | `find` over a nested 130-file tree into `head -5` | **40 / 40 aborted** (0/40 at 30 files) |
+
+  Same size, opposite outcomes. An external binary that queries a daemon — `docker`, `ss`,
+  `buildx` — is **never** safe merely for being terse: the gaps between its writes are RPC
+  round-trips. `find` walking directories is the same story with directory reads.
+
+  **The sound admission criterion is: the match can only land on the producer's FINAL write**
+  (nothing remains to be written, so nothing can SIGPIPE). A shell builtin emitting a small
+  in-memory string also qualifies — but that has a low ceiling, well under the buffer:
+  measured, `printf 'FIRST\n<payload>\n' | head -1` under `set -euo pipefail` aborts 0/100 at
+  7 KiB, **4/100 at 16 KiB**, 31/100 at 32 KiB and 100/100 at 60 KiB.
+
+  ⚠️ **"We ran it N times and saw nothing" is not evidence below a few thousand iterations.**
+  At the measured ~1-in-250 rate for `docker info`, a 400-iteration null result is the expected
+  outcome about 45% of the time — an earlier 400-run pass on this exact command is what
+  licensed the size rule in the first place. Size the run against the rate, or use a producer
+  with a deliberate gap (the 40-byte/2 ms fixture above) which inverts every time.
+
+  Fix: `[ "$(<producer> | grep -c ...)" -gt 0 ]` (`grep -c` reads to EOF), or capture the
+  producer into a variable / a `while read` loop and match on that. Two scanners enforce this
+  and they have **different reaches** — do not add a third:
+  `backend/tests/unit/test_pipefail_grep_q_inversion.py` scans all of `scripts/` for the
+  `| grep -q` half, and `test_opentr_docker_probe_sigpipe.py` covers the assignment/abort half
+  and the wider reader set over an owned-script list.
 - **The scannable component list has exactly one home**: the `SCAN_COMPONENT_*` tables in
   `security-scan.sh`, exposed as `./scripts/security-scan.sh list-components` (and
   `list-repos`, `component<TAB>repo`, which `scripts/release/50-scan.sh` derives its

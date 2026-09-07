@@ -158,39 +158,58 @@
       const state = urlParams.get('state');
 
       if (code && state) {
-        // Clear URL parameters immediately to prevent double-processing on refresh
-        window.history.replaceState({}, document.title, window.location.pathname);
+        // NOTHING in this block may escape.
+        //
+        // The auth-methods fetch below — and with it the `finally` that opens the
+        // `authMethodsLoaded` gate — is unreachable if an exception gets out here, so a throw
+        // pins the card to its spinner permanently: a user returning from the IdP is then left
+        // with no way in AT ALL, not even the local credential form. Before the gate existed
+        // the same throw was survivable, because the form had already been painted against the
+        // placeholder defaults; gating the render is what turned it into a lockout.
+        //
+        // `sessionStorage` is the concrete hazard, not a hypothetical one: in a browser
+        // configured to block site storage, merely *touching* it throws `SecurityError`, and
+        // `setItem` throws on quota. Neither is under our control. Falling through to the
+        // ordinary credential form is the recoverable outcome.
+        try {
+          // Clear URL parameters immediately to prevent double-processing on refresh
+          window.history.replaceState({}, document.title, window.location.pathname);
 
-        // Check if we already processed this callback (prevents double toast)
-        const processedKey = `oidc_callback_${state}`;
-        if (sessionStorage.getItem(processedKey)) {
-          // Already processed this callback, skip
-          window.location.href = "/";
-          return;
-        }
-        sessionStorage.setItem(processedKey, 'true');
-
-        // Handle the OIDC callback
-        oidcLoading = true;
-        const result = await handleOIDCCallback(code, state);
-        oidcLoading = false;
-
-        if (result.success) {
-          loginSuccess = true;
-          setTimeout(() => goto('/', { replaceState: true }), 600);
-          return;
-        } else {
-          // Only show error if it's not a state-related issue (likely double-request)
-          if (!result.message?.includes('state')) {
-            toastStore.error(result.message || $t('auth.loginFailed'));
-          } else {
-            // State error but user might already be logged in, check and redirect
-            if ($isAuthenticated) {
-              window.location.href = "/";
-              return;
-            }
-            toastStore.error(result.message || $t('auth.loginFailed'));
+          // Check if we already processed this callback (prevents double toast)
+          const processedKey = `oidc_callback_${state}`;
+          if (sessionStorage.getItem(processedKey)) {
+            // Already processed this callback, skip
+            window.location.href = "/";
+            return;
           }
+          sessionStorage.setItem(processedKey, 'true');
+
+          // Handle the OIDC callback
+          oidcLoading = true;
+          const result = await handleOIDCCallback(code, state);
+          oidcLoading = false;
+
+          if (result.success) {
+            loginSuccess = true;
+            setTimeout(() => goto('/', { replaceState: true }), 600);
+            return;
+          } else {
+            // Only show error if it's not a state-related issue (likely double-request)
+            if (!result.message?.includes('state')) {
+              toastStore.error(result.message || $t('auth.loginFailed'));
+            } else {
+              // State error but user might already be logged in, check and redirect
+              if ($isAuthenticated) {
+                window.location.href = "/";
+                return;
+              }
+              toastStore.error(result.message || $t('auth.loginFailed'));
+            }
+          }
+        } catch (err) {
+          console.error('OIDC callback handling failed; falling back to the sign-in form', err);
+          oidcLoading = false;
+          toastStore.error($t('auth.loginFailed'));
         }
       }
 

@@ -75,6 +75,14 @@ EXIT_PRECONDITION=3
 # has no prompt and no abort path; this script is invoked under the standard contract and
 # cannot. The translation happens at the boundary, in run_phase below.
 EXIT_NOT_MEASURED=5
+# The code this script RECEIVES for the same verdict, which is a different number from the one
+# it EMITS above. Both wrapped test scripts use 4: scripts/e2e/run-e2e.sh's own
+# EXIT_NOT_MEASURED, and scripts/run-integration-tests.sh's summary block. Named rather than
+# spelled inline at the comparison because there was previously nothing tying the three
+# together — change run-e2e.sh's constant and a NOT MEASURED e2e phase would have rendered
+# here as FAIL with every test green. backend/tests/unit/test_e2e_runner_skip_accounting.py
+# parses all three and fails if they disagree.
+PHASE_NOT_MEASURED_EXIT=4
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
@@ -305,16 +313,56 @@ fi
 # runs; if only RUN_FRONTEND is set, no overlay is ever needed (OVERLAY_TIER has no frontend-only
 # entries), so nothing further to do here.
 
+# Gate on project_gpu_count's output being a COUNT before anything compares it numerically.
+#
+# A separate function purely so it can be driven directly by
+# backend/tests/unit/test_dev_test_gpu_count_validation.py — the call site below is inside an
+# `if $WITH_GPU_SCALE` block that would otherwise need the whole stack to reach. Echoes the
+# count on success, and on failure echoes what it got instead (for the caller's message) and
+# returns 1. Empty, "0", "two" and " " are all failures; "1" is a legitimate answer, so the
+# caller — not this function — decides what a count of 1 means.
+validate_project_gpu_count() {
+    local count="${1:-}"
+    if [[ "$count" =~ ^[1-9][0-9]*$ ]]; then
+        printf '%s\n' "$count"
+        return 0
+    fi
+    printf 'not a positive integer: %q\n' "$count"
+    return 1
+}
+
 # --with-gpu-scale (B4): explicit opt-in only, never auto-started under any other flag. Detects
 # how many GPUs THIS PROJECT has configured (not the host's raw GPU count) and either exercises
 # the real topology or skips cleanly with a stated reason — same command works unmodified on a
 # single-project-GPU host (this one) and a future multi-GPU one.
 if $WITH_GPU_SCALE; then
-    PROJECT_GPU_COUNT="$(project_gpu_count)"
+    # ⚠️ An unvalidated count is a hardware CLAIM this script never measured. `project_gpu_count`
+    # runs python + python-dotenv against .env; in a git worktree (no .env, no backend/venv —
+    # the case this script's own docs call out) it prints NOTHING, and `[[ "" -lt 2 ]]` is TRUE
+    # in bash. So a failed probe printed "only 1 GPU available for this project" and silently
+    # dropped the multi-GPU leg — on a host whose CLAUDE.md says that leg must run, and where
+    # treating the machine as single-GPU is a documented cost, not a safe default.
+    if ! PROJECT_GPU_COUNT="$(validate_project_gpu_count "$(project_gpu_count)")"; then
+        echo -e "${RED}error:${NC} --with-gpu-scale: could not determine this project's GPU count" \
+             "($PROJECT_GPU_COUNT)." >&2
+        echo -e "  project_gpu_count needs python-dotenv in ${YELLOW}backend/venv${NC} and a" \
+             "readable ${YELLOW}.env${NC} — a git worktree has neither unless they were linked in." >&2
+        echo -e "  Refusing to guess: an unmeasured '1 GPU' would skip the multi-GPU leg silently." >&2
+        exit "$EXIT_PRECONDITION"
+    fi
     if [[ "$PROJECT_GPU_COUNT" -lt 2 ]]; then
         echo -e "${YELLOW}==>${NC} --with-gpu-scale: only 1 GPU available for this project" \
-             "(GPU_DEVICE_ID == GPU_SCALE_DEVICE_ID in .env) — skipping the multi-GPU smoke test"
-        export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:-} --deselect=tests/integration/test_gpu_scale_smoke_live.py"
+             "(GPU_DEVICE_ID == GPU_SCALE_DEVICE_ID in .env) — not starting the --gpu-scale topology"
+        # ⚠️ NO `--deselect=tests/integration/test_gpu_scale_smoke_live.py` here, deliberately.
+        # A FILE-level deselect is wider than the condition it is reacting to: two of that
+        # file's three tests carry `multi_gpu` (they need a running celery-worker-gpu-scaled),
+        # but test_default_worker_is_registered_in_dual_gpu_mode deliberately does NOT — commit
+        # 48fc6593 says so explicitly, because it asserts the DEFAULT worker is registered,
+        # which is true on a single-GPU deployment too and carries its own
+        # GPU_SCALE_DEFAULT_WORKER skipif. The marker-based deselection in
+        # run-integration-tests.sh (MULTI_GPU_FILTER, which DETECTS the topology) already
+        # removes exactly the two that need it, and only when it is absent. Deselecting the
+        # file as well removed a test that had been deliberately left selectable.
     else
         echo -e "${YELLOW}==>${NC} --with-gpu-scale: $PROJECT_GPU_COUNT distinct project GPUs configured" \
              "— bringing up the --gpu-scale worker topology"
@@ -388,7 +436,7 @@ run_phase() {
     if [[ "$rc" -eq 0 ]]; then
         PHASE_STATUS+=("PASS")
         echo -e "${GREEN}<==${NC} $name — PASS (${elapsed}s)"
-    elif [[ "$rc" -eq 4 ]]; then
+    elif [[ "$rc" -eq "$PHASE_NOT_MEASURED_EXIT" ]]; then
         # NOT MEASURED is its own verdict, distinct from both. Both wrapped test scripts exit
         # 4 when one of their phases declined to be counted — run-integration-tests.sh (mass
         # skips past a ceiling, or a check with no evidence) and, since the e2e phase grew the
@@ -397,8 +445,8 @@ run_phase() {
         # "NOT MEASURED" for itself be reported here as a green backend phase; folding it into
         # FAIL would be a lie in the other direction and would train people to ignore it.
         # Recorded here, re-emitted as EXIT_NOT_MEASURED (5) at the bottom — see that constant.
-        PHASE_STATUS+=("NOT MEASURED (phase exit 4)")
-        echo -e "${YELLOW}<==${NC} $name — NOT MEASURED, exit 4 (${elapsed}s)"
+        PHASE_STATUS+=("NOT MEASURED (phase exit $rc)")
+        echo -e "${YELLOW}<==${NC} $name — NOT MEASURED, exit $rc (${elapsed}s)"
     else
         PHASE_STATUS+=("FAIL (exit $rc)")
         echo -e "${RED}<==${NC} $name — FAIL exit $rc (${elapsed}s)"

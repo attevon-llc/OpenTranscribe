@@ -307,16 +307,43 @@ GPU_SELECTION="${GPU_SELECTION:-gpu$MULTI_GPU_FILTER}"
 
 # Like run_phase, but a phase that SKIPPED more than the ceiling is NOT MEASURED.
 #
+#   run_phase_watching_skips <title> <ceiling> <command...>
+#
+# ⚠️ The ceiling is a POSITIONAL PARAMETER, never a `PHASE_SKIP_CEILING=N
+# run_phase_watching_skips ...` command prefix, and the difference is not cosmetic.
+# **A prefix assignment on a shell FUNCTION call is exported into that function's child
+# processes** — it is not scoped to the call the way it is for an external command. Measured:
+#
+#     $ bash -c 'f(){ env | grep -c "^LEAK="; }; LEAK=151 f; echo "after:[${LEAK:-unset}]"'
+#     1
+#     after:[unset]
+#
+# So every phase below ran **pytest** with `PHASE_SKIP_CEILING=<this phase's ceiling>` in its
+# environment. That leaked into the gate's own self-test: `tests/unit/
+# test_integration_gate_skip_ceiling.py` drives this function through `bash -c`, its harness
+# inherited the ambient 151 rather than using its own 5, and three of its cases were red in
+# the gate for a reason that had nothing to do with what they check. A positional parameter
+# cannot leak anywhere — the same shape `scripts/e2e/run-e2e.sh`'s `enforce_skip_ceiling`
+# already has, which is immune by construction.
+#
+# The ceiling comes SECOND, after the title, on purpose: `tests/unit/
+# test_gate_phase_coverage.py` identifies a phase by matching `run_phase\w* "<title>"`, so
+# putting it first would break a guard in a file this change does not own.
+#
 # Output is teed rather than captured, so the run still streams; PIPESTATUS carries
 # pytest's real exit code past the pipe.
 run_phase_watching_skips() {
-    local title=$1; shift
-    # Per-phase ceiling. A caller sets PHASE_SKIP_CEILING as a command prefix
-    # (`PHASE_SKIP_CEILING=18 run_phase_watching_skips ...`); unset, the integration ceiling
-    # is used, so existing callers are unchanged. The GPU phase needs its own number: its
-    # legitimate residue is the container-only diarization suites, which is a different set
-    # from the integration phase's.
-    local ceiling="${PHASE_SKIP_CEILING:-$INTEGRATION_SKIP_CEILING}"
+    local title=$1 ceiling=$2; shift 2
+    # A missing or garbled ceiling would otherwise shift the whole command left by one
+    # argument and run something nobody wrote — most likely `pytest` with the ceiling's
+    # intended value as a path. Loud, and recorded as a FAILED phase: a misconfigured
+    # dispatcher must never be able to report a pass.
+    if [[ ! "$ceiling" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}✗ $title MISCONFIGURED — argument 2 must be the skip ceiling," \
+            "got '$ceiling'${NC}\n"
+        FAILED_PHASES+=("$title (bad skip-ceiling argument)")
+        return
+    fi
     local rc=0
     local out
     out=$(mktemp)
@@ -372,7 +399,7 @@ fi
 # it had NO skip ceiling at all, so a stack outage that made thousands of suites skip still
 # printed `✓ Unit/API suite passed` and exited 0. It is also the phase whose `-rs` output is the
 # only attribution any of those skips has.
-PHASE_SKIP_CEILING="$UNIT_SKIP_CEILING" run_phase_watching_skips "Unit/API suite" \
+run_phase_watching_skips "Unit/API suite" "$UNIT_SKIP_CEILING" \
     "$VENV_PY" -m pytest tests/ "${COV_ARGS[@]}" "${SKIP_REASONS[@]}" \
     --junitxml="$GATE_ARTIFACT_DIR/unit.xml"
 
@@ -383,7 +410,7 @@ PHASE_SKIP_CEILING="$UNIT_SKIP_CEILING" run_phase_watching_skips "Unit/API suite
 # since these files carry no gate and are ordinary members of tests/. The separate FIPS-off phase
 # that used to sit here re-executed 394 tests phase 1 had already run (proved by node-id diff of
 # the two junit artifacts: 0 of 394 absent from unit.xml) under `env` variables no test reads.
-PHASE_SKIP_CEILING="$FIPS_SKIP_CEILING" run_phase_watching_skips "Security suites (FIPS_MODE=true)" \
+run_phase_watching_skips "Security suites (FIPS_MODE=true)" "$FIPS_SKIP_CEILING" \
     env FIPS_MODE=true "$VENV_PY" -m pytest "${FIPS_MODE_SUITES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short \
     "${SKIP_REASONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/gated-fips-on.xml"
 
@@ -394,6 +421,37 @@ PHASE_SKIP_CEILING="$FIPS_SKIP_CEILING" run_phase_watching_skips "Security suite
 # SERIAL — `-o addopts=""` drops the inherited `-n auto`, which is correct here because these
 # talk to the live stack and share its state (uploads, reprocessing, mirror state); running
 # them concurrently would make them interfere rather than faster.
+#
+# ⚠️ `-n <N> --dist loadfile` was evaluated for this phase and REJECTED. Three things were
+# checked before concluding that, so a future attempt starts from facts rather than repeating
+# them:
+#   * `--dist loadfile` IS the right distribution here if anyone tries again — every
+#     container-provisioning fixture in this selection is module- or session-scoped, and both
+#     `xdist_group` marks in it (`tests/test_selective_reprocess.py`,
+#     `test_lite_mode_mocked_providers.py`) are MODULE-level `pytestmark`, which keeping a file
+#     on one worker already satisfies. There are zero `ddl_exclusive` tests in this selection,
+#     so the advisory-lock barrier is not a factor either.
+#   * The blocker is not the container suites — those are self-contained throwaways and are
+#     trivially parallel-safe. It is the LIVE-STACK modules, and it has a name:
+#     `test_fusion_strategy_switch.py::test_nothing_in_this_module_wrote_to_the_index` reads
+#     `indices.stats(transcript_chunks)["_all"]["total"]["indexing"]["index_total"]` before and
+#     after a search and asserts it is UNCHANGED. That is a cluster-wide counter for an index
+#     that eight other selected modules write to (`test_rename_propagation_chunks`,
+#     `test_chunk_pruning_opensearch`, `test_digest_plane_opensearch`, `test_corpus_injection_e2e`,
+#     `test_corpus_injection_synthetic_e2e`, `test_reindex_on_mutation_666`,
+#     `test_speaker_rename_service_chunks`, `test_speaker_label_index_drift`). Any overlap makes
+#     it fail for a reason that is not about the code — a flaky gate, which is worse than a slow
+#     one. `test_redaction_pipeline.py` and `test_lite_mode_mocked_providers.py` are a second,
+#     independent instance: both mutate global `SystemSettings` that other modules read.
+#   * So the phase's cost and the phase's interference risk sit in DIFFERENT modules. If this
+#     is revisited, the shape that works is splitting the selection — the throwaway-container
+#     suites in parallel, the live-stack suites serial — not turning `-n` on over the whole
+#     thing. That costs a second file list here, which this repo has been bitten by before
+#     (see the `--e2e-smoke` note further down), so it needs a guard, not just a flag.
+#
+# The waste that WAS removable here was per-test container provisioning, and it was removed in
+# the suites themselves rather than in this script: see `tests/integration/conftest.py` and
+# `tests/unit/test_{throwaway_pg_sharing,integration_container_sharing}.py`.
 #
 # The narrowing is guarded: tests/unit/test_gate_phase_coverage.py fails if an
 # `integration`-marked test appears outside these paths, so one added elsewhere cannot go
@@ -448,11 +506,11 @@ else
     # two files under tests/integration/ carry BOTH `integration` and `gpu` markers
     # (test_diar_native_smoke_live.py, test_gpu_scale_smoke_live.py), so this phase
     # legitimately needs real device visibility and must stay in that set.
-    # The ceiling is passed EXPLICITLY even though this phase is the one whose number is the
-    # dispatcher's fallback. An implicit ceiling is invisible at the call site, and "no prefix
-    # means the integration number" is exactly the coupling that had to be broken the moment
-    # the GPU phase needed a different one.
-    PHASE_SKIP_CEILING="$INTEGRATION_SKIP_CEILING" run_phase_watching_skips "Integration-marked tests" \
+    # The ceiling is a required argument for EVERY phase, including this one, whose number
+    # used to be the dispatcher's silent fallback. An implicit ceiling is invisible at the
+    # call site, and "no prefix means the integration number" is exactly the coupling that had
+    # to be broken the moment the GPU phase needed a different one.
+    run_phase_watching_skips "Integration-marked tests" "$INTEGRATION_SKIP_CEILING" \
         "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         -o addopts="" -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
         --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
@@ -496,7 +554,7 @@ if $RUN_GPU; then
     # tests/unit/test_gate_phase_coverage.py now fails if a `gpu`-marked test appears outside
     # these paths, so one added elsewhere cannot go silently unrun the way `gpu` itself did
     # before #297.
-    PHASE_SKIP_CEILING="$GPU_SKIP_CEILING" run_phase_watching_skips "GPU-marked tests" \
+    run_phase_watching_skips "GPU-marked tests" "$GPU_SKIP_CEILING" \
         "$VENV_PY" -m pytest tests/integration/ tests/unit/test_cuda_device_guard.py \
         -o addopts="" -m "$GPU_SELECTION" -q --tb=short --strict-markers \
         --timeout="${GPU_TEST_TIMEOUT:-1800}" \
@@ -560,7 +618,7 @@ fi
 # this phase exists to close has quietly stopped opening, which is exactly the state it was
 # already in for months. Without `-rs` the skip would also have had no recorded reason: the
 # `-o addopts=""` drops pyproject's flags, and this phase never restored them.
-PHASE_SKIP_CEILING="$SCHEMA_DRIFT_SKIP_CEILING" run_phase_watching_skips "Model-vs-schema drift" \
+run_phase_watching_skips "Model-vs-schema drift" "$SCHEMA_DRIFT_SKIP_CEILING" \
     env RUN_SCHEMA_DRIFT_TESTS=true "$VENV_PY" -m pytest tests/unit/test_schema_drift.py \
     -o addopts="" -q --tb=short "${SKIP_REASONS[@]}"
 
@@ -644,8 +702,8 @@ run_phase "Mutation ratchet (last run vs baselines)" \
 # Same treatment as the drift phase: this one sets RUN_SEARCH_QUALITY_TESTS itself, so a skip is
 # the gate failing to open, not a legitimate abstention. `-rs` was missing here too.
 if $SEARCH_QUALITY; then
-    PHASE_SKIP_CEILING="$SEARCH_QUALITY_SKIP_CEILING" \
-        run_phase_watching_skips "Search quality harness (corpus-dependent)" \
+    run_phase_watching_skips "Search quality harness (corpus-dependent)" \
+        "$SEARCH_QUALITY_SKIP_CEILING" \
         env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py \
         -o addopts="" -q --tb=short "${SKIP_REASONS[@]}"
 fi

@@ -42,6 +42,7 @@ mkdir -p "$E2E_ARTIFACT_DIR"
 #   2026-09-06 19:58  standalone   323 passed 41 skipped | 11 passed 24 skipped | 2 passed 8 skipped
 #   2026-09-06 20:50  --full       333 passed 24 skipped | 11 passed 24 skipped | 2 passed 8 skipped
 #   2026-09-07 01:31  --full       314 passed 25 skipped | 29 passed  3 skipped | 4 passed 6 skipped
+#   2026-09-07 11:43  --full       340 passed 23 skipped | 31 passed  2 skipped | 2 passed 6 skipped
 # 21 chat tests silently stopped running between the second and third runs and the phase
 # still reported PASS both times. `grep SKIPPED` on any of those logs returns nothing,
 # because no phase ran with `-rs`. Both flags cost nothing at runtime.
@@ -51,20 +52,47 @@ SKIP_REASONS=(-rs)
 #: Same reasoning as run-integration-tests.sh's INTEGRATION_SKIP_CEILING/GPU_SKIP_CEILING —
 #: exit 0 with mass skips is indistinguishable from a real pass.
 #:
-#: ⚠️ These are TODAY'S REALITY, not the target, and each is the LOW-WATER MARK of the runs
-#: tabulated above — i.e. the number of skips a fully-provisioned dev stack still produces.
-#: Deliberately not the high-water mark: a ceiling set above the best observed run lets
-#: through exactly the drift these exist to catch (24 chat skips would have "passed" under a
-#: ceiling of 24). Re-DERIVE them, never raise one to make a phase green.
+#: ⚠️ These are TODAY'S REALITY, not the target. A ceiling is a FLOOR TO DRIVE DOWN — never
+#: raise one to make a phase green, and re-derive it whenever anything changes what the suite
+#: owns. 25/3/6 were set before the data-ownership work removed skips, and this comment
+#: already said that leaving them stale is itself a failure.
 #:
-#: TODO: the residue is the dev-data-dependent skips (`test_search.py`'s corpus-absent skips,
-#: `test_visual_regression.py`'s "no completed transcribed file in dev dataset", speaker
-#: profiles, media fixtures) plus the auth-IdP skips of a stack started without
-#: --with-ldap-test/--with-keycloak-test. The parallel work on this branch to make the e2e
-#: suite own its own data (~9 files) should take phase 1 toward 0; lower these ceilings in
-#: the same commit that lands it, or this file records a target nobody moved.
-E2E_SKIP_CEILING="${E2E_SKIP_CEILING:-25}"           # 24 and 25 measured with overlays up; 41 without
-E2E_CHAT_SKIP_CEILING="${E2E_CHAT_SKIP_CEILING:-3}"  # 3 with the mock LLM up; 24 = the whole family gated off
+#: RE-DERIVED 2026-09-07 from the junit artifacts of the run that had just completed
+#: (`/tmp/ot-run-dev-tests.mYICD5/e2e-xml/*.xml`, 11:43-11:49), not from the terminal log —
+#: mock-llm/keycloak overlays up, NO --with-pki, NO --with-watch, no RUN_PIPELINE_SMOKE, no
+#: RUN_SEARCH_QUALITY_TESTS. Re-derive with:
+#:   python3 -c "import xml.etree.ElementTree as E,sys;r=E.parse(sys.argv[1]).getroot();
+#:               print(sum(int(t.get('skipped')) for t in r.iter('testsuite')))" <phase>.xml
+#:
+#: ⚠️ That run had TWO FAILURES IN EVERY PHASE (phase 1: two OIDC login tests; chat: two
+#: test_chat tests; visual: the chat_trace light/dark pair), so these are measured
+#: under-failure, not a clean-run baseline: a fixture that errors takes its dependants' skips
+#: with it, in either direction. Re-derive again after the first fully green run.
+#:
+#: Phase 1 — 365 tests, 23 skipped, each attributed by `-rs`:
+#:   10  PKI            — 7 "requires RUN_PKI_E2E=true and PKI overlay running" + 3 "PKI is
+#:                        not enabled" (test_pki.py, test_auth_buttons.py::TestPKIButton)
+#:    4  MFA            — one "User cannot set up MFA", the rest of the chain then skips on
+#:                        "MFA not configured for test user — run setup test first"
+#:    3  pipeline smoke — RUN_PIPELINE_SMOKE=1, strict opt-in (--with-pipeline-smoke)
+#:    2  search corpus  — needs the self-seeded RUN_SEARCH_QUALITY_TESTS corpus
+#:    2  watch sources  — stack started without --with-watch
+#:    1  MFA (setup)    — "MFA not required for this user — run setup test first"
+#:    1  search pager   — 'administration' matches <2 pages in this dev corpus
+#: Phase 2 (chat) — 35 tests, 2 skipped: "LLM is configured — the setup CTA path does not
+#:   apply" and "Settings modal could not be opened programmatically in this build". The 24
+#:   this file used to record were the whole family gated off by the mock-llm container the
+#:   unit suite was killing (fixed on this branch), so even 3 was already history.
+#: Phase 3 (visual) — 10 tests, 6 skipped: gallery / file_detail / speakers, light+dark, each
+#:   "needs an isolated, seeded stack — the shared dev stack's file/cluster counts change
+#:   between runs and cannot be fully masked".
+#:
+#: TODO: the residue that is NOT deployment shape (PKI / watch / opt-in gates) is the
+#: dev-data-dependent tail — the 3 visual pairs, the search pager, the search corpus. Those
+#: are what the data-ownership work should take to 0; lower these in the same commit that
+#: lands it, or this file records a target nobody moved.
+E2E_SKIP_CEILING="${E2E_SKIP_CEILING:-23}"           # 23 measured with overlays up; 41 with none
+E2E_CHAT_SKIP_CEILING="${E2E_CHAT_SKIP_CEILING:-2}"  # 2 with the mock LLM up; 24 = the whole family gated off
 E2E_VISUAL_SKIP_CEILING="${E2E_VISUAL_SKIP_CEILING:-6}"  # 6 measured; 8 = no completed file in the dataset
 
 port_open() { (exec 3<>"/dev/tcp/localhost/$1") 2>/dev/null && exec 3>&- && return 0 || return 1; }
@@ -137,8 +165,23 @@ if $HAS_CUSTOM || [[ "$WORKERS" == "0" ]]; then
     # or anything else) still wins: pytest takes the last occurrence. No ceiling is applied
     # to this path — the caller chose the selection, so its legitimate skip count is theirs
     # to know, not this script's.
-    exec "$VENV_PY" -m pytest "${SKIP_REASONS[@]}" \
-        --junitxml="$E2E_ARTIFACT_DIR/e2e-custom.xml" "${ARGS[@]}"
+    #
+    # ⚠️ NOT `exec`. pytest's own exit 4 means "usage error" — and 4 is THIS script's
+    # NOT MEASURED code, which run-dev-tests.sh renders as a phase that declined to be
+    # counted. `exec`ing pytest handed its raw code straight to the caller, so a mistyped
+    # flag on this path reported as "verified nothing" rather than as a failure: the
+    # green-ish reading of a broken invocation. The three-phase path below already maps
+    # pytest's codes through resolve_phase; this one could not, because exec left no process
+    # to map them. pytest's other codes keep their meaning and propagate unchanged.
+    custom_rc=0
+    "$VENV_PY" -m pytest "${SKIP_REASONS[@]}" \
+        --junitxml="$E2E_ARTIFACT_DIR/e2e-custom.xml" "${ARGS[@]}" || custom_rc=$?
+    if [[ $custom_rc -eq $EXIT_NOT_MEASURED ]]; then
+        echo -e "${RED}pytest exited ${custom_rc} — a USAGE ERROR, not a measurement." \
+            "Reporting it as a failure so it cannot be read as NOT MEASURED.${NC}" >&2
+        exit 1
+    fi
+    exit "$custom_rc"
 fi
 
 # Warm the Vite dev server first: after frontend edits the first browser

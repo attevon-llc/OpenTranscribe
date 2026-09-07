@@ -44,21 +44,35 @@ pytestmark = pytest.mark.skipif(
 )
 
 #: A phase dispatch, with any `VAR=value` command prefixes in front of it.
+#:
+#: The prefix group is still captured even though no dispatch may use one any more — that is
+#: what `test_no_dispatch_supplies_its_ceiling_as_an_environment_prefix` checks. A prefix
+#: assignment on a shell FUNCTION is exported into every process the function starts, so
+#: `PHASE_SKIP_CEILING=151 run_phase_watching_skips ...` ran pytest with that variable set.
 _DISPATCH = re.compile(
     r"^\s*(?P<prefix>(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*)"
     r"(?P<fn>run_phase_watching_skips|run_phase)\b"
     r"(?P<rest>.*)$"
 )
-#: The default ceiling `run_phase_watching_skips` falls back to when no prefix is given.
-_DEFAULT_CEILING_VAR = "INTEGRATION_SKIP_CEILING"
+#: `run_phase_watching_skips <title> <ceiling> <command...>`: the ceiling is the second
+#: POSITIONAL argument. Accepted spellings are a `*_SKIP_CEILING` variable reference (every
+#: real call site — the derivation is written beside the constant) or a bare integer (the
+#: self-test harnesses). Anything else means the argument was dropped and the whole command
+#: shifted left by one.
+_CEILING_ARG = re.compile(
+    r'^\s*"[^"]*"\s+(?:"?\$\{?(?P<var>[A-Za-z_][A-Za-z0-9_]*)\}?"?|(?P<literal>\d+))(?:\s|$)'
+)
 
 
 class Phase:
     """One dispatch and the lines belonging to it, up to the next dispatch."""
 
-    def __init__(self, fn: str, prefix: str, title: str, lineno: int) -> None:
+    def __init__(self, fn: str, prefix: str, rest: str, title: str, lineno: int) -> None:
         self.fn = fn
         self.prefix = prefix
+        #: Everything after the function name on the dispatch's own (continuation-folded)
+        #: line — i.e. its positional arguments, which is where the ceiling now lives.
+        self.rest = rest
         self.title = title
         self.lineno = lineno
         self.lines: list[str] = []
@@ -79,7 +93,22 @@ class Phase:
 
     @property
     def has_ceiling(self) -> bool:
-        return "PHASE_SKIP_CEILING=" in self.prefix or _DEFAULT_CEILING_VAR in self.body
+        """Is a skip ceiling supplied as the dispatch's second positional argument?
+
+        ⚠️ It used to be enough for `PHASE_SKIP_CEILING=` to appear as a command PREFIX, or
+        for the default ceiling variable to appear anywhere in the phase's body. Both were
+        wrong: the prefix form leaks the value into pytest's environment, and "the variable
+        is mentioned somewhere below" is satisfied by a comment.
+        """
+        if self.fn != "run_phase_watching_skips":
+            return False
+        match = _CEILING_ARG.match(self.rest)
+        if not match:
+            return False
+        if match.group("literal") is not None:
+            return True
+        var = match.group("var")
+        return var is not None and var.endswith("SKIP_CEILING")
 
     @property
     def reports_skip_reasons(self) -> bool:
@@ -126,6 +155,7 @@ def _parse_phases(source: str) -> list[Phase]:
             current = Phase(
                 fn=match.group("fn"),
                 prefix=match.group("prefix"),
+                rest=rest,
                 title=title_match.group(1) if title_match else rest.strip(),
                 lineno=lineno,
             )
@@ -163,13 +193,24 @@ def test_the_parser_finds_the_phases_that_are_there():
 
 
 def test_the_ceiling_mechanism_is_actually_consulted():
-    """A ceiling variable no dispatcher reads is decoration."""
+    """A ceiling argument no dispatcher reads is decoration.
+
+    The runtime behaviour is `test_integration_gate_skip_ceiling.py`'s job; this only pins
+    that the dispatcher still TAKES the ceiling positionally and compares against it, so the
+    static `has_ceiling` check below is checking something real.
+    """
     source = GATE.read_text(encoding="utf-8")
     body = source.split("run_phase_watching_skips() {", 1)
     assert len(body) == 2, "run_phase_watching_skips is not defined in the gate script"
     fn = body[1].split("\n}", 1)[0]
-    assert "PHASE_SKIP_CEILING" in fn, "the dispatcher no longer reads PHASE_SKIP_CEILING"
-    assert _DEFAULT_CEILING_VAR in fn, "the dispatcher no longer has a default ceiling"
+    assert re.search(r"local\s+title=\$1\s+ceiling=\$2", fn), (
+        "the dispatcher no longer takes <title> <ceiling> as its first two positional "
+        "arguments. If the ceiling moved back to an environment prefix, note that a prefix "
+        "on a shell FUNCTION is exported into every process the phase starts."
+    )
+    assert re.search(r"\bskipped\b.*>.*\bceiling\b|\bceiling\b.*<.*\bskipped\b", fn), (
+        "the dispatcher no longer compares the skip count against the ceiling"
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -192,9 +233,39 @@ def test_every_pytest_phase_watches_its_skips():
 def test_every_pytest_phase_has_a_ceiling():
     offenders = [p for p in _gate_phases() if p.runs_pytest and not p.has_ceiling]
     assert not offenders, (
-        f"these pytest phases carry no skip ceiling: {offenders}. Set PHASE_SKIP_CEILING as a "
-        "command prefix on the dispatch, with the measurement it came from written beside the "
-        "constant. Never raise one to make a phase pass."
+        f"these pytest phases carry no skip ceiling: {offenders}. Pass it as the dispatch's "
+        "SECOND POSITIONAL argument — run_phase_watching_skips <title> <ceiling> "
+        "<command...> — with the measurement it came from written beside the constant. Never "
+        "raise one to make a phase pass, and never supply it as a `VAR=x` command prefix "
+        "(see the next test)."
+    )
+
+
+def test_no_dispatch_supplies_its_ceiling_as_an_environment_prefix():
+    """⚠️ H1: `VAR=x <shell function>` EXPORTS `VAR` into that function's child processes.
+
+    It is not scoped to the call, the way it is for an external command:
+
+        $ bash -c 'f(){ env | grep -c "^LEAK="; }; LEAK=1 f; echo "after:[${LEAK:-unset}]"'
+        1
+        after:[unset]
+
+    So `PHASE_SKIP_CEILING=151 run_phase_watching_skips ... pytest ...` ran **pytest** with
+    `PHASE_SKIP_CEILING=151` in its environment — which reached this gate's own self-test,
+    whose `bash -c` harness then used 151 in place of the 5 it declares, and turned three of
+    its cases red for a reason none of them was about.
+
+    Nothing about the prefix form is specific to the ceiling, so this bans the shape rather
+    than the variable: a phase's environment must be built deliberately (`env VAR=x ...` as
+    part of the COMMAND, which the FIPS and drift phases both do), not inherited by accident.
+    """
+    offenders = [p for p in _gate_phases() if p.prefix.strip()]
+    assert not offenders, (
+        "these dispatches carry a `VAR=value` command prefix, which exports the variable "
+        "into every process the phase starts: "
+        + ", ".join(f"{p!r} prefix={p.prefix.strip()!r}" for p in offenders)
+        + ". Pass a ceiling positionally; put any real environment change in the command "
+        "itself with `env VAR=value ...`."
     )
 
 
@@ -223,9 +294,24 @@ run_phase "Unit/API suite" "$VENV_PY" -m pytest tests/ \\
 """
 
 _FIXTURE_GOOD = """
-PHASE_SKIP_CEILING="$UNIT_SKIP_CEILING" run_phase_watching_skips "Unit/API suite" \\
+run_phase_watching_skips "Unit/API suite" "$UNIT_SKIP_CEILING" \\
     "$VENV_PY" -m pytest tests/ "${SKIP_REASONS[@]}" \\
     --junitxml="$DIR/unit.xml"
+"""
+
+#: The ceiling argument dropped: the command shifts left by one, so `$VENV_PY` lands where the
+#: ceiling belongs. Reads as a correctly-dispatched phase to everything except `has_ceiling`.
+_FIXTURE_NO_CEILING = """
+run_phase_watching_skips "Unit/API suite" \\
+    "$VENV_PY" -m pytest tests/ "${SKIP_REASONS[@]}" \\
+    --junitxml="$DIR/unit.xml"
+"""
+
+#: The pre-H1 shape. Correct dispatcher, correct-looking ceiling — and it sets
+#: PHASE_SKIP_CEILING for pytest and everything else the phase starts.
+_FIXTURE_ENV_PREFIX = """
+PHASE_SKIP_CEILING="$UNIT_SKIP_CEILING" run_phase_watching_skips "Unit/API suite" \\
+    "$VENV_PY" -m pytest tests/ "${SKIP_REASONS[@]}"
 """
 
 _FIXTURE_NON_PYTEST = """
@@ -238,12 +324,12 @@ run_phase "Collection determinism (two processes, same test ids)" \\
     "$VENV_PY" -m pytest --collect-only -q -o addopts=
 """
 
-#: The prefix on its own continued line — how a long dispatch is actually written. Parsed as
-#: prefix-less before `_logical_lines` folded continuations, which reported a phase that HAS a
-#: ceiling as having none.
+#: The ceiling on its own continued line — how the longest dispatch is actually written.
+#: `_logical_lines` must fold continuations before the arguments are parsed, or a phase that
+#: HAS a ceiling reads as having none.
 _FIXTURE_GOOD_WRAPPED = """
-    PHASE_SKIP_CEILING="$SEARCH_QUALITY_SKIP_CEILING" \\
-        run_phase_watching_skips "Search quality harness (corpus-dependent)" \\
+    run_phase_watching_skips "Search quality harness (corpus-dependent)" \\
+        "$SEARCH_QUALITY_SKIP_CEILING" \\
         env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py \\
         -o addopts="" -q --tb=short "${SKIP_REASONS[@]}"
 """
@@ -267,13 +353,40 @@ def test_a_correctly_dispatched_phase_is_clean():
     assert phases[0].reports_skip_reasons
 
 
-def test_a_dispatch_whose_prefix_is_on_a_continued_line_is_still_seen():
+def test_a_dispatch_whose_ceiling_is_on_a_continued_line_is_still_seen():
     phases = _parse_phases(_FIXTURE_GOOD_WRAPPED)
     assert len(phases) == 1
     assert phases[0].runs_pytest
     assert phases[0].fn == "run_phase_watching_skips"
-    assert phases[0].has_ceiling, "backslash continuation must not hide the ceiling prefix"
+    assert phases[0].has_ceiling, "backslash continuation must not hide the ceiling argument"
     assert phases[0].reports_skip_reasons
+
+
+def test_a_dropped_ceiling_argument_is_detected():
+    """The failure the positional form makes possible, and the one `has_ceiling` must catch.
+
+    Everything else about this dispatch is correct — right dispatcher, `-rs`, a junit report —
+    so only the argument check can see it. Without this case, a `has_ceiling` that returned
+    True for every `run_phase_watching_skips` call would pass the whole module.
+    """
+    phases = _parse_phases(_FIXTURE_NO_CEILING)
+    assert len(phases) == 1
+    assert phases[0].fn == "run_phase_watching_skips"
+    assert phases[0].runs_pytest
+    assert not phases[0].has_ceiling, (
+        "a dispatch whose second argument is the COMMAND, not a ceiling, was accepted"
+    )
+
+
+def test_the_environment_prefix_form_is_detected():
+    """Must-fire case for the H1 ban: the exact shape the gate shipped with."""
+    phases = _parse_phases(_FIXTURE_ENV_PREFIX)
+    assert len(phases) == 1
+    assert phases[0].prefix.strip() == 'PHASE_SKIP_CEILING="$UNIT_SKIP_CEILING"'
+    assert not phases[0].has_ceiling, (
+        "a ceiling supplied as an environment prefix must not count as a ceiling — it is "
+        "exported into the phase's children instead of being scoped to the call"
+    )
 
 
 def test_a_non_pytest_phase_is_not_required_to_have_a_ceiling():

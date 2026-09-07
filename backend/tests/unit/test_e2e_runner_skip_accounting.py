@@ -59,6 +59,13 @@ def _extract(script: Path, function_name: str) -> str:
     return source[start : source.index("\n}\n", start) + 3]
 
 
+def _declared_int(script: Path, name: str) -> int:
+    """Read a `NAME=<int>` shell constant out of a script, or fail saying it is gone."""
+    match = re.search(rf"^{re.escape(name)}=(\d+)\s*$", script.read_text(encoding="utf-8"), re.M)
+    assert match, f"{name} is no longer declared as a plain integer in {script.name}"
+    return int(match.group(1))
+
+
 def _junit_xml(tmp_path: Path, *, skipped: int, name: str = "case") -> Path:
     path = tmp_path / f"{name}.xml"
     path.write_text(
@@ -192,13 +199,17 @@ def test_the_runner_exits_4_when_a_phase_was_not_measured():
     """
     source = E2E_RUNNER.read_text(encoding="utf-8")
     tail = source[source.index("# A real failure outranks a not-measured phase") :]
+    # ⚠️ Read from the script, never spelled here. This harness used to define its own
+    # `EXIT_NOT_MEASURED=4`, so nothing tied the number the runner EMITS to the number
+    # run-dev-tests.sh READS — see test_the_not_measured_exit_code_is_the_same_number_everywhere.
+    not_measured_code = _declared_int(E2E_RUNNER, "EXIT_NOT_MEASURED")
 
     def _verdict(*, failures: tuple[int, int, int], not_measured: list[str]) -> int:
         harness = (
             textwrap.dedent(f"""
                 set -uo pipefail
                 GREEN='' RED='' YELLOW='' NC=''
-                EXIT_NOT_MEASURED=4
+                EXIT_NOT_MEASURED={not_measured_code}
                 E2E_ARTIFACT_DIR=/tmp
                 status={failures[0]}; chat_status={failures[1]}; visual_status={failures[2]}
                 NOT_MEASURED_PHASES=({" ".join(f'"{p}"' for p in not_measured)})
@@ -210,7 +221,7 @@ def test_the_runner_exits_4_when_a_phase_was_not_measured():
         ).returncode
 
     assert _verdict(failures=(0, 0, 0), not_measured=[]) == 0, "a clean run must still exit 0"
-    assert _verdict(failures=(0, 0, 0), not_measured=["Phase 2 (-m chat)"]) == 4, (
+    assert _verdict(failures=(0, 0, 0), not_measured=["Phase 2 (-m chat)"]) == not_measured_code, (
         "a run whose only anomaly is a NOT MEASURED phase exited 0 — the false green this "
         "guard exists for"
     )
@@ -220,15 +231,78 @@ def test_the_runner_exits_4_when_a_phase_was_not_measured():
     )
 
 
+# ------------------------------------------------- the caller-selected passthrough path
+
+
+def _passthrough_block() -> str:
+    """The `$HAS_CUSTOM || WORKERS==0` branch, verbatim, up to its closing `fi`."""
+    source = E2E_RUNNER.read_text(encoding="utf-8")
+    start = source.index('if $HAS_CUSTOM || [[ "$WORKERS" == "0" ]]; then')
+    return source[start : source.index("\nfi\n", start) + 4]
+
+
+def _run_passthrough(pytest_exit: int, tmp_path: Path) -> int:
+    """Drive the REAL passthrough block with a stand-in `python` exiting ``pytest_exit``."""
+    stub = tmp_path / "fake-python"
+    stub.write_text(f"#!/bin/bash\nexit {pytest_exit}\n", encoding="utf-8")
+    stub.chmod(0o755)
+    harness = (
+        textwrap.dedent(f"""
+            set -uo pipefail
+            GREEN='' RED='' YELLOW='' NC=''
+            EXIT_NOT_MEASURED={_declared_int(E2E_RUNNER, "EXIT_NOT_MEASURED")}
+            VENV_PY={str(stub)!r}
+            E2E_ARTIFACT_DIR={str(tmp_path)!r}
+            HAS_CUSTOM=true
+            WORKERS=0
+            SKIP_REASONS=(-rs)
+            ARGS=(backend/tests/e2e/test_thing.py)
+        """)
+        + _passthrough_block()
+    )
+    return subprocess.run(
+        ["bash", "-c", harness], capture_output=True, text=True, timeout=60, check=False
+    ).returncode
+
+
+def test_the_passthrough_path_does_not_report_a_usage_error_as_not_measured(tmp_path):
+    """pytest's exit 4 means USAGE ERROR; 4 is this script's NOT MEASURED code.
+
+    The passthrough branch used to ``exec`` pytest, so its raw code became the script's — and
+    ``run-dev-tests.sh`` renders 4 as "this phase declined to be counted". A mistyped flag
+    therefore read as *verified nothing* rather than as a failure: the green-ish reading of a
+    broken invocation, on the one path that has no ``resolve_phase`` to map codes.
+
+    Every other code must still propagate unchanged, or this fix would have traded one
+    misreport for another. ``exec`` would fail this test by construction: the stand-in's exit
+    code would replace the shell's.
+    """
+    assert _run_passthrough(0, tmp_path) == 0, "a clean passthrough run must still exit 0"
+    assert _run_passthrough(1, tmp_path) == 1, "a real test failure must still be 1"
+    assert _run_passthrough(5, tmp_path) == 5, (
+        "'no tests collected' on a caller-chosen selection must still propagate — the caller "
+        "chose the selection, so only it can say whether that is wrong"
+    )
+    assert _run_passthrough(4, tmp_path) == 1, (
+        "pytest's usage error (4) reached the caller unchanged, where it means NOT MEASURED"
+    )
+
+
 # ------------------------------------------------------- the gate must SEE that exit code
 
 
 def _run_phase_verdict(exit_code: int) -> str:
-    """Drive run-dev-tests.sh's REAL run_phase with a stand-in exiting ``exit_code``."""
+    """Drive run-dev-tests.sh's REAL run_phase with a stand-in exiting ``exit_code``.
+
+    ``PHASE_NOT_MEASURED_EXIT`` is read out of the script rather than declared here, for the
+    same reason as above: a harness that supplies its own copy of a constant proves the
+    harness consistent, not the scripts.
+    """
     harness = textwrap.dedent(f"""
         set -uo pipefail
         GREEN='' RED='' YELLOW='' NC=''
         REPORT_DIR=$(mktemp -d)
+        PHASE_NOT_MEASURED_EXIT={_declared_int(DEV_TESTS, "PHASE_NOT_MEASURED_EXIT")}
         PHASE_NAMES=(); PHASE_STATUS=(); PHASE_LOGS=(); PHASE_SECONDS=()
         {_extract(DEV_TESTS, "run_phase")}
         stand_in() {{ echo "stand-in phase"; return {exit_code}; }}
@@ -243,16 +317,56 @@ def _run_phase_verdict(exit_code: int) -> str:
 
 
 def test_the_e2e_phase_reaches_a_not_measured_verdict_in_the_gate():
-    """run-e2e.sh's exit 4 must render as NOT MEASURED, not PASS and not FAIL.
+    """run-e2e.sh's NOT MEASURED exit must render as NOT MEASURED, not PASS and not FAIL.
 
     This is the other half of the accounting: a ceiling that no caller reads is a warning
     nobody acts on. All three verdicts, because any one alone is satisfiable by a constant.
     """
+    not_measured_code = _declared_int(E2E_RUNNER, "EXIT_NOT_MEASURED")
     assert _run_phase_verdict(0) == "PASS"
-    assert _run_phase_verdict(4).startswith("NOT MEASURED"), (
+    assert _run_phase_verdict(not_measured_code).startswith("NOT MEASURED"), (
         "an e2e phase that declined to count itself was folded into PASS or FAIL"
     )
     assert _run_phase_verdict(1).startswith("FAIL")
+
+
+def test_the_not_measured_exit_code_is_the_same_number_everywhere():
+    """⚠️ M5. Three scripts have to agree on one number and nothing checked that they did.
+
+    ``run-e2e.sh`` DECLARES ``EXIT_NOT_MEASURED``; ``run-integration-tests.sh`` exits the same
+    code from its summary block; ``run-dev-tests.sh`` is the caller that has to recognise it.
+    Until now this module defined its own private ``EXIT_NOT_MEASURED=4`` in a harness string,
+    which pinned the harness to itself and nothing else — so changing run-e2e.sh's constant
+    would have made a NOT MEASURED e2e phase render in the report as **FAIL, with every test
+    green**, and every test here would still have passed.
+
+    Also asserts the number is NOT run-dev-tests.sh's own ``EXIT_NOT_MEASURED`` (5). The two
+    differ on purpose: under the repo-wide standard contract 4 already means *operator abort*,
+    so this script must re-emit 5 at its own boundary. Collapsing them would make an honest
+    "a phase verified nothing" print as "the leg reported an operator abort".
+    """
+    emitted = _declared_int(E2E_RUNNER, "EXIT_NOT_MEASURED")
+    received = _declared_int(DEV_TESTS, "PHASE_NOT_MEASURED_EXIT")
+    assert emitted == received, (
+        f"scripts/e2e/run-e2e.sh exits {emitted} for NOT MEASURED but "
+        f"scripts/run-dev-tests.sh only recognises {received} — a phase that declined to be "
+        "counted would be reported as a FAILURE with every test green"
+    )
+
+    if INTEGRATION_GATE.is_file():
+        gate = INTEGRATION_GATE.read_text(encoding="utf-8")
+        summary = gate[gate.index("# --- Summary ---") :]
+        assert re.search(rf"^\s*exit {emitted}\s*$", summary, re.M), (
+            f"scripts/run-integration-tests.sh's summary block no longer exits {emitted} for a "
+            "NOT MEASURED phase, so the backend phase and the e2e phase would disagree"
+        )
+
+    re_emitted = _declared_int(DEV_TESTS, "EXIT_NOT_MEASURED")
+    assert re_emitted != received, (
+        "run-dev-tests.sh now emits the same code it receives. Those are deliberately "
+        "different: 4 means operator abort in the standard contract this script is invoked "
+        "under, which is why it re-emits 5."
+    )
 
 
 def test_the_e2e_phase_is_dispatched_through_that_verdict_path():

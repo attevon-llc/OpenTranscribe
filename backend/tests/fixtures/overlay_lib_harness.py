@@ -104,6 +104,14 @@ def sealed_script(tmp_path: Path, repo_root: Path | str, body: str) -> str:
     preamble = textwrap.dedent(f"""
         set -uo pipefail
         PATH="{seal_docker(tmp_path)!s}:$PATH"
+        # Pin the project explicitly rather than letting `compose_project_name` DETECT it from
+        # the shim's `docker ps`. Detection is an allowlist of the names this repo's live stack
+        # runs under (`OPENTR_LIVE_PROJECTS` in scripts/lib/compose-project.sh) — a sentinel the
+        # shim invents is deliberately not in it, so detection correctly falls through to the
+        # directory-name guess and the seal's "every lookup names the sentinel" assertion breaks.
+        # The env override is the documented "operator speaking" path and seals this HARDER than
+        # detection did: no daemon, real or shimmed, participates in the answer at all.
+        export COMPOSE_PROJECT_NAME={SEALED_PROJECT}
         REPO_ROOT={repo_root!s}
         VENV_PY=/nonexistent/python
         AUTH_CONFIG_CLI=/nonexistent/cli.py

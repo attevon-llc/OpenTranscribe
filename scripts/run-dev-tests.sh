@@ -389,9 +389,11 @@ run_phase() {
         PHASE_STATUS+=("PASS")
         echo -e "${GREEN}<==${NC} $name — PASS (${elapsed}s)"
     elif [[ "$rc" -eq 4 ]]; then
-        # NOT MEASURED is its own verdict, distinct from both. run-integration-tests.sh exits
-        # 4 when one of its phases declined to be counted (mass skips, or a check with no
-        # evidence). Folding that into PASS is what let a 733-second phase that had printed
+        # NOT MEASURED is its own verdict, distinct from both. Both wrapped test scripts exit
+        # 4 when one of their phases declined to be counted — run-integration-tests.sh (mass
+        # skips past a ceiling, or a check with no evidence) and, since the e2e phase grew the
+        # same accounting, scripts/e2e/run-e2e.sh. Folding that into PASS is what let a
+        # 733-second phase that had printed
         # "NOT MEASURED" for itself be reported here as a green backend phase; folding it into
         # FAIL would be a lie in the other direction and would train people to ignore it.
         # Recorded here, re-emitted as EXIT_NOT_MEASURED (5) at the bottom — see that constant.
@@ -400,6 +402,197 @@ run_phase() {
     else
         PHASE_STATUS+=("FAIL (exit $rc)")
         echo -e "${RED}<==${NC} $name — FAIL exit $rc (${elapsed}s)"
+    fi
+}
+
+# --------------------------------------------------------------------------- quiesce
+# Wait, bounded, for the stack to go quiet before handing it to the browser suite.
+#
+# ⚠️ This is the single largest cause of e2e failures in a chained run, and it is not a
+# property of the e2e tests. Natural experiment, same tree, same day:
+#
+#   run-e2e.sh standalone (19:58)            323 passed,  0 failed,               551 s
+#   the same suite as phase 2 here (20:50)   333 passed,  7 failed,               611 s
+#   the same suite as phase 2 here (01:31)   314 passed, 13 failed + 13 errors,   919 s
+#
+# The backend phase is a ~25-minute 48-worker suite; when it returns, the reindex /
+# search_index_maintenance work it dispatched is still running. Direct evidence from the
+# 01:31 log, before this existed:
+#   AssertionError: the chunk index stayed unavailable across 4 attempts
+#                   (TransportError(503, 'search_phase_execution_exception'))
+#
+# Three legs, one shared budget, and NON-FATAL: a stack that will not settle is reported and
+# the suite runs anyway. Turning "still busy" into a gate failure would replace a diagnosable
+# pile of timeouts with an undiagnosable red phase, and the e2e suite's own session preflight
+# (backend/tests/e2e/conftest.py::e2e_stack_preflight) still refuses a genuinely broken stack.
+#
+# The budget is SOFT: each leg finishes the probe it is in (a Celery `inspect` broadcast has
+# its own 3 s timeout), so a 60 s budget was measured taking 68 s. It bounds the wait, it is
+# not a deadline the function meets to the second — do not write a test that asserts it is.
+QUIESCE_BUDGET_S="${QUIESCE_BUDGET_S:-180}"
+
+await_stack_quiesce() {
+    # Budget comes from the environment (QUIESCE_BUDGET_S), not a parameter: there is one
+    # call site and a test needs to shorten it without this growing an argument contract.
+    local budget="$QUIESCE_BUDGET_S"
+    local started
+    started=$(date +%s)
+    echo -e "${YELLOW}==>${NC} quiesce: waiting for the stack to settle before the browser suite" \
+        "(budget ${budget}s)"
+
+    # Legs 1 and 2: backend /health steady, then OpenSearch settled.
+    #
+    # Leg 1 REUSES backend/tests/e2e/conftest.py::_await_stable_backend rather than
+    # re-implementing "N consecutive 200s" here — that helper is the one the e2e suite's own
+    # preflight uses, and a second copy in bash would be free to drift from it. It is loaded by
+    # path (the e2e tree is its own pytest rootdir, so there is no importable package name).
+    # If it cannot be loaded, this leg is SKIPPED with a loud message rather than silently
+    # replaced by a lookalike: the suite's preflight still runs the real thing.
+    local py_out py_rc=0
+    py_out=$("$VENV_PY" - "$budget" "${REPO_ROOT:-$PWD}" 2>&1 <<'PYEOF'
+import contextlib
+import importlib.util
+import io
+import os
+import pathlib
+import sys
+import time
+
+import requests
+
+budget = float(sys.argv[1])
+repo_root = pathlib.Path(sys.argv[2])
+deadline = time.monotonic() + budget
+backend_url = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+opensearch = "http://localhost:" + os.environ.get("OPENSEARCH_PORT", "5180")
+failed = False
+
+conftest = (repo_root / "backend/tests/e2e/conftest.py").resolve()
+await_stable = None
+noise = io.StringIO()
+try:
+    sys.path.insert(0, str(conftest.parent))
+    spec = importlib.util.spec_from_file_location("_ot_e2e_conftest", conftest)
+    module = importlib.util.module_from_spec(spec)
+    with contextlib.redirect_stderr(noise), contextlib.redirect_stdout(noise):
+        spec.loader.exec_module(module)
+    await_stable = module._await_stable_backend
+except Exception as exc:
+    print(f"  backend : SKIPPED — could not load {conftest}::_await_stable_backend ({exc})")
+
+if await_stable is not None:
+    t0 = time.monotonic()
+    # Capped at 60% of the budget, deliberately. A backend that is flapping (see the
+    # --reload-dir note in docker-compose.override.yml) never produces 3 consecutive 200s,
+    # and an uncapped leg 1 would eat the whole budget and leave OpenSearch reported as
+    # "NOT SETTLED after 0s" having never been probed — measured, on the first live run.
+    problem = await_stable(backend_url, required=3, budget=max(5.0, budget * 0.6))
+    if problem:
+        print(f"  backend : NOT STEADY after {time.monotonic() - t0:.0f}s — {problem}")
+        failed = True
+    else:
+        print(f"  backend : steady (3 consecutive /health 200s) in {time.monotonic() - t0:.0f}s")
+
+# Leg 2: OpenSearch. `status != red` alone is not settled — a cluster relocating or
+# initialising shards, or with queued cluster tasks, answers a search with the
+# search_phase_execution_exception above.
+t0 = time.monotonic()
+last = "no probe completed"
+settled = False
+first = True
+# At least one probe, always: an earlier leg overrunning the shared deadline must not turn
+# this one into a verdict it never measured.
+while first or time.monotonic() < deadline:
+    first = False
+    try:
+        health = requests.get(f"{opensearch}/_cluster/health", timeout=5).json()
+        busy = (
+            int(health.get("initializing_shards", 0))
+            + int(health.get("relocating_shards", 0))
+            + int(health.get("number_of_pending_tasks", 0))
+        )
+        last = f"status={health.get('status')} busy={busy}"
+        if health.get("status") in ("green", "yellow") and busy == 0:
+            settled = True
+            break
+    except Exception as exc:
+        last = f"unreachable ({type(exc).__name__})"
+    time.sleep(2.0)
+if settled:
+    print(f"  opensearch: settled ({last}) in {time.monotonic() - t0:.0f}s")
+else:
+    print(f"  opensearch: NOT SETTLED after {time.monotonic() - t0:.0f}s — {last}")
+    failed = True
+
+sys.exit(1 if failed else 0)
+PYEOF
+) || py_rc=$?
+    echo "$py_out"
+
+    # Leg 3: Celery idle. One `docker exec` holding a poll loop, not a probe per sample —
+    # measured 15 s for a single cold exec, which would dominate the budget.
+    #
+    # active + reserved only. `scheduled` holds ETA/countdown tasks (retries, beat work due
+    # later) and is NOT zero on an idle stack — measured 5 sitting on cpu-processor with
+    # nothing running — so requiring it to drain would burn the whole budget every run.
+    local worker="${CPU_WORKER_CONTAINER:-}"
+    [[ -z "$worker" ]] && worker="$(overlay_container_name celery-cpu-worker)"
+    local celery_rc=0
+    if [[ -z "$worker" ]]; then
+        echo "  celery  : SKIPPED — no celery-cpu-worker container found"
+    else
+        local remaining=$(( budget - ( $(date +%s) - started ) ))
+        [[ "$remaining" -lt 5 ]] && remaining=5
+        local celery_out
+        # ⚠️ `-i` is load-bearing. Without it docker exec does not forward stdin, so
+        # `python -` reads EOF, runs an EMPTY program and exits 0 — measured while writing
+        # this: a green leg that had inspected nothing. The empty-output guard below is the
+        # second half of that fix, so a future regression is reported rather than silent.
+        celery_out=$(docker exec -i "$worker" python - "$remaining" 2>&1 <<'PYEOF'
+import sys
+import time
+
+from app.core.celery import celery_app
+
+deadline = time.monotonic() + float(sys.argv[1])
+inspector = celery_app.control.inspect(timeout=3.0)
+streak = 0
+busy: dict[str, int] = {}
+t0 = time.monotonic()
+while time.monotonic() < deadline:
+    busy = {}
+    for kind in ("active", "reserved"):
+        for worker, tasks in (getattr(inspector, kind)() or {}).items():
+            if tasks:
+                busy[worker] = busy.get(worker, 0) + len(tasks)
+    if busy:
+        streak = 0
+    else:
+        streak += 1
+        if streak >= 2:
+            print(f"  celery  : idle (active+reserved == 0, twice) in {time.monotonic() - t0:.0f}s")
+            sys.exit(0)
+    time.sleep(2.0)
+detail = ", ".join(f"{w}:{n}" for w, n in sorted(busy.items())) or "unknown"
+print(f"  celery  : STILL BUSY after {time.monotonic() - t0:.0f}s — {detail}")
+sys.exit(1)
+PYEOF
+) || celery_rc=$?
+        if [[ -z "${celery_out// /}" ]]; then
+            echo "  celery  : NOT MEASURED — the inspect probe produced no output"
+            celery_rc=1
+        else
+            echo "$celery_out"
+        fi
+    fi
+
+    local elapsed=$(( $(date +%s) - started ))
+    if [[ "$py_rc" -eq 0 && "$celery_rc" -eq 0 ]]; then
+        echo -e "${GREEN}<==${NC} quiesce: stack settled in ${elapsed}s (budget ${budget}s)"
+    else
+        echo -e "${YELLOW}<==${NC} quiesce: NOT fully settled within ${elapsed}s of a ${budget}s" \
+            "budget — running the e2e suite anyway. The lines above name what was still busy;" \
+            "treat e2e failures in this run as suspect until it is."
     fi
 }
 
@@ -416,6 +609,16 @@ if [[ "$RUN_BACKEND" == "true" ]]; then
 fi
 
 if [[ "$RUN_E2E" == "true" ]]; then
+    # The browser suite must not start while the stack is still draining the backend phase's
+    # work — see await_stack_quiesce above for the measurements.
+    await_stack_quiesce
+
+    # Per-run junit XML for the three e2e phases, beside this run's other logs. run-e2e.sh
+    # OWNS the skip accounting and the per-phase ceilings (this script owns no test logic —
+    # see the header), and reports a phase that skipped past its ceiling by exiting 4, which
+    # run_phase above already renders as NOT MEASURED. So the e2e phase reaches the same
+    # verdict the backend phase does, without a second copy of the rule living here.
+    export E2E_ARTIFACT_DIR="$REPORT_DIR/e2e-xml"
     run_phase "e2e (run-e2e.sh, full suite)" \
         "$REPO_ROOT/scripts/e2e/run-e2e.sh"
 fi
@@ -436,6 +639,10 @@ if $WITH_MUTATION_TESTS; then
 fi
 
 if $WITH_PIPELINE_SMOKE; then
+    # Its own artifact dir: this also goes through run-e2e.sh's three phases, so under
+    # `--full --with-pipeline-smoke` it would otherwise overwrite the full suite's junit
+    # reports with a one-file run's.
+    export E2E_ARTIFACT_DIR="$REPORT_DIR/pipeline-smoke-xml"
     run_phase "pipeline smoke (upload->ASR/diarize->search->real-LLM chat)" \
         "$REPO_ROOT/scripts/e2e/run-e2e.sh" backend/tests/e2e/test_full_pipeline_smoke.py -v
 fi
@@ -486,7 +693,10 @@ if [[ "$overall_rc" -eq 0 ]]; then
 elif [[ "$overall_rc" -eq "$EXIT_NOT_MEASURED" ]]; then
     echo -e "${YELLOW}NO PHASE FAILED, BUT ONE OR MORE VERIFIED NOTHING${NC} — exit $EXIT_NOT_MEASURED."
     echo -e "${YELLOW}A NOT MEASURED phase is not a green run. The phase log names what it${NC}"
-    echo -e "${YELLOW}declined to count (every pytest phase runs with -rs; grep for SKIPPED).${NC}"
+    echo -e "${YELLOW}declined to count. Every phase that CAN report NOT MEASURED — the backend${NC}"
+    echo -e "${YELLOW}gate's skip-watched phases and all three e2e phases — runs with -rs, so${NC}"
+    echo -e "${YELLOW}grep that phase's log for SKIPPED. Both scripts also write junit XML${NC}"
+    echo -e "${YELLOW}(backend: \$GATE_ARTIFACT_DIR, e2e: $REPORT_DIR/e2e-xml).${NC}"
 else
     echo -e "${RED}ONE OR MORE PHASES FAILED${NC} — see logs above for the failing phase(s)"
 fi

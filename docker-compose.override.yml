@@ -75,7 +75,25 @@ services:
       # exclusion below.
       - /app/venv
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload  # Enable hot reload
+    # `--reload-dir app` is NOT a tuning knob — it is the other half of the venv exclusion
+    # above. `./backend:/app` puts the ENTIRE backend tree under the watcher, and a bare
+    # `--reload` watches all of it, so editing a TEST file restarts the API. Observed live:
+    #
+    #   WARNING: WatchFiles detected changes in 'tests/fixtures/overlay_lib_harness.py'. Reloading...
+    #   INFO:    Started server process [1544]          # 15 SECONDS LATER
+    #
+    # For those 15 s the published port stays open (the reloader parent holds the listening
+    # socket) and answers nothing. The SPA renders its whole shell behind
+    # `{#if $authReady}` (frontend/src/routes/+layout.svelte), which is set only after
+    # initAuth()'s GET /auth/session resolves — and a *hung* request, unlike a refused one,
+    # leaves the page blank rather than showing the login form. That is the mechanism behind
+    # the most common e2e failure shape: 13 of 26 failures in one run were
+    # `wait_for_selector: Timeout 30000ms` on `.gallery-action-buttons` (8) or `#email` (4),
+    # both app-shell selectors that are mounted unconditionally.
+    #
+    # Only `app/` is served by this process; migrations, tests and fixtures are not. Editing
+    # them no longer restarts it. `backend/app/**` still hot-reloads exactly as before.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload --reload-dir app
     environment:
       <<: *dev-environment
       # Dev-only security-limit relaxation. The e2e suite performs hundreds of

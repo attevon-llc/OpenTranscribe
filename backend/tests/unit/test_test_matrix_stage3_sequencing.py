@@ -7,7 +7,8 @@ that scenario deliberately leaves its stack running afterward on `TEST_BACKEND_P
 
 `check_stage3_precondition()` probes `localhost:5174` and treats it as reachable ->
 `EXIT_PRECONDITION`. Before this fix, that check ran unconditionally for every stage-3 leg,
-so once leg `3` passed and left its stack up, legs `3-lite` and `3-pki` were permanently
+so once leg `3` passed and left its stack up, its sibling legs (`3-pki`, and `3-lite` while
+that leg still existed) were permanently
 BLOCKED on the very next check within the SAME `test-matrix.sh all`/`3` invocation — they
 never got a chance to even start, let alone reach their own preflight/teardown logic
 (`scripts/pki/run-pki-e2e-leg.sh` already has a teardown preamble for exactly this
@@ -68,8 +69,13 @@ def _extract_legs_array(script: Path) -> str:
         check=True,
     ).stdout
     assert re.search(r'"3\|3\|', out), f"LEGS array (leg 3) not found in {script.name}"
-    assert '"3-lite|3|' in out, f"LEGS array (leg 3-lite) not found in {script.name}"
     assert '"3-pki|3|' in out, f"LEGS array (leg 3-pki) not found in {script.name}"
+    # There is deliberately no "3-lite" leg: 65-rehearse.sh (leg 3) already runs
+    # test-lite-mode.sh as Scenario C, so a second leg ran the ~30-45 min rehearsal twice.
+    assert '"3-lite|3|' not in out, (
+        "the 3-lite leg is back — leg 3 already runs Scenario C, see "
+        "docs-site/docs/developer-guide/full-test-matrix.md"
+    )
     return out
 
 
@@ -103,9 +109,10 @@ def _stage3_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         f'touch "{state_file}"\nexit 0\n',
     )
 
-    # Leg "3-lite": scripts/release-tests/test-lite-mode.sh --yes (also the target of the
-    # precondition's own `--cleanup --yes` call — dispatch on $1, do nothing on cleanup so
-    # the test can prove test-upgrade.sh's cleanup is what actually clears the state).
+    # test-lite-mode.sh is no longer a LEG of its own (leg 3's Scenario C covers it), but it
+    # is still one of the three `--cleanup --yes` targets the precondition invokes before any
+    # sibling leg — dispatch on $1, do nothing on cleanup so the test can prove
+    # test-upgrade.sh's cleanup is what actually clears the state.
     _write_stub(
         fake_repo / "scripts" / "release-tests" / "test-lite-mode.sh",
         f'if [ "$1" = "--cleanup" ]; then '
@@ -189,20 +196,21 @@ echo "RC=$?"
 
 
 @pytest.mark.unit
-def test_all_three_stage3_legs_run_in_one_invocation(tmp_path: Path) -> None:
-    """The reviewer's exact scenario: leg 3 leaves a stack up; 3-lite and 3-pki must still run."""
+def test_every_stage3_leg_runs_in_one_invocation(tmp_path: Path) -> None:
+    """The reviewer's exact scenario: leg 3 leaves a stack up; the sibling leg must still run."""
     fake_repo, marker_dir, state_file = _stage3_fixture(tmp_path)
 
     out = _run_stage3(fake_repo, state_file)
 
     assert (marker_dir / "leg3.ran").exists(), f"leg 3 never ran:\n{out}"
-    assert (marker_dir / "leg3lite.ran").exists(), (
-        f"leg 3-lite was blocked by leg 3's leftover stack — the bug being fixed:\n{out}"
-    )
     assert (marker_dir / "leg3pki.ran").exists(), (
         f"leg 3-pki was blocked by leg 3's leftover stack — the bug being fixed:\n{out}"
     )
-    assert "RC=0" in out, f"all three legs stubbed a pass; the stage must report success:\n{out}"
+    assert not (marker_dir / "leg3lite.ran").exists(), (
+        f"test-lite-mode.sh ran as a LEG — it is only a --cleanup target now; leg 3's "
+        f"Scenario C is what exercises lite:\n{out}"
+    )
+    assert "RC=0" in out, f"every leg stubbed a pass; the stage must report success:\n{out}"
     assert not state_file.exists(), (
         "the leftover release-test stack should have been cleared before 3-lite/3-pki ran"
     )

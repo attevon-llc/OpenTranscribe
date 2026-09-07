@@ -224,6 +224,14 @@ Two smaller findings in the same area:
   pipeline has no lite criterion at all. Combined with finding E — lite is not a shippable
   deployment shape — that is consistent, but it means "the matrix covers lite" is doubly weak.
 
+  > **CORRECTION (2026-09-07).** All three clauses are now false, and this bullet is kept only
+  > as the record of the state that was analysed. `65-rehearse.sh:141-163` runs
+  > `test-lite-mode.sh` as **Scenario C**; the release pipeline records it under the
+  > `lite-mode` criterion; and issue #680 made lite a genuinely shippable deployment shape
+  > (an arm64 host defaults to it). The `3-lite` matrix leg has been REMOVED, because it made
+  > `test-matrix.sh 3` run the lite rehearsal twice — see
+  > `docs-site/docs/developer-guide/full-test-matrix.md`.
+
 Recommendation and scoping are in the final report; deliberately not implemented here, because
 making stage 2/3 execute is a multi-hour-runtime orchestration change (stack up for 2, stack
 down for 3, teardown between) that wants its own review, not a rider on a harness fix.

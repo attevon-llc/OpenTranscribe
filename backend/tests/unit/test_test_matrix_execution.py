@@ -68,9 +68,28 @@ def _legs() -> list[tuple[str, str, str, str, str]]:
     return legs
 
 
-def test_the_leg_table_parses_and_is_not_empty():
+def test_the_leg_table_parses_and_matches_the_scripts_own_doc_leg_list():
+    """Derived, not transcribed.
+
+    This asserted `len(legs) >= 16` — a number copied out of the table, which went stale the
+    moment a leg was legitimately removed (the duplicate `3-lite`, which made
+    `test-matrix.sh 3` run the lite rehearsal twice). The invariant that actually matters is
+    the one `check_doc_sync` enforces at runtime: LEGS and the script's own `doc_leg_ids`
+    describe the same set. Comparing them here catches a half-applied edit without pinning a
+    count that has to be maintained by hand.
+    """
     legs = _legs()
-    assert len(legs) >= 16, f"expected the documented 16 legs, parsed {len(legs)}"
+    assert legs, "LEGS array parsed empty"
+
+    source = _matrix_source()
+    ids_line = re.search(r"local doc_leg_ids=\(([^)]*)\)", source)
+    assert ids_line, "doc_leg_ids not found in check_doc_sync"
+    documented = set(ids_line.group(1).split())
+
+    assert {leg[0] for leg in legs} == documented, (
+        f"LEGS and doc_leg_ids disagree: only in LEGS={ {leg[0] for leg in legs} - documented }, "
+        f"only in doc_leg_ids={documented - {leg[0] for leg in legs}}"
+    )
 
 
 def test_every_leg_entry_has_all_five_fields():
@@ -374,15 +393,23 @@ def test_not_measured_legs_do_not_exit_zero(rc_in: int, skip_count: int, expecte
 
 
 def test_the_doc_and_the_script_still_agree():
-    """check_doc_sync's anchors are load-bearing; a doc edit must not silently break them."""
+    """check_doc_sync's anchors are load-bearing; a doc edit must not silently break them.
+
+    The anchor list is READ OUT OF THE SCRIPT rather than transcribed here. A hand-copied
+    list is a third place to keep in sync, and it broke the first time an anchor was
+    legitimately retired (`### Stage 3 — lite-mode full rehearsal`, when the duplicate
+    `3-lite` leg was removed) — failing this test while `check_doc_sync` itself was green.
+    """
     assert DOC.is_file(), f"{DOC} is missing — the anti-staleness check cannot run"
     doc = DOC.read_text(encoding="utf-8")
-    for anchor in ("Cycle 2A", "Cycle 2B", "Cycle 2C", "Cycle 2D", "## Stage 3", "## Stage 4"):
-        assert anchor in doc, (
+
+    source = _matrix_source()
+    anchors = re.findall(r'grep -q(?:i)? "([^"]+)" "\$DOC"', source)
+    assert len(anchors) >= 6, f"check_doc_sync's doc anchors were not parsed: {anchors}"
+    for anchor in anchors:
+        assert re.search(re.escape(anchor), doc, re.IGNORECASE), (
             f"full-test-matrix.md lost the '{anchor}' anchor check_doc_sync greps for"
         )
-    assert "### Stage 3 — lite-mode full rehearsal" in doc
-    assert re.search(r"PKI/mTLS is prod", doc, re.IGNORECASE)
 
 
 @pytest.mark.parametrize(

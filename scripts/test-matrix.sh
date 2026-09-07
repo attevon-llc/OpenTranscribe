@@ -117,8 +117,15 @@ LEGS=(
     "2b|2|Cycle 2B — GPU scaling|scripts/gpu-scale-smoke.sh|smoke"
     "2c|2|Cycle 2C — diarization providers|scripts/diar-native-smoke.sh|smoke"
     "2d|2|Cycle 2D — lite/cpu-only topology|scripts/lite-smoke.sh|smoke"
-    "3|3|deployment mode rehearsal (fresh-install + upgrade)|scripts/release/65-rehearse.sh \"\$(tr -d '[:space:]' < VERSION)\"|standard"
-    "3-lite|3|lite-mode full pipeline rehearsal (mocked cloud ASR + mocked LLM)|scripts/release-tests/test-lite-mode.sh --yes|standard"
+    # Leg 3 runs Scenario A (fresh install), B (upgrade) AND C (lite) — 65-rehearse.sh:141-163.
+    # There used to be a separate "3-lite" leg invoking test-lite-mode.sh --yes as well, so
+    # `test-matrix.sh 3` ran the ~30-45 minute lite rehearsal TWICE. It was not always
+    # redundant: 65-rehearse.sh gained Scenario C after the leg was written, and the doc still
+    # described the stage script as "A then B". Removed rather than skipped inside
+    # 65-rehearse.sh, because this file's contract is that leg 3 IS what
+    # `scripts/release.sh rehearse` runs — one engine, two callers. To run lite alone:
+    #   ./scripts/release-tests/test-lite-mode.sh --yes
+    "3|3|deployment mode rehearsal (fresh-install + upgrade + lite)|scripts/release/65-rehearse.sh \"\$(tr -d '[:space:]' < VERSION)\"|standard"
     "3-pki|3|PKI/mTLS (prod+nginx only)|scripts/pki/run-pki-e2e-leg.sh --yes|standard"
     "4|4|image/release gates confirmation|scripts/release/50-scan.sh \"\$(tr -d '[:space:]' < VERSION)\"|standard"
 )
@@ -191,12 +198,11 @@ check_doc_sync() {
     grep -q "Cycle 2C" "$DOC" || missing_in_doc+=("2c")
     grep -q "Cycle 2D" "$DOC" || missing_in_doc+=("2d")
     grep -q "## Stage 3" "$DOC" || missing_in_doc+=("3")
-    grep -q "### Stage 3 — lite-mode full rehearsal" "$DOC" || missing_in_doc+=("3-lite")
     grep -qi "PKI/mTLS is prod" "$DOC" || missing_in_doc+=("3-pki")
     grep -q "## Stage 4" "$DOC" || missing_in_doc+=("4")
 
     # Reverse direction: every doc leg id has a LEGS entry.
-    local doc_leg_ids=(1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 2a 2b 2c 2d 3 3-lite 3-pki 4)
+    local doc_leg_ids=(1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 2a 2b 2c 2d 3 3-pki 4)
     for id in "${doc_leg_ids[@]}"; do
         local found=false
         for entry in "${LEGS[@]}"; do

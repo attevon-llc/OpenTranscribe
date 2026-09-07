@@ -53,14 +53,28 @@ from pathlib import Path
 
 import pytest
 
-from tests.integration.test_opentr_restore_roundtrip import _DB_USER
+from tests.integration import throwaway_pg
+
+# These four have NO canonical home: they are ordinary test helpers that live in the sibling
+# suite, and ``throwaway_pg.py`` belongs to another lane, so relocating them is not this
+# change's to make. They are imported rather than re-implemented — a second copy of "seed a
+# database and read its media_file rows" is how two suites start asserting on subtly
+# different fixtures. This is the one import line to follow if they ever move.
 from tests.integration.test_opentr_restore_roundtrip import _call_common_fn
 from tests.integration.test_opentr_restore_roundtrip import _create_db
 from tests.integration.test_opentr_restore_roundtrip import _media_filenames
-from tests.integration.test_opentr_restore_roundtrip import _postgres_image_tag
 from tests.integration.test_opentr_restore_roundtrip import _query
-from tests.integration.test_opentr_restore_roundtrip import _run
-from tests.integration.test_opentr_restore_roundtrip import _wait_ready
+
+# ⚠️ These four USED to come from ``test_opentr_restore_roundtrip`` too, where they were mere
+# ALIASES of the ``throwaway_pg`` originals. That coupling is exactly how a previous attempt at
+# this speed work deleted a helper from that module and made **6 tests silently vanish** from
+# the gate's selection: a cross-TEST-MODULE import is invisible to whoever is editing the
+# module being imported FROM. Depend on the canonical home instead — ``throwaway_pg`` has no
+# ``test_`` prefix precisely because being imported is its job.
+_run = throwaway_pg.run
+_DB_USER = throwaway_pg.DB_USER
+_postgres_image_tag = throwaway_pg.postgres_image_tag
+_wait_ready = throwaway_pg.wait_ready
 
 pytestmark = [
     pytest.mark.integration,
@@ -184,39 +198,28 @@ _GPG_SKIP_REASON = (
 
 
 @pytest.fixture
-def pg_container() -> Iterator[str]:
-    """A throwaway, network-isolated Postgres container for the Tier 2 (docker-exec-only) tests.
+def pg_container(isolated_pg: str) -> str:
+    """The session's shared throwaway, network-isolated Postgres (``tests/integration/conftest.py``).
 
-    Mirrors test_opentr_restore_roundtrip.py's fixture of the same name exactly (including
-    the two-consecutive-readiness-check rationale) — duplicated rather than imported because
-    pytest fixtures are resolved by name within the importing module's own namespace, and a
-    cross-file fixture import silently does not register as a fixture here.
+    Was a private ``docker run`` per test. Measured on the 2026-09-07 gate's own
+    ``integration.xml``, this module's four Tier 2 tests cost 86.9-146.5 s each and did
+    essentially no work: the whole of it was ``docker run`` + ``initdb`` on this host's md
+    RAID + ``docker rm -f``. ``isolated_pg`` pays that once for the session and drops every
+    database the test created afterwards (``WITH (FORCE)``), so the isolation guarantee is
+    unchanged — see that conftest for the full argument and the measurement table.
+
+    **Why this suite may share it**: every Tier 2 operation is DATABASE-scoped
+    (``CREATE``/``DROP DATABASE``, ``pg_dump -Fc``, ``pg_restore``, mutating
+    ``alembic_version``), and each test names its own database (``otrestore600_docbug``,
+    ``_fixed``, ``_rollback``, ``_verify_mismatch``) — distinct from the ``otrestore_*``
+    names the sibling suite uses in the same cluster. Nothing here restarts the server or
+    touches cluster-level state (roles, ``ALTER SYSTEM``, ``pg_hba``); that was checked, not
+    assumed. A test which needs any of those must take a private container and say why.
+
+    Tier 1 is the exception and keeps ``networked_pg`` below: it needs a real bridge network,
+    which is incompatible with the shared container's ``--network none`` posture.
     """
-    name = f"ot-restore600-pg-{uuid.uuid4().hex[:12]}"
-    image = _postgres_image_tag()
-    throwaway_password = uuid.uuid4().hex
-    started = _run(
-        [
-            "docker",
-            "run",
-            "-d",
-            "--network",
-            "none",
-            "--name",
-            name,
-            "-e",
-            f"POSTGRES_PASSWORD={throwaway_password}",
-            image,
-        ]
-    )
-    assert started.returncode == 0, (
-        f"failed to start throwaway postgres container: {started.stderr}"
-    )
-    try:
-        _wait_ready(name)
-        yield name
-    finally:
-        _run(["docker", "rm", "-f", name])
+    return isolated_pg
 
 
 @pytest.fixture
@@ -224,6 +227,13 @@ def networked_pg(tmp_path: Path) -> Iterator[tuple[str, str, str]]:
     """(network, pg_container, password) for Tier 1: a Postgres reachable from a SECOND
     throwaway container over a private bridge network with no published ports — never from
     the host, and never able to resolve a live compose service name.
+
+    Deliberately NOT the shared ``isolated_pg`` container: Tier 1's whole point is that the
+    real ``run_pg_dump`` runs inside a *separate* backend-image container and connects over
+    TCP, and the shared container is ``--network none`` precisely so it can never route
+    anywhere. Weakening that for every exec-only suite in order to save one container start
+    here is the wrong trade — so this one keeps its own, with ``--tmpfs`` for the same ~20x
+    ``initdb`` win the shared container gets.
     """
     net_name = f"ot-restore600-net-{uuid.uuid4().hex[:12]}"
     pg_name = f"ot-restore600-netpg-{uuid.uuid4().hex[:12]}"
@@ -242,6 +252,13 @@ def networked_pg(tmp_path: Path) -> Iterator[tuple[str, str, str]]:
                 net_name,
                 "--name",
                 pg_name,
+                "--label",
+                throwaway_pg.CONTAINER_LABEL,
+                # PGDATA on a tmpfs: measured 62-92 s -> 4.6 s to accept connections on this
+                # host (throwaway_pg.py's table). Safe because nothing restarts this container
+                # and the data is meant to die with it.
+                "--tmpfs",
+                "/var/lib/postgresql/data",
                 "-e",
                 f"POSTGRES_PASSWORD={password}",
                 image,

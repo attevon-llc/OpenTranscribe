@@ -160,9 +160,77 @@ def _wait_ready(container: str) -> None:
     raise RuntimeError(f"OpenSearch in {container} never became ready: {last}")
 
 
-@pytest.fixture
-def os_container() -> Iterator[str]:
-    """A throwaway OpenSearch on a private bridge network with no published ports."""
+def _user_indices(container: str) -> frozenset[str]:
+    """Every non-system index in the cluster.
+
+    Names beginning with ``.`` are OpenSearch's own (``.opensearch-observability``,
+    security plugin state, …). They are excluded from the candidate set rather than merely
+    absent from it: the cluster may create one at any point, and a cleanup that deleted a
+    system index would break the node instead of resetting it.
+    """
+    result = _run(
+        [
+            "docker",
+            "exec",
+            container,
+            "curl",
+            "-fsS",
+            "http://127.0.0.1:9200/_cat/indices?h=index&format=json&expand_wildcards=all",
+        ]
+    )
+    assert result.returncode == 0, f"could not list indices: {result.stderr}"
+    rows: list[dict[str, Any]] = json.loads(result.stdout) if result.stdout.strip() else []
+    return frozenset(str(row["index"]) for row in rows if not str(row["index"]).startswith("."))
+
+
+def _delete_indices_outside(container: str, keep: frozenset[str]) -> None:
+    """Delete every non-system index that is not in ``keep``.
+
+    Failure raises, deliberately. A silently-skipped delete surfaces later as an unrelated
+    test's ``PUT /speakers_v4`` being rejected as already-existing — and because ``_os_request``
+    uses ``curl -sS`` (no ``-f``), that rejection would be a 400 body with a zero exit status,
+    i.e. an invisible one. Failing here is a far better place to start debugging.
+    """
+    for index in sorted(_user_indices(container) - keep):
+        result = _run(
+            [
+                "docker",
+                "exec",
+                container,
+                "curl",
+                "-fsS",
+                "-X",
+                "DELETE",
+                f"http://127.0.0.1:9200/{index}",
+            ]
+        )
+        assert result.returncode == 0, (
+            f"could not delete leftover index {index!r} from the shared throwaway OpenSearch "
+            f"container: {result.stderr}"
+        )
+
+
+@pytest.fixture(scope="module")
+def _shared_os_container() -> Iterator[str]:
+    """ONE throwaway OpenSearch for this whole module, on a private bridge network.
+
+    Was one container **per test**. Measured on the 2026-09-07 gate's own ``integration.xml``
+    this module's five tests cost 99.6-237.9 s each — and profiled directly on this host, the
+    work each test actually performs is sub-second: ``docker exec`` is 0.11-0.15 s, sourcing
+    ``scripts/common.sh`` is 0.01 s, and a real ``os_export_speaker_indices`` /
+    ``os_import_speaker_indices`` round trip is 0.24 s / 0.18 s. Essentially the entire module
+    was container provisioning, five times over.
+
+    Unlike Postgres there is no ``initdb``-equivalent to remove with ``--tmpfs`` — the cost is
+    JVM boot and cluster bootstrap (measured 22-24 s to reach ``yellow`` on this host, with
+    ``docker run`` itself at ~2 s), which no flag makes cheaper. So the only waste available
+    here is the repetition, and sharing removes four fifths of it.
+
+    Prefer ``os_container`` in tests: it adds the per-test cleanup that makes sharing safe.
+
+    Module-scoped rather than session-scoped because this is the only suite that needs
+    OpenSearch this way; a session scope would hold a JVM for the whole run to serve one file.
+    """
     suffix = uuid.uuid4().hex[:12]
     net_name = f"ot-vp658-net-{suffix}"
     name = f"ot-vp658-os-{suffix}"
@@ -199,6 +267,29 @@ def os_container() -> Iterator[str]:
             _run(["docker", "rm", "-f", name])
     finally:
         _run(["docker", "network", "rm", net_name])
+
+
+@pytest.fixture
+def os_container(_shared_os_container: str) -> Iterator[str]:
+    """The module's OpenSearch, with every index the test created deleted afterwards.
+
+    Yields the container name, so a test body reads exactly as it did when this was a private
+    per-test container — and, critically, still *starts* the way it did: with no speaker
+    index present. That is not cosmetic here.
+    ``test_export_of_a_cluster_with_no_speaker_indices_is_a_valid_empty_artifact`` asserts on
+    a cluster that has none, so a leaked ``speakers_v4`` from an earlier test would turn its
+    ``manifest["total_docs"] == 0`` into a real failure; and the four seeding tests each
+    ``PUT /speakers_v4``, which is rejected rather than reset if the index survives.
+
+    Nothing in this module touches cluster-level state (no settings updates, no node restart,
+    no snapshot repository) — that was checked, not assumed. A test that needs any of those
+    must depend on a private container and say why.
+    """
+    baseline = _user_indices(_shared_os_container)
+    try:
+        yield _shared_os_container
+    finally:
+        _delete_indices_outside(_shared_os_container, baseline)
 
 
 def _create_speaker_index(container: str) -> None:

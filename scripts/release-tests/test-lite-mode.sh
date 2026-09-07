@@ -292,8 +292,7 @@ phase_03_pin_and_layer_overlays() {
     cp "$target/docker-compose.yml" "$target/docker-compose.yml.bak"
 
     cp_force_pull_policy "$target/docker-compose.prod.yml" never
-    cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
-    cp_inject_labels "$target/docker-compose.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$target" "$TEST_LABEL"
     # Frontend and the workers not overridden by docker-compose.lite.yml still
     # come from docker-compose.prod.yml, so pin those too.
     cp_pin_image_tag "$target/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"

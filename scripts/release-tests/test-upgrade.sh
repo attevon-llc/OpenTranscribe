@@ -705,11 +705,10 @@ phase_03_prepare_v033_compose() {
     # No container/volume rename — we use the stock 'opentranscribe-*' names
     # that the live deployment also uses. The live deployment is stopped
     # before tests run, so there is no collision.
-    cp_inject_labels "$stage/docker-compose.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$stage" "$TEST_LABEL"
 
     # Prod file: pin image tag to FROM_VERSION + pull always (exercises the
     # real Docker Hub pull path) + label injection.
-    cp_inject_labels "$stage/docker-compose.prod.yml" "$TEST_LABEL"
     cp_force_pull_policy "$stage/docker-compose.prod.yml" always
     cp_pin_image_tag "$stage/docker-compose.prod.yml" backend "$FROM_VERSION"
     cp_pin_image_tag "$stage/docker-compose.prod.yml" frontend "$FROM_VERSION"
@@ -1324,8 +1323,7 @@ phase_07_swap_to_new() {
     # staging, twice a hop, two hops a rehearsal.
     cp_stage_docs_context "$REPO_ROOT/docs-site" "$stage_after/docs-site"
 
-    cp_inject_labels "$stage_after/docker-compose.yml" "$TEST_LABEL"
-    cp_inject_labels "$stage_after/docker-compose.prod.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$stage_after" "$TEST_LABEL"
     cp_force_pull_policy "$stage_after/docker-compose.prod.yml" never
 
     # NO per-service cp_pin_image_tag here, deliberately.
@@ -1977,7 +1975,7 @@ phase_13_stage_rollback_tree() {
     # staged rehearsal tree needs it copied in explicitly.
     cp_stage_docs_context "$REPO_ROOT/docs-site" "$stage_rollback/docs-site"
 
-    cp_inject_labels "$stage_rollback/docker-compose.prod.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$stage_rollback" "$TEST_LABEL"
     cp_force_pull_policy "$stage_rollback/docker-compose.prod.yml" never
     if [[ "$TEST_USE_GPU" == "true" && -f "$stage_after/docker-compose.gpu.yml" ]]; then
         cp "$stage_after/docker-compose.gpu.yml" "$stage_rollback/docker-compose.gpu.yml"

@@ -358,17 +358,15 @@ phase_03_pin_local_image() {
             "davidamacey/opentranscribe-frontend:latest" \
             "davidamacey/opentranscribe-docs:latest" 2>/dev/null || true
         cp_force_pull_policy "$target/docker-compose.prod.yml" always
-        cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
         gr_ok "pull_policy=always, OT_IMAGE_TAG pinned to Hub :${LOCAL_IMAGE_TAG}"
     else
         cp_force_pull_policy "$target/docker-compose.prod.yml" never
-        cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
         gr_ok "OT_IMAGE_TAG pinned to :${LOCAL_IMAGE_TAG}, pull_policy=never, label injected"
     fi
 
     # Also label the base file's services for cleanup symmetry
     cp "$target/docker-compose.yml" "$target/docker-compose.yml.bak"
-    cp_inject_labels "$target/docker-compose.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$target" "$TEST_LABEL"
 
     # Pre-create the model cache directory. Ownership is DELIBERATELY left alone here —
     # repairing it is `opentranscribe.sh start`'s job (fix_model_cache_permissions),

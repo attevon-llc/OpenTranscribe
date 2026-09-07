@@ -125,6 +125,40 @@ path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
 PY
 }
 
+# cp_inject_labels_all DIR LABEL_KV
+#   Label EVERY docker-compose*.yml in DIR, not a hand-listed subset.
+#
+# ⚠️ Enumerating the files by name is what broke the rehearsal on 2026-09-07. The three
+# scenarios patched `docker-compose.yml` and `docker-compose.prod.yml`; the `diar-native`
+# service lives in `docker-compose.diar-native.yml`, so its container was created with the
+# stock compose-project label but WITHOUT the release-test label. `gr_cleanup` removes only
+# labelled containers, so `opentranscribe-diar-native-1` survived teardown, kept
+# `opentranscribe_default` alive, and scenario A's stack "did not go away" — which made
+# BOTH remaining scenarios exit 3, NOT MEASURED. One unlabelled service cost two thirds of
+# the rehearsal.
+#
+# It is also the only service with no explicit `container_name` (hence the compose-default
+# `-1` suffix), so a name-shaped check would have missed it too. Labelling every file
+# removes the enumeration rather than lengthening it: a new overlay is covered on arrival.
+#
+# Patching a compose file the install never loads is harmless — labels only reach services
+# that are actually created.
+cp_inject_labels_all() {
+    local dir="$1"
+    local label_kv="$2"
+    local file
+    local found=0
+    for file in "$dir"/docker-compose*.yml; do
+        [[ -f "$file" ]] || continue
+        cp_inject_labels "$file" "$label_kv"
+        found=$(( found + 1 ))
+    done
+    if (( found == 0 )); then
+        echo "cp_inject_labels_all: no docker-compose*.yml found in '$dir'" >&2
+        return 1
+    fi
+}
+
 # cp_pin_image_tag FILE SERVICE TAG
 #   Pins a service's image tag in the copied compose file so upgrade and
 #   fresh-install tests can exercise specific versions explicitly.

@@ -282,20 +282,54 @@ run_dockle() {
 }
 
 # Function to generate SBOM with Syft
+#
+# ⚠️ THE SOURCE NAME/VERSION ARE PASSED EXPLICITLY, AND THAT IS LOAD-BEARING.
+#
+# Syft derives `metadata.component.version` from the REFERENCE it was handed. The reference
+# resolve_platform_image() hands over is the per-arch scan alias `repo:vX.Y.Z-scanleg-<arch>`
+# (it has to be: two legs of one version must coexist locally, or the second pull overwrites
+# the first and both scans examine the same image). So an unqualified `syft "$image"` writes
+#
+#     metadata.component.version = "v0.5.0-scanleg-amd64"
+#
+# and 95-finish.sh's `sbom-describes-this-version` criterion — release-assets.sh's
+# release_assets_sbom_matches_version(), which requires an EXACT match against "v0.5.0" —
+# fails every SBOM on every real release. MEASURED with syft 1.33.0 against a local image
+# tagged `repo:v0.5.0-scanleg-amd64`: bare syft reports version "v0.5.0-scanleg-amd64";
+# with --source-version it reports "v0.5.0". The stage's own unit test could not see this,
+# because it synthesises SBOMs carrying the plain version rather than running syft.
+#
+# The scan alias is an artefact of HOW this script obtains a leg, not a fact about the
+# artefact, so naming the real repo + release tag is also simply more truthful than the
+# alias — the SBOM is a document about `repo:vX.Y.Z` on that architecture.
+#
+# Both output formats now come from ONE syft invocation (`-o fmt=path` twice) instead of two
+# full catalogue walks of the same image. On the ~13.8 GB backend image the walk is the whole
+# cost of this function.
+#
+# Args: $1 image ref to scan · $2 report-filename stem · $3 source name (repo) ·
+#       $4 source version (release tag). $3/$4 are optional so a caller that genuinely has no
+#       repo/tag to name still works — it then gets syft's own reference-derived default.
 generate_sbom() {
     local image=$1
     local component=$2
+    local source_name="${3:-}"
+    local source_version="${4:-}"
 
     print_header "Generating SBOM for ${image}"
 
     local sbom_file="${OUTPUT_DIR}/${component}-sbom.json"
+    local sbom_txt="${OUTPUT_DIR}/${component}-sbom.txt"
 
-    syft "${image}" -o cyclonedx-json > "${sbom_file}"
+    local identity_args=()
+    [ -n "${source_name}" ] && identity_args+=(--source-name "${source_name}")
+    [ -n "${source_version}" ] && identity_args+=(--source-version "${source_version}")
+
+    syft "${image}" "${identity_args[@]}" \
+        -o "cyclonedx-json=${sbom_file}" \
+        -o "table=${sbom_txt}"
     print_success "SBOM generated: ${sbom_file}"
-
-    # Also generate human-readable table format
-    syft "${image}" -o table > "${OUTPUT_DIR}/${component}-sbom.txt"
-    print_info "Human-readable SBOM: ${OUTPUT_DIR}/${component}-sbom.txt"
+    print_info "Human-readable SBOM: ${sbom_txt}"
 
     echo "${sbom_file}"
 }
@@ -666,9 +700,14 @@ scan_component() {
         echo "${rc}" > "${status_dir}/dockle.status"
     ) &
 
-    # SBOM generation (needed for Grype, but can start now)
+    # SBOM generation (needed for Grype, but can start now).
+    #
+    # `repo`/`tag` — NOT `image` — are what the SBOM must say it describes. `image` is the
+    # per-arch scan alias resolve_platform_image() minted (repo:vX.Y.Z-scanleg-<arch>), and
+    # syft would otherwise write that alias into metadata.component.version, which
+    # 95-finish.sh then rejects as "describes another version". See generate_sbom's header.
     (
-        rc=0; generate_sbom "${image}" "${label}" > "${status_dir}/sbom_path.txt" || rc=$?
+        rc=0; generate_sbom "${image}" "${label}" "${repo}" "${tag}" > "${status_dir}/sbom_path.txt" || rc=$?
         echo "${rc}" > "${status_dir}/sbom.status"
     ) &
 

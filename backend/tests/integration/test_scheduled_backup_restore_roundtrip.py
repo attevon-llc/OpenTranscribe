@@ -44,6 +44,7 @@ tests/integration/test_scheduled_backup_restore_roundtrip.py -v``
 
 from __future__ import annotations
 
+import functools
 import shutil
 import subprocess
 import uuid
@@ -120,10 +121,12 @@ def _drift(container: str, dbname: str) -> None:
     _exec_sql(container, dbname, _DRIFT_SQL)
 
 
+@functools.cache
 def _backend_image_available() -> bool:
     return _run(["docker", "image", "inspect", _BACKEND_IMAGE]).returncode == 0
 
 
+@functools.cache
 def _backend_image_has_gpg() -> bool:
     """False for the CURRENT opentranscribe-backend:latest — see issue #604.
 
@@ -149,6 +152,30 @@ _GPG_SKIP_REASON = (
     "postgresql-client but never gnupg, so backup.encrypt fails in production today). Rebuild "
     "the image after #604 lands, then re-run this test."
 )
+
+# ⚠️ THE TWO PROBES ABOVE ARE REFERENCED BY THE `skipif` MARKS BELOW AS *STRINGS*, DELIBERATELY.
+#
+# `pytest.mark.skipif(not _backend_image_has_gpg(), ...)` evaluates the call while the decorator
+# line is executing — i.e. at MODULE IMPORT, which is COLLECTION. Every pytest process imports
+# every test module, so that shape started a container from the 9.6 GB
+# `opentranscribe-backend:latest` image once per process, before a single test ran — including in
+# the fast suite, which deselects this whole file via `pytest.mark.integration` and never runs any
+# of it. Profiled with cProfile over `pytest tests/ --collect-only -n0`, this one call was
+# **48.9 s of a 88 s collection** (`select.poll` blocking inside `subprocess.communicate`), and
+# under the project's `-n auto` that is ~48 workers each starting their own copy of it
+# concurrently.
+#
+# pytest's `evaluate_condition` (`_pytest/skipping.py`) `eval()`s a *string* condition — and
+# `bool()`s a non-string one — during `pytest_runtest_setup`. So the string form moves the probe
+# to the moment the skip decision is actually needed, which is still BEFORE any fixture is set up
+# (no throwaway container is created for a test that is about to be skipped) and still produces
+# the same SKIPPED outcome with the same reason. The names resolve because pytest merges
+# `item.obj.__globals__` — this module's globals — into the eval namespace.
+#
+# `functools.cache` on the probes keeps this at most one docker invocation per process, matching
+# the old import-time "asked once" behaviour rather than re-probing per test.
+#
+# Do not "simplify" these back to bare calls: that reintroduces the cost, silently.
 
 
 # ---------------------------------------------------------------------------------------------
@@ -299,7 +326,7 @@ def _run_pg_dump_in_backend_container(
 # ---------------------------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not _backend_image_available(), reason=_BACKEND_IMAGE_SKIP_REASON)
+@pytest.mark.skipif("not _backend_image_available()", reason=_BACKEND_IMAGE_SKIP_REASON)
 def test_the_real_run_pg_dump_artifact_restores_exactly(
     networked_pg: tuple[str, str, str], tmp_path: Path
 ) -> None:
@@ -556,8 +583,8 @@ def test_pg_verify_custom_restore_fails_on_a_mismatched_database(
     )
 
 
-@pytest.mark.skipif(not _backend_image_available(), reason=_BACKEND_IMAGE_SKIP_REASON)
-@pytest.mark.skipif(not _backend_image_has_gpg(), reason=_GPG_SKIP_REASON)
+@pytest.mark.skipif("not _backend_image_available()", reason=_BACKEND_IMAGE_SKIP_REASON)
+@pytest.mark.skipif("not _backend_image_has_gpg()", reason=_GPG_SKIP_REASON)
 def test_gpg_encrypted_scheduled_artifact_round_trips(
     networked_pg: tuple[str, str, str], tmp_path: Path
 ) -> None:

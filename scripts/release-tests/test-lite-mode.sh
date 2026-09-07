@@ -373,6 +373,12 @@ phase_03_pin_and_layer_overlays() {
 
     local shared_cache="/mnt/nvm/opentranscribe-test-runs/.shared-model-cache"
     if [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
+        # Repair the SHARED cache first — see the same call in test-fresh-install.sh. Without
+        # it, `diar-native` was absent from the shared cache and this scenario's sidecar
+        # exported ~484 MB of ONNX/PLDA weights at first boot, which is precisely the network
+        # dependency the pre-seed below exists to remove.
+        mc_topup_from_live "$(mc_live_cache_dir)" "$shared_cache" \
+            sentence-transformers diar-native
         gr_log "seeding embedding/opensearch-ml/diar-native model cache from shared cache …"
         mc_seed_cache "$shared_cache" "$model_cache_dir" sentence-transformers opensearch-ml diar-native
         gr_ok "model cache seeded from $shared_cache"

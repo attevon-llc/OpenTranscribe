@@ -156,7 +156,23 @@ mc_seed_subdir() {
     local src_root="$1" dst_root="$2" sub="$3"
     local src="$src_root/$sub" dst="$dst_root/$sub"
 
-    [[ -d "$src" ]] || return 0
+    # ⚠️ A MISSING SOURCE IS ANNOUNCED, NOT SWALLOWED.
+    #
+    # This was a bare `[[ -d "$src" ]] || return 0`, and that silence is how the shared
+    # rehearsal cache went four weeks with NO `diar-native` subdirectory while every caller
+    # asked for one and every caller reported "model cache seeded". The visible consequence
+    # was a full ONNX export at first backend boot in Scenarios A and C — several minutes,
+    # over the network, on a path the harness believes it pre-seeded specifically so it would
+    # not depend on HuggingFace mid-rehearsal.
+    #
+    # `gr_warn`, not `gr_die`: a subdir a particular source genuinely does not have
+    # (`opensearch-ml` is container-specific; `onnx` only exists on newer releases) must not
+    # abort a rehearsal. But it must be in the log, because "it will download on first start"
+    # is a fact about the run's duration and its network dependence.
+    if [[ ! -d "$src" ]]; then
+        gr_warn "model cache: no '$sub' under $src_root — it will download/export on first start"
+        return 0
+    fi
     mkdir -p "$dst"
 
     if mc_is_pathsec_subdir "$sub" || mc_is_no_hardlink_subdir "$sub"; then
@@ -207,5 +223,69 @@ mc_seed_cache() {
     for sub in "${MC_PATHSEC_SUBDIRS[@]}"; do
         mc_assert_no_hardlinks "$dst_root/$sub" "seeded model cache"
     done
+    return 0
+}
+
+# The live host cache the shared rehearsal cache is seeded FROM. Derived, not hardcoded per
+# scenario: it was spelled out as an absolute literal in exactly one of the three scenarios,
+# which is why only that one could ever repair the shared cache.
+mc_live_cache_dir() {
+    printf '%s\n' "${MC_LIVE_CACHE_DIR:-${REPO_ROOT:-.}/models}"
+}
+
+# mc_topup_from_live LIVE_ROOT SHARED_ROOT SUBDIR...
+#
+# Fill in cache subdirectories that the shared cache is MISSING (absent, or present but
+# empty) and the live cache has. Returns 0 always; a subdir neither side has is reported by
+# mc_seed_subdir's warning.
+#
+# WHY THIS IS A SHARED FUNCTION RATHER THAN test-upgrade.sh's PRIVATE `if`
+#
+# `.seeded-from-live` means "seeded", not "seeded COMPLETELY" — a cache written by an older
+# revision of this harness is missing every subdir added since. test-upgrade.sh had a
+# hand-rolled top-up for exactly one subdir (`diar-native`, issue #670) inside its own reuse
+# branch, so:
+#   * the two OTHER scenarios seed from the shared cache and could never repair it — they
+#     would silently start with no diar-native export and pay a full ONNX export at first
+#     boot (test-fresh-install.sh's phase 03, test-lite-mode.sh's phase 03);
+#   * MEASURED 2026-09-07, before this change: the shared cache at
+#     /mnt/nvm/opentranscribe-test-runs/.shared-model-cache had `.seeded-from-live` dated
+#     2026-08-10 and NO `diar-native` directory at all, while the live cache had 462 MB of
+#     exported weights sitting right there;
+#   * and the next subdir added would have repeated the whole story, because a one-subdir
+#     `if` does not generalise.
+#
+# Called by all three scenarios' phase 03, so whichever runs FIRST repairs the shared cache
+# and the other two then seed from a complete one.
+mc_topup_from_live() {
+    local live_root="$1" shared_root="$2"
+    shift 2
+    local subs=("$@")
+    (( ${#subs[@]} )) || subs=(huggingface torch nltk_data sentence-transformers pyannote diar-native)
+
+    [[ -d "$live_root" ]] || {
+        gr_warn "model cache: no live cache at $live_root — cannot top up the shared cache"
+        return 0
+    }
+
+    local sub topped=()
+    for sub in "${subs[@]}"; do
+        # Present AND non-empty in the shared cache -> nothing to do. An empty directory is
+        # "missing" here: mkdir -p in every caller creates the shell of a subdir that was
+        # never populated, so a `-d` test alone reports success for the exact state this
+        # function exists to repair.
+        [[ -n "$(ls -A "$shared_root/$sub" 2>/dev/null)" ]] && continue
+        [[ -n "$(ls -A "$live_root/$sub" 2>/dev/null)" ]] || continue
+        gr_log "shared model cache is missing '$sub' — topping it up from $live_root"
+        mc_seed_subdir "$live_root" "$shared_root" "$sub"
+        topped+=("$sub")
+    done
+
+    if (( ${#topped[@]} )); then
+        gr_ok "topped up the shared model cache: ${topped[*]}"
+        for sub in "${MC_PATHSEC_SUBDIRS[@]}"; do
+            mc_assert_no_hardlinks "$shared_root/$sub" "topped-up model cache"
+        done
+    fi
     return 0
 }

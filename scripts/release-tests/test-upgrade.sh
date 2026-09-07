@@ -807,21 +807,14 @@ phase_03_prepare_v033_compose() {
         # re-assert the invariant on every reuse rather than trusting it.
         mc_break_hardlinks "$model_cache/nltk_data"
 
-        # diar-native did not exist as a seeded subdir before issue #670's fix,
-        # so a shared cache whose sentinel predates this change never gets it
-        # from the branch above (the sentinel means "seeded", not "seeded
-        # completely" either). Top it up incrementally rather than requiring
-        # an operator to blow away the whole multi-GB cache to pick up one
-        # new subdir.
-        if [[ -z "$(ls -A "$model_cache/diar-native" 2>/dev/null)" ]]; then
-            if [[ -d "$live_cache/diar-native" ]] && [[ -n "$(ls -A "$live_cache/diar-native" 2>/dev/null)" ]]; then
-                gr_log "shared cache predates diar-native seeding — topping it up from the live cache"
-                mc_seed_cache "$live_cache" "$model_cache" diar-native
-                gr_ok "diar-native seeded into the existing shared model cache"
-            else
-                gr_warn "no diar-native export in the live cache either — the backend will export its own on startup"
-            fi
-        fi
+        # The sentinel means "seeded", not "seeded COMPLETELY": a cache written by an older
+        # revision of this harness is missing every subdir added since. Top up incrementally
+        # rather than requiring an operator to blow away a multi-GB cache to pick up one new
+        # subdirectory. Generalised over the whole list — this used to be a hand-rolled `if`
+        # for `diar-native` alone, so the next subdir added would have repeated the story.
+        # See mc_topup_from_live in lib/model-cache.sh.
+        mc_topup_from_live "$live_cache" "$model_cache" \
+            huggingface torch nltk_data sentence-transformers pyannote diar-native
     fi
 
     # Gate: whichever branch ran above, the pathsec invariant must hold before

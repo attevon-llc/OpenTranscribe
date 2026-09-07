@@ -396,6 +396,14 @@ phase_03_pin_local_image() {
         fi
         gr_log "hub mode: model cache is empty — models will download from HuggingFace on first start (fresh-user path)"
     elif [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
+        # Repair the SHARED cache first (issue: it had no `diar-native` for four weeks while
+        # this scenario asked for one and reported "model cache seeded"). Only test-upgrade.sh
+        # could top it up before, so whichever scenario ran first here paid a full ONNX export
+        # at first backend boot — over the network, on the exact path this pre-seeding exists
+        # to remove. Deliberately inside this branch, not above it: hub mode leaves the cache
+        # empty ON PURPOSE, to rehearse the fresh-user download path.
+        mc_topup_from_live "$(mc_live_cache_dir)" "$shared_cache" \
+            huggingface torch nltk_data sentence-transformers pyannote diar-native
         gr_log "seeding model cache from shared cache …"
         # Hardlinks for the big trees; a real copy for nltk_data (nltk >=3.10
         # pathsec refuses multiply-linked files) and for diar-native (its

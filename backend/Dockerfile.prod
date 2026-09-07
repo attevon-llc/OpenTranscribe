@@ -16,8 +16,102 @@ FROM denoland/deno:bin AS deno-bin
 # `command:` override — see that file for why (warm ORT arena must survive worker
 # restarts, and gpu-scale runs N workers per container which makes a per-worker sidecar
 # ambiguous). Only ~419 MB of the standalone 3.46 GB image is actually needed: the
-# binary, three ORT libs (see the exclusion note below), and libopenblas0.
-FROM davidamacey/diar-native@sha256:544a6a6536464729834dd1b51dc6d76b538776da23a22682501f220cf2ff999c AS diar-native-bin
+# binary, three ORT libs (see the exclusion note below), and libopenblas0. The standalone image
+# is 2.9 GB as of diar-native 0.3.1.
+#
+# ⚠️ #680/#667: this is a SINGLE-ARCH (linux/amd64) image — diar-native publishes no CUDA
+# arm64 build (only *-cpu-arm64 / *-provision-arm64, see Dockerfile.lite). A
+# `--platform linux/arm64` build of this Dockerfile does NOT fail here — BuildKit only warns
+# (InvalidBaseImagePlatform) and COPY --from still succeeds, shipping an amd64 ELF that
+# fails at container start with "exec format error". This full/CUDA image is therefore
+# amd64-ONLY for v0.5.0 (a `vX.Y.Z-cuda-arm64` tag leg is reserved in the grammar but not
+# built). The arm64 stage below intentionally references a tag that does not exist so that
+# declaring `--platform linux/arm64` for this Dockerfile fails LOUDLY at the pull step
+# instead of silently shipping a broken binary — remove this stage and replace it with a
+# real digest only once diar-native publishes a CUDA arm64 artifact.
+ARG TARGETARCH
+FROM davidamacey/diar-native@sha256:83a709be94d0ca06441fa10aea0680f53b03cc10eb3ce11c4eeb84478400567d AS diar-native-bin-amd64
+FROM davidamacey/diar-native:UNAVAILABLE-NO-CUDA-ARM64-BUILD-SEE-ISSUE-680 AS diar-native-bin-arm64
+# This FROM selects one of the two stages immediately above (amd64 is digest-
+# pinned; arm64 is a deliberately nonexistent tag, see the comment above) by ARG
+# TARGETARCH; hadolint cannot trace that indirection.
+# hadolint ignore=DL3006
+FROM diar-native-bin-${TARGETARCH} AS diar-native-bin
+
+# -----------------------------------------------------------------------------
+# Stage 0b: Bundle diar-native's OWN validated OpenBLAS with its binary (issue #721)
+# -----------------------------------------------------------------------------
+# `diar-server` is built `openblas-system`: it carries an ELF NEEDED entry for
+# `libopenblas.so.0` and links whatever the HOST IMAGE provides — not what upstream
+# validated against. diar-native validates on Ubuntu 24.04 (**0.3.26**); the runtime
+# stage below is `python:3.13-slim-trixie`, whose `libopenblas0` is **0.3.29+ds-3**.
+#
+# Upstream reports that OpenBLAS 0.3.28/0.3.29 carry an **arm64-only** GEMM->GEMV forwarding
+# defect that moved its AMI-16 DER from **13.8% to 48.7%** — with `diar-server verify-models`
+# passing all five stages throughout, so a plausible speaker count sits on badly wrong
+# attribution that no smoke test, image scan, build gate or healthcheck can see.
+#
+# ⚠️ THAT DEFECT DOES NOT REPRODUCE ON ANY KERNEL WE CAN EXECUTE, and this comment must not
+# be read as claiming otherwise. Measured 2026-09-05 on BOTH architectures: amd64 0.0669 DER
+# on 0.3.29, and NATIVE aarch64 (Apple M2 Max, not QEMU — emulation dispatches the wrong
+# kernels and cannot answer this) 0.0669 as well; both identical to a 0.3.26 control, with
+# bit-identical segments, plus a 2,016-case `cblas_?gemm` probe over the forwarding shapes
+# finding 0 mismatches.
+#
+# So this stage is INSURANCE, not repair. It buys two specific things:
+#   - **No unpinned drift.** `libopenblas0` is installed bare and unversioned below, and
+#     there is no apt pin anywhere in this repo. "trixie ships 0.3.29 and 0.3.29 is fine"
+#     is a measurement, not a guarantee — the next Debian bump moves the library under the
+#     binary with nothing able to notice.
+#   - **Coverage for the aarch64 generations we cannot test.** Graviton3/4 select OpenBLAS's
+#     SVE kernels, which the available hardware physically cannot run (forcing them SIGILLs).
+#     Those are the paths upstream's report implicates, and they stay unproven; #713 tracks
+#     that gap. Shipping the library upstream validated on makes upstream's own 13.8% figure
+#     the applicable evidence for them.
+# Full record: `docs/diarization-openblas-der/README.md`.
+#
+# The library is taken from the SAME per-TARGETARCH stage the binary comes from, so its
+# architecture matches the binary's automatically and cannot drift. The version is spelled
+# out in the source path deliberately: `libopenblasp-r0.3.26.so` IS the version number, so
+# an upstream bump off 0.3.26 fails this COPY loudly instead of silently shipping an
+# unvalidated pairing. `openblas-pthread` is the variant Debian/Ubuntu's alternatives
+# select and the one `ldd diar-server` resolves to in the upstream image — verified, not
+# assumed.
+#
+# ⚠️ DT_RPATH, NOT an environment variable, and NOT image-wide. Three reasons, in order:
+#
+#   1. **`diar-server` runs from more than one place.** The compose sidecar
+#      (`docker-compose.diar-native.yml`) sets a service-scoped `LD_LIBRARY_PATH`, but
+#      `app/transcription/native_provision.py` also runs `diar-server provision-models`
+#      as a SUBPROCESS OF THE BACKEND, inheriting the backend's environment — which has no
+#      `/opt/diar-native/lib` on it. That subprocess is what EXPORTS the ONNX/PLDA model
+#      set the sidecar later serves, so an env-only fix would leave model *creation* on
+#      the unvalidated library. `scripts/diar-native-smoke.sh`, `scripts/release/85-smoke.sh`
+#      and `docker run --entrypoint diar-server ...` are three more such call sites.
+#   2. An image-wide `LD_LIBRARY_PATH` would change what numpy/scipy and every other
+#      process in this SHARED backend image resolve. DT_RPATH is a property of this one
+#      ELF, so the blast radius is exactly the binary that needs it.
+#   3. `--force-rpath` emits **DT_RPATH**, not DT_RUNPATH. DT_RPATH is searched BEFORE
+#      `LD_LIBRARY_PATH`; DT_RUNPATH is searched after it. Only the former makes the
+#      validated pairing impossible to displace silently with an env var — which is the
+#      same failure class as the bug being fixed. (`LD_PRELOAD` remains the deliberate
+#      escape hatch for A/B experiments such as `scripts/diar-openblas-der-ab.py`.)
+#
+# patchelf lives in this throwaway stage, never in the shipped image.
+FROM python:3.13-slim-trixie AS diar-native-staged
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+COPY --from=diar-native-bin /usr/local/bin/diar-server /staged/bin/diar-server
+COPY --from=diar-native-bin /usr/lib/*/openblas-pthread/libopenblasp-r0.3.26.so /staged/lib/
+# The RPATH is read back and compared, so a patchelf that silently no-ops fails the BUILD
+# rather than shipping a copied-but-never-loaded library, which looks exactly like success.
+# `test` rather than `| grep` because hadolint requires `pipefail` before any piped RUN.
+RUN set -eux; \
+    patchelf --force-rpath --set-rpath /opt/diar-native/lib /staged/bin/diar-server; \
+    rpath="$(patchelf --print-rpath /staged/bin/diar-server)"; \
+    test "$rpath" = "/opt/diar-native/lib"
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation
@@ -103,6 +197,12 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
 # torch.compile's Inductor JIT, which emits C++ kernels. torch.compile is now
 # opt-in only (production uses eager PyTorch). Without gcc and triton, a
 # torch_compile=True caller gets an eager fallback. Saves ~150 MB.
+#
+# gnupg: `backup_service.run_pg_dump` shells out to `gpg --symmetric` when the
+# scheduled/S3 backup feature's `backup.encrypt` setting is on (issue #604). Without
+# it, `pg_dump` succeeds and the `gpg` step then fails with FileNotFoundError, so an
+# encrypted backup silently never completes. postgresql-client (above) does NOT pull
+# gnupg in as a dependency — they are unrelated packages.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
@@ -110,13 +210,34 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     libimage-exiftool-perl \
     libgomp1 \
     postgresql-client \
+    gnupg \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
 # diar-native's only extra system dependency: libopenblas0 (linked by diar-server itself,
 # per `ldd`). libgfortran5 is openblas's own dependency but is ALREADY present in this
 # image at 0 extra bytes (pulled in transitively by something upstream, e.g. scipy) —
-# verified via `dpkg -l | grep libgfortran` against a built image, not assumed.
+# verified via `dpkg -l | grep libgfortran` on a built image, not assumed. It is what the BUNDLED
+# 0.3.26 above needs too (its only non-glibc NEEDED entry), and `libopenblas0` depends on
+# it, so keeping this install is also what keeps the bundled library loadable.
+#
+# ⚠️ This apt `libopenblas0` STAYS even though the validated 0.3.26 is now bundled beside
+# the binary (issue #721), and that is a decision, not an oversight. Measured in the built
+# image rather than assumed:
+#   - numpy and scipy do NOT use it. They load their own vendored builds
+#     (`numpy.libs/libscipy_openblas64_-*.so`, `scipy.libs/libscipy_openblas-*.so`), so
+#     removing it would not have disturbed them.
+#   - An ELF sweep of all 1,863 distinct objects under /usr /opt /app /home/appuser/.local
+#     /bin /sbin found `libopenblas.so.0` has exactly ONE consumer outside its own package:
+#     `diar-server`.
+#   - But the same package set provides the `libblas.so.3` / `liblapack.so.3` alternatives
+#     that ffmpeg's `libsphinxbase.so.3.0.0` links. Dropping `libopenblas0` re-points a
+#     production audio dependency's BLAS onto the reference implementation, on an
+#     architecture (arm64) that cannot be tested from this host.
+# Bundling does not require that change, so it does not make it. Two copies now exist and
+# **DT_RPATH decides** which one `diar-server` gets — not load order, not an env var, and
+# provably: `/proc/<pid>/maps` inside the running sidecar shows
+# `/opt/diar-native/lib/libopenblasp-r0.3.26.so`.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas0 \
     && rm -rf /var/lib/apt/lists/* \
@@ -172,24 +293,49 @@ RUN chmod +x /usr/local/bin/deno
 # compose service's working_dir). libonnxruntime.so.1.24.2 itself is found via
 # LD_LIBRARY_PATH (the compose-level env var), replacing what `ldconfig` did in the
 # standalone image.
-RUN mkdir -p /opt/diar-native/lib /opt/diar-native/run
+RUN mkdir -p /opt/diar-native/lib /opt/diar-native/run && chown appuser:appuser /opt/diar-native/run
+# /opt/diar-native/run is diar-server's CWD (`working_dir` in docker-compose.diar-native.yml)
+# — a `mkdir -p` with no owner leaves it root:root 755, which the non-root appuser process
+# cannot write into. Nothing writes there today (confirmed: `touch` inside a running
+# container 403s with no owner set, yet the sidecar runs healthy — it only reads the
+# symlinked provider libs below), but the working_dir is exactly where a future
+# write-relative-to-cwd would land, so it is chowned here rather than left as a trap for
+# whenever that changes. /opt/diar-native/lib is intentionally left root:root: it holds
+# only the read-only provider .so artifacts COPY'd in below, never written to.
 # --chown at COPY time, not a later `chown -R`: this stage's parent (COPY --from=builder)
 # already put a multi-GB tree in this layer, and a later recursive chown on an
 # already-copied 316 MB file forces an overlayfs copy-up that nearly doubled this
 # block's contribution to image size (374 MB measured for a chown of files that were
 # already 356 MB) — caught by comparing `docker history` layer sizes before/after.
-COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/bin/diar-server /usr/local/bin/diar-server
+# From diar-native-staged, not diar-native-bin: the binary shipped here is the upstream
+# one with DT_RPATH=/opt/diar-native/lib added (issue #721), so its sha256 deliberately
+# differs from upstream's. The library beside it is upstream's own validated 0.3.26.
+COPY --from=diar-native-staged --chown=appuser:appuser /staged/bin/diar-server /usr/local/bin/diar-server
+COPY --from=diar-native-staged --chown=appuser:appuser /staged/lib/libopenblasp-r0.3.26.so /opt/diar-native/lib/libopenblasp-r0.3.26.so
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime.so.1.24.2 /opt/diar-native/lib/libonnxruntime.so.1.24.2
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_cuda.so /opt/diar-native/lib/libonnxruntime_providers_cuda.so
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_shared.so /opt/diar-native/lib/libonnxruntime_providers_shared.so
+# The 26 s verification clip `provision-models` diarizes in its end-to-end stage. The
+# standalone diar-server images bake one in; an image that only COPYs the binary out of
+# them has none, so provisioning from here must pass --smoke-clip and would otherwise
+# exit 2. Taken from the same pinned digest as the binary, so the clip and the code that
+# scores it move together. ~832 KB.
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/share/diar-native/smoke.wav /usr/local/share/diar-native/smoke.wav
 # No `chmod +x` here: the source image's binary is already mode 755 and COPY preserves
 # it — an explicit chmod on an already-copied 33 MB file forces the same overlayfs
 # copy-up as the chown-vs-COPY issue above, for zero behavioral change.
+#
+# The libopenblas.so.0 link is the SONAME diar-server's DT_NEEDED asks for; the target
+# keeps the version in its filename so `/proc/<pid>/maps` names the version that actually
+# ran. It is created here rather than COPY'd because COPY's symlink semantics differ
+# between the classic builder and BuildKit — a dereferenced link would ship a second
+# 37 MB copy under a name that hides which version it is.
 RUN ln -s /opt/diar-native/lib/libonnxruntime_providers_cuda.so /usr/local/bin/libonnxruntime_providers_cuda.so && \
     ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /usr/local/bin/libonnxruntime_providers_shared.so && \
     ln -s /opt/diar-native/lib/libonnxruntime_providers_cuda.so /opt/diar-native/run/libonnxruntime_providers_cuda.so && \
     ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /opt/diar-native/run/libonnxruntime_providers_shared.so && \
-    chown -h appuser:appuser /opt/diar-native/run/libonnxruntime_providers_cuda.so /opt/diar-native/run/libonnxruntime_providers_shared.so
+    ln -s libopenblasp-r0.3.26.so /opt/diar-native/lib/libopenblas.so.0 && \
+    chown -h appuser:appuser /opt/diar-native/run/libonnxruntime_providers_cuda.so /opt/diar-native/run/libonnxruntime_providers_shared.so /opt/diar-native/lib/libopenblas.so.0
 
 # Ensure scripts in .local are usable by adding to PATH
 # Set LD_LIBRARY_PATH for cuDNN libraries from PyTorch package
@@ -231,17 +377,50 @@ COPY --chown=appuser:appuser . .
 # position affects is cache reuse.
 ARG APP_VERSION=unknown
 ENV APP_VERSION=${APP_VERSION}
+
+# Make CUDA ordinals match nvidia-smi, NVML and Docker's `device_ids` (issue #719).
+# CUDA's default FASTEST_FIRST ordering does NOT match nvidia-smi on multi-GPU hosts
+# (measured: nvidia-smi 0=A6000/1=RTX3080Ti/2=A6000 vs CUDA 0=A6000/1=A6000/2=RTX3080Ti),
+# so an ordinal derived from GPU_DEVICE_ID could select a card the deployment does not own.
+# Set as image ENV, not compose `environment:`, for two reasons: it must be in place before
+# the process starts (there is no safe point to set it after the first CUDA call), and the
+# API, every Celery worker and the diar-native sidecar all run from this one image with only
+# their CMD replaced — a per-service compose entry would have to be repeated on a dozen
+# services and would silently miss the next one added.
+ENV CUDA_DEVICE_ORDER=PCI_BUS_ID
 ARG GIT_SHA=unknown
 ENV GIT_SHA=${GIT_SHA}
 ARG BUILD_TIME=unknown
 ENV BUILD_TIME=${BUILD_TIME}
 
-# Reserve the pipeline's shared-volume mount points. A named volume inherits the image
+# Reserve the pipeline's shared-volume mount point. A named volume inherits the image
 # directory's ownership at creation, so without this it lands root-owned and the non-root
 # worker cannot write the stage-to-stage WAV handoff. Existing deployments predate this and
 # need scripts/fix-shared-volume-perms.sh once.
-RUN mkdir -p /scratch/opentranscribe /tmp/transcription && \
-    chown appuser:appuser /scratch/opentranscribe /tmp/transcription
+#
+# Issue #661 E2: this used to be THREE separate mount points/volumes
+# (pipeline_scratch, transcription-temp, diar-native-tmp) — consolidated onto one volume,
+# pipeline_scratch, with three namespaces (<file_uuid>/, engine/, diar/). Kept as two RUN
+# blocks, mount point first: backend/tests/unit/test_chown_script_targets.py's
+# ``_RESERVED_PATHS_RE`` greps the FIRST ``RUN mkdir -p ... &&`` line for the volume's own
+# mount point (what fix-shared-volume-perms.sh chowns) and ``_compose_volumes_for`` maps it
+# to a compose mount line; the namespace subdirs below are not compose mounts, so folding
+# them into the same line would make that derivation compare apples to oranges.
+RUN mkdir -p /scratch/opentranscribe && \
+    chown appuser:appuser /scratch/opentranscribe
+
+# The engine/ and diar/ namespaces. Ownership note (both directions, issue #661 E2):
+# - FRESH volume: Docker initialises the new named volume from the image's CONTENT at the
+#   mount point, preserving ownership, so these subdirs come up appuser-owned for free.
+# - EXISTING volume (upgrade): Docker does NOT re-copy into an already-populated volume, so
+#   these subdirs won't exist yet — runtime `os.makedirs(exist_ok=True)` creates them under
+#   an already-appuser-owned parent (preprocess.py, audio_loader.py, diarizer_native.py), so
+#   they land appuser too. This is NOT issue #580 (that was a runtime mkdir of a MOUNT POINT
+#   Docker had already made root-owned) — a subdir of an appuser-owned parent is different,
+#   UNLESS the parent itself is root-owned, which is exactly what
+#   scripts/fix-shared-volume-perms.sh (2.7) exists to repair on an upgrading install.
+RUN mkdir -p /scratch/opentranscribe/engine /scratch/opentranscribe/diar && \
+    chown appuser:appuser /scratch/opentranscribe/engine /scratch/opentranscribe/diar
 
 # Switch to non-root user
 USER appuser

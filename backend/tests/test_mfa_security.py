@@ -385,8 +385,13 @@ class TestBackupCodeExhaustion:
 
         # Lowercase should also work
         lowercase = original.lower()
-        is_valid, _ = MFAService.verify_backup_code(lowercase, hashed_codes)
-        assert is_valid
+        is_valid, matched_hash = MFAService.verify_backup_code(lowercase, hashed_codes)
+        assert is_valid is True
+        # The matched hash is what the caller REMOVES from the user's remaining codes.
+        # Returning True with no hash would leave a single-use code usable forever, and
+        # the sibling refusal tests above already assert `matched_hash is None` — so
+        # without this the pair proves nothing about the accepted case.
+        assert matched_hash == hashed_codes[0]
 
     def test_backup_code_ignores_formatting(self):
         """Backup code verification should ignore dashes and spaces."""
@@ -398,13 +403,18 @@ class TestBackupCodeExhaustion:
 
         # Without dash
         no_dash = original.replace("-", "")
-        is_valid, _ = MFAService.verify_backup_code(no_dash, hashed_codes)
-        assert is_valid
+        is_valid, matched_hash = MFAService.verify_backup_code(no_dash, hashed_codes)
+        assert is_valid is True
+        assert matched_hash == hashed_codes[0]
 
         # With spaces
         with_spaces = f"{no_dash[:4]} {no_dash[4:]}"
-        is_valid, _ = MFAService.verify_backup_code(with_spaces, list(hashed_codes))
-        assert is_valid
+        is_valid, matched_hash = MFAService.verify_backup_code(with_spaces, list(hashed_codes))
+        assert is_valid is True
+        # Same code, so the SAME stored hash must come back — a normaliser that
+        # accepted the spaced form but matched a different entry would burn the wrong
+        # single-use code and leave this one live.
+        assert matched_hash == hashed_codes[0]
 
 
 class TestTOTPWindowConfiguration:
@@ -416,38 +426,75 @@ class TestTOTPWindowConfiguration:
         assert isinstance(settings.TOTP_VALID_WINDOW, int)
 
     def test_totp_valid_window_default_value(self):
-        """Default TOTP_VALID_WINDOW should be 1 (±30 seconds)."""
-        # Default from config is 1
-        assert settings.TOTP_VALID_WINDOW >= 0
+        """Default TOTP_VALID_WINDOW must be exactly 1 (±30 seconds).
 
-    def test_totp_verification_uses_configurable_window(self):
-        """TOTP verification should use the configured valid_window."""
-        secret = MFAService.generate_totp_secret()
-        totp = pyotp.TOTP(secret, interval=30)
+        ``>= 0`` (the old assertion) passes at ANY non-negative value, including a
+        misconfigured ``10`` — a ±5-minute TOTP replay window in production. Proven by
+        mutation: changing the default from 1 to 10 in ``core/config.py`` left the old
+        assertion (and every other test in this class) green.
+        """
+        assert settings.TOTP_VALID_WINDOW == 1
 
-        # Current code should always be valid
-        current_code = totp.now()
-        assert MFAService.verify_totp(secret, current_code)
+    def test_totp_verification_uses_configurable_window(self, monkeypatch):
+        """A previous-step code — refused at window=0 — must be ACCEPTED once the
+        window is widened to 1, through ``MFAService.verify_totp`` itself.
 
-    def test_totp_verification_accepts_within_window(self):
-        """TOTP codes within the valid window should be accepted."""
-        secret = MFAService.generate_totp_secret()
-        totp = pyotp.TOTP(secret, interval=30, digits=6)
-
-        # Code at current time should work
-        current_code = totp.at(datetime.now(UTC))
-        assert MFAService.verify_totp(secret, current_code)
-
-    def test_totp_verification_with_custom_window(self):
-        """Test that verification respects the settings.TOTP_VALID_WINDOW."""
+        The old version of this test only asserted the CURRENT code verifies, which is
+        true at any window size (including a misconfigured window that doesn't limit
+        anything) and proves nothing about the window being enforced at all. This
+        exercises the actual claim a "configurable window" makes: the same code, same
+        secret, same server clock — accepted or refused purely as a function of the
+        setting.
+        """
         secret = MFAService.generate_totp_secret()
         totp = pyotp.TOTP(secret, interval=30, digits=6)
+        now = datetime.now(UTC)
+        previous_step_code = totp.at(now - timedelta(seconds=30))
 
-        # Current code
-        current_code = totp.now()
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 0)
+        assert MFAService.verify_totp(secret, previous_step_code) is False
 
-        # Verify current code works
-        assert MFAService.verify_totp(secret, current_code)
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 1)
+        assert MFAService.verify_totp(secret, previous_step_code) is True
+
+    def test_totp_verification_accepts_within_window(self, monkeypatch):
+        """At the default window (1), a code from the boundary — the previous 30s
+        step — must be accepted; a code two steps back must not.
+
+        The old version of this test only checked the CENTER of the window (the
+        current-time code), which is the one case that verifies at ANY window size
+        (including 0) and says nothing about whether "within window" means anything.
+        This checks the actual edge the setting is supposed to draw.
+        """
+        secret = MFAService.generate_totp_secret()
+        totp = pyotp.TOTP(secret, interval=30, digits=6)
+        now = datetime.now(UTC)
+
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 1)
+        previous_step_code = totp.at(now - timedelta(seconds=30))
+        two_steps_back_code = totp.at(now - timedelta(seconds=60))
+
+        assert MFAService.verify_totp(secret, previous_step_code) is True
+        assert MFAService.verify_totp(secret, two_steps_back_code) is False
+
+    def test_totp_verification_with_custom_window(self, monkeypatch):
+        """A window of 2 accepts a code two steps back that window=1 refuses.
+
+        Distinct from the "uses configurable window" test above (window 0 -> 1,
+        checking the exact boundary those two windows disagree on): this checks a
+        SECOND pair of settings values disagree on a DIFFERENT boundary, so the
+        behaviour isn't coincidentally tied to one specific window transition.
+        """
+        secret = MFAService.generate_totp_secret()
+        totp = pyotp.TOTP(secret, interval=30, digits=6)
+        now = datetime.now(UTC)
+        two_steps_back_code = totp.at(now - timedelta(seconds=60))
+
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 1)
+        assert MFAService.verify_totp(secret, two_steps_back_code) is False
+
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 2)
+        assert MFAService.verify_totp(secret, two_steps_back_code) is True
 
     def test_totp_invalid_code_rejected_regardless_of_window(self):
         """Completely invalid codes should be rejected regardless of window size."""
@@ -465,17 +512,37 @@ class TestTOTPWindowConfiguration:
         """TOTP verification with empty secret should fail safely."""
         assert not MFAService.verify_totp("", "123456")
 
-    def test_totp_window_zero_only_accepts_current(self):
-        """With valid_window=0, only the exact current code should work."""
+    def test_totp_window_zero_only_accepts_current(self, monkeypatch):
+        """With TOTP_VALID_WINDOW=0, only the exact current code should work.
+
+        Goes through ``MFAService.verify_totp`` — the app's own code — rather than a
+        raw ``pyotp.TOTP.verify()`` call. The previous version of this test called
+        ``pyotp`` directly with an explicit ``valid_window=0`` kwarg it invented for the
+        occasion, which proves a third-party library invariant, not anything about this
+        codebase: the app's actual `verify_totp` reads ``settings.TOTP_VALID_WINDOW``,
+        and a test that never sets that setting and never calls that function cannot
+        catch a regression in either. Proven by mutation — changing
+        ``TOTP_VALID_WINDOW``'s default from 1 to 10 in ``core/config.py`` left the old
+        version of this test (and the rest of this class) green.
+
+        The ONLY half is still the point: a replay of the previous OR next 30-second
+        step is the attack the narrow window exists to refuse, so both are asserted
+        rejected, not just that the current code is accepted (equally true of a
+        misconfigured ``valid_window=10``).
+        """
         secret = MFAService.generate_totp_secret()
         totp = pyotp.TOTP(secret, interval=30, digits=6)
 
-        # Get current code
-        current_code = totp.now()
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 0)
 
-        # With window=0, verify manually using pyotp
-        is_valid = totp.verify(current_code, valid_window=0)
-        assert is_valid
+        now = datetime.now(UTC)
+        current_code = totp.at(now)
+        previous_step_code = totp.at(now - timedelta(seconds=30))
+        next_step_code = totp.at(now + timedelta(seconds=30))
+
+        assert MFAService.verify_totp(secret, current_code) is True
+        assert MFAService.verify_totp(secret, previous_step_code) is False
+        assert MFAService.verify_totp(secret, next_step_code) is False
 
     def test_totp_verification_code_format_normalization(self):
         """TOTP codes should be normalized (remove spaces/dashes)."""

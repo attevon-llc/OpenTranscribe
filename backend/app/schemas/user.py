@@ -288,17 +288,6 @@ class MFAStatusResponse(BaseModel):
     can_setup_mfa: bool  # True if user can set up MFA (not PKI/OIDC)
 
 
-class MFALoginResponse(BaseModel):
-    """Response when MFA is required during login."""
-
-    mfa_required: bool = True
-    mfa_token: str  # Short-lived token for MFA verification step
-    # True when the deployment requires MFA and this user has NOT enrolled: the token is
-    # scoped to /mfa/setup + /mfa/verify-setup, not /mfa/verify.
-    mfa_enrollment_required: bool = False
-    message: str = "MFA verification required"
-
-
 # ===== Login Banner Schemas (FedRAMP AC-8) =====
 
 
@@ -354,12 +343,6 @@ class AuthMethodsResponse(BaseModel):
         every constructor call site.
         """
         return self.oidc_enabled
-
-
-class BannerAcknowledgmentRequest(BaseModel):
-    """Request to acknowledge login banner."""
-
-    # No body required, user info comes from auth token
 
 
 # ===== Admin Password Reset Schema =====

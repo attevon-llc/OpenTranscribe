@@ -340,7 +340,7 @@
   }
 
   .dirty-indicator {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.9rem;
   }
 

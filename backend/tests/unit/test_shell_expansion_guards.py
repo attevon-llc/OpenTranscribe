@@ -1,8 +1,12 @@
-"""Every unguarded ``$VAR`` in ``opentr.sh`` + ``scripts/common.sh`` must be defaulted.
+"""Every unguarded ``$VAR`` in ``opentr.sh`` / ``scripts/common.sh`` / ``opentranscribe.sh``
+must be defaulted.
 
-Both scripts run under ``set -uo pipefail``, where referencing an unset variable **aborts the
+``opentr.sh`` runs under ``set -uo pipefail``, where referencing an unset variable **aborts the
 script**. That is the right setting — a silently empty ``--gpus device=`` is worse than a hard
-stop — but it makes every optional ``.env`` variable a landmine:
+stop — but it makes every optional ``.env`` variable a landmine. ``opentranscribe.sh`` (issue
+#613) sources ``scripts/common.sh`` too, but runs only ``set -e`` — no ``set -u`` — so an
+unguarded expansion there is empty rather than fatal. It is scanned anyway to keep the guard
+uniform across the code the two front ends now share:
 
 ``scripts/common.sh`` read a bare ``[ -n "$GPU_DEVICE_ID" ]`` while ``opentr.sh`` defaulted five
 *other* optional variables and not that one. Result: ``./opentr.sh`` died with ``GPU_DEVICE_ID:
@@ -34,9 +38,12 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
-#: The two scripts in scope. `common.sh` is sourced only by `opentr.sh`, and both run under
-#: `set -u`, so they share one blast radius.
-_SCRIPTS = ("opentr.sh", "scripts/common.sh")
+#: The scripts in scope. `common.sh` is sourced by both front ends: `opentr.sh` (dev, `set -u`)
+#: and, since issue #613, `opentranscribe.sh` (production, `set -e` but deliberately no `set -u`
+#: — an unguarded expansion there is empty rather than fatal). Scanning all three keeps the
+#: guard uniform across the code `common.sh` now shares between them, even though only two of
+#: the three scripts can actually abort on an unset variable.
+_SCRIPTS = ("opentr.sh", "scripts/common.sh", "opentranscribe.sh")
 
 #: Variables **bash itself** maintains, which therefore cannot be unset at reference time.
 #: Deliberately excludes `USER`, `LOGNAME`, `TERM`, `LANG`, `TMPDIR` and `EDITOR`: those are
@@ -103,8 +110,13 @@ _ASSIGN_RES = (
     re.compile(r"^\s*(?:export|readonly|local|declare|typeset)\s+([A-Za-z_]\w*)\s*$"),
     re.compile(r"^\s*for\s+([A-Za-z_]\w*)\s+in\b"),
     # `read -r name` at line end, or followed by `; do` / `; then` in a loop
-    # header (`while IFS= read -r v; do` binds v as surely as at end-of-line).
-    re.compile(r"\bread\b[^;|&]*?\s([A-Za-z_]\w*)\s*(?:;|$)"),
+    # header (`while IFS= read -r v; do` binds v as surely as at end-of-line), or
+    # followed by `|| [ -n "$v" ]` — the "handle a final line with no trailing
+    # newline" idiom (`while IFS= read -r line || [ -n "$line" ]; do`, used by
+    # opentranscribe.sh's manifest-line loop). `read` binds the name regardless
+    # of what follows; the terminator list here is about what this scanner can
+    # recognize, not about bash semantics.
+    re.compile(r"\bread\b[^;|&]*?\s([A-Za-z_]\w*)\s*(?:;|\|\||$)"),
     re.compile(r"\bmapfile\b.*?\s([A-Za-z_]\w*)\s*$"),
 )
 

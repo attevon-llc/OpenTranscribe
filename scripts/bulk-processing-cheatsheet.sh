@@ -249,9 +249,20 @@ gpu-status() {
 # WORKER MONITORING
 # =============================================================================
 
-# Celery worker status via Flower API
+# Celery worker status via Flower API.
+#
+# ⚠️ issue #609: /api/workers is a ONE-SHOT snapshot taken at Flower's process
+# startup (flower/app.py:98), never refreshed on a timer. A worker that was
+# still importing torch/whisperx (or preloading GPU models) when Flower booted
+# is absent from the *unrefreshed* endpoint forever — this bulk-processing
+# helper exists specifically to watch GPU workers during a big batch, so that
+# silent omission is the worst possible place for it. `?refresh=1` is Flower's
+# own documented parameter and makes it issue a real broadcast for this
+# request (flower/api/workers.py, awaited server-side).
 bulk-workers() {
-    curl -s "http://localhost:${FLOWER_PORT:-5175}/flower/api/workers" 2>/dev/null | \
+    curl -fsS -u "${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}" \
+        --max-time 40 \
+        "http://localhost:${FLOWER_PORT:-5175}/flower/api/workers?refresh=1" 2>/dev/null | \
         python3 -c "
 import sys, json
 try:
@@ -261,7 +272,8 @@ try:
         processed = info.get('stats', {}).get('total', {})
         total = sum(processed.values()) if processed else 0
         print(f'  {name}: active={active}, total_processed={total}')
-except: print('  Flower not ready or unreachable')
+except (json.JSONDecodeError, AttributeError, TypeError) as exc:
+    print(f'  Flower not ready or unreachable ({exc})')
 "
 }
 

@@ -84,7 +84,7 @@ ver_to_version() {
 # ------------------------------------------------------------------ docker hub
 
 _ver_hub_cache() {
-    echo "${TEST_ROOT:-${TMPDIR:-/tmp}}/.hub-tags"
+    echo "${OT_HUB_CACHE_DIR:-${TEST_ROOT:-${TMPDIR:-/tmp}}}/.hub-tags"
 }
 
 # ver_hub_has <repo-suffix> <tag> — is davidamacey/opentranscribe-<suffix>:<tag>
@@ -165,6 +165,128 @@ ver_previous_version() {
     done < <(ver_release_tags)
 
     return 1
+}
+
+# ------------------------------------------------------- multi-source upgrades
+
+# Internal: the highest valid, non-prerelease git tag strictly below TO, git-only (no
+# Docker Hub check). This is the SAME derivation scripts/release/patch-lib.sh's
+# patch_base_tag makes -- needed here too (to detect the "TO is a patch" collapse case
+# below) without sourcing patch-lib.sh, which itself sources this file; the dependency
+# only goes one way.
+_ver_highest_tag_below() {
+    local to="$1" tag
+    while read -r tag; do
+        [[ -n "$tag" ]] || continue
+        ver_is_valid "$tag" || continue
+        if ver_lt "$tag" "$to"; then
+            echo "$tag"
+            return 0
+        fi
+    done < <(ver_release_tags)
+    return 1
+}
+
+# Internal: the major.minor series a tag belongs to, v-prefixed. v0.10.3 -> v0.10.
+# String equality on this value is safe even though sort -V orders v0.10.0 > v0.9.0 --
+# that hazard is about ORDERING tags, not about comparing two series names for
+# equality, which is what every caller of this helper does.
+_ver_series() {
+    local v="${1#v}"
+    echo "v${v%.*}"
+}
+
+# ver_upgrade_sources -> the derived set of upgrade-FROM sources, one per line: the
+# newest Hub-published release of each of the last OT_UPGRADE_SOURCE_MINORS (default 2)
+# minor series strictly below TO. For v0.5.0 that is {v0.4.1, v0.3.3}.
+#
+# Why per-minor-series, over the alternatives:
+#   - "previous + oldest published" -> {v0.4.1, v0.1.0}, unbounded as history grows.
+#   - "previous + previous-minor's .0" -> {v0.4.1, v0.4.0}, whose alembic chains are
+#     IDENTICAL (both 45 revisions) -- two hops buying one hop's coverage.
+# The per-minor-series rule is bounded, derived, stable as versions advance, selects
+# for CHAIN DIVERSITY, and is the only one of the three that reaches the v0.3.3
+# bootstrap case (issue #783 premise P8: v0.3.3 shipped only 2 Alembic revisions and
+# bootstrapped its schema from database/init_db.sql -- a shape no other rule visits).
+#
+# A patch TO collapses to ONE hop: a patch adds no Alembic revisions, so a second hop
+# would re-measure the identical migration chain at full price for zero additional
+# coverage, and would balloon a same-day hotfix's rehearsal duration for nothing.
+#
+# FROM_VERSIONS (plural, space-separated) OVERRIDES this derivation entirely -- it is
+# an override, not the thing that enables multi-hop. Set it and this function echoes
+# exactly those entries, normalized, with NO Hub/git validation here: each is validated
+# where it is actually USED, by ver_previous_version's existing FROM_VERSION override
+# branch (one hop at a time, in the child that runs it), which already gr_dies on an
+# unpublished pin. Per-hop validation beats validating the whole list up front, and is
+# simpler than doing both.
+#
+# FROM_VERSION (singular) is resolved by the CALLER before this ever runs and is not
+# consulted here.
+#
+# Prints nothing and returns 0 when there is no published release below TO -- exactly
+# ver_previous_version's contract, so callers make the identical skip-vs-fail decision
+# (REQUIRE_PREVIOUS=1) either way.
+ver_upgrade_sources() {
+    local to
+    to="$(ver_to_version)"
+
+    if [[ -n "${FROM_VERSIONS:-}" ]]; then
+        local v
+        for v in $FROM_VERSIONS; do
+            ver_normalize "$v"
+        done
+        return 0
+    fi
+
+    # Patch collapse: if the highest tag below TO shares TO's minor series, TO is a
+    # patch relative to it, and the multi-source derivation degenerates to the single
+    # previous release ver_previous_version already computes (Hub-verified there).
+    local highest_below
+    if highest_below="$(_ver_highest_tag_below "$to")"; then
+        if [[ "$(_ver_series "$to")" == "$(_ver_series "$highest_below")" ]]; then
+            local prev
+            if prev="$(ver_previous_version)"; then
+                echo "$prev"
+            fi
+            return 0
+        fi
+    fi
+
+    local minors="${OT_UPGRADE_SOURCE_MINORS:-2}"
+    local -a seen_series=()
+    local -a result=()
+    local tag series already s
+
+    while read -r tag; do
+        [[ -n "$tag" ]] || continue
+        ver_is_valid "$tag" || continue
+        ver_lt "$tag" "$to" || continue
+
+        series="$(_ver_series "$tag")"
+        already=0
+        for s in "${seen_series[@]:-}"; do
+            [[ "$s" == "$series" ]] && { already=1; break; }
+        done
+        (( already == 1 )) && continue
+
+        # Dedupe the series BEFORE the Hub probe: once a series has answered (found
+        # published), an older tag in the SAME series costs nothing. An UNPUBLISHED
+        # newest-in-series does NOT mark the series done, so the next-older tag in it
+        # gets probed too -- that is the fallback-within-the-series case.
+        if ver_hub_has_release "$tag"; then
+            result+=("$tag")
+            seen_series+=("$series")
+            (( ${#result[@]} >= minors )) && break
+        else
+            gr_warn "skipping $tag: tagged in git but not published to Docker Hub"
+        fi
+    done < <(ver_release_tags)
+
+    if (( ${#result[@]} > 0 )); then
+        printf '%s\n' "${result[@]}"
+    fi
+    return 0
 }
 
 # Advisory cross-check: a tag that exists locally but was never pushed as a

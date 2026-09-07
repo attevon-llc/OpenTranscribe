@@ -250,7 +250,7 @@ Problem indicators:
 Restart OpenTranscribe to apply the new configuration:
 
 ```bash
-./opentr.sh restart
+./opentr.sh restart-all
 ```
 
 ## Related Issues

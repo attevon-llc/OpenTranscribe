@@ -778,7 +778,7 @@
   }
   .step-item.visited .step-dot {
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
   .step-label {
     font-size: 0.75rem;
@@ -787,12 +787,12 @@
     white-space: nowrap;
   }
   .step-item.active .step-label {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 600;
   }
   .step-item.completed .step-label,
   .step-item.visited .step-label {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
   .step-line {
     flex: 1;
@@ -954,7 +954,7 @@
     background: none;
     border: none;
     box-shadow: none;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     font-size: 0.8rem;
     padding: 0;

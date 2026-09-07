@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "OpenTranscribe — Celery Queues (inside \"Celery Workers\")",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "gpu-work", "label": "GPU-bound", "focus": ["dispatch", "gpu", "cloud_asr"], "note": "ASR + diarization: local GPU work, or routed to the dynamic cloud-asr/cpu-transcribe queues per provider." },
+      { "id": "cpu-work", "label": "CPU post-processing", "focus": ["dispatch", "cpu", "redaction", "utility", "minio"], "note": "Embeddings-from-known-segments, gender detection, thumbnails, reindex maintenance, backups — several of these read/write MinIO directly." },
+      { "id": "enrichment", "label": "LLM + search enrichment", "focus": ["dispatch", "nlp", "embedding"], "note": "Summaries/topics/speaker-ID call an LLM; chunk-level search indexing needs its own embedding-model queue." }
+    ]
+  },
+  "components": [
+    { "id": "dispatch", "type": "messagebus", "label": "Task Router", "sublabel": "celery.py task_routes", "pos": [40, 300], "size": [150, 60] },
+    { "id": "gpu", "type": "backend", "label": "gpu", "sublabel": "ASR, diarization", "tag": "concurrency=1", "pos": [280, 120], "size": [170, 64] },
+    { "id": "cloud_asr", "type": "cloud", "label": "cloud-asr", "sublabel": "+ cpu-transcribe, dynamic", "pos": [280, 220], "size": [170, 64] },
+    { "id": "cpu", "type": "backend", "label": "cpu", "sublabel": "embeddings, thumbnails, reindex", "tag": "concurrency=8", "pos": [280, 320], "size": [170, 64] },
+    { "id": "download", "type": "backend", "label": "download", "sublabel": "yt-dlp URL/playlist fetch", "tag": "concurrency=3", "pos": [280, 420], "size": [170, 64] },
+    { "id": "nlp", "type": "external", "label": "nlp", "sublabel": "summary, topics, speaker-ID", "tag": "concurrency=4", "pos": [560, 120], "size": [170, 64] },
+    { "id": "embedding", "type": "database", "label": "embedding", "sublabel": "chunk-level search indexing", "tag": "concurrency=1", "pos": [560, 220], "size": [170, 64] },
+    { "id": "redaction", "type": "security", "label": "redaction", "sublabel": "PII/toxicity detection", "pos": [560, 320], "size": [170, 64] },
+    { "id": "utility", "type": "backend", "label": "utility", "sublabel": "backups, pipeline errors, index writes", "pos": [560, 420], "size": [170, 64] },
+    { "id": "minio", "type": "database", "label": "MinIO", "sublabel": "audio, thumbnails, waveforms", "pos": [850, 270], "size": [170, 64] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Celery Workers (docker-compose.gpu-scale.yml can multiply the gpu queue across cards)", "wraps": ["gpu", "cloud_asr", "cpu", "download", "nlp", "embedding", "redaction", "utility"] }
+  ],
+  "connections": [
+    { "id": "route-gpu", "from": "dispatch", "to": "gpu", "variant": "emphasis" },
+    { "id": "route-cloud", "from": "dispatch", "to": "cloud_asr", "variant": "emphasis" },
+    { "id": "route-cpu", "from": "dispatch", "to": "cpu", "variant": "default" },
+    { "id": "route-download", "from": "dispatch", "to": "download", "variant": "default" },
+    { "id": "route-nlp", "from": "dispatch", "to": "nlp", "variant": "dashed", "fromSide": "bottom", "toSide": "right", "via": [[115, 560], [780, 560], [780, 152]] },
+    { "id": "route-embedding", "from": "dispatch", "to": "embedding", "variant": "dashed", "fromSide": "bottom", "toSide": "right", "via": [[115, 580], [780, 580], [780, 252]] },
+    { "id": "route-redaction", "from": "dispatch", "to": "redaction", "variant": "dashed", "fromSide": "bottom", "toSide": "right", "via": [[115, 600], [780, 600], [780, 352]] },
+    { "id": "route-utility", "from": "dispatch", "to": "utility", "variant": "default", "fromSide": "bottom", "toSide": "right", "via": [[115, 620], [780, 620], [780, 452]] },
+    { "id": "workers-minio", "from": "dispatch", "to": "minio", "label": "gpu/cpu/download read+write media", "variant": "default", "fromSide": "top", "toSide": "top", "via": [[115, 50], [935, 50]] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "task_routes is the single source of truth", "items": ["task_create_missing_queues=False — an unrouted task raises at dispatch, it never silently lands somewhere wrong", "cloud-asr / cpu-transcribe are dynamic: dispatch.py picks the queue per request, not a static route"] },
+    { "dot": "rose", "title": "Why extract_speaker_embeddings is CPU, not GPU", "items": ["It only reads already-known segments — no diarization model pass needed", "Lite mode scales the gpu queue to zero workers; pinning this to gpu left it stuck forever (issue #584)"] },
+    { "dot": "emerald", "title": "Workers hit MinIO directly", "items": ["gpu/cpu/download tasks read source audio and write thumbnails/waveforms straight to MinIO — not proxied through the backend", "gpu: one physical card, one job at a time; embedding: the embedding model itself is the bottleneck, not hardware"] }
+  ]
+}

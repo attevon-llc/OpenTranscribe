@@ -106,6 +106,10 @@ tqdm==4.70.0
 # is also --no-deps below and no longer has pip enforcing that constraint for us.
 transformers==4.57.6
 huggingface-hub==0.36.2
+# Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
+# virtualenv) — pinned after the dependency-parity gate caught the venv and the
+# image resolving different patch releases (issue #492's exact failure mode).
+filelock==3.32.4
 # pandas removed: only used by diarizer/speaker_assigner/reprocess, replaced with
 # DiarizeResult numpy dataclass. Saves ~72 MB. See app/transcription/diarize_result.py.
 # triton removed: openai/triton only needed for torch.compile(backend="inductor") JIT,
@@ -129,6 +133,24 @@ onnx==1.22.0
 # are installed with --no-deps from requirements-nodeps.txt instead of from this file.
 onnxruntime-gpu==1.28.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 onnxruntime==1.28.0; sys_platform != 'linux' or platform_machine != 'x86_64'
+
+# diar-native model export (issue #654). `diar-server provision-models` embeds its own
+# export scripts in the binary, but not the packages those scripts import — these are
+# the three this image was missing. Measured: 483,882,939 bytes exported in 137 s.
+#
+# onnxSLIM, not onnxSIM. onnxsim publishes no CPython 3.13 wheel at any version and is
+# a C++ extension, so it cannot build here; the exporter falls back to onnxslim, which
+# is numerically bit-exact but emits a differently-shaped graph. Which one ran is
+# recorded in the marker's `toolchain.folder`, and a mismatch against a directory folded
+# with onnxsim is NOT corruption.
+#
+# ⚠️ onnxconverter-common is the one whose absence is invisible: without it the gender
+# classifier silently exports at fp32 (379 MB instead of 189 MB, ~500 MiB more VRAM)
+# and NOTHING errors. The marker's `toolchain.gender_precision` is the only signal, and
+# backend/tests asserts it is "fp16" for exactly this reason.
+onnxscript==0.7.1
+onnxslim==0.1.96
+onnxconverter-common==1.16.0
 # NOTE: `tensorrt` was added during Phase 6.3 spike but removed 2026-04-23.
 # ORT's TensorrtExecutionProvider hit rebuild storms on pyannote's variable
 # input shapes — 2 min CPU saturation, 0% GPU usage, no inference. Microbench
@@ -202,6 +224,14 @@ boto3==1.43.74
 openai==3.3.0
 # requests is pulled in by many packages but listed explicitly for Gladia REST calls
 requests==2.34.2
+# Recovers structurally-malformed JSON from LLM summary responses
+# (llm_service.py::_parse_summary_response) that `_repair_truncated_json`'s
+# bracket-closing can't fix — chiefly an unescaped literal `"` inside a string
+# value (e.g. a transcript quoting a feet/inches measurement like `6'6"`,
+# verified live on a real transcript), which desyncs the parser's
+# in-string tracking for everything after it, not just the tail. Zero
+# transitive dependencies.
+json-repair==0.63.4
 
 # Diarization-boundary benchmark (issue #193): cpWER metric. Lazily imported by
 # app.utils.diarization_metrics.cpwer + backend/scripts/benchmark_boundary.py — only
@@ -317,10 +347,42 @@ cuda-pathfinder==1.6.1     # via cuda-bindings
 botocore==1.43.75          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
 docling-core==2.92.0       # via docling-slim — drifted 2.91.0 (venv) vs 2.92.0 (image), 2026-08-20
 docling-parse==7.14.0      # via docling (document parsing sidecar tier)
+# The four below all predate documents and remain pulled in by packages that have
+# nothing to do with them (see each line). They are here because #551 removed
+# docling-slim, whose own constraints had been holding them at fixed versions as a
+# side effect; lxml was additionally pinned outright for docling's HTML repair
+# step and went with it. With nothing pinning them they resolved freely on the
+# next rebuild and immediately drifted venv vs image. Pinned at the versions the
+# rebuilt IMAGE resolved -- forward only, never back to docling's older set.
+cloudpathlib==0.25.0       # via weasel — drifted 0.24.0 (venv) vs 0.25.0 (image), 2026-08-23
+cython==3.3.0              # via meeteval — drifted 3.2.9 (venv) vs 3.3.0 (image), 2026-08-23
+lxml==6.1.2                # via python3-saml, xmlsec — drifted 6.1.1 (venv) vs 6.1.2 (image), 2026-08-23
+typer==0.27.1              # via spacy, weasel — drifted 0.26.8 (venv) vs 0.27.1 (image), 2026-08-23
 httpcore2==2.12.0          # via httpx2
 httpx2==2.12.0             # via openai
+google-api-core==2.35.0    # via google-cloud-speech — drifted 2.34.0 (venv) vs 2.35.0 (image), 2026-08-25
+google-auth==2.57.0        # via google-api-core, google-cloud-speech — drifted 2.56.3 (venv) vs 2.57.0 (image), 2026-08-25
+spacy==3.8.16              # via presidio_analyzer — drifted 3.8.15 (venv) vs 3.8.16 (image), 2026-08-25
+googleapis-common-protos==1.75.2  # via google-api-core — drifted 1.75.1 (venv) vs 1.75.2 (image), 2026-08-26
+proto-plus==1.28.4         # via google-cloud-speech — drifted 1.28.3 (venv) vs 1.28.4 (image), 2026-08-26
+mmh3==5.3.0                # via imohash — drifted 5.2.1 (venv) vs 5.3.0 (image), 2026-08-26
+pyspnego==0.12.2           # via smbprotocol — drifted 0.12.1 (venv) vs 0.12.2 (image), 2026-08-26
 idna==3.19                 # via requests, httpx, anyio, yarl, tldextract
 argon2-cffi-bindings==26.1.0  # via argon2-cffi — drifted 25.1.0 (venv) vs 26.1.0 (image), 2026-08-21
 protobuf==7.36.0           # via grpcio-status, onnx, opensearch-protobufs — drifted 7.35.1 (venv) vs 7.36.0 (image), 2026-08-21
 narwhals==2.25.0           # via altair/plotly family — drifted 2.24.0 (venv) vs 2.25.0 (image), 2026-08-21
 scipy==1.18.1              # via scikit-learn, librosa — drifted 1.18.0 (venv) vs 1.18.1 (image), 2026-08-21
+click==8.5.0                # via uvicorn/celery — drifted 8.4.2 (venv) vs 8.5.0 (image), 2026-08-27
+grpcio==1.83.1             # via google-cloud-speech, opensearch-protobufs, opentelemetry-exporter-otlp-proto-grpc — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
+grpcio-status==1.83.1      # via google-api-core[grpc] — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
+kiwisolver==1.5.1          # via matplotlib — drifted 1.5.0 (venv) vs 1.5.1 (image), 2026-08-31
+phonenumbers==9.0.38       # via presidio-analyzer — drifted 9.0.37 (venv) vs 9.0.38 (image), 2026-08-31
+regex==2026.8.31           # via nltk, presidio-analyzer, transformers — drifted 2026.7.19 (venv) vs 2026.8.31 (image), 2026-08-31
+wcwidth==0.8.3             # via prompt-toolkit — drifted 0.8.2 (venv) vs 0.8.3 (image), 2026-08-31
+wrapt==2.4.0               # via Deprecated, smart-open — drifted 2.3.0 (venv) vs 2.4.0 (image), 2026-08-31
+# joblib 1.6.0 added cloudpickle as a hard dependency; 1.5.3 had none. So this pair
+# drifted in BOTH ways at once — a version mismatch on joblib, and a package the image
+# had that the venv had never heard of. cloudpickle is pinned in its own right rather
+# than left to arrive with joblib, so a later joblib bump cannot silently move it.
+joblib==1.6.0              # via nltk, scikit-learn — drifted 1.5.3 (venv) vs 1.6.0 (image), 2026-08-31
+cloudpickle==3.1.2         # via joblib — image-only (venv's joblib 1.5.3 did not require it), 2026-08-31

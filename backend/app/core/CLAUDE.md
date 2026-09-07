@@ -19,12 +19,53 @@ should import `app.api` or `app.services` at module scope.
   deployment — the default-secret refusal, `DEBUG` enforcement, Redis-password requirement, and
   cookie `Secure` flag were all dead code until #284 A0.3. Dev declares itself via the
   `x-dev-environment` anchor in `docker-compose.override.yml`, which prod never loads.
+  **`ALLOW_INSECURE_COOKIES` (default `false`) is the one narrow, explicit opt-out from the
+  `Secure` half of that** — for a hardened deployment reached over plain HTTP with no
+  TLS-terminating reverse proxy in front (a homelab/small-business LAN IP, e.g.
+  `http://10.10.10.20:5173`). A browser silently drops a `Secure` cookie sent over plain HTTP to
+  anything other than `localhost`/`127.0.0.1`, so without this a LAN-IP login answers 200 with a
+  valid `access_token`, the browser never stores the cookie, and the very next request 401s —
+  indistinguishable from a wrong password. It relaxes only that one cookie attribute; every other
+  hardened-mode control (secrets, rate limits, lockout, `DEBUG`) is unaffected, and it is a no-op
+  on an already-relaxed (dev/testing) deployment. Read in `app/auth/cookies.py`, not here — see
+  its CLAUDE.md. Self-signed HTTPS, a real reverse proxy, and cloud/EC2 deployments all already
+  work under the default (`Secure` only requires the `https:` scheme, not a browser-trusted CA),
+  so this flag is never the right fix for those; a plain-HTTP LAN is the only legitimate case.
 - `constants.py` — magic numbers, `CeleryQueues` (**single source of truth for queue names**),
   the `OPENSEARCH_EMBEDDING_MODELS` tiers, and the `DEFAULT_*` values backing DB-stored settings
   (redaction, watch sources, engine/boundary). **Check here before adding a `.env` var.**
 - `celery.py` — `celery_app`, explicit `task_queues`, `task_routes`, beat schedule. Patches
   `torch.load(weights_only=False)` *before* any ML import; the whole ML block is skipped when
-  `SKIP_CELERY=true` (test startup).
+  `SKIP_CELERY=true` (test startup, **and** `scripts/celery_pool_healthcheck.py`, which is a
+  CLI client that never runs a task — measured 7.3 s -> 2.8 s per probe).
+  ⚠️ **`init_worker_process` runs inside every forked prefork child, against a kill timer.**
+  `worker_process_init` fires from `billiard.pool.Worker.after_fork()`, which runs *before*
+  `on_loop_start()` puts `WORKER_UP`; the parent SIGKILLs any child that misses
+  `worker_proc_alive_timeout` and forks a replacement, which runs the same code. So a slow
+  step there is not a slow start, it is a self-sustaining fork/kill loop that accepts **zero**
+  tasks and recovers only when the slowness does (69,231 kills over 10 h 46 m, issue #631 —
+  the cause was `huggingface_hub.login()`, whose `whoami()` goes out through `requests` with no
+  `timeout=`). No network, no locks, no model loads in that function. `publish_hf_token_to_
+  environment()` is the network-free replacement: `huggingface_hub.get_token()` prefers
+  `HF_TOKEN` from the environment over its on-disk token file, so a dict write does what the
+  round trip did. `worker_proc_alive_timeout` (`CELERY_PROC_ALIVE_TIMEOUT`, default 30 s) is
+  defence in depth over celery's bare 4.0 s, not the fix.
+  ⚠️ **That kill timer covers respawns only, so the absence of `Timed out waiting for UP
+  message` in a worker's logs proves nothing.** It is armed from `on_process_up` via
+  `hub.call_later`, so the initial pool population predates it and a hub blocked in a long
+  callback cannot fire it. `preload_models` runs on `worker_ready` in that same MainProcess
+  main thread — which is why its model loads are bounded
+  (`_CPU_WHISPER_PRELOAD_TIMEOUT_S`, `hf_hub_offline.load_with_timeout`): nothing on the Hub
+  path sets a timeout, so an unbounded `WhisperModel(...)` freezes the loop for however long
+  that particular fault happens to take, and the storm detection goes down with it.
+  ⚠️ **Measured, so quote it rather than "it hangs forever":** against a blackholed
+  `huggingface.co` in the prod image the unbounded call returned by itself after **140.0 s**
+  and the bounded one after **125.7 s**. The bound's worth is that it is *declared* — a TCP
+  blackhole terminates, an endpoint that accepts and never replies does not. 120 s is
+  `celery-cpu-worker`'s `start_period`, i.e. the window in which a frozen MainProcess is
+  invisible; outside it, a worker that cannot answer `inspect stats` already fails the
+  healthcheck. Read `init_worker_process`'s `fork init started`/`finished` pairs when the
+  `asynpool` line is missing — those come from the child.
 - `enums.py` — centralized enums (`FileStatus`), imported from here instead of model modules to
   break import cycles. `ReasoningOffSwitch` lives here rather than beside its probe because
   three layers read it (the service that measures it, the Pydantic response that carries it,

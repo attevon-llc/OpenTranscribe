@@ -616,7 +616,7 @@ def reindex_env(db_session, monkeypatch):
     monkeypatch.setattr(rix, "session_scope", tracker.scope)
     monkeypatch.setattr(rix, "get_redis", lambda: _FakeRedis())
     monkeypatch.setattr(rix, "_send_reindex_progress", lambda *a, **kw: None)
-    monkeypatch.setattr(rix, "_is_cancellation_requested", lambda user_id: False)
+    monkeypatch.setattr(rix, "_is_cancellation_requested", lambda user_id, run_id=None: False)
     monkeypatch.setattr(rix, "_handle_reindex_completion", lambda *a, **kw: None)
 
     class _FakeTracker:

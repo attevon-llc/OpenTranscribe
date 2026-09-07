@@ -289,6 +289,19 @@ def update_segment_speaker(
         user_id=current_user.id,
     )
 
+    # A speaker reassignment changes the `speaker` snapshot the chunk plane
+    # was indexed with, and can re-group which turns belong to which chunk —
+    # search/RAG kept attributing this segment to the old speaker until a full
+    # reindex ran (issue #666). Debounced per file, same as a text edit.
+    if original_speaker_id != new_speaker_id:
+        from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+        dispatch_transcript_reindex(
+            file_id=media_file.id,
+            file_uuid=str(media_file.uuid),
+            user_id=int(media_file.user_id),
+        )
+
     # Format the response with speaker details
     response_data = TranscriptSegmentSchema(
         uuid=segment.uuid,  # type: ignore[arg-type]

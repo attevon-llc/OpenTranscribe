@@ -34,7 +34,9 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 
 ## How it connects
 
-- Parent: `routes/files/[id]/+page.svelte`. Export pipeline: `$lib/export/transcriptExport`.
+- Parent: `routes/files/[id]/+page.svelte`. Export content is generated server-side
+  (`GET /files/{uuid}/export`, issue #673); `$lib/export/txtExportPrefs` only persists the
+  TXT options dialog's toggles.
 - The transcript itself is rendered by `TranscriptDisplay` + `components/transcript/*`.
 
 ## Gotchas

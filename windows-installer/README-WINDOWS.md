@@ -89,7 +89,9 @@ After installation, access OpenTranscribe at:
 
 AI models are stored in the installation directory under `models/`:
 - `models/huggingface/` - WhisperX transcription models
-- `models/torch/` - PyAnnote diarization models
+- `models/torch/` - PyAnnote diarization models (the only diarization engine this
+  installer ships — the native `diar-native` sidecar is not packaged for Windows,
+  see INSTALL-WINDOWS.md's HuggingFace token step)
 - `models/nltk_data/` - Natural language processing data
 - `models/sentence-transformers/` - Semantic search models
 

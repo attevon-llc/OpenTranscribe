@@ -153,8 +153,20 @@ def compute_from_minio(object_name: str, size: int | None = None) -> str | None:
             that already have the size should pass it to avoid a round-trip.
 
     Returns:
-        The 32-char hex imohash digest, or None on error / missing object.
+        The 32-char hex imohash digest, or None when the object is confirmed
+        missing / empty.
+
+    Raises:
+        S3Error: propagated when storage itself is unreachable (B2) — this used
+            to be swallowed into the same ``None`` a genuinely absent object
+            returns, so a storage outage silently degraded to "dedup found
+            nothing" instead of surfacing as the outage it was. Every caller
+            already treats a failure here as non-fatal to its own operation
+            (see ``complete_upload._fingerprint_object``); the distinction
+            matters for the log line and for callers that want to retry.
     """
+    from minio.error import S3Error
+
     try:
         from app.services.minio_service import object_exists_and_size
 
@@ -165,6 +177,9 @@ def compute_from_minio(object_name: str, size: int | None = None) -> str | None:
 
         reader = _MinioRangeReader(object_name, size)
         return compute_from_stream(reader)  # type: ignore[arg-type]  # duck-typed seekable
+    except S3Error as e:
+        logger.error(f"Storage outage computing imohash for {object_name}: {e}")
+        raise
     except Exception as e:
         logger.debug(f"imohash compute_from_minio({object_name}) failed: {e}")
         return None

@@ -656,6 +656,33 @@ class TestLdapConfigFromDb:
         assert config.user_search_filter == "(uid={username})"
         assert config.username_attr == "uid"
 
+    def test_from_db_resolves_username_attr_placeholder(self, db_session, admin_user):
+        """LdapConfig.from_db() must resolve `{username_attr}` in the stored filter.
+
+        Regression for the same bug class fixed for the .env path in
+        core/config.py's `validate_auth_settings` (which does
+        `self.LDAP_USER_SEARCH_FILTER.replace("{username_attr}", ...)`). That
+        substitution was never ported to the DB-backed loader, so a DB-configured
+        filter using the documented `{username_attr}` placeholder — as opposed to a
+        hardcoded attribute name like `sAMAccountName` — would carry the literal
+        placeholder into every LDAP search and match no real attribute.
+        """
+        from app.auth.ldap_auth import LdapConfig
+
+        self._store_ldap_config(
+            db_session,
+            admin_user,
+            overrides={
+                "ldap_user_search_filter": ("({username_attr}={username})", "string"),
+                "ldap_username_attr": ("uid", "string"),
+            },
+        )
+
+        config = LdapConfig.from_db(db_session)
+
+        assert "{username_attr}" not in config.user_search_filter
+        assert config.user_search_filter == "(uid={username})"
+
     def test_from_db_is_frozen(self, db_session, admin_user):
         """LdapConfig is immutable (frozen dataclass)."""
         from app.auth.ldap_auth import LdapConfig

@@ -261,9 +261,6 @@ Then restart: `./opentr.sh restart-backend`
 - `docs/YOUTUBE_COOKIE_AUTH.md` - Detailed cookie setup guide
 - `docs/YOUTUBE_ANTI_BOT_QUICKSTART.md` - This file
 
-**New Files (v0.4.0):**
-- `backend/app/services/download_quality_service.py` - Per-user quality selection
-
 **Modified Files:**
 - `backend/app/core/config.py` - Added YouTube config settings, Deno path, quality settings
 - `backend/app/services/media_download_service.py` - Added cookie support, Deno integration, quality selection

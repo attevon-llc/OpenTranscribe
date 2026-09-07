@@ -12,7 +12,7 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   — `ar` is RTL, driven by `document.documentElement.dir` from `stores/locale.ts`). This said
   11 and called `it` the one language the UI lacked; `it.json` exists and `it` is registered in
   `lib/i18n/languages.ts`, so the count and the caveat were both stale.
-  Node pinned to 22 (`.nvmrc`).
+  Node pinned to 26 (`.nvmrc`).
   Locales are **code-split, one chunk per language** — `src/lib/i18n/index.ts` globs them
   non-eagerly and `ensureLocaleLoaded()` fetches only the active one. Never static-import a
   locale JSON: that puts all ~2.3 MB back into the entry chunk. Only the active language is
@@ -25,6 +25,18 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
 - `npm run build` — production build (catches Vite-only issues svelte-check misses).
 - `npm run check` — `svelte-check` (type + a11y). `npm run lint` / `lint:fix` — ESLint.
 - `npm run test` / `test:watch` — Vitest unit/component tests (jsdom).
+  ⚠️ **Those scripts set `NODE_OPTIONS=--no-experimental-webstorage`, and it is load-bearing on
+  Node >=26.** Node 26 defines a `localStorage` accessor on `globalThis` that evaluates to
+  `undefined` without `--localstorage-file`; vitest's `populateGlobal` skips any jsdom window key
+  already present on `globalThis` (`localStorage` is in neither its KEYS nor jsdom's
+  additionalKeys), so jsdom's real `Storage` is never installed and Node's `undefined` wins —
+  15 failures in `FileUploader.test.ts` at `localStorage.clear()`. The flag removes the global so
+  jsdom installs the real thing. **Do not replace it with a hand-rolled Storage shim**:
+  `clearUserState`, `auth.logoutOrdering` and `txtExportPrefs` all `vi.spyOn(Storage.prototype, …)`,
+  which cannot hook an object that doesn't inherit from it. Measured equivalent — node:26+flag and
+  node:24 both 189 files / 1747 passed. Enforced by
+  `backend/tests/unit/test_node_version_consistency.py`, gated on `.nvmrc` so it lapses if we ever
+  drop below 26. If you run bare `npx vitest` on Node 26 you will hit this.
 - `npm run test:audit` — finds tests that pass whether the code works or not (below).
 - **Before committing**: lint + svelte-check + build + test must be green (pre-commit enforces
   it via `scripts/frontend-check.sh`).
@@ -69,8 +81,14 @@ in production passes while proving nothing. Correctness over 1.3 s.
 The frontend renders backend data and captures input. Business logic, aggregation, and
 domain formatting belong in the API. The backend already sends pre-formatted display fields
 (`formatted_duration`, `display_status`, `resolved_speaker_name`, analytics, …) — render those,
-don't recompute. Approved client-side exception: purely-presentational transforms on
-already-downloaded data (TXT/SRT/VTT/CSV export).
+don't recompute. ⚠️ **The former "approved client-side exception" for purely-presentational
+transforms on already-downloaded data (TXT/SRT/VTT/CSV export) is retracted — it is the
+mechanism of a live security bug, issue #673.** A client-side serializer cannot enforce a
+server-side policy: five of the six user-clickable export formats build transcript text in
+the browser, so none of them ever consult the server-side `export_locked` admin lock. An
+admin can mandate censored exports and every SPA export button still writes the unredacted
+original to disk. Transcript export is being moved server-side to close this. Do not add a
+second client-side exporter believing this exception still applies.
 
 ## dev (Vite) vs prod (nginx) — both must work
 
@@ -117,5 +135,28 @@ already-downloaded data (TXT/SRT/VTT/CSV export).
   gates every call site with `isCloudEdition` from `$lib/edition`, and must never name the
   edition's vendors — CI's seam-guard greps `frontend/src` (and `backend/app`) for `clerk|stripe`
   and fails the build on a match.
+
+## Theming — two rules that have both already shipped a bug (issue #746)
+
+Tokens live in `src/styles/theme.css`; the light values are on `:root`, the dark ones on
+`[data-theme='dark']`. `src/stores/theme.js` sets **`data-theme` on `<html>`** and
+`theme-<light|dark>` on `<body>`.
+
+- **The dark-mode selector is `:global([data-theme='dark'])`, never `:global(.dark)`.** No
+  element in this app is ever given the class `dark`, so 34 components had written their entire
+  dark-mode override against a selector that could not match: the light value stayed applied in
+  dark mode and nothing failed. `src/styles/theme-parity.test.ts` now fails on any new one.
+- **A global element rule can out-specify a component's scoped rule, so don't set colours on
+  `button:<pseudo-class>` in `src/styles/form-elements.css`.** Svelte compiles `.foo { … }` to
+  `.foo.svelte-HASH` — specificity (0,2,0) — which `button:focus:not(:disabled)` (0,2,1) beats.
+  That is exactly how #746 happened: the global focus rule repainted `background-color`, browsers
+  put `:focus` on a button on mouse-down, and every icon button styled
+  `.foo { background: <solid>; color: white }` turned into a white glyph on a near-transparent
+  background — invisible in light mode — as soon as it was clicked. Focus feedback is an
+  `outline` on `:focus-visible` now; keep it that way.
+
+Hand-rolled icon buttons are where this recurs, because they are copied rather than reused.
+Prefer the `ui/` primitives (`SearchBar`'s clear/next controls, `CopyButton`, `Chip`,
+`BaseModal`'s header close) over re-declaring the pattern.
 
 ## Verify UI changes in a browser (light + dark) — type-check ≠ feature-check.

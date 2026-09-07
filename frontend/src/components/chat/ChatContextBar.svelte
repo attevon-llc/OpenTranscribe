@@ -177,7 +177,7 @@
   .chip-scoped {
     border-color: rgba(var(--primary-color-rgb), 0.35);
     background-color: rgba(var(--primary-color-rgb), 0.08);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
   }
 
@@ -191,7 +191,7 @@
   .chip-speaker {
     border-color: rgba(var(--primary-color-rgb), 0.35);
     background-color: rgba(var(--primary-color-rgb), 0.08);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
     max-width: 16rem;
   }

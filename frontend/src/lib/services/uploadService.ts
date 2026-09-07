@@ -12,6 +12,7 @@ import {
   type StallWatchdog,
 } from '$lib/services/stallWatchdog';
 import { uploadInParts, type MultipartPlan, type PutPart } from '$lib/services/multipartUploader';
+import { reconnectDelayMs } from '$lib/utils/backoff';
 
 // Upload item types
 type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
@@ -90,7 +91,6 @@ interface MultipartSession {
 
 // Upload configuration constants
 const MAX_RETRIES = 3;
-const RETRY_BASE_DELAY_MS = 1000;
 const MAX_CONCURRENT_UPLOADS = 3;
 const QUEUE_PROCESS_DELAY_MS = 100;
 
@@ -361,13 +361,14 @@ class UploadService {
 
       this.emit('failed', uploadId, { error: errorMessage });
 
-      // Handle retry logic
+      // Handle retry logic. Shared backoff policy (H4a): capped at 30 s, jittered
+      // so a backend restart doesn't bring every client's retries back in lockstep.
       if (upload.retryCount < MAX_RETRIES && !axios.isCancel(error)) {
         setTimeout(
           () => {
             this.retryUpload(uploadId);
           },
-          RETRY_BASE_DELAY_MS * Math.pow(2, upload.retryCount)
+          reconnectDelayMs(upload.retryCount + 1)
         );
       } else {
         // Out of retries: release the parts of an unfinished multipart upload

@@ -1,5 +1,6 @@
 """Pydantic schemas for user media source settings."""
 
+import logging
 import re
 from datetime import datetime
 
@@ -7,58 +8,63 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
 
+from app.utils.url_validation import is_safe_url
+
+logger = logging.getLogger(__name__)
+
 ALLOWED_PROVIDER_TYPES = {"mediacms"}
 
-# Bare hostnames that map to internal Docker/Kubernetes services
-_RESERVED_HOSTNAMES = {
-    "redis",
-    "postgres",
-    "postgresql",
-    "minio",
-    "opensearch",
-    "elasticsearch",
-    "celery",
-    "flower",
-    "nginx",
-    "backend",
-    "frontend",
-    "localhost",
-    "kibana",
-    "grafana",
-    "prometheus",
-    "vault",
-    "consul",
-    "etcd",
-    "kubernetes",
-    "docker",
-    "host",
-    "gateway",
-}
+#: Syntax only — an LDH hostname, optionally dotted. Says nothing about whether the host
+#: is safe to fetch; :func:`app.utils.url_validation.is_safe_url` answers that.
+_HOSTNAME_RE = re.compile(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$")
 
 
-def _validate_hostname_value(v: str) -> str:
-    """Shared hostname validation logic. Accepts host or host:port."""
+def _validated_hostname(v: str) -> str:
+    """Normalise ``host`` / ``host:port`` and refuse anything not publicly reachable.
+
+    This value is **not** inert configuration: it becomes an allowed host for MediaCMS
+    ingestion (``protected_media_plugins/mediacms.py::_get_allowed_hosts``) which the
+    server then fetches with the user's credentials, echoing response and error
+    differences back — a non-blind SSRF oracle available to any authenticated
+    non-admin user.
+
+    Safety is therefore judged by :mod:`app.utils.url_validation`, the one
+    implementation in this codebase that resolves the name and inspects **every**
+    address it answers with. What used to be here — a regex, a "must contain a dot"
+    rule and a hardcoded first-label blocklist — never resolved anything, and passed
+    ``169.254.169.254``, ``127.0.0.1``, ``10.0.0.5``, ``0.0.0.0`` and
+    ``metadata.google.internal`` alike (audit finding A1).
+
+    Args:
+        v: The raw ``hostname`` field value, as ``host`` or ``host:port``.
+
+    Returns:
+        The normalised (stripped, lower-cased) value.
+
+    Raises:
+        ValueError: if the value is malformed, or names a host that must not be
+            fetched server-side.
+    """
     v = v.strip().lower()
-    # Split off optional port
+
     host_part = v
     if ":" in v:
-        parts = v.rsplit(":", 1)
-        host_part = parts[0]
-        port_str = parts[1]
+        host_part, _, port_str = v.rpartition(":")
         if not port_str.isdigit() or not (1 <= int(port_str) <= 65535):
             raise ValueError("Invalid port number (must be 1-65535)")
-    if not re.match(
-        r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$",
-        host_part,
-    ):
+
+    if not _HOSTNAME_RE.match(host_part):
         raise ValueError("Invalid hostname format")
-    # SSRF protection: require at least one dot (reject bare service names)
-    if "." not in host_part:
-        raise ValueError("Hostname must be a fully qualified domain name (e.g., media.example.com)")
-    # Block known internal service names even with dots (e.g., kubernetes.default.svc)
-    first_label = host_part.split(".")[0]
-    if first_label in _RESERVED_HOSTNAMES:
-        raise ValueError(f"Hostname '{v}' is not allowed (reserved internal name)")
+
+    safe, reason = is_safe_url(f"https://{v}")
+    if not safe:
+        # The reason distinguishes "private address" from "cannot resolve", which would
+        # turn this endpoint into a network scanner. Logged, never returned.
+        logger.warning("Blocked media source hostname %r: %s", v, reason)
+        raise ValueError(
+            "Hostname must be a publicly reachable fully qualified domain name "
+            "(e.g., media.example.com)"
+        )
     return v
 
 
@@ -84,7 +90,7 @@ class UserMediaSourceCreate(BaseModel):
     @field_validator("hostname")
     @classmethod
     def validate_hostname(cls, v: str) -> str:
-        return _validate_hostname_value(v)
+        return _validated_hostname(v)
 
     @field_validator("provider_type")
     @classmethod
@@ -107,7 +113,7 @@ class UserMediaSourceUpdate(BaseModel):
     @classmethod
     def validate_hostname(cls, v: str | None) -> str | None:
         if v is not None:
-            return _validate_hostname_value(v)
+            return _validated_hostname(v)
         return v
 
     @field_validator("provider_type")

@@ -103,7 +103,12 @@ async def retry_summary(
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = media_file.id
 

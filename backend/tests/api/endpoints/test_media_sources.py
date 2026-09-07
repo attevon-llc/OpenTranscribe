@@ -10,8 +10,28 @@ Covers the /api/user-settings/media-sources endpoints:
 
 import uuid
 
+import pytest
+
 from app.models.user_media_source import UserMediaSource
 from app.utils.encryption import encrypt_api_key
+from tests.helpers import stub_public_dns
+
+
+@pytest.fixture(autouse=True)
+def _public_media_host_dns(monkeypatch):
+    """Let ``*.example.com`` resolve to a public address for this module.
+
+    Since audit finding A1, storing a media source resolves the hostname and refuses
+    non-public addresses — the old regex-and-blocklist validator accepted
+    ``169.254.169.254``. RFC 2606 reserves ``example.com`` but its subdomains NXDOMAIN,
+    so every hostname in this suite would otherwise be refused for "cannot resolve",
+    which is not what any of these tests are about.
+
+    Deliberately scoped to that one domain: ``internalhost`` and ``redis.internal.svc``
+    below must keep failing to resolve, or the rejection tests become no-ops.
+    """
+    stub_public_dns(monkeypatch)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -444,10 +464,18 @@ class TestMediaSourceCredentialSecurity:
 
 
 class TestMediaSourceHostnameValidation:
-    """Hostname validation prevents SSRF via reserved/internal names."""
+    """Hostname validation prevents SSRF at the endpoint.
+
+    Since audit finding A1 the judgement is made by ``utils/url_validation``, which
+    resolves the name and inspects every address. So the names below are refused for
+    resolving to a private address (in a container or cluster) or for not resolving at
+    all, rather than by the first-label blocklist that used to sit in the schema and
+    let ``169.254.169.254`` straight through. The address-class cases live in
+    ``unit/test_media_source_ssrf.py``; these pin the HTTP contract.
+    """
 
     def test_bare_hostname_rejected(self, client, normal_user, user_token_headers):
-        """Single-label hostnames (no dots) should be rejected."""
+        """Single-label service names must not become an allowed host."""
         resp = client.post(
             "/api/user-settings/media-sources",
             json={"hostname": "internalhost"},
@@ -465,7 +493,12 @@ class TestMediaSourceHostnameValidation:
         assert resp.status_code == 422
 
     def test_reserved_internal_name_rejected(self, client, normal_user, user_token_headers):
-        """Reserved names like redis.*, postgres.* should be rejected."""
+        """Kubernetes/Docker service names must not become an allowed host.
+
+        In a cluster these resolve to a private address; outside one they do not resolve
+        at all. Both are refusals, which is why this holds without the hardcoded name
+        list it used to depend on.
+        """
         for reserved in ["redis.internal.svc", "postgres.default.svc", "minio.cluster.local"]:
             resp = client.post(
                 "/api/user-settings/media-sources",

@@ -70,7 +70,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetAppStores();
   settingsModalStore.reset();
-  capabilities.set({ edition: 'community', loaded: true, capabilities: {}, audience: {} });
+  capabilities.set({
+    edition: 'community',
+    loaded: true,
+    capabilities: {},
+    audience: {},
+    maxUploadBytes: undefined,
+  });
   mockAxios.get.mockResolvedValue({ data: {} });
   mockAxios.post.mockResolvedValue({ data: {} });
   mockUserSettingsApi.getRecordingSettings.mockResolvedValue({
@@ -144,6 +150,7 @@ describe('privilege-gated sidebar sections', () => {
       loaded: true,
       capabilities: { 'asr.user_providers': false, 'prompts.user': false },
       audience: {},
+      maxUploadBytes: undefined,
     });
     setUser('user');
     const { container } = openModal();

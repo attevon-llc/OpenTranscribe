@@ -13,7 +13,7 @@
  * 2. **Never branch on the error text.** Unknown, expired, revoked and
  *    already-used tokens all answer with one identical `detail`; classifying it
  *    client-side would rebuild the token oracle the backend deliberately removed.
- *    Render `invitationErrorMessage(err)` as-is.
+ *    Render `getErrorMessage(err)` (from `$lib/utils/apiError`) as-is.
  */
 import axiosInstance from '../axios';
 
@@ -69,25 +69,6 @@ export interface InvitationCreatePayload {
 export const INVITE_EXPIRY_DEFAULT_HOURS = 72;
 export const INVITE_EXPIRY_MIN_HOURS = 1;
 export const INVITE_EXPIRY_MAX_HOURS = 336;
-
-/**
- * Pull the backend's `detail` out of an axios error as a plain string.
- *
- * Used for the public invite/verify routes, whose `detail` is always a single
- * generic string. Callers render the result verbatim — see rule 2 above.
- */
-export function invitationErrorMessage(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-  if (typeof detail === 'string' && detail.trim() !== '') return detail;
-  if (Array.isArray(detail)) {
-    const joined = detail
-      .map((d: { msg?: string }) => d?.msg ?? String(d))
-      .filter(Boolean)
-      .join('. ');
-    if (joined) return joined;
-  }
-  return fallback;
-}
 
 // ── public (unauthenticated) ────────────────────────────────────────────────
 

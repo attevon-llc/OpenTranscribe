@@ -1,16 +1,19 @@
 /**
- * `downloadStore` tracks in-flight download jobs and drives both the notification
- * panel and toasts off status transitions. These tests focus on the desync risks:
- * starting a second download for a file that's already in flight, and the read-only
- * accessors — which, until fixed here, went through `update()` (firing every
- * subscriber on every read, including when nothing changed) and could return
- * `undefined` instead of `false`/`null` for an untracked file id.
+ * `downloadStore` tracks in-flight download jobs and drives toasts off status
+ * transitions. These tests focus on the desync risks: starting a second download
+ * for a file that's already in flight, and the read-only accessors — which, until
+ * fixed here, went through `update()` (firing every subscriber on every read,
+ * including when nothing changed) and could return `undefined` instead of
+ * `false`/`null` for an untracked file id.
+ *
+ * This store used to also push a persistent notification into `$stores/notifications`
+ * on every transition, but that store's list was rendered by nothing —
+ * `NotificationsPanel.svelte` renders exclusively from `$websocketStore.notifications`
+ * — so those dead writes were deleted (issue G9). Downloads already surface their own
+ * toasts (asserted below) and inline progress via `TranscriptDisplay.svelte`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { get } from 'svelte/store';
-
-const mockAddNotification = vi.hoisted(() => vi.fn());
-vi.mock('./notifications', () => ({ addNotification: mockAddNotification }));
 
 const mockToast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock('./toast', () => ({ toastStore: mockToast }));
@@ -32,7 +35,7 @@ beforeEach(() => {
 });
 
 describe('startDownload', () => {
-  it('starts a fresh download and seeds a "preparing" notification', () => {
+  it('starts a fresh download', () => {
     const started = downloadStore.startDownload('file-1', 'meeting.mp4');
 
     expect(started).toBe(true);
@@ -40,17 +43,14 @@ describe('startDownload', () => {
       status: 'preparing',
       downloadType: 'video_with_subtitles',
     });
-    expect(mockAddNotification).toHaveBeenCalledTimes(1);
   });
 
   it('refuses to start a second download while one is already in flight', () => {
     downloadStore.startDownload('file-1', 'meeting.mp4');
-    mockAddNotification.mockClear();
 
     const startedAgain = downloadStore.startDownload('file-1', 'meeting.mp4');
 
     expect(startedAgain).toBe(false);
-    expect(mockAddNotification).not.toHaveBeenCalled();
     expect(mockToast.warning).toHaveBeenCalled();
   });
 
@@ -77,28 +77,19 @@ describe('updateStatus', () => {
     expect(get(downloadStore)['file-1']).toMatchObject({ status: 'downloading', progress: 42 });
   });
 
-  it('emits identical notification title/message for "processing" and "downloading"', () => {
-    // NOTE: 'processing' and 'downloading' currently emit identical copy - see issue #475
-    // plan for context, this may be intentional (same phase reported at two granularities)
-    // or a copy gap; pinning current behavior, not asserting it's correct.
+  it('is a silent transition (no toast) for "processing" and "downloading"', () => {
+    // Neither status has a toast or notification side effect — only the stored
+    // state changes; UI feedback for these phases is the inline progress bar.
     downloadStore.startDownload('file-1', 'meeting.mp4');
-    mockAddNotification.mockClear();
 
     downloadStore.updateStatus('file-1', 'processing');
+    expect(get(downloadStore)['file-1']).toMatchObject({ status: 'processing' });
+
     downloadStore.updateStatus('file-1', 'downloading');
+    expect(get(downloadStore)['file-1']).toMatchObject({ status: 'downloading' });
 
-    expect(mockAddNotification).toHaveBeenCalledTimes(2);
-    const [processingCall, downloadingCall] = mockAddNotification.mock.calls.map(
-      ([arg]) => arg as { title: string; message: string; data: { download_type: string } }
-    );
-
-    expect(processingCall.title).toBe(downloadingCall.title);
-    expect(processingCall.message).toBe(downloadingCall.message);
-
-    // The only thing that currently distinguishes the two statuses is the
-    // notification's `data.download_type`, not anything user-visible.
-    expect(processingCall.data.download_type).toBe('processing');
-    expect(downloadingCall.data.download_type).toBe('ready');
+    expect(mockToast.success).not.toHaveBeenCalled();
+    expect(mockToast.error).not.toHaveBeenCalled();
   });
 
   describe('completed', () => {
@@ -122,13 +113,11 @@ describe('updateStatus', () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());
 
-    it('notifies, toasts, and removes the entry after the longer error keep-alive window', () => {
+    it('toasts and removes the entry after the longer error keep-alive window', () => {
       downloadStore.startDownload('file-1', 'meeting.mp4');
-      mockAddNotification.mockClear();
 
       downloadStore.updateStatus('file-1', 'error', undefined, 'disk full');
 
-      expect(mockAddNotification).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
       expect(mockToast.error).toHaveBeenCalled();
 
       vi.advanceTimersByTime(59999);

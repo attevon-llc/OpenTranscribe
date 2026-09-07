@@ -92,6 +92,7 @@ def test_settings_declares_every_canonical_name():
     """
     from app.core.config import settings
 
+    assert CANONICAL_NAMES, "no canonical OIDC env names to check"
     for canonical in CANONICAL_NAMES:
         assert hasattr(settings, canonical), f"Settings has no {canonical}"
 
@@ -105,10 +106,12 @@ def test_the_env_config_map_only_uses_canonical_names():
     from app.services.auth_config_service import AuthConfigService
 
     vendor_noun = "key" + "cloak"
+    assert AuthConfigService.ENV_TO_CONFIG_MAPPING, "no env->config mappings to check"
     for env_name, config_key in AuthConfigService.ENV_TO_CONFIG_MAPPING.items():
         assert vendor_noun not in env_name.lower()
         assert vendor_noun not in config_key.lower()
 
+    assert CANONICAL_NAMES, "no canonical OIDC env names to check"
     for canonical in CANONICAL_NAMES:
         assert canonical in AuthConfigService.ENV_TO_CONFIG_MAPPING, (
             f"{canonical} has no config-key mapping, so its DB key can never be "

@@ -123,7 +123,7 @@
     box-shadow: none;
   }
   .tab.active {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     border-bottom-color: var(--primary-color);
     background: transparent;
     transform: none;
@@ -159,6 +159,6 @@
   .tab.active .tab-badge {
     background: rgba(var(--primary-color-rgb), 0.12);
     border-color: transparent;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 </style>

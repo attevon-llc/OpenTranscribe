@@ -158,6 +158,7 @@ def sync_saml_user_to_db(db, saml_data: SAMLUserData, cfg=None):
         HTTPException: 401, when admission is refused or an email-matched link is.
     """
     from app.auth.account_linking import assert_email_link_permitted
+    from app.auth.account_linking import assert_provider_id_link_permitted
     from app.auth.constants import AUTH_TYPE_LOCAL
     from app.auth.saml.admission import assert_saml_admission_permitted
     from app.auth.saml.config import SAMLConfig
@@ -172,6 +173,17 @@ def sync_saml_user_to_db(db, saml_data: SAMLUserData, cfg=None):
     is_admin = bool(saml_data["is_admin"])
 
     user = db.query(User).filter(User.saml_subject == subject).first()
+    if user:
+        # A stored saml_subject is not necessarily a deliberate admin link — JIT
+        # provisioning stamps it on ordinary first logins too, so a replayed or
+        # reassigned NameID still needs the corroboration/super_admin guard.
+        assert_provider_id_link_permitted(
+            user,
+            provider=AUTH_TYPE_SAML,
+            source_identifier=subject,
+            asserted_email=email,
+            failure_detail=LINK_REFUSED_DETAIL,
+        )
     if not user and email:
         user = db.query(User).filter(User.email == email).first()
         if user:

@@ -26,6 +26,18 @@ in the sibling speaker/voiceprint plane, none in this package):
 This package itself never reads a raw kNN score: transcript search ranks by **RRF**, whose
 output is a rank-fusion score, not a similarity. Don't treat `relevance_score` as cosine.
 
+### The conversion applies to WRITES too (issue #674)
+
+A threshold sent *into* OpenSearch — `min_score`, or any filter expressed in score space —
+lives in the same shifted space and must be converted the other way,
+`opensearch_score = (1 + raw_cosine) / 2`. A read-site audit cannot find a bad write, because
+nothing is being read: `min_score=0.75` looked like the auto-accept gate and actually admitted
+everything at raw cosine ≥ 0.50, which `_propagate_profile_assignment` then wrote `verified=True`.
+Both directions are named functions in `app/utils/cosine_space.py` — call them rather than
+open-coding the arithmetic, so the space is in the name. There is exactly one `min_score` write
+against a cosinesimil index today (`../similarity_service.py`, whose parameter is now
+`min_raw_cosine`); every other kNN caller filters in Python *after* converting the score.
+
 ## Purpose
 
 The transcript-chunk search plane: chunk → index → query. The **speaker/voiceprint** plane is
@@ -64,7 +76,10 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
   `settings_service.py` (DB-backed model + dimension), `tenant_scope.py`.
 - `embedding_provenance.py` — which model produced the vectors, and the one-query
   mixed-index survey. `model_switch.py` — the whole model switch, shared by both
-  endpoints. See "Switching the embedding model" below.
+  endpoints, plus the ONE reindex fan-out loop. See "Switching the embedding model"
+  below. `reindex_scope.py` — which owners and which of their files a reindex must
+  cover; `reindex_cancel.py` — the cancel flag's key shape, the fan-out record, and
+  why the flag names a run. See "A reindex is corpus-wide" below.
 
 ## Conventions / patterns
 
@@ -506,6 +521,161 @@ straight into the pipeline. That silently repointed embedding **with no user act
 one deployed model is not a choice and is adopted with a warning (the recovery the fallback
 exists for); more than one returns `None` and leaves search on BM25 — loud, obvious and
 reversible, where a wrong guess is silent and costs a full re-embed.
+
+## A reindex is corpus-wide, in every mode (#627)
+
+**`POST /search/reindex` had the identical defect #437 fixed for the switch, and kept it for
+another release.** All three of its modes dispatched one
+`reindex_transcripts_task.delay(user_id=current_user.id, ...)`, and that coordinator filters
+`MediaFile.user_id == user_id`. So the admin Settings → Search "Reindex all" button repaired the
+pressing admin's own account and left every other user's files exactly as they were — no error,
+no warning, a success toast. The pending-only sweep was scoped twice over (a `user_id ==` in
+Postgres *and* a `{"term": {"user_id": ...}}` beside the chunk-plane clause in the aggregation),
+so it could not even see another account's unindexed files. Naming another user's file UUID
+explicitly did nothing at all.
+
+- **One fan-out loop, not two.** `dispatch_reindex_for_every_owner` grew an optional
+  `file_uuids_by_owner`; it did **not** grow a sibling. `None` still means the whole corpus
+  (every owner of a COMPLETED file, caller first and unconditionally). A mapping means a partial
+  scope, one coordinator per named owner with that owner's files.
+- ⚠️ **An owner with an empty list is DROPPED, never dispatched.**
+  `reindex_transcripts_task` narrows with `if file_uuids:`, so `[]` is indistinguishable from
+  "no filter" and would re-embed that owner's entire account — the opposite of what a
+  pending-only sweep asked for.
+- **`reindex_scope.py` answers the scope question**, the dispatcher answers the fan-out one.
+  `pending_files_by_owner()` distinguishes "nothing indexable exists" from "everything is
+  already indexed"; the endpoint reports them as different messages, because a corpus-wide sweep
+  answering the empty-deployment message would be hiding a survey that saw nothing.
+  `indexed_file_uuids()` **fails open** — an unreachable cluster reads as "nothing is indexed"
+  and queues the corpus rather than nothing. That is the pre-existing direction and the safe one
+  (re-indexing overwrites by deterministic id), but the blast radius is now deployment-wide, so
+  the failure is logged with a traceback.
+- **The gate is `get_current_admin_user`, and it always was.** Corpus-wide work behind a
+  per-user gate would trade a scoping bug for a privilege one;
+  `test_reindex_is_refused_for_a_plain_user` carries the two-owner corpus fixture so a dropped
+  gate shows up as dispatches for *other* owners, not merely a wrong status code.
+- **`POST /search/reindex/stop` cancels the whole run it started** (#691). It was left per-owner
+  by #627 — the caller could only flag their own coordinator while the other owners' ran to
+  completion — because cancelling a fan-out needs the dispatched owner set and nothing persisted
+  it. `dispatch_reindex_for_every_owner` now writes its `{owner: task id}` mapping to
+  `reindex_fanout:{admin id}` as well as returning it, and `stop` flags every owner in it. See
+  the next section for the two properties that make that safe.
+
+## Cancelling a fan-out: the flag NAMES the run (#691)
+
+`reindex_cancel:{user_id}` used to hold `"1"`. It now holds **the coordinator task id being
+cancelled**, and that is not decoration — without it the fix does not work on the deployment
+shape it was written for.
+
+- ⚠️ **The coordinator that most needs to see the flag has not started yet.** The fan-out
+  dispatches the caller first, so with fewer workers than owners the caller's coordinator runs
+  while owners B..N sit in the broker queue. Every coordinator **clears** the cancel flag on
+  entry — a flag left by an *earlier* run would otherwise abort the next legitimate reindex after
+  its first file — so a flag carrying only `"1"` would be erased by the very coordinator it was
+  written for. Naming the run is what distinguishes "I was cancelled before I started" (abort,
+  release the lock, index nothing) from "someone else's flag is lying around" (clear it and
+  proceed). `reindex_cancel.consume_pending_cancel` is that single decision, called once at
+  coordinator entry in place of the old unconditional clear.
+- **A second run started while one is cancelling is unaffected, by construction.** Its
+  coordinators carry fresh task ids, so the first run's flags read as stale and are cleared
+  exactly as they always were. No run can inherit another run's cancellation, and there is no
+  window to reason about.
+- **The record is per triggering admin**, so two admins' concurrent fan-outs cancel separately.
+  Overlapping *owners* are not a hazard either: `reindex_lock:{user_id}` already makes two
+  coordinators for one owner mutually exclusive — the second is skipped, never concurrent.
+- **A caller with no recorded fan-out still cancels their own coordinator**, with the legacy `"1"`
+  value. That is the `search_index_maintenance`-dispatched run, which has no admin-facing run id;
+  its behaviour is unchanged from before #691. Those automatic per-owner runs are deliberately
+  **not** swept up by an admin's stop — the button cancels the run *you* started.
+- **`reindex_fanout:*` is NOT in `app/main.py`'s startup sweep**, unlike `reindex_cancel:*`. The
+  API process restarts independently of the Celery workers still executing the fan-out, and
+  deleting the record takes the only handle `stop` has on those coordinators with it. A 1-hour
+  TTL bounds it instead.
+
+## The bootstrap self-heals, and why it is a beat task (#625)
+
+**The old bootstrap was a one-shot startup task with no retry.** `app/main.py`'s
+`_initialize_neural_search` fired exactly once from `lifespan` via `asyncio.create_task`, and
+every failure arm was a bare `return` after a `logger.warning`. Nothing ever re-entered it.
+
+The specific race: `ml_model_service._REGISTRATION_MAX_WAIT` (300s) is a poll **ceiling on our
+own polling**, not on OpenSearch's registration task, which keeps running server-side after we
+stop looking. A model can finish `REGISTERED, deployed=False` a few minutes after the API
+process gave up, and then sit there forever — nothing re-checks it. Consequence: the ingest
+pipeline never gets created, and every file indexed during that window is written with
+`use_neural=False` / `embedding_model` absent, **permanently** — `search_index_maintenance`
+(above) only finds files with **no** chunks, never files with text-only ones.
+
+**The fix is one idempotent function, two callers**, not two implementations:
+`services/search/neural_bootstrap.py`'s `ensure_neural_search_bootstrap` owns the whole
+sequence (managed-mode adoption, ML settings, local-model scan, download,
+`ensure_model_deployed`, `set_active_model_id`, `ensure_neural_ingest_pipeline`) that used to
+be inlined in `_initialize_neural_search`. It is a **sequencer**, not a state machine —
+`ensure_model_deployed` and `ensure_neural_ingest_pipeline` are already fully
+idempotent/resumable, so this module reimplements none of that.
+
+- **Caller 1: the startup fast path.** `app/main.py::_initialize_neural_search` sleeps
+  `NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS` (15s), then calls the same function once via
+  `run_in_threadpool`, elected with `run_once_per_boot("neural_search_bootstrap")` so N
+  replicas booting together don't all race the same expensive OpenSearch calls. This is no
+  longer the ONLY attempt.
+- **Caller 2: the beat self-heal**, `app/tasks/search_maintenance_task.neural_search_bootstrap_task`,
+  every 10 minutes (`crontab(minute="3,13,23,33,43,53")`). A healthy deployment pays only
+  `neural_search_ready()` — the cheap probe (`get_active_model_id()` +
+  `is_neural_pipeline_available()`, no OpenSearch mutation) — on every tick, forever. Only a
+  miss runs the expensive arm.
+
+⚠️ **Two callers means a race, and the race is DESTRUCTIVE, not just wasteful (issue #625
+follow-up).** `find_model_by_name` matches a model the instant ML Commons creates its meta
+document — state `REGISTERING`, long before there is anything to deploy. `ensure_model_deployed`
+used to see "matched, `deployed` is False" and call `deploy_model` unconditionally. A deploy
+issued into a `REGISTERING` model does not merely fail: OpenSearch's own deploy-failure cleanup
+runs `ModelHelper.deleteFileCache(modelId)`, which **recursively deletes**
+`ml_cache/models_cache/register/<modelId>/` — the exact directory the OTHER caller's in-flight
+download is still writing into. Measured on `opensearch:3.4.0`: the control (no concurrent
+deploy) registers in ~12-18s every time; forcing a second deploy ~3s into registration turns it
+into `REGISTER_MODEL FAILED: <path>.zip (No such file or directory)` plus a `DEPLOY_MODEL`
+NPE (`totalChunks is null`) — the exact pair a real fresh-install rehearsal hit live, in ~6
+seconds. **No poll duration can rescue this**: the files are gone, so there is nothing left to
+wait for. `run_bootstrap_tick`'s 600s backoff after one failure happened to match
+`test-fresh-install.sh`'s 600s poll window exactly, which is why one race guaranteed the
+rehearsal's assertion would fail.
+
+The fix is a state guard, not a lock alone: `ml_model_service._DEPLOYABLE_STATES` /
+`_IN_FLIGHT_STATES` plus `_await_deployable_state()` make `ensure_model_deployed` wait out
+`REGISTERING`/`DEPLOYING` rather than deploying into it, so the destructive path is closed even
+if two callers still overlap. **Defense in depth, not a substitute**: `_initialize_neural_search`
+also takes `search_maintenance_task.NEURAL_BOOTSTRAP_LOCK_KEY` — the SAME lock the beat task
+already held via `@with_task_lock` — so the two callers exclude each other instead of relying
+purely on the state guard to save them. `run_once_per_boot` only ever protected N replicas'
+startup paths from racing EACH OTHER; it did nothing about one replica's own startup path racing
+its own beat tick, which is the race that actually shipped.
+
+**The backoff never terminates.** `run_bootstrap_tick` tracks `attempts` / `next_at` /
+`last_error` in Redis (`neural_bootstrap:*` keys, 24h TTL), doubling from
+`NEURAL_BOOTSTRAP_BASE_BACKOFF_SECONDS` (600s) and saturating at
+`NEURAL_BOOTSTRAP_MAX_BACKOFF_SECONDS` (6h) — it never gives up the way the old one-shot did.
+Redis failure **fails open** (attempts the bootstrap anyway), the same rule
+`app/utils/boot_once.py` documents: duplicated work is safer than skipped work.
+
+**No new `SystemSettings` row for bootstrap health** — matches this package's "derive, don't
+record" rule (see the mixed-index detector above). `bootstrap_status()` re-derives `state` from
+the same cheap probe on every read; only the attempt *history* (genuinely not derivable) lives
+in Redis. `GET /search/models/neural/status`'s `bootstrap` block and the admin Settings → Search
+banner both read it.
+
+**The explicit non-decision: no auto re-embed of the text-only tail.** `bootstrap_status()`
+reports `text_only_chunk_files` — a distinct-file count of chunks with no `embedding_model`
+field, i.e. files indexed while the pipeline was down — but nothing dispatches a reindex for
+them automatically. Same reasoning as the mixed-index detector: dispatching a full re-embed
+from a beat tick is how a health check becomes an outage, and here it's worse, because an
+operator hasn't even chosen to look yet. An operator-triggered re-embed action for exactly this
+count is tracked separately, issue #626 — do not build it as part of this mechanism.
+
+⚠️ **`text_only_chunk_files` counts `EMBEDDING_MODEL_ABSENT`, never `EMBEDDING_MODEL_UNKNOWN`
+("neural").** The `"neural"` sentinel means "embedded, but by a pre-#437 pipeline that never
+recorded provenance" — a much larger, unrelated population on any index older than #437.
+Counting it here would vastly overstate this specific bootstrap-gap defect.
 
 ## A failed index must not report success (#495)
 

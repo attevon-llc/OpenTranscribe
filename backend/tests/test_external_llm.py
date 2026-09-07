@@ -464,15 +464,20 @@ class TestResourceManagement:
             # This should fail
             service.validate_connection()
 
-        # Cleanup should work without errors - this is the main assertion
-        # close() should not raise any exceptions
-        try:
-            service.close()
-            cleanup_success = True
-        except Exception:
-            cleanup_success = False
+        # No try/except around close(): if it raises, the traceback naming the cause is
+        # what you want, not `assert False`. The assertion is on the STATE close()
+        # exists to leave behind — the pinned session and its ExitStack released. A
+        # close() that swallowed its own failure and left the socket held would have
+        # satisfied the old "did not raise" flag exactly.
+        service.close()
 
-        assert cleanup_success, "Service cleanup should not raise exceptions"
+        assert service._pinned is None
+        assert service._pinned_stack is None
+
+        # And it must be idempotent: cleanup is driven from `finally` blocks, which do
+        # run twice when an outer handler also closes.
+        service.close()
+        assert service._pinned is None
 
     def test_multiple_sequential_connections(self):
         """Test handling of multiple sequential connection attempts"""

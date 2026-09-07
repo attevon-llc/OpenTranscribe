@@ -1,4 +1,10 @@
-"""Local PyAnnote diarization provider -- wraps existing GPU diarizer."""
+"""Local diarization provider -- wraps ModelManager.get_diarizer().
+
+Runs local (on-GPU) speaker diarization via ModelManager.get_diarizer(), which uses
+diar-native (the Rust/ONNX "speakrs" engine) as the primary engine and automatically
+falls back to the in-process PyAnnote fork whenever the native sidecar is unavailable
+or fails mid-job (see app/transcription/diarizer_native.py).
+"""
 
 from __future__ import annotations
 
@@ -15,14 +21,24 @@ logger = logging.getLogger(__name__)
 
 
 class LocalDiarizationProvider(DiarizationProvider):
-    """Run PyAnnote speaker diarization on local GPU."""
+    """Run local speaker diarization on GPU via diar-native, with automatic PyAnnote fallback."""
 
     @property
     def provider_name(self) -> str:
         return "local"
 
     def supports_speaker_count(self) -> bool:
-        return True
+        """Whether the engine actually serving local diarization honors speaker-count hints.
+
+        Only the in-process PyAnnote fork does: it passes num_speakers/min_speakers/
+        max_speakers into the pipeline. The native sidecar runs community-1 auto speaker
+        counting — ``NativeSpeakerDiarizer.diarize`` (``diarizer_native.py``) logs a warning
+        and ignores an explicit ``num_speakers``, and silently drops min/max entirely — so
+        answering True unconditionally overstated what a caller could rely on.
+        """
+        from app.transcription.config import TranscriptionConfig
+
+        return TranscriptionConfig._resolve_diarizer_backend() != "native"
 
     def validate_connection(self) -> tuple[bool, str, float]:
         """Check CUDA availability as a proxy for local diarization readiness."""
@@ -45,7 +61,7 @@ class LocalDiarizationProvider(DiarizationProvider):
         config: DiarizeConfig,
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> DiarizeResult:
-        """Run PyAnnote diarization using the existing model manager.
+        """Run local diarization using the model manager (diar-native, PyAnnote fallback).
 
         Args:
             audio_path: Path to the audio file on disk.

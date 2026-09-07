@@ -323,7 +323,7 @@
     padding: 8px 16px;
     border-radius: 8px;
     border: none;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     font-size: 14px;
     font-weight: 500;
@@ -500,7 +500,7 @@
     justify-content: space-between;
     gap: 8px;
     padding: 8px 16px;
-    background: color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
+    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 10%, transparent);
     border: 1px solid var(--primary-color, #3b82f6);
     border-radius: 6px;
     margin-bottom: 12px;

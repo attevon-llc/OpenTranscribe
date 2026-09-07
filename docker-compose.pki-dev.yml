@@ -46,11 +46,16 @@ services:
     environment:
       - NODE_ENV=production
 
-  # Use local backend build
+  # Use local backend build. There is no backend/Dockerfile.dev — dev and prod
+  # share Dockerfile.prod (backend/CLAUDE.md); only the frontend has a
+  # Dockerfile.dev, for Vite HMR. This block used to reference the
+  # nonexistent file and failed `up --build` with "open Dockerfile.dev: no
+  # such file or directory" — undetected because opentr.sh refused --with-pki
+  # in dev mode outright, so this overlay was never actually built.
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app
     environment:

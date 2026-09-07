@@ -27,6 +27,10 @@ CRITICAL REQUIREMENTS:
 5. Identify content-appropriate action items, decisions, or key takeaways
 6. Use clear, professional language appropriate for the detected content type
 7. Your response must be valid JSON matching the exact structure specified
+8. **Escaping**: If any string value needs to include a double quote character
+   (") — including when quoting someone's speech, or a measurement written
+   with an inch/foot mark like 6'6" — you MUST escape it as \" inside the
+   JSON string. Never place a literal, unescaped " inside a JSON string value.
 
 IMPORTANT: The transcript has already been processed with speaker embedding matching. Use the speaker information provided in SPEAKER INFORMATION section - do NOT attempt to identify or rename speakers. Focus on analyzing content and extracting insights.
 </task_instructions>
@@ -380,6 +384,11 @@ CRITICAL REQUIREMENTS:
 1. Use clear, professional language appropriate for the answer information
 2. Be gender neutral in the answer summaries
 3. Your response must be valid JSON matching the exact structure specified
+4. **Escaping**: Questions are repeated verbatim, so if a question or answer
+   needs to include a double quote character (") — including quoted speech or
+   a measurement written with an inch/foot mark like 6'6" — you MUST escape it
+   as \" inside the JSON string. Never place a literal, unescaped " inside a
+   JSON string value.
 
 IMPORTANT: The transcript has already been processed with speaker embedding matching. Use the speaker information provided in SPEAKER INFORMATION section - do NOT attempt to identify or rename speakers. Focus on analyzing content and extracting insights.
 </task_instructions>

@@ -483,7 +483,7 @@
 
   .action-box.running .action-icon {
     background: rgba(var(--primary-color-rgb), 0.15);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .action-content {
@@ -531,7 +531,7 @@
   .progress-percent {
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .progress-bar-container {
@@ -543,7 +543,7 @@
 
   .progress-bar-fill {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     border-radius: 4px;
     transition: width 0.3s ease;
   }

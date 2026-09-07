@@ -267,6 +267,27 @@ someone else's product.
 
 ## Gotchas
 
+- **`cookies.py`'s `_SECURE` module constant is computed once at import time from
+  `settings.is_hardened` and `settings.ALLOW_INSECURE_COOKIES`, in that order — hardened first,
+  override second.** A hardened deployment (`ENVIRONMENT` unset or `production`, the default)
+  sets `Secure` on every auth cookie, which a browser silently drops when sent over plain HTTP to
+  anything other than `localhost`/`127.0.0.1`. That made a LAN-IP login (a homelab/small-business
+  deployment with no TLS-terminating reverse proxy, e.g. `http://10.10.10.20:5173`) answer 200
+  with a real `access_token` and then never actually hold a session — the next request 401s,
+  which looks exactly like a wrong password and gives no hint why. `ALLOW_INSECURE_COOKIES`
+  (default `false`, `core/config.py`) is the one explicit, narrow opt-out; enabling it on a
+  hardened deployment logs a `logging.warning` at import time so the relaxation is visible in
+  the boot log, not silent. Because it is a module-level constant, a test that needs a different
+  combination must `importlib.reload(cookies)` after monkeypatching `settings` — see
+  `tests/unit/test_cookie_secure_flag.py`. Self-signed HTTPS, a real reverse proxy, and future
+  cloud/EC2 deployments all already work under the default and need no override — `Secure` only
+  requires the `https:` scheme, not a browser-trusted CA.
+  `stores/auth.ts:login()` on the frontend treats a failed `/auth/me` immediately after a 200
+  `/auth/login` as this exact failure mode (the cookie never came back) and reports
+  `auth.error.sessionCookieRejected` instead of a generic failure — safe to be specific there
+  because that branch is only reachable after the password was already verified correct, so it
+  tells a genuine operator something actionable without giving an unauthenticated attacker any
+  signal they didn't already have.
 - **Every token carries a `type` claim and every consumer verifies it.** Access, refresh and
   MFA tokens are signed with the same key, so `type` is the only thing separating them —
   without the check the MFA half-token (handed out BEFORE the second factor) was a full
@@ -350,9 +371,15 @@ someone else's product.
 - **Negative login tests MUST use a nonexistent account** — never a wrong password for
   `admin@example.com`. Lockout is progressive per-account and poisons the whole suite.
 - **Dev relaxes auth limits** (`docker-compose.override.yml`: `RATE_LIMIT_AUTH_PER_MINUTE`
-  120, `ACCOUNT_LOCKOUT_THRESHOLD` 100, `..._DURATION_MINUTES` 1; `DEV_*` tunable in `.env`).
-  Prod keeps strict values — the override is never loaded there. Env changes need a
-  container **recreate**, not `restart-backend`.
+  120, `ACCOUNT_LOCKOUT_THRESHOLD` 100, `..._DURATION_MINUTES` 1, and — since issue #632 —
+  `MAX_CONCURRENT_SESSIONS` 1000 (exactly `auth_config.py`'s `le=1000` ceiling, so the relaxed
+  value stays settable through the admin UI); all `DEV_*` tunable in `.env`). Prod keeps strict
+  values — the override is never loaded there. Env changes need a container **recreate**, not
+  `restart-backend`. `MAX_CONCURRENT_SESSIONS` is the one exception to "each var lives on the
+  service that reads it": it sits on the `x-dev-environment` **anchor**, not on `backend`
+  alone, because `celery-cpu-worker` runs the nightly `session.cap_sweep` (utility queue) —
+  if that process and `backend` disagreed about the cap, the sweep would silently evict the
+  dev stack's sessions back down to 5 every night.
 - Local IdPs for testing: `--with-ldap-test` (LDAP :3890, UI :17170, `admin`/`admin_password`),
   `--with-keycloak-test` (a Keycloak to test OIDC against, :8180, `admin`/`admin`),
   `--with-authentik-test` (an Authentik to test OIDC against, :9022, bootstrap

@@ -282,37 +282,37 @@
   }
 
   /* Dark mode adjustments */
-  :global(.dark) .upload-item {
+  :global([data-theme='dark']) .upload-item {
     background: var(--surface-color);
     border-color: var(--border-color);
   }
 
-  :global(.dark) .upload-name {
+  :global([data-theme='dark']) .upload-name {
     color: var(--text-primary);
   }
 
-  :global(.dark) .upload-meta {
+  :global([data-theme='dark']) .upload-meta {
     color: var(--text-secondary);
   }
 
-  :global(.dark) .upload-dedup-skipped {
+  :global([data-theme='dark']) .upload-dedup-skipped {
     color: #fcd34d;
     background: rgba(245, 158, 11, 0.18);
   }
 
-  :global(.dark) .action-btn {
+  :global([data-theme='dark']) .action-btn {
     color: var(--text-secondary);
   }
 
-  :global(.dark) .action-btn:hover {
+  :global([data-theme='dark']) .action-btn:hover {
     background: var(--hover-color);
   }
 
-  :global(.dark) .progress-bar {
+  :global([data-theme='dark']) .progress-bar {
     background: var(--border-color);
   }
 
-  :global(.dark) .error-message {
+  :global([data-theme='dark']) .error-message {
     background: rgba(239, 68, 68, 0.15);
     border-color: rgba(239, 68, 68, 0.3);
     color: #fca5a5;

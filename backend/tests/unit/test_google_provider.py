@@ -292,3 +292,47 @@ def test_entire_audio_file_is_read_into_memory_before_being_sent(tmp_path):
     sent_audio = call_kwargs["audio"]
     assert sent_audio.content == payload
     assert len(sent_audio.content) == len(payload)
+
+
+# ── Rate-limit taxonomy (issue Lane 5) ────────────────────────────────────────
+
+
+def test_resource_exhausted_is_classified_as_asr_rate_limited(tmp_path):
+    from google.api_core.exceptions import ResourceExhausted
+
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _write_audio(tmp_path)
+    provider = _provider()
+    client = MagicMock()
+    client.long_running_recognize.side_effect = ResourceExhausted("quota exceeded")
+
+    with (
+        patch.object(speech, "SpeechClient", return_value=client),
+        pytest.raises(ASRRateLimitedError) as excinfo,
+    ):
+        provider.transcribe(audio_path, _config())
+
+    assert excinfo.value.provider == "google"
+
+
+def test_permission_denied_stays_a_plain_runtime_error(tmp_path):
+    """Negative control: a non-throttle google.api_core error must NOT be classified as
+    retryable.
+    """
+    from google.api_core.exceptions import PermissionDenied
+
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _write_audio(tmp_path)
+    provider = _provider()
+    client = MagicMock()
+    client.long_running_recognize.side_effect = PermissionDenied("access denied")
+
+    with (
+        patch.object(speech, "SpeechClient", return_value=client),
+        pytest.raises(RuntimeError, match="Google Cloud Speech transcription failed") as excinfo,
+    ):
+        provider.transcribe(audio_path, _config())
+
+    assert not isinstance(excinfo.value, ASRRateLimitedError)

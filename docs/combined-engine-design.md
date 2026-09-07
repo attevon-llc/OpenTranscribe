@@ -81,7 +81,7 @@ Wraps `TranscriptionConfig` and adds engine-level settings:
 
 | Field | Default | Purpose |
 |-------|---------|---------|
-| `shared_volume_path` | `/tmp/transcription` | Directory for the shared-volume WAV |
+| `shared_volume_path` | `/scratch/opentranscribe/engine` | Directory for the shared-volume WAV (per-task namespace on `pipeline_scratch`) |
 | `transcriber_backend` | `faster_whisper` | Backend registry key |
 | `diarizer_backend` | `native` | Backend registry key (`native` primary, `pyannote` failover) |
 | `gpu_split` | `False` | Multi-GPU split (Phase 4) |
@@ -109,9 +109,11 @@ All three handoff types are JSON-serializable:
 
 ## Shared-Volume WAV (Opt-3A)
 
-Stage 1 writes the decoded 16 kHz WAV to a Docker-named volume (`transcription-temp`) mounted at
-`ENGINE_SHARED_VOLUME_PATH` (default `/tmp/transcription`) on both CPU and GPU workers. Stage 2
-`mmap`-loads the file via `load_from_shared_volume()`, avoiding a MinIO round-trip (saves 2–5 s).
+Stage 1 writes the decoded 16 kHz WAV to the single `pipeline_scratch` volume, under its
+`engine/<safe_task_id>.wav` namespace (`ENGINE_SHARED_VOLUME_PATH`, default
+`/scratch/opentranscribe/engine`) — an `os.link` of the per-file `<file_uuid>/audio.wav` copy
+already staged in the same volume, so no bytes are actually copied. Stage 2 `mmap`-loads the
+file via `load_from_shared_volume()`, avoiding a MinIO round-trip (saves 2–5 s).
 
 Fallback: if the write fails (permissions, volume not mounted), `local_wav_path` is set to `""`
 and Stage 2 falls back to downloading from MinIO. No task failure occurs.
@@ -120,11 +122,14 @@ The volume definition in `docker-compose.yml`:
 
 ```yaml
 volumes:
-  transcription-temp:
+  pipeline_scratch:
     driver: local
 ```
 
-Mounted in both `celery-worker` (GPU) and `celery-cpu-worker` (CPU) services.
+Mounted at `/scratch/opentranscribe` on every worker that touches the pipeline (`celery-worker`,
+`celery-cpu-worker`, `celery-cloud-asr-worker`, `celery-embedding-worker`, `backend`, and more) —
+one volume, three namespaces (`<file_uuid>/`, `engine/`, `diar/`), rather than a separate
+per-purpose volume.
 
 ---
 
@@ -190,7 +195,7 @@ via `clean_segments()`, and calls `assign_speakers()` for the final segment-spea
 | `ENGINE_TRANSCRIBER_BACKEND` | `faster_whisper` | Transcriber backend key |
 | `ENGINE_DIARIZER_BACKEND` | `native` | Diarizer backend key (`native` primary, `pyannote` failover) |
 | `ENGINE_GPU_SPLIT` | `false` | Enable Phase 4 multi-GPU split |
-| `ENGINE_SHARED_VOLUME_PATH` | `/tmp/transcription` | Shared-volume mount point |
+| `ENGINE_SHARED_VOLUME_PATH` | `/scratch/opentranscribe/engine` | Shared-volume mount point (per-task namespace on `pipeline_scratch`) |
 | `ENGINE_PRECOMPUTE_VAD` | `false` | Pre-run Silero VAD in Stage 1 (Phase 3) |
 
 ---

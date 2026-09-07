@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
 
+from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
+from app.core.constants import resolve_engine_shared_volume_path
+
 if TYPE_CHECKING:
     from app.transcription.config import TranscriptionConfig
 
@@ -34,8 +37,8 @@ class EngineConfig:
     boundary_acoustic_cosine_margin: float = 0.05
     boundary_acoustic_max_word_dur: float = 1.0
 
-    # Shared-volume handoff path (Opt-3A) — /tmp is always world-writable in containers
-    shared_volume_path: str = "/tmp"  # noqa: S108  # nosec B108
+    # Shared-volume handoff path (Opt-3A) — the engine/ namespace of pipeline_scratch
+    shared_volume_path: str = ENGINE_SHARED_VOLUME_DEFAULT
 
     # Internal: wrapped TranscriptionConfig (set by from_environment)
     _transcription_config: TranscriptionConfig | None = field(default=None, repr=False)
@@ -125,9 +128,7 @@ class EngineConfig:
                 1.0,
             ),
             shared_volume_path=(
-                vals.get("engine.shared_volume_path")
-                or os.getenv("ENGINE_SHARED_VOLUME_PATH")
-                or "/tmp"  # noqa: S108  # nosec B108
+                vals.get("engine.shared_volume_path") or resolve_engine_shared_volume_path()
             ),
         )
 
@@ -163,7 +164,7 @@ class EngineConfig:
             boundary_acoustic_max_word_dur=cls._db_env_float(
                 None, "", "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR", 1.0
             ),
-            shared_volume_path=os.getenv("ENGINE_SHARED_VOLUME_PATH", "/tmp"),  # noqa: S108  # nosec B108
+            shared_volume_path=resolve_engine_shared_volume_path(),
         )
         for k, v in engine_overrides.items():
             if hasattr(engine, k):
@@ -250,7 +251,7 @@ class EngineConfig:
             ),
             boundary_acoustic_cosine_margin=snapshot.get("boundary_acoustic_cosine_margin", 0.05),
             boundary_acoustic_max_word_dur=snapshot.get("boundary_acoustic_max_word_dur", 1.0),
-            shared_volume_path=snapshot.get("shared_volume_path", "/tmp"),  # noqa: S108  # nosec B108
+            shared_volume_path=snapshot.get("shared_volume_path", ENGINE_SHARED_VOLUME_DEFAULT),
         )
         engine._transcription_config = tc
         return engine

@@ -128,23 +128,8 @@
     color: var(--text-muted);
   }
 
-  /* Search highlighting styles */
-  :global(.search-match) {
-    background-color: #ffeb3b;
-    color: #000;
-    padding: 0.1rem 0.2rem;
-    border-radius: 3px;
-    font-weight: 500;
-  }
-
-  :global(.current-match) {
-    background-color: #ff9800;
-    color: #000;
-    padding: 0.1rem 0.2rem;
-    border-radius: 3px;
-    font-weight: 600;
-    box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.3);
-  }
+  /* Search highlighting: .search-match / .current-match live in src/styles/search.css
+     (shared across TranscriptModal, SummaryDisplay, TopicsList — see G7). */
 
   @media (max-width: 768px) {
     .topic-item {

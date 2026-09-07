@@ -32,6 +32,23 @@ services:
       dockerfile: Dockerfile.blackwell
     image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
 
+  # Deliberately NO `diar-native` entry here. A retag of it USED to live in this file
+  # (`image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}`),
+  # with a comment claiming it kept the sidecar on the same Blackwell build as
+  # celery-worker below. It could not deliver that: both opentr.sh (add_gpu_overlay,
+  # then add_diar_native_overlay) and opentranscribe.sh (get_compose_files) always append
+  # this blackwell overlay BEFORE docker-compose.diar-native.yml, and compose's last-file-
+  # wins merge means diar-native.yml's own `image:` key always overrides whatever this
+  # file set — verified: resolving the full chain up to and including diar-native.yml
+  # gave `celery-worker` -> `:blackwell` but `diar-native` -> `:latest`, the exact
+  # mismatch the removed comment claimed was fixed. A compose-side retag genuinely cannot
+  # win that ordering; reordering the two `-f` appends would require editing opentr.sh /
+  # opentranscribe.sh, out of scope for this file. The real fix is on the shell side:
+  # exporting `DIAR_NATIVE_IMAGE=...:${OT_BLACKWELL_IMAGE_TAG:-blackwell}` before compose
+  # runs, so docker-compose.diar-native.yml's own `${DIAR_NATIVE_IMAGE:-...}` fallback
+  # resolves to the Blackwell tag regardless of file order (tracked separately). Leaving
+  # an inert retag with a comment asserting it worked was worse than no entry at all.
+
   # Override GPU worker to use Blackwell image with SM_121 patches
   celery-worker:
     build:
@@ -67,10 +84,15 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/user/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/user/.cache/sentence-transformers
       - ${MODEL_CACHE_DIR:-./models}/yt-dlp:/home/user/.cache/yt-dlp
-      # Temp directory for processing intermediate files
-      - ${TEMP_DIR:-./temp}:/app/temp
+      # Temp directory for processing intermediate files. TEMP_DIR_HOST is the
+      # HOST-side bind source — distinct from the base stack's in-container
+      # TEMP_DIR (hardcoded to /app/temp there, not user-configurable).
+      - ${TEMP_DIR_HOST:-./temp}:/app/temp
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcription@$$HOSTNAME"]
+      # Pool-aware healthcheck (issue #631) — mirrors the base stack. Threads pool:
+      # a stats reply from MainProcess is the same proof `inspect ping` gave. Prefork
+      # (GPU_WORKER_POOL=prefork): the child-process and respawn-storm checks apply.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-transcription@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3

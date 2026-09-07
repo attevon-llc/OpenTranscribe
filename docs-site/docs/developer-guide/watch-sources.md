@@ -71,14 +71,14 @@ Dedup is three layers, all on the imohash content fingerprint:
 3. **Cross-pipeline** — `utils/file_hash.check_duplicate_by_imohash` against `media_file.imohash`
    (manual uploads, URL imports, prior watch imports).
 
-:::warning Fixed in v0.6.0
+:::warning[Fixed in v0.6.0]
 Layer 2 filtered `watch_source_id != source.id`, excluding the source being scanned — so one
 source holding the same recording under two names imported it twice, and
 `SkipReason.DUPLICATE_SAME_SOURCE` was defined but produced by no code path. Regression:
 `backend/tests/unit/test_watch_source_dedup.py`.
 :::
 
-:::note Documents are not covered by layer 3
+:::note[Documents are not covered by layer 3]
 `Document` carries a `file_hash` (an imohash, written by both ingest paths) that nothing reads,
 so a watch-imported document is deduplicated against nothing outside its own source. Tracked in
 [#546](https://github.com/attevon-llc/OpenTranscribe/issues/546) for the document-ingestion
@@ -89,7 +89,7 @@ branch — the column exists, so no migration is needed.
 plus a seekable MinIO ranged-read shim, so a fingerprint is computed from ~3 small windows
 regardless of file size and is identical whether the file is local, a stream, or a MinIO object.
 
-:::note Breaking change
+:::note[Breaking change]
 Switching from the previous hand-rolled blake2b stand-in to the `imohash` package changes every
 existing `media_file.imohash`. `tasks/imohash_recompute.py` runs once on first startup (gated by
 the `imohash_package_recompute_complete` system-settings flag, dispatched from `main.py` lifespan)
@@ -125,7 +125,7 @@ Multi-part detection (`services/watch_sources/multipart.py`) groups files by a c
 regex (default `^(.+?)_P(\d{3})(\.[^.]+)$`) within a time window; incomplete groups wait a
 bounded number of scans before stitching what arrived.
 
-:::warning `retry_count` means two things — fixed in v0.6.0
+:::warning[`retry_count` means two things — fixed in v0.6.0]
 `_handle_group` uses `retry_count` as the **wait-scan counter**, while `_record_error`
 increments the same column as a **failure count**. A file that had failed twice as a standalone
 import and later joined a group therefore entered the wait already "aged": with the default

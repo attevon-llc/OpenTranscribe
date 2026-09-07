@@ -18,7 +18,9 @@ source "${SCRIPT_DIR}/offline-common.sh"
 
 # Load .env file if it exists and HUGGINGFACE_TOKEN is not already set
 if [ -z "$HUGGINGFACE_TOKEN" ] && [ -f .env ]; then
-    HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" .env | cut -d'=' -f2)
+    # python-dotenv, not grep/cut (issue #590) -- see gpu-scale-smoke.sh's read_env
+    # for the inline-comment corruption class this replaces.
+    HUGGINGFACE_TOKEN=$(python3 "${SCRIPT_DIR}/lib/env_reader.py" .env HUGGINGFACE_TOKEN)
     export HUGGINGFACE_TOKEN
 fi
 
@@ -145,14 +147,36 @@ extract_docker_images() {
 
     print_info "Source: docker-compose.yml (single source of truth)"
 
+    # DECISION (issue #655): the diar-native sidecar image is intentionally NOT
+    # extracted or packaged here. docker-compose.diar-native.yml is never copied
+    # into the installer package (see the "Copying docker-compose configuration"
+    # step below) and there is no overlay hook in run_opentranscribe.bat either.
+    # Windows installs are PyAnnote-diarization-only by design -- see
+    # windows-installer/INSTALL-WINDOWS.md's HuggingFace token step. If native
+    # diarization on Windows is ever built, it needs both a `docker save` of the
+    # diar-native image here AND an overlay hook in run_opentranscribe.bat.
+
     # Get infrastructure images from main docker-compose.yml
     mapfile -t INFRASTRUCTURE_IMAGES < <(extract_infrastructure_images)
 
     # Add production application images
+    #
+    # OT_IMAGE_TAG (issue #781/N7), unset defaults to "latest" — today's behaviour, unchanged.
+    # Same fix as build-offline-package.sh's twin: without it, a developer packaging v0.5.0
+    # after v0.6.0 has shipped has no way to pin which version gets pulled/saved here.
+    #
+    # ⚠️ Unlike the Linux packager, copy_configuration() below does not re-sync image tags in
+    # the copied docker-compose.offline.yml (it has no such loop even for infrastructure
+    # images today). So setting OT_IMAGE_TAG for a Windows build pins what gets pulled/saved,
+    # but the packaged compose file still asks for `:latest` until that sync is added — a
+    # narrower version of the exact bug this fixes on Linux. Left as a known gap rather than
+    # silently "fixed" here: extending copy_configuration was out of this change's scope
+    # (issue #781 is the SBOM/checksum gate; N7 is one adjacent fix, not a Windows packaging
+    # overhaul), and the default (OT_IMAGE_TAG unset) is unaffected either way.
     APPLICATION_IMAGES=(
-        "davidamacey/opentranscribe-backend:latest"
-        "davidamacey/opentranscribe-frontend:latest"
-        "davidamacey/opentranscribe-docs:latest"
+        "davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}"
+        "davidamacey/opentranscribe-frontend:${OT_IMAGE_TAG:-latest}"
+        "davidamacey/opentranscribe-docs:${OT_IMAGE_TAG:-latest}"
     )
 
     # Combine all images
@@ -250,7 +274,7 @@ download_models() {
         $gpu_args \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${WHISPER_MODEL:-large-v3-turbo}" \
-        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
+        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}" \
         -e USE_GPU="${USE_GPU:-true}" \
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
         -e OPENSEARCH_MODELS="${OPENSEARCH_MODELS:-}" \

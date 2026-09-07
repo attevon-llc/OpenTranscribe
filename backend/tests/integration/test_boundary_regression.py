@@ -155,6 +155,13 @@ def test_fixture_regression(fixture_path: Path | None) -> None:
     bleed islands, and collar-0 DER is unchanged by smoothing.
     """
     if fixture_path is None:
+        # _discover_fixtures() already makes this a VISIBLE skip (a pytest.mark.skip
+        # parametrize case), never a silent pass — but assert that explicitly so the
+        # intent survives a future refactor of the parametrize wiring (issue #669).
+        assert not _discover_fixtures(), (
+            "fixture_path is None but fixtures ARE present on disk — the parametrize "
+            "wiring is broken and this test is skipping when it should be running"
+        )
         pytest.skip("no *.rawinfer.json fixtures present in fixtures/boundary/")
     assert fixture_path is not None  # narrow Path | None for the type checker
 

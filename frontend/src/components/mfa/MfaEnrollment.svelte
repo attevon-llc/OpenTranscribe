@@ -284,7 +284,7 @@
     padding: 0;
     background: none;
     border: none;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.85rem;
     text-decoration: underline;
     cursor: pointer;

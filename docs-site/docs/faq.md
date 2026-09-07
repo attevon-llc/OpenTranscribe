@@ -57,8 +57,12 @@ No, but **highly recommended** for practical use. CPU-only processing is very sl
 
 ### Can I use Apple Silicon (M1/M2/M3)?
 
-Yes! OpenTranscribe supports Apple Silicon Macs with MPS (Metal Performance Shaders) acceleration. Performance is between CPU and NVIDIA GPU:
-- **M2 Max**: 1-hour video → ~15-20 minutes
+Yes, with the `--lite` (CPU-only) image — but **not** with MPS acceleration. Docker
+Desktop on macOS has no Metal/GPU passthrough into the Linux VM the container runs
+in, so every container on Apple Silicon is CPU-only regardless of the host chip's
+MPS capability. Expect CPU-class timings, not GPU-class ones — see the CPU figures
+above. (An MPS code path exists in the diarization engine, but it is unreachable in
+every containerized deployment; see `backend/app/transcription/CLAUDE.md`.)
 
 ### What GPUs are supported?
 
@@ -74,9 +78,7 @@ AMD GPUs are not currently supported (ROCm support planned for future).
 1. Create free account at [huggingface.co](https://huggingface.co)
 2. Go to [Settings → Access Tokens](https://huggingface.co/settings/tokens)
 3. Click "New token", select "Read" access
-4. Accept agreements for:
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+4. Accept the agreement for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — this is the only repo OpenTranscribe actually gates on (auto-approved, CC-BY-4.0)
 5. Copy token to your `.env` file
 
 See [HuggingFace Setup](./installation/huggingface-setup.md) for detailed instructions.
@@ -435,7 +437,7 @@ It depends on the store:
   search and AI features require the backend to read it. PostgreSQL has no built-in at-rest
   encryption, so use **full-disk encryption** (LUKS/dm-crypt, FileVault, BitLocker) or place
   the data volumes on an encrypted filesystem.
-- **Backups**: use `./opentr.sh backup --encrypt` for GPG AES-256 encrypted dumps.
+- **Backups**: use `./opentranscribe.sh backup --encrypt` for GPG AES-256 encrypted dumps.
 
 See [Security Hardening](operations/security-hardening.md) for the complete picture.
 

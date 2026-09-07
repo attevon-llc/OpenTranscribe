@@ -270,3 +270,26 @@ def test_profile_id_belonging_to_another_user_resolves_to_empty(
     )
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_t4_leak_the_general_listing_excludes_a_quarantined_speaker(
+    client, db_session, normal_user, user_token_headers
+):
+    """Adversarial-review follow-up: T4's quarantine check was applied only to
+    ``_get_unique_speakers_for_filter`` (``for_filter=True``). The GENERAL
+    listing (``GET /speakers`` with no ``for_filter``/``file_uuid``) scoped
+    only by ``Speaker.user_id == current_user.id`` with no quarantine
+    exclusion at all — so a caller's OWN quarantined file's speakers stayed
+    fully visible through the default listing, even though the file itself
+    404s everywhere else."""
+    quarantined = _make_file(db_session, normal_user, title="Quarantined", quarantined=True)
+    _add_speaker(db_session, quarantined, normal_user, display_name="Quinn Zhao")
+    visible = _make_file(db_session, normal_user, title="Visible")
+    _add_speaker(db_session, visible, normal_user, display_name="Priya Patel")
+
+    response = client.get("/api/speakers", headers=user_token_headers)
+
+    assert response.status_code == 200
+    names = {row["display_name"] for row in response.json()}
+    assert "Quinn Zhao" not in names
+    assert "Priya Patel" in names

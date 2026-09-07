@@ -117,6 +117,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Developer Guide',
       items: [
+        'developer-guide/roadmap',
         'developer-guide/architecture',
         'developer-guide/diarization-boundary-correction',
         'developer-guide/watch-sources',
@@ -127,6 +128,7 @@ const sidebars: SidebarsConfig = {
         'developer-guide/rag-prior-art-and-packages',
         'developer-guide/contributing',
         'developer-guide/testing',
+        'developer-guide/full-test-matrix',
         'developer-guide/releasing',
         'developer-guide/ffmpeg-wasm-build',
       ],

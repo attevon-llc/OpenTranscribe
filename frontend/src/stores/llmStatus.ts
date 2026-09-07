@@ -162,11 +162,6 @@ export const llmStatusStore = createLLMStatusStore();
 export const isLLMAvailable = derived(llmStatusStore, ($llmStatus) => {
   return $llmStatus.available;
 });
-export const isLLMChecking = derived(llmStatusStore, ($llmStatus) => $llmStatus.checking);
-export const llmStatusMessage = derived(
-  llmStatusStore,
-  ($llmStatus) => $llmStatus.status?.message || ''
-);
 export const llmProvider = derived(
   llmStatusStore,
   ($llmStatus) => $llmStatus.status?.provider || null

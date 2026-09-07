@@ -13,12 +13,21 @@
   import SummaryModal from '$components/SummaryModal.svelte';
   import FilterSidebar from '$components/FilterSidebar.svelte';
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
-  import SearchSortDropdown from '$components/search/SearchSortDropdown.svelte';
+  import SortDropdown, { type SortOption } from '$components/ui/SortDropdown.svelte';
   import FloatingPreviewPlayer from '$components/FloatingPreviewPlayer.svelte';
   import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import { prefetchNextSearchPage } from '$lib/prefetch';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
+
+  const searchSortOptions: SortOption[] = [
+    { value: 'relevance', label: 'search.sort.relevance', noDirection: true },
+    { value: 'upload_time', label: 'gallery.sort.uploadDate' },
+    { value: 'completed_at', label: 'gallery.sort.completedDate' },
+    { value: 'filename', label: 'gallery.sort.filename' },
+    { value: 'duration', label: 'gallery.sort.duration' },
+    { value: 'file_size', label: 'gallery.sort.fileSize' },
+  ];
 
   let searchInput = '';
   let previewMediaUrl = '';
@@ -675,9 +684,12 @@
                   {$t('search.exactMode')}
                 </button>
               </div>
-              <SearchSortDropdown
+              <SortDropdown
+                sortOptions={searchSortOptions}
                 sortBy={$searchStore.sortBy}
                 sortOrder={$searchStore.sortOrder}
+                ariaLabelKey="search.sort.label"
+                align="right"
                 on:change={handleSortChange}
               />
             </div>
@@ -988,7 +1000,7 @@
     height: 44px;
     padding: 0 1rem;
     flex-shrink: 0;
-    background-color: var(--primary-color, #3b82f6);
+    background-color: var(--primary-color, var(--primary-color));
     color: white;
     border: none;
     border-radius: 6px;
@@ -1192,7 +1204,7 @@
     font-size: 0.9rem;
   }
 
-  :global(.dark) .no-keyword-notice {
+  :global([data-theme='dark']) .no-keyword-notice {
     background: rgba(245, 158, 11, 0.1);
     color: #fbbf24;
   }
@@ -1290,7 +1302,7 @@
     color: #059669;
   }
 
-  :global(.dark) .neural-status.active {
+  :global([data-theme='dark']) .neural-status.active {
     background: rgba(16, 185, 129, 0.1);
     border-color: rgba(16, 185, 129, 0.3);
     color: #34d399;
@@ -1302,7 +1314,7 @@
     color: #d97706;
   }
 
-  :global(.dark) .neural-status:not(.active) {
+  :global([data-theme='dark']) .neural-status:not(.active) {
     background: rgba(245, 158, 11, 0.1);
     border-color: rgba(245, 158, 11, 0.3);
     color: #fbbf24;

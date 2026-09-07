@@ -2,7 +2,18 @@
 # DOCS_BASE_URL=/docs/ ensures all internal Docusaurus links use /docs/ prefix
 # so the site works correctly when proxied by the frontend at /docs/
 
-FROM node:20-alpine AS build
+# Node 26, not 20 or 24 (issue #780). Node 20 went EOL 2026-04-30 — this build stage was
+# shipping on a dead runtime while frontend/Dockerfile.prod had already moved to node:26-alpine.
+# Node 24 hits maintenance-LTS 2026-10-20; Node 26 hits Active LTS 2026-10-28, seven weeks out,
+# so picking 24 here means redoing this before year-end for no benefit. Docusaurus 3.10.2
+# declares `engines.node >=20.0` — a floor with no ceiling — so nothing in this repo caps it
+# below 26. Safe to run Current-not-yet-Active-LTS here specifically because this is a BUILD
+# stage `COPY --from=build` (further below) discards: it never ships in the image or its attack
+# surface, unlike the nginx base pinned below, which is why that one stays deliberately
+# lockstepped with frontend/Dockerfile.prod's runtime image and this one is not.
+# `docs-site/.nvmrc` and `frontend/.nvmrc` must both read the same major as this line —
+# backend/tests/unit/test_node_version_consistency.py enforces it.
+FROM node:26-alpine AS build
 WORKDIR /app
 
 # Install dependencies first (layer caching)

@@ -340,7 +340,7 @@ def update_current_user(
         # The revocation above is total and includes THIS session. Hand the caller
         # a fresh one rather than signing them out of the flow they just completed.
         reissue_current_session(
-            db, current_user, response, user_agent=user_agent, ip_address=client_ip
+            db, current_user, response, request, user_agent=user_agent, ip_address=client_ip
         )
 
     if password_changed:
@@ -475,14 +475,7 @@ def update_user(
     # super_admin changes the role, recompute is_superuser to keep the invariant
     # (enforced by the v369 DB CHECK constraint) intact.
     update_data.pop("is_superuser", None)
-    if "role" in update_data:
-        if update_data["role"] not in VALID_ROLES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid role: {update_data['role']}",
-            )
-        update_data["is_superuser"] = role_implies_superuser(update_data["role"])
-        _assert_not_last_super_admin(db, user, update_data["role"])
+    _validate_role_and_activation_changes(db, user, update_data)
 
     # allow_local_fallback only means anything for accounts whose identity lives in
     # PKI or an OIDC provider. The UI hides the toggle elsewhere, but that is a
@@ -558,6 +551,29 @@ def update_user(
     return user
 
 
+def _validate_role_and_activation_changes(
+    db: Session, user: User, update_data: dict[str, object]
+) -> None:
+    """Validate a role change and/or deactivation on ``update_data`` in place.
+
+    Split out of ``update_user`` to keep that function's branch count readable
+    (ruff C901). Mutates ``update_data["is_superuser"]`` when the role changes,
+    and raises if either change would leave the deployment with no active
+    super_admin.
+    """
+    if "role" in update_data:
+        if update_data["role"] not in VALID_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid role: {update_data['role']}",
+            )
+        update_data["is_superuser"] = role_implies_superuser(update_data["role"])
+        _assert_not_last_super_admin(db, user, update_data["role"])
+
+    if update_data.get("is_active") is False:
+        _assert_not_last_super_admin_deactivation(db, user)
+
+
 def _audit_expiration_if_changed(
     user: User, actor: User, old_expires_at: str | None, client_ip: str, user_agent: str
 ) -> None:
@@ -565,6 +581,20 @@ def _audit_expiration_if_changed(
     new_expires_at = str(user.account_expires_at) if user.account_expires_at else None
     if new_expires_at != old_expires_at:
         audit_expiration_change(user, actor, old_expires_at, new_expires_at, client_ip, user_agent)
+
+
+def _count_other_active_super_admins(db: Session, user: User) -> int:
+    """Count active super_admins other than ``user``.
+
+    Shared by every guard that must refuse leaving the deployment with zero
+    active super_admins — role change, deactivation, and delete all need this
+    same count, decided against differently.
+    """
+    return (
+        db.query(User)
+        .filter(User.role == ROLE_SUPER_ADMIN, User.id != user.id, User.is_active.is_(True))
+        .count()
+    )
 
 
 def _assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None:
@@ -577,15 +607,26 @@ def _assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None
     if str(user.role) != ROLE_SUPER_ADMIN or new_role == ROLE_SUPER_ADMIN:
         return
 
-    remaining = (
-        db.query(User)
-        .filter(User.role == ROLE_SUPER_ADMIN, User.id != user.id, User.is_active.is_(True))
-        .count()
-    )
-    if remaining == 0:
+    if _count_other_active_super_admins(db, user) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot demote the last super_admin — promote another account first.",
+        )
+
+
+def _assert_not_last_super_admin_deactivation(db: Session, user: User) -> None:
+    """Refuse deactivating the last active super_admin.
+
+    Mirrors ``_assert_not_last_super_admin``, but for `is_active=False` rather
+    than a role change — deactivating has the same lockout effect as demoting.
+    """
+    if str(user.role) != ROLE_SUPER_ADMIN or bool(user.is_active) is False:
+        return
+
+    if _count_other_active_super_admins(db, user) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot deactivate the last super_admin — promote another account first.",
         )
 
 
@@ -623,11 +664,26 @@ def delete_user(
     deleted_snapshot = DeletedUser.of(user)
 
     # Use the comprehensive cleanup from the admin endpoint to avoid orphaned records.
+    from app.api.endpoints.admin import _assert_no_files_under_legal_hold
     from app.api.endpoints.admin import _delete_user_media_files
     from app.api.endpoints.admin import _delete_user_owned_records
     from app.api.endpoints.admin import _delete_user_speakers
+    from app.services.file_cleanup_service import load_account_purge_plans
+    from app.services.file_cleanup_service import purge_account_external_copies
 
     user_id = user.id
+
+    # Before the first pass, not inside the third: this handler has no savepoint, so a
+    # refusal raised after _delete_user_owned_records would leave the session holding
+    # deletes of rows the caller was told were not deleted (issue #689).
+    _assert_no_files_under_legal_hold(db, user_id)
+
+    # Phase 0 — read the storage/OpenSearch plan while the rows still exist (issue
+    # #695). See admin.delete_admin_user's docstring for the full phase-boundary
+    # rationale; this handler has no savepoint, so the read happens before any bulk
+    # delete runs at all.
+    purge_plan = load_account_purge_plans(db, user_id)
+
     _delete_user_owned_records(db, user_id)
     _delete_user_speakers(db, user_id)
     _delete_user_media_files(db, user_id)
@@ -635,7 +691,12 @@ def delete_user(
     db.delete(user)
     db.commit()
 
+    # Phase 2 — object storage + OpenSearch. NO transaction is held here. The rows are
+    # already gone, so a failure here is NOT retryable: it must be visible, never
+    # swallowed.
+    residual_errors = purge_account_external_copies(purge_plan)
+
     # ADMIN_USER_DELETE existed as an event type with no emitter anywhere.
-    audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent)
+    audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent, residual_errors)
 
     return None

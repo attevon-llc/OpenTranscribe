@@ -660,6 +660,13 @@ def test_s3_connection(
 # =============================================================================
 # pg_dump execution
 # =============================================================================
+#: Custom-format (-Fc) is a load-bearing contract, not an implementation detail:
+#: scripts/common.sh's pg_replay_custom_dump / pg_verify_custom_restore can only
+#: read this format, and ./opentr.sh restore dispatches on its PGDMP magic bytes.
+#: Changing it requires changing those too (issue #600).
+PG_DUMP_FORMAT = "custom"
+
+
 def _read_passphrase(passphrase_file: str) -> str:
     """Read a gpg passphrase from a file; raise if missing/empty."""
     p = Path(passphrase_file)
@@ -686,7 +693,7 @@ def run_pg_dump(
     """
     url = database_url or settings.DATABASE_URL
     env = dict(os.environ)
-    cmd = ["pg_dump", "--format=custom", "--no-owner", "--no-acl", "--dbname", url]
+    cmd = ["pg_dump", f"--format={PG_DUMP_FORMAT}", "--no-owner", "--no-acl", "--dbname", url]
     logger.info("Running pg_dump → %s", dest_path)
     subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell; url carries credentials, not user input
         cmd,

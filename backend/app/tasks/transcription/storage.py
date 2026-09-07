@@ -10,6 +10,7 @@ from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.utils.language import normalize_language
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +117,10 @@ def update_media_file_transcription_status(
     db: Session,
     file_id: int,
     segments: list[dict[str, Any]],
-    language: str = "en",
+    language: str | None = "en",
     whisper_model: str | None = None,
     diarization_model: str | None = None,
+    diarization_provider: str | None = None,
     embedding_mode: str | None = None,
     asr_provider: str | None = None,
     asr_model: str | None = None,
@@ -134,6 +136,9 @@ def update_media_file_transcription_status(
         language: Detected language
         whisper_model: Whisper model used for transcription
         diarization_model: Diarization model used
+        diarization_provider: Diarization engine that ACTUALLY served the request
+            ("native" or "pyannote"), resolved after any fallback (issue #706) —
+            not the configured backend.
         embedding_mode: Speaker embedding mode ("v3" or "v4")
         asr_provider: Name of the ASR provider that ran the transcription (e.g. "deepgram")
         asr_model: Model name used by the ASR provider (e.g. "nova-3")
@@ -160,7 +165,17 @@ def update_media_file_transcription_status(
     # Update media file
     if duration is not None:
         media_file.duration = duration
-    media_file.language = language
+    # The ONE place `media_file.language` is assigned by the pipeline, so it is the last
+    # boundary before the column every redaction/chat/search reader keys on (issue #545).
+    # `ASRResult` already normalizes the cloud providers' output; this also covers the local
+    # WhisperX path, which reaches here as a bare string, and `finalize.py`'s `.get(..., "en")`
+    # default. An unidentifiable value becomes NULL — never "en" — which is necessary but was
+    # not, by itself, sufficient: storing NULL only stops this boundary from lying about the
+    # language. `redaction/service.py::detect_and_store` still had to be taught to decline
+    # running its English-hardcoded detectors when it reads that NULL back, and to record the
+    # decline as an uncovered gap rather than credit itself — see that function's
+    # `normalize_language(media.language) is None` branch for the other, load-bearing half.
+    media_file.language = normalize_language(language)
     media_file.status = FileStatus.COMPLETED
     media_file.completed_at = datetime.datetime.now(datetime.UTC)
 
@@ -169,6 +184,8 @@ def update_media_file_transcription_status(
         media_file.whisper_model = whisper_model
     if diarization_model:
         media_file.diarization_model = diarization_model
+    if diarization_provider is not None and hasattr(media_file, "diarization_provider"):
+        media_file.diarization_provider = diarization_provider
     if embedding_mode:
         media_file.embedding_mode = embedding_mode
 

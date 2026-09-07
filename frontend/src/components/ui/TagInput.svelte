@@ -120,13 +120,12 @@
     font-size: 0.6875rem;
     font-weight: 500;
     background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
+    color: var(--primary-on-surface);
     gap: 0.25rem;
     white-space: nowrap;
   }
 
-  :global([data-theme='dark']) .tag-pill,
-  :global(.dark) .tag-pill {
+  :global([data-theme='dark']) .tag-pill {
     background: rgba(59, 130, 246, 0.2);
     color: #60a5fa;
   }

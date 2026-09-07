@@ -1,6 +1,6 @@
 """A test run must not inherit the operator's env file (issue #431, #403 handoff).
 
-``Settings.Config.env_file`` was the literal ``".env"``, which pydantic-settings resolves
+``Settings.model_config["env_file"]`` was the literal ``".env"``, which pydantic-settings resolves
 against the **working directory**. So the suite's behaviour depended on where you launched
 it from: ``pytest`` in ``backend/`` found no env file and used exactly what the fixtures
 export, while the same command from the repo root loaded the real deployment ``.env`` on
@@ -39,7 +39,7 @@ def test_settings_loads_no_env_file_under_testing():
         "conftest is expected to set TESTING before app import — without it this test "
         "would assert the production branch and pass vacuously"
     )
-    assert Settings.Config.env_file is None
+    assert Settings.model_config["env_file"] is None
 
 
 def test_the_production_branch_still_loads_dot_env():
@@ -54,7 +54,7 @@ def test_the_production_branch_still_loads_dot_env():
         f"sys.path.insert(0, {str(_BACKEND)!r});"
         "assert 'TESTING' not in os.environ;"
         "from app.core.config import Settings;"
-        "print(Settings.Config.env_file)"
+        "print(Settings.model_config['env_file'])"
     )
     result = subprocess.run(
         [sys.executable, "-c", probe],

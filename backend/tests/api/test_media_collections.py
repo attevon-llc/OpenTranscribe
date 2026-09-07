@@ -583,3 +583,87 @@ def test_delete_share_emits_resource_unshare_audit_event(
     assert event["target_user_id"] == other_user.id
     assert event["details"]["resource_type"] == "collection"
     assert event["details"]["resource_uuid"] == str(col.uuid)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/collections/{uuid}/media — A4: admin/super_admin role check inversion
+# ---------------------------------------------------------------------------
+
+
+def test_get_collection_media_super_admin_sees_at_least_as_much_as_admin(
+    client,
+    admin_token_headers,
+    admin_user,
+    super_admin_token_headers,
+    super_admin_user,
+    other_user,
+    db_session,
+):
+    """A super_admin owns a collection that also contains a file uploaded by someone
+    else (added directly, as a collaborator would). The endpoint hand-rolled
+    ``current_user.role != "admin"`` instead of ``User.is_admin`` — so a super_admin
+    was scoped down to their own files while a plain admin, six lines away, was not.
+    """
+    other_mf = _make_file(db_session, other_user)
+
+    admin_col = _make_collection(db_session, admin_user)
+    admin_own_mf = _make_file(db_session, admin_user)
+    db_session.add_all(
+        [
+            CollectionMember(collection_id=admin_col.id, media_file_id=admin_own_mf.id),
+            CollectionMember(collection_id=admin_col.id, media_file_id=other_mf.id),
+        ]
+    )
+    db_session.commit()
+
+    super_col = _make_collection(db_session, super_admin_user)
+    super_own_mf = _make_file(db_session, super_admin_user)
+    db_session.add_all(
+        [
+            CollectionMember(collection_id=super_col.id, media_file_id=super_own_mf.id),
+            CollectionMember(collection_id=super_col.id, media_file_id=other_mf.id),
+        ]
+    )
+    db_session.commit()
+
+    admin_resp = client.get(f"/api/collections/{admin_col.uuid}/media", headers=admin_token_headers)
+    super_resp = client.get(
+        f"/api/collections/{super_col.uuid}/media", headers=super_admin_token_headers
+    )
+    assert admin_resp.status_code == status.HTTP_200_OK
+    assert super_resp.status_code == status.HTTP_200_OK
+
+    admin_uuids = {f["uuid"] for f in admin_resp.json()["items"]}
+    super_uuids = {f["uuid"] for f in super_resp.json()["items"]}
+
+    # Both admin tiers own their collection, so both already saw >= their own file
+    # before this fix. The bug: super_admin did NOT see the other-owned file that
+    # a plain admin did, in the identical shape of collection.
+    assert str(other_mf.uuid) in admin_uuids
+    assert str(other_mf.uuid) in super_uuids, (
+        "super_admin was scoped down to owned files only — the admin/super_admin "
+        "inversion (A4) regressed"
+    )
+
+
+def test_get_collection_media_plain_user_sees_only_their_own(
+    client, user_token_headers, normal_user, other_user, db_session
+):
+    """Control: an ordinary (non-admin) owner is still scoped to their own files
+    within a collection that also contains a file added by someone else."""
+    other_mf = _make_file(db_session, other_user)
+    col = _make_collection(db_session, normal_user)
+    own_mf = _make_file(db_session, normal_user)
+    db_session.add_all(
+        [
+            CollectionMember(collection_id=col.id, media_file_id=own_mf.id),
+            CollectionMember(collection_id=col.id, media_file_id=other_mf.id),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(f"/api/collections/{col.uuid}/media", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    uuids = {f["uuid"] for f in response.json()["items"]}
+    assert str(own_mf.uuid) in uuids
+    assert str(other_mf.uuid) not in uuids

@@ -39,7 +39,7 @@ docker compose version
 Docker Compose version v2.x.x or higher
 ```
 
-:::warning Important
+:::warning[Important]
 Use `docker compose` (with space), not `docker-compose` (with hyphen). OpenTranscribe requires Docker Compose V2.
 :::
 
@@ -170,9 +170,7 @@ See [Authentication Overview](../authentication/overview.md) for setup guides.
 **This step is CRITICAL for speaker diarization**
 
 1. **Get a token** at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-2. **Accept model agreements** for:
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+2. **Accept the model agreement** for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — the only repo OpenTranscribe actually gates on
 3. **Add to .env**: `HUGGINGFACE_TOKEN=hf_xxxxxxxxxxxx`
 
 See [HuggingFace Setup](./huggingface-setup.md) for detailed instructions.
@@ -194,7 +192,7 @@ This downloads several GB of AI models. The exact total depends on which
 `WHISPER_MODEL` you selected and how many neural-search models you enable — see
 [HuggingFace setup](./huggingface-setup.md).
 
-:::tip Prefer the helper script
+:::tip[Prefer the helper script]
 `bash scripts/download-models.sh` fetches the whole set (transcription,
 diarization, gender classifier, NLTK, embeddings, chat reranker, neural search,
 and content redaction) using the **image version your deployment is pinned to**,

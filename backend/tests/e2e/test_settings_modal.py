@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import os
 import tempfile
+from typing import Any
 
 import pytest
+import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
@@ -114,6 +116,19 @@ def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
 
     if os.path.exists(state_file):
         os.unlink(state_file)
+
+
+@pytest.fixture(scope="module")
+def api_token(backend_url: str) -> str:
+    """Get an API token once for the entire module (mirrors test_gallery_actions.py)."""
+    resp = requests.post(
+        f"{backend_url}/api/auth/token",
+        data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30,
+    )
+    assert resp.status_code == 200, f"API login failed: {resp.status_code}"
+    return str(resp.json()["access_token"])
 
 
 @pytest.fixture
@@ -244,6 +259,95 @@ class TestTranscriptionSection:
         if app_page.locator("#min-speakers").count():
             expect(app_page.locator("#min-speakers")).to_be_visible()
             expect(app_page.locator("#max-speakers")).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# Settings persistence: prove a change round-trips through the backend, not
+# just client-side reactive state (issue ticket E4).
+#
+# `speaker_prompt_behavior` (GET/PUT /api/user-settings/transcription) is the
+# simplest reliable target: a 3-value enum driven by a single native <select>
+# (`#speaker-behavior`), with no dependent fields to juggle (unlike min/max
+# speakers, which only render conditionally) and no side effects on transcription
+# behavior beyond a UI default. Theme/locale were considered and rejected: this
+# repo's locale is a pure client-side preference (`stores/locale.ts`, no backend
+# round-trip), so it cannot prove backend persistence at all.
+# ---------------------------------------------------------------------------
+SPEAKER_BEHAVIOR_VALUES = ("always_prompt", "use_defaults", "use_custom")
+
+
+def _get_transcription_settings(backend_url: str, token: str) -> dict[str, Any]:
+    resp = requests.get(
+        f"{backend_url}/api/user-settings/transcription",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    assert resp.status_code == 200, f"GET transcription settings failed: {resp.status_code}"
+    return dict(resp.json())
+
+
+def _put_transcription_settings(backend_url: str, token: str, settings: dict[str, Any]) -> None:
+    resp = requests.put(
+        f"{backend_url}/api/user-settings/transcription",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json=settings,
+        timeout=30,
+    )
+    assert resp.status_code == 200, f"PUT transcription settings failed: {resp.status_code}"
+
+
+class TestTranscriptionSettingsPersistence:
+    """Change speaker_prompt_behavior via the UI and prove it survives a reload."""
+
+    def test_speaker_behavior_change_persists_across_reload(
+        self, app_page: Page, api_token: str, backend_url: str
+    ) -> None:
+        """Saving a new speaker-behavior value round-trips through the backend.
+
+        Reads the value back three ways: the reloaded UI control, and a direct
+        GET against the persistence endpoint — proving this is not merely
+        client-side reactive state. Restores the original value afterwards so
+        the shared dev admin account's settings are not left mutated for other
+        tests/agents.
+        """
+        original = _get_transcription_settings(backend_url, api_token)
+        original_behavior = original["speaker_prompt_behavior"]
+        new_behavior = next(v for v in SPEAKER_BEHAVIOR_VALUES if v != original_behavior)
+
+        try:
+            _open_section(app_page, "Transcription Settings")
+            select = app_page.locator("#speaker-behavior")
+            expect(select).to_be_visible(timeout=8000)
+            select.select_option(new_behavior)
+
+            save_btn = app_page.locator(".transcription-settings .btn-primary")
+            expect(save_btn).to_be_enabled(timeout=5000)
+            save_btn.click()
+            expect(app_page.locator(".toast.toast-success")).to_be_visible(timeout=10000)
+
+            # Hard reload — proves the value survived a real round-trip, not just
+            # in-memory Svelte reactivity.
+            app_page.reload()
+            app_page.wait_for_selector(".user-button", timeout=30000)
+            _open_section(app_page, "Transcription Settings")
+            reloaded_select = app_page.locator("#speaker-behavior")
+            expect(reloaded_select).to_be_visible(timeout=8000)
+            expect(reloaded_select).to_have_value(new_behavior, timeout=8000)
+
+            # Direct backend confirmation — the real proof, independent of the UI.
+            persisted = _get_transcription_settings(backend_url, api_token)
+            assert persisted["speaker_prompt_behavior"] == new_behavior, (
+                f"Backend still reports {persisted['speaker_prompt_behavior']!r} "
+                f"after saving {new_behavior!r} via the UI"
+            )
+        finally:
+            _put_transcription_settings(
+                backend_url, api_token, {"speaker_prompt_behavior": original_behavior}
+            )
+            restored = _get_transcription_settings(backend_url, api_token)
+            assert restored["speaker_prompt_behavior"] == original_behavior, (
+                "Failed to restore original speaker_prompt_behavior after the test"
+            )
 
 
 # ---------------------------------------------------------------------------

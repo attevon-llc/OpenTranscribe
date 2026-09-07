@@ -15,7 +15,7 @@ OpenTranscribe delivers dramatic performance improvements with NVIDIA GPU accele
 | **CPU Only** | 0.5-1x realtime | ~60-120 min | ~3-6 hours |
 | **NVIDIA GPU** | 70x realtime | ~50 seconds | ~2.5 minutes |
 
-:::tip 70x Faster
+:::tip[70x Faster]
 With GPU acceleration, OpenTranscribe processes audio/video **70 times faster than realtime**. A 3-hour meeting transcribes in just 2.5 minutes!
 :::
 
@@ -37,7 +37,7 @@ OpenTranscribe supports NVIDIA GPUs with CUDA capability:
 
 **Minimum VRAM**: 6GB (transcription only), 8GB (with speaker diarization)
 
-:::warning macOS Note
+:::warning[macOS Note]
 NVIDIA GPUs are not supported on macOS (Apple deprecated CUDA support). macOS users will use CPU-only mode or Apple Silicon optimizations (experimental).
 :::
 
@@ -159,7 +159,7 @@ wsl --set-default-version 2
 2. Install driver on Windows (NOT inside WSL2)
 3. Reboot Windows
 
-:::warning Important
+:::warning[Important]
 Install the NVIDIA driver on **Windows host**, not inside WSL2. WSL2 will automatically detect and use the Windows driver.
 :::
 
@@ -292,7 +292,7 @@ See [Multi-GPU Scaling](../configuration/multi-gpu-scaling.md) for detailed conf
 | large-v2 | 5-6GB | 7-8GB |
 | large-v3 | 5-6GB | 7-8GB |
 
-:::tip Recommended Settings
+:::tip[Recommended Settings]
 - **8GB GPU**: large-v2 model, single worker
 - **12GB GPU**: large-v2 model, 2-3 parallel workers
 - **24GB+ GPU**: large-v2 model, 4-6 parallel workers

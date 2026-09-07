@@ -184,7 +184,7 @@
 
   .badge.prompt {
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .collection-actions {
@@ -217,7 +217,7 @@
   }
 
   .share-button:hover:not(:disabled) {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
   }
@@ -241,7 +241,7 @@
   }
 
   .edit-button:hover:not(:disabled) {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
   }
@@ -261,7 +261,7 @@
 
   .btn-add {
     padding: 6px 12px;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 6px;

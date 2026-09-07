@@ -21,12 +21,16 @@ from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v4
-from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.search import SEARCH_RESULT_TYPES
 from app.schemas.search import SetEmbeddingModelSchema
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
+from app.services.search.reindex_cancel import LEGACY_CANCEL_VALUE
+from app.services.search.reindex_cancel import cancel_requested
+from app.services.search.reindex_cancel import clear_fanout
+from app.services.search.reindex_cancel import read_fanout
+from app.services.search.reindex_cancel import request_cancel
 
 logger = logging.getLogger(__name__)
 
@@ -546,13 +550,30 @@ def get_available_filters(
     """
     Return available filter options (speakers, tags, date range).
 
+    Quarantined (DMCA/abuse takedown) files are excluded from every facet for
+    non-admins, including the file's own owner — same admin bypass as the
+    results page's ``_drop_quarantined_search_hits``.
+
     Returns:
         Dict with speakers, tags, and date_range filter options.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
 
     search_service = HybridSearchService()
-    return search_service.get_available_filters(user_id=ctx.user.id, organization_id=ctx.org_id)
+    return search_service.get_available_filters(
+        user_id=ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.user.is_admin
+    )
+
+
+def _no_pending(message: str) -> dict[str, Any]:
+    """The "there is nothing to queue" answer, in the shape the panel expects."""
+    return {
+        "task_id": None,
+        "status": "no_pending",
+        "message": message,
+        "reindex_task_ids": {},
+        "reindex_users": 0,
+    }
 
 
 @router.post("/reindex")
@@ -563,123 +584,85 @@ def trigger_reindex(
     pending_only: bool = Query(False, description="Only reindex files without chunks"),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """
-    Trigger re-indexing of existing transcripts as a background Celery task.
+    """Re-index existing transcripts **deployment-wide**, one coordinator per owner.
+
+    Admin-only (``get_current_admin_user``), and that gate is what makes the
+    corpus-wide scope legitimate rather than a privilege escalation.
+
+    Every mode used to dispatch a single ``reindex_transcripts_task`` for
+    ``current_user.id`` (issue #627). Since that coordinator filters
+    ``MediaFile.user_id == user_id``, an admin pressing "Reindex all" repaired
+    their own account and left every other user's files untouched — silently,
+    with a success toast. The fan-out is #437's
+    ``dispatch_reindex_for_every_owner``, reused rather than reimplemented; the
+    scope of the two narrower modes comes from
+    ``services/search/reindex_scope.py``.
 
     Args:
-        file_uuids: Optional list of specific file UUIDs. None = all files.
-        pending_only: If True, only reindex files that have no chunks in OpenSearch.
+        file_uuids: Optional list of specific file UUIDs, resolved to whichever
+            accounts own them. ``None`` = every owner's whole corpus.
+        pending_only: If True, only reindex files that have no chunks in
+            OpenSearch — surveyed across every owner, not just the caller's.
 
     Returns:
-        Dict with task_id and status.
+        Dict with the caller's ``task_id`` (the run the settings panel's progress
+        stream is keyed to), the per-owner task ids, and how many owners were
+        dispatched.
+
+    Raises:
+        HTTPException: 503 when nothing could be queued at all.
     """
-    if pending_only and file_uuids is None:
-        # Find file UUIDs that are NOT yet indexed in OpenSearch
-        from sqlalchemy import exists
-        from sqlalchemy import select
+    from app.services.search.model_switch import ReindexDispatchError
+    from app.services.search.model_switch import dispatch_reindex_for_every_owner
+    from app.services.search.reindex_scope import owners_of_files
+    from app.services.search.reindex_scope import pending_files_by_owner
 
-        from app.db.session_utils import session_scope
-        from app.models.media import FileStatus
-        from app.models.media import MediaFile
-        from app.models.media import TranscriptSegment
-        from app.services.opensearch_service import opensearch_client
+    scope: dict[int, list[str]] | None = None
 
-        # Get completed file UUIDs that have transcript segments (indexable)
-        with session_scope() as db:
-            has_segments = exists(
-                select(TranscriptSegment.id).where(TranscriptSegment.media_file_id == MediaFile.id)
+    if file_uuids is not None:
+        scope = owners_of_files(file_uuids)
+        if not scope:
+            return _no_pending(
+                f"None of the {len(file_uuids)} requested file(s) are completed "
+                f"transcripts that can be indexed."
             )
-            completed_files = (
-                db.query(MediaFile.uuid)
-                .filter(
-                    MediaFile.user_id == current_user.id,
-                    MediaFile.status == FileStatus.COMPLETED,
-                    has_segments,
-                )
-                .all()
-            )
-            all_uuids = {str(row[0]) for row in completed_files}
-
-        if not all_uuids:
-            return {
-                "task_id": None,
-                "status": "no_pending",
-                "message": "No completed files found to index.",
-            }
-
-        # Find which file UUIDs already have chunks in OpenSearch
-        indexed_uuids: set[str] = set()
-        if opensearch_client:
-            try:
-                index_name = settings.OPENSEARCH_CHUNKS_INDEX
-                if opensearch_client.indices.exists(index=index_name):
-                    agg_response = opensearch_client.search(
-                        index=index_name,
-                        body={
-                            "size": 0,
-                            "query": {
-                                "bool": {
-                                    "filter": [
-                                        {"term": {"user_id": current_user.id}},
-                                        # G4: "which files still need indexing?".
-                                        # A file left with only a digest (a rebuild
-                                        # that failed part-way) would otherwise read
-                                        # as indexed and never be repaired.
-                                        chunk_plane_clause(),
-                                    ]
-                                }
-                            },
-                            "aggs": {
-                                "indexed_files": {
-                                    "terms": {
-                                        "field": "file_uuid",
-                                        "size": min(len(all_uuids) + 100, 65536),
-                                    }
-                                }
-                            },
-                        },
-                    )
-                    buckets = (
-                        agg_response.get("aggregations", {})
-                        .get("indexed_files", {})
-                        .get("buckets", [])
-                    )
-                    indexed_uuids = {b["key"] for b in buckets}
-            except Exception as e:
-                logger.exception(f"Error querying indexed files: {e}")
-
-        # Compute the difference: files that need indexing
-        pending_uuids = list(all_uuids - indexed_uuids)
-
-        if not pending_uuids:
-            return {
-                "task_id": None,
-                "status": "no_pending",
-                "message": "All files are already indexed.",
-            }
-
-        file_uuids = pending_uuids
+    elif pending_only:
+        scope, indexable_total = pending_files_by_owner()
+        if not indexable_total:
+            return _no_pending("No completed files found to index.")
+        if not scope:
+            return _no_pending("All files are already indexed.")
+        queued = sum(len(uuids) for uuids in scope.values())
         logger.info(
-            f"Pending-only reindex: {len(pending_uuids)} files need indexing "
-            f"(out of {len(all_uuids)} total)"
+            f"Pending-only reindex: {queued} files across {len(scope)} owner(s) need "
+            f"indexing (out of {indexable_total} total)"
         )
 
-    from app.tasks.reindex_task import reindex_transcripts_task
+    try:
+        dispatch = dispatch_reindex_for_every_owner(current_user.id, scope)
+    except ReindexDispatchError as e:
+        logger.error(f"Re-index could not be queued: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
-    task = reindex_transcripts_task.delay(
-        user_id=current_user.id,
-        file_uuids=file_uuids,
-    )
-
+    task_ids = dispatch["reindex_task_ids"]
     logger.info(
-        f"Re-index task {task.id} started for user {current_user.id}, "
-        f"files: {len(file_uuids) if file_uuids else 'all'}"
+        f"Re-index dispatched by user {current_user.id} for {dispatch['reindex_users']} "
+        f"owner(s), files: {'named' if scope else 'all'}"
     )
 
     return {
-        "task_id": task.id,
+        # The caller's own coordinator, because that is the run the panel's
+        # progress stream is keyed to. It is absent when a named-file scope
+        # contains nothing the caller owns. `POST /reindex/stop` is NOT keyed to
+        # it — it cancels every owner in the fan-out `dispatch_reindex_for_every_owner`
+        # recorded (#691).
+        "task_id": task_ids.get(current_user.id),
         "status": "started",
-        "message": "Re-indexing started. Progress will be sent via WebSocket.",
+        "message": (
+            f"Re-indexing started for {dispatch['reindex_users']} user(s) across the "
+            f"deployment. Progress will be sent via WebSocket."
+        ),
+        **dispatch,
     }
 
 
@@ -687,32 +670,64 @@ def trigger_reindex(
 def stop_reindex(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """Request cancellation of a running reindex task.
+    """Cancel the re-index run this admin started — **every owner's coordinator**.
 
-    Sets a Redis flag that the reindex task checks between files.
-    The task will stop after completing the current file and restore
-    normal index settings (refresh_interval).
+    ``POST /reindex`` fans out one coordinator per owner (#627); this used to set
+    a single ``reindex_cancel:{caller id}`` flag, and each coordinator reads the
+    flag belonging to the *file's* owner. So an admin could start a
+    deployment-wide re-embed and cancel only their own share of it, with every
+    other owner's coordinator running to completion (#691). It now enumerates the
+    owner set the dispatch recorded under ``reindex_fanout:{caller id}`` and flags
+    all of them, naming each coordinator's run id so a coordinator still sitting
+    in the broker queue can honour the stop instead of clearing it on entry.
+    ``services/search/reindex_cancel.py`` holds the mechanism and its rationale.
+
+    Scoped to **this admin's own run**, not to every reindex on the deployment: a
+    concurrent run another admin started, and the per-owner coordinators
+    ``search_index_maintenance`` dispatches on its own schedule, are left alone.
+    A caller whose own coordinator is running but belongs to no recorded fan-out
+    is still flagged, so a maintenance-dispatched run stays stoppable exactly as
+    it was.
+
+    Each flagged coordinator stops after its current file completes and restores
+    normal index settings (``refresh_interval``).
 
     Returns:
-        Dict with stop status.
+        Dict with the stop status and how many coordinators were signalled.
     """
     user_id = current_user.id
 
-    if not _check_reindex_task_active(user_id):
-        return {
-            "status": "not_running",
-            "message": "No reindex task is currently running.",
-        }
-
     try:
-        redis_client = get_redis()
-        redis_client.setex(f"reindex_cancel:{user_id}", 3600, "1")
+        dispatched = read_fanout(user_id)
+        targets = dict(dispatched)
+        if user_id not in targets and _check_reindex_task_active(user_id):
+            # A run this admin did not fan out: dispatched by
+            # `search_index_maintenance`, or started before the record existed.
+            # There is no run id to name, so the flag falls back to the legacy
+            # value — truthy for the batch workers of a coordinator that is
+            # already running, which is the only kind that can exist here.
+            targets[user_id] = LEGACY_CANCEL_VALUE
 
-        logger.info(f"Reindex stop requested for user {user_id}")
+        if not any(_check_reindex_task_active(uid) for uid in targets):
+            return {
+                "status": "not_running",
+                "message": "No reindex task is currently running.",
+            }
+
+        stopped = request_cancel(targets)
+        if dispatched:
+            clear_fanout(user_id)
+
+        logger.info(f"Reindex stop requested by user {user_id} for owner(s) {stopped}")
 
         return {
             "status": "stop_requested",
-            "message": "Stop signal sent. Reindex will stop after the current file completes.",
+            "stopped_users": len(stopped),
+            "message": (
+                f"Stop signal sent to {len(stopped)} re-index coordinator(s) — the whole "
+                f"run you started, not just your own files. Each stops after the file it "
+                f"is on completes."
+            ),
         }
     except HTTPException:
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
@@ -727,26 +742,120 @@ def stop_reindex(
         ) from e
 
 
-def _check_reindex_task_active(user_id: int) -> bool:
-    """Check if a reindex task is currently active for this user.
+def _running_reindex_run_id(user_id: int) -> str | None:
+    """The coordinator task id currently holding ``reindex_lock:{user_id}``.
 
-    Uses the ``reindex_lock:{user_id}`` Redis key that the reindex task
-    itself sets on start (NX, 1-hour TTL) and clears on finish.
-    This is a sub-millisecond Redis GET — no Celery broadcast needed.
+    The lock's *value* is the run id (``reindex_task`` sets it NX with a 1-hour
+    TTL and releases it only if it still owns it), so one sub-millisecond GET
+    answers both "is a reindex running for this owner" and "which run is it" — no
+    Celery broadcast needed.
 
     Args:
-        user_id: The user ID to check for active reindex tasks.
+        user_id: The owner to check.
 
     Returns:
-        True if a reindex task is actively running for this user.
+        The run id, or ``None`` when no reindex is running for that owner.
     """
     try:
         from app.core.redis import get_redis
 
-        return bool(get_redis().exists(f"reindex_lock:{user_id}"))
+        value = get_redis().get(f"reindex_lock:{user_id}")
     except Exception as e:
         logger.debug(f"Could not check reindex lock: {e}")
-        return False
+        return None
+    if value is None:
+        return None
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def _check_reindex_task_active(user_id: int) -> bool:
+    """Whether a reindex coordinator is currently running for this user."""
+    return _running_reindex_run_id(user_id) is not None
+
+
+@router.get("/degraded-embeddings")
+def get_degraded_embeddings(
+    limit: int = Query(500, le=5000),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """Preview the files stranded text-only by a neural-search degraded window (#626).
+
+    Read-only survey — pairs with ``POST /search/reembed-degraded``, which requires this
+    preview to be confirmed rather than dispatching on click.
+    """
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+    from app.services.search.embedding_provenance import survey_degraded_files
+
+    files, truncated = survey_degraded_files(limit=limit)
+
+    if not files:
+        return {"total_files": 0, "truncated": False, "affected_users": 0, "files": []}
+
+    file_uuids = [f.file_uuid for f in files]
+    with session_scope() as db:
+        rows = (
+            db.query(MediaFile.uuid, MediaFile.filename)
+            .filter(MediaFile.uuid.in_(file_uuids))
+            .all()
+        )
+        titles = {str(row[0]): row[1] for row in rows}
+
+    return {
+        "total_files": len(files),
+        "truncated": truncated,
+        "affected_users": len({f.user_id for f in files}),
+        "files": [
+            {
+                "file_uuid": f.file_uuid,
+                "title": titles.get(f.file_uuid) or f.file_uuid,
+                "user_id": f.user_id,
+            }
+            for f in files
+        ],
+    }
+
+
+@router.post("/reembed-degraded")
+def trigger_reembed_degraded(
+    limit: int = Query(500, le=5000),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """Dispatch the operator-triggered re-embed of #626's degraded (text-only) files.
+
+    Checks the task's own lock before dispatching, rather than dispatching into a lock it
+    knows is already held — matches ``start_embedding_consistency_repair``'s shape in
+    ``admin.py``.
+    """
+    from app.tasks.search_reembed_task import REEMBED_LOCK_KEY
+    from app.tasks.search_reembed_task import reembed_degraded_files_task
+    from app.utils.task_lock import task_lock_manager
+
+    if task_lock_manager.is_locked(REEMBED_LOCK_KEY):
+        return {
+            "task_id": None,
+            "status": "already_running",
+            "message": "A re-embed of degraded files is already in progress.",
+        }
+
+    from app.services.search.embedding_provenance import survey_degraded_files
+
+    files, _truncated = survey_degraded_files(limit=limit)
+    if not files:
+        return {
+            "task_id": None,
+            "status": "no_degraded_files",
+            "message": "No degraded (text-only) files found to re-embed.",
+        }
+
+    result = reembed_degraded_files_task.apply_async(
+        kwargs={"triggered_by": current_user.id, "limit": limit},
+    )
+    return {
+        "task_id": str(result.id),
+        "status": "started",
+        "message": "Re-embedding started. Progress will be sent via WebSocket.",
+    }
 
 
 @router.get("/reindex/status")
@@ -815,17 +924,14 @@ def reindex_status(
         except Exception as e:
             logger.exception(f"Error checking index status: {e}")
 
-    # Check if a reindex task is actively running for this user
-    in_progress = _check_reindex_task_active(current_user.id)
+    # Check if a reindex task is actively running for this user, and which run.
+    running_run_id = _running_reindex_run_id(current_user.id)
+    in_progress = running_run_id is not None
 
-    # Check if stop has been requested
-    stop_requested = False
-    if in_progress:
-        try:
-            redis_client = get_redis()
-            stop_requested = bool(redis_client.get(f"reindex_cancel:{current_user.id}"))
-        except Exception as e:
-            logger.debug(f"Could not check reindex cancellation flag: {e}")
+    # Check if stop has been requested — for THIS run. A flag naming a finished
+    # run would otherwise show the panel a stop that cannot apply to what is
+    # currently indexing (#691).
+    stop_requested = in_progress and cancel_requested(current_user.id, running_run_id)
 
     current_model, current_dimension = get_search_embedding_settings()
 
@@ -1451,12 +1557,17 @@ def get_neural_search_status(
         health while the vector segments are corrupt and *every* semantic query
         answers 503, because they describe the pipeline, the model registry and a
         ``terms`` aggregation, none of which touch the HNSW graph (issue #540).
+
+        And ``bootstrap`` — the self-heal's own state (issue #625): whether the beat task
+        is currently degraded, its attempt count, last error and next retry time, plus a
+        report-only ``text_only_chunk_files`` count (no auto re-embed; see #626).
     """
     from app.services.opensearch_service import probe_knn_health_cached
     from app.services.search.embedding_provenance import survey_embedding_models
     from app.services.search.indexing_service import is_neural_pipeline_available
     from app.services.search.ml_model_service import get_ml_model_service
     from app.services.search.model_switch import provenance_payload
+    from app.services.search.neural_bootstrap import bootstrap_status
 
     ml_service = get_ml_model_service()
     active_model_id = ml_service.get_active_model_id()
@@ -1480,6 +1591,7 @@ def get_neural_search_status(
         "active_model_dimension": active_model_info["dimension"] if active_model_info else None,
         "pipeline_name": settings.OPENSEARCH_NEURAL_PIPELINE,
         "embedding_provenance": provenance_payload(survey_embedding_models()),
+        "bootstrap": bootstrap_status(),
         "chunks_index_knn": {
             "index": settings.OPENSEARCH_CHUNKS_INDEX,
             "status": knn_probe.status,

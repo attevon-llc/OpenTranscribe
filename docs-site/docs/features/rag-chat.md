@@ -65,7 +65,7 @@ they were never discussed.
 You can also start from the gallery: select recordings and choose **Chat with N**
 from the bulk actions menu.
 
-:::tip Narrower is usually better
+:::tip[Narrower is usually better]
 Retrieval quality drops when a question has to compete with an entire library.
 If you know which meetings matter, select them — answers get noticeably more
 specific.
@@ -123,7 +123,7 @@ The practical consequence: **the assistant sees passages, not the whole story.**
 It answers well when the answer lives in a few specific moments, and poorly when
 it requires reading everything end to end.
 
-:::tip This is why "summarise this recording" is the wrong question for chat
+:::tip[This is why "summarise this recording" is the wrong question for chat]
 A summary needs the *whole* transcript; chat retrieves fragments. Use the
 built-in **summary** feature for that — it reads the entire transcript — and use
 chat for questions that point at specific moments.
@@ -169,7 +169,7 @@ citations, so without the trace there is no way to tell them apart. The same goe
 for **Failed**: if search breaks, the assistant still answers — from whatever it
 had — and the reply looks entirely normal. The trace is what makes that visible.
 
-:::tip What to look for when an answer seems thin
+:::tip[What to look for when an answer seems thin]
 Check **Sampled** and **Filtered**. `48 found` followed by `12 kept · 36 dropped`
 is normal narrowing. But `12 kept · 0 dropped` at Filtered followed by
 `0 excerpts` at Answered means the evidence was found and then removed — usually
@@ -234,6 +234,22 @@ If the excerpts do not contain the answer, the assistant is instructed to say so
 rather than guess.
 
 ![Chat conversation with numbered citations, source list, and expandable Details](/img/screenshots/chat/02-chat-conversation-with-citations.png)
+
+## Reasoning / thinking display
+
+Some models stream their reasoning separately from the final answer. When the configured
+model supports that, its reasoning appears above the answer in a **collapsed-by-default**
+panel (Open WebUI-style) — expand it to see the model's intermediate thinking, or leave it
+collapsed and read only the answer.
+
+Whether a model exposes reasoning at all is a **measured, per-model capability**, not a guess:
+OpenTranscribe determines and records it rather than assuming every model of a given provider
+behaves the same way. Where a provider streams reasoning through a dedicated field, that field
+is what drives the display — vLLM/OpenRouter's `reasoning_content`/`reasoning`, Anthropic's
+extended-thinking `thinking_delta` blocks, and Ollama's `message.thinking`. Providers with no
+dedicated reasoning field are handled by an incremental `<think>...</think>` tag extractor that
+reassembles a tag even when it is split across stream chunks, so unparsed thinking text never
+leaks into the visible answer.
 
 ## Working with a conversation
 

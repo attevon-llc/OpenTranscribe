@@ -143,11 +143,17 @@ class TestOnlyDeadRecordsAreSwept:
         assert cleanup_expired_lockouts() == 0
 
     def test_a_live_lockout_keeps_its_lock_expiry(self, store):
-        _write(store, _live_lockout())
+        record = _live_lockout()
+        _write(store, record)
 
         cleanup_expired_lockouts()
 
-        assert _read(store, "locked@example.com").get_locked_until_datetime() is not None
+        # The expiry must come back UNCHANGED. "Still present" would also be satisfied
+        # by a sweep that rewrote the record with a nearer expiry — which unlocks the
+        # account early, the same outcome as deleting it, only harder to see.
+        survivor = _read(store, "locked@example.com")
+        assert survivor.get_locked_until_datetime() == record.get_locked_until_datetime()
+        assert survivor.lockout_count == record.lockout_count
 
     def test_a_recently_attacked_record_is_not_swept(self, store):
         """Its lock expired, but deleting it would reset the escalation an attacker is

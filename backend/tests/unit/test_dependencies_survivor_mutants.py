@@ -20,7 +20,16 @@ rewritten — see ``TestGetCurrentUserAlgorithmAllowlistIsEnforced`` — after t
 actual joserfc exception showed the first version's premise about which direction the
 gap runs was wrong):
 
-* **96 real** — this file targets all 96. Two families dominate:
+**+4 real, added 2026-08-28.** A from-scratch re-run (the prior log predated the
+completion+source-binding evidence ``scripts/mutation-baselines.tsv``'s header now
+requires, so it counted as NOT MEASURED) found 83 survivors against this row's 79 —
+commit 1b536070 had added ``"trigger": "fixed_date"`` to ``_enforce_account_expiry``'s
+audit ``details`` with no test alongside it. See
+``TestEnforceAccountExpiry::test_the_audit_details_are_tagged_with_the_fixed_date_trigger``.
+The other 78 were confirmed byte-identical to this triage (the intervening diff touches
+only that one ``details=`` literal), bringing the total real count to 100.
+
+* **100 real** — this file targets all 100. Two families dominate:
 
   - **Response-body text.** Every ``HTTPException`` this module raises carries a
     machine-readable ``detail`` dict (``code``/``message``, sometimes ``reason``)
@@ -361,6 +370,35 @@ class TestEnforceAccountExpiry:
             "message": (
                 "This account expired on 2024-06-15. Contact an administrator to extend it."
             ),
+        }
+
+    def test_the_audit_details_are_tagged_with_the_fixed_date_trigger(self, monkeypatch):
+        """``details={"trigger": "fixed_date", ...}`` on the ``AUTH_ACCOUNT_EXPIRED`` audit call.
+
+        ``account_lifecycle_service.py``'s background inactivity sweep emits the SAME
+        event type with ``details.trigger == "inactivity"`` (or
+        ``"inactivity_skipped_super_admin"``). Per that module's own docstring, a
+        FedRAMP AU-2 reader "must not have to string-match ``details.trigger`` to tell
+        the two apart" — so a renamed key or reworded value here is not cosmetic, it
+        breaks the one field that disambiguates a per-request refusal from a
+        background sweep in the audit trail. Without this assertion, mutating
+        ``"trigger"`` -> ``"XXtriggerXX"`` or ``"fixed_date"`` -> ``"FIXED_DATE"``
+        survived (issue #446 follow-up: introduced by the trigger key landing in
+        1b536070 without a test alongside it).
+        """
+        recorded: list[dict] = []
+        monkeypatch.setattr(deps_module.audit_logger, "log", lambda **kw: recorded.append(kw))
+        expires_at = datetime(2024, 6, 15, tzinfo=UTC)
+        user = _user(account_expires_at=expires_at)
+
+        with pytest.raises(HTTPException):
+            deps_module._enforce_account_expiry(user, _request())
+
+        assert len(recorded) == 1
+        assert recorded[0]["details"] == {
+            "trigger": "fixed_date",
+            "expired_at": expires_at.isoformat(),
+            "path": ORDINARY_PATH,
         }
 
 

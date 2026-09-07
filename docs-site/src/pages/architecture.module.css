@@ -1,0 +1,146 @@
+/* Architecture diagrams page.
+ *
+ * Every colour is an Infima variable (or this site's --ot-* tokens defined in
+ * src/css/custom.css) so light/dark parity is automatic — hard-coded hex values
+ * are how that gets broken. The embedded diagrams are self-contained HTML with
+ * their own light/dark toggle, independent of this page's theme.
+ */
+
+.hero {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 3.5rem 1rem 1.5rem;
+  text-align: center;
+}
+
+.title {
+  font-size: 2.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.75rem;
+}
+
+.subtitle {
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--ifm-color-emphasis-700);
+  margin: 0 0 1.5rem;
+}
+
+.main {
+  /* The Layout wrapper is a flex container, so a block child without an explicit
+     width shrink-wraps to its content's natural (max-content) width instead of
+     filling the available space up to max-width. That made the whole tab section
+     visibly narrower — and re-centered, so it jumped left/right — depending on
+     which tab's content happened to be narrower. width: 100% forces it to always
+     fill up to max-width regardless of which tab is active. */
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0 1rem 3rem;
+}
+
+/* Outer tabs (System / Pipelines & Workflows / Codebase Maps) read as the page's
+   primary navigation, so they get a bit more presence than Infima's default. */
+.outerTabs :global(.tabs) {
+  border-bottom: 2px solid var(--ot-border);
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.outerTabs :global(.tabs__item) {
+  font-size: 1.05rem;
+  font-weight: 600;
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px 8px 0 0;
+}
+
+.outerTabs :global(.tabs__item--active) {
+  color: var(--ifm-color-primary);
+  border-bottom: 2px solid var(--ifm-color-primary);
+}
+
+/* Inner tabs (one per diagram within a group) are a segmented control, not a
+   second row of the same outer tab-strip style — visually distinct so it reads as
+   "pick a diagram within this group", not "here are six more top-level sections". */
+.innerTabs :global(.tabs) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  background: var(--ot-surface-alt);
+  border: 1px solid var(--ot-border);
+  border-radius: 10px;
+  padding: 0.3rem;
+  margin-bottom: 1rem;
+}
+
+.innerTabs :global(.tabs__item) {
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 7px;
+  padding: 0.45rem 0.9rem;
+  border: none;
+  color: var(--ot-text-muted);
+}
+
+.innerTabs :global(.tabs__item--active) {
+  background: var(--ot-bg);
+  color: var(--ifm-color-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.diagramDescription {
+  color: var(--ot-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  max-width: 60rem;
+  margin: 1rem 0 1rem;
+}
+
+.frame {
+  border: 1px solid var(--ot-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--ot-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='dark'] .frame {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.iframe {
+  width: 100%;
+  border: 0;
+  display: block;
+  background: #fff;
+  /* height is set inline per-diagram in architecture.tsx (FRAME_HEIGHT) */
+}
+
+.footnote {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0 1rem 4rem;
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-600);
+  line-height: 1.6;
+}
+
+.footnote code {
+  font-size: 0.85em;
+}
+
+@media (max-width: 768px) {
+  .title {
+    font-size: 2rem;
+  }
+
+  .iframe {
+    height: 600px;
+  }
+
+  .outerTabs :global(.tabs__item) {
+    font-size: 0.95rem;
+    padding: 0.6rem 0.9rem;
+  }
+}

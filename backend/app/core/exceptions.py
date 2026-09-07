@@ -47,6 +47,17 @@ class MigrationError(OpenTranscribeError):
     """Data migration failures."""
 
 
+class ASRConfigurationError(OpenTranscribeError):
+    """ASR provider resolution is impossible under the current deployment config.
+
+    Raised by ``services/asr/factory.py`` when resolution would otherwise silently
+    fall back to ``LocalASRProvider`` on a deployment that cannot run it — e.g. a
+    ``DEPLOYMENT_MODE=lite`` image, which ships without whisperx/faster-whisper
+    (``requirements-lite.txt``). Without this guard the failure surfaces much later,
+    deep in a Celery GPU task, as a raw ``ModuleNotFoundError``.
+    """
+
+
 class EmailDeliveryError(OpenTranscribeError):
     """A transactional email could not be handed to a mail transport.
 

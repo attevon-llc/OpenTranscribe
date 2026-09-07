@@ -55,7 +55,8 @@ services:
       docs:
         condition: service_started
     env_file:
-      - .env
+      - path: .env
+        required: false
     command: >
       /bin/sh -c "
       FLOWER_AUTH_B64=$$(printf '%s:%s' '${FLOWER_USER:-admin}' '${FLOWER_PASSWORD:-flower}' | base64 | tr -d '\n') &&

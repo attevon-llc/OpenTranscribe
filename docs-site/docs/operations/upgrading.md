@@ -14,7 +14,10 @@ Before upgrading, complete these steps:
 
 1. **Back up the database** -- this is non-negotiable
    ```bash
-   # An installed deployment has no backup subcommand; dump directly.
+   ./opentranscribe.sh backup
+   ```
+   Or dump directly, if you don't have the script on hand:
+   ```bash
    docker compose exec -T postgres pg_dump -U postgres opentranscribe \
      > "opentranscribe-backup-$(date +%Y%m%d-%H%M%S).sql"
    ```
@@ -49,7 +52,7 @@ Always back up your database before upgrading. Database migrations run automatic
 ./opentranscribe.sh update-full
 ```
 
-:::note `opentranscribe.sh`, not `opentr.sh`
+:::note[`opentranscribe.sh`, not `opentr.sh`]
 `opentranscribe.sh` is the management script the installer places next to your
 compose files — it is what you have. `opentr.sh` is the *development* script and
 only exists in a git clone of the repository. This page previously said
@@ -102,12 +105,64 @@ available versions.
 
 This re-pins the image tag recorded by the last `update --version`.
 
-:::danger Images roll back; the database does not
+:::danger[Images roll back; the database does not]
 The migration chain is one-way. Rolling images back does **not** revert schema
 changes, and an older image may not be able to read the newer schema. A real
 rollback means restoring the backup you took before upgrading. `update` refuses a
 downgrade unless you pass `--rollback` or `--force-downgrade`.
+
+`update --rollback` also checks, before touching anything, whether the version
+you are rolling back to can even read the database as it currently stands — if
+it cannot, it refuses (exit 1) and tells you to restore a pre-upgrade backup
+first. Override with `--force-downgrade` if you are certain.
 :::
+
+## Skipping Versions
+
+**You do not need to stop at every intermediate release.** The Alembic migration
+chain is linear and cumulative — upgrading straight from an older release to a
+newer one replays every revision in between in order, the same way a run
+through each intermediate version would. No intermediate stop is required.
+
+That said, "supported in principle" and "tested" are different claims, and this
+project is explicit about which is which: **the only upgrade paths exercised by
+the release rehearsal are jumps from the newest published release of each of the
+last 2 minor series below the target** (`OT_UPGRADE_SOURCE_MINORS`, default `2`,
+in `scripts/release-tests/lib/versions.sh`). For a v0.5.0 release that means
+v0.4.1 → v0.5.0 and v0.3.3 → v0.5.0 are both rehearsed before the release ships.
+**Every other starting version is untested** — not unsupported in principle
+(the migration chain does not care where it starts), but genuinely never run by
+anyone before you. Treat that distinction as real: a jump through an untested
+source can surface a migration ordering issue, a stale bootstrap assumption, or
+an old schema shape that nothing has looked at recently. `./scripts/release-tests/
+test-upgrade.sh --list-sources` prints the exact pair a given release rehearsed.
+
+If you are further back than the newest tested source in your series, **hop
+through the newest release of that series first** rather than jumping straight
+to the target from further back — e.g. from v0.4.0, upgrade to v0.4.1 (or
+straight to the target, if v0.4.0's own series was one of the tested sources),
+not from three minors back in one leap. This keeps your upgrade inside the set
+that was actually rehearsed, rather than outside it.
+
+**Back up before every leg**, not just the first — see
+[Pre-Upgrade Checklist](#pre-upgrade-checklist) and
+[Backup & Restore](./backup-restore.md). A multi-version jump that fails partway
+through should be recoverable from the backup taken immediately before it, not
+from one taken several versions ago.
+
+**What skipping versions does NOT carry you past:**
+
+1. **Manual, one-time steps that ship in an intermediate release and are not
+   themselves a migration.** The clearest example is the `speakers_v3` →
+   `speakers_v4` voiceprint embedding migration (see
+   [Embedding Migration (v3 to v4)](#embedding-migration-v3-to-v4) below) — it is
+   run **from the Admin Settings UI**, not from Alembic, so skipping past the
+   release that introduced it means you still need to open Admin Settings and run
+   it after you land, exactly as if you had stopped there.
+2. **`.env` variables added in a version you skipped.** Diff your `.env` against
+   the **current** `.env.example` *after* upgrading, not before — a variable
+   added three versions ago has a coded default that keeps the app running, but
+   you may want to set it deliberately rather than silently inherit the default.
 
 ## Database Migrations
 
@@ -151,6 +206,32 @@ The migration chain progresses through these versions:
 | `v352` | Requested Whisper model per-transcription |
 | `v353` | Segment unique index fix |
 | `v355` | Independent diarization provider settings |
+| `v360-v362` | Pipeline timing instrumentation (durable wall-clock metrics, imohash fingerprinting) |
+| `v363` | AWS Transcribe dual-credential support (access key ID column) |
+| `v364` | Content redaction columns (PII / profanity / toxicity) |
+| `v365` | Prompt sharing attribution |
+| `v366` | Watch Sources auto-import tables (issue #26) |
+| `v367`, `v371` | Cloud-edition multitenancy seams + a schema-shape repair for pre-release deployments |
+| `v368` | Defensive guard: native `uuid` column type on every identifier |
+| `v369`, `v377` | Superuser/role invariant hardening — see [Breaking Changes (v0.5.0)](#breaking-changes-v050) |
+| `v370` | Media file quarantine / takedown columns |
+| `v372-v373` | Organization-scoped audit events and speaker clusters (issue #262) |
+| `v374` | Per-user tag ownership (security fix for cross-user tag-name disclosure) |
+| `v375-v376` | RAG chat tables and chat projects (issues #52, #360) |
+| `v378` | Directory (LDAP/OIDC) group-to-in-app-group mapping |
+| `v379-v380` | OIDC config/identity rename — see [The OIDC surface is renamed](#the-oidc-surface-is-renamed--configuration-keys-routes-and-the-admin-tab) |
+| `v381` | Administrator approval state for newly provisioned accounts |
+| `v382` | SCIM 2.0 bearer tokens |
+| `v383` | SAML auth type and identity column (issue #35) |
+| `v384` | Chat reasoning-content column (collapsible "thinking" display) |
+| `v385` | Drop orphaned tables left by removed features (issue #398) |
+| `v386-v387` | Tag sharing with users/groups, plus actor-FK and CHECK-constraint repairs |
+| `v388` | Tenant scope for `user_group` (issue #262) |
+| `v389` | Erasure ledger — durable record of GDPR Art. 17 erasure requests (#442) |
+| `v390` | Deterministic ingest artifacts for the no-LLM summary tier (#383/#403) |
+| `v391` | `media_file.recorded_date` and its provenance (#403) |
+| `v392` | `media_file.redaction_coverage` — which detectors a scan actually ran (#403) |
+| `v393` | Timing columns for transcribe-diarize overlap and progressive presentation |
 
 ### What to Do if Migrations Fail
 
@@ -162,12 +243,24 @@ If a migration fails on startup:
    ```
 2. **Restore your backup** if the migration left the database in a broken state:
    ```bash
-   docker compose stop backend celery-worker
-   docker compose exec -T postgres psql -U postgres -d opentranscribe \
-     < opentranscribe-backup-YYYYMMDD-HHMMSS.sql
-   docker compose start backend celery-worker
+   ./opentranscribe.sh restore backups/opentranscribe-backup-YYYYMMDD-HHMMSS.sql
    ```
-   (In a git clone, `./opentr.sh restore backups/<file>.sql`.)
+   This replaces the database entirely (drop + recreate + replay + verify) rather than
+   layering the backup over the broken schema — a plain `psql < backup.sql` into an
+   already-populated database fails silently (see
+   [Restore Procedures](./backup-restore.md#restoring-the-database)). It stops the
+   backend/Celery services, prompts for confirmation (`--yes` to skip), takes a safety
+   dump of the current (broken) database first, then — **only if the backup's own
+   schema version matches the version that was just running** — restarts services.
+   On a mismatch it completes the restore but leaves services **stopped**, and prints
+   the two next moves (roll the app back to match the backup, or explicitly opt in to
+   letting the current version migrate the backup forward). This is what stops a
+   restore from silently re-migrating an older backup forward before you get to look
+   at it — see [Rolling Back](#rolling-back) below, and
+   [Restore Procedures](./backup-restore.md#restoring-the-database) for the
+   `--migrate-forward` / `--no-restart` flags.
+   Note this restores **PostgreSQL only** — MinIO and OpenSearch are not rolled back in
+   lockstep, so reindex from Admin → Search afterwards if needed.
 3. **Report the issue** -- migration failures are bugs. File an issue with the error output.
 
 :::note
@@ -184,26 +277,41 @@ If an upgrade causes issues, you can roll back:
 # 1. Stop all services
 docker compose down
 
-# 2. Restore the database backup you made before upgrading
+# 2. Restore the database backup you made before upgrading (drops + recreates + replays +
+#    verifies — see Restore Procedures in Backup & Restore for what this does). Because
+#    this backup predates the upgrade, its schema head will not match whichever image is
+#    still pinned in .env — restore detects that and leaves services STOPPED for you
+#    rather than restarting the (still-newer) image over it.
 docker compose up -d postgres
-# Wait for postgres to be ready
-until docker compose exec postgres pg_isready -U postgres; do sleep 2; done
-docker compose exec -T postgres psql -U postgres opentranscribe < backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql
+./opentranscribe.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql
 
-# 3. Pull the previous version images
-docker pull davidamacey/opentranscribe-frontend:vPREVIOUS
-docker pull davidamacey/opentranscribe-backend:vPREVIOUS
-
-# 4. Tag them as latest (so compose uses them)
-docker tag davidamacey/opentranscribe-frontend:vPREVIOUS davidamacey/opentranscribe-frontend:latest
-docker tag davidamacey/opentranscribe-backend:vPREVIOUS davidamacey/opentranscribe-backend:latest
-
-# 5. Start all services
-docker compose up -d
+# 3. Re-pin the image tag to the previous version BEFORE starting anything — this is
+#    what `update --rollback` does (recommended over the manual pull/tag/up sequence
+#    below): it also refuses if the target version cannot read the current schema.
+./opentranscribe.sh update --rollback
+#    or, for a version not tracked by --rollback's recorded target:
+#      docker pull davidamacey/opentranscribe-frontend:vPREVIOUS
+#      docker pull davidamacey/opentranscribe-backend:vPREVIOUS
+#      docker tag davidamacey/opentranscribe-frontend:vPREVIOUS davidamacey/opentranscribe-frontend:latest
+#      docker tag davidamacey/opentranscribe-backend:vPREVIOUS davidamacey/opentranscribe-backend:latest
+#      docker compose up -d
 ```
 
 :::warning
 You must restore the database backup when rolling back. Newer migrations may have altered the schema in ways incompatible with older code.
+:::
+
+:::danger[The old order corrupted the restore (issue #610)]
+This recipe used to restore the database, THEN re-pin the image — steps 3-5 pulled and
+tagged the previous version only *after* `./opentranscribe.sh restore` had already restarted
+whatever was running. Because the `.env` image tag hadn't moved yet at that point, the
+service that restarted was the **newer, still-pinned** image — which runs its own
+migrations on startup, and silently migrated the just-restored, deliberately-older
+backup straight back to the newer schema before you ever got to step 3. Every operator
+who followed the old recipe got the corruption. Re-pinning the image **before** starting
+anything (`update --rollback`, step 3 above) is what fixes it; `opentranscribe.sh restore` itself
+now also refuses to restart into that trap on its own (see the note in
+[What to Do if Migrations Fail](#what-to-do-if-migrations-fail) above).
 :::
 
 ## Major Version Upgrades
@@ -241,7 +349,7 @@ and the **Redaction policy** floor now require the `super_admin` role instead of
 configure how the deployment runs, and several store infrastructure credentials (S3 keys, SMB
 passwords, SMTP passwords) that a team-level admin has no reason to read or replace.
 
-:::danger ACTION REQUIRED if a plain `admin` manages any of those six panels
+:::danger[ACTION REQUIRED if a plain `admin` manages any of those six panels]
 Promote that account to `super_admin` (Settings → Users → Role → Super Admin) **before
 upgrading**, or hand the work to an existing super admin. Nothing else changes tier: user
 accounts, tasks, search, and speaker maintenance stay at `admin`. Creating additional super
@@ -432,12 +540,13 @@ curl -X POST http://localhost:5174/api/admin/reindex -H "Authorization: Bearer <
 
 ### Permission Errors on Model Cache
 
-After upgrading, the container user (UID 1000) may not have access to cached models:
+After upgrading, the container user (UID 1000, GID 999 — `appuser` is created with
+`useradd -u 1000` but `groupadd -r`, issue #580) may not have access to cached models:
 
 ```bash
 # Fix permissions
 ./scripts/fix-model-permissions.sh
 
 # Or manually
-sudo chown -R 1000:1000 ${MODEL_CACHE_DIR:-./models}/
+sudo chown -R 1000:999 ${MODEL_CACHE_DIR:-./models}/
 ```

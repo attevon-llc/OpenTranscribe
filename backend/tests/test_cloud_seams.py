@@ -409,7 +409,27 @@ class TestWebSocketAuthExternalBranch:
 
 
 class TestAuthMethodsDiscovery:
-    def test_external_providers_empty_by_default(self, client):
+    def test_external_providers_empty_by_default(self, client, db_session, admin_user):
+        # /auth/methods appends "oidc" to `methods` from TWO independent sources:
+        # the in-memory provider registry (what this test class actually covers,
+        # and what `clean_registry` resets) AND the DB-backed `oidc_enabled`
+        # auth_config row (a real deployment toggle, unrelated to the cloud seam).
+        # `db_session` is a savepoint that survives commit() and rolls back at
+        # teardown, so pinning oidc_enabled=False here makes the assertion below
+        # deterministic for THIS test without touching real state any other test
+        # (e.g. the e2e OIDC-configuration flow, which intentionally leaves OIDC
+        # enabled in the live DB for its own follow-on tests) depends on.
+        from app.services.auth_config_service import AuthConfigService
+
+        AuthConfigService.set_config(
+            db=db_session,
+            key="oidc_enabled",
+            value=False,
+            is_sensitive=False,
+            category="oidc",
+            user_id=admin_user.id,
+        )
+
         body = client.get("/api/auth/methods").json()
         assert body["external_providers"] == []
         assert EXTERNAL_PROVIDER not in body["methods"]

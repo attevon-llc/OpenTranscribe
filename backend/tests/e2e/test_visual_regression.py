@@ -323,6 +323,28 @@ def trace_conversation_uuid(api_token: str, backend_url: str) -> Iterator[str]:
     assert provider.ok, f"Could not create provider: {provider.status_code} {provider.text}"
     provider_uuid = str(provider.json()["uuid"])
 
+    # The backend only auto-activates a config when it is the user's FIRST one
+    # ever; the shared e2e account accumulates configs across runs, so this is
+    # essentially never true here. ChatComposer's disabled state is driven by
+    # that global "active" pointer (GET /api/llm-settings/status), not by the
+    # conversation's own pinned llm_config_uuid — without this the composer
+    # stays disabled with "Chat needs a language model" and the traced turn
+    # below never sends. This mutates the SHARED e2e account's active-config
+    # pointer, which the dev-data-hygiene rule covers just as much as a
+    # created row does — captured before activating, restored in the finally.
+    status = requests.get(f"{backend_url}/api/llm-settings/status", headers=auth, timeout=30)
+    assert status.ok, f"Could not read prior LLM status: {status.status_code} {status.text}"
+    prior_active = status.json().get("active_configuration")
+    prior_active_uuid = prior_active["uuid"] if prior_active else None
+
+    activate = requests.post(
+        f"{backend_url}/api/llm-settings/set-active",
+        headers=auth,
+        json={"configuration_id": provider_uuid},
+        timeout=30,
+    )
+    assert activate.ok, f"Could not activate provider: {activate.status_code} {activate.text}"
+
     conversation_uuid = ""
     try:
         conversation = requests.post(
@@ -355,6 +377,16 @@ def trace_conversation_uuid(api_token: str, backend_url: str) -> Iterator[str]:
                 continue
             try:
                 requests.delete(url, headers=auth, timeout=30)
+            except requests.RequestException:
+                pass
+        if prior_active_uuid:
+            try:
+                requests.post(
+                    f"{backend_url}/api/llm-settings/set-active",
+                    headers=auth,
+                    json={"configuration_id": prior_active_uuid},
+                    timeout=30,
+                )
             except requests.RequestException:
                 pass
 
@@ -450,19 +482,156 @@ THEMES = ["light", "dark"]
 #: be compared for real.
 #: Do not add a selector here without checking `page.locator(sel).count()`.
 _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
-    # "Last run: N minutes ago" (1 element) + per-cluster membership counts (20).
-    "speakers": (".last-clustered-chip", ".member-count"),
+    # `.count-chip` (GalleryCountChip.svelte) renders the true library total /
+    # loaded-count, which reflows the grid on every upload elsewhere in the
+    # stack; `.notifications-btn` (Navbar.svelte) is the navbar bell on every
+    # authenticated page. Neither is a layout fix (see module docstring
+    # issue #451 note) — row/page-height drift from card count is NOT maskable
+    # and is instead handled by the isolated-stack skip guard below.
+    #
+    # ⚠️ Mask the BUTTON, not the `.notification-badge` pill inside it. The pill
+    # is `{#if $unreadCount > 0}`, so it exists in one notification state and not
+    # the other — and a mask that only sometimes applies produces two different
+    # baselines for identical UI (absent: real navbar pixels; present: a magenta
+    # box). A single unread notification on the capture stack would silently
+    # invalidate every surface. `.notifications-btn` is unconditional and
+    # encloses the pill, so the masked region is identical either way. The cost
+    # is that a regression in the 20x20 bell glyph is no longer compared — cheap
+    # next to a baseline whose validity depends on nobody having notifications.
+    # `.meta-line` (VirtualGrid.svelte) is the per-card "Sep 06, 2026 · 23 MB ·
+    # 4 spk" strip. Masked because it is what BOUND these baselines to a single
+    # deployment: the upload date is the day the stack was seeded, so a baseline
+    # containing it can never match a re-seeded stack, and `fresh-destroy` on
+    # the capture deployment silently retired the whole suite. That is the
+    # mechanism by which these baselines rotted for 28 frontend commits. Losing
+    # the pixel comparison of a date/size/speaker-count string costs nothing a
+    # visual baseline is for — layout, chrome, spacing and theme are still
+    # compared in full — and buys baselines that survive a re-seed on any host.
+    "gallery": (".count-chip", ".notifications-btn", ".meta-line"),
+    # "Last run: N minutes ago" (1 element) + per-cluster membership counts (20)
+    # + the three tab counters ("13/1/11" etc, `.speakers-page .badge`) + the
+    # shared navbar notification pill. Row-count drift itself is not maskable —
+    # see the isolated-stack skip guard below.
+    "speakers": (
+        ".last-clustered-chip",
+        ".member-count",
+        ".speakers-page .badge",
+        ".notifications-btn",
+    ),
     # Users/files/tasks/throughput/queue/model/CPU/mem/disk/GPU cards — live
-    # telemetry and DB totals, all inside one wrapper (see comment above).
-    "settings": (".settings-modal .stats-grid",),
+    # telemetry and DB totals, all inside one wrapper (see comment above). The
+    # settings modal is captured with `full_page=False` over the gallery page
+    # underneath it, which leaks `.count-chip` and the navbar's
+    # `.notifications-btn` into the corner of the capture — `_volatile_regions`
+    # is keyed per-surface, so those two must be listed again here even though
+    # `gallery` already lists them.
+    "settings": (".settings-modal .stats-grid", ".count-chip", ".notifications-btn"),
     # Every trace node renders the real wall-clock cost of its stage (GH #514).
     # Those milliseconds differ on EVERY run by construction — that is the whole
     # point of measuring them — so a baseline containing them would be
     # un-reproducible from the very first commit. Masking them leaves the part
     # worth comparing: row order, marker shapes, labels, counts, and the
-    # skipped-row de-emphasis.
-    "chat_trace": (".trace-ms",),
+    # skipped-row de-emphasis. `.trace-chip` carries the retrieval/rerank/sample
+    # counts (e.g. "12 found"), which move with corpus size between runs;
+    # labels, outcome badges, and reasons stay unmasked as real semantic content.
+    "chat_trace": (".trace-ms", ".trace-chip"),
+    # Shared navbar notification pill — the only volatile element on this
+    # surface; the two different-file problem (see issue #451 note in the
+    # module docstring) is not maskable and is handled by the skip guard below.
+    "file_detail": (".notifications-btn",),
 }
+
+
+#: Selectors that are CONDITIONALLY rendered, so matching nothing is normal.
+#:
+#: The "a masked surface must actually mask something" assertions below exist to
+#: catch a CLASS RENAME silently disabling masking. They implement that as "does
+#: this selector match right now", which conflates two different things: a stale
+#: selector (a real defect) and an element the app correctly chose not to render
+#: (normal). `.notification-badge` was the case that exposed this: it is
+#: `{#if $unreadCount > 0}` in Navbar.svelte, so on a freshly seeded stack it
+#: renders zero elements — and `file_detail`, whose entire mask list was that one
+#: selector, FAILED both themes on a clean isolated stack while passing on the
+#: shared dev stack that happened to have unread notifications. The guard was
+#: reporting the cleanliness of the stack, not the health of the selector.
+#:
+#: **This set is deliberately EMPTY.** Exempting the badge would have made the
+#: suite pass while leaving the real hazard in place: a mask that applies in one
+#: notification state and not the other yields two different baselines for
+#: identical UI. The fix was to mask its unconditional parent `.notifications-btn`
+#: instead, so no exemption is needed. Prefer that shape — find a stable ancestor
+#: — before adding an entry here.
+#:
+#: Membership suppresses only the RUNTIME match requirement, never the static
+#: existence check in `tests/unit/test_visual_regression_selectors.py`, which
+#: does not depend on what the app happened to render during one capture.
+_CONDITIONAL_SELECTORS: frozenset[str] = frozenset()
+
+
+def _assert_masks(page: Page, surface: str) -> list[Any]:
+    """Return mask locators for *surface*, failing if a required one matched nothing.
+
+    A selector listed in `_CONDITIONAL_SELECTORS` is allowed to match nothing;
+    every other declared selector must match, because Playwright treats an
+    unmatched locator as a silent no-op and the volatile region would drift back
+    into the baseline with nothing in the run saying so.
+    """
+    regions: list[Any] = []
+    missing: list[str] = []
+    for selector in _VOLATILE_SELECTORS.get(surface, ()):
+        locator = page.locator(selector)
+        if locator.count():
+            regions.append(locator)
+        elif selector not in _CONDITIONAL_SELECTORS:
+            missing.append(selector)
+    if missing:
+        pytest.fail(
+            f"_VOLATILE_SELECTORS[{surface!r}] declares {missing}, which matched nothing "
+            f"on the rendered page. Playwright masks nothing for an unmatched locator, so "
+            f"this capture would bake a volatile region into its baseline. Either the class "
+            f"was renamed (fix the selector) or the element is conditionally rendered (add "
+            f"it to _CONDITIONAL_SELECTORS with a reason)."
+        )
+    return regions
+
+
+#: Host:port pairs that mean "the shared dev stack", not an isolated `--fresh`
+#: deployment. Matches conftest's own `FRONTEND_URL`/`BACKEND_URL` defaults
+#: (``localhost:5173``/``localhost:5174``) — the same signal the module
+#: docstring's issue #451 section already names as the isolation requirement,
+#: just not previously enforced anywhere.
+_SHARED_STACK_HOSTS = ("localhost:5173", "localhost:5174", "127.0.0.1:5173", "127.0.0.1:5174")
+
+#: Surfaces where masking cannot fully remove non-determinism — row/page-height
+#: drift from a changing card/cluster count, or (`file_detail`) two runs simply
+#: picking a different newest file. These need an isolated, seeded stack to be
+#: meaningfully green; `chat_trace` and `settings` are NOT in this set because
+#: masking makes them fully reproducible on the shared stack too.
+_NEEDS_ISOLATED_STACK = frozenset({"gallery", "speakers", "file_detail"})
+
+
+def _skip_unless_isolated_stack(surface: str, base_url: str, backend_url: str) -> None:
+    """Skip *surface* when running against the shared dev stack, not a `--fresh` one.
+
+    A missing isolated stack is not a UI regression, and this must never be a
+    false PASS either — masking cannot remove the row/page-height drift these
+    three surfaces have (see `_NEEDS_ISOLATED_STACK`), so comparing them against
+    a stale baseline on a shared, mutable stack is guaranteed to either fail on
+    ambient noise or (worse) silently pass because nobody has ever refreshed the
+    baseline for this exact random content.
+    """
+    if surface not in _NEEDS_ISOLATED_STACK:
+        return
+    if any(host in base_url or host in backend_url for host in _SHARED_STACK_HOSTS):
+        pytest.skip(
+            f"'{surface}' visual capture needs an isolated, seeded stack — the shared dev "
+            f"stack's file/cluster counts change between runs and cannot be fully masked "
+            f"(row/page-height drift). Run: ./opentr.sh start dev --fresh visual "
+            f"--port-offset 100 --seed-benchmark --with-mock-llm, then pytest "
+            f"backend/tests/e2e/test_visual_regression.py -v "
+            f"--base-url=http://localhost:5273 --backend-url=http://localhost:5274 "
+            f"(ports shift with --port-offset; wait for seeded files to leave 'processing' first)."
+        )
 
 
 def _run_traced_turn(page: Page, base_url: str, conversation_uuid: str) -> None:
@@ -528,6 +697,8 @@ def test_visual_regression(
     request: pytest.FixtureRequest,
 ) -> None:
     """Capture and compare a full-page screenshot for each surface and theme."""
+    backend_url = request.getfixturevalue("backend_url")
+    _skip_unless_isolated_stack(surface, base_url, backend_url)
     context = _make_context(browser, theme)
     page = context.new_page()
     try:
@@ -541,10 +712,20 @@ def test_visual_regression(
             page.wait_for_selector(".gallery-action-buttons", timeout=30000)
             page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
             _stabilize(page)
+            # A masked surface must actually mask something — see the speakers
+            # branch below for why this is asserted rather than assumed.
+            _assert_masks(page, "gallery")
         elif surface == "file_detail":
             page.goto(f"{base_url}/files/{transcribed_file_uuid}")
             page.wait_for_selector(".transcript-segment", timeout=30000)
             _stabilize(page)
+            # A masked surface must actually mask something — see the speakers
+            # branch below for why this is asserted rather than assumed. This
+            # surface's only volatile element is the navbar bell, which is
+            # unconditional — masking the button rather than the conditional
+            # badge inside it is what lets this assertion be meaningful here at
+            # all (see `_CONDITIONAL_SELECTORS`).
+            _assert_masks(page, "file_detail")
         elif surface == "speakers":
             page.goto(f"{base_url}/speakers")
             page.wait_for_selector(".speakers-page", timeout=30000)
@@ -555,11 +736,7 @@ def test_visual_regression(
             # into the baseline the moment a class is renamed — and the run would
             # look identical. Asserted here rather than in a separate test
             # because it is only knowable against the rendered page.
-            assert _volatile_regions(page, "speakers"), (
-                "None of _VOLATILE_SELECTORS['speakers'] matched anything on the "
-                "speakers page, so this capture masks nothing and its baseline "
-                "will absorb the 'Last run: N ago' chip and live cluster counts."
-            )
+            _assert_masks(page, "speakers")
         elif surface == "settings":
             page.goto(base_url)
             page.wait_for_selector(".user-button", timeout=30000)
@@ -578,11 +755,7 @@ def test_visual_regression(
             # See the speakers branch above for why this assertion exists: a
             # masked surface must actually mask something, or a class rename
             # silently lets the live gauges/DB totals back into the baseline.
-            assert _volatile_regions(page, "settings"), (
-                "_VOLATILE_SELECTORS['settings'] matched nothing on the settings "
-                "modal, so this capture masks nothing and its baseline will "
-                "absorb live CPU/disk/GPU gauges and DB totals."
-            )
+            _assert_masks(page, "settings")
         elif surface == "chat_trace":
             # Resolved lazily, NOT as a test parameter: the fixture skips without
             # the mock LLM, and a declared parameter would take the other four
@@ -592,10 +765,7 @@ def test_visual_regression(
             # something. Every row's `ms` is genuinely different each run, so an
             # unmatched selector here does not merely add noise — it guarantees
             # the baseline can never pass a second time.
-            assert _volatile_regions(page, "chat_trace"), (
-                "_VOLATILE_SELECTORS['chat_trace'] matched nothing, so this capture "
-                "bakes live per-stage timings into the baseline and can never match again."
-            )
+            _assert_masks(page, "chat_trace")
             # The warm-up is only useful if it took effect. A miss here still
             # produces a plausible-looking image, and the image is the only
             # thing a reviewer sees — so the precondition is asserted rather

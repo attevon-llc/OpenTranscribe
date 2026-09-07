@@ -443,7 +443,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.5rem 1.1rem;
@@ -529,7 +529,7 @@
     font-size: 0.65rem;
     text-transform: uppercase;
     font-weight: 600;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     padding: 0.1rem 0.35rem;
     border-radius: 0.25rem;
@@ -752,7 +752,7 @@
     padding: 0.5rem 1rem;
     border: none;
     border-radius: 8px;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     font-size: 0.875rem;
     font-weight: 500;

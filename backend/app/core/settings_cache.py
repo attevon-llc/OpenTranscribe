@@ -102,9 +102,3 @@ def invalidate(key: str) -> None:
         return
     with _lock:
         _cache.pop(key, None)
-
-
-def invalidate_all() -> None:
-    """Clear the entire settings cache (used on bulk/unknown writes)."""
-    with _lock:
-        _cache.clear()

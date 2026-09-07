@@ -22,7 +22,22 @@
   export let isOpen = false;
   export let title = '';
   export let maxWidth = '600px';
-  export let zIndex = 1300;
+  /**
+   * Optional fixed dialog height, e.g. `min(90vh, 780px)`.
+   *
+   * Applied INLINE, like `maxWidth` — deliberately not left to the call site's
+   * stylesheet. A caller that pinned this with
+   * `.host :global(.modal-container) { height: … }` had the rule silently stop
+   * applying: the host's only child is this component, so the descendant half
+   * of that selector crosses a component boundary, and svelte-check reports no
+   * unused-selector warning to say so. Empty means content-sized, which is what
+   * every smaller consumer (confirmations, pickers) wants.
+   */
+  export let height = '';
+  /** CSS z-index value. Defaults to the shared `--z-modal` tier (H5) — pass a
+   *  higher value (e.g. a toast/critical tier) only for a modal that must
+   *  layer above another modal it can be opened from. */
+  export let zIndex: string | number = 'var(--z-modal)';
   /**
    * Let an inner dropdown escape the body's scroll clip.
    *
@@ -30,6 +45,15 @@
    * stops scrolling and long content is unreachable.
    */
   export let allowOverflow = false;
+  /**
+   * Whether clicking the backdrop dismisses the modal.
+   *
+   * Set `false` for dialogs holding in-progress user work that a stray click
+   * must not destroy — the upload wizard (#739) carries a chosen file plus
+   * tags, collections and speaker settings. Escape and the X button still
+   * close, so there is always an obvious way out.
+   */
+  export let closeOnBackdropClick = true;
   export let onClose: () => void = () => {};
 
   // Stable id for wiring the dialog's accessible name to its <h2> title (when no
@@ -47,6 +71,7 @@
   });
 
   function handleBackdropClick(event: MouseEvent) {
+    if (!closeOnBackdropClick) return;
     if (event.target === event.currentTarget) onClose();
   }
 
@@ -60,10 +85,10 @@
 {#if isOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-backdrop" style="z-index: {zIndex}" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
+  <div class="modal-backdrop" style="z-index: {zIndex}; --modal-instance-z-index: {zIndex};" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
     <div
       class="modal-container"
-      style="max-width: {maxWidth}"
+      style="max-width: {maxWidth}{height ? `; height: ${height}` : ''}"
       role="dialog"
       aria-modal="true"
       aria-labelledby={$$slots.header ? undefined : titleId}
@@ -98,6 +123,9 @@
 {/if}
 
 <style>
+  /* z-index is set via the inline `style="z-index: {zIndex}"` above, not here
+     (H5) — a CSS rule here would always lose to that inline style anyway, so
+     one used to sit here dead, unreachable, and confusing to a reader. */
   .modal-backdrop {
     position: fixed;
     top: 0;
@@ -108,7 +136,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
     overflow: hidden;
     overscroll-behavior: none;
   }
@@ -206,11 +233,27 @@
     }
   }
 
-  /* Raise modals above navbar (z-index 1200) on mobile/tablet so
-     close button is not hidden behind the navbar */
+  /* Raise modals above the navbar (--z-navbar) on mobile/tablet so the close
+     button is not hidden behind it. `!important` is required here: this must
+     win over the inline `style="z-index: {zIndex}"` when a caller passed a
+     LOWER explicit zIndex, and `!important` on a normal CSS property beats an
+     inline style — a plain declaration would not.
+
+     ⚠️ Adversarial-review follow-up (H5): an unconditional
+     `z-index: var(--z-modal) !important` here defeated the documented `zIndex`
+     prop contract on every viewport ≤1200px — a caller passing a HIGHER value
+     on purpose (e.g. `SelectiveReprocessModal` passes `--z-toast`, 9999, so it
+     layers above another modal it can be opened from) got silently clobbered
+     back down to `--z-modal` (1300) the moment the viewport narrowed, with no
+     visual regression on desktop to catch it. `--modal-instance-z-index`
+     mirrors the same inline `zIndex` value into a CSS custom property so this
+     rule can take the GREATER of the two instead of unconditionally
+     overwriting: a caller's default (`--z-modal`) is unaffected, a
+     legitimately higher value survives, and the floor this rule exists for
+     (never render below the navbar) still holds. */
   @media (max-width: 1200px) {
     .modal-backdrop {
-      z-index: 1300 !important;
+      z-index: max(var(--z-modal), var(--modal-instance-z-index, var(--z-modal))) !important;
     }
   }
 

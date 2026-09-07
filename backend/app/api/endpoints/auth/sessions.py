@@ -164,7 +164,7 @@ def refresh_access_token(
     # Set new httpOnly cookies with rotated tokens (C2 security hardening)
     from app.auth.cookies import set_auth_cookies
 
-    set_auth_cookies(response, access_token, new_refresh_token)
+    set_auth_cookies(response, access_token, new_refresh_token, request)
     return response
 
 

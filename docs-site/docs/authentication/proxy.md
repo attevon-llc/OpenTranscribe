@@ -20,7 +20,7 @@ trusted-peer implementation, shared by both.
 
 ## Trust configuration — read this first
 
-:::danger `proxy_trusted_proxies` is required whenever proxy auth is enabled
+:::danger[`proxy_trusted_proxies` is required whenever proxy auth is enabled]
 An **empty** allowlist **refuses every header-sourced assertion outright** — it does not mean
 "trust everyone". A hardened deployment additionally refuses to *start* with `PROXY_ENABLED` and
 no allowlist configured.

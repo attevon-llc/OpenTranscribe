@@ -28,20 +28,14 @@ Configure AI models, caching behavior, and model discovery.
 # Whisper Transcription Models
 WHISPER_MODEL=large-v3-turbo  # or: large-v3, large-v2, medium, small, base, tiny
 
-# PyAnnote Speaker Diarization
-PYANNOTE_VERSION=auto  # or: v3, v4 (auto-detect installed version)
-EMBEDDING_MODE=auto  # or: v3, v4 (embedding model version)
+# PyAnnote Speaker Diarization — DIARIZATION_MODEL is fixed; there is no runtime version toggle
+DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
 MIN_SPEAKERS=1
 MAX_SPEAKERS=20
 
 # Model Caching & Storage
 MODEL_CACHE_DIR=./models
-HUGGINGFACE_CACHE=${MODEL_CACHE_DIR}/huggingface
-TORCH_CACHE=${MODEL_CACHE_DIR}/torch
 HUGGINGFACE_TOKEN=hf_your_token_here
-
-# Warm Cache (Pre-load Models on Startup)
-WARM_CACHE_ENABLED=false
 ```
 
 ### Transcription Performance Options
@@ -79,23 +73,32 @@ WHISPER_COMPUTE_TYPE=float16
 | `large-v3` | ~10GB | ~20GB | ~30GB |
 | `large-v2` | ~10GB | ~20GB | ~30GB |
 
-## PyAnnote v4 Configuration
+## Speaker Diarization & Voiceprint Embeddings
 
 Configure speaker diarization and voice fingerprinting for speaker identification and tracking.
+There is no `PYANNOTE_VERSION` or `EMBEDDING_MODE` variable in the code — the diarization
+pipeline is fixed to `DIARIZATION_MODEL=pyannote/speaker-diarization-community-1` (see
+[Model & Caching](#model--caching) above). "v4" below refers to the `pyannote.audio` 4.x
+model/API generation the app uses, not a selectable value. See
+[HuggingFace Token Setup](../installation/huggingface-setup.md) for what to accept on
+HuggingFace, and [Native Diarization Engine](#native-diarization-engine-diar-native) below for
+which process actually runs the pipeline.
 
 ```bash
-# Speaker Diarization Version
-PYANNOTE_VERSION=auto  # or: v3, v4 (auto-detect installed version)
-
 # Speaker Detection Ranges
 MIN_SPEAKERS=1         # Minimum speakers to detect
 MAX_SPEAKERS=20        # Maximum speakers to detect (no hard limit, can increase for large events)
 
-# Embedding & Fingerprinting
-EMBEDDING_MODE=auto    # or: v3, v4 (which embedding model to use)
+# Where v4 (256-dim) voiceprints are computed. Default true: they come from the
+# diarizer's own centroids, or from the diar-native sidecar when a separate
+# extraction is needed — both run the same WeSpeaker ResNet34-LM weights the
+# in-process model does, so this is a deployment choice, not an accuracy one.
+# Set false to force the in-process PyAnnote model (the escape hatch; costs a
+# 40-60s model load and ~500MB VRAM per worker). v3 (512-dim) installs always use
+# the in-process model — `pyannote/embedding` is a different network that the
+# sidecar does not serve.
+USE_NATIVE_SPEAKER_EMBEDDINGS=true
 
-# Model Caching & Warmup
-WARM_CACHE_ENABLED=false  # Pre-load speaker models on startup for faster first transcription
 MODEL_CACHE_DIR=./models
 ```
 
@@ -108,13 +111,91 @@ MODEL_CACHE_DIR=./models
 | Large conferences | 15-30 | 30-40 | Increase MAX_SPEAKERS |
 | Very large events | 30-50+ | 50-100 | No hard limit |
 
-### Warm Cache Benefits
+### Model preloading
 
-Enabling `WARM_CACHE_ENABLED=true` pre-loads PyAnnote models on startup:
-- **First transcription**: 15-20 seconds faster (models already loaded)
-- **Subsequent transcriptions**: No performance change
-- **Trade-off**: ~500MB additional memory usage at startup
-- **Recommended for**: High-throughput systems with continuous transcription
+There is no `WARM_CACHE_ENABLED` variable — that was never implemented. The real mechanism is
+`PRELOAD_GPU_MODELS` (see [GPU Concurrent Processing](#gpu-concurrent-processing) below): set it
+`true` on a GPU worker's compose service to load its model at container start instead of on the
+first task.
+
+## Native Diarization Engine (diar-native)
+
+`ENGINE_DIARIZER_BACKEND` selects which diarizer serves `local` (on-box) diarization —
+`native` (the coded default) routes to the `diar-native` sidecar, `pyannote` routes to the
+in-process PyAnnote fork. This is a **different axis** from `ASR_PROVIDER`/diarization-source
+above: it only decides which *engine* runs once diarization is already happening locally. See
+[Speaker Diarization → Native Diarization Engine](../features/speaker-diarization.md#native-diarization-engine-new-in-v050)
+for what the sidecar does and how its weights get provisioned; this section is only the
+variable reference. Defaults below come from `.env.example`'s "GPU AND TRANSCRIPTION" block and
+`docker-compose.diar-native.yml` — not invented here.
+
+```bash
+# Engine selection. SystemSettings `engine.diarizer_backend` (Settings -> Engine) wins over
+# this; both are re-read on every diarization call, so neither needs a worker restart.
+ENGINE_DIARIZER_BACKEND=native   # native (default) | pyannote
+
+# Worker -> sidecar HTTP client (backend/app/transcription/diarizer_native.py)
+DIAR_NATIVE_URL=http://diar-native:8701
+DIAR_NATIVE_SHARED_DIR=/scratch/opentranscribe/diar
+DIAR_NATIVE_TIMEOUT_S=1800
+DIAR_NATIVE_GENDER=1             # ask the sidecar for gender in the same pass
+
+# The diar-server process itself (docker-compose.diar-native.yml / -gpu.yml)
+#DIAR_NATIVE_MODE=               # cuda | mps | cpu -- leave unset; the compose overlay decides
+DIAR_NATIVE_MAX_INFLIGHT=2
+DIAR_NATIVE_LAZY_SESSIONS=1
+#DIAR_NATIVE_GPU=                # defaults to GPU_DEVICE_ID -- never a bare 0
+#DIAR_NATIVE_LOG_LEVEL=info
+#DIAR_NATIVE_LOG_FORMAT=text     # text | json
+
+# Model export (backend/app/transcription/native_provision.py, FastAPI lifespan)
+#DIAR_NATIVE_MODELS_DIR=./models/diar-native   # default: ${MODEL_CACHE_DIR}/diar-native
+#DIAR_NATIVE_AUTO_PROVISION=true
+#DIAR_NATIVE_MODEL_SET=fast      # fast (default) | small (laptop tier)
+#DIAR_NATIVE_PROVISION_TIMEOUT_S=1800
+```
+
+### Where each variable is read, and what changing it needs
+
+| Variable | Read by | Takes effect after |
+|---|---|---|
+| `ENGINE_DIARIZER_BACKEND` | `TranscriptionConfig._resolve_diarizer_backend()`, resolved fresh on every diarization call | nothing to restart — live immediately, and a DB `engine.diarizer_backend` setting overrides it anyway |
+| `DIAR_NATIVE_URL`, `DIAR_NATIVE_SHARED_DIR`, `DIAR_NATIVE_TIMEOUT_S`, `DIAR_NATIVE_GENDER` | module-level constants in `diarizer_native.py`, read once when the **celery worker** process imports it | restarting/recreating the celery worker container(s) |
+| `DIAR_NATIVE_MODE`, `DIAR_NATIVE_MAX_INFLIGHT`, `DIAR_NATIVE_LAZY_SESSIONS`, `DIAR_NATIVE_GPU`, `DIAR_NATIVE_LOG_LEVEL`, `DIAR_NATIVE_LOG_FORMAT` | the `diar-server` Rust binary, at its own process start | recreating the `diar-native` container only |
+| `DIAR_NATIVE_MODELS_DIR` | the compose bind-mount source for both `backend` and `diar-native`, and `native_provision.ensure_native_models` | recreating **both** the `backend` and `diar-native` containers |
+| `DIAR_NATIVE_AUTO_PROVISION`, `DIAR_NATIVE_MODEL_SET`, `DIAR_NATIVE_PROVISION_TIMEOUT_S` | `native_provision.py`, read once from the **backend's** FastAPI lifespan at startup | restarting the backend |
+
+### Provisioning is automatic
+
+The backend exports the ONNX/PLDA model set itself on first startup — nothing to run by hand
+on a normal install. It needs `HUGGINGFACE_TOKEN` (above) from an account that has also
+accepted the terms at
+[pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
+(the gate is per-account and auto-approved; a valid token whose account never accepted the
+terms fails identically — HTTP 403). Measured cold: 483,882,939 bytes in 137 seconds on a warm
+HuggingFace cache. It's idempotent behind a `diar-provision.json` marker in
+`DIAR_NATIVE_MODELS_DIR`, so every startup after the first is a `stat` pass, and the
+`diar-native` compose service waits on `depends_on: backend: condition: service_healthy` so it
+never starts against an empty `/models` and crash-loops.
+
+A failure here is never fatal to startup — diarization falls back to the in-process PyAnnote
+engine, logged, and that is a supported configuration. `./opentranscribe.sh download-models
+diar-native` runs the same export outside the backend's lifespan: use it to pre-provision
+before first start, to force a re-export, or on a multi-replica deployment where
+`DIAR_NATIVE_AUTO_PROVISION=false` hands the export to a dedicated job instead of racing
+several backend replicas against the same files.
+
+### CPU vs GPU
+
+`docker-compose.diar-native.yml` is CPU-safe on its own — no GPU device reservation,
+`DIAR_MODE` defaults to `cpu`. A second overlay, `docker-compose.diar-native-gpu.yml`, adds the
+nvidia device reservation (pinned to `DIAR_NATIVE_GPU`, falling back to `GPU_DEVICE_ID`) and
+flips `DIAR_MODE` to `cuda`. Both `opentr.sh` and `opentranscribe.sh` add that second overlay
+automatically whenever they've already detected an nvidia runtime for the rest of the stack —
+there is no separate flag to set. Idle GPU footprint is ~2.2 GB of warm ONNX Runtime arena once
+the sidecar has served a request (measured on `diar-server` 0.3.1; pre-0.3.1 builds held
+roughly double that, so re-measure with `nvidia-smi --query-compute-apps` rather than trusting
+a fixed number here).
 
 ## OpenSearch Neural Search
 
@@ -192,7 +273,7 @@ OPENSEARCH_CHUNKS_INDEX_SHARDS=1     # default -- correct for laptop/home-server
 OPENSEARCH_CHUNKS_INDEX_REPLICAS=0   # default -- correct for laptop/home-server (single node)
 ```
 
-:::warning A replica needs a second node to mean anything
+:::warning[A replica needs a second node to mean anything]
 `number_of_replicas` is a *copy count per shard*. On a single-node deployment (laptop, home
 server, the bundled `opensearch` container) there is nowhere to place a replica shard, so
 setting `OPENSEARCH_CHUNKS_INDEX_REPLICAS` above `0` leaves every replica **UNASSIGNED** and the
@@ -338,7 +419,6 @@ PYANNOTE_API_KEY=
 PYANNOTE_MODEL=parakeet  # or: whisper-large-v3-turbo
 
 # Cloud ASR Options
-CLOUD_ASR_EXTRACT_EMBEDDINGS=true  # Extract speaker embeddings locally for cross-file matching
 CLOUD_ASR_CONCURRENCY=4            # Concurrency for cloud-asr worker
 ```
 
@@ -475,7 +555,7 @@ PRESIGNED_URL_MAX_SECONDS=21600   # 6h default -- a presigned URL cannot outlive
 MULTIPART_THRESHOLD_MB=512        # objects at/above this size use browser-side multipart upload
 ```
 
-:::note S3 vs MinIO single-PUT ceiling
+:::note[S3 vs MinIO single-PUT ceiling]
 MinIO accepts a single-PUT object up to 5 TiB. AWS S3 rejects a single PUT above 5 GiB
 (`EntityTooLarge`), so on `STORAGE_BACKEND=s3` an upload above that size always goes through the
 multipart path regardless of `MULTIPART_THRESHOLD_MB`.
@@ -591,7 +671,7 @@ owns it in `user.auth_type`. Which methods are *available* is decided per method
 `local_enabled`, `ldap_enabled`, `oidc_enabled` and `pki_enabled` — see
 [the identity-source model](../authentication/overview.md#the-identity-source-model).
 
-:::warning There is no `AUTH_TYPE` setting
+:::warning[There is no `AUTH_TYPE` setting]
 Earlier versions of this page documented `AUTH_TYPE=local,ldap,keycloak` as an informational
 indicator. No such setting exists and nothing ever read it. Remove it from your `.env`; it does
 nothing.
@@ -630,7 +710,7 @@ OIDC_ROLES_CLAIM=groups            # realm_access.roles | groups | roles
 OIDC_ADMIN_ROLE=admin
 ```
 
-:::note `KEYCLOAK_*` still works
+:::note[`KEYCLOAK_*` still works]
 Every one of these variables was previously named `KEYCLOAK_*`, and those names keep working
 permanently — the legacy spelling even wins when both are set. The canonical spelling is
 `OIDC_*`; the backend logs one deprecation line at startup naming any legacy variables it found.
@@ -692,3 +772,301 @@ LOGIN_BANNER_TEXT=This is a restricted system...
 - [GPU Setup](../installation/gpu-setup.md)
 - [Multi-GPU Scaling](./multi-gpu-scaling.md)
 - [LLM Integration](../features/llm-integration.md)
+
+## Cloud ASR Providers
+
+:::tip[Configure these in the UI]
+Each user sets their own ASR provider and API key in **Settings → Transcription**,
+stored encrypted in the database. The variables below are only the
+**deployment-wide fallback** for users who have set nothing, and for a zero-touch
+provisioned install. They were removed from `.env.example` for that reason.
+:::
+
+`ASR_PROVIDER` selects the default engine: `local` (the bundled WhisperX, needs a
+GPU) or one of the cloud providers below.
+
+| Provider | `ASR_PROVIDER` | Variables |
+|---|---|---|
+| Deepgram | `deepgram` | `DEEPGRAM_API_KEY`, `DEEPGRAM_MODEL` (default `nova-3`) |
+| AssemblyAI | `assemblyai` | `ASSEMBLYAI_API_KEY`, `ASSEMBLYAI_MODEL` (`universal`) |
+| OpenAI | `openai` | reuses `OPENAI_API_KEY`; `OPENAI_ASR_MODEL` (`gpt-4o-transcribe`) |
+| Google Cloud Speech | `google` | `GOOGLE_CLOUD_CREDENTIALS` (path to the service-account JSON), `GOOGLE_ASR_MODEL` (`chirp-3`) |
+| Azure Speech | `azure` | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` (`eastus`), `AZURE_ASR_MODEL` (`whisper`) |
+| Amazon Transcribe | `aws` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ASR_MODEL`, `AWS_TRANSCRIBE_BUCKET` |
+| Speechmatics | `speechmatics` | `SPEECHMATICS_API_KEY`, `SPEECHMATICS_MODEL` |
+| Gladia | `gladia` | `GLADIA_API_KEY`, `GLADIA_MODEL` |
+
+:::warning[AWS variables are shared]
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_REGION` are **not
+ASR-specific**. The native S3 storage backend uses them when
+`S3_USE_IAM_ROLE=false`, and `BEDROCK_REGION` falls back to `AWS_REGION`.
+Changing them affects storage and Bedrock too. They remain in `.env.example` for
+that reason.
+:::
+
+Amazon Transcribe additionally needs `AWS_TRANSCRIBE_BUCKET` to already exist —
+Transcribe writes intermediate output there, and the bucket must be in
+`AWS_REGION`.
+
+Worker concurrency for cloud providers is `CLOUD_ASR_CONCURRENCY` (compose
+default **16**), not a per-provider setting.
+
+## LLM Providers
+
+:::tip[Configure these in the UI]
+Each user configures their own LLM provider, model and API key in
+**Settings → LLM Provider**, encrypted at rest. `LLMService` resolves per-user
+settings first and only falls back to the variables below when a user has none —
+which is also the path background tasks take. Leave `LLM_PROVIDER` empty for
+transcription-only mode with no AI features at all.
+:::
+
+| Provider | `LLM_PROVIDER` | Variables |
+|---|---|---|
+| vLLM (self-hosted) | `vllm` | `VLLM_BASE_URL`, `VLLM_MODEL_NAME`, `VLLM_API_KEY` |
+| Ollama (self-hosted) | `ollama` | `OLLAMA_BASE_URL`, `OLLAMA_MODEL_NAME` |
+| OpenAI | `openai` | `OPENAI_API_KEY`, `OPENAI_MODEL_NAME`, `OPENAI_BASE_URL` |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL_NAME`, `ANTHROPIC_BASE_URL` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL_NAME`, `OPENROUTER_BASE_URL` |
+| Amazon Bedrock | `bedrock` | `BEDROCK_REGION` only — no API key |
+| Custom (OpenAI-compatible) | `custom` | user-config only; never resolved from env |
+
+### Self-hosted models need the SSRF guard opened
+
+`LLM_ALLOW_PRIVATE_ENDPOINTS` defaults to **`false`**, which makes the backend
+refuse to call private, loopback, link-local or cloud-metadata addresses. That is
+correct for a cloud deployment and **blocks a local vLLM or Ollama entirely** —
+the symptom is an opaque `Health check blocked … Private IP address`.
+
+```bash
+LLM_ALLOW_PRIVATE_ENDPOINTS=true   # required for local vLLM / Ollama
+```
+
+:::danger[Keep it false on multi-tenant deployments]
+With it on, any user can point a "test connection" at internal services or cloud
+instance metadata. Only enable it where you control who can register.
+:::
+
+### Bedrock uses the AWS credential chain
+
+There is deliberately no Bedrock API key. boto3 resolves credentials from the
+standard chain (instance role, task role, shared profile, environment), so a
+deployment on EC2/ECS/EKS provisions no secret at all. Required IAM actions:
+`bedrock:InvokeModelWithResponseStream` (chat) and `bedrock:InvokeModel`
+(summaries). `BEDROCK_REGION` falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`.
+
+### Context window
+
+`max_tokens` is a **UI setting**, not an environment variable
+(**Settings → LLM Provider → Max Tokens**). It still defaults to **8192**, but a
+**Discover context window** probe (beside Test Connection) now measures the
+model's real maximum instead of making you trust that default: for **vLLM** it
+reads `max_model_len` off `GET /v1/models`, for **Ollama** it reads the model's
+`context_length` off `POST /api/show`. Both are metadata-only calls — no
+generation, no user content — and run only when you click the button, never on
+a schedule. Every other provider (Anthropic, OpenRouter, Bedrock, `custom`)
+reports as unsupported and your configured value stands unchanged. The probe
+never guesses upward — a stale or wrong measurement fails closed to "unknown"
+rather than raising your configured limit for you — so `max_tokens` still needs
+to be raised by hand to match what the probe reports; leaving it at 8192 still
+truncates long transcripts, the probe just makes that visible instead of
+silent.
+
+## Worker Concurrency and PostgreSQL Tuning
+
+Advanced knobs for bulk-processing workloads. All are **optional** — the compose
+defaults suit a 4–8 GB server with SSD storage, so a normal deployment sets none
+of them. They were removed from `.env.example` to keep it to what an install
+actually needs.
+
+### Celery worker concurrency
+
+| Variable | Default | Worker |
+|---|---|---|
+| `DOWNLOAD_CONCURRENCY` | 5 | parallel video/URL downloads — raise for bulk imports |
+| `DOWNLOAD_MAX_TASKS` | 10 | restart the download worker after N tasks |
+| `CPU_WORKER_CONCURRENCY` | 8 | preprocessing, postprocessing, waveforms |
+| `CLOUD_ASR_CONCURRENCY` | **16** | concurrent cloud-provider transcriptions |
+| `REDACTION_MAX_TASKS` | **200** | restart the redaction worker after N tasks |
+| `REDACTION_WORKER_POOL` | `threads` | Celery pool for the redaction worker |
+| `NLP_CONCURRENCY` | 4 | summarization, speaker ID, topic extraction |
+| `NLP_MAX_TASKS` | 50 | restart the NLP worker after N tasks |
+| `WORKER_DB_POOL_SIZE` | 2 | worker SQLAlchemy pool (workers fork their own engines) |
+| `WORKER_DB_MAX_OVERFLOW` | 3 | worker pool overflow |
+
+GPU worker settings are documented separately under **GPU Configuration** above —
+note in particular that `GPU_MAX_TASKS` is **ignored** on the default `threads`
+pool, because `--max-tasks-per-child` is a prefork-only feature.
+
+### PostgreSQL
+
+These override the values compose passes to the Postgres container.
+
+| Variable | Default | Guidance |
+|---|---|---|
+| `PG_SHARED_BUFFERS` | `256MB` | ~25% of available RAM |
+| `PG_EFFECTIVE_CACHE_SIZE` | `1GB` | ~75% of RAM, as an OS-cache estimate |
+| `PG_WORK_MEM` | `16MB` | per sort/hash operation |
+| `PG_MAINTENANCE_WORK_MEM` | `128MB` | `VACUUM`, `CREATE INDEX` |
+| `PG_RANDOM_PAGE_COST` | `1.1` | `1.1` for SSD, `4.0` for spinning disk |
+| `PG_EFFECTIVE_IO_CONCURRENCY` | `200` | `200` for SSD, `2` for HDD |
+| `PG_MAX_CONNECTIONS` | `200` | maximum client connections |
+
+### Auto-constructed values — do not set these
+
+Some variables are **derived** and setting them by hand has no effect or breaks
+the deployment:
+
+- `DATABASE_URL` — built by the backend from the individual `POSTGRES_*` settings.
+- `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` — built from `REDIS_HOST`,
+  `REDIS_PORT` and `REDIS_PASSWORD`.
+- `POSTGRES_HOST`, `MINIO_HOST`, `REDIS_HOST`, `OPENSEARCH_HOST` inside
+  containers — compose hardcodes the service DNS names. The values in `.env` only
+  affect host-side tools such as pytest.
+
+## Search and Indexing Tuning
+
+Optional knobs for the OpenSearch transcript index. Defaults are correct for a
+laptop or single home server; none of these need setting for a normal install.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SEARCH_CHUNK_TARGET_WORDS` | 200 | target words per transcript chunk |
+| `SEARCH_CHUNK_OVERLAP_WORDS` | 40 | sliding-window overlap between chunks |
+| `SEARCH_BULK_BATCH_SIZE` | 100 | chunks per OpenSearch bulk request |
+| `SEARCH_NEURAL_BATCH_SIZE` | 5 | documents per embedding call |
+| `SEARCH_REINDEX_REFRESH_INTERVAL` | 100 | flush a Lucene segment every N files |
+| `SEARCH_LARGE_TRANSCRIPT_CHUNKS` | — | bulk loads this large disable refresh for the load |
+| `REINDEX_PARALLEL_WORKERS` | — | parallel reindex workers |
+| `SEARCH_COLLAPSE_MAX_CONCURRENT` | 20 | concurrent inner_hits searches; 0 = sequential |
+| `SEARCH_MAX_OVERFETCH` | — | over-fetch ceiling before collapse |
+| `SEARCH_HYBRID_MIN_SCORE` | — | minimum hybrid score to return a hit |
+| `SEARCH_SEMANTIC_HIGH_CONFIDENCE` | 0.010 | semantic-confidence threshold |
+| `SEARCH_SEMANTIC_SUPPRESS_RATIO` | 0.20 | suppression ratio for weak semantic hits |
+| `OPENSEARCH_CHUNKS_INDEX_SHARDS` | 1 | applied **only at index creation** |
+| `OPENSEARCH_CHUNKS_INDEX_REPLICAS` | 0 | see the warning below |
+
+:::warning[Changing chunk size requires a full reindex]
+Chunk boundaries are baked into the index at write time. Changing
+`SEARCH_CHUNK_TARGET_WORDS` or `SEARCH_CHUNK_OVERLAP_WORDS` affects only
+newly-indexed content until you reindex everything, which leaves a corpus chunked
+two different ways in the meantime.
+:::
+
+:::warning[Replicas on a single node]
+`OPENSEARCH_CHUNKS_INDEX_REPLICAS > 0` on a single-node cluster leaves every
+replica shard permanently `UNASSIGNED` and the index status yellow — there is no
+second node to place them on. Set it `>= 1` only on a multi-node domain.
+:::
+
+### Fusion strategy — measurement knobs, deliberately env-only
+
+`SEARCH_FUSION_STRATEGY`, `SEARCH_RRF_RANK_CONSTANT`, `SEARCH_RRF_WINDOW_SIZE`,
+`SEARCH_NORMALIZATION_TECHNIQUE`, `SEARCH_COMBINATION_TECHNIQUE` and
+`SEARCH_COMBINATION_WEIGHTS` select how keyword and vector results are fused.
+
+These are **not** DB-backed on purpose: they exist to run A/B measurements, and a
+per-request argument is the supported way to use them. RRF remains the default
+because a ten-arm sweep over 1,651 queries found no arm that won on both corpora.
+See `backend/app/services/search/CLAUDE.md` before changing any of them.
+
+### Per-variable reference — cloud ASR
+
+Every variable below is the **deployment-wide fallback**. A user who configures a
+provider in **Settings → Transcription** overrides all of it, and their API key is
+stored encrypted rather than in a file.
+
+| Variable | Valid values / limits | Default | Description |
+|---|---|---|---|
+| `ASR_PROVIDER` | `local` \| `deepgram` \| `assemblyai` \| `openai` \| `google` \| `azure` \| `aws` \| `speechmatics` \| `gladia` | `local` | Engine used when a user has chosen nothing. `local` uses the bundled WhisperX and requires a GPU. |
+| `DEEPGRAM_API_KEY` | string | *(empty)* | Deepgram credential. Empty disables the provider. |
+| `DEEPGRAM_MODEL` | `nova-3`, `nova-2`, `enhanced`, `base` | `nova-3` | Deepgram model id. Older accounts may not have `nova-3`. |
+| `ASSEMBLYAI_API_KEY` | string | *(empty)* | AssemblyAI credential. |
+| `ASSEMBLYAI_MODEL` | `universal`, `best`, `nano` | `universal` | Model tier. `nano` is cheapest, `best` most accurate. |
+| `OPENAI_ASR_MODEL` | `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `whisper-1` | `gpt-4o-transcribe` | OpenAI speech model. Uses `OPENAI_API_KEY` — there is no separate ASR key. |
+| `GOOGLE_CLOUD_CREDENTIALS` | absolute path | *(empty)* | **Path to a service-account JSON file**, not a key string. Must be readable inside the container. |
+| `GOOGLE_ASR_MODEL` | `chirp-3`, `chirp-2`, `latest_long`, `latest_short` | `chirp-3` | Google Speech model. |
+| `AZURE_SPEECH_KEY` | string | *(empty)* | Azure Speech subscription key. |
+| `AZURE_SPEECH_REGION` | any Azure region id | `eastus` | **Must match the region the key was issued for**, or every request returns 401. |
+| `AZURE_ASR_MODEL` | `whisper`, `conversation` | `whisper` | Azure recognition model. |
+| `AWS_ASR_MODEL` | `standard`, `medical` | `standard` | Amazon Transcribe tier. |
+| `AWS_TRANSCRIBE_BUCKET` | S3 bucket name | *(empty)* | Bucket Transcribe writes intermediate output to. **Must already exist and be in `AWS_REGION`.** |
+| `SPEECHMATICS_API_KEY` | string | *(empty)* | Speechmatics credential. |
+| `SPEECHMATICS_MODEL` | `standard`, `enhanced` | `standard` | Operating point. `enhanced` is slower and more accurate. |
+| `GLADIA_API_KEY` | string | *(empty)* | Gladia credential. |
+| `GLADIA_MODEL` | `standard`, `accurate` | `standard` | Gladia model tier. |
+
+#### Example — Deepgram as the deployment default
+
+```bash
+# .env
+ASR_PROVIDER=deepgram
+DEEPGRAM_API_KEY=your-deepgram-key
+DEEPGRAM_MODEL=nova-3
+```
+
+#### Example — Amazon Transcribe with an instance role
+
+```bash
+# .env — no static keys; the EC2/ECS role supplies credentials
+ASR_PROVIDER=aws
+AWS_REGION=us-east-1
+AWS_TRANSCRIBE_BUCKET=my-transcribe-scratch   # must exist, same region
+AWS_ASR_MODEL=standard
+```
+
+### Per-variable reference — LLM providers
+
+**Where to set** column legend:
+
+| Marker | Meaning |
+|---|---|
+| 🖥️ **UI** | Configurable in the admin/user UI. The UI value **wins** — you do not need to set it in `.env` at all. The env var is only a fallback for users who have configured nothing, and for background tasks (which have no user). |
+| 📄 **env** | No UI equivalent exists. `.env` is the only way to set it. |
+
+| Variable | Where to set | Valid values / limits | Default | Description |
+|---|---|---|---|---|
+| `LLM_PROVIDER` | 🖥️ UI | `vllm` \| `openai` \| `ollama` \| `anthropic` \| `bedrock` \| `openrouter` \| `custom` \| *(empty)* | *(empty)* | Fallback provider. **Empty = transcription-only**: no summaries, speaker suggestions or chat. `custom` is user-config only and is never resolved from env. |
+| `LLM_ALLOW_PRIVATE_ENDPOINTS` | 📄 env | `true` \| `false` | `false` | SSRF guard. **Must be `true` for a local vLLM/Ollama**, or calls are refused with `Health check blocked … Private IP address`. Keep `false` anywhere untrusted users can register. |
+| `VLLM_BASE_URL` | 🖥️ UI | URL ending `/v1` | `http://localhost:8012/v1` | vLLM OpenAI-compatible endpoint. This exact default is treated as *"not configured"*, so an untouched value is ignored rather than dialled. |
+| `VLLM_MODEL_NAME` | 🖥️ UI | model name your server reports | *(empty)* | Must match what vLLM serves. `gpt-oss` is treated as a placeholder, not a real model. |
+| `VLLM_API_KEY` | 🖥️ UI | string | *(empty)* | Only needed if vLLM was started with `--api-key`. Usually blank locally. |
+| `OLLAMA_BASE_URL` | 🖥️ UI | URL | `http://localhost:11434` | ⚠️ Unlike vLLM this has **no** "not configured" sentinel — an untouched default is treated as real and hits the SSRF refusal unless `LLM_ALLOW_PRIVATE_ENDPOINTS=true`. |
+| `OLLAMA_MODEL_NAME` | 🖥️ UI | any pulled Ollama tag | `llama2:7b-chat` | ⚠️ The coded default is **stale** (Llama 2, 2023). Use a current tag such as `llama3.1:8b`, and pull it first: `ollama pull llama3.1:8b`. |
+| `OPENAI_API_KEY` | 🖥️ UI | `sk-…` | *(empty)* | OpenAI credential, shared with the OpenAI ASR provider. |
+| `OPENAI_MODEL_NAME` | 🖥️ UI | any OpenAI chat model | `gpt-4o-mini` | Model used for summaries and speaker suggestions. |
+| `OPENAI_BASE_URL` | 🖥️ UI | URL | `https://api.openai.com/v1` | Override for an OpenAI-compatible gateway. |
+| `ANTHROPIC_API_KEY` | 🖥️ UI | `sk-ant-…` | *(empty)* | Anthropic credential. |
+| `ANTHROPIC_MODEL_NAME` | 🖥️ UI | any Claude model id | `claude-haiku-4-5` | Anthropic model. |
+| `ANTHROPIC_BASE_URL` | 🖥️ UI | URL | `https://api.anthropic.com` | Override for a proxy or gateway. |
+| `OPENROUTER_API_KEY` | 🖥️ UI | `sk-or-…` | *(empty)* | OpenRouter credential. |
+| `OPENROUTER_MODEL_NAME` | 🖥️ UI | `vendor/model` slug | `anthropic/claude-haiku-4.5` | Note the `vendor/model` form — a bare model name will not resolve. |
+| `OPENROUTER_BASE_URL` | 🖥️ UI | URL | `https://openrouter.ai/api/v1` | OpenRouter endpoint. |
+| `BEDROCK_REGION` | 📄 env | AWS region id | *(empty)* | Falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. **No API key exists** — boto3 uses the standard credential chain. The Bedrock *model* is chosen per user in the UI only, so there is no env var for it. |
+| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider → Max Tokens. A **Discover context window** probe (vLLM/Ollama only) can measure the model's real maximum for comparison, but never raises this value for you — leaving it at 8192 still silently truncates long transcripts. |
+
+#### Example — local Ollama on the same host
+
+```bash
+# .env
+LLM_PROVIDER=ollama
+LLM_ALLOW_PRIVATE_ENDPOINTS=true      # REQUIRED, or every call is refused
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL_NAME=llama3.1:8b         # run: ollama pull llama3.1:8b
+```
+
+#### Example — cloud provider for a hosted deployment
+
+```bash
+# .env
+LLM_PROVIDER=anthropic
+LLM_ALLOW_PRIVATE_ENDPOINTS=false     # keep the SSRF guard on
+ANTHROPIC_API_KEY=sk-ant-your-key
+ANTHROPIC_MODEL_NAME=claude-haiku-4-5
+```
+
+:::note[Setting these is optional]
+None of the above is required. A deployment with `LLM_PROVIDER` empty and
+`ASR_PROVIDER=local` transcribes normally with no cloud account at all — which is
+the default self-hosted configuration.
+:::

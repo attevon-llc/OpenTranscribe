@@ -329,7 +329,7 @@ Edit `.env`:
 ```bash
 GPU_TRANSCRIBE_DEVICE_ID=0       # A6000 — WhisperX only
 GPU_DIARIZE_DEVICE_ID=1          # 3080 Ti — PyAnnote only
-ENGINE_SHARED_VOLUME_PATH=/tmp/transcription
+ENGINE_SHARED_VOLUME_PATH=/scratch/opentranscribe/engine
 ```
 
 ```bash

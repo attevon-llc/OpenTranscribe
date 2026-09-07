@@ -578,11 +578,17 @@ class TaskRecoveryService:
         for media_file in oom_files:
             stats["files_checked"] += 1
 
+            # The effective ceiling is the admin-tunable SystemSettings value, never
+            # `MediaFile.max_retries` — nothing writes that column (see A3 in
+            # management.py), so logging/notifying from it always reported the ORM
+            # default of 3 regardless of the actual configured limit.
+            effective_max_retries = system_settings_service.get_retry_config(db)["max_retries"]
+
             # Check if retry is allowed based on system settings
             if not system_settings_service.should_retry_file(db, int(media_file.retry_count or 0)):
                 logger.warning(
                     f"OOM retry limit exhausted for file {media_file.id} ({media_file.filename}) - "
-                    f"retry_count: {media_file.retry_count}, max_retries: {media_file.max_retries}"
+                    f"retry_count: {media_file.retry_count}, max_retries: {effective_max_retries}"
                 )
                 stats["files_exhausted"] += 1
                 # File stays in ERROR status (already there)
@@ -591,7 +597,7 @@ class TaskRecoveryService:
             try:
                 logger.info(
                     f"Retrying OOM error for file {media_file.id} ({media_file.filename}) - "
-                    f"attempt {(media_file.retry_count or 0) + 1}/{media_file.max_retries}"
+                    f"attempt {(media_file.retry_count or 0) + 1}/{effective_max_retries}"
                 )
 
                 # Update recovery tracking fields. Both counters are nullable Integers
@@ -619,7 +625,7 @@ class TaskRecoveryService:
                             int(media_file.user_id),
                             int(media_file.id),
                             FileStatus.PROCESSING,
-                            f"Retrying after GPU memory error (attempt {media_file.retry_count}/{media_file.max_retries})",
+                            f"Retrying after GPU memory error (attempt {media_file.retry_count}/{effective_max_retries})",
                             progress=0,
                         )
                     except Exception as e:

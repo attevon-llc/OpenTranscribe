@@ -48,6 +48,11 @@ cachetools==7.1.7
 # Asynchronous Tasks
 celery==5.6.3
 redis==8.1.0
+# Pure-Python (tornado/prometheus_client/humanize/pytz deps only, no torch) — needed so
+# backend/tests/unit/test_flower_worker_discovery.py's is_flower_option() check (issue #609)
+# actually runs in CI instead of importorskip-ing silently, which is the exact "240 security
+# tests gated off behind stale env vars" failure mode scripts/audit-tests.py exists to prevent.
+flower==2.1.0
 psycopg2-binary==2.9.12
 minio==7.2.20
 imohash==1.1.0
@@ -63,6 +68,15 @@ qrcode[pil]==8.2
 
 # AI/ML stack (CPU wheels via the extra index above)
 numpy==2.4.6
+# pandas is TRANSITIVE in the real image (pyannote-core/database/metrics and whisperx each
+# declare a bare `pandas>=2.2.3` floor), and CI installs none of those. But the diarize
+# result handed to speaker_assigner IS a pandas DataFrame in production, and
+# tests/unit/test_speaker_assigner.py exercises exactly that. Without this pin the test
+# raises ModuleNotFoundError in CI; with an `importorskip` it would silently SKIP, which is
+# the same green-vacuum that let the pandas 3.0 breakage reach production in the first place.
+# Pinned to the version the image resolves so CI reproduces the real condition, not a
+# friendlier one.
+pandas==3.0.5
 # See requirements.txt for why 2.11.0 (not a newer torch) is the pinned pair.
 torch==2.11.0
 torchaudio==2.11.0
@@ -98,6 +112,8 @@ speechmatics-batch==0.5.0
 boto3==1.43.74
 openai==3.3.0
 requests==2.34.2
+# See requirements.txt for why — LLM summary JSON repair (llm_service.py)
+json-repair==0.63.4
 
 # Diarization metrics (cpWER) — exercised by tests/unit/test_diarization_metrics.py
 meeteval==0.4.3

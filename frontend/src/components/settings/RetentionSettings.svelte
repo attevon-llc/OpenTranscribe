@@ -625,7 +625,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
   }
 
   .toggle-input:checked + .toggle-switch::after {
@@ -712,7 +712,7 @@
   }
 
   .confirm-check-label input[type='checkbox']:checked {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-color: var(--primary-color);
   }
 
@@ -769,7 +769,7 @@
   }
 
   .status-badge {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border-radius: 10px;
     padding: 0 0.5rem;

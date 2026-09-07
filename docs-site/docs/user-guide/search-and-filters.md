@@ -29,7 +29,7 @@ Combines full-text and semantic search for the best results:
 - Weighted combination for optimal relevance
 - Falls back gracefully if neural search is unavailable
 
-:::note Hybrid Search Fix (v0.4.0)
+:::note[Hybrid Search Fix (v0.4.0)]
 A critical bug in OpenSearch 3.4 caused hybrid search to silently fall back to keyword-only (BM25) search due to an `ArrayIndexOutOfBoundsException` triggered by the combination of aggregations, `collapse`, and RRF search pipelines. This was fixed in v0.4.0 — semantic search now works as intended. The improvement is significant: for example, searching "pytorch" went from 1 result to 83 results after the fix. Typo tolerance and query latency (255–500ms) are also confirmed working. If you were using an earlier version, reindexing is not required — the fix is in the query layer.
 :::
 
@@ -95,6 +95,28 @@ For maximum precision, combine text queries with filters:
 When search results are returned, matching text is highlighted with `<em>` tags in the result snippets. This makes it easy to see exactly where your search terms appear within each transcript. Result snippets show up to 150 characters of surrounding context for each match.
 
 ![Search results with highlighted matching transcript segments](/img/screenshots/search/search-results.png)
+
+## Finding Text Inside a Transcript
+
+The gallery/library search above searches across your whole collection. A separate **find bar**
+searches *within* the transcript or summary you currently have open, and shares its component
+and fuzzy-matching behavior (diacritic- and case-folding) everywhere it appears, so it behaves
+the same way in the transcript viewer as it does in the summary panel.
+
+In the transcript viewer, the find bar highlights matches in the currently loaded portion of the
+transcript instantly, then resolves a lightweight, debounced count query scoped to that file to
+show an accurate **N of M+** indicator and progressively load more matches if any exist outside
+what's currently rendered — so a match late in a long transcript is never missed just because
+that page hasn't loaded yet. In the summary panel, where the whole summary is already in memory,
+the find bar is a simpler, complete-from-the-start version of the same component.
+
+### Searching Settings
+
+**Settings** has its own macOS-style search: a search box above the sidebar tabs that replaces
+the grouped navigation with ranked, highlighted results as you type. Selecting a result jumps
+straight to that section and briefly flashes the matched control, so you don't have to remember
+which tab a setting lives under. It works across all supported languages and only surfaces
+settings your account and edition can actually see.
 
 ## Transcript Comments
 

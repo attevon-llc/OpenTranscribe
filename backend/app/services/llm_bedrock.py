@@ -210,6 +210,75 @@ def translate_stream_event(
     return None, None
 
 
+class BedrockStreamError(RuntimeError):
+    """A `type=="error"` event surfaced mid-stream by :func:`stream_converse`.
+
+    Raised by :func:`converse` rather than swallowed, so the non-streaming caller sees
+    the provider's own message instead of a generic "empty content" error.
+    """
+
+
+def converse(
+    *,
+    model: str,
+    region: str,
+    messages: list[dict[str, str]],
+    max_tokens: int,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    attribution: dict[str, Any] | None = None,
+) -> tuple[str, int | None, str | None]:
+    """Non-streaming Bedrock completion, built by draining :func:`stream_converse`.
+
+    Bedrock's Converse API has no separate non-streaming call in this module — Converse
+    (invoked here) and ConverseStream are two distinct boto3 operations, and adding a
+    second one would duplicate the request-building and event-translation logic that
+    :func:`stream_converse` already owns. Folding the stream is zero new boto3 surface.
+
+    Args:
+        model: Foundation-model ID, inference-profile ID, or profile ARN.
+        region: AWS region to call.
+        messages: Chat messages in OpenAI format (``system`` role permitted).
+        max_tokens: Output ceiling.
+        temperature: Sampling temperature, omitted when None.
+        top_p: Nucleus sampling, omitted when None.
+        attribution: Tenant/user identifiers for ``requestMetadata``.
+
+    Returns:
+        ``(content, usage_tokens, finish_reason)`` — the same shape every other
+        provider's ``_extract_*_response`` returns.
+
+    Raises:
+        BedrockStreamError: The stream reported an error event (client construction
+            failure, throttling, a Bedrock-side exception, or an interrupted stream).
+    """
+    content_parts: list[str] = []
+    usage_tokens: int | None = None
+    finish_reason: str | None = None
+
+    for event in stream_converse(
+        model=model,
+        region=region,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        attribution=attribution,
+    ):
+        if event.type == "delta":
+            content_parts.append(event.text or "")
+        elif event.type == "usage":
+            prompt = event.prompt_tokens or 0
+            completion = event.completion_tokens or 0
+            usage_tokens = prompt + completion
+        elif event.type == "error":
+            raise BedrockStreamError(event.message or "Bedrock error")
+        elif event.type == "done":
+            finish_reason = event.finish_reason
+
+    return "".join(content_parts), usage_tokens, finish_reason
+
+
 def stream_converse(
     *,
     model: str,
@@ -317,59 +386,3 @@ def stream_converse(
         logger.warning("Bedrock stream for %s produced no usage metadata", model_id)
 
     yield LLMStreamEvent(type="done", finish_reason=finish_reason or "stop")
-
-
-def invoke_converse(
-    *,
-    model: str,
-    region: str,
-    messages: list[dict[str, str]],
-    max_tokens: int,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    attribution: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Non-streaming Converse call, for the batch enrichment tasks.
-
-    Returns:
-        ``{"content": str, "usage": {...}, "stop_reason": str}``.
-
-    Raises:
-        BedrockNotConfiguredError: No region, no model, or boto3 missing.
-        Exception: Any botocore error, propagated for the caller's retry policy.
-    """
-    client = _client(region)
-    model_id = resolve_model_id(model, region)
-    system_blocks, turns = split_system_messages(messages)
-
-    inference_config: dict[str, Any] = {"maxTokens": max_tokens}
-    if temperature is not None:
-        inference_config["temperature"] = temperature
-    if top_p is not None:
-        inference_config["topP"] = top_p
-
-    request: dict[str, Any] = {
-        "modelId": model_id,
-        "messages": turns,
-        "inferenceConfig": inference_config,
-    }
-    if system_blocks:
-        request["system"] = system_blocks
-    metadata = build_request_metadata(attribution)
-    if metadata:
-        request["requestMetadata"] = metadata
-
-    response = client.converse(**request)
-    blocks = response.get("output", {}).get("message", {}).get("content", [])
-    text = "".join(str(block.get("text", "")) for block in blocks)
-    usage = response.get("usage", {}) or {}
-    return {
-        "content": text,
-        "usage": {
-            "prompt_tokens": usage.get("inputTokens"),
-            "completion_tokens": usage.get("outputTokens"),
-            "cache_read_tokens": usage.get("cacheReadInputTokens"),
-            "cache_write_tokens": usage.get("cacheWriteInputTokens"),
-        },
-        "stop_reason": response.get("stopReason", "stop"),
-    }

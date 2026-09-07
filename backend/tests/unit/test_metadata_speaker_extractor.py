@@ -106,12 +106,16 @@ class TestTitlePatternExtraction:
         assert "Michael Chen" in names
 
     def test_no_false_positive_on_plain_title(self, extractor):
-        """A plain title with no name pattern should return no hints."""
+        """A plain title with no name pattern should return no hints.
+
+        Was a loop over ``result.hints`` asserting each hint's name had >= 1 word —
+        trivially true of any non-empty name, and vacuous on the empty list this
+        extractor actually returns for a plain title, so the test always passed
+        regardless of what the extractor did. The docstring's own claim ("should
+        return no hints") is directly assertable and is what is now checked.
+        """
         result = extractor.extract({"title": "How to cook pasta"})
-        # Should not pick up single-word or junk names
-        for h in result.hints:
-            # Any hint returned must be a valid multi-word title-case string
-            assert len(h.name.split()) >= 1
+        assert result.hints == [], f"expected no hints for a plain title, got: {result.hints}"
 
     def test_hints_have_title_source(self, extractor):
         """Hints extracted from title should have source='title'."""
@@ -580,6 +584,7 @@ class TestCrossReferenceAttributes:
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
         matches = [r for r in results if r["alignment"] == "match"]
+        assert matches, "expected at least one 'match' alignment to check confidence_boost on"
         for m in matches:
             assert m["confidence_boost"] > 0
 
@@ -592,6 +597,7 @@ class TestCrossReferenceAttributes:
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
         mismatches = [r for r in results if r["alignment"] == "mismatch"]
+        assert mismatches, "expected at least one 'mismatch' alignment to check confidence_boost on"
         for m in mismatches:
             assert m["confidence_boost"] < 0
 

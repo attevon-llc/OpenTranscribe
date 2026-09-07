@@ -218,6 +218,57 @@ def test_dispatch_reindex_ignores_owners_whose_files_are_not_completed(
     assert set(result["reindex_task_ids"].keys()) == baseline | {normal_user.id}
 
 
+def test_dispatch_reindex_with_a_named_scope_covers_exactly_those_owners(
+    db_session, normal_user, other_user
+):
+    """The #627 partial scope: each owner's coordinator gets that owner's files.
+
+    A partial scope must NOT also sweep in every other owner of a completed file
+    the way the default whole-corpus mode does — a pending-only sweep that
+    re-embedded fully-indexed accounts is the opposite defect.
+    """
+    _make_media_file(db_session, other_user, FileStatus.COMPLETED)
+    fake_delay = MagicMock(side_effect=lambda **kw: MagicMock(id=f"task-{kw['user_id']}"))
+
+    with (
+        patch("app.db.session_utils.session_scope", lambda: _yield_session(db_session)),
+        patch("app.tasks.reindex_task.reindex_transcripts_task.delay", fake_delay),
+    ):
+        result = dispatch_reindex_for_every_owner(
+            triggered_by=normal_user.id,
+            file_uuids_by_owner={other_user.id: ["uuid-a", "uuid-b"]},
+        )
+
+    assert set(result["reindex_task_ids"].keys()) == {other_user.id}
+    fake_delay.assert_called_once_with(user_id=other_user.id, file_uuids=["uuid-a", "uuid-b"])
+
+
+def test_dispatch_reindex_drops_a_named_owner_with_an_empty_file_list(
+    db_session, normal_user, other_user
+):
+    """``file_uuids=[]`` would re-embed that owner's WHOLE account, not nothing.
+
+    ``reindex_transcripts_task`` narrows its snapshot with ``if file_uuids:``, so a
+    falsy list is indistinguishable from "no filter given". An owner the scope
+    resolved to zero pending files must therefore be dropped, never dispatched
+    with an empty list.
+    """
+    _make_media_file(db_session, other_user, FileStatus.COMPLETED)
+    fake_delay = MagicMock(side_effect=lambda **kw: MagicMock(id=f"task-{kw['user_id']}"))
+
+    with (
+        patch("app.db.session_utils.session_scope", lambda: _yield_session(db_session)),
+        patch("app.tasks.reindex_task.reindex_transcripts_task.delay", fake_delay),
+    ):
+        result = dispatch_reindex_for_every_owner(
+            triggered_by=normal_user.id,
+            file_uuids_by_owner={other_user.id: [], normal_user.id: ["uuid-a"]},
+        )
+
+    assert set(result["reindex_task_ids"].keys()) == {normal_user.id}
+    fake_delay.assert_called_once_with(user_id=normal_user.id, file_uuids=["uuid-a"])
+
+
 def test_dispatch_reindex_raises_when_delay_fails_and_message_reports_partial_progress(
     db_session, normal_user, other_user
 ):

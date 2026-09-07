@@ -33,17 +33,6 @@ def adapt_legacy(callback: LegacyProgressCallback | None) -> ProgressCallback | 
     return _wrapped
 
 
-def adapt_to_legacy(callback: ProgressCallback | None) -> LegacyProgressCallback | None:
-    """Wrap a ProgressCallback into the legacy (float, str) signature."""
-    if callback is None:
-        return None
-
-    def _wrapped(progress: float, message: str) -> None:
-        callback(ProgressEvent(progress=progress, message=message))
-
-    return _wrapped
-
-
 def emit(
     callback: ProgressCallback | None,
     progress: float,

@@ -26,7 +26,7 @@
     DEFAULT_TRANSCRIPTION_SETTINGS
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
-  import { MAX_UPLOAD_BYTES, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
+  import { getMaxUploadBytes, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
   import { listTags } from '$lib/api/tags';
 
   // Step components
@@ -436,7 +436,9 @@
     }
 
     if (exceedsUploadLimit(selectedFile.size)) {
-      error = $t('uploader.fileTooLargeError', { fileSize: formatFileSize(selectedFile.size), maxSize: formatFileSize(MAX_UPLOAD_BYTES) });
+      // Only reachable when the live limit is a real ceiling (exceedsUploadLimit is
+      // false whenever getMaxUploadBytes() is null, i.e. the admin disabled it).
+      error = $t('uploader.fileTooLargeError', { fileSize: formatFileSize(selectedFile.size), maxSize: formatFileSize(getMaxUploadBytes() ?? 0) });
       file = null;
       return;
     }
@@ -956,11 +958,10 @@
           {$t('uploader.back')}
         </button>
       {/if}
-      {#if currentStep?.optional && !isLastStep}
-        <button type="button" class="nav-btn nav-skip" on:click={goNext}>
-          {$t('uploader.skip')}
-        </button>
-      {/if}
+      <!-- No "Skip" button here (#739): it called `goNext` — the same handler as
+           the Next button beside it — so it offered a choice that did not exist.
+           Advancing past an optional step without filling it in IS skipping it;
+           "Review with defaults" remains the way to jump straight to the end. -->
     </div>
 
     <div class="nav-right">
@@ -1036,6 +1037,10 @@
     width: 100%;
     padding: 0;
     min-height: 300px;
+    /* Fill the modal's now-fixed height (#739) so the footer sits at the bottom
+       of the dialog instead of floating under the content with a dead gap
+       beneath it. `.step-body` is `flex: 1`, so it absorbs the slack. */
+    height: 100%;
   }
 
   /* ── Stepper Indicator ── */
@@ -1098,13 +1103,13 @@
 
   .step-item.active .step-dot {
     border-color: var(--primary-color, #3b82f6);
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
   }
 
   .step-item.completed .step-dot {
     border-color: var(--primary-color, #3b82f6);
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
   }
 
@@ -1139,7 +1144,7 @@
     transition: background 0.25s ease;
   }
 
-  .step-line.completed { background: #3b82f6; }
+  .step-line.completed { background: var(--primary-color); }
   .step-line.visited { background: rgba(59, 130, 246, 0.4); }
 
   /* ── Step Content ── */
@@ -1147,6 +1152,10 @@
     flex: 1;
     min-height: 200px;
     position: relative;
+    /* A step taller than the fixed-height dialog scrolls here, inside the step
+       area, so the stepper above and the nav buttons below stay put (#739). */
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .step-content {
@@ -1181,8 +1190,8 @@
     position: relative;
   }
 
-  .tab-button:hover { color: var(--primary-color); background-color: rgba(59, 130, 246, 0.05); }
-  .tab-button.active { color: var(--primary-color); border-bottom: 2px solid var(--primary-color); }
+  .tab-button:hover { color: var(--primary-on-surface); background-color: rgba(59, 130, 246, 0.05); }
+  .tab-button.active { color: var(--primary-on-surface); border-bottom: 2px solid var(--primary-color); }
   .tab-button:disabled { opacity: 0.5; cursor: not-allowed; }
   .tab-button:disabled:hover { background: transparent; color: var(--text-secondary); }
 
@@ -1195,7 +1204,7 @@
     background: rgba(59, 130, 246, 0.1);
     border: 1px solid var(--primary-color);
     border-left: 4px solid var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .duplicate-message strong { display: block; margin-bottom: 0.25rem; font-size: 0.875rem; }
@@ -1203,7 +1212,7 @@
 
   .btn-acknowledge {
     padding: 0.375rem 0.75rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 4px;
@@ -1270,7 +1279,15 @@
     flex-shrink: 0;
     position: relative;
     z-index: 1;
-    background: var(--background-color);
+    /* Transparent, NOT `var(--background-color)`. That token is the PAGE
+       background (#0f172a in dark), while the dialog surface is
+       `--surface-color` (#1e293b) — so the footer painted a visibly different,
+       inset band across the bottom of the modal in dark mode. In light the two
+       are #f8fafc vs #ffffff, near-identical, which is why it went unnoticed.
+       Transparent simply adopts whatever surface the wizard is placed on, and
+       is safe now that `.step-body` scrolls its own overflow so no content can
+       pass beneath this bar. */
+    background: transparent;
   }
 
   .nav-left, .nav-right {
@@ -1300,14 +1317,6 @@
 
   .nav-back:hover { background: var(--button-hover); color: var(--text-primary); }
 
-  .nav-skip {
-    background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-  }
-
-  .nav-skip:hover { background: var(--surface-color); color: var(--text-primary); }
-
   /* "Review with defaults" — prominent secondary action, clearly distinct from Next */
   .nav-review-defaults {
     background: rgba(59, 130, 246, 0.08);
@@ -1330,7 +1339,7 @@
   }
 
   .nav-next, .nav-submit {
-    background: #3b82f6;
+    background: var(--primary-color);
     border: 1px solid #3b82f6;
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);

@@ -1,15 +1,15 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-08-10T22:04:25.943338374-04:00",
+  "CreatedAt": "2026-08-31T12:31:04.680137637-04:00",
   "ArtifactName": "davidamacey/opentranscribe-frontend:v0.5.0",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 143781888,
+    "Size": 88466432,
     "OS": {
       "Family": "alpine",
       "Name": "3.23.5"
     },
-    "ImageID": "sha256:4b008f0a46f65da0e390a801b0e96c61ed819eabd169681125fceb49272db075",
+    "ImageID": "sha256:30901a646e2cc3c98e1ef0f80085a9f21011389ab23dbf8302150595410244c2",
     "DiffIDs": [
       "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0",
       "sha256:c91b7a48dd9f6fce74f14b5d0920e59c09773787293e3749fb2a07c068f17a46",
@@ -19,17 +19,17 @@
       "sha256:1876c8091457c6f55a9542d29f3549ef9f96ef9c8085bdbbf4ced393948a8753",
       "sha256:4979493d808a77835f23fb742b89b125901b9ec9af28e104555adca56fa854ca",
       "sha256:afbf6a2e4dc808fd59c8694426ca7e1ede0f87d699f3e5f24c506e3aff3cba2a",
-      "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445",
-      "sha256:5346f3f7dc6ddd5956b0c6d1309c29940365ea820d0b61c725df7e04b847f1fb",
-      "sha256:82f2634fb27cde70f542bc2181d1d258a0dba7cbf7aed6348a04a877e82ace95",
-      "sha256:45529b20e41e25b29efc3f9401f5fa61e0b1a68c1a4f3e0e864f6b40f3a0ad99"
+      "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f",
+      "sha256:a1b3faac558cd34f49af13abcf4b959446cd204626b1cb4f85734f08e1b9baaf",
+      "sha256:5c2a8717db9cb4f05db41c4aa72c8c55e90dd4aaa302ca0bc8178fee862bd3d6",
+      "sha256:65f633fd3337a754f8cfe27ebe5e4c6ca9f1b41d30a2193f85583c9f32b19dd9"
     ],
     "RepoTags": [
       "davidamacey/opentranscribe-frontend:v0.5.0"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2026-08-10T22:01:57.549977967-04:00",
+      "created": "2026-08-31T15:58:23.425544506Z",
       "history": [
         {
           "created": "2026-06-22T19:20:09Z",
@@ -144,51 +144,51 @@
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T01:57:21Z",
+          "created": "2026-08-23T12:09:14Z",
           "created_by": "LABEL org.opencontainers.image.title=OpenTranscribe Frontend org.opencontainers.image.description=Svelte-based Progressive Web App for AI-powered transcription org.opencontainers.image.vendor=OpenTranscribe org.opencontainers.image.authors=OpenTranscribe Contributors org.opencontainers.image.licenses=AGPL-3.0 org.opencontainers.image.source=https://github.com/attevon-llc/OpenTranscribe org.opencontainers.image.documentation=https://github.com/attevon-llc/OpenTranscribe/blob/master/README.md",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-08-11T01:57:21Z",
+          "created": "2026-08-23T12:09:14Z",
           "created_by": "RUN /bin/sh -c apk upgrade --no-cache \u0026\u0026 apk del curl # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T02:01:49Z",
+          "created": "2026-08-31T15:58:16Z",
           "created_by": "COPY /app/dist /usr/share/nginx/html # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T02:01:50Z",
+          "created": "2026-08-31T15:58:17Z",
           "created_by": "COPY nginx.conf /etc/nginx/conf.d/default.conf # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T02:01:57Z",
+          "created": "2026-08-31T15:58:23Z",
           "created_by": "RUN /bin/sh -c chown -R nginx:nginx /usr/share/nginx/html \u0026\u0026     chown -R nginx:nginx /var/cache/nginx \u0026\u0026     mkdir -p /var/log/nginx \u0026\u0026     chown -R nginx:nginx /var/log/nginx \u0026\u0026     touch /var/run/nginx.pid \u0026\u0026     chown nginx:nginx /var/run/nginx.pid # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T02:01:57Z",
+          "created": "2026-08-31T15:58:23Z",
           "created_by": "USER nginx",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-08-11T02:01:57Z",
-          "created_by": "EXPOSE map[8080/tcp:{}]",
+          "created": "2026-08-31T15:58:23Z",
+          "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-08-11T02:01:57Z",
-          "created_by": "HEALTHCHECK \u0026{[\"CMD-SHELL\" \"wget --quiet --tries=1 --spider http://127.0.0.1:8080/ || exit 1\"] \"30s\" \"3s\" \"5s\" \"0s\" '\\x03'}",
+          "created": "2026-08-31T15:58:23Z",
+          "created_by": "HEALTHCHECK {Test:[CMD-SHELL wget --quiet --tries=1 --spider http://127.0.0.1:8080/ || exit 1] Interval:30s Timeout:3s StartPeriod:5s StartInterval:0s Retries:3}",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-08-11T02:01:57Z",
+          "created": "2026-08-31T15:58:23Z",
           "created_by": "CMD [\"nginx\" \"-g\" \"daemon off;\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
@@ -206,10 +206,10 @@
           "sha256:1876c8091457c6f55a9542d29f3549ef9f96ef9c8085bdbbf4ced393948a8753",
           "sha256:4979493d808a77835f23fb742b89b125901b9ec9af28e104555adca56fa854ca",
           "sha256:afbf6a2e4dc808fd59c8694426ca7e1ede0f87d699f3e5f24c506e3aff3cba2a",
-          "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445",
-          "sha256:5346f3f7dc6ddd5956b0c6d1309c29940365ea820d0b61c725df7e04b847f1fb",
-          "sha256:82f2634fb27cde70f542bc2181d1d258a0dba7cbf7aed6348a04a877e82ace95",
-          "sha256:45529b20e41e25b29efc3f9401f5fa61e0b1a68c1a4f3e0e864f6b40f3a0ad99"
+          "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f",
+          "sha256:a1b3faac558cd34f49af13abcf4b959446cd204626b1cb4f85734f08e1b9baaf",
+          "sha256:5c2a8717db9cb4f05db41c4aa72c8c55e90dd4aaa302ca0bc8178fee862bd3d6",
+          "sha256:65f633fd3337a754f8cfe27ebe5e4c6ca9f1b41d30a2193f85583c9f32b19dd9"
         ]
       },
       "config": {
@@ -243,12 +243,15 @@
         "Labels": {
           "maintainer": "NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e",
           "org.opencontainers.image.authors": "OpenTranscribe Contributors",
+          "org.opencontainers.image.created": "2026-08-31T15:34:10Z",
           "org.opencontainers.image.description": "Svelte-based Progressive Web App for AI-powered transcription",
           "org.opencontainers.image.documentation": "https://github.com/attevon-llc/OpenTranscribe/blob/master/README.md",
           "org.opencontainers.image.licenses": "AGPL-3.0",
+          "org.opencontainers.image.revision": "b9cc0b352a2ec849675cdac17432e38c336afd3e",
           "org.opencontainers.image.source": "https://github.com/attevon-llc/OpenTranscribe",
           "org.opencontainers.image.title": "OpenTranscribe Frontend",
-          "org.opencontainers.image.vendor": "OpenTranscribe"
+          "org.opencontainers.image.vendor": "OpenTranscribe",
+          "org.opencontainers.image.version": "v0.5.0"
         },
         "User": "nginx",
         "WorkingDir": "/",
@@ -294,20 +297,20 @@
         "DiffID": "sha256:afbf6a2e4dc808fd59c8694426ca7e1ede0f87d699f3e5f24c506e3aff3cba2a"
       },
       {
-        "Size": 2201088,
-        "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+        "Size": 2200576,
+        "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
       },
       {
-        "Size": 38999040,
-        "DiffID": "sha256:5346f3f7dc6ddd5956b0c6d1309c29940365ea820d0b61c725df7e04b847f1fb"
+        "Size": 11341824,
+        "DiffID": "sha256:a1b3faac558cd34f49af13abcf4b959446cd204626b1cb4f85734f08e1b9baaf"
       },
       {
         "Size": 12288,
-        "DiffID": "sha256:82f2634fb27cde70f542bc2181d1d258a0dba7cbf7aed6348a04a877e82ace95"
+        "DiffID": "sha256:5c2a8717db9cb4f05db41c4aa72c8c55e90dd4aaa302ca0bc8178fee862bd3d6"
       },
       {
-        "Size": 39005184,
-        "DiffID": "sha256:45529b20e41e25b29efc3f9401f5fa61e0b1a68c1a4f3e0e864f6b40f3a0ad99"
+        "Size": 11347456,
+        "DiffID": "sha256:65f633fd3337a754f8cfe27ebe5e4c6ca9f1b41d30a2193f85583c9f32b19dd9"
       }
     ]
   },
@@ -537,7 +540,7 @@
             "zlib@1.3.2-r0"
           ],
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
           "Digest": "sha1:f74e88a991c70829597463bf8f0aa680619f899e",
           "InstalledFiles": [
@@ -817,7 +820,7 @@
           "Name": "fontconfig",
           "Identifier": {
             "PURL": "pkg:apk/alpine/fontconfig@2.17.1-r0?arch=x86_64\u0026distro=3.23.5",
-            "UID": "2fe1213ee843c470"
+            "UID": "7dfa1a943788ae4"
           },
           "Version": "2.17.1-r0",
           "Arch": "x86_64",
@@ -830,7 +833,7 @@
           "DependsOn": [
             "busybox-binsh@1.37.0-r30",
             "freetype@2.14.3-r0",
-            "libexpat@2.8.2-r0",
+            "libexpat@2.8.3-r0",
             "musl@1.2.5-r23"
           ],
           "Layer": {
@@ -944,7 +947,7 @@
             "zlib@1.3.2-r0"
           ],
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
           "Digest": "sha1:830add7bff72b4656dbe08b5b5704ddbc162660a",
           "InstalledFiles": [
@@ -1032,7 +1035,7 @@
             "zlib@1.3.2-r0"
           ],
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
           "Digest": "sha1:9ed5c8f9cad03e5af6c10e1332a88b9c372ea84c",
           "InstalledFiles": [
@@ -1215,16 +1218,16 @@
           ]
         },
         {
-          "ID": "libexpat@2.8.2-r0",
+          "ID": "libexpat@2.8.3-r0",
           "Name": "libexpat",
           "Identifier": {
-            "PURL": "pkg:apk/alpine/libexpat@2.8.2-r0?arch=x86_64\u0026distro=3.23.5",
-            "UID": "586cf394bdbe0eb5"
+            "PURL": "pkg:apk/alpine/libexpat@2.8.3-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "9a942159db4b95aa"
           },
-          "Version": "2.8.2-r0",
+          "Version": "2.8.3-r0",
           "Arch": "x86_64",
           "SrcName": "expat",
-          "SrcVersion": "2.8.2-r0",
+          "SrcVersion": "2.8.3-r0",
           "Licenses": [
             "MIT"
           ],
@@ -1233,12 +1236,12 @@
             "musl@1.2.5-r23"
           ],
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
-          "Digest": "sha1:85a2beba0ffd79c6d33a62172e7badd2719903e1",
+          "Digest": "sha1:c5c511312b0b99eac9e8f216561fc3b5eeb92c5b",
           "InstalledFiles": [
             "usr/lib/libexpat.so.1",
-            "usr/lib/libexpat.so.1.12.2"
+            "usr/lib/libexpat.so.1.12.3"
           ]
         },
         {
@@ -2650,7 +2653,7 @@
           ],
           "Maintainer": "Natanael Copa \u003cncopa@alpinelinux.org\u003e",
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
           "Digest": "sha1:5449aeb87c78a380a49320e1f98f67b13b1828a7",
           "InstalledFiles": [
@@ -3343,6 +3346,416 @@
             "usr/lib/libzstd.so.1",
             "usr/lib/libzstd.so.1.5.7"
           ]
+        }
+      ],
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-14456",
+          "PkgID": "libcrypto3@3.5.7-r0",
+          "PkgName": "libcrypto3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libcrypto3@3.5.7-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "f67e057ab1db2f9b"
+          },
+          "InstalledVersion": "3.5.7-r0",
+          "FixedVersion": "3.5.8-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-14456",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: OpenSSL: Denial of Service via unbounded memory growth in QUIC server",
+          "Description": "Issue summary: When an OpenSSL QUIC server (Listener SSL object) processes\nvalid QUIC Initial packets for unknown destination connection IDs, it\ncan allocate and queue new incoming channels without enforcing any limit.\n\nImpact summary: A remote peer that can make many Initial packets reach the\nserver listener faster than the application accepts connections, can cause the\nmemory allocated to store the per-channel state to grow without any limits,\npotentially making the QUIC listener unavailable and causing Denial of Service.\n\nCWE: CWE-770: Allocation of Resources Without Limits or Throttling\n\nDescription: The function that handles inbound QUIC packets uses\nConnection-Id from the packet header to find an existing connection\n(QUIC channel). If no existing connection is found and the packet\ntype is INITIAL, the function treats the packet as a new connection. It\nallocates a new channel object and inserts it into a queue where it\nwaits to be accepted by the local application with SSL_accept(3ossl).\nThe memory occupied by these initial channel objects may grow\nwithout bounds if the application is not able to call SSL_accept()\nfrequently enough to serve these inbound connection requests.\n\nThe issue is present since OpenSSL 3.5 when the QUIC server implementation\nwas added.\n\nThe fix introduces a limit for pending connections. The default limit is set\nto 256 pending connections (waiting to be accepted by the local application).\nApplications may change the default by calling SSL_set_value_uint(3ossl).\n\nFIPS impact: no\nThe FIPS module is not affected as the QUIC implementation is outside of\nthe OpenSSL FIPS module boundary.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-770"
+          ],
+          "VendorSeverity": {
+            "photon": 3,
+            "redhat": 3,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2026/08/13/4",
+            "https://access.redhat.com/security/cve/CVE-2026-14456",
+            "https://github.com/openssl/openssl/commit/08e7756c3900bcfd77a720e7b74e27d6e4ed01a9",
+            "https://github.com/openssl/openssl/commit/4084152e040329ca0194c4c1750b9b46d00a5b6b",
+            "https://github.com/openssl/openssl/commit/f2f1465f2d2e5c61dfeac4d20fd093797d821139",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-14456",
+            "https://openssl-library.org/news/secadv/20260813.txt",
+            "https://ubuntu.com/security/notices/USN-8678-1",
+            "https://www.cve.org/CVERecord?id=CVE-2026-14456"
+          ],
+          "PublishedDate": "2026-08-13T15:19:31.82Z",
+          "LastModifiedDate": "2026-08-28T19:46:29.323Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-18798",
+          "PkgID": "libcrypto3@3.5.7-r0",
+          "PkgName": "libcrypto3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libcrypto3@3.5.7-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "f67e057ab1db2f9b"
+          },
+          "InstalledVersion": "3.5.7-r0",
+          "FixedVersion": "3.5.8-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-18798",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: QUIC server may trigger double free when processing INITIAL packet",
+          "Description": "Issue summary: QUIC server may double free QRX (QUIC record layer RX) object\nwhen channel creation fails for initial packet.\n\nImpact summary: Double free leads to heap corruption, which typically results in \ntermination of QUIC server process, leading to Denial of Service. There is so\nfar no evidence that this double free is exploitable for remote code execution,\nthus it is considered highly improbable.\n\nCWE: CWE-415: Double Free\n\nDescription: In order to validate initial packet, OpenSSL QUIC stack default\npacket handler (port_default_packet_handler()) creates a so-called QRX object.\nIf the initial packet validates successfully with QRX object, the default packet\nhandler proceeds to channel (connection object) creation. The QRX object used\nfor packet validation is passed to port_bind_channel(), so it becomes part of\nthe newly created connection. If port_bind_channel() fails, then it also frees\nthe QRX object. Once port_bind_channel() returns, the port_default_packet_handler()\ndetects the failure and proceeds to the error branch, where the same QRX object is\nfreed for the second time.\n\nThe failure in port_bind_channel() function can be induced with a relatively\nlow effort by a malformed (non RFC 9000 compliant) INITIAL packet. If the packet\ncarries DCID (destination connection ID) which is shorter than 8 bytes, then\nport_bind_channel() jumps to the error path after ossl_quic_lcidm_enrol_odcid()\ndetects that the DCID has invalid length.\n\nFIPS impact: no\nThe FIPS module is not affected, as the QUIC implementation is outside of\nthe OpenSSL FIPS module boundary.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-415"
+          ],
+          "VendorSeverity": {
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-18798",
+            "https://github.com/openssl/openssl/commit/70cebd74d3592f5272945501b58a60374c4e13af",
+            "https://github.com/openssl/openssl/commit/967582d5037f01a26b6d19beae19af62a1b15c3c",
+            "https://github.com/openssl/openssl/commit/a14a1deac403522fbeafabcb198503cf6caa7dc4",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-18798",
+            "https://openssl-library.org/news/secadv/20260825.txt",
+            "https://ubuntu.com/security/notices/USN-8678-1",
+            "https://www.cve.org/CVERecord?id=CVE-2026-18798"
+          ],
+          "PublishedDate": "2026-08-25T13:17:49.813Z",
+          "LastModifiedDate": "2026-08-28T19:46:29.323Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-63072",
+          "PkgID": "libcrypto3@3.5.7-r0",
+          "PkgName": "libcrypto3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libcrypto3@3.5.7-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "f67e057ab1db2f9b"
+          },
+          "InstalledVersion": "3.5.7-r0",
+          "FixedVersion": "3.5.8-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-63072",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: heap buffer overflow in CMS key unwrapping",
+          "Description": "Issue summary: OpenSSL CMS decryption sizes the key-unwrap output buffer based\non querying the unwrapped key size, but the AES-WRAP-PAD unwrap primitive\ncan write and cleanse more bytes than that query reports, causing an 8-byte\nout-of-bounds heap write.\n\nImpact summary: An attacker who supplies a crafted CMS message can trigger a\ndeterministic 8-byte out-of-bounds heap write when the victim decrypts it\nwith CMS_decrypt(), corrupting the heap and typically resulting in a Denial\nof Service.\n\nCWE: CWE-787: Out-of-bounds Write\n\nDescription: The key-wrap OID is potentially attacker-controlled on the wire.\nCMS unwrapping allows both id-aesNNN-wrap-pad and id-aesNNN-wrap ciphers.\nAn attacker can take a legitimate message and change a single OID byte to\nselect the padded variant while leaving the message otherwise valid. Since\nthe unwrap key is derived from the recipient's private operation (ECDH key\nagreement or ML-KEM decapsulation), the RFC 5649 integrity check cannot\npass, and the decryption fails with integrity failure.\n\nThe write is a fixed-size (8-byte), fixed-value (zero) heap overflow\nimmediately past the allocation, requires no special configuration, and is\nreachable from the public CMS_decrypt() function. The consequence is\na heap corruption leading to a Denial of Service. The fix in the CMS code\nsizes the unwrap output buffer for the worst case so a failed unwrap cannot\nwrite past the allocation.\n\nFIPS impact: no\n\nAs the CMS code lives outside the FIPS module boundary, no FIPS\nmodules are affected by this CVE.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-787"
+          ],
+          "VendorSeverity": {
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-63072",
+            "https://github.com/openssl/openssl/commit/2a3dac874c8057c1f0186849bf1ede1ae7b6b756",
+            "https://github.com/openssl/openssl/commit/87784ad619af36b8807c2044b3940006fccc1e42",
+            "https://github.com/openssl/openssl/commit/9530a5fd1aacaeccdced4478ea2340a480613335",
+            "https://github.com/openssl/openssl/commit/9ec2f6d2ae2bcad907cf7ee38584855bafe4979a",
+            "https://github.com/openssl/openssl/commit/a0c8ec557d9cac078f032d76cdf684fe743eb382",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-63072",
+            "https://openssl-library.org/news/secadv/20260825.txt",
+            "https://ubuntu.com/security/notices/USN-8678-1",
+            "https://ubuntu.com/security/notices/USN-8678-2",
+            "https://www.cve.org/CVERecord?id=CVE-2026-63072"
+          ],
+          "PublishedDate": "2026-08-25T13:19:26.01Z",
+          "LastModifiedDate": "2026-08-28T19:46:29.323Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-63076",
+          "PkgID": "libcrypto3@3.5.7-r0",
+          "PkgName": "libcrypto3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libcrypto3@3.5.7-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "f67e057ab1db2f9b"
+          },
+          "InstalledVersion": "3.5.7-r0",
+          "FixedVersion": "3.5.8-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-63076",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: invalid pointer dereference in CMP server via crafted protectionAlg",
+          "Description": "Issue summary: OpenSSL CMP password based protection verification only\nchecks whether the protectionAlg parameter was not NULL and not its\nASN.1 type, before treating it as a PBMParameter. A crafted message can\ncontain a parameter of a different type, which is then dereferenced as an\ninvalid pointer.\n\nImpact summary: A remote, unauthenticated attacker can crash an application\nacting as a CMP server that accepts PBM-protected messages, or a CMP client\ntalking to a malicious or intercepted CMP server, resulting in a Denial of\nService.\n\nCWE: CWE-476: NULL Pointer Dereference\n\nDescription: When verifying the password-based MAC protection of a CMP\nmessage, OpenSSL library reads the protectionAlg algorithm parameter with\nX509_ALGOR_get0(), which returns both the parameter type and its value\npointer. The value is then cast to an ASN1_STRING and treated as the\nexpected PBMParameter after only checking that pointer is not NULL. The\nparameter type returned by X509_ALGOR_get0() was never consulted.\n\nThis happens during protection verification, before any MAC is computed, so\nno knowledge of the PBM shared secret is required; the only precondition is\nthat PBM verification is reachable. On the server side this is reached from\nOSSL_CMP_SRV_process_request() for any application that stands up a CMP\nserver accepting PBM-protected messages, and on the client side from CMP\nresponse validation against a malicious or on-path (MITM) server. The\nreliable consequence is a denial of service; there is no memory disclosure,\nno controlled memory write, and no path to code execution. CMP is a\nspecialized feature that an application must explicitly enable.\n\nFIPS impact: no\nAs the CMP code lives outside the FIPS module boundary, no FIPS modules\nare affected by this CVE.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-476"
+          ],
+          "VendorSeverity": {
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-63076",
+            "https://github.com/openssl/openssl/commit/37882aa2e0256e1072442a8f62f7db45b995c45b",
+            "https://github.com/openssl/openssl/commit/a17cc8d612ecff6d94a9b7ca8b5283ddf5ff570e",
+            "https://github.com/openssl/openssl/commit/a1f348ccb328c3afbd4ba6883f9b7c813c043259",
+            "https://github.com/openssl/openssl/commit/a7af46a92d0ce19a90e669ef56d2576a07924226",
+            "https://github.com/openssl/openssl/commit/cdacfff557389abfa9e4615abded2ec984517d6c",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-63076",
+            "https://openssl-library.org/news/secadv/20260825.txt",
+            "https://ubuntu.com/security/notices/USN-8678-1",
+            "https://ubuntu.com/security/notices/USN-8678-2",
+            "https://www.cve.org/CVERecord?id=CVE-2026-63076"
+          ],
+          "PublishedDate": "2026-08-25T13:19:26.543Z",
+          "LastModifiedDate": "2026-08-28T19:46:29.323Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-14456",
+          "PkgID": "libssl3@3.5.7-r0",
+          "PkgName": "libssl3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libssl3@3.5.7-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "45236381910260dd"
+          },
+          "InstalledVersion": "3.5.7-r0",
+          "FixedVersion": "3.5.8-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-14456",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: OpenSSL: Denial of Service via unbounded memory growth in QUIC server",
+          "Description": "Issue summary: When an OpenSSL QUIC server (Listener SSL object) processes\nvalid QUIC Initial packets for unknown destination connection IDs, it\ncan allocate and queue new incoming channels without enforcing any limit.\n\nImpact summary: A remote peer that can make many Initial packets reach the\nserver listener faster than the application accepts connections, can cause the\nmemory allocated to store the per-channel state to grow without any limits,\npotentially making the QUIC listener unavailable and causing Denial of Service.\n\nCWE: CWE-770: Allocation of Resources Without Limits or Throttling\n\nDescription: The function that handles inbound QUIC packets uses\nConnection-Id from the packet header to find an existing connection\n(QUIC channel). If no existing connection is found and the packet\ntype is INITIAL, the function treats the packet as a new connection. It\nallocates a new channel object and inserts it into a queue where it\nwaits to be accepted by the local application with SSL_accept(3ossl).\nThe memory occupied by these initial channel objects may grow\nwithout bounds if the application is not able to call SSL_accept()\nfrequently enough to serve these inbound connection requests.\n\nThe issue is present since OpenSSL 3.5 when the QUIC server implementation\nwas added.\n\nThe fix introduces a limit for pending connections. The default limit is set\nto 256 pending connections (waiting to be accepted by the local application).\nApplications may change the default by calling SSL_set_value_uint(3ossl).\n\nFIPS impact: no\nThe FIPS module is not affected as the QUIC implementation is outside of\nthe OpenSSL FIPS module boundary.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-770"
+          ],
+          "VendorSeverity": {
+            "photon": 3,
+            "redhat": 3,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2026/08/13/4",
+            "https://access.redhat.com/security/cve/CVE-2026-14456",
+            "https://github.com/openssl/openssl/commit/08e7756c3900bcfd77a720e7b74e27d6e4ed01a9",
+            "https://github.com/openssl/openssl/commit/4084152e040329ca0194c4c1750b9b46d00a5b6b",
+            "https://github.com/openssl/openssl/commit/f2f1465f2d2e5c61dfeac4d20fd093797d821139",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-14456",
+            "https://openssl-library.org/news/secadv/20260813.txt",
+            "https://ubuntu.com/security/notices/USN-8678-1",
+            "https://www.cve.org/CVERecord?id=CVE-2026-14456"
+          ],
+          "PublishedDate": "2026-08-13T15:19:31.82Z",
+          "LastModifiedDate": "2026-08-28T19:46:29.323Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-18798",
+          "PkgID": "libssl3@3.5.7-r0",
+          "PkgName": "libssl3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libssl3@3.5.7-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "45236381910260dd"
+          },
+          "InstalledVersion": "3.5.7-r0",
+          "FixedVersion": "3.5.8-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-18798",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: QUIC server may trigger double free when processing INITIAL packet",
+          "Description": "Issue summary: QUIC server may double free QRX (QUIC record layer RX) object\nwhen channel creation fails for initial packet.\n\nImpact summary: Double free leads to heap corruption, which typically results in \ntermination of QUIC server process, leading to Denial of Service. There is so\nfar no evidence that this double free is exploitable for remote code execution,\nthus it is considered highly improbable.\n\nCWE: CWE-415: Double Free\n\nDescription: In order to validate initial packet, OpenSSL QUIC stack default\npacket handler (port_default_packet_handler()) creates a so-called QRX object.\nIf the initial packet validates successfully with QRX object, the default packet\nhandler proceeds to channel (connection object) creation. The QRX object used\nfor packet validation is passed to port_bind_channel(), so it becomes part of\nthe newly created connection. If port_bind_channel() fails, then it also frees\nthe QRX object. Once port_bind_channel() returns, the port_default_packet_handler()\ndetects the failure and proceeds to the error branch, where the same QRX object is\nfreed for the second time.\n\nThe failure in port_bind_channel() function can be induced with a relatively\nlow effort by a malformed (non RFC 9000 compliant) INITIAL packet. If the packet\ncarries DCID (destination connection ID) which is shorter than 8 bytes, then\nport_bind_channel() jumps to the error path after ossl_quic_lcidm_enrol_odcid()\ndetects that the DCID has invalid length.\n\nFIPS impact: no\nThe FIPS module is not affected, as the QUIC implementation is outside of\nthe OpenSSL FIPS module boundary.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-415"
+          ],
+          "VendorSeverity": {
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-18798",
+            "https://github.com/openssl/openssl/commit/70cebd74d3592f5272945501b58a60374c4e13af",
+            "https://github.com/openssl/openssl/commit/967582d5037f01a26b6d19beae19af62a1b15c3c",
+            "https://github.com/openssl/openssl/commit/a14a1deac403522fbeafabcb198503cf6caa7dc4",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-18798",
+            "https://openssl-library.org/news/secadv/20260825.txt",
+            "https://ubuntu.com/security/notices/USN-8678-1",
+            "https://www.cve.org/CVERecord?id=CVE-2026-18798"
+          ],
+          "PublishedDate": "2026-08-25T13:17:49.813Z",
+          "LastModifiedDate": "2026-08-28T19:46:29.323Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-63072",
+          "PkgID": "libssl3@3.5.7-r0",
+          "PkgName": "libssl3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libssl3@3.5.7-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "45236381910260dd"
+          },
+          "InstalledVersion": "3.5.7-r0",
+          "FixedVersion": "3.5.8-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-63072",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: heap buffer overflow in CMS key unwrapping",
+          "Description": "Issue summary: OpenSSL CMS decryption sizes the key-unwrap output buffer based\non querying the unwrapped key size, but the AES-WRAP-PAD unwrap primitive\ncan write and cleanse more bytes than that query reports, causing an 8-byte\nout-of-bounds heap write.\n\nImpact summary: An attacker who supplies a crafted CMS message can trigger a\ndeterministic 8-byte out-of-bounds heap write when the victim decrypts it\nwith CMS_decrypt(), corrupting the heap and typically resulting in a Denial\nof Service.\n\nCWE: CWE-787: Out-of-bounds Write\n\nDescription: The key-wrap OID is potentially attacker-controlled on the wire.\nCMS unwrapping allows both id-aesNNN-wrap-pad and id-aesNNN-wrap ciphers.\nAn attacker can take a legitimate message and change a single OID byte to\nselect the padded variant while leaving the message otherwise valid. Since\nthe unwrap key is derived from the recipient's private operation (ECDH key\nagreement or ML-KEM decapsulation), the RFC 5649 integrity check cannot\npass, and the decryption fails with integrity failure.\n\nThe write is a fixed-size (8-byte), fixed-value (zero) heap overflow\nimmediately past the allocation, requires no special configuration, and is\nreachable from the public CMS_decrypt() function. The consequence is\na heap corruption leading to a Denial of Service. The fix in the CMS code\nsizes the unwrap output buffer for the worst case so a failed unwrap cannot\nwrite past the allocation.\n\nFIPS impact: no\n\nAs the CMS code lives outside the FIPS module boundary, no FIPS\nmodules are affected by this CVE.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-787"
+          ],
+          "VendorSeverity": {
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-63072",
+            "https://github.com/openssl/openssl/commit/2a3dac874c8057c1f0186849bf1ede1ae7b6b756",
+            "https://github.com/openssl/openssl/commit/87784ad619af36b8807c2044b3940006fccc1e42",
+            "https://github.com/openssl/openssl/commit/9530a5fd1aacaeccdced4478ea2340a480613335",
+            "https://github.com/openssl/openssl/commit/9ec2f6d2ae2bcad907cf7ee38584855bafe4979a",
+            "https://github.com/openssl/openssl/commit/a0c8ec557d9cac078f032d76cdf684fe743eb382",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-63072",
+            "https://openssl-library.org/news/secadv/20260825.txt",
+            "https://ubuntu.com/security/notices/USN-8678-1",
+            "https://ubuntu.com/security/notices/USN-8678-2",
+            "https://www.cve.org/CVERecord?id=CVE-2026-63072"
+          ],
+          "PublishedDate": "2026-08-25T13:19:26.01Z",
+          "LastModifiedDate": "2026-08-28T19:46:29.323Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-63076",
+          "PkgID": "libssl3@3.5.7-r0",
+          "PkgName": "libssl3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libssl3@3.5.7-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "45236381910260dd"
+          },
+          "InstalledVersion": "3.5.7-r0",
+          "FixedVersion": "3.5.8-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-63076",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: invalid pointer dereference in CMP server via crafted protectionAlg",
+          "Description": "Issue summary: OpenSSL CMP password based protection verification only\nchecks whether the protectionAlg parameter was not NULL and not its\nASN.1 type, before treating it as a PBMParameter. A crafted message can\ncontain a parameter of a different type, which is then dereferenced as an\ninvalid pointer.\n\nImpact summary: A remote, unauthenticated attacker can crash an application\nacting as a CMP server that accepts PBM-protected messages, or a CMP client\ntalking to a malicious or intercepted CMP server, resulting in a Denial of\nService.\n\nCWE: CWE-476: NULL Pointer Dereference\n\nDescription: When verifying the password-based MAC protection of a CMP\nmessage, OpenSSL library reads the protectionAlg algorithm parameter with\nX509_ALGOR_get0(), which returns both the parameter type and its value\npointer. The value is then cast to an ASN1_STRING and treated as the\nexpected PBMParameter after only checking that pointer is not NULL. The\nparameter type returned by X509_ALGOR_get0() was never consulted.\n\nThis happens during protection verification, before any MAC is computed, so\nno knowledge of the PBM shared secret is required; the only precondition is\nthat PBM verification is reachable. On the server side this is reached from\nOSSL_CMP_SRV_process_request() for any application that stands up a CMP\nserver accepting PBM-protected messages, and on the client side from CMP\nresponse validation against a malicious or on-path (MITM) server. The\nreliable consequence is a denial of service; there is no memory disclosure,\nno controlled memory write, and no path to code execution. CMP is a\nspecialized feature that an application must explicitly enable.\n\nFIPS impact: no\nAs the CMP code lives outside the FIPS module boundary, no FIPS modules\nare affected by this CVE.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-476"
+          ],
+          "VendorSeverity": {
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-63076",
+            "https://github.com/openssl/openssl/commit/37882aa2e0256e1072442a8f62f7db45b995c45b",
+            "https://github.com/openssl/openssl/commit/a17cc8d612ecff6d94a9b7ca8b5283ddf5ff570e",
+            "https://github.com/openssl/openssl/commit/a1f348ccb328c3afbd4ba6883f9b7c813c043259",
+            "https://github.com/openssl/openssl/commit/a7af46a92d0ce19a90e669ef56d2576a07924226",
+            "https://github.com/openssl/openssl/commit/cdacfff557389abfa9e4615abded2ec984517d6c",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-63076",
+            "https://openssl-library.org/news/secadv/20260825.txt",
+            "https://ubuntu.com/security/notices/USN-8678-1",
+            "https://ubuntu.com/security/notices/USN-8678-2",
+            "https://www.cve.org/CVERecord?id=CVE-2026-63076"
+          ],
+          "PublishedDate": "2026-08-25T13:19:26.543Z",
+          "LastModifiedDate": "2026-08-28T19:46:29.323Z"
         }
       ]
     }

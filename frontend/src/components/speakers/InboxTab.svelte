@@ -38,6 +38,7 @@
       {#each inboxItems as item, idx (item.speaker_uuid)}
         <SpeakerInboxItem
           {item}
+          {profiles}
           actionInProgress={inboxActionInProgress.has(item.speaker_uuid)}
           on:action
           on:preview

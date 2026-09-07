@@ -6,9 +6,13 @@ set -e
 
 echo "=== Testing Model Download ==="
 
-# Load .env for HF token
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load .env for HF token via python-dotenv (issue #590), not a hand-rolled grep/cut —
+# a plain grep/cut chain does not strip a trailing `  # comment` and silently corrupts
+# any token line that carries one.
 if [ -f .env ]; then
-    HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" .env | cut -d'=' -f2)
+    HUGGINGFACE_TOKEN=$(python3 "$SCRIPT_DIR/lib/env_reader.py" .env HUGGINGFACE_TOKEN)
     export HUGGINGFACE_TOKEN
 fi
 
@@ -27,7 +31,7 @@ docker run --rm \
     --gpus all \
     -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
     -e WHISPER_MODEL="base" \
-    -e DIARIZATION_MODEL="pyannote/speaker-diarization-3.1" \
+    -e DIARIZATION_MODEL="pyannote/speaker-diarization-community-1" \
     -e USE_GPU="true" \
     -e COMPUTE_TYPE="float16" \
     -v "${TEST_CACHE}/huggingface:/home/appuser/.cache/huggingface" \

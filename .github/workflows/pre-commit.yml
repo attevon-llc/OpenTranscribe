@@ -3,10 +3,43 @@ name: Pre-commit Checks
 on:
   workflow_dispatch:  # Manual triggering always available
   pull_request:
-    branches: [master, main, develop]
+    # release/** added for #784: a hotfix PR merges onto release/<major>.<minor>,
+    # not master, and that branch produces the next tag -- it must never take
+    # machine-unreviewed code (issue #784, finding N2).
+    branches: [master, main, develop, 'release/**']
   # push intentionally left off to respect runner-resource limits — PRs are the gate.
   # push:
   #   branches: [master, main, develop]
+  # Required for a merge queue. A queued entry runs its checks against
+  # master-plus-the-preceding-queue, NOT against the PR branch — so a required
+  # check whose workflow lacks this trigger simply never reports, and the merge
+  # hangs forever. This workflow supplies THREE of the four required checks
+  # (Run Pre-commit Hooks, Backend Tests, Frontend Unit Tests), so it is the
+  # load-bearing one. Added BEFORE the queue is enabled, deliberately: it is
+  # inert until then, and enabling the queue first is how a repo bricks its
+  # own merges.
+  merge_group:
+
+# Cancel a superseded run the moment a new commit lands on the same PR.
+#
+# Without this, pushing a fix (or merging master up, which this repo does often
+# because `strict` is false on branch protection and staleness is caught by
+# discipline rather than by GitHub) left the PREVIOUS run going: `Backend Tests
+# (pytest)` alone is ~16 minutes, so a stale-base merge-up meant two full runs
+# on a runner where only the second one's verdict could ever be used.
+#
+# Keyed on the PR number (`github.event.pull_request.number`), falling back to
+# `github.ref` for `workflow_dispatch`, so concurrent DIFFERENT PRs never cancel
+# each other — only successive pushes to the same one.
+concurrency:
+  group: pre-commit-${{ github.event.pull_request.number || github.ref }}
+  # Cancel ONLY on pull_request. A merge_group run must never be cancelled:
+  # its verdict is what lets the queue merge, so cancelling one stalls the
+  # queue behind a check that will never report. `github.ref` is already
+  # unique per queue entry (refs/heads/gh-readonly-queue/...), so entries
+  # would not cancel each other anyway — this makes the intent explicit
+  # rather than relying on that.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   pre-commit:
@@ -27,7 +60,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24' # matches frontend/Dockerfile.prod build stage (node:24-alpine, active LTS)
+          node-version-file: frontend/.nvmrc
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -49,15 +82,33 @@ jobs:
           restore-keys: |
             pre-commit-
 
-      - name: Run pre-commit
+      - name: Run pre-commit (pre-commit stage)
         run: pre-commit run --all-files --show-diff-on-failure
+
+      # ⚠️ BOTH stages, always (issue #688). `pre-commit run` with no --hook-stage runs
+      # DEFAULT-stage hooks only, and .pre-commit-config.yaml sets
+      # `default_stages: [pre-commit]` — so a hook demoted to `stages: [pre-push]` silently
+      # stops running here and the workflow stays green while checking less. That is the
+      # exact failure the tiering had to avoid, so the demotion and this step are one change,
+      # not two. It currently covers the frontend production vite build (the ONLY one in CI
+      # for a PR — docker-publish.yml is workflow_dispatch-only) and the recursive
+      # `bandit -r backend/` scan.
+      #
+      # `--show-diff-on-failure` is kept: shared pre-commit-hooks entries such as
+      # trailing-whitespace/end-of-file-fixer declare pre-push in their own stages and can
+      # rewrite files here too.
+      #
+      # backend/tests/unit/test_precommit_stage_ci_parity.py fails the build if any stage a
+      # hook is assigned to has no CI invocation.
+      - name: Run pre-commit (pre-push stage)
+        run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
 
       - name: Generate pre-commit summary
         if: always()
         run: |
           echo "## Pre-commit Check Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Pre-commit hooks executed on all files." >> $GITHUB_STEP_SUMMARY
+          echo "Pre-commit hooks executed on all files (pre-commit AND pre-push stages)." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Hooks Executed:" >> $GITHUB_STEP_SUMMARY
           echo "- Code formatting (Ruff, Prettier)" >> $GITHUB_STEP_SUMMARY
@@ -231,7 +282,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version-file: frontend/.nvmrc
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 

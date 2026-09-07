@@ -16,7 +16,6 @@ from joserfc.jwk import OctKey
 from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.utils import local_password_allowed
 from app.core.config import settings
-from app.core.security import pwd_context
 from app.core.security import verify_and_update_password
 
 # Database connection parameters
@@ -33,11 +32,6 @@ def get_db_connection():
         host=DB_HOST, port=DB_PORT, database=DB_NAME, user=DB_USER, password=DB_PASSWORD
     )
     return conn
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against a hash."""
-    return pwd_context.verify(plain_password, hashed_password)  # type: ignore[no-any-return]
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

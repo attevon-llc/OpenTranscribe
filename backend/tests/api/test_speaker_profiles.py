@@ -338,6 +338,147 @@ def test_assign_profile_unknown_profile_404(client, user_token_headers, normal_u
     assert resp.json()["detail"] == "Speaker profile not found"
 
 
+# ---------------------------------------------------------------------------
+# assign-profile: post-commit region atomicity (issue #620 item 8)
+#
+# assign_speaker_to_profile (the SERVICE call) commits the DB write before this
+# handler builds its response / calls update_speaker_collections. A failure in
+# either of those AFTER that commit must never surface as a 500 -- the client
+# would be told the assignment did not happen when it durably did, and the
+# handler's `db.rollback()` cannot undo an already-committed write anyway.
+# ---------------------------------------------------------------------------
+
+
+def test_assign_profile_happy_path_200(client, user_token_headers, normal_user, db_session):
+    """Baseline positive control the failure-mode tests below are contrasted against."""
+    prof = _make_profile(db_session, normal_user)
+    _mf, spk = _make_file_and_speaker(db_session, normal_user)
+    resp = client.post(
+        f"{PREFIX}/speakers/{spk.uuid}/assign-profile",
+        headers=user_token_headers,
+        params={"profile_uuid": str(prof.uuid)},
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    body = resp.json()
+    assert body["status"] == "assigned"
+    assert body["speaker_id"] == str(spk.uuid)
+    db_session.refresh(spk)
+    assert spk.profile_id == prof.id
+    assert spk.verified is True
+
+
+def test_assign_profile_opensearch_failure_still_returns_200_and_writes_durably(
+    client, user_token_headers, normal_user, db_session
+):
+    """Red-first: before this fix, an exception here (e.g. an expired ORM attribute
+    read) propagated out of the try/except as a 500 -- even though
+    assign_speaker_to_profile had already committed the assignment. The client was
+    told the assignment failed when it had, in fact, durably succeeded.
+    """
+    from unittest.mock import patch
+
+    prof = _make_profile(db_session, normal_user)
+    _mf, spk = _make_file_and_speaker(db_session, normal_user)
+
+    with patch(
+        "app.api.endpoints.speaker_profiles.update_speaker_collections",
+        side_effect=RuntimeError("OpenSearch is down"),
+    ):
+        resp = client.post(
+            f"{PREFIX}/speakers/{spk.uuid}/assign-profile",
+            headers=user_token_headers,
+            params={"profile_uuid": str(prof.uuid)},
+        )
+
+    assert resp.status_code == status.HTTP_200_OK, (
+        f"a post-commit OpenSearch failure must not surface as a 500: {resp.text}"
+    )
+    body = resp.json()
+    assert body["status"] == "assigned"
+
+    # The durable state is what matters: the commit already happened inside
+    # assign_speaker_to_profile, independent of this response.
+    db_session.refresh(spk)
+    assert spk.profile_id == prof.id, "the assignment must be committed despite the failure"
+    assert spk.verified is True, "verified must be committed despite the failure"
+
+
+def test_assign_profile_opensearch_failure_response_does_not_claim_rollback(
+    client, user_token_headers, normal_user, db_session
+):
+    """Negative control: the degraded response must not resemble the normal success
+    body (which includes profile_name/confidence/verified) -- it is a distinct,
+    minimal shape so a caller cannot mistake it for the full happy path.
+    """
+    from unittest.mock import patch
+
+    prof = _make_profile(db_session, normal_user)
+    _mf, spk = _make_file_and_speaker(db_session, normal_user)
+
+    with patch(
+        "app.api.endpoints.speaker_profiles.update_speaker_collections",
+        side_effect=RuntimeError("OpenSearch is down"),
+    ):
+        resp = client.post(
+            f"{PREFIX}/speakers/{spk.uuid}/assign-profile",
+            headers=user_token_headers,
+            params={"profile_uuid": str(prof.uuid)},
+        )
+
+    assert resp.status_code == status.HTTP_200_OK
+    body = resp.json()
+    assert "profile_name" not in body, (
+        "the degraded response should not fabricate fields it could not safely build"
+    )
+    assert body == {"status": "assigned", "profile_id": str(prof.uuid)}
+
+
+def test_assign_profile_pre_commit_failure_still_500s_and_writes_nothing(
+    client, user_token_headers, normal_user, db_session
+):
+    """Control for the OTHER direction: a failure BEFORE assign_speaker_to_profile's
+    commit (still inside the outer try/except) must still 500 and must NOT be
+    reported as a success -- the post-commit guard must not have widened to swallow
+    every exception in the handler.
+
+    Deliberately does NOT re-query the speaker row through `db_session` afterward:
+    this fixture's savepoint-restart isolation (conftest.py's `db_session`, "handles
+    the case where the code under test calls commit()") does not extend to a
+    subsequent `db.rollback()` on the SAME session -- measured directly, a
+    `session.rollback()` issued after one or more prior `commit()`s rolls the
+    session back past the last savepoint into the fixture's own outer transaction
+    setup, not just to the savepoint boundary the endpoint's rollback should be
+    scoped to. That is a pre-existing test-harness limitation unrelated to this fix
+    (the production code's `db.rollback()` behaves correctly against real Postgres;
+    only re-probing it through this exact fixture afterward is unsafe) and out of
+    scope for issue #620 to fix. The mock's own call assertion is harness-safe
+    evidence that the pre-commit path was taken and never wrote.
+    """
+    from unittest.mock import patch
+
+    prof = _make_profile(db_session, normal_user)
+    _mf, spk = _make_file_and_speaker(db_session, normal_user)
+
+    with patch(
+        "app.api.endpoints.speaker_profiles.SpeakerMatchingService.assign_speaker_to_profile",
+        side_effect=RuntimeError("pre-commit failure"),
+    ) as mock_assign:
+        resp = client.post(
+            f"{PREFIX}/speakers/{spk.uuid}/assign-profile",
+            headers=user_token_headers,
+            params={"profile_uuid": str(prof.uuid)},
+        )
+
+    assert resp.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert mock_assign.call_count == 1, (
+        "expected the request to reach (and fail inside) assign_speaker_to_profile, "
+        "confirming the failure was on the pre-commit path"
+    )
+    assert "assigned" not in resp.text, (
+        "a pre-commit failure response must not resemble or claim any success"
+    )
+
+
 def test_suggestions_owner_200_already_profiled_empty(
     client, user_token_headers, normal_user, db_session
 ):

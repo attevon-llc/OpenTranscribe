@@ -132,7 +132,7 @@
     height: 56px;
     border-radius: 50%;
     background-color: rgba(var(--primary-color-rgb), 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .hero-icon.warning {

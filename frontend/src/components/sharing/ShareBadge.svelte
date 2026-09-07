@@ -30,7 +30,7 @@
     font-size: 11px;
     font-weight: 500;
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     white-space: nowrap;
   }
 

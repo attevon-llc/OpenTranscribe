@@ -11,7 +11,9 @@ services:
     container_name: opentranscribe-postgres
     image: postgres:17.5-alpine
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Performance tuning for transcription workloads (2500+ files, 1M+ segments)
@@ -48,7 +50,9 @@ services:
     container_name: opentranscribe-minio
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     volumes:
@@ -78,7 +82,9 @@ services:
     container_name: opentranscribe-redis
     image: redis:8.2.2-alpine3.22
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     ports:
@@ -170,6 +176,10 @@ services:
       - plugins.ml_commons.native_memory_threshold=99
       - plugins.ml_commons.model_access_control_enabled=false
       - plugins.ml_commons.allow_registering_model_via_url=true
+      # Required separately from the url permission above -- OpenSearch 3.4 refuses a
+      # file:// registration outright without this, independent of whether the backend
+      # can even reach the shared /ml-models path (issue #638).
+      - plugins.ml_commons.allow_registering_model_via_local_file=true
     ulimits:
       memlock:
         soft: -1
@@ -200,7 +210,9 @@ services:
   backend:
     container_name: opentranscribe-backend
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Backend handles API requests only - except the search embedding model
@@ -210,10 +222,31 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # RAG chat loads a CPU cross-encoder here to rerank retrieval results.
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      # Read-write access to the SAME host directory OpenSearch mounts read-only at
+      # /ml-models (issue #638) -- OpenSearch resolves a file:// model registration on
+      # its OWN filesystem, so a model the backend downloads must land in this shared
+      # path, not the backend's private cache, for OpenSearch to ever find it.
+      - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models
+      # The native diarizer's exported ONNX/PLDA set, READ-WRITE and only here. The
+      # backend owns the export (app/transcription/native_provision.py, run from the
+      # lifespan); the diar-native sidecar mounts this same host directory READ-ONLY at
+      # the identical container path, so both agree on the location by construction and
+      # only one process can ever write it. Same DIAR_NATIVE_MODELS_DIR indirection the
+      # sidecar uses, so pinning it in .env moves both together (issue #654).
+      - ${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-./models}/diar-native}:/models
       # Shared scratch for cross-worker preprocessed-WAV handoff
       - pipeline_scratch:/scratch/opentranscribe
     ports:
-      - "${BACKEND_PORT:-5174}:8080"
+      # BACKEND_BIND_HOST defaults to the wildcard address, which is the
+      # historical behaviour and what a plain deployment expects. A --with-pki
+      # stack overrides it to 127.0.0.1 (scripts/pki/generate-test-env.sh writes
+      # it into the fragment opentr.sh sources before assembling this chain):
+      # there, mTLS-terminating nginx is the only legitimate front door, and a
+      # reachable backend port turned the trusted-proxy allowlist into remote
+      # unauthenticated admin impersonation (issue #620). Set via env, never a
+      # second `ports:` entry in an overlay — compose APPENDS port lists, so an
+      # overlay would publish the wildcard binding as well (issue #343).
+      - "${BACKEND_BIND_HOST:-0.0.0.0}:${BACKEND_PORT:-5174}:8080"
     environment:
       # Internal Docker network settings (hardcoded for service-to-service communication)
       - POSTGRES_HOST=postgres
@@ -279,7 +312,34 @@ services:
   celery-worker:
     container_name: opentranscribe-celery-worker
     restart: always
-    env_file: .env
+    # Grace period before SIGKILL on `docker stop`/`down`/`restart` (issue #782). Compose
+    # v2.29.7 bakes this into the container's Config.StopTimeout at CREATE time, and the
+    # daemon honours it even for a bare `docker stop` — the primary fix. `worker_shutdown`
+    # (app/core/worker_shutdown.py) releases the transcriber/diarizer/CUDA context on
+    # SIGTERM, so this window only needs to cover that release, not a full task.
+    #
+    # 30s is MEASURED, not guessed. Isolated stack on an idle RTX A6000 (GPU 2), models
+    # preloaded, `docker stop --time 120` so the ceiling could not clip the result:
+    #
+    #   rep   wall     exit   handler release
+    #   1     3.90s    0      1.400s
+    #   2     4.44s    0      1.413s
+    #   3     3.98s    0      1.510s
+    #
+    # Worst clean stop 4.44s; the release itself is ~1.5s of that, the rest is celery's
+    # warm shutdown joining the pool. 30s is ~6.7x the worst observed case.
+    #
+    # ⚠️ Deliberately NOT larger, and the reason is measured too: a SIGTERM that arrives
+    # while the worker is still BOOTING is never handled — celery logs a warm shutdown and
+    # then never exits, so the container burns the entire grace period and is SIGKILLed
+    # anyway (observed: stop at T+2s => 31.09s wall, exit 137; stop when ready => 4.55s,
+    # exit 0). A longer window does not rescue that case, it only lengthens the hang. This
+    # is the "trades a wedged GPU for a stop that hangs" trade-off issue #782 warns about,
+    # and it is why this is 30s rather than the 3600s the issue floats.
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcription@%h -E
@@ -294,7 +354,6 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       # Shared scratch — reads the preprocessed WAV that the CPU worker staged
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -324,7 +383,14 @@ services:
       # Without this, ALL workers preload Whisper + PyAnnote onto GPU (~15GB wasted).
       - PRELOAD_GPU_MODELS=true
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcription@$$HOSTNAME"]
+      # Pool-aware healthcheck. This worker DEFAULTS to --pool=threads, for which
+      # this script degrades to exactly what `inspect ping` proved (MainProcess
+      # answered) — but the pool type is an env var, and core/celery.py explicitly
+      # recommends flipping it to prefork for --max-tasks-per-child recycling. Under
+      # `inspect ping` that flip silently bought the issue #631 blind spot: a wedged
+      # forked pool that keeps answering healthy. The script reads pool.implementation
+      # and applies the child-process checks only when they mean something.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-transcription@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -339,7 +405,9 @@ services:
   celery-download-worker:
     container_name: opentranscribe-celery-download-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-5} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10} --hostname media-downloader@%h -E
@@ -365,7 +433,13 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d media-downloader@$$HOSTNAME"]
+      # prefork pool (default, no --pool= flag): `inspect ping` is answered by the
+      # MainProcess regardless of whether the forked child pool is alive, so it
+      # cannot detect a wedged pool. The script checks the pool itself — both a
+      # dead pool (no children) and a RESPAWN STORM (children replaced every probe
+      # while the accepted-task counter stays frozen), which a non-empty child list
+      # reports as healthy. See backend/scripts/celery_pool_healthcheck.py (#631).
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py media-downloader@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -379,7 +453,12 @@ services:
   celery-cpu-worker:
     container_name: opentranscribe-celery-cpu-worker
     restart: always
-    env_file: .env
+    # CUDA-holding: `count: all` GPU reservation below. Same grace period as celery-worker
+    # — see the comment there for the full rationale (issue #782).
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Compute-bound queues only. cloud-asr runs on its own container
@@ -400,7 +479,6 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       - PRELOAD_CPU_WHISPER=true
       # ffmpeg preprocess threading (opt-in CPU-contention control; default off).
@@ -427,7 +505,12 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cpu-processor@$$HOSTNAME"]
+      # prefork pool: `inspect ping` answers from MainProcess even with every forked
+      # child dead — this is the queue hit by the 10h46m wedge incident (#631), and
+      # that wedge was a respawn STORM, so `pool.processes` was never empty: billiard
+      # appends a child before start(). The script also compares the pid set and the
+      # accepted-task counter across probes (backend/scripts/celery_pool_healthcheck.py).
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py cpu-processor@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -452,7 +535,12 @@ services:
   celery-redaction:
     container_name: opentranscribe-celery-redaction
     restart: always
-    env_file: .env
+    # CUDA-holding: REDACTION_DEVICE=auto can open a CUDA context. Same grace period as
+    # celery-worker (issue #782).
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: nice -n ${REDACTION_NICE:-10} celery -A app.core.celery worker --loglevel=info -Q redaction --pool=${REDACTION_WORKER_POOL:-threads} --concurrency=${REDACTION_CONCURRENCY:-2} --max-tasks-per-child=${REDACTION_MAX_TASKS:-200} --hostname redaction@%h -E
@@ -490,7 +578,14 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d redaction@$$HOSTNAME"]
+      # Pool-aware healthcheck. This worker DEFAULTS to --pool=threads, for which
+      # this script degrades to exactly what `inspect ping` proved (MainProcess
+      # answered) — but the pool type is an env var, and core/celery.py explicitly
+      # recommends flipping it to prefork for --max-tasks-per-child recycling. Under
+      # `inspect ping` that flip silently bought the issue #631 blind spot: a wedged
+      # forked pool that keeps answering healthy. The script reads pool.implementation
+      # and applies the child-process checks only when they mean something.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py redaction@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -509,7 +604,9 @@ services:
     # CPU worker. Phase 2 of the timing audit plan — item 17.
     container_name: opentranscribe-celery-cloud-asr-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q cloud-asr --concurrency=${CLOUD_ASR_CONCURRENCY:-16} --max-tasks-per-child=50 --hostname cloud-asr@%h -E
@@ -535,7 +632,8 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cloud-asr@$$HOSTNAME"]
+      # prefork pool: see the cpu-processor healthcheck comment above.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py cloud-asr@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -549,7 +647,9 @@ services:
   celery-nlp-worker:
     container_name: opentranscribe-celery-nlp-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=${NLP_CONCURRENCY:-4} --max-tasks-per-child=${NLP_MAX_TASKS:-50} --hostname ai-nlp@%h -E
@@ -574,7 +674,8 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d ai-nlp@$$HOSTNAME"]
+      # prefork pool: see the cpu-processor healthcheck comment above.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py ai-nlp@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -590,7 +691,9 @@ services:
   celery-embedding-worker:
     container_name: opentranscribe-celery-embedding-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Dedicated embedding worker: concurrency=1 keeps one model loaded in memory.
@@ -629,7 +732,8 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d search-indexer@$$HOSTNAME"]
+      # prefork pool: see the cpu-processor healthcheck comment above.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py search-indexer@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -644,7 +748,9 @@ services:
   celery-beat:
     container_name: opentranscribe-celery-beat
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery beat --loglevel=info
@@ -700,13 +806,26 @@ services:
   # GPU device assignment is controlled via GPU_TRANSCRIBE_DEVICE_ID /
   # GPU_DIARIZE_DEVICE_ID.  GPU reservation (deploy.resources.reservations)
   # must be added via an overlay file (see docker-compose.gpu.yml pattern).
+  #
+  # celery-worker-gpu-transcribe only receives work because
+  # transcription/dispatch.py:_resolve_gpu_queue() routes the initial GPU stage
+  # to the 'gpu-transcribe' queue when app.core.constants.gpu_split_enabled()
+  # is true. Before issue #703's fix, nothing ever published to that queue —
+  # this worker held its GPU reservation and sat idle under --with-gpu-split.
+  # ENGINE_GPU_SPLIT propagation to the dispatching containers (backend,
+  # celery-worker, celery-cpu-worker, celery-download-worker) is handled in
+  # docker-compose.gpu-split.yml, not here — see that file's header comment.
 
   celery-worker-gpu-transcribe:
     container_name: ${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-transcribe
     profiles:
       - gpu-split
     restart: always
-    env_file: .env
+    # CUDA-holding gpu-split worker. Same grace period as celery-worker (issue #782).
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu-transcribe --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcribe@%h -E
@@ -716,7 +835,6 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -747,7 +865,14 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - ENGINE_GPU_SPLIT=true
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcribe@$$HOSTNAME"]
+      # Pool-aware healthcheck. This worker DEFAULTS to --pool=threads, for which
+      # this script degrades to exactly what `inspect ping` proved (MainProcess
+      # answered) — but the pool type is an env var, and core/celery.py explicitly
+      # recommends flipping it to prefork for --max-tasks-per-child recycling. Under
+      # `inspect ping` that flip silently bought the issue #631 blind spot: a wedged
+      # forked pool that keeps answering healthy. The script reads pool.implementation
+      # and applies the child-process checks only when they mean something.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-transcribe@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -764,7 +889,11 @@ services:
     profiles:
       - gpu-split
     restart: always
-    env_file: .env
+    # CUDA-holding gpu-split worker. Same grace period as celery-worker (issue #782).
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu-diarize --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-diarize@%h -E
@@ -774,7 +903,6 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -805,7 +933,14 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - ENGINE_GPU_SPLIT=true
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-diarize@$$HOSTNAME"]
+      # Pool-aware healthcheck. This worker DEFAULTS to --pool=threads, for which
+      # this script degrades to exactly what `inspect ping` proved (MainProcess
+      # answered) — but the pool type is an env var, and core/celery.py explicitly
+      # recommends flipping it to prefork for --max-tasks-per-child recycling. Under
+      # `inspect ping` that flip silently bought the issue #631 blind spot: a wedged
+      # forked pool that keeps answering healthy. The script reads pool.implementation
+      # and applies the child-process checks only when they mean something.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-diarize@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -827,7 +962,13 @@ services:
       - gpu-scale  # Only activated with --gpu-scale flag
     scale: 0  # Disabled by default, gpu-scale.yml sets scale: 1
     restart: always
-    env_file: .env
+    # CUDA-holding gpu-scale worker. Same grace period as celery-worker (issue #782).
+    # Inert while scale: 0 (docker-compose.lite.yml) -- the key applies at container
+    # CREATE time, and lite mode creates none.
+    stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     environment:
@@ -855,7 +996,6 @@ services:
       # match the other transcription workers or the scaled worker can't see the
       # handoff and silently falls back to re-downloading from MinIO per file.
       - pipeline_scratch:/scratch/opentranscribe
-      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     tmpfs:
       - /app/temp:noexec,nosuid,size=20g,mode=1777
     depends_on:
@@ -867,7 +1007,9 @@ services:
   frontend:
     container_name: opentranscribe-frontend
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Note: ports, healthcheck, and NODE_ENV defined in override files (dev vs prod)
@@ -878,22 +1020,48 @@ services:
   flower:
     container_name: opentranscribe-flower
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
+    # ⚠️ issue #609: flower 2.1.0's /api/workers is a ONE-SHOT startup snapshot,
+    # not a live roster. Flower.start() (flower/app.py:98) issues a single
+    # `celery inspect` broadcast at process boot with a 1 s reply timeout and
+    # never re-inspects on a timer (grep the installed package for
+    # update_workers/PeriodicCallback — there is no periodic inspection at
+    # all). A worker still importing torch/whisperx, or running
+    # @worker_ready preload_models() synchronously in its main thread
+    # (backend/app/core/celery.py PRELOAD_GPU_MODELS), is not ready to answer
+    # inside that 1 s boot window and is absent from the JSON API FOREVER —
+    # "wait longer and re-check" cannot fix it, because nothing ever asks
+    # again. This is NOT a --pool=threads bug: prefork workers (cpu-processor,
+    # cloud-asr) lose the exact same race, and a --pool=threads worker
+    # answering its own healthcheck's `inspect stats` broadcast proves threads
+    # workers DO respond to broadcasts. --inspect_timeout below only widens the
+    # window for a request that explicitly asks Flower to re-broadcast (see
+    # scripts/gpu-scale-smoke.sh and scripts/bulk-processing-cheatsheet.sh,
+    # both of which now call /api/workers?refresh=1) — it does not make the
+    # one-shot cache itself refresh. --queues=... and --broker=... used to be
+    # listed here and did NOTHING: flower.command.is_flower_option() silently
+    # discards any argv flag it doesn't recognize as a real Flower option
+    # (--queues has never been one), and Flower already resolves the broker
+    # from CELERY_BROKER_URL below via settings.CELERY_BROKER_URL — removing
+    # them is a no-op fix that also silences a boot-time warning.
+    # backend/tests/unit/test_flower_worker_discovery.py guards both facts so
+    # a future silently-dropped flag doesn't reappear unnoticed.
     command: >
       python -m celery -A app.core.celery flower
       --port=5555
       --url_prefix=${FLOWER_URL_PREFIX:-flower}
       --persistent=True
       --db=/app/temp/flower.db
-      --broker=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
       --max_tasks=10000
       --natural_time=True
       --auto_refresh=True
       --tasks_columns=name,uuid,state,received,started,runtime,worker,args
       --purge_offline_workers=600
-      --queues=gpu,gpu-transcribe,gpu-diarize,download,cpu,nlp,embedding,utility,cloud-asr,cpu-transcribe,redaction,celery
+      --inspect_timeout=10000
       --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}
     ports:
       # Loopback-only: prod reaches Flower through nginx on the compose network;
@@ -952,14 +1120,18 @@ volumes:
   redis_data:
   opensearch_data:
   flower_data:
-  # Shared scratch volume for cross-worker artifact handoff. Holds the
-  # preprocessed 16 kHz WAV (one per in-flight file, plus ephemeral
-  # derived artifacts). Defaults to a regular disk-backed volume so the
-  # stack works on every host; override to tmpfs in an environment
-  # overlay (see docker-compose.scratch-tmpfs.yml) for RAM-backed speed.
-  # See backend/app/utils/scratch_volume.py for the contract.
+  # Shared scratch volume for cross-worker artifact handoff (issue #661 E2: ONE volume,
+  # three namespaces). Holds the preprocessed 16 kHz WAV under `<file_uuid>/` (one per
+  # in-flight file, plus ephemeral derived artifacts — see backend/app/utils/scratch_volume.py
+  # for that contract), the engine's Stage-1→Stage-2 handoff WAV under `engine/`
+  # (ENGINE_SHARED_VOLUME_PATH, backend/app/core/constants.py), and the diar-native sidecar's
+  # own-copy fallback under `diar/` (DIAR_NATIVE_SHARED_DIR). Same volume for all three is what
+  # lets the engine handoff be an `os.link` instead of a cross-filesystem copy. Defaults to a
+  # regular disk-backed volume so the stack works on every host; override to tmpfs in an
+  # environment overlay (see docker-compose.scratch-tmpfs.yml) for RAM-backed speed — worst
+  # case there is `DIAR_NATIVE_MAX_INFLIGHT x 2 x largest_file` (the x2 is the own-copy
+  # fallback transiently holding both names).
   pipeline_scratch:
-  transcription-temp:
     driver: local
 
 networks:

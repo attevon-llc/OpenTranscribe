@@ -26,7 +26,7 @@
 export const MAX_TAG_NAME_LENGTH = 50;
 
 /** Mirrors `app.core.constants.FUZZY_MATCH_THRESHOLD`. */
-export const TAG_FUZZY_MATCH_THRESHOLD = 0.85;
+const TAG_FUZZY_MATCH_THRESHOLD = 0.85;
 
 /**
  * Normalize a tag name the way the backend does

@@ -353,6 +353,7 @@ def get_metadata_filters(
     ownership: str = "all",
     *,
     organization_id: OrgScope = UNSCOPED,
+    is_admin: bool = False,
 ) -> dict:
     """
     Get available metadata filters for the user's accessible files.
@@ -366,6 +367,10 @@ def get_metadata_filters(
         ownership: 'mine', 'shared', or 'all' (default: 'all')
         organization_id: Active org id, None for personal, or UNSCOPED (legacy) —
             tenant-gates every ownership branch (default-deny across scopes).
+        is_admin: When False (default), quarantined (DMCA/legal-hold) files are
+            excluded — matching every other read surface (A2). Facet VALUES
+            (formats, codecs, languages, date/size ranges) drawn only from a
+            quarantined file must not leak even though the file itself 404s.
 
     Returns:
         Dictionary of available filter options
@@ -394,6 +399,13 @@ def get_metadata_filters(
             db, user_id, organization_id=organization_id
         )
         file_filter = MediaFile.id.in_(select(accessible_sq))
+
+    if not is_admin:
+        # Mirrors `services/takedown_service.exclude_quarantined` — that helper
+        # takes a Query, and `file_filter` here is a bare predicate combined
+        # into two different queries below, so the same condition is applied
+        # directly rather than reshaping this function around a Query object.
+        file_filter = and_(file_filter, MediaFile.is_quarantined.is_(False))
 
     format_text = cast(MediaFile.metadata_important["format"], String)
     codec_text = cast(MediaFile.metadata_important["codec"], String)

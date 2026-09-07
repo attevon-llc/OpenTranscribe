@@ -550,3 +550,81 @@ def test_the_structure_lock_is_scoped_to_the_index_name():
         tl.task_lock_manager = original
 
     assert captured == [f"opensearch_index_structure_lock:{settings.OPENSEARCH_CHUNKS_INDEX}"]
+
+
+# ---------------------------------------------------------------------------
+# Anti-drift guard (issue #692): the repair path reads its dispatch result by
+# key, and `.get(key, 0)` cannot tell "the key is absent" from "the count is
+# zero". `rebuild_chunks_index` read `dispatched`, which
+# `dispatch_reindex_for_every_owner` has never returned, so the repair log
+# reported "0 owners" on every run however many it actually fanned out to.
+#
+# Structural rather than behavioural on purpose: the defect is a key that does
+# not exist, so the check that catches it is "every key read is a key
+# returned". A log-text assertion would pin one message and miss the next one.
+# ---------------------------------------------------------------------------
+
+
+def _returned_dict_keys(source: str, func_name: str) -> set[str]:
+    """Every literal key in every dict `func_name` returns."""
+    tree = ast.parse(source)
+    keys: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != func_name:
+            continue
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Return) and isinstance(sub.value, ast.Dict):
+                keys |= {
+                    k.value
+                    for k in sub.value.keys
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str)
+                }
+    return keys
+
+
+def _keys_read_off(source: str, func_name: str, var_name: str) -> set[str]:
+    """Every literal key read via ``<var_name>.get("...")`` inside ``func_name``."""
+    tree = ast.parse(source)
+    keys: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != func_name:
+            continue
+        for sub in ast.walk(node):
+            if (
+                isinstance(sub, ast.Call)
+                and isinstance(sub.func, ast.Attribute)
+                and sub.func.attr == "get"
+                and isinstance(sub.func.value, ast.Name)
+                and sub.func.value.id == var_name
+                and sub.args
+                and isinstance(sub.args[0], ast.Constant)
+                and isinstance(sub.args[0].value, str)
+            ):
+                keys.add(sub.args[0].value)
+    return keys
+
+
+def test_the_repair_log_reads_only_keys_the_dispatcher_returns():
+    """A `.get()` on a key that is never returned reports its default forever."""
+    import app.services.search.index_health as health_mod
+    import app.services.search.model_switch as switch_mod
+
+    returned = _returned_dict_keys(
+        Path(switch_mod.__file__).read_text(),
+        "dispatch_reindex_for_every_owner",
+    )
+    assert returned, "could not find the dispatcher's returned keys — the guard would be vacuous"
+
+    read = _keys_read_off(
+        Path(health_mod.__file__).read_text(),
+        "rebuild_chunks_index",
+        "result",
+    )
+    assert read, "could not find any key read off the dispatch result — the guard would be vacuous"
+
+    unknown = read - returned
+    assert not unknown, (
+        f"rebuild_chunks_index reads {sorted(unknown)} off dispatch_reindex_for_every_owner's "
+        f"result, but it only ever returns {sorted(returned)}. A `.get(key, default)` on an "
+        f"absent key silently reports the default — issue #692."
+    )

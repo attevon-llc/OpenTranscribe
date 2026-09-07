@@ -196,6 +196,13 @@ echo ========================================
 echo.
 
 REM Set environment variables for offline mode
+REM
+REM NOTE (issue #655): this is a FIXED two-file compose chain by design. There is
+REM deliberately no docker-compose.diar-native.yml overlay hook here -- the native
+REM diar-native sidecar image is never packaged by build-windows-installer.sh, so
+REM adding the overlay would just fail to pull it offline. Windows installs are
+REM PyAnnote-diarization-only; see INSTALL-WINDOWS.md's HuggingFace token step and
+REM README-WINDOWS.md's model-cache section for the operator-facing explanation.
 set "COMPOSE_FILE_BASE=%INSTALL_DIR%config\docker-compose.yml"
 set "COMPOSE_FILE_OFFLINE=%INSTALL_DIR%config\docker-compose.offline.yml"
 set "MODEL_CACHE_DIR=%INSTALL_DIR%models"

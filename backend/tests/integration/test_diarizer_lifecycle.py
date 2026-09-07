@@ -9,28 +9,37 @@ Asserts three invariants:
    Measured floor is 300 MB on (torch 2.8.0+cu128, driver 580.126, A6000);
    tolerance = 350 MB. Any regression above this means new unreleased
    state was introduced in Transcriber.unload_model or its callees.
-3. DIARIZATION_VRAM_BUDGET_MB env var propagates through settings ->
-   _apply_vram_policy -> fork pipeline.vram_budget_mb.
+3. SpeakerDiarizer's embedding batch size is pinned at EMBEDDING_BATCH_SIZE = 16
+   (superseding the earlier DIARIZATION_VRAM_BUDGET_MB budget-aware auto-scaler,
+   removed in 7ed7456e once Phase-A measurement showed bs=16 matches larger
+   batches on throughput/DER at a fraction of the VRAM — see
+   docs/diarization-vram-profile/README.md). PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE
+   is set to match, so pyannote's own batching agrees with ours.
 
-Run (in-container):
+Run (in-container — the prod image has no pytest, so this needs the test image;
+issue #577):
 
-    docker compose -f docker-compose.yml -f docker-compose.override.yml \\
-                   -f docker-compose.gpu.yml -f docker-compose.benchmark.yml \\
-                   run --rm --entrypoint "" diarization-probe \\
-        python -m pytest /app/tests/integration/test_diarizer_lifecycle.py -v
+    ./scripts/run-diarization-gpu-tests.sh \\
+        tests/integration/test_diarizer_lifecycle.py -v -o addopts= -m gpu
+
+`-o addopts= -m gpu` is not optional: pyproject's default selector is
+``-m 'not integration and not gpu'``, which deselects every test in this module and
+exits 0. Running the whole GPU diarization set (this module plus the perf gates and
+the RTTM regression) is just ``./scripts/run-diarization-gpu-tests.sh`` with no args.
 
 Refs: plan i-need-a-full-stateful-origami.md D.2.
 """
 
 from __future__ import annotations
 
-import ctypes
 import os
 import wave
 from pathlib import Path
 
 import numpy as np
 import pytest
+
+from tests import gpu_memory
 
 pytestmark = pytest.mark.gpu
 
@@ -64,28 +73,6 @@ def torch_cuda() -> object:
     return torch
 
 
-def _nvml_used_mb() -> float:
-    """Current NVML device_used in MB for device 0, or 0.0 on failure."""
-    try:
-        lib = ctypes.CDLL("libnvidia-ml.so.1")
-        lib.nvmlInit_v2()
-        handle = ctypes.c_void_p()
-        lib.nvmlDeviceGetHandleByIndex(0, ctypes.byref(handle))
-
-        class _Mem(ctypes.Structure):
-            _fields_ = [
-                ("total", ctypes.c_ulonglong),
-                ("free", ctypes.c_ulonglong),
-                ("used", ctypes.c_ulonglong),
-            ]
-
-        mem = _Mem()
-        lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
-        return float(mem.used) / (1024**2)
-    except Exception:
-        return 0.0
-
-
 def _load_audio(path: Path) -> np.ndarray:
     with wave.open(str(path), "rb") as wf:
         if wf.getframerate() != 16000:
@@ -115,7 +102,13 @@ def test_handoff_residue_within_gate(
         pytest.skip(f"benchmark audio missing: {wav_path}")
     audio = _load_audio(wav_path)
 
-    baseline = _nvml_used_mb()
+    # Captured BEFORE anything in this process touches CUDA, so every PID in it belongs to
+    # someone else. Subtracting them is what makes this a measurement of *our* process
+    # rather than of the whole card — see tests/gpu_memory.py for the run where a
+    # co-tenant's 5.2 GB model load was reported here as a 5363 MB handoff regression.
+    co_tenants = gpu_memory.co_tenant_pids()
+    before = gpu_memory.read()
+    baseline = gpu_memory.usage_excluding(before, co_tenants)
 
     cfg = TranscriptionConfig(
         model_name="base",
@@ -136,14 +129,21 @@ def test_handoff_residue_within_gate(
     torch.cuda.synchronize()
     time.sleep(0.5)  # let NVML settle
 
-    post_release = _nvml_used_mb()
+    after = gpu_memory.read()
+    # Raises rather than reporting ~0 if the baseline was taken too late to be a baseline.
+    gpu_memory.assert_self_is_measured(after, co_tenants)
+    post_release = gpu_memory.usage_excluding(after, co_tenants)
     residue = post_release - baseline
 
     assert residue <= RESIDUE_GATE_MB, (
         f"Handoff residue regression: {residue:.1f} MB above baseline "
         f"(gate: {RESIDUE_GATE_MB} MB). baseline={baseline:.1f} "
         f"post_release={post_release:.1f}. Phase A.6b floor was 278 MB; a "
-        f"jump suggests new unreleased state in Transcriber.unload_model."
+        f"jump suggests new unreleased state in Transcriber.unload_model.\n"
+        f"  before: {gpu_memory.describe(before, co_tenants)}\n"
+        f"  after:  {gpu_memory.describe(after, co_tenants)}\n"
+        f"A co-tenant PID present in 'after' but absent from 'before' started mid-test and "
+        f"is counted against us — re-run on a quieter card before believing this number."
     )
 
 

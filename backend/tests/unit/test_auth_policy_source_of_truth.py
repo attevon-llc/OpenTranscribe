@@ -56,7 +56,12 @@ class TestResetPathCannotBypassThePasswordPolicy:
             validate.return_value = SimpleNamespace(is_valid=True, errors=[])
             pr_module.confirm_password_reset(cast(Session, db), "raw-token", "weak")
 
-        assert validate.called, "the reset path must consult the policy resolver, not the .env flag"
+        assert validate.call_count == 1, (
+            "the reset path must consult the policy resolver, not the .env flag"
+        )
+        # And consult it about the password being SET. `.called` is equally true of a
+        # call that validated the old password, or the token, and then let "weak" through.
+        assert validate.call_args.args[0] == "weak"
 
     def test_a_policy_rejection_still_fails_the_reset(self):
         db = _ConfirmSession()

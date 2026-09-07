@@ -2,10 +2,18 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import GalleryCountChip from '$components/gallery/GalleryCountChip.svelte';
-  import GallerySortDropdown from '$components/gallery/GallerySortDropdown.svelte';
+  import SortDropdown, { type SortOption } from '$components/ui/SortDropdown.svelte';
   import GalleryViewToggle from '$components/gallery/GalleryViewToggle.svelte';
   import GalleryActionButtons from '$components/gallery/GalleryActionButtons.svelte';
   import type { MediaFile } from '$lib/types/media';
+
+  const sortOptions: SortOption[] = [
+    { value: 'upload_time', label: 'gallery.sort.uploadDate' },
+    { value: 'completed_at', label: 'gallery.sort.completedDate' },
+    { value: 'filename', label: 'gallery.sort.filename' },
+    { value: 'duration', label: 'gallery.sort.duration' },
+    { value: 'file_size', label: 'gallery.sort.fileSize' },
+  ];
 
   export let files: MediaFile[] = [];
   export let sortBy: string;
@@ -42,9 +50,11 @@
   </div>
   {#if files.length > 0}
     <div class="gallery-header-right">
-      <GallerySortDropdown
+      <SortDropdown
+        {sortOptions}
         {sortBy}
         {sortOrder}
+        ariaLabelKey="gallery.sort.label"
         on:change
       />
       <GalleryViewToggle />

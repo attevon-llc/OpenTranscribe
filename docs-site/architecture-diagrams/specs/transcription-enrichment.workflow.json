@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OpenTranscribe — Post-Transcription Enrichment",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "identity", "label": "Speaker identity chain", "focus": ["finalize", "voiceprint", "gender", "speaker_llm", "clustering"], "note": "Embeddings (voiceprint) -> gender/age detection -> LLM speaker-ID suggestion -> optional reclustering." },
+      { "id": "llm-enrich", "label": "LLM enrichment", "focus": ["finalize", "summarization", "topic", "analytics"], "note": "Runs independently of the speaker-identity chain, dispatched right after finalize." },
+      { "id": "search", "label": "Search indexing", "focus": ["finalize", "indexing"], "note": "Whole-doc + chunk-level OpenSearch indexing, dispatched immediately on finalize." }
+    ]
+  },
+  "lanes": [
+    { "id": "core", "label": "Core" },
+    { "id": "identity", "label": "Speaker Identity" },
+    { "id": "search", "label": "Search" },
+    { "id": "llm", "label": "LLM Enrichment" }
+  ],
+  "phases": [
+    { "id": "fanout", "label": "Dispatched on finalize", "fromCol": 1, "toCol": 1, "variant": "emphasis" },
+    { "id": "chain", "label": "Speaker identity chain", "fromCol": 2, "toCol": 4, "variant": "dashed" }
+  ],
+  "mainPath": ["finalize", "voiceprint", "gender", "speaker_llm", "clustering"],
+  "nodes": [
+    { "id": "finalize", "lane": "core", "col": 0, "type": "database", "label": "Finalize", "sublabel": "transcript written to Postgres", "width": 132 },
+    { "id": "voiceprint", "lane": "identity", "col": 1, "type": "backend", "label": "Voiceprint", "sublabel": "embeddings, local or cloud", "tag": "gpu or cpu queue", "width": 132 },
+    { "id": "indexing", "lane": "search", "col": 1, "type": "database", "label": "Indexing", "sublabel": "OpenSearch whole-doc + chunks", "width": 132 },
+    { "id": "summarization", "lane": "llm", "col": 1, "type": "external", "label": "Summarization", "sublabel": "LLM summary", "width": 132 },
+    { "id": "gender", "lane": "identity", "col": 2, "type": "backend", "label": "Gender/Age", "sublabel": "speaker attribute detection", "width": 132 },
+    { "id": "topic", "lane": "llm", "col": 2, "type": "external", "label": "Topics", "sublabel": "LLM topic extraction", "width": 132 },
+    { "id": "analytics", "lane": "llm", "col": 3, "type": "backend", "label": "Analytics", "sublabel": "talk-time, stats", "width": 132 },
+    { "id": "speaker_llm", "lane": "identity", "col": 3, "type": "external", "label": "Speaker ID", "sublabel": "LLM suggestion, manual approve", "tag": "never auto-applied", "width": 132 },
+    { "id": "clustering", "lane": "identity", "col": 4, "type": "backend", "label": "Reclustering", "sublabel": "selective, on request", "width": 132 }
+  ],
+  "edges": [
+    { "id": "finalize-voiceprint", "from": "finalize", "to": "voiceprint", "variant": "emphasis" },
+    { "id": "finalize-indexing", "from": "finalize", "to": "indexing", "variant": "dashed" },
+    { "id": "finalize-summarization", "from": "finalize", "to": "summarization", "variant": "dashed" },
+    { "id": "voiceprint-gender", "from": "voiceprint", "to": "gender", "variant": "emphasis" },
+    { "id": "summarization-topic", "from": "summarization", "to": "topic", "variant": "dashed" },
+    { "id": "finalize-analytics", "from": "finalize", "to": "analytics", "variant": "dashed" },
+    { "id": "gender-speakerllm", "from": "gender", "to": "speaker_llm", "label": "context for LLM", "variant": "emphasis" },
+    { "id": "speakerllm-clustering", "from": "speaker_llm", "to": "clustering", "label": "on request", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Voiceprinting already covers cloud ASR", "items": ["Local ASR: embeddings come inline from PyAnnote's native centroids (no extra GPU pass)", "Cloud ASR (no native embeddings): a dedicated extract_speaker_embeddings_task runs on the CPU queue — same voiceprint/fingerprint outcome, different path"] },
+    { "dot": "rose", "title": "LLM speaker ID is a suggestion, never a write", "items": ["Gender/age detection runs first so the LLM has that context", "Confidence-scored suggestions surface for manual approval only — repo-wide rule"] },
+    { "dot": "emerald", "title": "Independent fan-out", "items": ["Indexing, summarization, and analytics all dispatch right after finalize", "None of them block the speaker-identity chain or each other"] }
+  ]
+}

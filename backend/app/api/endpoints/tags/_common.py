@@ -13,6 +13,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.models.media import FileTag
+from app.models.media import MediaFile
 from app.models.media import Tag
 from app.schemas.media import TagMutationResult
 from app.schemas.media import TagShareTarget
@@ -38,10 +39,20 @@ def _visible_to(db: Session, user_id: int, organization_id: Any) -> ColumnElemen
     ``get_accessible_file_ids_subquery`` already covers files shared directly and
     via groups and applies the org tenant gate, so sharing needs no extra rule
     here — do not add a parallel one.
+
+    It does NOT know about quarantine, though (ownership/sharing only), so a
+    quarantined file's own id is excluded from the "attached to an accessible
+    file" arm explicitly (A2's leak class, same fix as
+    ``tag_service.visible_to``): without it, a same-named tag owned by someone
+    else and reachable only through a file shared with the caller would keep
+    appearing in ``GET /tags`` after that file was taken down, even though the
+    file itself now 404s.
     """
     accessible_files = accessible_file_ids_subquery(db, user_id, organization_id)
+    quarantined_files = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
     attached_to_accessible = select(FileTag.tag_id).where(
-        FileTag.media_file_id.in_(select(accessible_files))
+        FileTag.media_file_id.in_(select(accessible_files)),
+        FileTag.media_file_id.not_in(quarantined_files),
     )
     return or_(_owned_or_system(user_id), Tag.id.in_(attached_to_accessible))
 

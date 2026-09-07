@@ -30,7 +30,7 @@ Before running the installer, ensure you have:
 2. **Internet connection** for downloading images and models
 3. **8GB+ RAM** (16GB+ recommended)
 
-:::info HuggingFace Token Required
+:::info[HuggingFace Token Required]
 For speaker diarization to work, you'll need a **free HuggingFace token**. The installer will prompt you for it. See [HuggingFace Setup](../installation/huggingface-setup.md) for details.
 :::
 
@@ -53,7 +53,7 @@ The installer will ask for:
 2. **Whisper Model Size** (default: `large-v3-turbo` — auto-detected based on hardware)
    - `large-v3-turbo` - 6x faster, excellent accuracy (default, NVIDIA GPU recommended)
    - `large-v3` - Best accuracy, required for translation to English
-   - `medium` - Good balance (8GB+ GPU or Apple Silicon)
+   - `medium` - Good balance (8GB+ NVIDIA GPU)
    - `base` - Fast (CPU-only systems)
 
 ### Step 3: Start OpenTranscribe
@@ -80,6 +80,21 @@ When you first access OpenTranscribe, you'll see the registration page:
 1. Enter your email and password
 2. Click "Sign Up"
 3. You're automatically logged in
+
+### Guided First-Run Setup Wizard
+
+The very first account created on a fresh install becomes the bootstrap `super_admin`, and that
+account sees a one-time guided setup wizard on first login instead of the empty gallery. Rather
+than leaving you to discover dozens of auth-related environment variables and several admin
+tabs on your own, it surfaces the three things a first-time operator actually needs:
+
+- **Change your password** from whatever was used during account creation
+- **SSO / LDAP setup**, if you're connecting an identity provider
+- **Security defaults** — MFA-required, login banner, and approval-on-signup
+
+The wizard presents OpenTranscribe's real settings screens rather than a separate duplicate
+flow, so anything you configure here is the same configuration you'd reach from **Settings →
+Authentication** later. It's shown once; closing or completing it won't bring it back.
 
 ### 2. Upload a Media File
 

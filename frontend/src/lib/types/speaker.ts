@@ -49,10 +49,31 @@ export interface Segment {
   speaker_id?: string; // UUID
   speaker_label?: string;
   resolved_speaker_name?: string;
+  /**
+   * The backend serialises the FULL speaker onto every segment, not just an
+   * identity triple. This used to declare only `uuid`/`name`/`display_name`,
+   * which is the type-level reason nothing stopped an unverified LLM guess
+   * being rendered in the name slot (#741) — the suggestion fields were
+   * invisible to the compiler, so reaching for a "better looking" field was
+   * never flagged.
+   *
+   * ⚠️ `display_name` is the ONLY field meaning "a human confirmed this name":
+   * `POST /speakers` and `PUT /speakers/{uuid}` both flip `verified` the moment
+   * it is set. `suggested_name` + `confidence` + `suggestion_source` are the
+   * machine guess and must be surfaced AS a suggestion, never as the name.
+   * Note `resolved_speaker_name` above (and `Speaker.resolved_display_name`)
+   * deliberately collapse the two — both come from `canonical_speaker_label()`,
+   * which returns `suggested_name` once confidence >= 0.75. Do not key
+   * "does this speaker have a real name" off either of them.
+   */
   speaker?: {
     uuid: string; // Public UUID identifier
     name: string;
     display_name?: string;
+    suggested_name?: string;
+    suggestion_source?: string;
+    confidence?: number;
+    verified?: boolean;
   };
   formatted_timestamp?: string;
   display_timestamp?: string;

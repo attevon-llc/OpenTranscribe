@@ -142,23 +142,36 @@ def _current_speaker_name(speaker_id: int) -> str | None:
     Re-reading here makes execution order irrelevant: whichever task runs, it
     writes the name Postgres holds now, so both orderings converge on C.
 
-    Mirrors the indexer's own rule — ``display_name or name``
-    (``search_indexing_task``) — so the value written is the value a reindex
-    would write.
+    Delegates to :func:`~app.utils.speaker_labels.canonical_speaker_label_for_row`
+    — the SAME resolver the chunk-index writers (``search_indexing_task``,
+    ``reindex_task``) use — so the value written here is the value a reindex
+    would write. It used to run its own ``display_name or name`` copy, which
+    stopped agreeing the day the writers picked up a confident
+    ``suggested_name``: this function kept re-deriving the OLD rule while the
+    index moved on, so a rename dispatched against a suggestion-derived indexed
+    name computed the wrong ``old_names`` and the ``update_by_query`` matched
+    nothing (issue #605).
 
     Returns:
-        The current name, or ``None`` when the speaker is gone (deleted between
-        dispatch and execution) or the lookup failed. Callers fall back to the
-        dispatched name rather than skipping the rewrite: a stale rewrite is
-        better than a stale index.
+        The current canonical label — never empty, ``UNKNOWN_SPEAKER_LABEL`` at
+        worst — or ``None`` when the speaker is gone (deleted between dispatch
+        and execution) or the lookup failed. Callers fall back to the dispatched
+        name rather than skipping the rewrite: a stale rewrite is better than a
+        stale index.
     """
     try:
         from app.db.session_utils import session_scope
         from app.models.media import Speaker
+        from app.utils.speaker_labels import canonical_speaker_label_for_row
 
         with session_scope() as db:
             row = (
-                db.query(Speaker.display_name, Speaker.name)
+                db.query(
+                    Speaker.name,
+                    Speaker.display_name,
+                    Speaker.suggested_name,
+                    Speaker.confidence,
+                )
                 .filter(Speaker.id == speaker_id)
                 .first()
             )
@@ -168,8 +181,7 @@ def _current_speaker_name(speaker_id: int) -> str | None:
 
     if not row:
         return None
-    display_name, name = row
-    return str(display_name or name or "") or None
+    return canonical_speaker_label_for_row(row)
 
 
 def _current_file_title(file_uuid: str) -> str | None:

@@ -522,7 +522,7 @@
   }
 
   .action-item-bullet {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 600;
     margin-top: 0.1rem;
   }
@@ -593,7 +593,7 @@
   }
 
   .speaker-talktime {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
     font-size: 0.85rem;
   }
@@ -687,24 +687,9 @@
 
   :global(.number-value) {
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
-  /* Search highlighting styles */
-  :global(.search-match) {
-    background-color: #ffeb3b;
-    color: #000;
-    padding: 0.1rem 0.2rem;
-    border-radius: 3px;
-    font-weight: 500;
-  }
-
-  :global(.current-match) {
-    background-color: #ff9800;
-    color: #000;
-    padding: 0.1rem 0.2rem;
-    border-radius: 3px;
-    font-weight: 600;
-    box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.3);
-  }
+  /* Search highlighting: .search-match / .current-match live in src/styles/search.css
+     (shared across TranscriptModal, SummaryDisplay, TopicsList — see G7). */
 </style>

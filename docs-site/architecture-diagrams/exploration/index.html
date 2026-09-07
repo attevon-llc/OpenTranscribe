@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OpenTranscribe — Codebase Visualization (draft, iterate before docs-site)</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0f1420; color: #e6e9ef; }
+  header { padding: 24px 32px; background: #161c2c; border-bottom: 1px solid #2a3350; }
+  header h1 { margin: 0 0 4px; font-size: 22px; }
+  header p { margin: 0; color: #9aa4c0; font-size: 14px; }
+  nav { display: flex; gap: 8px; padding: 12px 32px; background: #12182a; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid #2a3350; flex-wrap: wrap; }
+  nav a { color: #9aa4c0; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-size: 13px; }
+  nav a:hover { background: #232c46; color: #fff; }
+  section { padding: 32px; border-bottom: 1px solid #2a3350; }
+  section h2 { margin-top: 0; }
+  .finding { background: #1c2338; border-left: 4px solid #e0a030; padding: 12px 16px; border-radius: 4px; margin: 12px 0; }
+  .finding.ok { border-left-color: #3fb950; }
+  .finding.low { border-left-color: #6b7280; }
+  .frame-wrap { border: 1px solid #2a3350; border-radius: 8px; overflow: hidden; height: 820px; }
+  iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+  .imgscroll { overflow: auto; border: 1px solid #2a3350; border-radius: 8px; background: #fff; max-height: 900px; }
+  .imgscroll img { display: block; }
+  code { background: #232c46; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  ul { line-height: 1.7; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #232c46; color: #9aa4c0; margin-left: 8px; }
+  .tag.docs { background: #2b3f2c; color: #8fdc8f; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>OpenTranscribe — Codebase Visualization <span class="tag">DRAFT — iterate here before docs-site</span></h1>
+  <p>Generated 2026-09-06 with <a href="https://github.com/tt-a1i/archify" style="color:#8fdc8f;">Archify</a> (evidence-based, interactive) + madge + pyreverse. Read-only — no repo files were modified. Full credits at the bottom.</p>
+</header>
+<nav>
+  <a href="#overview">1. System Overview</a>
+  <a href="#celery-queues">2. Celery Queues</a>
+  <a href="#transcription">3. Transcription Pipeline</a>
+  <a href="#enrichment">4. Post-Transcription Enrichment</a>
+  <a href="#cloud-asr">5. Cloud ASR + Voiceprinting</a>
+  <a href="#speaker-clustering">6. Speaker Clustering & Naming</a>
+  <a href="#search">7. Search & Indexing</a>
+  <a href="#rag-chat">8. RAG / Chat</a>
+  <a href="#frontend">9. Frontend Dependency Graph</a>
+  <a href="#backend-models">10. Backend Data Model</a>
+  <a href="#credits">Credits</a>
+  <a href="#findings">11. Findings + Next Steps</a>
+</nav>
+
+<section id="overview">
+  <h2>1. System Overview <span class="tag">explorable · pan/zoom/search/views built in</span> <span class="tag docs">docs-site candidate: landing/banner diagram</span></h2>
+  <p>Curated by Archify from real repo evidence (routers, services, Celery tasks, frontend structure). Use the
+  <b>PATH / MAP / LENS</b> controls bottom-left to trace a flow, the guided-view pills at top to jump to a
+  sub-story, and the theme/export controls top-right. The Celery Workers box links conceptually to tab 2 for
+  the full queue breakdown, and the async-pipeline card links to tab 5 for cloud ASR providers.</p>
+  <div class="frame-wrap"><iframe src="archify-architecture.html"></iframe></div>
+</section>
+
+<section id="celery-queues">
+  <h2>2. Celery Queues <span class="tag">explorable</span> <span class="tag docs">docs-site candidate: "how the job queue works"</span></h2>
+  <p>The "Celery Workers" box in the System Overview is really 8 named queues, each with a real concurrency
+  setting and a reason for existing (from <code>backend/app/core/celery.py</code>'s <code>task_routes</code> —
+  the single source of truth; <code>task_create_missing_queues=False</code> means a typo'd queue raises at
+  dispatch instead of silently vanishing). Guided views split this into GPU-bound, CPU post-processing, and
+  LLM/search enrichment.</p>
+  <div class="frame-wrap"><iframe src="celery-queues.html"></iframe></div>
+</section>
+
+<section id="transcription">
+  <h2>3. Transcription Pipeline <span class="tag">explorable</span> <span class="tag docs">docs-site candidate: "how transcription works"</span></h2>
+  <p>Upload → Celery gpu-queue ASR/diarization → post-process (boundary correction + redaction) → Postgres + OpenSearch + WebSocket notify.
+  The three guided views split this into "happy path", "GPU-bound work", and "post-processing + delivery".</p>
+  <div class="frame-wrap"><iframe src="transcription-pipeline.html"></iframe></div>
+</section>
+
+<section id="enrichment">
+  <h2>4. Post-Transcription Enrichment <span class="tag">explorable</span> <span class="tag docs">docs-site candidate: "what happens after transcription"</span></h2>
+  <p>What the Transcription Pipeline's last step ("Post-process") fans out into: voiceprinting, gender/age
+  detection, LLM speaker-ID suggestions, summarization, topic extraction, and analytics — all dispatched
+  independently right after finalize.</p>
+  <div class="finding ok">
+    <b>Answers your voiceprint/fingerprint question directly:</b> this already works for cloud ASR today.
+    Local ASR gets embeddings inline from PyAnnote's native centroids; cloud ASR (no native centroids
+    available) dispatches a dedicated <code>extract_speaker_embeddings_task</code> on the CPU queue instead —
+    same outcome, different path. See tab 5 for the cloud-ASR-specific view of this.
+  </div>
+  <div class="frame-wrap"><iframe src="transcription-enrichment.html"></iframe></div>
+</section>
+
+<section id="cloud-asr">
+  <h2>5. Cloud ASR + Voiceprinting <span class="tag">explorable</span> <span class="tag docs">docs-site candidate: "cloud ASR providers"</span></h2>
+  <p>8 cloud providers (AssemblyAI, AWS, Azure, Deepgram, Gladia, Google, OpenAI, Speechmatics) sit behind one
+  factory. Some return their own speaker labels; providers that don't still get local PyAnnote diarization on
+  the downloaded audio. Either way, voiceprinting/fingerprinting happens — see the card in the diagram for the
+  exact task name and why it's CPU, not GPU.</p>
+  <div class="frame-wrap"><iframe src="cloud-asr.html"></iframe></div>
+</section>
+
+<section id="speaker-clustering">
+  <h2>6. Speaker Clustering & Naming <span class="tag">explorable</span> <span class="tag docs">docs-site candidate: "how speaker identification works"</span></h2>
+  <p>What happens to a voiceprint after extraction: automatic matching against known profiles above a
+  confidence threshold, or — for no confident match — grouping into cross-file clusters that wait for a human
+  to merge, split, verify, and promote to a named, reusable profile.</p>
+  <div class="frame-wrap"><iframe src="speaker-clustering.html"></iframe></div>
+</section>
+
+<section id="search">
+  <h2>7. Search & Indexing <span class="tag">explorable</span> <span class="tag docs">docs-site candidate: "how search works"</span></h2>
+  <p>Query path (BM25 + kNN fused server-side via RRF, then quarantine/redaction filtering) and write path
+  (chunking + embedding dispatched right after finalize) in one diagram.</p>
+  <div class="frame-wrap"><iframe src="search-indexing.html"></iframe></div>
+</section>
+
+<section id="rag-chat">
+  <h2>8. RAG / Chat Retrieval <span class="tag">explorable</span> <span class="tag docs">docs-site candidate: "how chat/RAG works"</span></h2>
+  <p>Query → scope/plan → OpenSearch retrieval → the local-vs-remote redaction guard → LLM → output-layer redaction → streamed answer with citations.
+  This is the one subsystem in the repo with a genuinely subtle invariant (two independent masks, fail-closed) — worth keeping this diagram close to
+  <code>backend/app/services/chat/CLAUDE.md</code> so it doesn't drift.</p>
+  <div class="frame-wrap"><iframe src="rag-chat.html"></iframe></div>
+</section>
+
+<section id="frontend">
+  <h2>9. Frontend Module Map <span class="tag">explorable</span> <span class="tag docs">docs-site candidate: "frontend architecture"</span></h2>
+  <p>Hand-curated from the real directory listing, because the automated tools (madge, dependency-cruiser)
+  couldn't reliably trace this codebase's Svelte imports — see the root-cause writeup below the diagram if
+  you want the details. This is the useful replacement.</p>
+  <div class="frame-wrap"><iframe src="frontend-modules.html"></iframe></div>
+  <div class="finding">
+    <b>Real circular dependency found, but already mitigated:</b> <code>lib/axios.ts → stores/auth.ts → lib/axios.ts</code>.
+    Checked the actual code: <code>axios.ts</code> uses <code>await import('../stores/auth')</code> (dynamic
+    import) specifically to break the cycle at runtime. madge can't distinguish static from dynamic imports, so
+    it flags a cycle that isn't live. Not a bug — no action needed.
+  </div>
+  <div class="finding low">
+    <b>Why the raw dependency-graph tools failed here (root cause, confirmed):</b> <code>frontend/node_modules</code> was
+    fine, but neither tool had a generated <code>.svelte-kit/tsconfig.json</code> to resolve the
+    <code>$lib</code>/<code>$components</code>/<code>$stores</code> aliases — running
+    <code>./node_modules/.bin/svelte-kit sync</code> fixed path resolution for both tools immediately
+    (dependency-cruiser went from 1 module/0 edges to a correct 388 modules/350 edges; <code>0</code> circular
+    deps confirmed independently). But that only fixed part of it. Isolating <code>src/routes/files/[id]/+page.svelte</code>
+    alone (<code>npx madge "src/routes/files/[id]/+page.svelte"</code>) shows madge parses it as having
+    <b>zero</b> imports — provably wrong, since line 26 is
+    <code>import TranscriptDisplay from '$components/TranscriptDisplay.svelte'</code>, one of ~15 component
+    imports in that file. That single 2,493-line file silently failing to parse is what cascades into most of
+    the false orphans: TranscriptDisplay, VideoPlayer, WaveformPlayer, MetadataDisplay, AnalyticsSection,
+    FileHeader, TagsSection, CommentSection, CollectionsSection, and more are <i>only</i> imported by this one
+    file, so when madge's parser silently drops it, all of them read as unreferenced. dependency-cruiser has
+    the same blind spot for a different reason — it only speaks JS/TS/CoffeeScript, so it can resolve a
+    <code>.svelte</code> file as a valid path but never parses imports <i>from inside</i> one Svelte file's
+    <code>&lt;script&gt;</code> block into another. Neither tool is Svelte-aware enough for this codebase's
+    largest route files. This is a real, confirmed tool limitation — not a code problem, and not something I'd
+    have found without testing the isolated file directly rather than trusting the aggregate orphan count.
+  </div>
+</section>
+
+<section id="backend-models">
+  <h2>10. Backend Module Map <span class="tag">explorable</span> <span class="tag docs">docs-site candidate: "backend architecture"</span></h2>
+  <p>Hand-curated the same way — pyreverse crashes before it can show this layering (root cause below the
+  diagram). This shows what actually matters: routers validate with schemas and call services; Celery tasks
+  call the <i>same</i> services layer, not a duplicate copy of the logic.</p>
+  <div class="frame-wrap"><iframe src="backend-modules.html"></iframe></div>
+  <div class="finding low">
+    <b>Why pyreverse failed here (root cause, confirmed):</b> <code>python -c "import app.api"</code> succeeds cleanly in this venv, and
+    astroid's own <code>modpath_from_file()</code> resolves ordinary files (e.g.
+    <code>app/api/endpoints/files/__init__.py</code>) correctly in isolation. The failure is specific to
+    pyreverse's traversal itself: passing a bare <code>__init__.py</code> as a scan target alongside dotted
+    module names (<code>pyreverse app.api app.services app.tasks app.models</code>) crashes inside
+    <code>astroid/modutils.py</code>'s <code>modpath_from_file_with_callback</code> with
+    <code>TypeError: expected str, bytes or os.PathLike object, not NoneType</code> — an upstream
+    astroid/pylint bug in how it mixes path-style and dotted-style scan targets, not a problem in this repo's
+    code. It silently drops every module after the point of failure, which is why only <code>app.models</code>
+    (30 modules) came through intact. The hand-curated Archify diagrams above (2–8) cover the ground pyreverse
+    couldn't reach.
+  </div>
+  <p>pyreverse also produced a raw field-by-field UML dump of every SQLAlchemy model — dropped from this page:
+  it's a single 2,787px-wide unreadable image with no association lines, worse than just reading
+  <code>backend/app/models/</code> directly. Not worth keeping just because a tool produced it.</p>
+</section>
+
+<section id="credits">
+  <h2>Credits</h2>
+  <p>Every interactive diagram in this page (sections 1–8, and the two module maps in 9–10) is rendered by
+  <a href="https://github.com/tt-a1i/archify" style="color:#8fdc8f;">Archify</a> — an open-source agent skill by
+  <b>tt-a1i</b> (© 2026 tt-a1i / Archify, © 2025 Cocoon AI), licensed under the
+  <a href="https://github.com/tt-a1i/archify/blob/main/LICENSE" style="color:#8fdc8f;">MIT License</a>. Archify
+  compiles a typed JSON specification into validated, self-contained HTML/SVG — the pan/zoom, search, guided
+  views, theme switching, and PNG/SVG export you're using on every diagram above are its Viewer Runtime, not
+  something built for this page specifically. This page's per-diagram JSON specs (authored from this repo's
+  real code, not generated by Archify itself) are otherwise plain project artifacts.</p>
+  <p>Static-analysis cross-checks used <a href="https://github.com/pahen/madge" style="color:#8fdc8f;">madge</a>
+  (MIT), <a href="https://github.com/sverweij/dependency-cruiser" style="color:#8fdc8f;">dependency-cruiser</a>
+  (MIT) by Sander Verweij, and <a href="https://pylint.readthedocs.io/en/latest/pyreverse.html" style="color:#8fdc8f;">pyreverse</a>
+  (GPL-2.0, part of Pylint).</p>
+</section>
+
+<section id="findings">
+  <h2>11. Findings + next steps</h2>
+  <ul>
+    <li><b>Route/reach trace — DONE, no real dead routes found:</b> checked all 39 backend router prefixes
+      against real frontend API-call sites. Four showed zero hits (<code>org-admin</code>, <code>usage</code>,
+      <code>speakers/combined-migration</code>, <code>version</code>) — all four verified individually and all
+      explained: <code>org-admin</code>/<code>usage</code> are called from the private commercial cloud overlay
+      repo (this OSS checkout only has stub seam components); <code>version</code> is deliberately
+      public/infra-only per its own docstring (release harness, load balancers); <code>combined-migration</code>
+      is explicitly allowlisted as a maintenance-ops endpoint in the repo's own
+      <code>backend/tests/unit/test_route_has_a_caller.py</code> — which already exists and already covers this
+      exact question. No new issue filed; nothing to fix.</li>
+    <li><b>Circular dependency — checked, mitigated, no action needed:</b> see section 9.</li>
+    <li><b>For the docs-site:</b> sections 1–8 are genuinely interactive (pan/zoom/search/guided-views/export
+      baked into the HTML) and evidence-based — these are the ones worth promoting. Sections 9–10 are working
+      notes on tool limitations, not diagrams to ship.</li>
+  </ul>
+</section>
+
+</body>
+</html>

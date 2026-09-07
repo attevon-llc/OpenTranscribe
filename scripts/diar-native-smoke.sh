@@ -64,10 +64,15 @@ fail() {
 
 command -v nvidia-smi >/dev/null 2>&1 || fail "nvidia-smi not available — cannot verify GPU residency" 4
 
+# shellcheck source=lib/compose-project.sh
+source "$REPO_ROOT/scripts/lib/compose-project.sh"
+
 # The container name is not fixed: compose derives it from the project name, which
-# --fresh deployments change. Resolve it by image+command rather than hardcoding.
-CONTAINER="$(docker ps --filter "name=diar-native" --format '{{.Names}}' | head -1)"
-[[ -n "$CONTAINER" ]] || fail "no running diar-native container (start it with ./opentr.sh start dev --with-diar-native)" 4
+# --fresh deployments change. Resolve it by compose PROJECT+SERVICE label, never a bare
+# name filter — an unscoped `name=diar-native` reads whatever stack happens to be up on
+# this host (e.g. the live dev one) instead of the one this check is meant to examine.
+CONTAINER="$(overlay_container_name diar-native)"
+[[ -n "$CONTAINER" ]] || fail "no running diar-native container in compose project $(compose_project_name) (start it with ./opentr.sh start dev --with-diar-native)" 4
 
 read -r RESTARTING RESTART_COUNT PID < <(
     docker inspect --format '{{.State.Restarting}} {{.RestartCount}} {{.State.Pid}}' "$CONTAINER"
@@ -80,9 +85,12 @@ read -r RESTARTING RESTART_COUNT PID < <(
 # Which GPU the project told it to use. The overlay's own precedence is
 # DIAR_NATIVE_GPU -> GPU_DEVICE_ID -> 0; mirror it exactly rather than guessing.
 ENV_FILE="$REPO_ROOT/.env"
+# Real dotenv parsing (issue #590) via python-dotenv, not a hand-rolled grep/cut/tr
+# pipeline — see gpu-scale-smoke.sh's read_env for the exact corruption this used to
+# cause (a trailing `  # comment` glued onto the value).
 read_env() {
     [[ -f "$ENV_FILE" ]] || return 0
-    grep -E "^${1}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"' \r'
+    python3 "$REPO_ROOT/scripts/lib/env_reader.py" "$ENV_FILE" "$1"
 }
 EXPECTED_GPU="${DIAR_NATIVE_GPU:-$(read_env DIAR_NATIVE_GPU)}"
 [[ -n "$EXPECTED_GPU" ]] || EXPECTED_GPU="${GPU_DEVICE_ID:-$(read_env GPU_DEVICE_ID)}"

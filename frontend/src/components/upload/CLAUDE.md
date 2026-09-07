@@ -46,13 +46,19 @@ addRecording` → `$lib/services/uploadService`; the progress UI is `UploadManag
   `.step-indicator`, `.tab-navigation .tab-button`, `.message.error-msg`, and
   `.nav-btn.nav-next` / `.nav-submit` / `.nav-review-defaults`.
 - **Size limits live in `$lib/utils/uploadLimits.ts` — never re-declare one in a component.**
-  `MAX_UPLOAD_BYTES` (15 GB, matching the backend's `max_filesize`) is the hard reject;
-  `LARGE_UPLOAD_WARNING_BYTES` (2 GB) is a warning on _every_ path, never a reject on any.
-  Both the single-file and multi-file paths in `FileUploader` use them. Until #298 there were
-  three copies with two different values, so the same 5 GB file uploaded when dropped alone and
-  was rejected as "too large" when dropped alongside another. `MediaFilePanel` still validates
-  nothing by design — it normalizes the MIME type and dispatches `fileSelect`; the parent owns
-  rejection and error rendering.
+  The hard reject is `getMaxUploadBytes()` — the LIVE, admin-configurable value from
+  `GET /system/capabilities` (`settings.MAX_UPLOAD_BYTES` on the backend, `$stores/capabilities`
+  on the frontend), not a hardcoded literal (issue G10: a hardcoded 15 GB silently went stale
+  the moment an admin changed the env var). `DEFAULT_MAX_UPLOAD_BYTES` (15 GB, matching the
+  backend's coded default) is only the fallback until that fetch resolves, or if it fails —
+  never read as "no limit". `getMaxUploadBytes()` returns `null` when the admin has explicitly
+  disabled the limit server-side (`MAX_UPLOAD_BYTES=0`). `LARGE_UPLOAD_WARNING_BYTES` (2 GB, NOT
+  admin-configurable) is a warning on _every_ path, never a reject on any. Both the single-file
+  and multi-file paths in `FileUploader` use `exceedsUploadLimit`/`warrantsLargeUploadWarning`.
+  Until #298 there were three copies of the hard limit with two different values, so the same
+  5 GB file uploaded when dropped alone and was rejected as "too large" when dropped alongside
+  another. `MediaFilePanel` still validates nothing by design — it normalizes the MIME type and
+  dispatches `fileSelect`; the parent owns rejection and error rendering.
 - Every string in these steps is keyed (#284 A3.1 fixed the last hardcoded English in
   `UploadStepExtraction`, `UploadStepModel`, `UploadStepReview`, `UploadStepTags`,
   `UploadStepCollections` and `UploadStepSpeakers`). Keep it that way — only the active locale is

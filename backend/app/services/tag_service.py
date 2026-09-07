@@ -279,13 +279,22 @@ def visible_to(
     ``get_accessible_file_ids_subquery`` already covers files shared directly and
     via groups and applies the org tenant gate, so the file arm needs no second
     rule.
+
+    ``get_accessible_file_ids_subquery`` does NOT know about quarantine — it
+    covers ownership/sharing only — so the file arm excludes a quarantined
+    file's own id explicitly (A2's leak class): without this, a same-named
+    tag owned by someone ELSE and attached only to a file shared with the
+    caller would keep surfacing in the caller's tag list after that file was
+    taken down, even though the file itself now 404s for them.
     """
     from sqlalchemy import select
 
+    quarantined_files = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
     attached_to_accessible = select(FileTag.tag_id).where(
         FileTag.media_file_id.in_(
             select(accessible_file_ids_subquery(db, user_id, organization_id))
-        )
+        ),
+        FileTag.media_file_id.not_in(quarantined_files),
     )
     return or_(
         owned_or_system(user_id),

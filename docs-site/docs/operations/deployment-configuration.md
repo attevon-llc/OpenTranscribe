@@ -12,7 +12,7 @@ composes the correct overlay set for you — **always launch the stack through i
 rather than bare `docker compose`, so containers get the right database, storage,
 network, and environment.
 
-:::tip Use `./opentr.sh`
+:::tip[Use `./opentr.sh`]
 `./opentr.sh start dev` (and the flags below) selects the correct `-f` overlay
 chain. Bare `docker compose up` skips the overlays and can attach to a
 differently-configured stack — symptoms include schema errors, wrong storage, or
@@ -27,14 +27,15 @@ workers that silently re-download every file. See
 | **Dev (default)** | `./opentr.sh start dev` | Vite hot-reload, relaxed auth limits, auto-loads `docker-compose.override.yml`. |
 | **Production** | `./opentr.sh start prod --build` | Pre-built/local images, nginx, strict auth. |
 | **CPU-only** | `./opentr.sh start dev --cpu` | Local transcription on CPU; skips the GPU overlay. |
-| **Lite (cloud ASR)** | `./opentr.sh start dev --lite` | No GPU; transcription via a configured cloud ASR provider. |
+| **Lite (cloud ASR)** | `./opentr.sh start dev --lite` | No GPU; transcription via a configured cloud ASR provider. Speaker embeddings (v4/256-d) come from the diar-native CPU-EP sidecar, not an in-process PyAnnote model — the lite image runs no in-process PyAnnote (issue #660), though since #654 `requirements-lite.txt` DOES install `pyannote.audio` and the export toolchain (onnx/onnxscript/onnxslim/onnxconverter-common) so the sidecar can provision its own weights. Add `--with-diar-native`; set `DIAR_NATIVE_MODELS_DIR` only if pointing it at a pre-made export instead of provisioning fresh. v3 (512-d) speaker data is unserviceable under lite until migrated to v4. |
 | **GPU scale (dual-GPU)** | `./opentr.sh start dev --gpu-scale` | N parallel workers on `GPU_SCALE_DEVICE_ID`; keeps the default worker too when `GPU_SCALE_DEFAULT_WORKER=1`. |
-| **GPU split** | `./opentr.sh start dev --with-gpu-split` | Transcription and diarization on **separate** GPUs. Needs `ENGINE_GPU_SPLIT=true`. |
+| **GPU split** | `./opentr.sh start dev --with-gpu-split` | Transcription and diarization on **separate** GPUs. Needs `ENGINE_GPU_SPLIT=true`. On a production install, set `ENGINE_GPU_SPLIT=true` in `.env` and run `./opentranscribe.sh start` — that single variable is both the app-side routing switch and (as of issue #708) what `opentranscribe.sh` gates the `docker-compose.gpu-split.yml` overlay on; there is no separate `--with-*` flag (`./opentranscribe.sh` has none). |
+| **Native diarization sidecar** | `./opentr.sh start dev --with-diar-native` | Runs `diar-server` (Rust/ONNX) alongside `celery-worker` instead of in-process PyAnnote. **Windows installer excluded** — see `windows-installer/INSTALL-WINDOWS.md`. |
 | **NAS / NVMe storage** | `./opentr.sh start dev --nas` | Bind-mounts custom host paths for media/DB/search. Auto-detected from `.env`; `--no-nas` suppresses it. |
 | **Fresh / isolated** | `./opentr.sh start dev --fresh <name>` | Throwaway stack, own project + volumes, NAS overlay never loaded. See [Fresh Deployments](./fresh-deployments.md). |
 | **Monitoring** | `./opentr.sh start dev --with-monitoring` | Prometheus (:5186) + Grafana (:5185). See [Monitoring](./monitoring.md). |
 | **Watch sources** | `./opentr.sh start dev --with-watch` | Mounts `WATCH_HOST_PATH` for auto-import. |
-| **In-app backups** | `./opentr.sh start dev --with-backup` | Mounts `BACKUP_HOST_PATH` for scheduled backups. See [Backup & Restore](./backup-restore.md). |
+| **In-app backups** | `./opentr.sh start dev --with-backup` | Mounts `BACKUP_HOST_PATH` for scheduled backups. See [Backup & Restore](./backup-restore.md). On a production install, set `BACKUP_OVERLAY_ENABLED=true` in `.env` instead (`./opentranscribe.sh` has no `--with-*` flags) — commented out by default since it also recreates the OpenSearch container. |
 | **LDAP test IdP** | `./opentr.sh start dev --with-ldap-test` | lldap at `localhost:3890`, UI `:17170`. |
 | **Keycloak test IdP** | `./opentr.sh start dev --with-keycloak-test` | Keycloak at `localhost:8180`. |
 | **SMB test share** | `./opentr.sh start dev --with-smb-test` | Samba share for watch-source testing. |
@@ -48,7 +49,7 @@ Flags combine where they make sense (e.g. `--gpu-scale --nas`,
 flags because the dev override is **not** auto-loaded once you pass other
 overlays.
 
-:::note PKI in development
+:::note[PKI in development]
 The dev `--with-pki` flow uses `docker-compose.pki-dev.yml`, which only overrides
 `frontend` + `backend` — every other service comes from the dev override, so the
 override **must** be in the chain (`./opentr.sh` handles this). Because the dev
@@ -115,9 +116,9 @@ MinIO — correct, but much slower. This mount is now present on the default GPU
 worker, the scaled GPU worker, and both GPU-split workers across the dev, prod,
 and offline overlays.
 
-:::warning Scratch volume permissions
+:::warning[Scratch volume permissions]
 The `pipeline_scratch` volume is root-owned when first created, but workers run as
-UID 1000. `./opentr.sh` chowns it to `1000:1000` on startup; if you create the
+UID 1000. `./opentr.sh` chowns it to `1000:999` (the container `appuser`) on startup; if you create the
 stack by other means, the handoff will fall back to MinIO until the volume is
 writable by the worker user.
 :::
@@ -167,11 +168,28 @@ GPU_DIARIZE_DEVICE_ID=1      # host GPU for the gpu-diarize worker
 ./opentr.sh start dev --with-gpu-split
 ```
 
-This loads `docker-compose.gpu-split.yml`, which activates the `gpu-transcribe` /
-`gpu-diarize` worker services (defined in the base compose under the `gpu-split`
-profile) and grants each a **dedicated GPU reservation**. The two device IDs must
-be **different** for the split to help — if they're equal, both stages share one
-card with no benefit.
+On a **production / self-hosted** install (`opentranscribe.sh`), there is no
+`--with-gpu-split` flag — set the same `.env` variables and just `start`:
+
+```bash
+ENGINE_GPU_SPLIT=true
+GPU_TRANSCRIBE_DEVICE_ID=0
+GPU_DIARIZE_DEVICE_ID=1
+./opentranscribe.sh start
+```
+
+`ENGINE_GPU_SPLIT=true` is the one switch: `app/core/constants.py`'s
+`gpu_split_enabled()` reads it to route dispatch onto the `gpu-transcribe` /
+`gpu-diarize` queues, and `opentranscribe.sh`'s `gpu_split_active()` reads the
+identical value to decide whether to add `docker-compose.gpu-split.yml` to the
+compose chain (issue #708) — so the two halves can't drift out of sync the way
+they could before this overlay had any code path to it in the shipped script.
+
+Either front end loads `docker-compose.gpu-split.yml`, which activates the
+`gpu-transcribe` / `gpu-diarize` worker services (defined in the base compose
+under the `gpu-split` profile) and grants each a **dedicated GPU reservation**.
+The two device IDs must be **different** for the split to help — if they're
+equal, both stages share one card with no benefit.
 
 #### Device reservation → `cuda:0` mapping
 
@@ -229,7 +247,7 @@ The overlay is **auto-loaded** when any of those paths is set (with a banner);
 `--no-nas` suppresses it (use named volumes; live bind data untouched) and
 `--nas` opts in explicitly.
 
-:::info Schema is built by Alembic, not `init_db.sql`
+:::info[Schema is built by Alembic, not `init_db.sql`]
 The NAS overlay **no longer mounts the legacy `database/init_db.sql`**. The schema
 is built by Alembic/Python on backend startup (migrations run automatically), so
 the init script was redundant — and on a large bind mount it slowed the first
@@ -237,7 +255,7 @@ boot enough to trigger the datastore healthcheck race described above.
 `database/init_db.sql` remains in the repo as a legacy reference only.
 :::
 
-:::warning Protect live data
+:::warning[Protect live data]
 Every NAS-overlay start writes a `.opentranscribe-live-data` marker into each
 bind-mounted directory. Run `./opentr.sh data-paths` to see exactly which host
 paths hold live data **before** deleting or cleaning up anything. Use

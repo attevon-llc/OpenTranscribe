@@ -19,6 +19,27 @@ INSTALL_DIR="/opt/opentranscribe"
 COMPOSE_FILES="-f $INSTALL_DIR/docker-compose.yml -f $INSTALL_DIR/docker-compose.offline.yml"
 BACKUP_DIR="$INSTALL_DIR/backups"
 
+# Grace period (seconds) for CUDA-holding services on stop/down (issue #782). This script
+# ships standalone inside the offline package and sources nothing else, so it carries its
+# own copy of the default -- same value as docker-compose.yml's `${OT_STOP_GRACE_GPU:-30}s`
+# and scripts/common.sh's OT_STOP_GRACE_GPU, checked by
+# backend/tests/unit/test_stop_grace_period_wiring.py.
+OT_STOP_GRACE_GPU="${OT_STOP_GRACE_GPU:-30}"
+
+# Give the CUDA-holding services a chance to release VRAM cleanly before `down` reaches
+# them. Compose v2.29.7 bakes `stop_grace_period` into the container's Config.StopTimeout
+# at CREATE time and the daemon honours it even for this bare `stop`, but an install
+# predating that key still needs the explicit -t here. Scoped to the CUDA-holding
+# SERVICES ONLY -- a global `down -t N` would also give Postgres/MinIO/OpenSearch N
+# seconds to hang in. Safe against an absent service name: 2>/dev/null || true.
+ot_drain_gpu_workers() {
+    # shellcheck disable=SC2086
+    docker compose $COMPOSE_FILES stop -t "$OT_STOP_GRACE_GPU" \
+        celery-worker celery-worker-gpu-transcribe celery-worker-gpu-diarize \
+        celery-worker-gpu-scaled celery-redaction celery-cpu-worker diar-native \
+        2>/dev/null || true
+}
+
 #######################
 # HELPER FUNCTIONS
 #######################
@@ -179,6 +200,9 @@ stop_services() {
         return
     }
 
+    # Drain CUDA-holding workers before `down` reaches them (issue #782).
+    ot_drain_gpu_workers
+
     # Stop services without removing volumes yet
     docker compose $COMPOSE_FILES down 2>/dev/null || {
         print_warning "Some services may have already been stopped"
@@ -222,6 +246,10 @@ remove_volumes() {
         print_warning "Could not change to $INSTALL_DIR"
         return
     }
+
+    # Drain CUDA-holding workers before the destructive `down -v` below (issue #782).
+    # A no-op if stop_services() already ran (services already stopped/gone).
+    ot_drain_gpu_workers
 
     docker compose $COMPOSE_FILES down -v 2>/dev/null || {
         print_warning "Some volumes may have already been removed"

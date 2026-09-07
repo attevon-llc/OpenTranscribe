@@ -1,13 +1,21 @@
 """``cleanup.orphan_upload_sweeper`` — deleting abandoned uploads without deleting live ones.
 
-Two defects, both destructive: the MinIO object was deleted *before* the row that
-points at it, and nothing exempted an upload still in flight. The browser
-multipart path accepts objects up to 15 GB and holds its ``MediaFile`` at PENDING
-for the whole transfer, so a fixed 30-minute window deleted a running upload's
-object and row out from under it.
+Three defects, all destructive: the MinIO object was deleted *before* the row
+that points at it, nothing exempted an upload still in flight, and — the
+adversarial-review follow-up — a PENDING row past its grace window was swept on
+age+status alone with no positive confirmation the object was actually absent
+from storage. A long MinIO/DB outage can hold ``/files/complete``'s own
+verification (B1) hostage well past one sweep interval, so a row can still read
+PENDING even though the browser's PUT already landed real bytes; sweeping it on
+status alone in that window destroyed a completed upload the moment storage
+recovered.
 
 The task FUNCTION BODY runs against the savepoint-rolled-back ``db_session``;
 ``minio_service.delete_file`` is stubbed, so no object is ever really removed.
+``minio_service.object_exists_and_size`` is stubbed to ``None`` by default (a
+confirmed-absent object — the "genuinely abandoned" case every pre-existing
+test in this file exercises); individual tests override it to prove the new
+confirmation gate.
 """
 
 import contextlib
@@ -46,6 +54,10 @@ def sweeper_env(db_session, normal_user, monkeypatch):
     db_session.query(MediaFile).filter(MediaFile.status == FileStatus.PENDING).update(
         {"upload_time": datetime.now(UTC)}, synchronize_session=False
     )
+    # Confirmed-absent by default — matches every pre-existing test's "the upload
+    # never actually landed" scenario. Tests proving the confirmation gate itself
+    # override this per-test.
+    monkeypatch.setattr(minio_service, "object_exists_and_size", lambda path: None, raising=True)
 
     def _make_pending(*, file_size: int, age_minutes: int) -> int:
         pending = MediaFile(
@@ -95,6 +107,46 @@ def test_genuinely_abandoned_upload_is_swept(db_session, sweeper_env, monkeypatc
 
     assert result["deleted_rows"] == 1
     assert db_session.query(MediaFile).filter(MediaFile.id == file_id).first() is None
+
+
+def test_an_object_that_actually_landed_is_never_deleted(db_session, sweeper_env, monkeypatch):
+    """Defect (adversarial-review follow-up to B1): a PENDING row past its grace
+    window was swept on age+status alone, with no check of whether the object
+    actually exists in storage. During an extended MinIO/DB outage,
+    ``/files/complete`` can never mark a row COMPLETED even though the browser's
+    PUT already landed the real bytes — so a confirmed-PRESENT object must leave
+    the row (and the object) untouched, not just a confirmed-PENDING status."""
+    monkeypatch.setattr(minio_service, "delete_file", lambda path: None, raising=True)
+    monkeypatch.setattr(minio_service, "object_exists_and_size", lambda path: 4096, raising=True)
+    file_id = sweeper_env(file_size=1024, age_minutes=180)
+
+    result = cleanup.orphan_upload_sweeper.run(max_age_minutes=30)
+
+    assert result["deleted_rows"] == 0
+    assert result["skipped_uncertain"] == 1
+    assert db_session.query(MediaFile).filter(MediaFile.id == file_id).first() is not None
+
+
+def test_a_storage_outage_during_the_sweep_leaves_the_row_alone(
+    db_session, sweeper_env, monkeypatch
+):
+    """Control for the same defect: when storage cannot even be asked (a real
+    MinIO-down scenario), the sweeper must not guess — it must skip the row
+    this pass rather than treat "can't confirm" the same as "confirmed absent"."""
+    monkeypatch.setattr(minio_service, "delete_file", lambda path: None, raising=True)
+
+    def _raise(path: str):
+        raise RuntimeError("simulated storage outage")
+
+    monkeypatch.setattr(minio_service, "object_exists_and_size", _raise, raising=True)
+    file_id = sweeper_env(file_size=1024, age_minutes=180)
+
+    result = cleanup.orphan_upload_sweeper.run(max_age_minutes=30)
+
+    assert result["deleted_rows"] == 0
+    assert result["skipped_uncertain"] == 1
+    assert result["errors"] == 0
+    assert db_session.query(MediaFile).filter(MediaFile.id == file_id).first() is not None
 
 
 def test_row_is_gone_before_the_object_is_deleted(db_session, sweeper_env, monkeypatch):

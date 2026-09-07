@@ -33,9 +33,14 @@ from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.schemas.media import PaginatedTaskResponse
 from app.schemas.media import Task
+from app.services import system_settings_service
 from app.services.task_detection_service import task_detection_service
 from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_recovery_service import task_recovery_service
+from app.utils.task_utils import TASK_STATUS_COMPLETED
+from app.utils.task_utils import TASK_STATUS_FAILED
+from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
+from app.utils.task_utils import TASK_STATUS_PENDING
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.uuid_helpers import get_user_by_uuid
 
@@ -59,13 +64,6 @@ def calculate_age_seconds(timestamp):
 
     # Calculate the difference
     return (now - timestamp).total_seconds()
-
-
-# Define task status constants to match those in the utils module
-TASK_STATUS_PENDING = "pending"
-TASK_STATUS_IN_PROGRESS = "in_progress"
-TASK_STATUS_COMPLETED = "completed"
-TASK_STATUS_FAILED = "failed"
 
 
 def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
@@ -774,6 +772,7 @@ def retry_file_processing(
                 current_user.id,
                 is_admin=current_user.is_admin,
                 organization_id=ctx.org_id,
+                min_permission="editor",
             )
 
         file_id = media_file.id
@@ -788,10 +787,26 @@ def retry_file_processing(
                 detail=f"Cannot retry file in {current_status} status",
             )
 
+        # Enforce the same admin-tunable retry ceiling every other retry entry point
+        # does (files/management.py's `/{file_uuid}/retry`, user_files.py's
+        # `/my-files/{uuid}/retry`). This route used to dispatch unconditionally with
+        # no retry_count tracking at all -- an admin lowering the ceiling to stop a
+        # runaway retry loop had no effect on a user retrying through this endpoint.
+        if not current_user.is_admin:
+            ceiling_message = system_settings_service.retry_ceiling_message(
+                db, int(media_file.retry_count or 0)
+            )
+            if ceiling_message:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=ceiling_message,
+                )
+
         # Reset the file status to PENDING
         from app.utils.task_utils import update_media_file_status
 
         update_media_file_status(db, int(file_id), FileStatus.PENDING)
+        media_file.retry_count = int(media_file.retry_count or 0) + 1
 
         # Clear old tasks or mark them as failed
         old_tasks = (

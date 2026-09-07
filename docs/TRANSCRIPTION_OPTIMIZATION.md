@@ -248,12 +248,17 @@ The dedup module (`backend/app/utils/segment_dedup.py`) handles this:
 
 Performance: <0.2s for 3000+ segments (vectorized numpy). Quality: 99.5% match to aligned baseline.
 
-### Fast Speaker Assignment: 273x Speedup
+### Fast Speaker Assignment
 
-The original WhisperX `assign_word_speakers()` used O(n) linear scan per word. Our replacement (`backend/app/utils/fast_speaker_assignment.py`) uses an interval tree + NumPy vectorization for O(log n) per query.
+The original WhisperX `assign_word_speakers()` used O(n) linear scan per word. Our replacement
+(`backend/app/transcription/speaker_assigner.py`, formerly `backend/app/utils/fast_speaker_assignment.py`
+— an interval-tree version measured below; since replaced with a fully vectorized numpy
+implementation) computes speaker assignment via numpy broadcasting instead of a per-word loop.
 
 - WhisperX: 10.2s for 150 segments, 1349 words
-- Ours: 0.037s (273x faster)
+- Interval-tree version (superseded): 0.037s (273x faster)
+- Current vectorized-numpy version: ~13x speedup on long-form content (80s → 6s for a 4.7hr
+  file, 54K words) — see the module docstring for current numbers.
 
 ### Warm Model Caching
 
@@ -319,13 +324,13 @@ These parameters affect transcription speed. Relevant for both native and whispe
 | `backend/app/transcription/model_manager.py` | Warm model caching singleton |
 | `backend/app/transcription/config.py` | Configuration from env + hardware |
 | `backend/app/transcription/audio.py` | Audio loading (decode_audio) |
-| `backend/app/transcription/speaker_assigner.py` | Wrapper for fast_speaker_assignment |
+| `backend/app/transcription/speaker_assigner.py` | Vectorized numpy speaker assignment |
 
 ### Shared Utilities
 
 | File | Purpose |
 |------|---------|
-| `backend/app/utils/fast_speaker_assignment.py` | Interval tree speaker assignment (273x faster) |
+| `backend/app/transcription/speaker_assigner.py` | Vectorized numpy speaker assignment (~13x faster) |
 | `backend/app/utils/segment_dedup.py` | Vectorized segment dedup + sentence splitting |
 | `backend/app/utils/hardware_detection.py` | GPU detection, batch_size, compute_type |
 | `backend/app/utils/vram_profiler.py` | Per-step VRAM and timing profiler |

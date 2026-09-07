@@ -302,6 +302,7 @@ def verify_mfa_setup(
             enrollment.user_role,
             client_ip,
             user_agent,
+            request,
             extra_content=body,
         )
 
@@ -386,6 +387,7 @@ def verify_mfa(
         used_backup_code,
         client_ip,
         user_agent,
+        request,
     )
 
 

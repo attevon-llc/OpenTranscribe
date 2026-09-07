@@ -135,9 +135,13 @@ class TestRouterGating:
     resolver disables the surface, capabilities endpoint never gated."""
 
     def test_community_router_reachable(self, client):
-        # Unauthenticated -> 401/403 (auth gate), NOT 404 (capability gate)
-        assert client.get("/api/watch-sources").status_code != 404
-        assert client.get("/api/llm-settings").status_code != 404
+        # Unauthenticated -> 401 (auth gate: "Could not validate credentials"), NOT 404
+        # (capability gate). Was `!= 404`, which also passes on a 500; both routes'
+        # actual dependency-injection auth failure is exactly 401, so that is pinned.
+        watch_resp = client.get("/api/watch-sources")
+        assert watch_resp.status_code == 401, watch_resp.text
+        llm_resp = client.get("/api/llm-settings")
+        assert llm_resp.status_code == 401, llm_resp.text
 
     def test_cloud_resolver_hides_gated_routers(self, client):
         set_capability_resolver(

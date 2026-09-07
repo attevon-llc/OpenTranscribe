@@ -5,6 +5,8 @@ File cleanup service for recovering stuck files and maintaining system health.
 import contextlib
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
+from dataclasses import field
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -19,6 +21,21 @@ from app.utils.task_utils import check_for_stuck_files
 from app.utils.task_utils import recover_stuck_file
 
 logger = logging.getLogger(__name__)
+
+#: Refusal reported by :func:`purge_media_file` for a file under an active legal
+#: hold. A module constant rather than an inline literal because callers that
+#: translate the refusal into a user-facing response should not have to re-spell it.
+LEGAL_HOLD_REFUSAL = (
+    "refused: the file is under an active legal hold and cannot be deleted. "
+    "Release the hold before deleting."
+)
+
+#: Machine-readable code every API surface answers with when a delete is declined
+#: because of an active legal hold — the single-file interactive delete
+#: (``api/endpoints/files/crud.delete_media_file``) and the whole-account delete
+#: (``api/endpoints/admin._assert_no_files_under_legal_hold``, issue #689) alike. One
+#: constant so a client handles one refusal rather than two spellings of it.
+LEGAL_HOLD_ERROR_CODE = "FILE_UNDER_LEGAL_HOLD"
 
 
 class FileCleanupService:
@@ -488,6 +505,30 @@ def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], 
             fail("speakers", f"could not verify {idx}: {e}")
 
 
+def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], None]) -> None:
+    """Delete the account's speaker-profile embeddings (biometric data).
+
+    Sibling of :func:`_erase_speaker_docs` for :class:`SpeakerProfile` rows (issue
+    #715) — used only by :func:`purge_account_external_copies`, after the account's
+    rows have already committed, so a failure here is not retryable and must be
+    reported rather than swallowed. ``remove_profile_embedding`` sweeps its own main +
+    v4-staging indices and swallows its own errors (returns ``False`` for both
+    "absent" and "failed"), so — unlike the speaker case — there is no independent
+    survivor count to verify against; the best this can report is whether the call
+    itself raised.
+    """
+    if not profile_uuids:
+        return
+
+    for profile_uuid in profile_uuids:
+        try:
+            from app.services.opensearch_service import remove_profile_embedding
+
+            remove_profile_embedding(profile_uuid)
+        except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
+            fail("profiles", e)
+
+
 def _erase_transcript_doc(file_uuid: str, fail: Callable[[str, object], None]) -> None:
     """Delete the transcript document — the verbatim text of the recording."""
     try:
@@ -742,6 +783,170 @@ def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
     return residual
 
 
+@dataclass(frozen=True)
+class AccountPurgePlan:
+    """Plain-data plan for destroying every external copy an ACCOUNT owns (issue #695).
+
+    Deleting a user removes ``media_file`` rows via a bulk ``query(...).delete()``
+    (``admin._delete_user_media_files``) that never loads instances and therefore never
+    reaches ``purge_media_file`` — so the objects those rows named survived every
+    account deletion forever. This is the account-scoped analogue of
+    :func:`_load_purge_plan`: read everything the external destroy needs *before* the
+    bulk delete runs, as plain data, then hand it to :func:`purge_account_external_copies`
+    with no transaction open.
+
+    Attributes:
+        files: One ``_load_purge_plan``-shaped dict per media file the account owns.
+        avatar_paths: Every non-null ``SpeakerProfile.avatar_path`` the account owns.
+            ``purge_media_file`` deliberately never touches these — profiles are
+            preserved when a single FILE is destroyed — but the account-delete path
+            destroys the profiles themselves (``_delete_user_owned_records``), and
+            nothing else has ever removed the avatar objects backing them.
+        speaker_uuids: Every ``Speaker.uuid`` this account owns (issue #715). Read
+            here, alongside ``avatar_paths``, so :func:`purge_account_external_copies`
+            can remove the OpenSearch voiceprints **after** the account's rows commit,
+            instead of ``admin._delete_user_speakers`` doing it — one OpenSearch round
+            trip per speaker — from inside the caller's open transaction.
+        profile_uuids: Every ``SpeakerProfile.uuid`` this account owns (issue #715),
+            for the same reason: ``admin._delete_user_owned_records`` used to remove
+            the profile embeddings itself, also from inside the open transaction.
+    """
+
+    files: list[dict[str, Any]] = field(default_factory=list)
+    avatar_paths: list[str] = field(default_factory=list)
+    speaker_uuids: list[str] = field(default_factory=list)
+    profile_uuids: list[str] = field(default_factory=list)
+
+
+def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
+    """Read the storage/OpenSearch addresses of everything an account owns.
+
+    Two COLUMN-ONLY queries — **plain tuples, never ORM instances** — for the same
+    reason :func:`_load_purge_plan` reads plain data: an escaping instance lazy-loads,
+    which reopens a transaction in the middle of the caller's external-copy phase.
+
+    ``speaker_uuids`` is left ``[]`` on every FILE plan here — not because a file's
+    speakers should be skipped, but because they are not per-file work at all.
+    :class:`AccountPurgePlan` carries the account's speaker and profile UUIDs at the
+    top level instead (issue #715): both used to be swept by
+    ``admin._delete_user_speakers`` / ``admin._delete_user_owned_records`` themselves,
+    one OpenSearch round trip per speaker/profile, from inside the caller's open
+    transaction. They are read here as plain column-only tuples, and
+    :func:`purge_account_external_copies` removes the embeddings after the account's
+    rows have committed, matching the phase split every other external-copy delete in
+    this module already uses.
+
+    Args:
+        db: The caller's session, used only for the reads below.
+        user_id: Internal id of the account about to be deleted.
+
+    Returns:
+        An :class:`AccountPurgePlan` naming every object this account's cascade must
+        remove from object storage and OpenSearch.
+    """
+    from app.models.media import Speaker
+    from app.models.media import SpeakerProfile
+
+    file_rows = (
+        db.query(
+            MediaFile.id,
+            MediaFile.uuid,
+            MediaFile.filename,
+            MediaFile.storage_path,
+            MediaFile.thumbnail_path,
+        )
+        .filter(MediaFile.user_id == user_id)
+        .all()
+    )
+    files: list[dict[str, Any]] = [
+        {
+            "file_id": int(row.id),
+            "file_uuid": str(row.uuid),
+            "owner_id": int(user_id),
+            "filename": str(row.filename) if row.filename else None,
+            "storage_path": str(row.storage_path) if row.storage_path else None,
+            "thumbnail_path": str(row.thumbnail_path) if row.thumbnail_path else None,
+            "speaker_uuids": [],
+            "speaker_read_error": None,
+        }
+        for row in file_rows
+    ]
+
+    avatar_rows = (
+        db.query(SpeakerProfile.avatar_path)
+        .filter(SpeakerProfile.user_id == user_id, SpeakerProfile.avatar_path.isnot(None))
+        .all()
+    )
+    avatar_paths = [str(row[0]) for row in avatar_rows if row[0]]
+
+    speaker_rows = db.query(Speaker.uuid).filter(Speaker.user_id == user_id).all()
+    speaker_uuids = [str(row[0]) for row in speaker_rows]
+
+    profile_uuid_rows = (
+        db.query(SpeakerProfile.uuid).filter(SpeakerProfile.user_id == user_id).all()
+    )
+    profile_uuids = [str(row[0]) for row in profile_uuid_rows]
+
+    return AccountPurgePlan(
+        files=files,
+        avatar_paths=avatar_paths,
+        speaker_uuids=speaker_uuids,
+        profile_uuids=profile_uuids,
+    )
+
+
+def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]]:
+    """Destroy every external copy an ACCOUNT owned. **Takes no Session, never raises.**
+
+    Runs after the account's rows are already committed (see
+    ``admin.delete_admin_user`` / ``users.delete_user``): the rows are gone, so a
+    failure here is not retryable and must be visible, never swallowed. Reuses
+    :func:`_purge_external_copies` per file rather than open-coding a second artifact
+    list, which is what gives this call thumbnail + derived-cache (including listed
+    masked variants) + OpenSearch erasure for free, in one audited implementation.
+    Also sweeps ``plan.speaker_uuids`` / ``plan.profile_uuids`` (issue #715) — this is
+    now the only place either embedding is removed; neither
+    ``admin._delete_user_speakers`` nor ``admin._delete_user_owned_records`` touches
+    OpenSearch any more.
+
+    Args:
+        plan: The plain-data plan from :func:`load_account_purge_plans`.
+
+    Returns:
+        One ``{"stage", "file_uuid"|"avatar_path", "error"}`` dict per object that may
+        still exist. Empty means every object was confirmed gone.
+    """
+    residual: list[dict[str, Any]] = []
+
+    for file_plan in plan.files:
+        try:
+            residual.extend(_purge_external_copies(file_plan))
+        except Exception as e:  # noqa: BLE001 — one file must never block the rest
+            residual.append(
+                {
+                    "stage": "storage",
+                    "file_uuid": file_plan.get("file_uuid"),
+                    "error": str(e),
+                }
+            )
+
+    def _fail(stage: str, err: object) -> None:
+        residual.append({"stage": stage, "error": str(err)})
+
+    _erase_speaker_docs(plan.speaker_uuids, _fail)
+    _erase_profile_docs(plan.profile_uuids, _fail)
+
+    for avatar_path in plan.avatar_paths:
+        try:
+            from app.services.minio_service import delete_file
+
+            delete_file(avatar_path)
+        except Exception as e:  # noqa: BLE001 — one avatar must never block the rest
+            residual.append({"stage": "avatar", "avatar_path": avatar_path, "error": str(e)})
+
+    return residual
+
+
 def purge_media_file(db: Session, file: MediaFile) -> dict:
     """Canonical destroy for a MediaFile and ALL associated data.
 
@@ -758,8 +963,27 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
 
     SpeakerProfile records and their profile embeddings are intentionally preserved.
 
+    **A file under an active legal hold is REFUSED before step 1.** The hold is
+    the source of truth that keeps DMCA/litigation evidence alive (the S3 object
+    lock only mirrors it, best-effort), and this destroy is irreversible, so the
+    check lives here rather than only in each caller's query: a guard in one
+    query protects one caller, and this function has four. It fails closed — the
+    refusal is logged at ERROR and reported as ``deleted: False`` with
+    ``refused_legal_hold: True``, never as a quiet no-op that a caller reading
+    only ``deleted`` could mistake for a completed destroy. Clear the hold
+    (``takedown_service.release_file``) to make a held file deletable; there is
+    deliberately no override argument, because an argument that skips the guard
+    is the guard's own failure mode.
+
+    ``is_quarantined`` is deliberately **not** part of this check. Quarantine is
+    a review state an admin can legitimately end by deleting the offending
+    upload; it is the unattended retention sweep that must never destroy a file
+    under review, and that predicate lives on the sweep's query
+    (``tasks/cleanup._select_expired_files``).
+
     Returns ``{"deleted": bool, "file_uuid": str, "error": str | None,
-    "residual_errors": list[dict]}``. Never raises.
+    "residual_errors": list[dict]}``, plus ``refused_legal_hold: True`` on the
+    refusal above. Never raises.
 
     ``deleted`` reports the **database row** only. ``residual_errors`` is
     non-empty when a copy of the file's data may still exist in object storage
@@ -780,6 +1004,20 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
     """
     file_uuid = str(file.uuid)
     residual: list[dict[str, Any]] = []
+
+    if bool(file.legal_hold):
+        logger.error(
+            f"purge_media_file: REFUSED to delete file {file_uuid} — it is under an "
+            "active legal hold. Release the hold before deleting."
+        )
+        return {
+            "deleted": False,
+            "file_uuid": file_uuid,
+            "error": LEGAL_HOLD_REFUSAL,
+            "residual_errors": residual,
+            "refused_legal_hold": True,
+        }
+
     try:
         # Phase 1 — read (DB session open, Postgres only).
         plan = _load_purge_plan(db, file)

@@ -336,7 +336,7 @@
   }
 
   input:checked + .toggle-slider {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
   }
 
   input:checked + .toggle-slider:before {
@@ -388,7 +388,7 @@
 
   .save-button {
     padding: 0.75rem 2rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 10px;
@@ -428,7 +428,7 @@
 
   .info-icon {
     flex-shrink: 0;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .info-content {

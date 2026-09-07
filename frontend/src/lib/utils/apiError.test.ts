@@ -14,6 +14,31 @@ describe('getErrorMessage', () => {
       'Not authorized'
     );
   });
+  it('extracts the msg from a FastAPI 422 validation-error array detail', () => {
+    expect(
+      getErrorMessage({
+        response: { data: { detail: [{ msg: 'field required' }] } },
+      })
+    ).toBe('field required');
+  });
+  it('joins multiple validation-error messages from an array detail', () => {
+    expect(
+      getErrorMessage({
+        response: {
+          data: { detail: [{ msg: 'field required' }, { msg: 'must be positive' }] },
+        },
+      })
+    ).toBe('field required. must be positive');
+  });
+  it('still returns the object-shaped detail.message (account-lifecycle refusals)', () => {
+    expect(
+      getErrorMessage({
+        response: {
+          data: { detail: { code: 'account_expired', message: 'Your account has expired.' } },
+        },
+      })
+    ).toBe('Your account has expired.');
+  });
   it('falls back to response.data.message', () => {
     expect(getErrorMessage({ response: { data: { message: 'Bad request' } } })).toBe('Bad request');
   });

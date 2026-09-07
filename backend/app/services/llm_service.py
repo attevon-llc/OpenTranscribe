@@ -183,6 +183,13 @@ class LLMService:
             # Fixed endpoints - these providers don't support custom base URLs
             LLMProvider.CLAUDE: "https://api.anthropic.com/v1/messages",
             LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages",
+            # Not a real HTTP endpoint — boto3 resolves it from the region. This entry
+            # exists only so `self.endpoints[...]` (validate_connection, the
+            # /llm-settings/test endpoint) has something descriptive to read instead of
+            # raising KeyError or logging a bare "None".
+            LLMProvider.BEDROCK: (
+                f"boto3 bedrock-runtime (region={settings.BEDROCK_REGION or 'NOT CONFIGURED'})"
+            ),
         }
 
         # SDK-based providers have no HTTP endpoint to validate — Bedrock is reached
@@ -584,6 +591,25 @@ class LLMService:
             logger.error(f"Failed to parse LLM response: {response.text}")
             raise Exception(f"Invalid JSON response: {e}") from e
 
+    def _resolve_endpoint(self) -> str:
+        """Return the HTTP endpoint for the configured provider, or raise.
+
+        A plain subscript (``self.endpoints[provider]``) raises ``KeyError`` for any
+        provider absent from the dict entirely — which is exactly what happened for
+        Bedrock (not a key in ``self.endpoints` at all, since it is reached through
+        boto3, not HTTP) before the SDK branch below existed to intercept it. This
+        converts that into the same ``ValueError`` every other missing-endpoint case
+        (``vllm``/``custom``/``openrouter`` with no ``base_url``, which ARE keys but
+        map to ``None``) already raised.
+
+        Raises:
+            ValueError: No endpoint is configured for ``self.config.provider``.
+        """
+        url = self.endpoints.get(self.config.provider)
+        if not url:
+            raise ValueError(f"No endpoint configured for provider {self.config.provider}")
+        return url
+
     def chat_completion_raw(
         self, messages: list[dict[str, str]], *, timeout: int = 300, **kwargs
     ) -> dict[str, Any]:
@@ -608,11 +634,18 @@ class LLMService:
 
         Raises:
             LLMEndpointBlockedError: The endpoint is not a permitted target.
+            ValueError: Bedrock has no "provider's parsed JSON" — it is an SDK call,
+                not an HTTP endpoint, so there is nothing unshaped to return. This
+                is a guard, not a regression: `llm_reasoning.PROBEABLE_PROVIDERS`
+                deliberately excludes Bedrock already.
             Exception: Any non-200 response or unparseable body.
         """
-        url = self.endpoints[self.config.provider]
-        if url is None:
-            raise ValueError(f"No endpoint configured for provider {self.config.provider}")
+        if self.config.provider == LLMProvider.BEDROCK:
+            raise ValueError(
+                "chat_completion_raw is not supported for the Bedrock provider: "
+                "there is no provider JSON body to return unshaped for an SDK call."
+            )
+        url = self._resolve_endpoint()
         payload = self._prepare_payload(messages, **kwargs)
         return self._send_llm_request(url, payload, self._get_headers(), timeout)
 
@@ -620,9 +653,10 @@ class LLMService:
         """
         Send chat completion request to LLM provider
         """
-        url = self.endpoints[self.config.provider]
-        if url is None:
-            raise ValueError(f"No endpoint configured for provider {self.config.provider}")
+        if self.config.provider == LLMProvider.BEDROCK:
+            return self._bedrock_chat_completion(messages, **kwargs)
+
+        url = self._resolve_endpoint()
         headers = self._get_headers()
         payload = self._prepare_payload(messages, **kwargs)
 
@@ -667,6 +701,50 @@ class LLMService:
                 f"Unexpected error in LLM request to {self.config.provider}: {type(e).__name__}: {e}"
             )
             raise
+
+    def _bedrock_chat_completion(self, messages: list[dict[str, str]], **kwargs) -> LLMResponse:
+        """Non-streaming completion via the Bedrock Converse SDK path.
+
+        Bedrock is an SDK call, not an HTTP endpoint (it has no entry in
+        ``self.endpoints`` at all — see ``SDK_PROVIDERS``), so it cannot go through
+        ``_send_llm_request``/``_extract_response_content`` like every other provider.
+        ``llm_bedrock.converse`` drains the existing ``stream_converse`` generator and
+        folds it into the same ``(content, usage_tokens, finish_reason)`` shape the
+        HTTP extractors return, so this method only has to build the ``LLMResponse``.
+
+        Raises:
+            Exception: The stream reported an error (``llm_bedrock.BedrockStreamError``)
+                or the response was empty, mirroring the HTTP path's behaviour.
+        """
+        from app.services.llm_bedrock import BedrockStreamError
+        from app.services.llm_bedrock import converse
+
+        try:
+            content, usage_tokens, finish_reason = converse(
+                model=self.config.model,
+                region=settings.BEDROCK_REGION,
+                messages=messages,
+                max_tokens=kwargs.get("max_tokens", self.config.response_tokens),
+                temperature=kwargs.get("temperature"),
+                top_p=kwargs.get("top_p"),
+                attribution=kwargs.get("attribution"),
+            )
+        except BedrockStreamError as e:
+            logger.error(f"Bedrock chat completion failed: {e}")
+            raise Exception(f"Bedrock error: {e}") from e
+
+        if not content:
+            raise Exception("Empty content in LLM response")
+
+        logger.info(f"LLM request successful, tokens: {usage_tokens}")
+
+        return LLMResponse(
+            content=content,
+            usage_tokens=usage_tokens,
+            finish_reason=finish_reason,
+            model=self.config.model,
+            provider=self.config.provider.value,
+        )
 
     def _iter_stream_lines(
         self, response: requests.Response, cancel_event: threading.Event | None
@@ -895,7 +973,15 @@ class LLMService:
         """
         Split transcript into intelligent chunks using ONLY user's max_tokens setting
         """
-        available_tokens = self.user_context_window - 2000  # Reserve for prompt + response
+        # Reserve the ACTUAL response budget, not a flat guess -- this used to subtract a
+        # flat 2000 regardless of self.response_tokens (up to 16384), so a transcript sized
+        # to "fit" here could still overflow the model's real context once the requested
+        # response tokens were added back in. Measured live: a 3-hour transcript (204,655
+        # chars) was accepted as a single chunk, then vLLM 400'd at 45001 input + 15000
+        # output against a 60000-token model (issue #645-adjacent finding). The extra 2000
+        # keeps the original margin for prompt-template/speaker-data overhead on top of the
+        # response reservation.
+        available_tokens = self.user_context_window - self.response_tokens - 2000
         estimated_tokens = self._estimate_tokens(transcript)
 
         logger.info(
@@ -1179,7 +1265,26 @@ class LLMService:
             parsed_result: dict[str, Any] = json.loads(content)
             return parsed_result
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse section {section_num} JSON: {e}")
+            logger.warning(f"Failed to parse section {section_num} JSON: {e}")
+
+            # Same recovery as `_parse_summary_response` for a mid-document break
+            # (e.g. an unescaped literal `"` in the source transcript reproduced
+            # verbatim in a string value) — see that method for the full
+            # rationale. Worth doing here too: an unrecovered section becomes a
+            # "Failed to parse" placeholder that gets stitched verbatim into the
+            # combine-step prompt, degrading the final summary for that section.
+            try:
+                from json_repair import loads as repair_json_loads
+
+                lib_repaired = repair_json_loads(content)
+            except Exception:
+                lib_repaired = None
+
+            if isinstance(lib_repaired, dict) and lib_repaired:
+                logger.info(f"json_repair recovered section {section_num}'s summary")
+                return lib_repaired
+
+            logger.error(f"Section {section_num} JSON repair also failed")
             return {
                 "key_points": [f"Section {section_num}: Failed to parse structured summary"],
                 "speakers_in_section": [],
@@ -1313,10 +1418,7 @@ class LLMService:
         except json.JSONDecodeError as e:
             logger.warning(f"Initial JSON parse failed: {e}")
 
-            # Attempt JSON repair for truncated responses
-            repaired = self._repair_truncated_json(content)
-            if repaired is not None:
-                logger.info("JSON repair succeeded, using repaired summary")
+            def _repaired_metadata() -> dict[str, Any]:
                 metadata = {
                     "provider": self.config.provider.value,
                     "model": self.config.model,
@@ -1327,8 +1429,42 @@ class LLMService:
                 }
                 if extra_metadata:
                     metadata.update(extra_metadata)
-                repaired["metadata"] = metadata
+                return metadata
+
+            # Attempt JSON repair for truncated responses (a response cut off at
+            # the token limit, i.e. finish_reason="length" — nothing to close mid-
+            # document, only an open string/array/object at the very end).
+            repaired = self._repair_truncated_json(content)
+            if repaired is not None:
+                logger.info("JSON repair succeeded, using repaired summary")
+                repaired["metadata"] = _repaired_metadata()
                 return repaired
+
+            # The bracket-closer above only fixes a trailing cut-off. It does
+            # nothing for a MID-document syntax break, which produces a different
+            # symptom: json.loads fails well past the actual defect (e.g.
+            # "Expecting ':' delimiter" deep into an otherwise well-formed
+            # document) rather than at end-of-string, because there is no open
+            # bracket to close. Measured live: gemma-4-e4b, asked to summarize a
+            # transcript that contains a literal `"` (a spoken aside quoting a
+            # feet/inches measurement, e.g. `6'6"`), sometimes reproduces it
+            # unescaped inside a JSON string value — one stray quote desyncs the
+            # parser's in-string tracking for everything that follows.
+            # `json_repair` (zero transitive deps, MIT) handles this class
+            # directly instead of us hand-rolling a quote-scanner; it never
+            # raises, so a non-dict/empty result means it couldn't make sense of
+            # the content either.
+            try:
+                from json_repair import loads as repair_json_loads
+
+                lib_repaired = repair_json_loads(content)
+            except Exception:
+                lib_repaired = None
+
+            if isinstance(lib_repaired, dict) and lib_repaired:
+                logger.info("json_repair recovered a malformed (non-truncated) summary response")
+                lib_repaired["metadata"] = _repaired_metadata()
+                return lib_repaired
 
             logger.error(f"JSON repair also failed. Response content: {response.content[:500]}...")
 
@@ -1435,16 +1571,23 @@ class LLMService:
         try:
             headers = self._get_headers()
 
-            # Claude/Anthropic providers don't have a models endpoint, test with a simple request
-            if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
+            # Claude/Anthropic and Bedrock have no models endpoint to probe (Bedrock has no
+            # HTTP endpoint at all — it's an SDK call), so all three test with a simple request
+            # instead, exercising the exact code path a real chat turn would take.
+            if self.config.provider in [
+                LLMProvider.CLAUDE,
+                LLMProvider.ANTHROPIC,
+                LLMProvider.BEDROCK,
+            ]:
                 # No local guard here: this branch reaches the network through
                 # `chat_completion`, which now validates and PINS the URL it actually
                 # POSTs to (`_endpoint_session`). The `is_safe_url(base_url)` check that
                 # used to sit here was validate-only — it judged a *different* string
-                # from the one fetched, resolved it a second time, and for these two
-                # providers judged a `base_url` that is never used at all (their
-                # endpoints are fixed). The refusal still surfaces here, as the
-                # `LLMEndpointBlockedError` message caught below.
+                # from the one fetched, resolved it a second time, and for Claude/
+                # Anthropic judged a `base_url` that is never used at all (their
+                # endpoints are fixed). Bedrock has no `base_url` concept whatsoever.
+                # The refusal still surfaces here, as the `LLMEndpointBlockedError`
+                # message caught below.
                 #
                 # Test with a simple message
                 test_messages = [{"role": "user", "content": "Hi"}]
@@ -2138,6 +2281,25 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             logger.info("Custom provider requires user-specific configuration via UI")
             return None
 
+        if provider == LLMProvider.BEDROCK:
+            # Bedrock has no `base_url`/`api_key` shape at all (SDK call, credentials via
+            # the IAM chain — see `llm_bedrock.py`'s module docstring), so it does not fit
+            # the dict-driven validation below, which assumes an HTTP endpoint and casts
+            # `base_url` to `str()` unconditionally. Validated instead against the two
+            # things that actually gate a Bedrock call: a model ID, and a region for
+            # boto3 to construct the client against (`_client` in `llm_bedrock.py` raises
+            # `BedrockNotConfiguredError` without one).
+            model = str(settings.BEDROCK_MODEL_NAME or "").strip()
+            if not model:
+                logger.info("Bedrock provider configured but no model ID set (BEDROCK_MODEL_NAME)")
+                return None
+            if not settings.BEDROCK_REGION:
+                logger.info(
+                    "Bedrock provider configured but no AWS region set (BEDROCK_REGION/AWS_REGION)"
+                )
+                return None
+            return model, None, None
+
         if provider not in provider_settings:
             logger.warning(f"Unsupported LLM provider: {provider}")
             return None
@@ -2210,32 +2372,6 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         except Exception as e:
             logger.error(f"Failed to create LLMService from system settings: {e}")
             return None
-
-
-# Context manager for proper cleanup
-class LLMServiceContext:
-    """Context manager for LLM service with proper cleanup"""
-
-    def __init__(self, service: LLMService | None = None, user_id: int | None = None):
-        self.service = service
-        self.user_id = user_id
-        self._created_service = service is None
-
-    def __enter__(self) -> Optional["LLMService"]:
-        if self.service is None:
-            self.service = (
-                LLMService.create_from_user_settings(self.user_id)
-                if self.user_id
-                else LLMService.create_from_system_settings()
-            )
-            if self.service is None:
-                logger.info("LLM service is not available - no provider configured")
-                return None
-        return self.service
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.service and self._created_service:
-            self.service.close()
 
 
 # Utility function for quick LLM availability check

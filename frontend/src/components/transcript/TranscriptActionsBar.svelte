@@ -265,7 +265,7 @@
   }
 
   .download-button.downloading {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }

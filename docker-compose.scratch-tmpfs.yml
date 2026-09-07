@@ -1,0 +1,38 @@
+# Opt-in RAM-backed override for the `pipeline_scratch` cross-worker WAV handoff volume
+# (issue #661 E5). See docker-compose.yml's `pipeline_scratch` volume comment, which
+# names this file, and backend/app/utils/scratch_volume.py for the contract it backs.
+#
+# NEVER auto-loaded. Enable explicitly with:
+#   ./opentr.sh start dev --with-scratch-tmpfs
+#
+# Sizing rationale — read before raising SCRATCH_TMPFS_SIZE:
+#
+# Backpressure, not the filesystem, is this pipeline's load-safety mechanism. Peak
+# concurrent handoff size is `inflight x largest_file`, independent of how many jobs are
+# queued behind it — a queued job costs only Celery/Postgres metadata until it is actually
+# dispatched, not scratch-volume bytes. So the tmpfs cap should be sized off
+# DIAR_NATIVE_MAX_INFLIGHT (.env.example default: 2) times a generous per-file ceiling for
+# one in-flight preprocessed 16 kHz mono WAV (well under 1 GB even for multi-hour audio),
+# not off queue depth. The 2g default here covers 2 in-flight jobs with headroom; raise
+# SCRATCH_TMPFS_SIZE if DIAR_NATIVE_MAX_INFLIGHT is raised on a RAM-rich host.
+#
+# Issue #661 E2 makes this bound HONEST rather than aspirational: before the consolidation,
+# this tmpfs override only put the `<file_uuid>/` namespace's WAV in RAM — the engine
+# handoff WAV (`transcription-temp`, a separate volume this file never touched) and the
+# sidecar's own-copy fallback (`diar-native-tmp`, also untouched) stayed on disk
+# regardless, so a job's real peak footprint was never actually RAM-bound by this knob.
+# All three now live on this one volume, so the multiplier is `DIAR_NATIVE_MAX_INFLIGHT x
+# 2 x largest_file` — the `x2` is the own-copy fallback (``_post_own_copy``) transiently
+# holding BOTH the `engine/`-linked name and its own `diar/` copy at once, worst case.
+#
+# A FULL tmpfs fails the one job that overflows it with ENOSPC — loud, and scoped to that
+# job — rather than the host paging or the OOM killer picking a victim process, which is
+# why disk stays the default and this stays opt-in rather than becoming the default.
+# No `services:` section — this overlay touches nothing but the volume driver below.
+volumes:
+  pipeline_scratch:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=${SCRATCH_TMPFS_SIZE:-2g}"

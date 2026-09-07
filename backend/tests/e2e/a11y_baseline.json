@@ -1,5 +1,5 @@
 {
-  "_comment": "Accepted (pre-existing) serious/critical axe-core rule IDs. Regenerate with UPDATE_A11Y_BASELINE=1 pytest backend/tests/e2e/test_a11y.py. The a11y test fails only on rule IDs NOT listed here.",
+  "_comment": "Accepted (pre-existing) serious/critical axe-core rule IDs. Regenerate with python3 scripts/update-a11y-baseline.py. The a11y test fails only on rule IDs NOT listed here.",
   "serious_critical_rule_ids": [
     "aria-input-field-name",
     "aria-required-children",

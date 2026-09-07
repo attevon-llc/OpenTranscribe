@@ -124,6 +124,30 @@ def llm_config(api_session: requests.Session, backend_url: str) -> Iterator[str]
     )
     assert response.ok, f"Could not create provider: {response.status_code} {response.text}"
     uuid = str(response.json()["uuid"])
+
+    # The backend only auto-activates a config when it is the user's FIRST one
+    # ever; the shared e2e account accumulates configs across runs, so this is
+    # essentially never true here. ChatComposer's disabled state is driven by
+    # that global "active" pointer (GET /api/llm-settings/status), not by the
+    # conversation's own pinned llm_config_uuid — without this the composer
+    # stays disabled with "Chat needs a language model" for the whole test.
+    #
+    # This mutates the SHARED e2e account's active-config pointer, which the
+    # dev-data-hygiene rule (never persist changes to shared dev data) covers
+    # just as much as a created row does — captured before activating, restored
+    # in the finally below.
+    status = api_session.get(f"{backend_url}/api/llm-settings/status", timeout=30)
+    assert status.ok, f"Could not read prior LLM status: {status.status_code} {status.text}"
+    prior_active = status.json().get("active_configuration")
+    prior_active_uuid = prior_active["uuid"] if prior_active else None
+
+    activate = api_session.post(
+        f"{backend_url}/api/llm-settings/set-active",
+        json={"configuration_id": uuid},
+        timeout=30,
+    )
+    assert activate.ok, f"Could not activate provider: {activate.status_code} {activate.text}"
+
     try:
         yield uuid
     finally:
@@ -133,6 +157,19 @@ def llm_config(api_session: requests.Session, backend_url: str) -> Iterator[str]
             api_session.delete(f"{backend_url}/api/llm-settings/config/{uuid}", timeout=30)
         except requests.RequestException:
             pass
+        # Restore whichever config (if any) was active before this fixture touched
+        # it — deleting the config above already re-picks SOME active config
+        # server-side when this one had been active; this puts it back rather than
+        # leaving it at whatever that reassignment happened to land on.
+        if prior_active_uuid:
+            try:
+                api_session.post(
+                    f"{backend_url}/api/llm-settings/set-active",
+                    json={"configuration_id": prior_active_uuid},
+                    timeout=30,
+                )
+            except requests.RequestException:
+                pass
 
 
 @pytest.fixture

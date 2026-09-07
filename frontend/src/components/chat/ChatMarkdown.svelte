@@ -238,7 +238,7 @@
   }
 
   .chat-markdown :global(a) {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     text-decoration: underline;
   }
 

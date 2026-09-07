@@ -63,7 +63,7 @@ flowchart LR
 **Limited support** (may require authentication):
 - Vimeo, Instagram, Facebook, TikTok
 
-:::tip Platform Guidance
+:::tip[Platform Guidance]
 If a video fails to download, OpenTranscribe provides helpful error messages with platform-specific suggestions. Common issues include:
 - **Authentication required** - Video requires login (try YouTube or Dailymotion instead)
 - **Age/geo-restricted** - Content blocked in your region
@@ -91,7 +91,7 @@ When uploading files, you can assign them to **collections** and **tags** direct
 
 This saves time compared to organizing files after upload. Tags and collections can also be managed later from the file detail page.
 
-:::tip Auto-Labeling
+:::tip[Auto-Labeling]
 If auto-labeling is enabled (Settings > Auto-Label), OpenTranscribe can automatically suggest tags and collections based on AI topic analysis after transcription completes. See [AI Summarization](./ai-summarization.md#auto-labeling) for details.
 :::
 
@@ -241,7 +241,7 @@ If a file is stuck in `processing` status or has failed:
 
 The system automatically detects stuck files (processing longer than the threshold, default 2 hours) and provides recovery recommendations.
 
-:::info Admin Tools
+:::info[Admin Tools]
 Administrators have access to additional file management capabilities:
 - **Stuck files report** -- View all files stuck in processing beyond a configurable threshold
 - **Cleanup orphaned files** -- Bulk recover or mark files that lost their worker connection
@@ -315,11 +315,11 @@ Record audio directly in your browser without any external software:
 2. The recorded audio is automatically uploaded to OpenTranscribe
 3. Standard transcription processing begins immediately
 
-:::tip Recording Quality
+:::tip[Recording Quality]
 For best results, use an external microphone rather than a built-in laptop mic. Ensure your environment is quiet and speak clearly. Monitor the audio level indicator to confirm your voice is being captured.
 :::
 
-:::note Browser Support
+:::note[Browser Support]
 Recording requires a modern browser with MediaRecorder API support (Chrome, Firefox, Edge, Safari 14.1+). Your browser must have permission to access the microphone.
 :::
 

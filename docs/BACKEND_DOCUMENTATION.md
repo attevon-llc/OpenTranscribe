@@ -10,7 +10,7 @@ Comprehensive documentation for the OpenTranscribe backend system, organized by 
 
 ## 📚 Documentation Structure
 
-### 🏠 [Main Backend README](backend/README.md)
+### 🏠 [Main Backend README](../backend/README.md)
 **Start here for backend overview and quick setup**
 - Quick start guide
 - Architecture overview
@@ -18,7 +18,7 @@ Comprehensive documentation for the OpenTranscribe backend system, organized by 
 - API access points
 - Testing and deployment
 
-### 🏗️ [Application Architecture](backend/app/README.md)
+### 🏗️ [Application Architecture](../backend/app/README.md)
 **Deep dive into application structure and design patterns**
 - Layered architecture explanation
 - Directory structure and organization
@@ -55,7 +55,7 @@ Auth method configuration is stored in the database (Admin UI → Settings → A
 - [Security Overview](SECURITY.md) - Security features and FedRAMP compliance
 - [Testing Checklist](TESTING_CHECKLIST.md) - Authentication verification
 
-### 🌐 [API Layer](backend/app/api/README.md)
+### 🌐 [API Layer](../backend/app/api/README.md)
 **Complete API documentation and patterns**
 - RESTful endpoint design
 - Authentication and authorization
@@ -64,7 +64,7 @@ Auth method configuration is stored in the database (Admin UI → Settings → A
 - WebSocket integration
 - Adding new endpoints
 
-### 🗄️ [Data Models](backend/app/models/README.md)
+### 🗄️ [Data Models](../backend/app/models/README.md)
 **Database schema and ORM models**
 - Database design overview
 - Entity relationships
@@ -72,7 +72,7 @@ Auth method configuration is stored in the database (Admin UI → Settings → A
 - Query patterns and optimization
 - Migration strategies
 
-### 🔧 [Services Layer](backend/app/services/README.md)
+### 🔧 [Services Layer](../backend/app/services/README.md)
 **Business logic and service patterns**
 - Service layer principles
 - File management service
@@ -80,7 +80,7 @@ Auth method configuration is stored in the database (Admin UI → Settings → A
 - External service integration
 - Error handling and transactions
 
-### ⚡ [Background Tasks](backend/app/tasks/README.md)
+### ⚡ [Background Tasks](../backend/app/tasks/README.md)
 **Asynchronous processing and AI workflows**
 - Task system architecture
 - Transcription pipeline: unified 3-stage Celery chain (preprocess → GPU → postprocess)
@@ -107,7 +107,7 @@ Auto-activates when the GPU lacks VRAM for the configured model, or always on ma
 - Override: `WHISPER_HYBRID_MODE=auto|true|false` (auto = default, true = always, false = never)
 - Benchmark data: `docs/whisper-vram-profile/README.md`
 
-### 🛠️ [Utilities](backend/app/utils/README.md)
+### 🛠️ [Utilities](../backend/app/utils/README.md)
 **Common utilities and helper functions**
 - Authentication decorators
 - Database helpers
@@ -126,14 +126,14 @@ Auto-activates when the GPU lacks VRAM for the configured model, or always on ma
 - Audit logging
 - FedRAMP compliance features (AC-8, IA-2, IA-5, AC-12, AU-2/AU-3)
 
-### 🗃️ [Database Strategy](backend/app/db/README.md)
+### 🗃️ [Database Strategy](../backend/app/db/README.md)
 **Database management approach**
 - Development vs production workflows
 - Alembic migration strategy
 - Schema change procedures
 - Troubleshooting guide
 
-### 📁 [Utility Scripts](backend/scripts/README.md)
+### 📁 [Utility Scripts](../backend/scripts/README.md)
 **Administrative and development scripts**
 - Admin user creation
 - Database inspection tools
@@ -157,27 +157,27 @@ Word-level timestamps are now produced natively by faster-whisper via cross-atte
 ## 🚀 Getting Started Guides
 
 ### For New Developers
-1. **[Backend README](backend/README.md)** - Start here for environment setup
-2. **[Application Architecture](backend/app/README.md)** - Understand the codebase structure
-3. **[API Documentation](backend/app/api/README.md)** - Learn the API patterns
+1. **[Backend README](../backend/README.md)** - Start here for environment setup
+2. **[Application Architecture](../backend/app/README.md)** - Understand the codebase structure
+3. **[API Documentation](../backend/app/api/README.md)** - Learn the API patterns
 4. **[Adding Features Guide](#adding-new-features)** - Step-by-step feature development
 
 ### For API Integration
-1. **[API Layer Documentation](backend/app/api/README.md)**
-2. **[Authentication Patterns](backend/app/utils/README.md#authentication-decorators)**
-3. **[Error Handling](backend/app/utils/README.md#error-handlers)**
+1. **[API Layer Documentation](../backend/app/api/README.md)**
+2. **[Authentication Patterns](../backend/app/utils/README.md#authentication-decorators)**
+3. **[Error Handling](../backend/app/utils/README.md#error-handlers)**
 4. **Interactive API Docs**: http://localhost:5174/api/docs
 
 ### For Database Work
-1. **[Data Models](backend/app/models/README.md)**
-2. **[Database Strategy](backend/app/db/README.md)**
-3. **[Database Helpers](backend/app/utils/README.md#database-helpers)**
-4. **[Migration Guide](backend/app/db/README.md#migration-strategy)**
+1. **[Data Models](../backend/app/models/README.md)**
+2. **[Database Strategy](../backend/app/db/README.md)**
+3. **[Database Helpers](../backend/app/utils/README.md#database-helpers)**
+4. **[Migration Guide](../backend/app/db/README.md#migration-strategy)**
 
 ### For Background Processing
-1. **[Tasks Overview](backend/app/tasks/README.md)**
-2. **[Transcription Pipeline](backend/app/tasks/README.md#transcription-pipeline)**
-3. **[Task Monitoring](backend/app/tasks/README.md#task-monitoring)**
+1. **[Tasks Overview](../backend/app/tasks/README.md)**
+2. **[Transcription Pipeline](../backend/app/tasks/README.md#transcription-pipeline)**
+3. **[Task Monitoring](../backend/app/tasks/README.md#task-monitoring)**
 4. **Flower Dashboard**: http://localhost:5175/flower
 
 ## 🔧 Development Workflows
@@ -185,9 +185,9 @@ Word-level timestamps are now produced natively by faster-whisper via cross-atte
 ### Adding New Features
 
 #### 1. Planning Phase
-- Review **[Application Architecture](backend/app/README.md)** for patterns
-- Check **[API Documentation](backend/app/api/README.md)** for endpoint conventions
-- Review **[Data Models](backend/app/models/README.md)** for database design
+- Review **[Application Architecture](../backend/app/README.md)** for patterns
+- Check **[API Documentation](../backend/app/api/README.md)** for endpoint conventions
+- Review **[Data Models](../backend/app/models/README.md)** for database design
 
 #### 2. Implementation Phase
 ```bash
@@ -209,21 +209,21 @@ Word-level timestamps are now produced natively by faster-whisper via cross-atte
 ### Debugging Workflows
 
 #### API Issues
-1. Check **[Error Handling](backend/app/utils/README.md#error-handlers)** patterns
-2. Review **[API Documentation](backend/app/api/README.md)** for debugging tips
+1. Check **[Error Handling](../backend/app/utils/README.md#error-handlers)** patterns
+2. Review **[API Documentation](../backend/app/api/README.md)** for debugging tips
 3. Use interactive docs at http://localhost:5174/api/docs
 4. Check logs: `./opentr.sh logs backend`
 
 #### Database Issues
-1. Review **[Database Strategy](backend/app/db/README.md#troubleshooting)**
-2. Use **[Database Scripts](backend/scripts/README.md)** for inspection
-3. Check **[Query Patterns](backend/app/models/README.md#query-patterns)**
+1. Review **[Database Strategy](../backend/app/db/README.md#troubleshooting)**
+2. Use **[Database Scripts](../backend/scripts/README.md)** for inspection
+3. Check **[Query Patterns](../backend/app/models/README.md#query-patterns)**
 4. Run: `python scripts/db_inspect.py`
 
 #### Background Task Issues
-1. Check **[Task Documentation](backend/app/tasks/README.md#error-handling)**
+1. Check **[Task Documentation](../backend/app/tasks/README.md#error-handling)**
 2. Monitor via **Flower Dashboard**: http://localhost:5175/flower
-3. Review **[Task Utilities](backend/app/utils/README.md#task-utilities)**
+3. Review **[Task Utilities](../backend/app/utils/README.md#task-utilities)**
 4. Check logs: `./opentr.sh logs celery-worker`
 
 ## 📊 Reference Materials
@@ -231,34 +231,35 @@ Word-level timestamps are now produced natively by faster-whisper via cross-atte
 ### API Reference
 - **Interactive Docs**: http://localhost:5174/api/docs
 - **ReDoc**: http://localhost:5174/api/redoc
-- **[Endpoint List](backend/app/api/README.md#api-endpoints-reference)**
-- **[Authentication Guide](backend/app/api/README.md#authentication--authorization)**
+- **[Endpoint List](../backend/app/api/README.md#api-endpoints-reference)**
+- **[Authentication Guide](../backend/app/api/README.md#authentication--authorization)**
 
 ### Database Reference
-- **[Schema Overview](backend/app/models/README.md#database-schema-overview)**
-- **[Model Definitions](backend/app/models/README.md)**
-- **[Query Examples](backend/app/models/README.md#query-patterns)**
+- **[Schema Overview](../backend/app/models/README.md#database-schema-overview)**
+- **[Model Definitions](../backend/app/models/README.md)**
+- **[Query Examples](../backend/app/models/README.md#query-patterns)**
 
 ### Task Reference
-- **[Available Tasks](backend/app/tasks/README.md)**
-- **[Progress Tracking](backend/app/tasks/README.md#task-monitoring)**
-- **[Error Recovery](backend/app/tasks/README.md#error-handling)**
+- **[Available Tasks](../backend/app/tasks/README.md)**
+- **[Progress Tracking](../backend/app/tasks/README.md#task-monitoring)**
+- **[Error Recovery](../backend/app/tasks/README.md#error-handling)**
 
 ### Utility Reference
-- **[Helper Functions](backend/app/utils/README.md)**
-- **[Common Patterns](backend/app/utils/README.md#common-patterns)**
-- **[Testing Utilities](backend/app/utils/README.md#testing-utilities)**
+- **[Helper Functions](../backend/app/utils/README.md)**
+- **[Common Patterns](../backend/app/utils/README.md#common-patterns)**
+- **[Testing Utilities](../backend/app/utils/README.md#testing-utilities)**
 
 ## 🧪 Testing Documentation
 
 ### Test Organization
 ```bash
 tests/
-├── api/endpoints/          # API endpoint tests
+├── api/                   # API endpoint tests
 ├── services/              # Service layer tests
-├── models/               # Database model tests
-├── tasks/                # Background task tests
-└── utils/                # Utility function tests
+├── unit/                  # Unit tests (models, utils, tasks, etc.)
+├── integration/           # Cross-component integration tests
+├── e2e/                   # Playwright end-to-end tests
+└── eval/                  # RAG/retrieval evaluation harness
 ```
 
 ### Running Tests
@@ -270,40 +271,40 @@ pytest tests/
 # Specific test categories
 pytest tests/api/           # API tests
 pytest tests/services/      # Service tests
-pytest tests/models/        # Model tests
+pytest tests/unit/          # Unit tests
 
 # With coverage
 pytest --cov=app tests/
 ```
 
 ### Test Documentation Links
-- **[API Testing](backend/app/api/README.md#testing-endpoints)**
-- **[Service Testing](backend/app/services/README.md#testing-services)**
-- **[Model Testing](backend/app/models/README.md#testing-models)**
-- **[Task Testing](backend/app/tasks/README.md#testing-tasks)**
+- **[API Testing](../backend/app/api/README.md#testing-endpoints)**
+- **[Service Testing](../backend/app/services/README.md#testing-services)**
+- **[Model Testing](../backend/app/models/README.md#testing-models)**
+- **[Task Testing](../backend/app/tasks/README.md#testing-tasks)**
 
 ## 🚀 Deployment Documentation
 
 ### Environment Setup
-- **[Production Setup](backend/README.md#deployment)**
-- **[Environment Variables](backend/README.md#environment-variables)**
-- **[Health Checks](backend/README.md#health-checks)**
+- **[Production Setup](../backend/README.md#deployment)**
+- **[Environment Variables](../backend/README.md#environment-variables)**
+- **[Health Checks](../backend/README.md#health-checks)**
 
 ### Database Deployment
-- **[Migration Strategy](backend/app/db/README.md#production-approach)**
-- **[Backup Procedures](backend/app/db/README.md#best-practices)**
+- **[Migration Strategy](../backend/app/db/README.md#production-approach)**
+- **[Backup Procedures](../backend/app/db/README.md#best-practices)**
 
 ### Task System Deployment
-- **[Worker Configuration](backend/app/tasks/README.md#task-configuration)**
-- **[Monitoring Setup](backend/app/tasks/README.md#task-monitoring)**
-- **[Performance Tuning](backend/app/tasks/README.md#performance-optimization)**
+- **[Worker Configuration](../backend/app/tasks/README.md#task-configuration)**
+- **[Monitoring Setup](../backend/app/tasks/README.md#task-monitoring)**
+- **[Performance Tuning](../backend/app/tasks/README.md#performance-optimization)**
 
 ## 🤝 Contributing Guidelines
 
 ### Code Standards
-- **[Development Guidelines](backend/app/README.md#development-guidelines)**
-- **[Code Organization Rules](backend/app/README.md#code-organization-rules)**
-- **[Import Organization](backend/app/README.md#import-organization)**
+- **[Development Guidelines](../backend/app/README.md#development-guidelines)**
+- **[Code Organization Rules](../backend/app/README.md#code-organization-rules)**
+- **[Import Organization](../backend/app/README.md#import-organization)**
 
 ### Documentation Standards
 - **Google-style docstrings** for all functions and classes
@@ -322,8 +323,8 @@ pytest --cov=app tests/
 ## 📞 Support and Resources
 
 ### Getting Help
-- **[Main README](backend/README.md#support)** for general questions
-- **[Troubleshooting Guide](backend/app/db/README.md#troubleshooting)**
+- **[Main README](../backend/README.md#support)** for general questions
+- **[Troubleshooting Guide](../backend/app/db/README.md#troubleshooting)**
 - **[GitHub Issues](https://github.com/your-repo/issues)** for bug reports
 
 ### Useful Commands

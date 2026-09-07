@@ -160,14 +160,14 @@ def test_sigv4_without_resolvable_credentials_raises(sigv4_auth):
 
 
 def test_local_embedding_mode_is_the_default():
-    from app.main import _managed_embedding_mode
+    from app.services.search.neural_bootstrap import _managed_embedding_mode
 
     assert settings.OPENSEARCH_EMBEDDING_MODE == "local"
     assert _managed_embedding_mode() is False
 
 
 def test_managed_embedding_mode_is_detected(monkeypatch):
-    from app.main import _managed_embedding_mode
+    from app.services.search.neural_bootstrap import _managed_embedding_mode
 
     monkeypatch.setattr(settings, "OPENSEARCH_EMBEDDING_MODE", "managed")
     assert _managed_embedding_mode() is True
@@ -178,7 +178,7 @@ def test_managed_mode_adopts_the_configured_model_without_touching_the_cluster(
 ):
     """A managed domain exposes neither the ML Commons cluster settings nor URL-based
     model registration, so neither may be attempted."""
-    from app.main import _adopt_managed_embedding_model
+    from app.services.search.neural_bootstrap import _adopt_managed_embedding_model
 
     monkeypatch.setattr(settings, "OPENSEARCH_EMBEDDING_MODE", "managed")
     monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_MODEL_ID", "abc123")
@@ -196,7 +196,7 @@ def test_managed_mode_adopts_the_configured_model_without_touching_the_cluster(
 
 
 def test_managed_mode_without_a_model_id_falls_back_to_the_active_one(monkeypatch):
-    from app.main import _adopt_managed_embedding_model
+    from app.services.search.neural_bootstrap import _adopt_managed_embedding_model
 
     monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_MODEL_ID", "")
     ml_service = MagicMock()
@@ -211,7 +211,7 @@ def test_managed_mode_without_a_model_id_falls_back_to_the_active_one(monkeypatc
 
 
 def test_managed_mode_with_no_model_at_all_is_a_logged_no_op(monkeypatch):
-    from app.main import _adopt_managed_embedding_model
+    from app.services.search.neural_bootstrap import _adopt_managed_embedding_model
 
     monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_MODEL_ID", "")
     ml_service = MagicMock()

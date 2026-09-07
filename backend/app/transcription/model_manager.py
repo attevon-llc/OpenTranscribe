@@ -135,14 +135,31 @@ class ModelManager:
         if not native_selected:
             return not native_cached
 
-        from app.transcription.diarizer_native import sidecar_healthy
+        from app.transcription.diarizer_native import sidecar_ready
 
-        healthy = sidecar_healthy()
-        if native_cached and not healthy:
-            logger.warning("diar-native sidecar is unreachable; falling back to PyAnnote")
-        elif healthy and not native_cached:
-            logger.info("diar-native sidecar is healthy again; leaving the PyAnnote fallback")
-        return native_cached == healthy
+        # Readiness, not liveness. /healthz answers 200 even when the models are absent or
+        # known-bad, so probing it here kept selecting the native engine for a sidecar that
+        # could not actually diarize, and the failure then surfaced at request time instead
+        # of here, where the PyAnnote fallback was still available to choose. /readyz is 200
+        # only once the models are verified. Pre-0.3.0 sidecars have no /readyz and fall
+        # back to liveness inside sidecar_ready, so an older pin behaves as it did before.
+        ready = sidecar_ready()
+        if native_cached and not ready:
+            # "Gone" and "up but cannot serve" are different operator problems with
+            # different fixes, so they get different messages. The extra probe only runs
+            # on the failure path, which is approximately never in normal operation.
+            from app.transcription.diarizer_native import sidecar_healthy
+
+            if sidecar_healthy():
+                logger.warning(
+                    "diar-native sidecar is up but not ready (models missing or unusable); "
+                    "falling back to PyAnnote"
+                )
+            else:
+                logger.warning("diar-native sidecar is unreachable; falling back to PyAnnote")
+        elif ready and not native_cached:
+            logger.info("diar-native sidecar is ready again; leaving the PyAnnote fallback")
+        return native_cached == ready
 
     def ensure_models_loaded(self, config: TranscriptionConfig) -> None:
         """Preload both models for concurrent mode.

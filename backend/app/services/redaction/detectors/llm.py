@@ -35,10 +35,30 @@ def detect_with_llm(
     user_id: int,
     *,
     max_chars: int = 6000,
+    failures: list[str] | None = None,
 ) -> dict[int, list[RedactionSpan]]:
     """Run LLM detection over segments. Returns {segment_index: [spans]}.
 
-    Best-effort: returns ``{}`` if no LLM is configured or anything fails.
+    Best-effort: returns ``{}`` if no LLM is configured or anything fails, and never raises —
+    the pipeline must not block on an opt-in detector.
+
+    ⚠️ **That makes the return value ambiguous, which is what ``failures`` is for.** ``{}`` is
+    what a working model that found nothing returns AND what a provider outage returns, so
+    ``detect_and_store`` used to append ``"llm"`` to ``media_file.redaction_coverage`` whenever
+    the owner had selected the detector — a misconfigured provider recorded as a completed scan
+    with zero findings, and a coverage surface reporting clean. Same shape as the PII/toxicity
+    sinks of issue #324, and the same remedy: report the fault out of band.
+
+    Args:
+        segments: ``{"text": ..., "words": ...}`` per transcript segment.
+        user_id: Whose LLM provider to use.
+        max_chars: Per-segment prompt budget.
+        failures: Optional sink. ``"llm"`` is appended when no provider could be resolved or
+            when a segment's call raised, so the caller can tell "examined and found nothing"
+            from "never examined". Left alone when the detector genuinely ran clean.
+
+    Returns:
+        ``{segment_index: [spans]}`` for the segments that produced spans.
     """
     try:
         from app.services.llm_service import LLMService
@@ -46,8 +66,11 @@ def detect_with_llm(
         service = LLMService.create_from_settings(user_id)
     except Exception as exc:  # noqa: BLE001
         logger.info("LLM redaction detector: no LLM service for user %s (%s)", user_id, exc)
+        _report(failures)
         return {}
     if service is None:
+        logger.info("LLM redaction detector: no LLM configured for user %s", user_id)
+        _report(failures)
         return {}
 
     results: dict[int, list[RedactionSpan]] = {}
@@ -56,7 +79,7 @@ def detect_with_llm(
             text = str(seg.get("text", ""))
             if not text.strip():
                 continue
-            spans = _detect_one(service, text, seg.get("words"), max_chars)
+            spans = _detect_one(service, text, seg.get("words"), max_chars, failures)
             if spans:
                 results[idx] = spans
     finally:
@@ -65,8 +88,18 @@ def detect_with_llm(
     return results
 
 
+def _report(failures: list[str] | None) -> None:
+    """Record the detector as not having examined the text, at most once per scan."""
+    if failures is not None and "llm" not in failures:
+        failures.append("llm")
+
+
 def _detect_one(
-    service, text: str, words: list[dict] | None, max_chars: int
+    service,
+    text: str,
+    words: list[dict] | None,
+    max_chars: int,
+    failures: list[str] | None = None,
 ) -> list[RedactionSpan]:
     try:
         resp = service.chat_completion(
@@ -76,6 +109,7 @@ def _detect_one(
         items = _parse_json_array(resp.content)
     except Exception as exc:  # noqa: BLE001
         logger.debug("LLM redaction detection failed for a segment: %s", exc)
+        _report(failures)
         return []
 
     word_offsets = build_word_offsets(text, words)

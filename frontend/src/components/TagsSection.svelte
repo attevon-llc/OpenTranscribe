@@ -104,7 +104,7 @@
 
   .tag-chip {
     background: var(--primary-light);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     padding: 3px 8px;
     border-radius: 12px;
     font-size: 11px;

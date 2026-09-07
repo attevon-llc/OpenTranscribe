@@ -56,6 +56,7 @@ def issue_session_response(
     user_role: str,
     client_ip: str,
     user_agent: str,
+    request: Request,
     extra_content: dict | None = None,
 ) -> JSONResponse:
     """Mint the access/refresh pair for a caller that has passed the second factor.
@@ -70,6 +71,8 @@ def issue_session_response(
         user_role: Role to embed in the tokens
         client_ip: Client IP address
         user_agent: Client user agent
+        request: The inbound request; its scheme decides the cookie Secure flag
+            under ALLOW_INSECURE_COOKIES (see `auth/cookies.py:_secure_for_request`).
         extra_content: Additional keys to merge into the JSON body (e.g. backup codes)
 
     Returns:
@@ -102,7 +105,7 @@ def issue_session_response(
     # Set httpOnly cookies for browser-based authentication (C2 security hardening)
     from app.auth.cookies import set_auth_cookies
 
-    set_auth_cookies(response, access_token, refresh_token)
+    set_auth_cookies(response, access_token, refresh_token, request)
 
     # Every successful auth path stamps last_login_at. This function is the single
     # post-MFA session-issue point, so it covers /mfa/verify AND the forced
@@ -125,6 +128,7 @@ def _complete_mfa_verification(
     used_backup_code: bool,
     client_ip: str,
     user_agent: str,
+    request: Request,
 ) -> JSONResponse:
     """Finalize MFA verification and generate tokens.
 
@@ -138,6 +142,8 @@ def _complete_mfa_verification(
         used_backup_code: Whether a backup code was used
         client_ip: Client IP address
         user_agent: Client user agent
+        request: The inbound request; its scheme decides the cookie Secure flag
+            under ALLOW_INSECURE_COOKIES (see `auth/cookies.py:_secure_for_request`).
 
     Returns:
         JSONResponse with access_token, refresh_token, and token metadata
@@ -181,7 +187,9 @@ def _complete_mfa_verification(
     )
 
     logger.info(f"MFA verification successful for user: {str(user.email)}")
-    return issue_session_response(db, user, user_uuid_str, user_role, client_ip, user_agent)
+    return issue_session_response(
+        db, user, user_uuid_str, user_role, client_ip, user_agent, request
+    )
 
 
 @dataclass

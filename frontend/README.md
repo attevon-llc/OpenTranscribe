@@ -109,7 +109,7 @@ frontend/
 │   ├── stores/                # Svelte stores for state management
 │   │   ├── auth.ts           # Authentication state
 │   │   ├── locale.ts         # Language/locale management
-│   │   ├── notifications.ts   # Notification system
+│   │   ├── notificationsPanel.ts   # Notification bell panel visibility
 │   │   ├── recording.ts      # Recording state management
 │   │   ├── theme.js          # Theme management
 │   │   ├── uploads.ts        # Upload queue management
@@ -133,7 +133,6 @@ frontend/
 │   │   ├── services/         # Business logic services
 │   │   │   └── uploadService.ts # Upload management service
 │   │   ├── axios.ts          # HTTP client configuration
-│   │   ├── websocket.js      # WebSocket service
 │   │   └── utils/            # Helper functions
 │   ├── styles/               # Global styles
 │   │   ├── theme.css         # CSS variables and themes
@@ -234,12 +233,13 @@ export const theme = writable('auto'); // 'light', 'dark', 'auto'
 export const isDarkMode = derived(theme, ...);
 ```
 
-#### Notifications Store (`stores/notifications.ts`)
+#### Notifications Panel Store (`stores/notificationsPanel.ts`)
 
 ```typescript
-// Toast notifications and alerts
-export const notifications = writable<Notification[]>([]);
-export function addNotification(notification: Notification) { ... }
+// Notification bell panel open/close state — the LIST itself lives in
+// stores/websocket.ts ($websocketStore.notifications), not here.
+export const showNotificationsPanel = writable<boolean>(false);
+export function toggleNotificationsPanel(): void { ... }
 ```
 
 #### WebSocket Store (`stores/websocket.ts`)
@@ -395,18 +395,13 @@ api.interceptors.request.use((config) => {
 });
 ```
 
-### WebSocket Integration (`lib/websocket.js`)
+### WebSocket Integration (`stores/websocket.ts`)
 
-```javascript
-// Real-time updates for transcription progress
-export function connectWebSocket() {
-  const ws = new WebSocket(`ws://${window.location.host}/ws`);
-
-  ws.onmessage = (event) => {
-    const update = JSON.parse(event.data);
-    taskUpdates.update((updates) => [...updates, update]);
-  };
-}
+```typescript
+// Real-time updates for transcription progress and notifications
+export const websocketStore = createWebSocketStore();
+export const unreadCount = derived(websocketStore, ...);
+export const connectionStatus = derived<typeof websocketStore, UiConnectionStatus>(...);
 ```
 
 ## 📱 Progressive Web App

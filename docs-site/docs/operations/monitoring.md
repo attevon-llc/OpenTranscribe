@@ -35,10 +35,10 @@ Key metric names (stable; dashboards are built against these):
 | `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`external`) |
 | `files_uploaded_total` | Counter | `source` (`upload`/`url`/`watch`) |
 
-:::note Route labels use the route **template** (e.g. `/api/files/{file_id}`), never the raw path or query string — this bounds cardinality and keeps tokens/PII out of metrics. `user_id`/`org_id` are written to the JSON **access log** only, never as Prometheus labels.
+:::note[Route labels use the route **template** (e.g. `/api/files/{file_id}`), never the raw path or query string — this bounds cardinality and keeps tokens/PII out of metrics. `user_id`/`org_id` are written to the JSON **access log** only, never as Prometheus labels.]
 :::
 
-:::info Worker-side product events (transcription outcomes, processed minutes, watch-source imports) happen in Celery workers, whose Prometheus registries are never scraped. Those are dashboarded from the database via Grafana's PostgreSQL datasource (the Product dashboard below), not from Prometheus counters.
+:::info[Worker-side product events (transcription outcomes, processed minutes, watch-source imports) happen in Celery workers, whose Prometheus registries are never scraped. Those are dashboarded from the database via Grafana's PostgreSQL datasource (the Product dashboard below), not from Prometheus counters.]
 :::
 
 ### Starting the stack
@@ -131,7 +131,7 @@ The built-in stack is portable to managed AWS services with no code change:
 - **CloudWatch Logs**: set `LOG_FORMAT=json` and let Fluent Bit / the CloudWatch agent ship the structured access lines. **CloudWatch Logs Insights** then queries `user_id` / `org_id` / `route` / `duration_ms` directly for DAU/WAU and funnels.
 - **Readiness**: switch your load balancer / Kubernetes `readinessProbe` from `/health` to `/health/ready` so traffic is only routed once Postgres and Redis are actually reachable.
 
-:::tip Future tweak: uvicorn emits its own access log line next to OpenTranscribe's structured one (duplicate request lines). This is left as-is because changing the container `CMD` is a behavior change for existing log consumers; in production you can add `--no-access-log` to the uvicorn command to drop the duplicate and rely solely on the structured access logger.
+:::tip[Future tweak: uvicorn emits its own access log line next to OpenTranscribe's structured one (duplicate request lines). This is left as-is because changing the container `CMD` is a behavior change for existing log consumers; in production you can add `--no-access-log` to the uvicorn command to drop the duplicate and rely solely on the structured access logger.]
 :::
 
 ## Monitoring Architecture
@@ -244,6 +244,10 @@ Flower is configured with these operational settings in `docker-compose.yml`:
 - `--persistent=True` -- persists task history to `/app/flower.db`
 - `--purge_offline_workers=600` -- removes offline workers after 10 minutes
 - `--natural_time=True` -- displays human-readable timestamps
+- `--inspect_timeout=10000` -- widens the `celery inspect` broadcast's reply deadline from
+  Flower's 1 s default to 10 s, so a GPU worker mid model-load can still answer a
+  `?refresh=1` request (see the caveat under "Integration with External Monitoring" below —
+  issue [#609](https://github.com/attevon-llc/OpenTranscribe/issues/609))
 
 ## Docker Container Monitoring
 
@@ -496,7 +500,7 @@ OpenTranscribe ships with a built-in Prometheus + Grafana stack for application-
 - **PostgreSQL Exporter**: Use [postgres_exporter](https://github.com/prometheus-community/postgres_exporter) pointed at the exposed PostgreSQL port
 - **Redis Exporter**: Use [redis_exporter](https://github.com/oliver006/redis_exporter) for Redis metrics
 - **OpenSearch**: OpenSearch exposes `/_prometheus/metrics` via the [prometheus-exporter plugin](https://github.com/aiven/prometheus-exporter-plugin-for-opensearch)
-- **Flower**: Flower exposes a JSON API at `/api/workers` and `/api/tasks` that can be scraped by a custom exporter
+- **Flower**: Flower exposes a JSON API at `/api/workers` and `/api/tasks` that can be scraped by a custom exporter. ⚠️ **`/api/workers` without `?refresh=1` is a one-shot snapshot cached at Flower's own process startup and is never refreshed on a timer** (issue [#609](https://github.com/attevon-llc/OpenTranscribe/issues/609)) — a worker that was still starting up when Flower booted (importing torch/whisperx, or preloading GPU models) is absent from the unrefreshed endpoint permanently, so a scraper that never passes `refresh=1` will under-report the worker fleet forever, not just during a brief startup race. A scraper polling on an interval should pass `?refresh=1` on every poll (Flower awaits the broadcast server-side before responding, up to `--inspect_timeout`, 10 s by default here) rather than trusting the cache.
 - **Docker**: Use [cAdvisor](https://github.com/google/cadvisor) for per-container resource metrics
 
 ### Datadog / New Relic / Similar

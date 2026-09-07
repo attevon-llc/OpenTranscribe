@@ -676,6 +676,12 @@ class TestClaimsValidationIsReal:
         cfg = _cfg(verify_issuer=False, verify_audience=False)
         data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
         assert data is not None
+        # The identity the caller logs in as must survive the relaxed check — `is not
+        # None` is also satisfied by an empty result, which authenticates nobody. And
+        # the token has to have CARRIED an audience, or "the check was skipped" is
+        # trivially true of a token there was nothing to check.
+        assert data["oidc_subject"] == "user-1"
+        assert "aud" in data["claim_keys"]
 
     def test_wrong_issuer_is_refused(self, stub_jwt):
         tracker = stub_jwt({"ID": self._payload(iss="https://not-the-configured-idp.example.com")})
@@ -689,6 +695,12 @@ class TestClaimsValidationIsReal:
         cfg = _cfg(verify_issuer=True)
         data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
         assert data is not None
+        # The subject the caller would be logged in as, not merely "something came
+        # back". `iss` must be present in the decoded claim set too: with issuer
+        # verification ON, a token carrying no issuer at all reaching this line would
+        # mean the check passed by absence rather than by matching.
+        assert data["oidc_subject"] == "user-1"
+        assert "iss" in data["claim_keys"]
 
     def test_hs256_never_reaches_the_algorithm_allow_list(self):
         """The classic algorithm-confusion attack forges a token with the

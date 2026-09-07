@@ -193,7 +193,7 @@
       height: calc(100vh - var(--content-top, 60px));
       height: calc(100dvh - var(--content-top, 60px));
       background: var(--surface-color);
-      z-index: 1300;
+      z-index: var(--z-modal);
       transition: left 0.3s ease;
       border-right: 1px solid var(--border-color);
       border-top: 1px solid var(--border-color);

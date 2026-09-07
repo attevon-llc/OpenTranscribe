@@ -14,14 +14,49 @@ conftest, so retry/recovery exercise the API path only.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
+import pytest
 from fastapi import status
 
 from app.models.media import MediaFile
+from app.services.task_recovery_service import TaskRecoveryService
+
+
+@pytest.fixture(autouse=True)
+def _patch_task_recovery_session_scope(monkeypatch, db_session):
+    """``retry_file_processing`` dispatches through
+    ``task_recovery_service.schedule_file_retry``, which opens its OWN session via
+    ``TaskRecoveryService._session_scope`` (a fresh ``SessionLocal()``) rather than the
+    request's ``get_db``-injected one. That is a different connection than the test's
+    savepoint-isolated ``db_session``, so it cannot see a ``MediaFile`` this test created
+    — "File N not found for retry" — even though the row is plainly there. Same failure
+    mode, same fix, as ``test_chat_endpoints.py`` patching
+    ``app.db.session_utils.session_scope``: reuse the test session instead of opening a
+    real one. ``staticmethod(...)`` is required — a bare function assigned onto the class
+    would bind ``self`` as its first (and only) positional argument.
+
+    A *second* real session sits one hop further down the same call chain:
+    ``schedule_file_retry`` dispatches into
+    ``tasks/transcription/dispatch.py::dispatch_transcription_pipeline``, which opens its
+    own session via ``with session_scope() as db:``. That module did
+    ``from app.db.session_utils import session_scope`` at import time, which binds the
+    name into `dispatch`'s own namespace — patching
+    ``app.db.session_utils.session_scope`` afterwards does not reach a reference already
+    bound elsewhere, so the patch target has to be where the name is *used*.
+    """
+
+    @contextlib.contextmanager
+    def _fake_scope():
+        yield db_session
+        db_session.commit()
+
+    monkeypatch.setattr(TaskRecoveryService, "_session_scope", staticmethod(_fake_scope))
+    monkeypatch.setattr("app.tasks.transcription.dispatch.session_scope", _fake_scope)
 
 
 def _make_file(
@@ -31,6 +66,7 @@ def _make_file(
     file_status: str = "completed",
     upload_age_hours: float = 0.0,
     filename: str = "myfile.wav",
+    retry_count: int = 0,
 ) -> MediaFile:
     file_uuid = str(uuid.uuid4())
     mf = MediaFile(
@@ -42,6 +78,7 @@ def _make_file(
         file_size=4096,
         status=file_status,
         upload_time=datetime.now(UTC) - timedelta(hours=upload_age_hours),
+        retry_count=retry_count,
     )
     db_session.add(mf)
     db_session.commit()
@@ -155,6 +192,70 @@ def test_retry_other_user_403(client, other_user_auth_headers, normal_user, db_s
 def test_retry_nonexistent_404(client, user_token_headers):
     response = client.post(f"/api/my-files/{uuid.uuid4()}/retry", headers=user_token_headers)
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_retry_error_file_succeeds_below_ceiling(
+    client, user_token_headers, normal_user, db_session
+):
+    """Control: retrying an ERROR file below the retry ceiling still works — this is
+    the success path the ceiling test below needs a working control for."""
+    mf = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+    response = client.post(f"/api/my-files/{mf.uuid}/retry", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["file_id"] == str(mf.uuid)
+    assert body["new_status"] == "pending"
+
+
+def test_retry_increments_retry_count(client, user_token_headers, normal_user, db_session):
+    """A dispatched retry must count against the ceiling it was just checked against.
+
+    Before this fix, `schedule_file_retry` dispatched the task but nothing on this
+    route ever wrote `retry_count`, so the same file could be retried indefinitely at
+    the 5-minute cooldown's rate regardless of any admin-configured ceiling.
+    """
+    mf = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+    response = client.post(f"/api/my-files/{mf.uuid}/retry", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+
+    db_session.refresh(mf)
+    assert mf.retry_count == 2
+
+
+def test_retry_honours_admin_ceiling(client, user_token_headers, normal_user, db_session):
+    """The live route (`POST /my-files/{uuid}/retry`, the one `UserFileStatus.svelte`
+    actually calls) must refuse a retry once the admin-tunable ceiling is reached —
+    not just its unreachable sibling `POST /files/{uuid}/retry`. Before this fix, this
+    handler had no ceiling check at all: it called `schedule_file_retry` unconditionally
+    and never wrote `retry_count`, so an admin lowering the ceiling to stop a
+    runaway-cost retry loop did not stop anything reachable from the product's own
+    retry button.
+    """
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    mf = _make_file(db_session, normal_user, file_status="error", retry_count=2)
+    response = client.post(f"/api/my-files/{mf.uuid}/retry", headers=user_token_headers)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "maximum retry attempts" in response.json()["detail"]
+
+    # And the refusal must be a genuine refusal to dispatch, not merely a rejected
+    # response with the task fired anyway.
+    db_session.refresh(mf)
+    assert mf.retry_count == 2
+    assert mf.status == "error"
+
+
+def test_retry_below_admin_ceiling_still_succeeds(
+    client, user_token_headers, normal_user, db_session
+):
+    """Control for the ceiling test above: below the (lowered) ceiling, retry works."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=5)
+    mf = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+    response = client.post(f"/api/my-files/{mf.uuid}/retry", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
 
 
 # ---------------------------------------------------------------------------

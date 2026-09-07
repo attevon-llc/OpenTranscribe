@@ -101,8 +101,25 @@ Phase A policy conclusion (confirmed end-to-end): **bs=16 fp32 for all deploymen
 
 ## Outstanding (Phase B / C)
 
-- **Phase B:** implement `pipelines/_budget.py` in the fork; replace the bs=64–256 auto-scaler with the free-VRAM → batch table from this README.
-- **Phase C:** surface `DIARIZATION_VRAM_BUDGET_MB`, `DIARIZATION_MIXED_PRECISION`, `DIARIZATION_ONNX_CPU` in `backend/app/core/config.py`. Drop the diag's `CUDA_CONTEXT_MB` to a per-driver table once we have numbers from other GPU classes.
+- **Phase B and C, as originally planned here, were superseded (`7ed7456e`, same day as
+  landing) — the APP-SIDE plumbing was removed, not the fork's auto-scaler itself.**
+  `pipelines/_budget.py`'s free-VRAM → batch auto-scaler is still present and live in the
+  pinned fork (`requirements.txt`'s `pyannote.audio` SHA) — what got removed was the app's own
+  `DIARIZATION_VRAM_BUDGET_MB` / `DIARIZATION_MIXED_PRECISION` / `DIARIZATION_ONNX_CPU` env
+  vars → settings → `_apply_vram_policy` → `pipeline.vram_budget_mb` chain that would have
+  driven it. In its place: a single fixed `EMBEDDING_BATCH_SIZE = 16` on every deployment,
+  since the sweep found no throughput or DER benefit above bs=16 for the VRAM it costs. The
+  fork's auto-scaler is **deliberately bypassed, not deleted** — `diarizer.py` sets
+  `PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE`, which short-circuits the fork's `_force` branch
+  *before* it ever reads `vram_budget_mb` (`speaker_diarization.py`). **Do not remove that env
+  var as "vestigial"**: without it the fork's ladder re-engages and steps down to bs=4 under
+  VRAM pressure, silently breaking the fixed ~1 GB-per-pipeline footprint the multi-worker
+  GPU-scale concurrency model depends on. See `CHANGELOG.md`'s `[Unreleased] > Removed` entry
+  and `backend/app/transcription/diarizer.py`'s `EMBEDDING_BATCH_SIZE` class var (issue #568).
+  Do not resurrect the app-side budget knob without new measurement showing the fixed-16
+  policy is actually insufficient for some deployment shape.
+- Drop the diag's `CUDA_CONTEXT_MB` to a per-driver table once we have numbers from other GPU
+  classes — this piece of Phase C is unrelated to the batch-size knob and is still open.
 - **Cross-validation:** one representative config on physical RTX 3080 Ti (GPU 1) vs. capped-A6000 to confirm simulation fidelity within 5 % (plan A.7 item 3).
 - **Whisper large-v3-turbo whole-stack probe:** add to `--sweep` models list; need turbo numbers for the default deployment path.
 

@@ -30,12 +30,20 @@ from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.error_handlers import ErrorHandler
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.uuid_helpers import get_speaker_by_uuid
 
 logger = logging.getLogger(__name__)
 
 # Whitelist of fields that can be updated via the speaker update endpoint
 SPEAKER_UPDATABLE_FIELDS = {"name", "display_name", "suggested_name", "verified"}
+
+#: A ``display_name`` matching this is a **diarization placeholder**, not a human-assigned
+#: identity — as are ``NULL`` and ``""``. The distinction is deliberate and shared with the
+#: frontend's speaker plane: a placeholder is scoped to **one file**, so ``SPEAKER_00`` in
+#: recording A and ``SPEAKER_00`` in recording B are different people and must never be
+#: treated as one cross-file identity. Anything else is a name a human assigned.
+PLACEHOLDER_SPEAKER_NAME_PATTERN = r"^SPEAKER_\d+$"
 
 # Speaker suggestion constants
 SPEAKER_SUGGESTION_MIN_CONFIDENCE = 0.5
@@ -100,19 +108,18 @@ def create_speaker(
 # --- Helper functions for list_speakers ---
 
 
-def _filter_speakers_query(
-    query: Any, verified_only: bool, for_filter: bool, file_id: int | None
-) -> Any:
-    """Apply filters to the speakers query."""
+def _filter_speakers_query(query: Any, verified_only: bool, file_id: int | None) -> Any:
+    """Apply filters to the speakers query.
+
+    Note there is no ``for_filter`` branch here any more: it held a second copy
+    of the placeholder predicate (see :data:`PLACEHOLDER_SPEAKER_NAME_PATTERN`)
+    that the only caller has always passed ``False`` for, because the
+    ``for_filter=True`` fast path never reaches this function. Two definitions
+    of "is this a real name" is exactly the drift that would let one of them
+    silently stop matching the other.
+    """
     if verified_only:
         query = query.filter(Speaker.verified)
-
-    if for_filter:
-        query = query.filter(
-            Speaker.display_name.isnot(None),
-            Speaker.display_name != "",
-            ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
-        )
 
     if file_id is not None:
         query = query.filter(Speaker.media_file_id == file_id)
@@ -124,6 +131,9 @@ def _sort_speakers(speakers: list[Speaker]) -> list[Speaker]:
     """Sort speakers by SPEAKER_XX numbering for consistent ordering."""
 
     def get_speaker_number(speaker: Speaker) -> int:
+        # :data:`PLACEHOLDER_SPEAKER_NAME_PATTERN`, with the ordinal captured — this one
+        # reads the number out rather than answering the yes/no question, so it cannot
+        # reuse the constant directly. Keep the two in step.
         match = re.match(r"^SPEAKER_(\d+)$", str(speaker.name))
         return int(match.group(1)) if match else 999
 
@@ -172,6 +182,7 @@ def _get_unique_speakers_for_filter(
     limit: int = SPEAKER_FILTER_DEFAULT_LIMIT,
     profile_id: int | None = None,
     is_profile: bool | None = None,
+    include_unnamed: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Get unique speakers by display name for filter use with media file counts.
@@ -204,22 +215,52 @@ def _get_unique_speakers_for_filter(
             already resolved by the caller).
         is_profile: ``True`` = only profile-linked speakers, ``False`` = only
             unlinked, ``None`` = no filter.
+        include_unnamed: Also offer speakers **no human has named** — see the
+            note below. Off by default, so every existing caller (the chat
+            file-scope picker included) keeps a people-only roster.
 
     Returns:
-        List of dicts with uuid, name, display_name, media_count, and
-        profile_id (the profile's UUID, or ``None``).
+        List of dicts with uuid, name, display_name, media_count, is_unnamed,
+        and profile_id (the profile's UUID, or ``None``).
+
+    Unnamed speakers (issue #743)
+    ---------------------------
+    Diarization writes ``display_name=None`` and ``name='SPEAKER_00'``, so on a
+    library where nobody has renamed anyone this roster was **empty** and the
+    gallery's speaker filter had nothing to show. Dropping the "must have a
+    real display name" predicate is not the fix: this function groups across
+    files, and ``SPEAKER_00`` in one recording is a different person from
+    ``SPEAKER_00`` in another, so an unqualified entry would read as one person
+    and return a nonsense file set.
+
+    So they are opt-in and **flagged**. ``include_unnamed=True`` groups by the
+    label the caller would actually filter on — ``COALESCE(NULLIF(display_name,
+    ''), name)``, exactly what ``files/filtering.apply_speaker_filter`` matches
+    — and marks any group whose every row is unlabeled with ``is_unnamed``.
+    A caller must never render a flagged entry as a person; the filter sidebar
+    collapses them into one "files with unlabeled speakers" facet, which is a
+    true statement about a *file* rather than a false one about a person.
+    Named entries always sort ahead of unlabeled ones.
     """
+    from sqlalchemy import and_
     from sqlalchemy import func
+    from sqlalchemy import not_
     from sqlalchemy import select
 
     from app.services.permission_service import PermissionService
 
-    # Build base filters — admins see all speakers, others see accessible files only
-    base_filter = [
+    # "A human gave this speaker a real name." A raw ``SPEAKER_nn`` written into
+    # display_name (what an auto-label pass emits) is not one.
+    has_human_name = and_(
         Speaker.display_name.isnot(None),
         Speaker.display_name != "",
-        ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
-    ]
+        not_(Speaker.display_name.op("~")(PLACEHOLDER_SPEAKER_NAME_PATTERN)),
+    )
+    # The exact string this row is offered under, and sent back as ``?speaker=``.
+    label_col = func.coalesce(func.nullif(Speaker.display_name, ""), Speaker.name)
+
+    # Build base filters — admins see all speakers, others see accessible files only
+    base_filter = [] if include_unnamed else [has_human_name]
     if not current_user.is_admin:
         accessible_sq = PermissionService.get_accessible_file_ids_subquery(
             db, current_user.id, organization_id=organization_id
@@ -230,7 +271,9 @@ def _get_unique_speakers_for_filter(
     base_filter.append(~Speaker.media_file_id.in_(quarantined_ids))
 
     if q and q.strip():
-        base_filter.append(Speaker.display_name.ilike(f"%{q.strip()}%"))
+        # Search the offered label, not display_name alone — otherwise typing
+        # "SPEAKER_01" into the picker matches nothing it is showing.
+        base_filter.append(label_col.ilike(f"%{q.strip()}%"))
     if profile_id is not None:
         base_filter.append(Speaker.profile_id == profile_id)
     if is_profile is True:
@@ -240,16 +283,20 @@ def _get_unique_speakers_for_filter(
 
     bounded_limit = max(1, min(limit, SPEAKER_FILTER_MAX_LIMIT))
     media_count_col = func.count(func.distinct(Speaker.media_file_id))
+    # A group counts as unlabeled only when EVERY row in it is — a label shared
+    # with a real name is a person's entry, not a review bucket.
+    unnamed_col = func.bool_and(not_(has_human_name))
     grouped = (
         db.query(
-            Speaker.display_name,
+            label_col.label("label"),
+            unnamed_col.label("is_unnamed"),
             media_count_col.label("media_count"),
             func.min(Speaker.id).label("rep_id"),
             func.min(Speaker.profile_id).label("profile_id"),
         )
         .filter(*base_filter)
-        .group_by(Speaker.display_name)
-        .order_by(media_count_col.desc(), Speaker.display_name)
+        .group_by(label_col)
+        .order_by(unnamed_col.asc(), media_count_col.desc(), label_col)
         .limit(bounded_limit)
         .all()
     )
@@ -275,12 +322,16 @@ def _get_unique_speakers_for_filter(
         rep = reps_by_id.get(row.rep_id)
         if rep is None:
             continue
+        # An unlabeled group is projected with display_name=None so that the
+        # caller's `display_name || name` fallback yields the grouping label
+        # even when the label came from a display_name holding "SPEAKER_02".
         results.append(
             {
                 "uuid": str(rep.uuid),
-                "name": rep.name,
-                "display_name": row.display_name,
+                "name": row.label if row.is_unnamed else rep.name,
+                "display_name": None if row.is_unnamed else row.label,
                 "media_count": row.media_count,
+                "is_unnamed": bool(row.is_unnamed),
                 "profile_id": profile_uuids.get(row.profile_id) if row.profile_id else None,
             }
         )
@@ -458,10 +509,19 @@ def _compute_display_flags(
         and not speaker.display_name
     )
 
-    # Pre-compute placeholder text
-    if is_high_confidence:
-        input_placeholder = suggested_name
-    elif suggested_name and suggestion_source == "metadata_hint":
+    # Pre-compute placeholder text.
+    #
+    # ⚠️ A suggestion is ALWAYS labelled as one, however confident. The
+    # high-confidence branch used to emit the bare ``suggested_name`` — and the
+    # editor's `translatePlaceholder` passes an unrecognised placeholder through
+    # verbatim — so a >=0.75 voice match sat in the name field looking exactly
+    # like a value a human had confirmed, with only a border colour to say
+    # otherwise. Speaker-ID suggestions are never auto-applied; presenting one
+    # as an established name is the same claim by other means. Confidence is
+    # still reported, through ``is_high_confidence``/``is_medium_confidence``.
+    # (It also swallowed the metadata provenance: a confident `metadata_hint`
+    # took the bare branch and never said where the name came from.)
+    if suggested_name and suggestion_source == "metadata_hint":
         input_placeholder = f"From metadata: {suggested_name}"
     elif suggested_name:
         input_placeholder = f"Suggested: {suggested_name}"
@@ -707,6 +767,14 @@ def list_speakers(
     is_profile: bool | None = Query(
         None, description="for_filter only: restrict to profile-linked (true) or unlinked (false)"
     ),
+    include_unnamed: bool = Query(
+        False,
+        description=(
+            "for_filter only: also offer speakers nobody has named, under their diarization "
+            "label and flagged is_unnamed. They are per-file labels, not people — never "
+            "render a flagged entry as a person."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -727,8 +795,10 @@ def list_speakers(
         verified_only (bool): If true, return only verified speakers.
         file_uuid (Optional[str]): If provided, return only speakers associated with this file.
         for_filter (bool): If true, return only speakers with distinct display names for filtering.
-        q, limit, profile_id, is_profile: ``for_filter=True`` only — server-side type-to-search
-            (substring, case-insensitive), page size, and profile scoping. Ignored otherwise.
+        q, limit, profile_id, is_profile, include_unnamed: ``for_filter=True`` only —
+            server-side type-to-search (substring, case-insensitive), page size, profile
+            scoping, and whether to also offer unlabeled diarization labels (#743).
+            Ignored otherwise.
 
     Returns:
         List[dict]: Speaker objects with embedded suggestion data and profile information.
@@ -753,6 +823,7 @@ def list_speakers(
                 limit=limit,
                 profile_id=resolved_profile_id,
                 is_profile=is_profile,
+                include_unnamed=include_unnamed,
             )
 
         # Convert file_uuid to file_id if provided (tenant-gated via ctx.org_id)
@@ -762,14 +833,23 @@ def list_speakers(
             joinedload(Speaker.profile), joinedload(Speaker.media_file)
         )
         # Admins see all speakers; when file_id is provided, permission was
-        # already checked by _resolve_file_uuid_to_id; otherwise scope to owner.
+        # already checked by _resolve_file_uuid_to_id (which applies the
+        # takedown gate via get_file_by_uuid_with_permission); otherwise scope
+        # to owner AND drop speakers whose file is quarantined (A2's class —
+        # the general listing has no per-file permission check to catch it,
+        # so a caller's OWN quarantined file's speakers would otherwise leak
+        # here even though the file itself 404s for them).
         if current_user.is_admin:
             pass  # Admins see all speakers
         elif file_id is not None:
             pass  # Viewing specific file — permission already checked
         else:
+            from sqlalchemy import select
+
             query = query.filter(Speaker.user_id == current_user.id)
-        query = _filter_speakers_query(query, verified_only, False, file_id)
+            quarantined_ids = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
+            query = query.filter(~Speaker.media_file_id.in_(quarantined_ids))
+        query = _filter_speakers_query(query, verified_only, file_id)
         speakers = query.all()
         speakers = _sort_speakers(speakers)
 
@@ -1194,7 +1274,18 @@ def get_speaker_cross_media_occurrences(
     Get all media files where this speaker (or their profile) appears.
     """
     try:
+        from app.services.takedown_service import is_hidden_for
+
         speaker = get_speaker_by_uuid(db, speaker_uuid)
+        # A quarantined file is hidden from its own owner (A2's class) — the
+        # ownership/sharing check below has no notion of quarantine at all, so
+        # without this a non-admin whose OWN file got taken down could still
+        # reach its speaker's cross-media data through this endpoint even
+        # though the file itself 404s.
+        if speaker.media_file is not None and is_hidden_for(
+            speaker.media_file, is_admin=current_user.is_admin
+        ):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
         file_perm = (
             "owner"
             if current_user.is_admin
@@ -1253,9 +1344,28 @@ def verify_speaker_identification(
 
         profile_id = _resolve_profile_uuid_to_id(profile_uuid, current_user, db)
 
-        return _dispatch_verify_action(
+        # Captured before dispatch commits: `expire_on_commit=True` means a post-commit
+        # attribute read re-queries rather than reusing the value already in hand.
+        speaker_uuid_str = str(speaker.uuid)
+        media_file_uuid = _get_media_file_uuid(speaker, db)
+
+        result = _dispatch_verify_action(
             action, speaker, speaker.id, profile_id, profile_name, current_user, db
         )
+
+        from app.utils.websocket_notify import send_ws_event
+
+        send_ws_event(
+            current_user.id,
+            "speaker_updated",
+            {
+                "media_file_id": media_file_uuid,
+                "speaker_uuid": speaker_uuid_str,
+                "reason": f"speaker_verification_{action}",
+            },
+        )
+
+        return result
 
     except HTTPException:
         raise
@@ -1291,10 +1401,29 @@ def confirm_speaker_gender(
 
     speaker.predicted_gender = gender  # type: ignore[assignment]
     speaker.gender_confirmed_by_user = True  # type: ignore[assignment]
+
+    # Captured before commit: the session default is `expire_on_commit=True`, so a
+    # post-commit read of a relationship/column re-queries instead of reusing the
+    # already-loaded value.
+    speaker_uuid_str = str(speaker.uuid)
+    media_file_uuid = _get_media_file_uuid(speaker, db)
+
     db.commit()
 
+    from app.utils.websocket_notify import send_ws_event
+
+    send_ws_event(
+        current_user.id,
+        "speaker_updated",
+        {
+            "media_file_id": media_file_uuid,
+            "speaker_uuid": speaker_uuid_str,
+            "reason": "gender_confirmed",
+        },
+    )
+
     return {
-        "speaker_uuid": str(speaker.uuid),
+        "speaker_uuid": speaker_uuid_str,
         "predicted_gender": gender,
         "gender_confirmed_by_user": True,
     }
@@ -1371,6 +1500,24 @@ def merge_speakers(
     logger.info(
         f"Queued background merge processing for {source_speaker_uuid} -> {target_speaker.uuid}"
     )
+
+    # `_update_opensearch_speaker_merge` (in the background task above) only
+    # touches the speaker/voiceprint index — every segment that used to belong
+    # to the source speaker was just reassigned to the target in Postgres, but
+    # the chunk plane's `speaker`/`speakers` snapshot and turn grouping for
+    # both files kept the pre-merge attribution until a full reindex ran
+    # (issue #666). One file when source and target share a recording, two
+    # when they don't.
+    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+    for media_file_id in affected_media_files:
+        merged_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
+        if merged_file:
+            dispatch_transcript_reindex(
+                file_id=merged_file.id,
+                file_uuid=str(merged_file.uuid),
+                user_id=int(merged_file.user_id),
+            )
 
     # Invalidate caches
     try:
@@ -1573,10 +1720,14 @@ def _handle_update_profile_action(
     a dozen linked speakers used to cost a dozen-plus synchronous OpenSearch calls
     before the PUT could answer.
 
-    The ``(file_uuid, old_name)`` pairs are collected **before** the overwrite and
-    handed back, because a profile rename spans files and this is the last moment
-    the previous names exist anywhere: once committed, nothing in Postgres can say
-    what the chunk plane was indexed with (issue #405).
+    The member rewrite and the ``(file_uuid, old_name)`` capture live in
+    ``services/speaker_profile_rename.apply_profile_name_to_speakers`` — the ONE
+    implementation of "a profile rename re-applies the name to its members", shared
+    with ``PUT /speaker-profiles/profiles/{uuid}``, the other endpoint that renames a
+    profile (issue #675). It collects the old names **before** the overwrite, because
+    a profile rename spans files and that is the last moment the previous names exist
+    anywhere: once committed, nothing in Postgres can say what the chunk plane was
+    indexed with (issue #405).
 
     Returns:
         ``None`` when no such profile exists. Otherwise the renames to replay into
@@ -1584,6 +1735,8 @@ def _handle_update_profile_action(
         A non-``None`` return also tells the caller a profile was renamed, so it can
         ask the background task to replay the rename into the speaker index.
     """
+    from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+
     profile = (
         db.query(SpeakerProfile)
         .filter(SpeakerProfile.id == profile_id, SpeakerProfile.user_id == current_user.id)
@@ -1596,33 +1749,12 @@ def _handle_update_profile_action(
     profile.name = new_name  # type: ignore[assignment]
     logger.info(f"Updated profile {profile.id} name to '{new_name}' globally")
 
-    # Update all speakers linked to this profile
-    linked_query = db.query(Speaker).filter(Speaker.profile_id == profile_id)
-    if not current_user.is_admin:
-        linked_query = linked_query.filter(Speaker.user_id == current_user.id)
-    linked_speakers = linked_query.all()
-
-    # One grouped lookup, not a lazy `speaker.media_file.uuid` per row.
-    file_uuids: dict[int, str] = {}
-    media_file_ids = {int(s.media_file_id) for s in linked_speakers if s.media_file_id}
-    if media_file_ids:
-        file_uuids = {
-            int(row[0]): str(row[1])
-            for row in db.query(MediaFile.id, MediaFile.uuid).filter(
-                MediaFile.id.in_(media_file_ids)
-            )
-        }
-
-    renames: list[tuple[str, str]] = []
-    for linked_speaker in linked_speakers:
-        old_chunk_name = str(linked_speaker.display_name or linked_speaker.name or "")
-        file_uuid = file_uuids.get(int(linked_speaker.media_file_id or 0))
-        if file_uuid and old_chunk_name:
-            renames.append((file_uuid, old_chunk_name))
-        linked_speaker.display_name = new_name  # type: ignore[assignment]
-
-    logger.info(f"Updated {len(linked_speakers)} speakers with new profile name '{new_name}'")
-    return renames
+    return apply_profile_name_to_speakers(
+        db,
+        profile_id,
+        new_name,
+        restrict_to_user_id=None if current_user.is_admin else current_user.id,
+    )
 
 
 def _load_profile_speaker_names(db: Session, profile_id: int) -> list[tuple[str, str]]:
@@ -1789,38 +1921,6 @@ def _get_media_file_uuid(speaker: Speaker, db: Session) -> str | None:
     return None
 
 
-def _send_websocket_notification(speaker: Speaker, current_user: User, db: Session) -> None:
-    """Send WebSocket notification for speaker update (best-effort)."""
-    try:
-        import asyncio
-
-        from app.api.websockets import publish_notification
-
-        notification_data = {
-            "speaker_id": str(speaker.uuid),
-            "media_file_id": _get_media_file_uuid(speaker, db),
-            "display_name": speaker.display_name,
-            "verified": speaker.verified,
-            "profile_id": _get_profile_uuid(speaker, db),
-        }
-
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(
-                publish_notification(
-                    user_id=current_user.id,
-                    notification_type="speaker_updated",
-                    data=notification_data,
-                )
-            )
-        except RuntimeError:
-            logger.debug(
-                f"Skipped WebSocket notification for speaker {speaker.uuid} (no event loop)"
-            )
-    except Exception as e:
-        logger.debug(f"WebSocket notification skipped for speaker update: {e}")
-
-
 def _set_no_cache_headers(response: Response) -> None:
     """Set cache-busting headers on response."""
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -1829,11 +1929,23 @@ def _set_no_cache_headers(response: Response) -> None:
 
 
 def _apply_verification_on_display_name(speaker: Speaker, speaker_update: SpeakerUpdate) -> None:
-    """Mark speaker as verified when display name is set."""
+    """Mark speaker as verified when display name is set.
+
+    Clears ``suggested_name``/``confidence`` — the *active pending suggestion*
+    — so nothing reads a resolved speaker as still carrying one (issue #605).
+    ``suggestion_source`` is deliberately left alone: every reader of it
+    (``smart_speaker_suggestion_service``, ``speaker_profiles.py``, this
+    module's own display-flag builder) already gates on ``suggested_name``/
+    ``confidence`` being truthy too, so it never resurrects a "live"
+    suggestion — but ``task_detection_service`` reads it standalone as its
+    only signal for "has LLM speaker ID already run on this file", and
+    clearing it here caused every manually-confirmed speaker's file to look
+    unidentified again, re-offering (and re-dispatching) identification the
+    user had just finished with (issue #603 follow-up regression).
+    """
     if speaker_update.display_name is not None and speaker_update.display_name.strip():
         speaker.verified = True  # type: ignore[assignment]
         speaker.suggested_name = None  # type: ignore[assignment]
-        speaker.suggestion_source = None  # type: ignore[assignment]
         speaker.confidence = None  # type: ignore[assignment]
 
 
@@ -1856,9 +1968,9 @@ def _propagate_speaker_rename_to_chunks(
     broker was unreachable. The chunk plane stays stale until the next reindex,
     which is exactly the pre-#405 behaviour.
 
-    ``new_display_name`` is the **effective indexed name** (``display_name or
-    name``), not the display name. Those differ in two reachable cases and both
-    used to propagate nothing:
+    ``new_display_name`` is the **canonical indexed label**
+    (``canonical_speaker_label_for_row``), not the display name. Those differ in
+    three reachable cases and all three used to propagate nothing:
 
     * **A cleared display name.** ``{"display_name": ""}`` is a legal
       ``SpeakerUpdate`` — it is how a user undoes a label. Postgres reverts to
@@ -1868,6 +1980,11 @@ def _propagate_speaker_rename_to_chunks(
     * **An edit to ``name`` alone.** ``name`` is updatable too, and for a speaker
       with no ``display_name`` it is what the indexer writes — but dispatch used
       to key solely off ``display_name``.
+    * **A confident suggestion with no ``display_name`` at all** (issue #605).
+      The indexer writes ``suggested_name`` once ``confidence >= 0.75``; the old
+      ``display_name or name`` rule here never looked at either field, so a
+      speaker indexed under an LLM suggestion stayed keyed to the raw diarizer
+      label and any rename computed the wrong ``old_names``.
     """
     if not new_display_name:
         return
@@ -1914,10 +2031,12 @@ def update_speaker(
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     was_auto_labeled = speaker.suggested_name is not None and not speaker.verified
     media_file_id = int(speaker.media_file_id)
-    # The exact string the chunk plane was indexed with — display_name when the
-    # speaker had one, else the diarizer's raw label. Captured here because the
-    # overwrite below is the last moment it exists (issue #405).
-    previous_chunk_name = str(speaker.display_name or speaker.name or "")
+    # The exact string the chunk plane was indexed with — the SAME resolver the
+    # chunk-index writers use (issue #605; previously a stale `display_name or
+    # name` copy that stopped agreeing once the writers picked up a confident
+    # suggestion). Captured here because the overwrite below is the last moment
+    # it exists (issue #405).
+    previous_chunk_name = canonical_speaker_label_for_row(speaker)
     speaker_file_uuid = _get_media_file_uuid(speaker, db)
 
     # Update speaker fields
@@ -1970,11 +2089,13 @@ def update_speaker(
     # the search facet dropdown keep working off the pre-rename snapshot — see
     # app/tasks/rename_propagation_task.py (issue #405).
     #
-    # Keyed on the EFFECTIVE indexed name (`display_name or name`, the indexer's
-    # own rule in search_indexing_task), not on `display_name`. Keying on the
-    # latter missed both a cleared display name and an edit to `name` alone —
-    # see `_propagate_speaker_rename_to_chunks`.
-    new_chunk_name = str(speaker.display_name or speaker.name or "")
+    # Keyed on the CANONICAL indexed label (`canonical_speaker_label_for_row`,
+    # the SAME resolver `search_indexing_task`/`reindex_task` use), not on
+    # `display_name` alone. Keying on `display_name or name` missed three
+    # things: a cleared display name, an edit to `name` alone, and — issue
+    # #605 — a confident LLM/embedding suggestion the writer would have
+    # indexed instead of the raw name. See `_propagate_speaker_rename_to_chunks`.
+    new_chunk_name = canonical_speaker_label_for_row(speaker)
     _propagate_speaker_rename_to_chunks(
         file_uuid=speaker_file_uuid,
         previous_chunk_name=previous_chunk_name,
@@ -2111,14 +2232,53 @@ def _accept_speaker_profile_match(
 
 
 def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -> dict[str, Any]:
-    """Handle rejection of a speaker identification suggestion."""
+    """Handle rejection of a speaker identification suggestion.
+
+    Clears ``suggested_name`` alongside ``confidence`` (issue #605) — nulling
+    ``confidence`` alone left ``suggested_name`` populated, so any reader that
+    checks ``suggested_name is not None`` without also checking ``confidence``
+    (this module's own ``was_auto_labeled = speaker.suggested_name is not
+    None and not speaker.verified``) kept surfacing a rejected suggestion as
+    if it were still live. Clearing both also means the canonical label can
+    genuinely move (a rejected suggestion falls back to the raw diarizer
+    name), so the rejection is propagated to the chunk plane exactly like
+    every other write that moves the canonical label — a suggestion the user
+    rejected must not keep appearing in search facets or chat's speaker
+    scope.
+
+    ``suggestion_source`` is deliberately NOT cleared here. Every display
+    reader gates on ``suggested_name``/``confidence`` too (both nulled
+    above), so leaving it set never resurrects a "live" suggestion — but
+    ``task_detection_service.identify_incomplete_post_transcription_files``
+    reads ``suggestion_source == "llm_analysis"`` on its own as the sole
+    signal for "has LLM speaker ID already run on this file". Nulling it here
+    used to make a fully-rejected file look never-identified, so identify-
+    speakers got re-offered (and re-dispatched) and regenerated the exact
+    suggestions the user had just rejected, gated only by the ~30 minute
+    ``recently_attempted`` cooldown rather than actually prevented (audit
+    follow-up to issue #603).
+    """
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+    before = canonical_speaker_label_for_row(speaker)
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
     speaker.profile_id = None  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    speaker.suggested_name = None  # type: ignore[assignment]
     speaker.confidence = None  # type: ignore[assignment]
+    after = canonical_speaker_label_for_row(speaker)
     db.commit()
+
+    if before != after:
+        try:
+            from app.tasks.rename_propagation_task import dispatch_speaker_rename
+
+            file_uuid = _get_media_file_uuid(speaker, db)
+            dispatch_speaker_rename([(file_uuid, before)], after, speaker_id=speaker_id)
+        except Exception as exc:  # noqa: BLE001 — a rejection must not fail on dispatch
+            logger.warning(
+                f"Could not queue chunk-plane label sync for rejected speaker {speaker_id}: {exc}"
+            )
 
     # Update the old profile's embedding if speaker was previously assigned
     if old_profile_id:
@@ -2429,6 +2589,7 @@ def _get_profile_based_occurrences(
     )
     if not current_user.is_admin:
         query = query.filter(Speaker.user_id == current_user.id)
+        query = query.filter(MediaFile.is_quarantined.is_(False))
     profile_speakers = query.all()
 
     result: list[dict[str, Any]] = []
@@ -2469,6 +2630,7 @@ def _get_display_name_based_occurrences(
     )
     if not current_user.is_admin:
         similar_q = similar_q.filter(Speaker.user_id == current_user.id)
+        similar_q = similar_q.filter(MediaFile.is_quarantined.is_(False))
     similar_speakers = similar_q.all()
 
     for similar_speaker in similar_speakers:

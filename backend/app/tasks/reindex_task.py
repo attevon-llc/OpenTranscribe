@@ -14,6 +14,9 @@ from app.core.constants import CPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
+from app.services.search.reindex_cancel import cancel_requested
+from app.services.search.reindex_cancel import clear_cancel
+from app.services.search.reindex_cancel import consume_pending_cancel
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
@@ -225,7 +228,17 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
 
 
 def _refresh_index_and_clear_cache() -> None:
-    """Refresh the search index and clear the search cache."""
+    """Refresh the search index after a reindex completes.
+
+    Issue #666: this used to also call ``hybrid_search_service.clear_search_cache()``,
+    a process-local dict clear that ran in whichever worker executed this
+    coordinator — never the API process that actually serves cached search
+    responses, so it was a no-op where it mattered. The response cache is now
+    invalidated by its own ``corpus_version`` cache-key field
+    (``hybrid_search_service._search_corpus_version``), which
+    ``index_transcript_chunks`` already bumps for every file this reindex
+    processes — no explicit clear needed, cross-process, for free.
+    """
     try:
         from app.services.opensearch_service import opensearch_client
 
@@ -234,13 +247,6 @@ def _refresh_index_and_clear_cache() -> None:
             logger.info("Refreshed search index after reindex completion")
     except Exception as e:
         logger.warning(f"Index refresh after reindex failed: {e}")
-
-    try:
-        from app.services.search.hybrid_search_service import clear_search_cache
-
-        clear_search_cache()
-    except Exception as e:
-        logger.warning(f"Failed to clear search cache: {e}")
 
 
 def _set_bulk_indexing_mode() -> None:
@@ -463,32 +469,22 @@ def _check_and_recreate_stale_index() -> None:
         logger.error(f"Failed to check/recreate stale index: {e}")
 
 
-def _is_cancellation_requested(user_id: int) -> bool:
-    """Check if a reindex cancellation has been requested via Redis.
+def _is_cancellation_requested(user_id: int, run_id: str | None = None) -> bool:
+    """Check if a reindex cancellation has been requested for THIS run.
+
+    A thin seam over ``services/search/reindex_cancel``, which owns the flag's
+    key shape and its run-naming contract (#691). Kept as a named function
+    because it is the point the batch worker's tests substitute.
 
     Args:
         user_id: The user whose reindex to check.
+        run_id: The dispatching coordinator's task id. A flag naming a different
+            run is a finished run's residue and must not stop this one.
 
     Returns:
-        True if cancellation was requested.
+        True if cancellation was requested for this run.
     """
-    try:
-        return bool(get_redis().get(f"reindex_cancel:{user_id}"))
-    except Exception as e:
-        logger.warning(f"Could not check cancellation flag: {e}")
-        return False
-
-
-def _clear_cancellation_flag(user_id: int) -> None:
-    """Clear the reindex cancellation flag in Redis.
-
-    Args:
-        user_id: The user whose cancellation flag to clear.
-    """
-    try:
-        get_redis().delete(f"reindex_cancel:{user_id}")
-    except Exception as e:
-        logger.warning(f"Could not clear cancellation flag: {e}")
+    return cancel_requested(user_id, run_id)
 
 
 _REINDEX_STATE_KEY = "reindex_state:{user_id}"
@@ -703,7 +699,17 @@ def reindex_transcripts_task(
         logger.warning(f"Reindex already running for user {user_id}, skipping")
         return {"status": "skipped", "message": "Reindex already in progress"}
 
-    _clear_cancellation_flag(user_id)
+    # A stop that landed while this coordinator sat in the broker queue names
+    # THIS run (#691), and honouring it is what makes cancelling a fan-out work
+    # on a deployment with fewer workers than owners: the caller's coordinator
+    # runs while owners B..N wait, so the flags `stop` wrote for them are read
+    # here, not by a batch worker. The flag is cleared either way — one left over
+    # from an EARLIER run must not abort this one after its first file — and
+    # naming the run is exactly what tells those two cases apart.
+    if consume_pending_cancel(user_id, task_id):
+        logger.info(f"Reindex run {task_id} for user {user_id} was cancelled before it started")
+        _release_reindex_lock(redis_lock, user_id, task_id)
+        return {"status": "cancelled", "message": "Reindex cancelled before it started"}
 
     # Clear the stale progress tracker from any previous run (failed or completed).
     # This no longer touches the coordination state: see `_clear_stale_progress`.
@@ -963,7 +969,7 @@ def reindex_batch_task(
         # Phase 2 — index. OpenSearch only; NO DB session is held here.
         for file_uuid, metadata in page_metadata:
             # Check cancellation between files
-            if _is_cancellation_requested(user_id):
+            if _is_cancellation_requested(user_id, run_id):
                 logger.info(f"Reindex batch cancelled for user {user_id}")
                 cancelled = True
                 break
@@ -1156,7 +1162,7 @@ def _handle_reindex_completion(
     # unconditionally; the lock is user-scoped and only goes if we still hold it.
     redis_client.delete(state_key, uuids_key)
     _release_reindex_lock(redis_client, user_id, run_id)
-    _clear_cancellation_flag(user_id)
+    clear_cancel(user_id)
 
     logger.info(
         f"Re-index complete for user {user_id} ({mode}): "

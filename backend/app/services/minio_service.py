@@ -431,16 +431,25 @@ def presigned_put_url(
 
 
 def object_exists_and_size(object_name: str) -> int | None:
-    """Return the object's size in bytes, or None if it doesn't exist.
+    """Return the object's size in bytes, or None if it is confirmed absent.
 
     Used by ``complete_upload`` to verify the browser actually delivered the
-    bytes to MinIO before we dispatch the transcription pipeline.
+    bytes to MinIO before we dispatch the transcription pipeline. The caller
+    treats ``None`` as proof the upload failed and deletes the ``media_file``
+    row (B1) — so only a genuine "no such key" may return ``None``. Any other
+    failure (MinIO restart, network hiccup) must propagate: swallowing it here
+    previously made a transient storage outage indistinguishable from a
+    missing object and deleted the user's already-uploaded file.
     """
+    logger = logging.getLogger(__name__)
     try:
         stats = minio_client.stat_object(settings.MEDIA_BUCKET_NAME, object_name)
         return int(stats.size) if stats.size is not None else None
-    except Exception:
-        return None
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            return None
+        logger.error(f"Error checking object existence for {object_name}: {e}")
+        raise
 
 
 def range_read(object_name: str, offset: int, length: int) -> bytes:

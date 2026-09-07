@@ -294,8 +294,8 @@ YOUTUBE_COOKIE_FILE=
 **Testing schedule:**
 
 ```bash
-# Hour 0: Start backend
-./opentr.sh start-backend
+# Hour 0: Restart backend to pick up the .env changes above
+./opentr.sh restart-backend
 
 # Hour 0: Test ONE public video
 # Submit single video, wait 15 minutes
@@ -449,8 +449,8 @@ docker run --rm --network opentranscribe_default \
 # Or use redis-cli
 docker exec -it opentranscribe-redis redis-cli FLUSHDB
 
-# NOW start backend
-./opentr.sh start-backend
+# NOW restart backend
+./opentr.sh restart-backend
 ```
 
 ### "Still getting sign-in errors after enabling cookies"

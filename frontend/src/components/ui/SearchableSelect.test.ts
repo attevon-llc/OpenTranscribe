@@ -91,4 +91,19 @@ describe('SearchableSelect', () => {
     await fireEvent.keyDown(input, { key: 'Escape' });
     expect(screen.queryByRole('listbox')).toBeNull();
   });
+
+  it('clears the pending debounce timer on destroy, so fetchFn never fires after unmount', async () => {
+    const fetchFn = vi.fn(async () => items);
+    const { unmount } = render(SearchableSelect, {
+      props: { fetchFn, getLabel, debounceMs: 250 },
+    });
+
+    const input = screen.getByRole('combobox');
+    await fireEvent.input(input, { target: { value: 'a' } });
+    // Debounce timer is pending — destroy before it fires.
+    unmount();
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
 });

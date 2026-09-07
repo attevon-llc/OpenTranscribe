@@ -72,7 +72,7 @@
     text-align: left;
   }
   .expandable-header:hover {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
   .expandable-header:focus-visible {
     outline: 2px solid var(--primary-color);

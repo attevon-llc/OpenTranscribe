@@ -708,7 +708,7 @@
 
   .tag-chip {
     background: var(--primary-light);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     padding: 3px 8px;
     border-radius: 12px;
     font-size: 11px;
@@ -818,7 +818,7 @@
     background-color: var(--button-secondary-bg, rgba(59, 130, 246, 0.1));
     border: 1px solid var(--button-secondary-border, rgba(59, 130, 246, 0.3));
     border-radius: 6px;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     padding: 0.5rem 0.75rem;
     font-size: 0.85rem;
     font-weight: 500;
@@ -844,7 +844,7 @@
     padding: 0.2rem 0.4rem;
     border-radius: 4px;
     font-size: 0.85rem;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     transition: background-color 0.15s ease;
     font-weight: 500;
@@ -862,7 +862,7 @@
     background-color: var(--button-secondary-bg, rgba(59, 130, 246, 0.1));
     border: 1px solid var(--button-secondary-border, rgba(59, 130, 246, 0.3));
     border-radius: 6px;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     padding: 0.5rem 0.75rem;
     font-size: 0.85rem;
     font-weight: 500;
@@ -871,7 +871,7 @@
 
   .timestamp-value {
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .clear-button {
@@ -901,7 +901,7 @@
   button {
     padding: 0.35rem 0.75rem;
     border: none;
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border-radius: 4px;
     cursor: pointer;
@@ -922,7 +922,7 @@
   }
 
   .submit-button {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -981,7 +981,7 @@
   }
 
   .timestamp-link {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
   }
 
@@ -1034,7 +1034,7 @@
   }
 
   .save-button {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
@@ -1072,7 +1072,7 @@
   .edit-button {
     background: none;
     border: none;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.8rem;
     cursor: pointer;
     padding: 0;

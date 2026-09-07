@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from app.core.config import settings
+from app.utils.nltk_offline import NLTK_CORPUS_UNAVAILABLE
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 
 logger = logging.getLogger(__name__)
@@ -120,14 +121,22 @@ def reset_sentence_splitter_state() -> None:
 
 
 def _load_punkt_model(nltk_data_module: Any, language: str) -> Any:
-    """Try loading punkt_tab first, fall back to punkt."""
+    """Try loading punkt_tab first, fall back to punkt.
+
+    Catches :data:`NLTK_CORPUS_UNAVAILABLE` rather than ``LookupError`` so the
+    ``punkt`` fallback is actually reached when ``punkt_tab`` is present but
+    *unreadable* — wrong ownership on the model cache, or nltk >=3.10 pathsec
+    refusing a multiply-linked file (``PermissionError``). With the narrower
+    guard the first failure escaped this function entirely and the second
+    location was never tried, even when it would have worked.
+    """
     try:
         return nltk_data_module.load(f"tokenizers/punkt_tab/{language}.pickle")
-    except LookupError:
+    except NLTK_CORPUS_UNAVAILABLE:
         pass
     try:
         return nltk_data_module.load(f"tokenizers/punkt/{language}.pickle")
-    except LookupError:
+    except NLTK_CORPUS_UNAVAILABLE:
         return None
 
 

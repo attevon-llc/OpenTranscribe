@@ -214,7 +214,17 @@ def _process_transcription_result(
     step_start = time.perf_counter()
     whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
     diarization_disabled = result.get("diarization_disabled", False)
-    diarization_model = None if diarization_disabled else "pyannote/speaker-diarization-community-1"
+    # The engine that ACTUALLY served diarization (issue #706), resolved after any in-process
+    # fallback — engine/stages.py sets these on JobResult/RawInferenceResult from the diarizer
+    # instance's own last_provider/last_model, never from tc.diarizer_backend (the CONFIGURED
+    # value). The community-1 fallback string only applies to the cloud-ASR + local-diarization
+    # path, whose result dict predates this field and never sets it.
+    diarization_provider = None if diarization_disabled else result.get("diarization_provider")
+    diarization_model = (
+        None
+        if diarization_disabled
+        else result.get("diarization_model", "pyannote/speaker-diarization-community-1")
+    )
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 
@@ -231,6 +241,7 @@ def _process_transcription_result(
             result.get("language", "en"),
             whisper_model=whisper_model,
             diarization_model=diarization_model,
+            diarization_provider=diarization_provider,
             embedding_mode=embedding_mode,
             asr_provider=result.get("asr_provider"),
             asr_model=result.get("asr_model"),
@@ -337,7 +348,17 @@ def _process_and_save_critical(
     send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
     whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
     diarization_disabled = result.get("diarization_disabled", False)
-    diarization_model = None if diarization_disabled else "pyannote/speaker-diarization-community-1"
+    # The engine that ACTUALLY served diarization (issue #706), resolved after any in-process
+    # fallback — engine/stages.py sets these on JobResult/RawInferenceResult from the diarizer
+    # instance's own last_provider/last_model, never from tc.diarizer_backend (the CONFIGURED
+    # value). The community-1 fallback string only applies to the cloud-ASR + local-diarization
+    # path, whose result dict predates this field and never sets it.
+    diarization_provider = None if diarization_disabled else result.get("diarization_provider")
+    diarization_model = (
+        None
+        if diarization_disabled
+        else result.get("diarization_model", "pyannote/speaker-diarization-community-1")
+    )
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 
@@ -354,6 +375,7 @@ def _process_and_save_critical(
             result.get("language", "en"),
             whisper_model=whisper_model,
             diarization_model=diarization_model,
+            diarization_provider=diarization_provider,
             embedding_mode=embedding_mode,
             asr_provider=result.get("asr_provider"),
             asr_model=result.get("asr_model"),

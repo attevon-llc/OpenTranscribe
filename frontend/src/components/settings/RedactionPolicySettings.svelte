@@ -235,7 +235,7 @@
   .value-badge {
     font-size: 0.75rem;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     background: rgba(var(--primary-color-rgb), 0.12);
     padding: 0.1rem 0.45rem;
     border-radius: 999px;

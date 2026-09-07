@@ -11,6 +11,8 @@ INSTALL_DIR="/opt/opentranscribe"
 BASE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
 OFFLINE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.offline.yml"
 GPU_SCALE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.gpu-scale.yml"
+DIAR_NATIVE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.diar-native.yml"
+DIAR_NATIVE_GPU_COMPOSE_FILE="$INSTALL_DIR/docker-compose.diar-native-gpu.yml"
 
 # Colors for output
 RED='\033[0;31m'
@@ -114,7 +116,7 @@ dc() {
 }
 
 # Build compose files list in correct order
-# Order: base.yml -> [gpu-scale.yml] -> offline.yml (offline MUST be last)
+# Order: base.yml -> [gpu-scale.yml] -> [diar-native.yml] -> offline.yml (offline MUST be last)
 build_compose_files() {
     local use_gpu_scale="$1"
 
@@ -126,6 +128,77 @@ build_compose_files() {
             COMPOSE_FILES="$COMPOSE_FILES -f $GPU_SCALE_COMPOSE_FILE"
         else
             print_warning "docker-compose.gpu-scale.yml not found - GPU scaling not available"
+        fi
+    fi
+
+    # Native diarization sidecar, conditional on its weights ALREADY being present —
+    # unlike opentr.sh/opentranscribe.sh, this never checks HUGGINGFACE_TOKEN. An
+    # offline install has no network route to HuggingFace at all, so the export can
+    # only ever have arrived pre-populated in the package (see build-offline-package.sh's
+    # download_models()); a token here could never provision anything and would be a
+    # false promise that the sidecar is about to start working.
+    #
+    # Issue #655 fix item 5 / the feat/diar-native-e2e follow-up: this was previously
+    # gated on weights-present ALONE, with no engine gate — so an operator who
+    # deliberately set ENGINE_DIARIZER_BACKEND=pyannote still got the sidecar loaded,
+    # defeating that configuration outright. Mirrors opentr.sh's add_diar_native_overlay
+    # predicate (engine must resolve to native) minus the token/auto-provision half,
+    # which cannot apply here. DEPLOYMENT_MODE=lite is NOT an unconditional exclusion
+    # (#654): lite lacks the export toolchain to provision weights itself, but an
+    # offline install never provisions at install time regardless of mode -- weights
+    # only ever arrive pre-seeded in the package -- and backend/Dockerfile.lite ships
+    # the diar-server binary (#660), so a lite install skips only when weights are
+    # ALSO absent.
+    #
+    # DIAR_NATIVE_IMAGE / Blackwell: deliberately NOT wired here. opentr.sh pins
+    # DIAR_NATIVE_IMAGE to match docker-compose.blackwell.yml's celery-worker tag
+    # when it detects an SM_12x GPU, but this installer has no --blackwell overlay
+    # of any kind (build-offline-package.sh packages a single fixed image set, and
+    # nothing in this script ever loads docker-compose.blackwell.yml) — there is no
+    # existing Blackwell code path here for the sidecar's tag to disagree with.
+    # Adding one is a real offline-Blackwell-support gap, but a materially bigger
+    # scope than this fix; recorded as excluded rather than silently absent.
+    if [ -f "$DIAR_NATIVE_COMPOSE_FILE" ]; then
+        # .env is not guaranteed sourced yet -- cmd_stop()/cmd_restart() never call
+        # check_env(), and cmd_start() calls it AFTER build_compose_files(). Source it
+        # here directly rather than depending on caller order.
+        if [ -z "${MODEL_CACHE_DIR:-}${DIAR_NATIVE_MODELS_DIR:-}${ENGINE_DIARIZER_BACKEND:-}${DEPLOYMENT_MODE:-}" ] && [ -f "$INSTALL_DIR/.env" ]; then
+            # shellcheck source=/dev/null  # Runtime .env file, not available during static analysis
+            source "$INSTALL_DIR/.env"
+        fi
+        local diar_models_dir="${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-$INSTALL_DIR/models}/diar-native}"
+        local deployment_mode_lc
+        deployment_mode_lc=$(printf '%s' "${DEPLOYMENT_MODE:-}" | tr '[:upper:]' '[:lower:]')
+        local diar_weights_present="false"
+        if [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
+            diar_weights_present="true"
+        fi
+        # Since #654 restored the export toolchain (torch/onnx/onnxscript/etc) to
+        # requirements-lite.txt, DEPLOYMENT_MODE=lite is no longer unable to export these
+        # weights itself -- "a lite image cannot export it locally" is a dead claim. What
+        # actually gates this is that an OFFLINE install never provisions anything at
+        # install time, lite or full (see the block comment above: weights only ever arrive
+        # pre-seeded in the package, since there is no network to export against).
+        # backend/Dockerfile.lite ships the diar-server binary itself (#660), so a lite
+        # install with weights already pre-seeded can run the sidecar; only a lite install
+        # with NO pre-seeded weights has no way to get them in this offline flow and must skip.
+        if [ "$deployment_mode_lc" = "lite" ] && [ "$diar_weights_present" = "false" ]; then
+            print_info "Native diarization sidecar skipped (offline lite install has no pre-seeded weights at $diar_models_dir, and this offline flow cannot provision them)"
+        elif [ "${ENGINE_DIARIZER_BACKEND:-native}" != "native" ]; then
+            print_info "Native diarization sidecar skipped (ENGINE_DIARIZER_BACKEND=${ENGINE_DIARIZER_BACKEND})"
+        elif [ "$diar_weights_present" = "true" ]; then
+            COMPOSE_FILES="$COMPOSE_FILES -f $DIAR_NATIVE_COMPOSE_FILE"
+            print_info "Native diarization sidecar enabled (weights present at $diar_models_dir)"
+            # The base overlay is CPU-safe by construction; the device reservation lives
+            # in a second file so this one can load on a GPU-less air-gapped host (#660).
+            # Gated on the same nvidia probe the GPU-scale overlay uses above, so the
+            # sidecar never claims a device the rest of this install cannot see.
+            if [ -f "$DIAR_NATIVE_GPU_COMPOSE_FILE" ] && command -v nvidia-smi >/dev/null 2>&1; then
+                COMPOSE_FILES="$COMPOSE_FILES -f $DIAR_NATIVE_GPU_COMPOSE_FILE"
+                print_info "  GPU reservation added for the diarization sidecar"
+            else
+                print_info "  Sidecar will run on CPU (slower than GPU, identical output)"
+            fi
         fi
     fi
 

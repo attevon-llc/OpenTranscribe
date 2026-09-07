@@ -94,10 +94,25 @@ EOF
         -out "clients/${name}.crt" \
         -extfile "clients/${name}.ext"
 
-    # Create PKCS12 bundle (for browser import)
-    # Use -legacy flag for macOS Keychain compatibility
+    # Create PKCS12 bundle with OpenSSL 3.x's modern default encryption
+    # (AES-256/PBKDF2). This is the one Playwright/Node and any automated
+    # test tooling must use — Node's bundled OpenSSL 3.x cannot load a
+    # -legacy (RC2-40-CBC) bundle without the legacy provider enabled, which
+    # it does not have. Confirmed failure mode: "Browser.new_context: Failed
+    # to load client certificate: Unsupported TLS certificate."
     openssl pkcs12 -export \
         -out "clients/${name}.p12" \
+        -inkey "clients/${name}.key" \
+        -in "clients/${name}.crt" \
+        -certfile ca/ca.crt \
+        -passout pass:changeit \
+        -name "${cn}"
+
+    # Separate -legacy bundle for manual macOS Keychain import only (macOS's
+    # Keychain/Security framework rejects the modern PBES2 bundle above).
+    # Never used by automated tests.
+    openssl pkcs12 -export \
+        -out "clients/${name}-macos.p12" \
         -inkey "clients/${name}.key" \
         -in "clients/${name}.crt" \
         -certfile ca/ca.crt \
@@ -114,6 +129,16 @@ EOF
 # Create test user certificates
 create_client_cert "testuser" "Test User" "testuser@example.com" "OpenTranscribe Users"
 create_client_cert "admin" "Admin User" "admin@example.com" "OpenTranscribe Admins"
+# pkiadmin (issue #593): a PKI-only admin identity, deliberately NOT admin@example.com.
+# The E2E admin-cert fixture (backend/tests/e2e/test_pki.py) used to reuse the "admin" cert
+# above, whose email matches the shared dev super_admin account. account_linking.
+# assert_email_link_permitted() refuses ANY email-matched link onto a super_admin
+# unconditionally (auth/account_linking.py — "a platform-owner account is never acquired
+# through an external directory"), so that fixture's login always 401'd once that guard
+# shipped. pkiadmin@example.com has no pre-existing DB row, so PKI JIT-provisions a brand
+# new account and grants it at most 'admin' (external IdPs never grant super_admin) — no
+# collision, and it exercises the real admin-role UI path the fixture is actually for.
+create_client_cert "pkiadmin" "PKI Admin User" "pkiadmin@example.com" "OpenTranscribe Admins"
 create_client_cert "john.doe" "John Doe" "john.doe@gov.example.com" "Department of Testing"
 create_client_cert "jane.smith" "Jane Smith" "jane.smith@gov.example.com" "Department of Testing"
 
@@ -175,11 +200,18 @@ done
 echo ""
 echo -e "${GREEN}Next Steps:${NC}"
 echo ""
-echo "1. Update your .env file with the CA cert path:"
+echo "0. Fastest path — no .env edit at all: ./scripts/pki/generate-test-env.sh"
+echo "   then './opentr.sh start dev --with-pki' (or 'start prod --build --with-pki')."
+echo "   That generates the fragment steps 1-2 describe by hand and never touches .env."
+echo ""
+echo "1. To configure PKI by hand instead, update your .env file with the CA cert path:"
 echo "   PKI_CA_CERT_PATH=${PKI_DIR}/ca/ca.crt"
 echo ""
-echo "2. Set admin DNs (use the DN format above):"
-echo "   PKI_ADMIN_DNS=emailAddress=admin@example.com,CN=Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US"
+echo "2. Set admin DNs (use the DN format above; SEMICOLON-separated — a DN itself"
+echo "   contains commas, so PKI_ADMIN_DNS cannot use ',' between multiple entries)."
+echo "   Use the 'pkiadmin' cert, not 'admin': its email collides with the seeded"
+echo "   dev super_admin (admin@example.com), which account-linking always refuses."
+echo "   PKI_ADMIN_DNS=emailAddress=pkiadmin@example.com,CN=PKI Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US"
 echo ""
 echo "3. Import a .p12 file into your browser:"
 echo "   - Chrome: Settings → Privacy → Security → Manage certificates → Import"

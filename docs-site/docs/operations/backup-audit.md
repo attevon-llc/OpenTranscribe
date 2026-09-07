@@ -11,7 +11,7 @@ This page is an honest, store-by-store assessment of OpenTranscribe's backup cov
 [Backup & Restore](./backup-restore.md): that page tells you *how* to run a backup; this
 page tells you *what is and isn't protected* and where you must act yourself.
 
-:::danger The one thing most people get wrong
+:::danger[The one thing most people get wrong]
 A database backup is **worthless without the encryption keys**. OpenTranscribe encrypts
 secrets (user API keys, the S3 backup secret, watch-source credentials, email passwords,
 MFA secrets) into the database using a key that lives in **`.env`, not in the database**.
@@ -26,9 +26,10 @@ below.
 
 | Store | What's protected today | Gap | Severity | Recommendation |
 |---|---|---|---|---|
-| **PostgreSQL** (users, transcripts, segments, speakers, settings) | In-app scheduled `pg_dump -Fc` (GFS retention, optional gpg) to a local mount **or** S3-compatible bucket; manual `./opentr.sh backup [--encrypt]`; `restore` documented | Restore is documented but not automatically *verified* (no scheduled restore drill / checksum) | **Low** | Run the quarterly restore drill in [Backup & Restore](./backup-restore.md#testing-backups). Good as shipped. |
+| **PostgreSQL** (users, transcripts, segments, speakers, settings) | In-app scheduled `pg_dump -Fc` (GFS retention, optional gpg) to a local mount **or** S3-compatible bucket; manual `./opentranscribe.sh backup [--encrypt]`; `restore` covers both plain-SQL and `-Fc`/S3 artifacts, with a real integration-test round-trip (#600) | Restore is not automatically *verified on a schedule* (no periodic restore drill / checksum) | **Low** | Run the quarterly restore drill in [Backup & Restore](./backup-restore.md#testing-backups). Good as shipped. |
 | **MinIO media** (~484 GB, irreplaceable originals) | **Addressed (#242):** in-app scheduled **Media Mirror** — incremental, never-deleting copy of the media bucket to a mounted folder or S3-compatible bucket, with metrics + failure alerting | Default-OFF (must be enabled + given a destination); mirror is single-copy (pair with offsite for 3-2-1) | **Low** (was High) | Enable the mirror and point it off-host; optionally add bucket versioning as a deployment-level extra. See [MinIO media](#2-minio-media--the-484-gb-gap). |
-| **OpenSearch** (search + vector indices) | Optional in-app `fs` snapshot alongside each dump (`backup.include_opensearch`); fully **rebuildable** from Postgres via reindex | None that matters — derived data | **Low** | Leave snapshots off unless you want to skip reindex time on restore. Confirmed adequate. |
+| **OpenSearch — transcript/chunk indices** | Optional in-app `fs` snapshot alongside each dump (`backup.include_opensearch`, on by default since #658); **rebuildable** from Postgres via reindex | None that matters — derived data | **Low** | Snapshots only skip reindex time on restore. Confirmed adequate. |
+| **OpenSearch — speaker/voiceprint indices** (`speakers_v3` / `speakers_v4`) | **Addressed (#658):** `backup` writes a portable `*.voiceprints.ndjson` artifact beside every dump, and `restore` re-imports it and **verifies** it against a content digest before reporting success. The in-app scheduled snapshot now defaults ON and records how many voiceprints it covered | Not rebuildable at all if both copies are lost — re-deriving needs the source media plus a GPU re-embed run | **Low** (was **Critical**) | Keep the `*.voiceprints.ndjson` file with its dump. It is the only copy of the deployment's biometric data. See [§3](#3-opensearch--split-verdict). |
 | **Configuration & Secrets** (`.env`: `ENCRYPTION_KEY`, `JWT_SECRET_KEY`, DB/MinIO creds; gpg passphrase) | **Addressed (#243):** encrypted runs write `opentranscribe-recovery.env.gpg` (the essential keys, same passphrase) beside the dumps; unencrypted runs write a no-secrets `RECOVERY-README.txt` + a one-time admin warning | With encryption off, keys must still be preserved separately (by design — no plaintext keys beside a plaintext dump) | **Low** (was Critical) | Keep the gpg passphrase in a password manager and verify keys in every restore drill. See [§4](#secrets-gap). |
 | **Redis** (Celery broker/cache) | Nothing — by design | None | **None** | Ephemeral. Tasks re-queue (acks-late). No backup needed. Confirmed. |
 | **Model cache** (~2.5 GB AI weights) | Nothing — by design | None | **None** | Re-downloaded on first use. Back up only for air-gapped installs. |
@@ -44,13 +45,25 @@ authoritative state of the system and is well covered:
   applies grandfather-father-son retention, optionally gpg-encrypts (AES-256), and writes
   to either a **mounted folder** or an **S3-compatible bucket** — the latter already gets
   the dump **off the host**.
-- **Manual:** `./opentr.sh backup [--encrypt]` and `./opentr.sh restore <file>`.
-- **Restore is documented** for plain SQL, gzip, and custom-format dumps, including a
-  full from-scratch disaster-recovery runbook.
+- **Manual:** `./opentranscribe.sh backup [--encrypt]` and `./opentranscribe.sh restore <file>`.
+- **Restore covers both dump formats through one command**, `./opentranscribe.sh restore`, which
+  dispatches on the file's magic bytes: plain SQL/gzip via `psql`, custom-format (`-Fc`,
+  what the scheduled/S3 backup produces) via `pg_restore` — reusing the same confirm /
+  safety-dump / drop-recreate / verify sequence either way, plus `--from-s3` to fetch an
+  S3-destination artifact before anything destructive (issue #600). Proven by a real
+  integration-test round-trip against a throwaway Postgres, not just documented.
 
-**Gap:** restore is documented but not *automatically verified*. An untested backup is a
-hypothesis, not a backup. **Recommendation:** schedule the quarterly restore drill in
-[Testing Backups](./backup-restore.md#testing-backups). **Severity: Low.**
+⚠️ **This row previously read "restore is documented" at Severity Low, and that assurance
+was false.** The documented custom-format restore command was missing its stdin redirect
+(failed outright) — and fixing that naively would have reproduced issue #599's silent
+data-corruption bug (drifted data survives a restore that reports success). Nothing tested
+the custom-format path at all before #600. "Documented" was doing the work "verified"
+should have been doing, and that mismatch is very likely why nobody caught it.
+
+**Gap:** restore is not automatically *verified on a schedule* — an untested-in-production
+backup is still a hypothesis until you've actually run the drill. **Recommendation:**
+schedule the quarterly restore drill in [Testing Backups](./backup-restore.md#testing-backups),
+which now exercises both dump formats. **Severity: Low.**
 
 ## 2. MinIO media — the ~484 GB gap
 
@@ -99,12 +112,38 @@ deployment-level extra, not a requirement. Setup + restore-from-mirror:
 Residual note: the mirror is one additional copy — for full 3-2-1, point it (or a
 second replica) offsite.
 
-## 3. OpenSearch — adequate (derived data)
+## 3. OpenSearch — split verdict {/* #3-opensearch--split-verdict */}
 
-Every search and vector index is **rebuildable from PostgreSQL** via the reindex tasks, so
-OpenSearch is not a data-safety concern. The in-app scheduler can *optionally* take an `fs`
-snapshot beside each dump (`backup.include_opensearch`) purely to **skip reindex time** on
-restore. Leave it off and nothing is lost. **Confirmed adequate. Severity: Low.**
+This section used to read "adequate (derived data)" and say that *every* index is
+rebuildable from PostgreSQL. **That was wrong for one of them, and it was the one that
+mattered** (issue #658).
+
+**Transcript and chunk indices — genuinely derived.** Rebuildable from PostgreSQL via the
+reindex tasks. A snapshot only saves reindex time.
+
+**Speaker indices (`speakers_v3` / `speakers_v4`) — the sole copy of the deployment's
+biometric data.** PostgreSQL stores **no embedding vectors at all**: `SpeakerProfile`
+carries only `embedding_count` and `last_embedding_update`, and neither `Speaker` nor
+`SpeakerCluster` has a vector column (`backend/app/models/media.py`). Re-deriving a
+voiceprint needs the **source media** (which may have been deleted) plus a **GPU re-embed
+run** — it is not a reindex. Until #658, `backup` was a bare `pg_dump` and the in-app
+snapshot defaulted OFF, so a stock deployment had no recoverable copy.
+
+What ships now:
+
+- `./opentranscribe.sh backup` writes `<dump>.voiceprints.ndjson` (gpg-encrypted alongside
+  an encrypted dump) containing every speaker document, its index mapping, and a content
+  digest. A failed export **fails the backup** rather than reporting success.
+- `./opentranscribe.sh restore` finds that artifact by name, re-imports it, and then
+  **verifies** the live indices against the digest. A restore that silently comes back with
+  zero voiceprints is treated as a failed restore, services left stopped.
+- The restore also reports whether `speaker_profile.embedding_count` agrees with what
+  OpenSearch actually holds, so rows claiming embeddings that no longer exist are named
+  rather than discovered months later as "speaker matching stopped working".
+- `backup.include_opensearch` now defaults **on**; a snapshot that could not run records
+  how many voiceprints it therefore left uncovered.
+
+**Severity: Low (was Critical).** Keep the `*.voiceprints.ndjson` file with its dump.
 
 ## 4. Configuration & Secrets — the sneaky-critical gap {/* #secrets-gap */}
 

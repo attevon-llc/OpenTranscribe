@@ -3,12 +3,40 @@
 import uuid
 from unittest.mock import patch
 
+import pytest
 from fastapi import status
 
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.core.version import APP_VERSION
 from tests.user_owned_rows import seed_owned_rows
+
+
+@pytest.fixture(autouse=True)
+def _spy_storage_reclaim_phase(monkeypatch):
+    """Neutralize the object-storage/OpenSearch reclaim phase (issue #695).
+
+    This module's user-deletion tests seed rows through ``db_session`` (rolled back
+    at the end of the test) but never upload real objects, so letting the real
+    ``purge_account_external_copies`` run would hit a live/unreachable MinIO for
+    every plan entry. It is a SPY, not a silent stub: it asserts the plan it
+    received is shaped like an ``AccountPurgePlan`` (every file entry carries the
+    keys the real destroy depends on) before reporting a clean sweep.
+    """
+    import app.services.file_cleanup_service as fcs
+
+    calls: list[fcs.AccountPurgePlan] = []
+
+    def _spy(plan: fcs.AccountPurgePlan) -> list[dict]:
+        assert isinstance(plan, fcs.AccountPurgePlan)
+        for file_plan in plan.files:
+            assert "file_uuid" in file_plan
+            assert "storage_path" in file_plan
+        calls.append(plan)
+        return []
+
+    monkeypatch.setattr(fcs, "purge_account_external_copies", _spy)
+    yield calls
 
 
 def test_admin_stats(client, admin_token_headers):
@@ -139,7 +167,10 @@ def test_admin_users_delete(client, admin_token_headers, normal_user, db_session
 
     response = client.delete(f"/api/admin/users/{normal_user.uuid}", headers=admin_token_headers)
     assert response.status_code == status.HTTP_200_OK, response.text
-    assert response.json() == {"message": "User deleted successfully"}
+    assert response.json() == {
+        "message": "User deleted successfully",
+        "storage_objects_failed": 0,
+    }
 
     db_session.expire_all()
     assert db_session.query(User).filter(User.id == owned.user_id).first() is None

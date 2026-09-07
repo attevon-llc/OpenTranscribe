@@ -237,11 +237,17 @@ class TestRevokingSessionsStampsTheEpoch:
     credential/privilege change funnels through."""
 
     def test_revoking_all_sessions_stamps_the_epoch(self, revocation):
+        before = int(time.time())
+
         revocation.revoke_all_user_tokens_in_transaction(
             cast(Any, _FakeDB()), user_id=7, user_uuid=USER_UUID
         )
 
-        assert revocation.store.get(f"{USER_REVOCATION_EPOCH_PREFIX}{USER_UUID}") is not None
+        # "Present" is not the contract — the epoch means "nothing issued before NOW",
+        # so a stamp of 0 (or of some stale value) is a kill switch that kills nothing
+        # while reading as armed.
+        assert _epoch_of(revocation) >= before
+        assert _epoch_of(revocation) <= int(time.time())
 
     def test_the_stamped_epoch_refuses_a_token_issued_a_moment_earlier(self, revocation):
         """End to end through the dependency: revoke, then the live token stops working."""

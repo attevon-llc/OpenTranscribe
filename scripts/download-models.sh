@@ -47,6 +47,34 @@ MODEL_CACHE_DIR="${1:-./models}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# scripts/lib/env_reader.py is a dev/CI-only helper: it lives in the repo checkout but is
+# NOT in release-manifest.txt, so it never reaches a standalone `setup-opentranscribe.sh`
+# install (issue #590/#581). Calling it there raised ModuleNotFoundError-adjacent failures
+# silently swallowed by this script's lack of `set -e`, which degraded every .env read below
+# to "" -- e.g. resolve_downloader_image() falling back to :latest, the exact regression its
+# own comment says it exists to prevent. scripts/common.sh IS shipped
+# (release-manifest.txt) and its read_env_value() is the grep/cut equivalent already used by
+# opentranscribe.sh's shipped backup/restore arm, so use that here instead. Conditional
+# source + fallback definition, identical pattern to opentranscribe.sh (~line 29): an
+# install predating release-manifest.txt's common.sh entry still works, and common.sh's
+# definition wins when present (bash keeps the last definition).
+if [ -f "$SCRIPT_DIR/common.sh" ]; then
+    # shellcheck source=scripts/common.sh
+    . "$SCRIPT_DIR/common.sh"
+fi
+if ! declare -F read_env_value >/dev/null 2>&1; then
+    read_env_value() {
+        local key="$1" env_file="${2:-.env}"
+        [ -f "$env_file" ] || { echo ""; return 0; }
+        grep -E "^${key}=" "$env_file" 2>/dev/null \
+            | head -1 \
+            | cut -d= -f2- \
+            | sed -E 's/[[:space:]]+#.*$//' \
+            | tr -d ' "' \
+            || true
+    }
+fi
+
 # The image that does the downloading MUST be the version this deployment runs.
 #
 # This was hardcoded to `:latest`, which quietly defeats the point of a pinned
@@ -61,14 +89,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 resolve_downloader_image() {
     local tag="${OT_IMAGE_TAG:-}"
     if [ -z "$tag" ] && [ -f "$REPO_ROOT/.env" ]; then
-        tag=$(grep -E '^OT_IMAGE_TAG=' "$REPO_ROOT/.env" 2>/dev/null \
-            | cut -d'=' -f2 | tr -d ' "' | head -1)
+        # read_env_value, not env_reader.py -- this script ships to end users and
+        # env_reader.py does not (see the sourcing block above).
+        tag=$(read_env_value OT_IMAGE_TAG "$REPO_ROOT/.env")
     fi
     # A deployment sitting in the install dir (not a git clone) keeps .env beside
     # the compose files rather than one level up.
     if [ -z "$tag" ] && [ -f "./.env" ]; then
-        tag=$(grep -E '^OT_IMAGE_TAG=' ./.env 2>/dev/null \
-            | cut -d'=' -f2 | tr -d ' "' | head -1)
+        # read_env_value, not env_reader.py -- this script ships to end users and
+        # env_reader.py does not (see the sourcing block above).
+        tag=$(read_env_value OT_IMAGE_TAG ./.env)
     fi
     echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${tag:-latest}"
 }
@@ -188,7 +218,9 @@ check_huggingface_token() {
     # Check .env file
     if [ -f "$REPO_ROOT/.env" ]; then
         local token
-        token=$(grep "^HUGGINGFACE_TOKEN=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
+        # read_env_value, not env_reader.py -- this script ships to end users and
+        # env_reader.py does not (see the sourcing block above).
+        token=$(read_env_value HUGGINGFACE_TOKEN "$REPO_ROOT/.env")
         if [ -n "$token" ]; then
             export HUGGINGFACE_TOKEN="$token"
             print_success "HuggingFace token loaded from .env file"
@@ -211,14 +243,13 @@ check_huggingface_token() {
     echo "   • Select 'Read' permissions"
     echo "   • Copy the token"
     echo ""
-    echo -e "${RED}2. Accept BOTH gated model agreements (REQUIRED):${NC}"
-    echo -e "   ${YELLOW}• Segmentation Model:${NC}"
-    echo "     https://huggingface.co/pyannote/segmentation-3.0"
-    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
-    echo ""
+    echo -e "${RED}2. Accept the gated model agreement (REQUIRED):${NC}"
     echo -e "   ${YELLOW}• Speaker Diarization Model:${NC}"
     echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
     echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
+    echo ""
+    echo -e "   ${YELLOW}(Optional, internal last-resort fallback only — not required for${NC}"
+    echo -e "   ${YELLOW}normal diarization: pyannote/segmentation-3.0)${NC}"
     echo ""
     echo "3. Configure your token:"
     echo "   • Export it: export HUGGINGFACE_TOKEN=your_token_here"
@@ -247,6 +278,7 @@ download_models_docker() {
     print_info "  • Chat reranker (cross-encoder, RAG chat)"
     print_info "  • OpenSearch neural search models"
     print_info "  • Content-redaction models (PII / toxicity)"
+    print_info "  • Native diarizer (diar-server) ONNX/PLDA export"
     echo ""
     print_warning "This may take 10-30 minutes depending on your internet speed..."
     echo ""
@@ -257,6 +289,10 @@ download_models_docker() {
     mkdir -p "$MODEL_CACHE_DIR/nltk_data"
     mkdir -p "$MODEL_CACHE_DIR/sentence-transformers"
     mkdir -p "$MODEL_CACHE_DIR/opensearch-ml"
+    # diar-native's export lands at the top level, not under huggingface/torch like the
+    # PyAnnote weights it is exported FROM — it is mounted at /models (DIAR_MODELS_DIR),
+    # the same convention the backend and the diar-native sidecar both read.
+    mkdir -p "$MODEL_CACHE_DIR/diar-native"
 
     print_info "Starting model download using Docker..."
     echo ""
@@ -265,7 +301,9 @@ download_models_docker() {
     local whisper_model="${WHISPER_MODEL:-}"
     if [ -z "$whisper_model" ] && [ -f "$REPO_ROOT/.env" ]; then
         local env_model
-        env_model=$(grep "^WHISPER_MODEL=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
+        # read_env_value, not env_reader.py -- this script ships to end users and
+        # env_reader.py does not (see the sourcing block above).
+        env_model=$(read_env_value WHISPER_MODEL "$REPO_ROOT/.env")
         if [ -n "$env_model" ]; then
             whisper_model="$env_model"
         fi
@@ -332,6 +370,7 @@ download_models_docker() {
         -v "$(realpath "$MODEL_CACHE_DIR/nltk_data"):/home/appuser/.cache/nltk_data" \
         -v "$(realpath "$MODEL_CACHE_DIR/sentence-transformers"):/home/appuser/.cache/sentence-transformers" \
         -v "$(realpath "$MODEL_CACHE_DIR/opensearch-ml"):/home/appuser/.cache/opensearch-ml" \
+        -v "$(realpath "$MODEL_CACHE_DIR/diar-native"):/models" \
         -v "$SCRIPT_DIR/download-models.py:/app/download-models.py:ro" \
         "${DOWNLOADER_IMAGE}" \
         python /app/download-models.py
@@ -408,20 +447,19 @@ download_models_docker() {
         echo "Without them, the entire transcription process cannot complete."
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${CYAN}REQUIRED ACTION: Accept BOTH Gated Model Agreements${NC}"
+        echo -e "${CYAN}REQUIRED ACTION: Accept the Gated Model Agreement${NC}"
         echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
         echo ""
-        echo "You MUST accept BOTH of these model agreements on HuggingFace:"
+        echo "You MUST accept this model agreement on HuggingFace:"
         echo ""
-        echo "  1. Segmentation Model:"
-        echo "     https://huggingface.co/pyannote/segmentation-3.0"
-        echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
-        echo ""
-        echo "  2. Speaker Diarization Model:"
+        echo "  Speaker Diarization Model:"
         echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
         echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
         echo ""
-        echo -e "${CYAN}After accepting BOTH agreements:${NC}"
+        echo "  (Optional, internal last-resort fallback only — not required for normal"
+        echo "  diarization: pyannote/segmentation-3.0)"
+        echo ""
+        echo -e "${CYAN}After accepting the agreement:${NC}"
         echo "  • Wait 1-2 minutes for permissions to propagate"
         echo "  • Run this script again: bash scripts/download-models.sh models"
         echo ""
@@ -446,12 +484,14 @@ show_summary() {
     local nltk_size
     local st_size
     local opensearch_size
+    local diar_native_size
     total_size=$(get_dir_size "$MODEL_CACHE_DIR")
     hf_size=$(get_dir_size "$MODEL_CACHE_DIR/huggingface")
     torch_size=$(get_dir_size "$MODEL_CACHE_DIR/torch")
     nltk_size=$(get_dir_size "$MODEL_CACHE_DIR/nltk_data")
     st_size=$(get_dir_size "$MODEL_CACHE_DIR/sentence-transformers")
     opensearch_size=$(get_dir_size "$MODEL_CACHE_DIR/opensearch-ml")
+    diar_native_size=$(get_dir_size "$MODEL_CACHE_DIR/diar-native")
 
     echo -e "${GREEN}✅ Model cache ready!${NC}"
     echo ""
@@ -462,6 +502,7 @@ show_summary() {
     echo "  • NLTK data: $nltk_size"
     echo "  • Sentence-transformers: $st_size"
     echo "  • OpenSearch neural models: $opensearch_size"
+    echo "  • Native diarizer (diar-server) export: $diar_native_size"
     echo ""
     print_info "Models are cached and will be available immediately when Docker starts"
     echo ""

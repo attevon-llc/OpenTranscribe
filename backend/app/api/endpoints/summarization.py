@@ -84,7 +84,12 @@ async def trigger_summarization(
     """
     # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = media_file.id
 
@@ -342,7 +347,12 @@ async def identify_speakers(
     """
     # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = media_file.id
 
@@ -403,7 +413,12 @@ def delete_summary(
     (``services/file_cleanup_service.py``) until an operator drops the index.
     """
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = int(media_file.id)
     response_uuid = str(media_file.uuid)

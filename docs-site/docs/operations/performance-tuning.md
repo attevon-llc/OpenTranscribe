@@ -85,7 +85,7 @@ WHISPER_MODEL=large-v3-turbo
 
 ### Hybrid Mode {/* #hybrid-mode */}
 
-For systems where the GPU cannot fit the full transcription model, OpenTranscribe auto-activates **hybrid mode**: transcription runs on CPU while diarization stays on GPU/MPS. This requires only ~1.3 GB VRAM.
+For systems where the GPU cannot fit the full transcription model, OpenTranscribe auto-activates **hybrid mode**: transcription runs on CPU while diarization stays on the NVIDIA GPU. This requires only ~1.3 GB VRAM.
 
 **Auto-activation thresholds** (minimum batch=2 VRAM peak vs. 80% of GPU VRAM):
 
@@ -95,7 +95,12 @@ For systems where the GPU cannot fit the full transcription model, OpenTranscrib
 | medium | 3,829 MB | ~4.8 GB |
 | small | 2,933 MB | ~3.7 GB |
 
-macOS (Apple Silicon) always uses hybrid mode — PyAnnote runs on MPS, transcription runs on CPU.
+macOS (Apple Silicon) is **not** a hybrid-mode platform: Docker Desktop has no Metal/GPU
+passthrough into the Linux VM, so a container there has no MPS device to place diarization on.
+Use the `--lite` (CPU-only) image; both stages run on CPU. The MPS branch in
+`HardwareConfig._detect_optimal_device` gates on `platform.system() == "darwin"`, which is never
+true inside the Linux container every install path runs — see
+`backend/app/transcription/CLAUDE.md`.
 
 ```bash
 # Hybrid mode environment variables
@@ -164,7 +169,8 @@ See the [Multi-GPU Scaling](../configuration/multi-gpu-scaling) documentation fo
 
 The `HardwareConfig` class in `backend/app/utils/hardware_detection.py` handles all auto-detection:
 
-1. **Device detection**: CUDA > MPS (Apple Silicon) > CPU
+1. **Device detection**: CUDA > MPS > CPU — but the MPS arm is unreachable in a container
+   (it requires `platform.system() == "darwin"`), so on macOS this resolves to CPU
 2. **Compute type**: Based on GPU compute capability (see table above)
 3. **Batch size**: Based on total VRAM (see table above)
 4. **Environment overrides**: `TORCH_DEVICE`, `COMPUTE_TYPE`, `BATCH_SIZE` override auto-detection

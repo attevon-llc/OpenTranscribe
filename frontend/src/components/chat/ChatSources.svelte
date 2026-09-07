@@ -197,7 +197,7 @@
     flex-shrink: 0;
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-variant-numeric: tabular-nums;
   }
 

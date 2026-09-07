@@ -464,7 +464,7 @@
     padding: 0.75rem 1rem;
     background-color: rgba(var(--primary-color-rgb), 0.1);
     border-radius: 6px;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.8125rem;
   }
 
@@ -511,7 +511,7 @@
   .btn-link {
     background: none;
     border: none;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     font-size: 0.8125rem;
     text-decoration: underline;

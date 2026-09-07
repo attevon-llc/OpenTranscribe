@@ -1281,7 +1281,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1300;
+    z-index: var(--z-modal);
     animation: fadeIn 0.2s ease-out;
     overflow: hidden;
     overscroll-behavior: none;
@@ -1406,12 +1406,12 @@
 
   .nav-item:hover {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.04));
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .nav-item.active {
     background-color: var(--primary-light);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 500;
   }
 
@@ -1604,7 +1604,7 @@
   }
 
   .btn-primary {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }

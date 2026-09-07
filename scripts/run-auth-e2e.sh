@@ -39,6 +39,13 @@ VENV_PATH="${PROJECT_ROOT}/backend/venv"
 TESTS_DIR="${PROJECT_ROOT}/backend/tests/e2e"
 SCREENSHOT_DIR="${TESTS_DIR}/screenshots"
 
+# Resolve the live stack's compose project and any container in it BY LABEL. Shared with
+# scripts/lib/dev-test-overlays.sh rather than reimplemented — see that file's header for the
+# two guesses (directory name, hardcoded container_name) this replaces, and why both are wrong
+# from a git worktree or a --fresh stack.
+# shellcheck source=lib/compose-project.sh
+source "${SCRIPT_DIR}/lib/compose-project.sh"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -68,6 +75,15 @@ DISPLAY_VAL=":13"
 DO_CLEANUP=false
 VERBOSE=false
 DEV_FRONTEND_STOPPED=false
+# Set by phase 2, PER SERVICE, when THIS run brought that overlay up, so --cleanup only tears
+# down what it started and never removes an IdP the operator had running beforehand — the same
+# "not ours to stop" rule scripts/lib/dev-test-overlays.sh follows. Two separate flags, not one:
+# LLDAP and Keycloak are independently already-up-or-not, and a single shared boolean covering
+# both meant that starting just one of them (because the other was already running) still made
+# cleanup stop and remove BOTH — including the one the operator had running before this script
+# ever ran.
+LLDAP_OVERLAY_STARTED=false
+KEYCLOAK_OVERLAY_STARTED=false
 
 # ============================================================================
 # Argument parsing
@@ -178,7 +194,11 @@ get_admin_token() {
 }
 
 restore_admin_local_auth() {
-    # Restore admin user to local auth type after PKI tests convert it
+    # Defensive safety net, kept in cleanup_on_exit's unconditional teardown path.
+    # PKI Phase 3 (issue #593) no longer authenticates as admin@example.com — it uses a
+    # separate pkiadmin@example.com identity instead — so this is normally a no-op
+    # ("Admin already has local auth"). It stays in case some other phase or a future
+    # change ever converts the shared admin account's auth_type again.
     docker exec opentranscribe-backend python3 -c "
 import os, sys
 sys.path.insert(0, '/app')
@@ -257,7 +277,7 @@ cleanup_on_exit() {
     # 2. Restart dev frontend if it was stopped
     if [ "$DEV_FRONTEND_STOPPED" = true ]; then
         log_step "Restarting dev frontend..."
-        cd "$PROJECT_ROOT" && docker compose start frontend 2>/dev/null
+        docker start "${DEV_FRONTEND_CONTAINER:-}" >/dev/null 2>&1
         log_ok "Dev frontend restarted"
     fi
 
@@ -284,14 +304,40 @@ cleanup_on_exit() {
     reset_admin_mfa_db
     restore_admin_local_auth
 
-    # 5. Optional: remove LLDAP/Keycloak containers
-    if [ "$DO_CLEANUP" = true ]; then
-        log_step "Removing LLDAP and Keycloak containers..."
-        cd "$PROJECT_ROOT"
-        docker compose -f docker-compose.ldap-test.yml down 2>/dev/null || true
-        docker compose -f docker-compose.keycloak.yml down 2>/dev/null || true
+    # 5. Optional: remove the IdP containers THIS RUN started — per service, never both just
+    #    because one of them was.
+    #
+    # Resolved by compose PROJECT+SERVICE label, for the same reason phase 2 starts them through
+    # ./opentr.sh: `docker compose -f docker-compose.<idp>.yml down` derives the project from the
+    # current directory's name and, from a git worktree, tears down a project that does not
+    # exist — reporting success while leaving both IdPs running. Keycloak also declares no
+    # container_name, so a name filter could not find it under any spelling.
+    #
+    # Guarded per-service on {LLDAP,KEYCLOAK}_OVERLAY_STARTED so a --cleanup run never removes
+    # an IdP the operator had up before this script ran ("not ours to stop", per
+    # scripts/lib/dev-test-overlays.sh) — a single shared flag previously stopped/removed BOTH
+    # containers even when only one of them was started by this run.
+    # BEGIN idp-cleanup-loop
+    if [ "$DO_CLEANUP" = true ] && { [ "$LLDAP_OVERLAY_STARTED" = true ] || [ "$KEYCLOAK_OVERLAY_STARTED" = true ]; }; then
+        log_step "Removing the IdP containers this run started..."
+        local idp_svc idp_container idp_started
+        for idp_svc in lldap keycloak; do
+            case "$idp_svc" in
+                lldap)    idp_started="$LLDAP_OVERLAY_STARTED" ;;
+                keycloak) idp_started="$KEYCLOAK_OVERLAY_STARTED" ;;
+            esac
+            [ "$idp_started" = true ] || continue
+            idp_container="$(overlay_container_name "$idp_svc")"
+            if [ -n "$idp_container" ]; then
+                docker stop "$idp_container" >/dev/null 2>&1 || true
+                docker rm "$idp_container" >/dev/null 2>&1 || true
+            fi
+        done
         log_ok "Test containers removed"
+    elif [ "$DO_CLEANUP" = true ]; then
+        log_ok "IdP containers were already running before this run — left alone"
     fi
+    # END idp-cleanup-loop
 
     # 6. Print summary
     print_summary
@@ -416,7 +462,7 @@ phase_1_auth_buttons() {
         RESULT_auth_buttons=$?
         COUNT_auth_buttons=$(extract_test_counts "$output")
         log_err "Auth buttons tests failed"
-        if [ "$VERBOSE" = true ]; then echo "$output"; fi
+        echo "$output" | tail -60
     fi
 }
 
@@ -426,26 +472,65 @@ phase_1_auth_buttons() {
 phase_2_ldap_keycloak() {
     log_phase "Phase 2: LDAP/AD & Keycloak/OIDC"
 
-    # Pre-start LLDAP if not running
-    if ! port_open 3890; then
-        log_step "Starting LLDAP container..."
-        cd "$PROJECT_ROOT" && docker compose -f docker-compose.ldap-test.yml up -d 2>/dev/null
-        wait_for_port 3890 30 "LLDAP (LDAP)" || return 1
-        wait_for_port 17170 30 "LLDAP (Web UI)" || return 1
-    else
+    # Bring up whichever IdPs are missing, through ./opentr.sh — ONE batched call.
+    #
+    # This is a DEV script driving the DEV stack, so opentr.sh is the correct entry point
+    # (unlike scripts/release-tests/*, which must use the shipped opentranscribe.sh because
+    # that is what a real self-hoster has). It owns the compose chain, so the overlays land in
+    # the SAME project — and therefore the same network — as the backend that has to reach them.
+    #
+    # What this replaces, and why it was a bug rather than a style preference: two bare
+    # `docker compose -f docker-compose.<idp>.yml up -d` calls. Compose derives the project
+    # from the CURRENT DIRECTORY's name, so that only worked while the checkout happened to be
+    # named after the live stack's compose project. From a git worktree (.claude/worktrees/<name>,
+    # which this repo uses routinely) it creates a NEW project on a NEW network — measured with
+    # a throwaway project: the container joined `base_default` instead of `<project>_default`
+    # and could not resolve a sibling container by name at all. The backend would then fail
+    # every LDAP bind and OIDC discovery, which reads exactly like an auth bug. Both overlay
+    # files say so in their own headers: "./opentr.sh is the only supported entry point".
+    #
+    # Batched into one call for the same reason scripts/lib/dev-test-overlays.sh batches:
+    # each `opentr.sh start dev` reconciles the whole chain, so two sequential calls would
+    # bring the first overlay up and then immediately re-resolve without it.
+    # BEGIN idp-start-flags
+    local idp_flags=()
+    local start_lldap=false start_keycloak=false
+    if port_open 3890; then
         log_ok "LLDAP already running"
+    else
+        idp_flags+=(--with-ldap-test)
+        start_lldap=true
+    fi
+    if port_open 8180; then
+        log_ok "Keycloak already running"
+    else
+        idp_flags+=(--with-keycloak-test)
+        start_keycloak=true
+    fi
+    # END idp-start-flags
+
+    if [ ${#idp_flags[@]} -gt 0 ]; then
+        log_step "Starting IdP overlays via ./opentr.sh: ${idp_flags[*]}"
+        if ! (cd "$PROJECT_ROOT" && ./opentr.sh start dev "${idp_flags[@]}" >/dev/null 2>&1); then
+            log_err "failed to start IdP overlays — run './opentr.sh start dev ${idp_flags[*]}' to see why"
+            return 1
+        fi
+        # BEGIN idp-mark-started
+        # Marked per service that THIS invocation actually started — not "any overlay flag was
+        # passed" — so a run that only started Keycloak (because LLDAP was already up) does not
+        # later tell cleanup it is also responsible for LLDAP.
+        [ "$start_lldap" = true ] && LLDAP_OVERLAY_STARTED=true
+        [ "$start_keycloak" = true ] && KEYCLOAK_OVERLAY_STARTED=true
+        # END idp-mark-started
     fi
 
-    # Pre-start Keycloak if not running
-    if ! port_open 8180; then
-        log_step "Starting Keycloak container..."
-        cd "$PROJECT_ROOT" && docker compose -f docker-compose.keycloak.yml up -d keycloak 2>/dev/null
-        wait_for_port 8180 120 "Keycloak" || return 1
-        # Extra wait for Keycloak to fully initialize
-        sleep 5
-    else
-        log_ok "Keycloak already running"
-    fi
+    # Wait on the ports regardless of who started the containers: "already running" above only
+    # proves the port is bound, and a batched start returns as soon as compose has created the
+    # containers, not when Keycloak has finished booting.
+    wait_for_port 3890 30 "LLDAP (LDAP)" || return 1
+    wait_for_port 17170 30 "LLDAP (Web UI)" || return 1
+    wait_for_port 8180 120 "Keycloak" || return 1
+    sleep 5  # Keycloak serves its port before the realm endpoints are ready
 
     # Run LDAP/Keycloak E2E tests
     # The test file's session-scoped fixtures handle user creation and auth config
@@ -459,7 +544,7 @@ phase_2_ldap_keycloak() {
         RESULT_ldap_keycloak=$?
         COUNT_ldap_keycloak=$(extract_test_counts "$output")
         log_err "LDAP/Keycloak tests failed"
-        if [ "$VERBOSE" = true ]; then echo "$output"; fi
+        echo "$output" | tail -60
     fi
 }
 
@@ -481,9 +566,22 @@ phase_3_pki() {
     fi
     log_ok "Frontend production image built"
 
-    # Step 2: Stop the dev frontend container
-    log_step "Stopping dev frontend for PKI overlay..."
-    cd "$PROJECT_ROOT" && docker compose stop frontend 2>/dev/null
+    # Step 2: Stop the dev frontend container.
+    #
+    # Resolved by compose PROJECT+SERVICE label, not `docker compose stop frontend`. The latter
+    # derives the project from the current directory's name, so from a git worktree it targets a
+    # project with no containers and silently does nothing — the dev frontend keeps its port and
+    # the PKI overlay's restore step is a no-op too. See scripts/lib/compose-project.sh.
+    local dev_frontend
+    dev_frontend="$(overlay_container_name frontend)"
+    if [ -z "$dev_frontend" ]; then
+        log_err "no running 'frontend' container in compose project '$(compose_project_name)' — is the dev stack up?"
+        RESULT_pki=1
+        return 1
+    fi
+    log_step "Stopping dev frontend ($dev_frontend) for PKI overlay..."
+    docker stop "$dev_frontend" >/dev/null 2>&1
+    DEV_FRONTEND_CONTAINER="$dev_frontend"
     DEV_FRONTEND_STOPPED=true
     log_ok "Dev frontend stopped"
 
@@ -501,8 +599,8 @@ phase_3_pki() {
         -v "${PROJECT_ROOT}/scripts/pki/test-certs/nginx/server.key:/etc/nginx/certs/server.key:ro" \
         -v "${PROJECT_ROOT}/scripts/pki/test-certs/ca/ca.crt:/etc/nginx/certs/ca.crt:ro" \
         -p 5182:8443 \
-        -p 5183:8080 \
-        "${PKI_IMAGE_TAG}" 2>/dev/null; then
+        -p "${PKI_HTTP_PORT:-5187}:8080" \
+        "${PKI_IMAGE_TAG}"; then
         log_err "Failed to start PKI frontend container"
         RESULT_pki=1
         return 1
@@ -514,9 +612,16 @@ phase_3_pki() {
     local token
     token=$(get_admin_token) || { log_err "Failed to get admin token"; RESULT_pki=1; return 1; }
 
-    # Get admin cert DN for PKI_ADMIN_DNS
+    # Get the pkiadmin cert DN for PKI_ADMIN_DNS. Deliberately NOT clients/admin.crt
+    # (issue #593): that cert's email is admin@example.com, which collides with the
+    # shared dev super_admin account — auth/account_linking.assert_email_link_permitted()
+    # refuses ANY email-matched link onto a super_admin unconditionally, so logging in
+    # with admin.p12 always 401'd once that guard shipped. pkiadmin.crt (email
+    # pkiadmin@example.com) has no pre-existing DB row, so PKI JIT-provisions a fresh
+    # account at the 'admin' role instead — no collision, and the real admin@example.com
+    # super_admin account is never touched by this phase at all.
     local admin_dn
-    admin_dn=$(openssl x509 -in "${PROJECT_ROOT}/scripts/pki/test-certs/clients/admin.crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed 's/^subject=//')
+    admin_dn=$(openssl x509 -in "${PROJECT_ROOT}/scripts/pki/test-certs/clients/pkiadmin.crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed 's/^subject=//')
 
     curl -sf -X PUT "${BACKEND_URL}/api/admin/auth-config/pki" \
         -H "Authorization: Bearer $token" \
@@ -536,7 +641,7 @@ phase_3_pki() {
         RESULT_pki=$?
         COUNT_pki=$(extract_test_counts "$output")
         log_err "PKI tests failed"
-        if [ "$VERBOSE" = true ]; then echo "$output"; fi
+        echo "$output" | tail -60
     fi
 
     # Step 7: Restore — PKI container cleanup and frontend restart happen in cleanup_on_exit
@@ -545,13 +650,17 @@ phase_3_pki() {
     docker rm "${PKI_CONTAINER_NAME}" 2>/dev/null
 
     log_step "Restarting dev frontend..."
-    cd "$PROJECT_ROOT" && docker compose start frontend 2>/dev/null
+    docker start "${DEV_FRONTEND_CONTAINER:-}" >/dev/null 2>&1
     DEV_FRONTEND_STOPPED=false
     wait_for_port 5173 30 "Dev Frontend" || true
 
-    # Restore admin to local auth (PKI tests convert admin user)
-    log_step "Restoring admin to local auth..."
-    restore_admin_local_auth
+    # Note (issue #593): this phase used to log in with a cert whose email matched
+    # admin@example.com, converting the shared dev super_admin account to auth_type='pki'
+    # and requiring restore_admin_local_auth() here to convert it back. It now logs in
+    # with pkiadmin@example.com (a distinct, PKI-only account — see phase_3_pki's Step 5
+    # comment), so admin@example.com is never touched by this phase and there is nothing
+    # to restore. cleanup_on_exit's own restore_admin_local_auth() call remains as a
+    # defensive no-op in case any OTHER phase ever converts it.
 
     # Disable PKI
     token=$(get_admin_token 2>/dev/null) || true
@@ -595,7 +704,7 @@ phase_4_mfa() {
         RESULT_mfa=$?
         COUNT_mfa=$(extract_test_counts "$output")
         log_err "MFA tests failed"
-        if [ "$VERBOSE" = true ]; then echo "$output"; fi
+        echo "$output" | tail -60
     fi
 
     # Step 4: Cleanup — disable MFA and reset admin state

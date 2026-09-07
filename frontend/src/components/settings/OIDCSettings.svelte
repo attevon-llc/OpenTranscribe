@@ -750,7 +750,7 @@
   .btn-small {
     padding: 0.5rem 0.75rem;
     font-size: 0.75rem;
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);

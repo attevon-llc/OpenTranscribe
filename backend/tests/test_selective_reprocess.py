@@ -23,11 +23,84 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-pytestmark = pytest.mark.integration
+# `completed_file` is module-scoped and shares one GPU pipeline (upload -> transcribe ->
+# reprocess) across every test below. Without `xdist_group`, pyproject's default
+# `-n auto --dist loadgroup` can split this module's items across several parallel xdist
+# WORKER PROCESSES, each independently re-running the fixture — multiple concurrent
+# transcription/reprocess pipelines contending for the one dev GPU (real timeouts, not
+# flakiness), and multiple concurrent `reprocess-*` uploads racing the pre-flight self-heal
+# sweep in `_sweep_stale_fixture_uploads` below, which could delete a sibling worker's
+# still-in-flight upload. `xdist_group` pins the whole module to one worker, matching
+# `backend/tests/CLAUDE.md`'s documented rule for exactly this shape.
+pytestmark = [pytest.mark.integration, pytest.mark.xdist_group("selective_reprocess")]
 
-BASE_URL = "http://localhost:5174/api"
+BASE_URL = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api"
 LOGIN_EMAIL = "admin@example.com"
 LOGIN_PASSWORD = "password"
+
+#: Filename prefix every fixture upload in this module carries — the self-heal sweep and
+#: the admin login's own `/force` fallback both key off it. Never reused as a real filename
+#: elsewhere in the app, so a search hit is unambiguously this module's own leaked upload.
+_FIXTURE_PREFIX = "reprocess-"
+
+
+def _delete_file(headers, file_uuid: str) -> bool:
+    """Delete *file_uuid*, falling back to force-delete — never trust one attempt.
+
+    ``backend/tests/CLAUDE.md``'s own hygiene rule for uploads is "API delete, falling
+    back to /force"; the plain delete can 404/409/500 (file mid-processing, already
+    gone, a transient error) without raising a ``requests`` exception, so checking only
+    for ``RequestException`` — as this used to — silently treats a failed delete as
+    done. Returns whether the file is confirmed gone, so a caller can log instead of
+    assume.
+    """
+    try:
+        resp = requests.delete(f"{BASE_URL}/files/{file_uuid}", headers=headers, timeout=30)
+        if resp.status_code in (200, 204, 404):
+            return True
+    except requests.RequestException:
+        pass
+    try:
+        resp = requests.delete(f"{BASE_URL}/files/{file_uuid}/force", headers=headers, timeout=30)
+        return resp.status_code in (200, 204, 404)
+    except requests.RequestException:
+        return False
+
+
+def _sweep_stale_fixture_uploads(headers) -> None:
+    """Force-delete any leftover ``reprocess-*`` upload from a prior interrupted run.
+
+    A process ``SIGKILL`` (a rebuild recreating this container mid-test, a background
+    test run stopped from outside) skips the ``finally`` block in ``completed_file``
+    below entirely — no client-side cleanup can survive that. Rather than accumulate
+    leaked ``MediaFile`` rows across every such interruption (each one a real,
+    persisted duplicate-detection hit against this module's own committed fixture,
+    since the imohash is deterministic — see #issue-audit-remediation), self-heal on
+    the next run: sweep for the module's own prefix and clear it before uploading a
+    fresh copy. Mirrors ``scripts/cleanup-test-users.py``'s ``ORPHAN_PATTERNS`` backstop
+    for the same class of mid-flight-death leak, one layer down (files, not users).
+    """
+    try:
+        resp = requests.get(
+            f"{BASE_URL}/files",
+            headers=headers,
+            params={"search": _FIXTURE_PREFIX, "page_size": "100"},
+            timeout=30,
+        )
+    except requests.RequestException:
+        return  # best-effort — a failed sweep must not block the fixture it is guarding
+    if resp.status_code != 200:
+        return
+    for stale in resp.json().get("items", []):
+        stale_uuid = stale.get("uuid")
+        filename = stale.get("filename") or ""
+        if stale_uuid and filename.startswith(_FIXTURE_PREFIX):
+            logger.warning(
+                "sweeping stale fixture upload %s (%s) left by a prior interrupted run",
+                stale_uuid,
+                filename,
+            )
+            _delete_file(headers, stale_uuid)
 
 
 @pytest.fixture(scope="module")
@@ -109,6 +182,8 @@ def completed_file(headers):
     A 10 s clip removes all three: it is deterministic, it fits in any GPU, and it is
     deleted afterwards so the dev library is unchanged.
     """
+    _sweep_stale_fixture_uploads(headers)
+
     source = _source_media()
     if not source.exists():  # pragma: no cover - the committed fixture is tracked
         pytest.skip(f"missing media fixture {source}")
@@ -119,7 +194,7 @@ def completed_file(headers):
             f"{BASE_URL}/files",
             headers=headers,
             files={
-                "file": (f"reprocess-{uuid.uuid4().hex[:8]}{source.suffix}", fh, mime),
+                "file": (f"{_FIXTURE_PREFIX}{uuid.uuid4().hex[:8]}{source.suffix}", fh, mime),
             },
             timeout=300,
         )
@@ -146,11 +221,15 @@ def completed_file(headers):
         yield f
     finally:
         # Delete on the way out no matter how the module ended — a cleanup that only runs
-        # on the happy path is exactly the one that does not run when a test fails.
-        try:
-            requests.delete(f"{BASE_URL}/files/{file_uuid}", headers=headers, timeout=30)
-        except requests.RequestException:
-            logger.warning("could not delete uploaded fixture %s", file_uuid)
+        # on the happy path is exactly the one that does not run when a test fails. Falls
+        # back to /force and confirms the outcome rather than firing-and-forgetting a
+        # single DELETE (see `_delete_file`'s docstring for why that undercounted failures).
+        if not _delete_file(headers, file_uuid):
+            logger.warning(
+                "could not delete uploaded fixture %s — the next run's pre-flight sweep "
+                "will retry it",
+                file_uuid,
+            )
 
 
 #: Statuses a file can never leave on its own. Reaching one means the answer is already

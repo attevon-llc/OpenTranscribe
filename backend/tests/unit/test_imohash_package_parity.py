@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 
 import imohash
+import pytest
 
 from app.services import imohash_service as svc
 
@@ -97,6 +98,37 @@ def test_browser_fingerprint_vectors_are_reproducible():
     assert svc.compute_from_bytes(_pattern(128 * 1024)) == "80800833394f6067f0a5e566b8d64210"
     assert svc.compute_from_bytes(_pattern(200 * 1024)) == "80c00c33394f6067f0a5e566b8d64210"
     assert svc.compute_from_bytes(_pattern(8 * 1024 * 1024)) == "80808004394f6067f0a5e566b8d64210"
+
+
+def test_compute_from_minio_propagates_a_storage_outage(monkeypatch):
+    """B2: a transient MinIO error must not be swallowed into the same ``None``
+    a genuinely absent object returns — that silently degrades dedup to "found
+    nothing new" with no signal it was actually a storage outage."""
+    from minio.error import S3Error
+
+    outage = S3Error(
+        response=None,
+        code="InternalError",
+        message="simulated storage outage",
+        resource="/x",
+        request_id="test",
+        host_id="test",
+    )
+
+    def _raise(*_a, **_k):
+        raise outage
+
+    monkeypatch.setattr("app.services.minio_service.object_exists_and_size", _raise)
+
+    with pytest.raises(S3Error):
+        svc.compute_from_minio("some/object.wav", size=None)
+
+
+def test_compute_from_minio_returns_none_for_a_genuinely_new_file(monkeypatch):
+    """Control: a real absent/empty object still returns None, not an exception —
+    B2's fix must not turn every miss into a raised error."""
+    monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda *a, **k: None)
+    assert svc.compute_from_minio("some/object.wav", size=None) is None
 
 
 def test_multi_gigabyte_sizes_are_encoded_losslessly(tmp_path):

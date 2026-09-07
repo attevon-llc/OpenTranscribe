@@ -17,18 +17,45 @@ if TYPE_CHECKING:
     # from `app.api.router`, so a top-level `import torch` was paid by every process that
     # imports `app.main`, including all 48 pytest-xdist workers (issue #431).
     import torch
+    from pyannote.audio import Inference
 
 from app.core.config import settings
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
+from app.services.embedding_mode_service import MODE_V4
 from app.services.embedding_mode_service import EmbeddingMode
 from app.services.embedding_mode_service import EmbeddingModeService
 from app.utils.hardware_detection import detect_hardware
 
 logger = logging.getLogger(__name__)
 
+_NO_BACKEND_AVAILABLE_MESSAGE = (
+    "No speaker-embedding backend available: the diar-native sidecar did not answer "
+    "and the in-process PyAnnote model is not installed in this image. Check "
+    "DIAR_NATIVE_URL and that the sidecar is reachable, or run against a full image "
+    "that ships pyannote.audio."
+)
+
 
 class SpeakerEmbeddingService:
-    """Service for extracting speaker embeddings using pyannote."""
+    """Service for extracting speaker embeddings.
+
+    Two interchangeable backends produce the **same** v4 vectors (issue #571):
+
+    - ``"native"`` — the diar-native sidecar's ``/embed_window``. It runs the same
+      ``pyannote/wespeaker-voxceleb-resnet34-LM`` weights, re-exported to ONNX.
+      Measured over 134 AMI ground-truth windows the two paths agree at cosine
+      **0.9999997** on identical audio, so this is a replacement rather than an
+      approximation — and it loads no model in this process (no ~500 MB of VRAM,
+      no 40–60 s cold start).
+    - ``"pyannote"`` — the in-process model. Used for v3 mode (``pyannote/embedding``
+      is 512-d and a genuinely different network, which the sidecar does not serve),
+      when ``USE_NATIVE_SPEAKER_EMBEDDINGS=false``, and whenever the sidecar is
+      unreachable — the same degrade-don't-crash discipline ``NativeSpeakerDiarizer``
+      already applies to diarization.
+
+    ``model_name`` names the weights either backend runs, so it stays a valid warm-cache
+    key across a backend switch; ``backend`` names how they are executed.
+    """
 
     def __init__(
         self,
@@ -44,8 +71,6 @@ class SpeakerEmbeddingService:
             models_dir: Directory to cache models
             mode: Embedding mode ('v3' or 'v4', auto-detected if None)
         """
-        import torch
-
         # Detect embedding mode if not specified
         self.mode: EmbeddingMode = mode or EmbeddingModeService.detect_mode()
 
@@ -60,21 +85,142 @@ class SpeakerEmbeddingService:
         )
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
-        # Hardware detection
+        # Only the in-process backend has a torch device / VRAM budget. Both stay None
+        # on the native backend rather than being absent, so a stray attribute read is a
+        # readable None instead of an AttributeError.
+        self.inference: Inference | None = None
+        self.device: torch.device | None = None
+        self.hardware_config: Any = None
+
+        self.backend = "native" if self._native_backend_usable() else "pyannote"
+        if self.backend == "native":
+            logger.info(
+                "Speaker embeddings served by the diar-native sidecar "
+                "(%s, no in-process model load)",
+                self.model_name,
+            )
+            return
+
+        # NOTE: no lite-specific refusal here. One was added when #660 removed
+        # pyannote.audio from requirements-lite.txt, on the premise that lite had no
+        # in-process embedding model to fall back to. That premise no longer holds:
+        # pyannote.audio is back in lite, because the diar-native sidecar's ONNX/PLDA
+        # graphs are non-redistributable derivatives that lite must EXPORT for itself,
+        # and the exporter imports pyannote.audio. Having it installed means the
+        # in-process path is available on lite as the same graceful degrade every other
+        # deployment gets — refusing here would turn a working fallback into a hard
+        # failure, on the one local model job a cloud-ASR deployment still has.
+        #
+        # v3 (512-d) also falls through to here by design: `_native_backend_usable`
+        # excludes it because the sidecar serves 256-d v4 only, so in-process PyAnnote is
+        # the ONLY path for a v3 install — on lite as anywhere else.
+
+        import torch
+
+        # Hardware detection — only the in-process backend needs a device.
         self.hardware_config = detect_hardware()
         pyannote_config = self.hardware_config.get_pyannote_config()
         self.device = torch.device(pyannote_config["device"])
-
-        # Initialize the model
         self._initialize_model()
+
+    def _native_backend_usable(self) -> bool:
+        """Whether the sidecar can serve this service's mode, right now.
+
+        v3 is excluded on purpose: ``pyannote/embedding`` is a different 512-d
+        network and the sidecar has no equivalent, so routing v3 there would
+        silently write 256-d vectors into a 512-d index.
+        """
+        if self.mode != MODE_V4:
+            return False
+        if os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower() != "true":
+            logger.info("Native speaker embeddings disabled by USE_NATIVE_SPEAKER_EMBEDDINGS=false")
+            return False
+        if self.model_name != EmbeddingModeService.get_embedding_model_name(MODE_V4):
+            # An explicitly pinned, non-default model must be honoured in-process.
+            return False
+        from app.services.native_embedding_client import native_embedding_available
+
+        if not native_embedding_available():
+            logger.info("diar-native sidecar unavailable; loading the in-process embedding model")
+            return False
+        return True
+
+    def _embed(self, waveform: torch.Tensor, sample_rate: int) -> np.ndarray | None:
+        """Embed a waveform with the active backend, L2-normalized.
+
+        The single chokepoint every ``extract_*`` method funnels through, so the
+        backend choice and the normalization exist in exactly one place.
+
+        Returns:
+            L2-normalized embedding, or None when nothing could be embedded.
+        """
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+
+        from app.services.native_embedding_client import NATIVE_EMBEDDING_SAMPLE_RATE
+
+        if self.backend == "native" and sample_rate != NATIVE_EMBEDDING_SAMPLE_RATE:
+            # The sidecar's fbank front-end assumes 16 kHz and takes no sample-rate
+            # argument, so anything else would be embedded at the wrong rate — silently,
+            # since the vector would still come back the right shape. `_load_audio`'s
+            # ffmpeg branch always resamples, but its torchaudio/scipy fallbacks return
+            # the file's native rate, so this is reachable.
+            logger.info(
+                "Audio is %d Hz, not %d Hz; using the in-process model for this clip",
+                sample_rate,
+                NATIVE_EMBEDDING_SAMPLE_RATE,
+            )
+            self._load_fallback_model()
+
+        if self.backend == "native":
+            from app.services.native_embedding_client import embed_waveform
+
+            embedding = embed_waveform(waveform.reshape(-1).cpu().numpy())
+            if embedding is not None:
+                return embedding
+            # Sidecar lost mid-run: load the in-process model and keep going, the
+            # same way NativeSpeakerDiarizer falls back mid-job.
+            logger.warning(
+                "diar-native embedding failed; falling back to the in-process PyAnnote model"
+            )
+            self._load_fallback_model()
+
+        if self.inference is None:
+            # Only reachable if _load_fallback_model left no model loaded, which means
+            # the in-process model could not be loaded either. Say so, rather than
+            # dying on "'NoneType' object is not callable" two lines down.
+            raise RuntimeError(_NO_BACKEND_AVAILABLE_MESSAGE)
+
+        audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+        # Inference(window="whole") returns a single np.ndarray embedding
+        embedding = cast(np.ndarray, self.inference(audio_input))
+        if embedding is None:
+            return None
+        norm = np.linalg.norm(embedding)
+        return embedding / norm if norm > 0 else embedding
+
+    def _load_fallback_model(self) -> None:
+        """Switch this instance to the in-process backend after a sidecar loss."""
+        import torch
+
+        self.backend = "pyannote"
+        if self.inference is None:
+            self.hardware_config = detect_hardware()
+            self.device = torch.device(self.hardware_config.get_pyannote_config()["device"])
+            self._initialize_model()
 
     def _initialize_model(self):
         """Initialize the pyannote embedding model."""
         try:
             # Lazy import: pyannote is GPU-worker-only; keeping it out of the
-            # module top level spares the API server (and CI) the import cost.
-            from pyannote.audio import Inference
-            from pyannote.audio import Model
+            # module top level spares the API server (and CI) the import cost. It is
+            # also ABSENT from lite (issue #660) — caught explicitly below so that case
+            # gets the shaped sidecar-pointing error instead of a raw import traceback.
+            try:
+                from pyannote.audio import Inference
+                from pyannote.audio import Model
+            except (ImportError, ModuleNotFoundError) as import_err:
+                raise RuntimeError(_NO_BACKEND_AVAILABLE_MESSAGE) from import_err
 
             # Check if we have a Hugging Face token
             hf_token = settings.HUGGINGFACE_TOKEN
@@ -160,12 +306,16 @@ class SpeakerEmbeddingService:
         except Exception as ffmpeg_err:
             logger.debug(f"FFmpeg failed ({ffmpeg_err}), trying torchaudio")
 
-        # 2. torchaudio (when backends are available)
+        # 2. torchaudio (when backends are available). Absent entirely in lite since
+        # issue #660 — ImportError/ModuleNotFoundError falls through to scipy below
+        # exactly like the "no backend" torchaudio failure it already tolerated.
         try:
             import torchaudio
 
             waveform, sr = torchaudio.load(audio_path)
             return waveform, int(sr)
+        except (ImportError, ModuleNotFoundError) as ta_missing:
+            logger.debug(f"torchaudio not installed ({ta_missing}), trying scipy")
         except Exception as ta_err:
             if "backend" not in str(ta_err).lower() and "already_closed" not in str(ta_err).lower():
                 raise
@@ -204,22 +354,7 @@ class SpeakerEmbeddingService:
                 end_sample = int(segment["end"] * sample_rate)
                 waveform = waveform[:, start_sample:end_sample]
 
-            # PyAnnote expects mono audio
-            if waveform.shape[0] > 1:
-                waveform = waveform.mean(dim=0, keepdim=True)
-
-            # Pass as waveform dict to avoid torchcodec/AudioDecoder issues
-            audio_input = {"waveform": waveform, "sample_rate": sample_rate}
-            # Inference(window="whole") returns a single np.ndarray embedding
-            embedding = cast(np.ndarray, self.inference(audio_input))
-
-            # L2 normalize for optimal cosine similarity in OpenSearch
-            if embedding is not None:
-                norm = np.linalg.norm(embedding)
-                if norm > 0:
-                    embedding = embedding / norm
-
-            return embedding
+            return self._embed(waveform, sample_rate)
 
         except Exception as e:
             logger.error(f"Error extracting embedding from {audio_path}: {e}")
@@ -283,16 +418,7 @@ class SpeakerEmbeddingService:
             return None
 
         try:
-            audio_input = {"waveform": waveform, "sample_rate": 16000}
-            # Inference(window="whole") returns a single np.ndarray embedding
-            embedding = cast(np.ndarray, self.inference(audio_input))
-
-            if embedding is not None:
-                norm = np.linalg.norm(embedding)
-                if norm > 0:
-                    embedding = embedding / norm
-
-            return embedding
+            return self._embed(waveform, 16000)
         except Exception as e:
             logger.error(f"Error extracting embedding from segment: {e}")
             return None
@@ -324,19 +450,7 @@ class SpeakerEmbeddingService:
                 end_sample = int(segment["end"] * sample_rate)
                 wav = wav[:, start_sample:end_sample]
 
-            if wav.shape[0] > 1:
-                wav = wav.mean(dim=0, keepdim=True)
-
-            audio_input = {"waveform": wav, "sample_rate": sample_rate}
-            # Inference(window="whole") returns a single np.ndarray embedding
-            embedding = cast(np.ndarray, self.inference(audio_input))
-
-            if embedding is not None:
-                norm = np.linalg.norm(embedding)
-                if norm > 0:
-                    embedding = embedding / norm
-
-            return embedding
+            return self._embed(wav, sample_rate)
         except Exception as e:
             logger.error(f"Error extracting embedding from waveform segment: {e}")
             return None
@@ -360,6 +474,17 @@ class SpeakerEmbeddingService:
 
         Returns:
             Dictionary mapping speaker IDs to lists of embeddings
+
+        Note:
+            The audio file is decoded exactly ONCE up front (previously
+            ``extract_embedding_from_file`` decoded the entire file again for
+            every selected segment — up to 30 full-file decodes per job for
+            5 segments x 6 speakers). Each segment is then sliced from that
+            single in-memory waveform via ``extract_embedding_from_waveform``,
+            which applies the identical start/end sample slicing and ``_embed``
+            call ``extract_embedding_from_file`` used, so the resulting
+            embeddings are byte-for-byte the same — only the number of
+            decodes changes (issue #661 E3.2).
         """
         from app.services.audio_segment_utils import group_segments_by_speaker
         from app.services.audio_segment_utils import merge_adjacent_segments
@@ -367,6 +492,14 @@ class SpeakerEmbeddingService:
 
         speaker_embeddings: dict[int, list[np.ndarray]] = {}
         grouped = group_segments_by_speaker(segments, speaker_mapping)
+        if not grouped:
+            return speaker_embeddings
+
+        try:
+            waveform, sample_rate = self._load_audio(audio_path)
+        except Exception as e:
+            logger.error(f"Error loading audio {audio_path} for segment embeddings: {e}")
+            return speaker_embeddings
 
         for speaker_id, speaker_segs in grouped.items():
             merged = merge_adjacent_segments(speaker_segs)
@@ -376,8 +509,8 @@ class SpeakerEmbeddingService:
 
             embeddings = []
             for segment in selected:
-                embedding = self.extract_embedding_from_file(
-                    audio_path, {"start": segment["start"], "end": segment["end"]}
+                embedding = self.extract_embedding_from_waveform(
+                    waveform, sample_rate, {"start": segment["start"], "end": segment["end"]}
                 )
 
                 if embedding is not None:
@@ -455,13 +588,17 @@ class SpeakerEmbeddingService:
         proper GPU memory management, especially when multiple models are used
         in sequence during transcription processing.
         """
+        if self.inference is None:
+            # Native backend (or a never-initialized instance): nothing was loaded here.
+            logger.info("No in-process embedding model to clean up (backend=%s)", self.backend)
+            return
+
         import torch
 
         self.hardware_config.log_vram_usage("before embedding model cleanup")
 
-        if hasattr(self, "inference"):
-            logger.info("Cleaning up PyAnnote embedding model")
-            del self.inference
+        logger.info("Cleaning up PyAnnote embedding model")
+        self.inference = None
 
         # Force aggressive memory cleanup
         import gc

@@ -160,7 +160,7 @@
 
   .gender-toggle-btn.active {
     border-color: var(--primary-color, #3b82f6);
-    background: color-mix(in srgb, var(--primary-color, #3b82f6) 12%, transparent);
+    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
     color: var(--primary-color, #3b82f6);
   }
 
@@ -216,7 +216,7 @@
     font-size: 16px;
     font-weight: 600;
     color: var(--primary-color, #3b82f6);
-    background: color-mix(in srgb, var(--primary-color, #3b82f6) 20%, transparent);
+    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 20%, transparent);
   }
 
   .avatar-overlay {
@@ -239,7 +239,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--primary-color, #3b82f6) 20%, transparent);
+    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 20%, transparent);
   }
 
   .profile-header {
@@ -357,7 +357,7 @@
     vertical-align: middle;
     white-space: nowrap;
   }
-  :global(.dark) .shared-badge {
+  :global([data-theme='dark']) .shared-badge {
     background: rgba(99, 102, 241, 0.2);
     color: #a5b4fc;
   }

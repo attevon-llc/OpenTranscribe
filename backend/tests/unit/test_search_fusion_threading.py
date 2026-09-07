@@ -64,10 +64,10 @@ class _Recorder:
 def _clean_pipeline_state():
     """No verified-pipeline id survives into or out of a test in this module."""
     hss.reset_infrastructure_state()
-    hss.clear_search_cache()
+    hss._search_cache.clear()
     yield
     hss.reset_infrastructure_state()
-    hss.clear_search_cache()
+    hss._search_cache.clear()
 
 
 @pytest.fixture

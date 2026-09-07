@@ -16,6 +16,7 @@ the next file's audio is already prepared.
 import contextlib
 import json
 import logging
+import time
 import uuid
 
 from celery import chain
@@ -25,6 +26,7 @@ from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
+from app.core.constants import gpu_split_enabled
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -35,11 +37,86 @@ from app.utils.task_utils import update_task_status
 
 logger = logging.getLogger(__name__)
 
+# TTL cache for the "is anything actually consuming gpu-transcribe" check below.
+# Only consulted when gpu_split_enabled() is True (an explicit, rare operator
+# choice), so this does not add a broker round-trip to the default dispatch path.
+# A short TTL means a worker that comes up or dies is noticed within seconds,
+# while a 1000-file batch dispatch loop still pays the round-trip once, not 1000
+# times. Module-level and lock-free: a benign race just means two dispatches in
+# the same few-hundred-ms window might independently re-probe — never incorrect.
+_GPU_TRANSCRIBE_CONSUMER_CACHE_TTL_S = 15.0
+_gpu_transcribe_consumer_cache: dict[str, float | bool] = {"checked_at": 0.0, "present": False}
+
+
+def _gpu_transcribe_consumer_present() -> bool:
+    """Whether a live Celery worker is actually bound to CeleryQueues.GPU_TRANSCRIBE.
+
+    ``gpu_split_enabled()`` only reflects the operator's ``ENGINE_GPU_SPLIT`` env var,
+    which — per that function's docstring — reaches every container via ``.env``
+    regardless of whether ``celery-worker-gpu-transcribe`` (the gpu-split Compose
+    profile) was actually started. Routing on the env var alone reproduces the
+    dead-queue hazard issue #703 already fixed once for the reservation side; this
+    is the corroborating check on the dispatch side.
+
+    Uses a live ``inspect().active_queues()`` broadcast, NOT Flower's cached
+    ``/api/workers`` endpoint — that endpoint is a boot-time snapshot with known
+    staleness (backend/app/tasks/CLAUDE.md, issue #609), whereas a fresh
+    ``celery inspect`` call reaches workers reliably (the same doc notes
+    ``celery inspect ping`` works fine even for workers Flower's snapshot misses).
+
+    Fails CLOSED toward the safe direction: any error, timeout, or empty reply is
+    treated as "no consumer" so callers fall back to the always-staffed 'gpu' queue
+    rather than risk publishing into a queue nothing drains.
+    """
+    now = time.monotonic()
+    if (
+        now - float(_gpu_transcribe_consumer_cache["checked_at"])
+        < _GPU_TRANSCRIBE_CONSUMER_CACHE_TTL_S
+    ):
+        return bool(_gpu_transcribe_consumer_cache["present"])
+
+    present = False
+    try:
+        active = celery_app.control.inspect(timeout=2.0).active_queues()
+        if active:
+            for queues in active.values():
+                if any(q.get("name") == CeleryQueues.GPU_TRANSCRIBE for q in queues or []):
+                    present = True
+                    break
+    except Exception as e:
+        logger.warning(
+            f"Failed to verify a live '{CeleryQueues.GPU_TRANSCRIBE}' consumer "
+            f"(falling back to '{CeleryQueues.GPU}'): {e}"
+        )
+        present = False
+
+    _gpu_transcribe_consumer_cache["checked_at"] = now
+    _gpu_transcribe_consumer_cache["present"] = present
+    return present
+
 
 def _resolve_gpu_queue(user_id: int, db) -> str:
     """Resolve the correct queue based on the user's active ASR provider.
 
-    Returns 'cloud-asr' for cloud providers, 'gpu' for local.
+    Returns 'cloud-asr' for cloud providers. For local ASR, returns
+    'gpu-transcribe' when this deployment ASKS for the gpu-split topology
+    (:func:`gpu_split_enabled`) AND a worker is verified to actually be consuming
+    that queue (:func:`_gpu_transcribe_consumer_present`) — celery-worker-gpu-transcribe
+    picks it up, runs the transcribe-only stage, and forwards to diarize_gpu_task on
+    'gpu-diarize' (transcription/core.py). Otherwise returns the shared 'gpu'
+    queue, which celery-worker always staffs regardless of split mode.
+
+    Issue #703: before this branch existed, nothing ever published to
+    'gpu-transcribe', so celery-worker-gpu-transcribe held a GPU reservation
+    and did no work under --with-gpu-split.
+
+    Regression fixed here: ``ENGINE_GPU_SPLIT`` is an ordinary ``.env`` knob that
+    reaches every container via ``env_file`` independent of which Compose overlay is
+    loaded, so ``gpu_split_enabled()`` alone can be True with no consumer running
+    (operator sets the flag directly without ``--with-gpu-split``). Routing on it
+    alone black-holes every transcription into a queue nothing drains. The
+    consumer-presence check is the corroboration that keeps the failure direction
+    "no split" rather than "queued forever".
     """
     try:
         from app.services.asr.factory import ASRProviderFactory
@@ -53,6 +130,16 @@ def _resolve_gpu_queue(user_id: int, db) -> str:
             return CeleryQueues.CLOUD_ASR
     except Exception as e:
         logger.debug(f"ASR provider resolution failed, defaulting to 'gpu': {e}")
+
+    if gpu_split_enabled():
+        if _gpu_transcribe_consumer_present():
+            return CeleryQueues.GPU_TRANSCRIBE
+        logger.warning(
+            f"ENGINE_GPU_SPLIT is set but no worker is consuming "
+            f"'{CeleryQueues.GPU_TRANSCRIBE}' — routing to '{CeleryQueues.GPU}' instead "
+            f"of a queue nothing would drain. Start the stack with --with-gpu-split, "
+            f"or unset ENGINE_GPU_SPLIT if split topology isn't intended here."
+        )
     return CeleryQueues.GPU
 
 

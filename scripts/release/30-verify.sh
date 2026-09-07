@@ -181,6 +181,51 @@ else
     record docs-build fail "docs-site build failed" "cd docs-site && npm run build"
 fi
 
+# Visual baselines vs the UI they describe.
+#
+# Two git facts, no browser and no stack: has frontend/src moved since the
+# committed screenshots were last refreshed? It reports that the EVIDENCE has
+# expired, never that the UI regressed — only the e2e suite against an isolated
+# seeded stack can say that, and it cannot run here or in CI.
+#
+# `git log <baseline-commit>..HEAD -- frontend/src` is deliberately a COMMIT
+# COUNT rather than a timestamp comparison: commit dates are attacker- and
+# rebase-controlled and can run backwards on a merge, whereas reachability
+# cannot. A shallow clone has no history to walk, so that is NOT MEASURED
+# rather than a silent zero.
+VISUAL_BASELINE_DIR="backend/tests/e2e/__screenshots__"
+if [[ "${SKIP_VISUAL_BASELINE_FRESHNESS:-false}" == "true" ]]; then
+    record visual-baselines-fresh not-measured \
+        "SKIP_VISUAL_BASELINE_FRESHNESS=true — the operator opted out" \
+        "unset SKIP_VISUAL_BASELINE_FRESHNESS to measure it" waived
+elif [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]]; then
+    record visual-baselines-fresh not-measured \
+        "shallow clone — the history needed to compare the two paths is absent" \
+        "git fetch --unshallow"
+elif [[ ! -d "$VISUAL_BASELINE_DIR" ]]; then
+    record visual-baselines-fresh not-measured \
+        "$VISUAL_BASELINE_DIR is missing, so there is nothing to compare the UI against" \
+        "restore the baselines, or drop this criterion if the suite was removed"
+else
+    baseline_commit="$(git log -1 --format=%H -- "$VISUAL_BASELINE_DIR" 2>/dev/null || true)"
+    if [[ -z "$baseline_commit" ]]; then
+        record visual-baselines-fresh not-measured \
+            "no commit in history touches $VISUAL_BASELINE_DIR" \
+            "commit the baselines so their age is knowable"
+    else
+        # Count only commits that are ANCESTORS of HEAD, so a stale branch
+        # cannot look fresh by having the baselines committed on some other line.
+        ui_drift="$(git log --oneline "${baseline_commit}..HEAD" -- frontend/src/ 2>/dev/null | wc -l | tr -d ' ')"
+        if [[ "$ui_drift" -eq 0 ]]; then
+            record visual-baselines-fresh pass
+        else
+            record visual-baselines-fresh fail \
+                "frontend/src has ${ui_drift} commit(s) newer than the baselines in $VISUAL_BASELINE_DIR" \
+                "./opentr.sh start dev --fresh visual --port-offset 100 --seed-benchmark --with-mock-llm --gpu-device N && MOCK_LLM_PORT=5299 UPDATE_SCREENSHOTS=1 backend/venv/bin/pytest backend/tests/e2e/test_visual_regression.py --base-url=http://localhost:5273 --backend-url=http://localhost:5274   (review every image, then re-run without UPDATE_SCREENSHOTS)"
+        fi
+    fi
+fi
+
 # ── The criteria file and this script must agree ───────────────────────────
 unchecked=()
 for id in "${!SEVERITY[@]}"; do

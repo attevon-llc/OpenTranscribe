@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
+from app.utils.language import normalize_language
+
 
 @dataclass
 class ASRConfig:
@@ -54,13 +56,28 @@ class ASRSegment:
 
 @dataclass
 class ASRResult:
-    """Full result from an ASR provider transcription."""
+    """Full result from an ASR provider transcription.
+
+    ``language`` is **normalized on construction** — this is the boundary between ten vendors
+    that do not agree on the shape of a language code and a column every redaction, chat and
+    search reader keys on (issue #545). ``openai_provider`` returns whatever the API's
+    ``resp.language`` says (a NAME, e.g. ``"english"``), ``gladia_provider`` the first entry of
+    a detected-languages list, and each falls back to ``ASRConfig.language`` — which is
+    ``"auto"`` by default. Normalizing at each *reader* instead would be nine copies of one
+    rule; normalizing here means the value can only ever be a known code or ``None``.
+
+    ``None`` is a real outcome and must not be replaced by ``"en"``: see
+    ``app/utils/language.py`` for why guessing English is worse than admitting ignorance.
+    """
 
     segments: list[ASRSegment]
-    language: str
+    language: str | None
     has_speakers: bool = False
     speaker_embeddings: dict[str, Any] | None = None
     overlap_info: dict | None = None
     provider_name: str = "local"
     model_name: str = ""
     metadata: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.language = normalize_language(self.language)

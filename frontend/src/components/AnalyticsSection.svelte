@@ -107,6 +107,8 @@
   {#if isAnalyticsExpanded}
     <div class="analytics-content" transition:slide={{ duration: 200 }}>
       {#if analyticsData}
+        <!-- SpeakerStats is now properly reactive to its `analytics` prop, so this
+             remount-on-change key is redundant, not wrong — harmless belt-and-braces. -->
         {#key combinedKey}
           <SpeakerStats
             analytics={{
@@ -167,7 +169,7 @@
 
   .analytics-chip {
     background: var(--primary-light);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     padding: 4px 8px;
     border-radius: 12px;
     font-size: 12px;

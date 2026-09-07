@@ -14,12 +14,17 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
+from fastapi import Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
 from app.api.endpoints.auth import get_current_active_user
+from app.auth.rate_limit import get_llm_outbound_rate_limit
+from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.services import llm_context_window
 from app.services import llm_reasoning
@@ -77,7 +82,32 @@ def _clear_shared_active_references(
 
 
 def _set_active_configuration(db: Session, user_id: int, config_id: int) -> None:
-    """Helper function to set active LLM configuration for a user"""
+    """Set the active LLM configuration for a user, exclusively.
+
+    ``UserSetting.active_llm_config_id`` is the source of truth (per
+    ``UserLLMSettings``'s own docstring), but ``UserLLMSettings.is_active`` is a real,
+    queryable column also exposed on the wire (``UserLLMSettingsPublic.is_active``) — so
+    this is the ONE place that keeps it in sync. Before issue #607, `is_active` defaulted
+    `True` on every row and was never flipped when a different config became active, so
+    `GET /api/llm-settings` could report multiple configurations simultaneously as
+    `is_active: true` while only one was tracked as real. Every caller that changes the
+    active config (creation's first-config auto-activate, this endpoint's own
+    `/set-active`, and delete's auto-promote-remaining) funnels through this one function,
+    so fixing it here closes every entry point at once.
+
+    Both the bulk deactivate and the target-activate below are scoped to
+    ``UserLLMSettings.user_id == user_id`` -- the CALLING user's own rows, never the
+    config's actual owner. ``UserSetting.active_llm_config_id`` (the real selector) is
+    updated for `user_id` regardless of who owns `config_id`, so activating a config
+    someone else shared with you still correctly selects it for your own use -- but the
+    owner-scoped queries here find no matching row for it, so their `is_active` column is
+    never touched. This is deliberate, not a gap: `is_active` is a per-owner display flag
+    ("is this MY config"), and flipping another user's row would misreport which of
+    *their* own configs is active in their own UI. Treat `active_llm_config_id` as the
+    authority for "what am I using" and `is_active` as "what does the owner see
+    highlighted" -- the two questions have different answers for a shared config in use
+    by a non-owner (issue #620 item 8d).
+    """
     # Check if setting already exists
     existing_setting = (
         db.query(models.UserSetting)
@@ -98,6 +128,33 @@ def _set_active_configuration(db: Session, user_id: int, config_id: int) -> None
             setting_value=str(config_id),
         )
         db.add(new_setting)
+
+    # Exclusive toggle: every OTHER config of this user's own is deactivated in the same
+    # transaction. `synchronize_session=False` matches this file's existing bulk-update
+    # convention (`_clear_shared_active_references`) — cheap here since a user's LLM
+    # config count is always small, and `config_id` is excluded so it can never stomp the
+    # explicit activation below.
+    db.query(models.UserLLMSettings).filter(
+        models.UserLLMSettings.user_id == user_id,
+        models.UserLLMSettings.id != config_id,
+        models.UserLLMSettings.is_active == True,  # noqa: E712
+    ).update({"is_active": False}, synchronize_session=False)
+
+    # Set the target row True via the ORM (not the bulk statement above) so an
+    # already-loaded instance in THIS session — e.g. the caller's own `user_config` —
+    # picks up the change through SQLAlchemy's identity map, rather than returning a
+    # stale `is_active` in the response the caller builds right after this call.
+    target = (
+        db.query(models.UserLLMSettings)
+        .filter(
+            models.UserLLMSettings.user_id == user_id,
+            models.UserLLMSettings.id == config_id,
+        )
+        .first()
+    )
+    if target is not None and not target.is_active:
+        target.is_active = True
+        db.add(target)
 
     db.commit()
 
@@ -149,6 +206,20 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
             supports_custom_url=False,
             max_context_length=200000,
             description="OpenRouter provides access to many model providers",
+        ),
+        schemas.ProviderDefaults(
+            provider=schemas.LLMProvider.BEDROCK,
+            default_model="anthropic.claude-haiku-4-5-20251001-v1:0",
+            default_base_url=None,
+            requires_api_key=False,
+            supports_custom_url=False,
+            max_context_length=None,
+            description=(
+                "AWS Bedrock — Converse API access to Claude, Nova, Llama and Mistral "
+                "models. No API key: credentials resolve via the AWS SDK's standard "
+                "chain (IAM role, profile, or environment). The AWS region is set by "
+                "your administrator (BEDROCK_REGION/AWS_REGION), not per configuration."
+            ),
         ),
     ]
 
@@ -445,9 +516,17 @@ def create_user_llm_configuration(
         if not encrypted_api_key:
             raise HTTPException(status_code=500, detail="Failed to encrypt API key")
 
-    # Create new configuration
-    settings_data = settings_in.model_dump(exclude={"api_key"})
-    settings_data.update({"user_id": current_user.id, "api_key": encrypted_api_key})
+    # Create new configuration. `is_active` (issue #607) is never written from client
+    # input here: it is an exclusive, derived flag whose SOLE writer is
+    # _set_active_configuration below, so it can never disagree with
+    # active_llm_config_id. A newly created row therefore always starts inactive, and
+    # becomes active only via the auto-activate-the-first-config path a few lines down —
+    # exactly matching prior behavior for a first config, and fixing it for every one
+    # after (previously left at the column's `True` default, never flipped).
+    settings_data = settings_in.model_dump(exclude={"api_key", "is_active"})
+    settings_data.update(
+        {"user_id": current_user.id, "api_key": encrypted_api_key, "is_active": False}
+    )
 
     # Set shared_at timestamp if shared on creation
     if settings_data.get("is_shared"):
@@ -540,7 +619,16 @@ def update_user_llm_configuration(
                 exclude_user_id=current_user.id,
             )
 
-    # Reset test status when settings change (but not for share-only updates)
+    # is_active (issue #607) is an exclusive, derived flag — the SOLE writer is
+    # _set_active_configuration, never a raw column assignment here, or a PUT could
+    # reintroduce the exact bug #607 fixed (two rows both reading `is_active: true`).
+    # `True` routes through that helper below; `False` is dropped rather than applied
+    # directly — there is no supported "deactivate to nothing" via this endpoint, only
+    # activating a DIFFERENT config (via this same field, DELETE's auto-promote, or
+    # POST /set-active) ever changes what is active.
+    activate_requested = update_data.pop("is_active", None) is True
+
+    # Reset test status when settings change (but not for share-only/activation-only updates)
     non_share_keys = {k for k in update_data if k not in ("is_shared", "shared_at")}
     if non_share_keys:
         update_data["test_status"] = "untested"
@@ -555,6 +643,10 @@ def update_user_llm_configuration(
     db.commit()
     db.refresh(user_config)
 
+    if activate_requested:
+        _set_active_configuration(db, current_user.id, config_id)
+        db.refresh(user_config)
+
     return user_config
 
 
@@ -566,7 +658,15 @@ def set_active_configuration(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Set the active LLM configuration for the user
+    Set the active LLM configuration for the user.
+
+    ``configuration_id`` may name a config owned by someone else, so long as it is
+    shared (the `is_shared` check below) -- selecting it here only changes what THIS
+    user's turns use (`UserSetting.active_llm_config_id`, see `_set_active_configuration`'s
+    own docstring). The shared config's `is_active` column, which the owner's own UI
+    reads, is deliberately left untouched: it belongs to the owner's row, not the
+    activating user's, and this endpoint's `_set_active_configuration` call is scoped to
+    the CALLING user's own configs only (issue #620 item 8d).
     """
     # Verify the configuration exists and belongs to the user (or is shared) using UUID
     user_config = get_llm_config_by_uuid(db, request.configuration_id)
@@ -691,15 +791,22 @@ def delete_all_user_configurations(
 
 
 @router.post("/test", response_model=schemas.ConnectionTestResponse)
+@limiter.limit(get_llm_outbound_rate_limit(), key_func=user_or_ip_key)
 def test_llm_connection(
     *,
+    request: Request,
     test_request: schemas.ConnectionTestRequest,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Test connection to LLM provider without saving settings.
     If config_id is provided and no api_key, will use the stored API key from that config.
+
+    Rate-limited (issue #676): this handler makes a server-side outbound request to a
+    caller-supplied ``base_url`` and sits behind ``get_current_active_user``, not an
+    admin gate — see ``get_llm_outbound_rate_limit``.
     """
     _assert_safe_llm_endpoint(test_request.base_url, "LLM test-connection")
     start_time = time.time()
@@ -776,6 +883,7 @@ def test_llm_connection(
 
 @router.post("/test-current", response_model=schemas.ConnectionTestResponse)
 def test_active_configuration(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -840,7 +948,12 @@ def test_active_configuration(
     # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
     # Harmless only while these two callers never set `config_id` on the request they build —
     # the first one that does gets an AttributeError on a Depends instance.
-    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
+    # `request=request` is required for the same reason (issue #676 made it keyword-only, for
+    # the outbound rate limiter's per-user/per-IP key); omitting it is a TypeError at call time,
+    # which is what broke both of these endpoints.
+    result = test_llm_connection(
+        request=request, test_request=test_request, current_user=current_user, db=db
+    )
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -857,6 +970,7 @@ def test_active_configuration(
 @router.post("/test-config/{config_uuid}", response_model=schemas.ConnectionTestResponse)
 def test_specific_configuration(
     config_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -891,7 +1005,12 @@ def test_specific_configuration(
     # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
     # Harmless only while these two callers never set `config_id` on the request they build —
     # the first one that does gets an AttributeError on a Depends instance.
-    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
+    # `request=request` is required for the same reason (issue #676 made it keyword-only, for
+    # the outbound rate limiter's per-user/per-IP key); omitting it is a TypeError at call time,
+    # which is what broke both of these endpoints.
+    result = test_llm_connection(
+        request=request, test_request=test_request, current_user=current_user, db=db
+    )
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -1120,12 +1239,18 @@ def get_config_api_key(
 
 
 @router.get("/ollama/models")
+@limiter.limit(get_llm_outbound_rate_limit(), key_func=user_or_ip_key)
 async def get_ollama_models(
+    request: Request,
     base_url: str,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Get available models from an Ollama instance
+
+    Rate-limited (issue #676): fetches a caller-supplied ``base_url`` server-side —
+    see ``get_llm_outbound_rate_limit``.
     """
     import aiohttp
 
@@ -1303,10 +1428,13 @@ def _get_http_error_message(status_code: int, models_url: str, error_text: str =
 
 
 @router.get("/openai-compatible/models")
+@limiter.limit(get_llm_outbound_rate_limit(), key_func=user_or_ip_key)
 async def get_openai_compatible_models(
+    request: Request,
     base_url: str,
     api_key: str | None = None,
     config_id: str | None = None,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -1315,6 +1443,9 @@ async def get_openai_compatible_models(
 
     Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers.
     If config_id is provided and no api_key, will use the stored API key from that config.
+
+    Rate-limited (issue #676): fetches a caller-supplied ``base_url`` server-side —
+    see ``get_llm_outbound_rate_limit``.
     """
     import aiohttp
 

@@ -335,7 +335,7 @@
   .loading-bar-fill {
     width: 40%;
     height: 100%;
-    background: var(--primary-color, #3b82f6);
+    background: var(--primary-color, var(--primary-color));
     border-radius: 3px;
     animation: loading-slide 1.2s ease-in-out infinite;
   }

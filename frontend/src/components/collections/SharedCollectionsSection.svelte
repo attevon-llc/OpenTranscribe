@@ -157,7 +157,7 @@
 
   .btn-add {
     padding: 6px 12px;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 6px;

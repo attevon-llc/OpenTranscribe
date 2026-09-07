@@ -150,7 +150,13 @@ def test_oidc_subject_is_still_unique(db_session):
     unique_on_subject = [
         ix for ix in indexes if ix["column_names"] == ["oidc_subject"] and ix["unique"]
     ]
-    assert unique_on_subject, "oidc_subject lost its UNIQUE index in the rename"
+    # Exactly one. Two would mean the rename left the pre-v380 index behind beside the
+    # new one, and zero is the regression this test is named for — a bare truthy check
+    # cannot tell those two failures apart, and reports neither.
+    assert len(unique_on_subject) == 1, (
+        f"expected exactly one UNIQUE index on oidc_subject, found "
+        f"{[ix['name'] for ix in unique_on_subject]}"
+    )
 
 
 def test_no_row_still_carries_the_old_auth_type(db_session):

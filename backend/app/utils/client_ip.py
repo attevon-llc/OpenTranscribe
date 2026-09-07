@@ -52,11 +52,6 @@ def _parse_networks(raw: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Netw
 _TRUSTED_NETWORKS = _parse_networks(settings.RATE_LIMIT_TRUSTED_PROXIES)
 
 
-def trusted_proxies_configured() -> bool:
-    """Whether any trusted proxy is configured."""
-    return bool(_TRUSTED_NETWORKS)
-
-
 def is_trusted_proxy(ip: str) -> bool:
     """Whether *ip* is one of the configured trusted proxies."""
     if not _TRUSTED_NETWORKS:

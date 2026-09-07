@@ -381,7 +381,13 @@ def bulk_export_stream(
                         continue
                     except RedisError as e:
                         logger.warning(f"Bulk export SSE pubsub error for job {job}: {e}")
-                        yield sse("error", {"message": "Connection interrupted."})
+                        yield sse(
+                            "error",
+                            {
+                                "code": "connection_interrupted",
+                                "message": "Connection interrupted.",
+                            },
+                        )
                         return
                     if msg is None:
                         yield ": keepalive\n\n"
@@ -396,7 +402,16 @@ def bulk_export_stream(
                         yield sse("ready", data)
                         return
                     if status == "error":
-                        yield sse("error", data)
+                        # `data`'s "message" is worker-published free text (issue #611's
+                        # class of concern); "code" stays a fixed literal slug so the SSE
+                        # contract guard (test_chat_sse_contract.py) can pin it structurally.
+                        yield sse(
+                            "error",
+                            {
+                                "code": "export_failed",
+                                "message": data.get("message", "Export failed."),
+                            },
+                        )
                         return
                     yield sse("progress", data)
             finally:

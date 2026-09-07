@@ -37,10 +37,10 @@ _UNMASKED = EffectiveRedactionConfig(enabled=False, enabled_categories=set())
 def _clean_cache_state():
     """No cached page or verified-pipeline id survives into or out of a test here."""
     hss.reset_infrastructure_state()
-    hss.clear_search_cache()
+    hss._search_cache.clear()
     yield
     hss.reset_infrastructure_state()
-    hss.clear_search_cache()
+    hss._search_cache.clear()
 
 
 # --------------------------------------------------------------------------- #

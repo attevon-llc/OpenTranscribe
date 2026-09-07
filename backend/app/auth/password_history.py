@@ -12,7 +12,6 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.auth.password_policy import password_policy
-from app.core.config import settings
 from app.core.security import verify_password
 from app.models.password_history import PasswordHistory
 from app.models.user import User
@@ -139,32 +138,6 @@ def _matches_current_password(db: Session, user_id: int, plain_password: str) ->
     except Exception:
         logger.debug("Current-password comparison skipped: stored hash is unreadable")
         return False
-
-
-def get_user_password_history(
-    db: Session, user_id: int, limit: int | None = None
-) -> list[PasswordHistory]:
-    """
-    Get the password history for a user.
-
-    Args:
-        db: Database session
-        user_id: The user's ID
-        limit: Maximum number of entries to return (default: PASSWORD_HISTORY_COUNT)
-
-    Returns:
-        List of PasswordHistory records, most recent first
-    """
-    if limit is None:
-        limit = settings.PASSWORD_HISTORY_COUNT
-
-    return (  # type: ignore[no-any-return]
-        db.query(PasswordHistory)
-        .filter(PasswordHistory.user_id == user_id)
-        .order_by(PasswordHistory.created_at.desc())
-        .limit(limit)
-        .all()
-    )
 
 
 def _cleanup_old_history(db: Session, user_id: int) -> int:

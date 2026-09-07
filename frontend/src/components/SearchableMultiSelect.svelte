@@ -11,11 +11,21 @@
   export let disabled = false;
   export let showCounts = false; // Show usage counts in dropdown
 
-  $: placeholder = placeholder || $t('select.placeholder');
+  $: resolvedPlaceholder = placeholder || $t('select.placeholder');
 
   const dispatch = createEventDispatcher<{
     select: { id: string | number };
     deselect: { id: string | number };
+    /**
+     * The term typed into this dropdown's own search box.
+     *
+     * Client-side filtering of `options` still happens regardless. This event
+     * exists so a consumer whose option list is SERVER-paginated can refetch —
+     * without it, a caller had to render a second, separate search input beside
+     * the dropdown to reach options beyond the fetched page, which is exactly
+     * the redundant double-search the filter sidebar used to show.
+     */
+    search: { term: string };
   }>();
 
   let isOpen = false;
@@ -72,7 +82,7 @@
       {#if selectedIds.length > 0}
         {$t('select.selected', { count: selectedIds.length })}
       {:else}
-        {placeholder}
+        {resolvedPlaceholder}
       {/if}
     </span>
     <svg
@@ -95,6 +105,7 @@
           bind:value={searchTerm}
           class="search-input"
           on:click|stopPropagation
+          on:input={() => dispatch('search', { term: searchTerm })}
         />
       </div>
 

@@ -220,7 +220,7 @@
     position: absolute;
     width: 12px;
     height: 4px;
-    background: #3b82f6;
+    background: var(--primary-color);
     border-radius: 2px;
     opacity: 0.9;
     transition: all 0.2s ease-out;
@@ -248,7 +248,7 @@
 
   /* Dark theme adjustments */
   :global([data-theme='dark']) .playhead-indicator::before {
-    background: #3b82f6;
+    background: var(--primary-color);
     opacity: 0.9;
   }
 

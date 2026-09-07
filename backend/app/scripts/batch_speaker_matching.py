@@ -20,6 +20,8 @@ from app.models.media import SpeakerMatch
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.services.speaker_rename_tracker import SpeakerRenameTracker
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,6 +30,14 @@ logger = logging.getLogger(__name__)
 def batch_process_speaker_matches():
     """Process all speakers to find and store matches."""
     db = next(get_db())
+
+    # Accumulates chunk-plane label changes from the `suggested_name`/`confidence`
+    # writes below — a suggestion crossing the canonical-label threshold (0.75)
+    # moves what the chunk index would write with no `display_name` write at all
+    # (issue #605), so this must be tracked the same way the other writers of
+    # these fields are. Flushed after each commit, so a rolled-back batch never
+    # reaches the index.
+    tracker = SpeakerRenameTracker()
 
     try:
         # Initialize services
@@ -65,9 +75,18 @@ def batch_process_speaker_matches():
                             and match["display_name"]
                             and not speaker.suggested_name
                         ):
+                            # Captured before the write (issue #605) — a
+                            # confident suggestion moves the canonical chunk
+                            # label on its own, with no `display_name` write.
+                            before = canonical_speaker_label_for_row(speaker)
                             speaker.suggested_name = match["display_name"]
                             speaker.confidence = match["confidence"]
                             speaker.suggestion_source = "voice_match"
+                            tracker.record(
+                                int(speaker.media_file_id) if speaker.media_file_id else None,
+                                before,
+                                canonical_speaker_label_for_row(speaker),
+                            )
                             db.flush()
                             break
 
@@ -76,8 +95,10 @@ def batch_process_speaker_matches():
                 if processed % 10 == 0:
                     logger.info(f"Processed {processed}/{len(speakers)} speakers...")
                     db.commit()
+                    tracker.flush(db)
 
         db.commit()
+        tracker.flush(db)
 
         logger.info("Batch processing complete!")
         logger.info(f"Processed: {processed} speakers")
@@ -90,6 +111,7 @@ def batch_process_speaker_matches():
     except Exception as e:
         logger.error(f"Error in batch processing: {e}")
         db.rollback()
+        tracker.discard()
     finally:
         db.close()
 

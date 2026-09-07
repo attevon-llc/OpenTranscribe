@@ -543,7 +543,7 @@
   }
 
   input:checked + .toggle-slider {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
   }
 
   input:checked + .toggle-slider:before {
@@ -577,13 +577,13 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.8125rem;
     font-weight: 500;
   }
 
   :global([data-theme='dark']) .banner-content {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .btn-stop-shared {
@@ -721,7 +721,7 @@
   }
 
   .btn-use {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
@@ -773,7 +773,7 @@
 
   .info-icon {
     flex-shrink: 0;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .info-content {

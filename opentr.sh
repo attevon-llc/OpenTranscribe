@@ -40,6 +40,17 @@ fi
 # which aborts under `set -u` in any checkout whose .env omits it — i.e. every fresh
 # worktree. Empty means "no specific device", which that helper already handles.
 : "${GPU_DEVICE_ID:=}"
+# --with-pki host ports (docker-compose.pki.yml / docker-compose.pki-dev.yml).
+# Both are already guarded with `:-` at every read site, but listed here too
+# per the contract this block documents.
+: "${PKI_HTTPS_PORT:=}"
+: "${PKI_HTTP_PORT:=}"
+# Grace period (seconds) for CUDA-holding services on stop/down/restart (issue #782).
+# scripts/common.sh (sourced above) already assigns this with `${OT_STOP_GRACE_GPU:-30}`,
+# which satisfies `set -u` on its own — this entry exists for the drift-guard contract
+# test_stop_grace_period_wiring.py enforces (opentr.sh's defaults block, common.sh's
+# assignment, and the compose `${OT_STOP_GRACE_GPU:-Ns}` default must all agree on 30).
+: "${OT_STOP_GRACE_GPU:=30}"
 # Snapshot of the .env value, taken before any `--gpu-device` override replaces
 # it. The containers read GPU_DEVICE_ID from `env_file: .env` (not from this
 # shell), so the override has to be able to say which value they will still see.
@@ -49,11 +60,6 @@ GPU_DEVICE_ID_FROM_ENV="${GPU_DEVICE_ID}"
 # through start/reset first aborted before it could print anything. `dev` matches the
 # default those functions use, so defaulting here cannot change a real invocation.
 : "${ENVIRONMENT:=dev}"
-# Same reason as GPU_DEVICE_ID above: it is read to warn that clustering cannot be
-# moved off its pinned device, and that warning path runs on checkouts whose .env
-# never set it. Line 406 guards its own read with `:-`; line 409 does not, and a
-# static guard cannot know the `-n` test above it already proved it non-empty.
-: "${GPU_CLUSTERING_DEVICE:=}"
 
 # Export APP_VERSION so docker compose can pass it through to containers
 # (used instead of ./VERSION file bind-mount to avoid OCI stub creation in dev mode)
@@ -109,17 +115,22 @@ show_help() {
   echo "  --gpu-device N       - Run this stack's AI work on host GPU N, overriding .env AFTER it"
   echo "                         is sourced (a pre-exported GPU_DEVICE_ID cannot win — .env clobbers"
   echo "                         it — and editing .env moves the LIVE stack too)."
-  echo "                         Moves ALL FIVE worker device ids together, because a flag that"
-  echo "                         repoints one worker and leaves four behind just makes two stacks"
+  echo "                         Moves ALL SIX device ids together, because a flag that"
+  echo "                         repoints one worker and leaves five behind just makes two stacks"
   echo "                         fight over one card: GPU_DEVICE_ID, REDACTION_GPU_DEVICE_ID,"
-  echo "                         GPU_SCALE_DEVICE_ID, GPU_TRANSCRIBE_DEVICE_ID, GPU_DIARIZE_DEVICE_ID."
+  echo "                         GPU_SCALE_DEVICE_ID, GPU_TRANSCRIBE_DEVICE_ID, GPU_DIARIZE_DEVICE_ID,"
+  echo "                         DIAR_NATIVE_GPU (the sidecar — omitted from this list until #719)."
   echo "                         Does NOT move LLM_TEST_GPU_DEVICE_ID (--with-llm-test keeps its own"
   echo "                         card on purpose — co-locating a multi-GB LLM with transcription is"
   echo "                         what that separation prevents); use LLM_TEST_GPU_DEVICE_ID=N ./opentr.sh"
-  echo "                         Does NOT move GPU_CLUSTERING_DEVICE, nor the in-container copy of"
-  echo "                         GPU_DEVICE_ID: both come from 'env_file: .env', which no shell export"
-  echo "                         can reach. The in-container copy only labels the admin GPU-stats"
-  echo "                         panel; placement is the reservation this flag sets."
+  echo "                         Does NOT move the in-container copy of GPU_DEVICE_ID: it comes from"
+  echo "                         'env_file: .env', which no shell export can reach. It only labels the"
+  echo "                         admin GPU-stats panel; placement is the reservation this flag sets."
+  echo "  --diar-native-gpu N  - Move ONLY the diar-native sidecar to host GPU N, applied AFTER"
+  echo "                         --gpu-device so the two can differ (e.g. --gpu-device 2"
+  echo "                         --diar-native-gpu 1 puts gpu-scale workers on GPU 2 and the"
+  echo "                         sidecar on GPU 1) — needed to test the cross-card arrangement the"
+  echo "                         shipped defaults already describe (issue #711)."
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
   echo "  --no-diar-native     - Suppress the auto-loaded native diarization sidecar"
@@ -138,24 +149,30 @@ show_help() {
   echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
   echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
-  echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
+  echo "  --with-pki           - Enable PKI certificate authentication (mTLS). Works in dev (via"
+  echo "                         docker-compose.pki-dev.yml, a built nginx in front of the"
+  echo "                         bind-mounted dev backend) and prod. Generates its own test-env"
+  echo "                         fragment (scripts/pki/generate-test-env.sh) — never touches .env."
   echo "  --with-ldap-test     - Start LDAP test container (dev or prod; localhost:3890, UI :17170)"
   echo "  --with-mock-llm      - Start mock LLM provider (localhost:5199) so chat/AI features"
   echo "                         work without a GPU or API key. Models: mock-gpt, mock-echo,"
   echo "                         mock-empty, mock-error, mock-slow"
+  echo "  --with-mock-asr      - Start mock cloud ASR provider (Gladia stand-in, localhost:5198)"
+  echo "                         so cloud-ASR features work without a vendor account."
+  echo "                         Scenarios: ok, error, malformed, upload-reject"
   echo "  --with-llm-test      - Start a real GPU-backed LLM (vLLM, localhost:5195) for chat"
   echo "                         testing against actual model output, not canned tokens."
   echo "                         Default model: Gemma 4 E4B (AWQ), GPU 2. See"
   echo "                         docker-compose.llm-test.yml for the Ollama alternative."
   echo "  --with-documents     - Start the document parsing sidecars: docling-serve (OCR +"
   echo "                         layout, CPU-only, localhost:5197) and Apache Tika (legacy"
-  echo "                         OLE2 .doc/.ppt/.xls + RTF, localhost:5198). Without this"
+  echo "                         OLE2 .doc/.ppt/.xls + RTF, localhost:5194). Without this"
   echo "                         flag the in-worker 'slim' tier still parses PDF/OOXML/text;"
   echo "                         scans and legacy Office get a typed 'not available' error."
   echo "  --with-diar-native   - Start the native diarization sidecar (diar-server), the"
   echo "                         PRIMARY engine when engine.diarizer_backend=native."
   echo "                         GPU: DIAR_NATIVE_GPU, else GPU_DEVICE_ID; the sidecar"
-  echo "                         holds ~4.1 GB of warm ORT arena on that card while up."
+  echo "                         holds ~2.2 GB of warm ORT arena on that card while up."
   echo "                         Without this flag a native-configured stack silently"
   echo "                         falls back to the in-process PyAnnote fork per file."
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
@@ -165,18 +182,29 @@ show_help() {
   echo "  --with-monitoring    - Start Prometheus (:5186) + Grafana (:5185) observability stack"
   echo "                         (all four --with-* test overlays are isolated + port-offset by --fresh)"
   echo "  --with-backup        - Mount BACKUP_HOST_PATH (default ./backups) for in-app scheduled backups"
+  echo "  --with-scratch-tmpfs - Put the pipeline_scratch WAV handoff volume on RAM-backed tmpfs"
+  echo "                         (default 2g, override SCRATCH_TMPFS_SIZE). Sized off"
+  echo "                         DIAR_NATIVE_MAX_INFLIGHT x largest in-flight file."
   echo ""
   echo "Reset & Database Commands:"
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
   echo "                                           (Accepts same options as 'start' command)"
   echo "  backup [--encrypt]  - Create a database backup (--encrypt: GPG AES-256, no plaintext on disk)"
-  echo "  restore [file]      - Restore database from backup (.sql or .gpg)"
+  echo "  restore [--yes] [--no-safety-dump] [--from-s3] [--migrate-forward|--no-restart] <file>  - REPLACE the database from a backup"
+  echo "                  (.sql, .dump, .sql.gpg, or .dump.gpg; --from-s3 fetches by name first) — destructive"
   echo ""
   echo "Development Commands:"
-  echo "  restart-backend     - Restart backend, all celery workers, celery-beat & flower without database reset"
-  echo "  restart-frontend    - Restart frontend without affecting backend services"
-  echo "  restart-all         - Restart all services without resetting database"
-  echo "  rebuild-backend [--nas]  - Rebuild backend services with code changes"
+  echo "  restart-backend [--fresh <name>]"
+  echo "                      - Restart backend, all celery workers, celery-beat & flower without database reset"
+  echo "  restart-frontend [--fresh <name>]"
+  echo "                      - Restart frontend without affecting backend services"
+  echo "  restart-all [--fresh <name>]"
+  echo "                      - Restart all services without resetting database"
+  echo "                        (--fresh targets an isolated deployment; without it, the default stack)"
+  echo "  rebuild-backend [--nas] [--with-diar-native|--no-diar-native]"
+  echo "                           - Rebuild backend services with code changes. The"
+  echo "                             diar-native overlay is kept automatically when this"
+  echo "                             deployment already has the sidecar."
   echo "                             (pass --nas on NAS/NVMe deployments; auto-detected"
   echo "                             from MINIO_NAS_PATH/POSTGRES_DATA_PATH/OPENSEARCH_DATA_PATH"
   echo "                             env vars). --no-deps protects postgres/minio/opensearch."
@@ -230,6 +258,7 @@ show_help() {
   echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
+  echo "  ./opentr.sh start dev --with-mock-asr        # Dev with a fake cloud ASR provider for testing"
   echo "  ./opentr.sh start dev --with-llm-test        # Dev with a real GPU-backed LLM (vLLM) for chat testing"
   echo "  ./opentr.sh start dev --with-documents       # Dev with the OCR + legacy-Office parser sidecars"
   echo "  ./opentr.sh start dev --with-diar-native     # Dev with the native diarization sidecar"
@@ -238,11 +267,55 @@ show_help() {
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
   echo "  ./opentr.sh start prod --build               # Production with local build (test before push)"
   echo "  ./opentr.sh start prod --build --with-pki    # Production with PKI (requires nginx)"
+  echo "  ./opentr.sh start dev --with-pki             # Dev with PKI (docker-compose.pki-dev.yml)"
   echo "  ./opentr.sh reset dev                        # Reset development environment"
   echo "  ./opentr.sh reset dev --lite                 # Reset in cloud-only ASR mode"
   echo "  ./opentr.sh logs backend                     # View backend logs"
   echo "  ./opentr.sh restart-backend                  # Restart backend services only"
+  echo "  ./opentr.sh restart-backend --fresh test1    # ...on the isolated 'test1' deployment"
   echo ""
+}
+
+# Resolve where the diar-native ONNX/PLDA export lives, and EXPORT it so the
+# auto-load check below and docker-compose.diar-native.yml's volume mount can never
+# disagree about the answer.
+#
+# Order: an explicit DIAR_NATIVE_MODELS_DIR wins; then the standard cache location
+# (${MODEL_CACHE_DIR}/diar-native, a sibling of huggingface/ and torch/, and where a
+# self-hosted export lands); then the pre-convention sibling-repo export, which is
+# where this workstation's models still are and which has no entry in .env. Dropping
+# that last probe silently moved existing dev checkouts onto the PyAnnote fallback.
+#
+# This probe is dev-only on purpose: opentr.sh is deliberately not shipped
+# (test_opentr_sh_is_not_shipped_and_the_shipped_script_covers_it), and
+# opentranscribe.sh resolves the standard location only.
+resolve_diar_native_models_dir() {
+  if [ -n "${DIAR_NATIVE_MODELS_DIR:-}" ]; then
+    export DIAR_NATIVE_MODELS_DIR
+    return 0
+  fi
+
+  local standard="${MODEL_CACHE_DIR:-./models}/diar-native"
+  local legacy="/mnt/nvm/repos/diar-native/models_folded"
+
+  # `-d` alone is not enough: Docker auto-creates an empty directory at a bind-mount
+  # source that doesn't exist yet, so a standard path that was never populated (or was
+  # only just created by a prior container start) would otherwise be silently preferred
+  # over a legacy path that genuinely has the export -- reproduced live: diar-native
+  # restart-looped on "File at /models/segmentation-3.0.onnx does not exist" the moment
+  # an empty ./models/diar-native existed. Matches opentranscribe.sh's own
+  # `[ -d ... ] && [ -n "$(ls -A ...)" ]` non-emptiness check.
+  if [ -d "$standard" ] && [ -n "$(ls -A "$standard" 2>/dev/null)" ]; then
+    export DIAR_NATIVE_MODELS_DIR="$standard"
+  elif [ -d "$legacy" ]; then
+    export DIAR_NATIVE_MODELS_DIR="$legacy"
+    # Announced, not silent: this path is a property of one machine, not of the repo,
+    # so it must never become invisible drift that only that machine benefits from.
+    echo "ℹ️  diar-native models found at the legacy path $legacy."
+    echo "   Set DIAR_NATIVE_MODELS_DIR in .env to pin it, or move the export to $standard."
+  else
+    export DIAR_NATIVE_MODELS_DIR="$standard"
+  fi
 }
 
 # Build production images locally (backend + frontend)
@@ -289,6 +362,30 @@ detect_and_configure_hardware() {
   export DOCKER_RUNTIME=""
   export BACKEND_DOCKERFILE="Dockerfile.prod"
   export BUILD_ENV="development"
+
+  # FORCE_CPU_MODE=true in .env is an explicit opt-out of GPU usage even on a GPU host —
+  # opentranscribe.sh has honoured this since it was added; opentr.sh silently ignored it,
+  # so `./opentr.sh start dev` loaded the nvidia GPU reservation (and the diar-native GPU
+  # overlay, gated on the same $DOCKER_RUNTIME below) anyway. `--cpu`/`--lite` already clear
+  # DOCKER_RUNTIME themselves; this only covers the .env-only opt-out those flags don't set.
+  if [ "${FORCE_CPU_MODE:-}" = "true" ]; then
+    echo "🧮 CPU-only mode (FORCE_CPU_MODE=true in .env) — skipping GPU detection"
+    export TORCH_DEVICE="cpu"
+    export COMPUTE_TYPE="int8"
+    export USE_GPU="false"
+    export DOCKER_RUNTIME=""
+    export BACKEND_DOCKERFILE="Dockerfile.prod"
+    export BUILD_ENV="development"
+    TARGETPLATFORM="linux/$([[ "$ARCH" == "arm64" ]] && echo "arm64" || echo "amd64")"
+    export TARGETPLATFORM
+    echo "📋 Hardware Configuration:"
+    echo "  Platform: $PLATFORM"
+    echo "  Architecture: $ARCH"
+    echo "  Device: $TORCH_DEVICE"
+    echo "  Compute Type: $COMPUTE_TYPE"
+    echo "  Docker Runtime: default"
+    return
+  fi
 
   # Check for NVIDIA GPU
   if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
@@ -357,6 +454,20 @@ add_gpu_overlay() {
     # for docker-compose.gpu.yml on top.
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.blackwell.yml"
     echo "🎯 Adding Blackwell GPU overlay (SM_12x detected)"
+
+    # Pin the diar-native sidecar to the SAME Blackwell tag as celery-worker above.
+    # docker-compose.blackwell.yml deliberately carries no `diar-native` entry of its own
+    # (see its comment): this overlay is always appended BEFORE docker-compose.diar-native.yml
+    # (add_diar_native_overlay runs after add_gpu_overlay at every call site), and compose's
+    # last-file-wins merge means diar-native.yml's `image:` key always overrides whatever a
+    # compose-side retag here would set — verified: resolving the full chain gave
+    # celery-worker -> :blackwell but diar-native -> :latest. DIAR_NATIVE_IMAGE is the
+    # variable docker-compose.diar-native.yml itself interpolates, so setting it here, in the
+    # shell, before compose ever reads either file, wins regardless of `-f` order. `:-`
+    # respects an operator's own override (e.g. a hand-set custom export location); safe to
+    # call unconditionally since add_diar_native_overlay's own dev-mode default a few lines
+    # later uses the same `:-` form and therefore never clobbers this.
+    export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}}"
   elif [ -f "docker-compose.gpu.yml" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
     echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
@@ -396,9 +507,9 @@ GPU_DEVICE_VARS=(
 #     Folding it in would co-locate them — the exact OOM that separation avoids.
 #     Move it explicitly with `LLM_TEST_GPU_DEVICE_ID=N ./opentr.sh ...` (it is
 #     absent from .env.example, so a pre-export survives unless your .env sets it).
-#   * GPU_CLUSTERING_DEVICE, and the container-side copy of GPU_DEVICE_ID, are read
-#     INSIDE the container from `env_file: .env` rather than interpolated by
-#     compose, so no shell export can reach them. Both are warned about below.
+#   * The container-side copy of GPU_DEVICE_ID is read INSIDE the container from
+#     `env_file: .env` rather than interpolated by compose, so no shell export can
+#     reach it. Warned about below.
 apply_gpu_device_override() {
   local requested="$1"
   local var
@@ -438,11 +549,6 @@ apply_gpu_device_override() {
     echo "      only labels the admin GPU-stats panel; the reserved card is $requested."
   fi
 
-  if [ -n "${GPU_CLUSTERING_DEVICE:-}" ] && [ "${GPU_CLUSTERING_DEVICE}" != "$requested" ]; then
-    echo "   ⚠️  GPU_CLUSTERING_DEVICE=${GPU_CLUSTERING_DEVICE} in .env: speaker clustering runs on the"
-    echo "      cpu-worker (which sees ALL GPUs) and reads that value from env_file — --gpu-device"
-    echo "      cannot move it. Unset it in .env, or expect clustering on GPU ${GPU_CLUSTERING_DEVICE}."
-  fi
 }
 
 # Flag combinations that make --gpu-device mean less than it looks like it means.
@@ -496,6 +602,274 @@ add_nas_overlay() {
   echo "   OpenSearch:   $OS_PATH"
 }
 
+# True when this compose project already has a diar-native container, in ANY state.
+#
+# Label-scoped, never name-prefix-matched: this host runs unrelated compose stacks
+# whose container names share the `opentranscribe` prefix, and a naive
+# `docker ps | grep '^opentranscribe-'` in `opentr.sh stop` once destroyed one of
+# them. The diar-native service also declares no `container_name`, so its container
+# is `<project>-diar-native-1` and a `name=^<project>-diar-native$` filter — the
+# shape the gpu-scale/gpu-split loop uses for services that DO pin a name — would
+# match nothing here.
+#
+# `-a`, i.e. any state, not `status=running`, on purpose: the sidecar is
+# `restart: unless-stopped`, so a crash-looping instance reports `restarting`, and a
+# stack whose sidecar is merely down between rebuilds is still a stack that HAS one.
+# Being over-inclusive costs one named-volume mount and two env vars on
+# celery-worker; being under-inclusive costs the silent PyAnnote fallback that
+# add_diar_native_overlay exists to prevent.
+#
+# ⚠️ THE PROJECT NAME IS DERIVED FROM THE DIRECTORY, NOT DEFAULTED TO "opentranscribe".
+# The first version of this probe used `${COMPOSE_PROJECT_NAME:-opentranscribe}` and was
+# a NO-OP on the machine that has the bug. COMPOSE_PROJECT_NAME is never exported
+# globally by this script — only locally inside the fresh-deployment helpers — so
+# compose falls back to ITS default, the directory basename. Measured against the live
+# daemon: the sidecar's `com.docker.compose.project` label is `transcribe-app` (the
+# checkout is /mnt/nvm/repos/transcribe-app), and a probe filtering on `opentranscribe`
+# matched 0 containers, dropped the overlay, and reproduced the 422 exactly.
+# `basename "$(pwd)"` is the same resolution preflight_ports_or_die already uses; a
+# checkout in a differently-named directory must keep working, so this is derived and
+# never hardcoded. (test_the_probe_resolves_the_project_from_the_checkout_directory)
+diar_native_container_present() {
+  local project="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
+  docker ps -a --format '{{.ID}}' \
+    --filter "label=com.docker.compose.project=${project}" \
+    --filter "label=com.docker.compose.service=diar-native" 2>/dev/null | grep -q .
+}
+
+# Append the native diarization sidecar overlay to $COMPOSE_FILES. Mirrors
+# add_nas_overlay: ONE place decides, so start/reset/rebuild can never disagree
+# about whether celery-worker gets the diar-native handoff volume.
+#
+# ⚠️ WHY THIS IS SHARED RATHER THAN INLINED. docker-compose.diar-native.yml is the
+# only file that sets DIAR_NATIVE_URL on celery-worker and shares the pipeline_scratch
+# handoff volume with the sidecar (issue #661 E2: one volume, engine/ and diar/
+# namespaces — this used to be a dedicated `diar-native-tmp` volume at
+# /tmp/diar-native, which is the shape the reproduction below happened in; the
+# DEFECT this overlay prevents is unchanged, only the volume name moved).
+# `rebuild-backend` used to omit the overlay, so it recreated celery-worker with the
+# sidecar unreachable at all; the worker wrote the WAV to its own filesystem, the
+# sidecar could not see it, and /diarize answered
+#     HTTP 422  opening /tmp/diar-native/<job>.wav: No such file or directory
+# which the worker classified as "sidecar failed mid-job" and answered by falling
+# back to the in-process PyAnnote fork — slower, no speaker gender, and NOTHING
+# surfaced to the user beyond one log line. Same bug class as the NAS overlay note
+# above: containers that look correct, bound to the wrong storage.
+#
+# $1 picks the auto-detect predicate, because "should this deployment have the
+# sidecar?" and "does this deployment have the sidecar?" are different questions:
+#
+#   start   - CONFIGURATION. engine.diarizer_backend resolves to native AND (the model
+#             export already exists OR a HUGGINGFACE_TOKEN is configured to produce it on
+#             this startup). The right question for a stack that does not exist yet.
+#
+#   rebuild - OBSERVATION. A diar-native container already exists in this compose
+#             project. rebuild-backend recreates services in place, so the only
+#             correct answer is the one the running deployment already made; the
+#             config predicate disagrees with it in BOTH directions (a stack started
+#             with --no-diar-native would gain the overlay; a stack running the
+#             sidecar under ENGINE_DIARIZER_BACKEND=pyannote would lose it, which is
+#             the original bug). Precedent: the gpu-scale/gpu-split loop in
+#             rebuild-backend likewise rebuilds those workers only when they are up.
+#             It can never START a sidecar nobody asked for — with no container there
+#             is no overlay, and rebuild-backend passes an explicit service list with
+#             --no-deps, so `diar-native` is never brought up either way.
+#
+# Either predicate is overridden by an explicit --with-diar-native / --no-diar-native.
+add_diar_native_overlay() {
+  local mode="${1:-start}"
+
+  # Runs unconditionally (even under --no-diar-native): it EXPORTS the path
+  # docker-compose.diar-native.yml interpolates for the read-only /models bind, and
+  # its legacy-path banner is part of every start's output today.
+  resolve_diar_native_models_dir
+
+  if [ -z "${WITH_DIAR_NATIVE_FLAG:-}" ] && [ -z "${NO_DIAR_NATIVE_FLAG:-}" ]; then
+    if [ "$mode" = "rebuild" ]; then
+      if diar_native_container_present; then
+        WITH_DIAR_NATIVE_FLAG="auto"
+        echo "🎙️  diar-native sidecar is part of this deployment — keeping its overlay so celery-worker keeps DIAR_NATIVE_URL and the shared handoff namespace."
+      fi
+    else
+      # Native diarization sidecar auto-load: `native` is the coded default engine, so a
+      # stack without the sidecar silently serves every file from the in-process PyAnnote
+      # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
+      #
+      # Gate is "models present OR a token is configured", not "models present" alone.
+      # backend/app/transcription/native_provision.py now runs `diar-server
+      # provision-models` from the FastAPI lifespan on backend startup, so gating on the
+      # export already existing meant a fresh checkout needed TWO `start`s to converge —
+      # one to provision, a second to notice the result. A configured HUGGINGFACE_TOKEN is
+      # what lets that provisioning step succeed, so it stands in for the export until the
+      # export exists. With neither, nothing can ever produce the weights and loading the
+      # overlay would just crash-loop the sidecar (see resolve_diar_native_models_dir's
+      # comment for the reproduction).
+      #
+      # `--fresh` is no longer excluded here. It used to be, back when a fresh stack had no
+      # path to its own export; now the same lifespan provisioning runs there too, so a
+      # `--fresh` stack with a token configured is precisely the fresh-install rehearsal
+      # this auto-load exists to cover, not a case to skip.
+      #
+      # Lite is NO LONGER excluded. It used to be, on the premise that the lite image had
+      # no Python exporter toolchain, so /models could never fill itself in and loading the
+      # overlay would crash-loop diar-server against an empty --models-dir under
+      # `restart: unless-stopped` (`diar-server serve` with an empty DIAR_MODELS_DIR exits
+      # 8 — that part is still true and still what the gate below protects against).
+      #
+      # The premise was wrong in a way that removed the feature it was protecting. The
+      # ONNX/PLDA graphs are non-redistributable derivatives of gated weights, so a
+      # deployment that cannot export cannot obtain them AT ALL — excluding lite did not
+      # avoid a broken sidecar, it guaranteed lite had no local voiceprint path whatsoever
+      # (SpeakerEmbeddingService refuses when the sidecar is unusable, and lite runs cloud
+      # ASR, so speaker embeddings are the ONE local model job it still has).
+      #
+      # `diar-server` carries the export itself — its five Python scripts are compiled into
+      # the binary, which Dockerfile.lite copies in and which runs there. Only the packages
+      # those scripts import were missing; requirements-lite.txt now installs the four the
+      # binary's own preflight names (pyannote.audio, onnxscript, onnxslim,
+      # onnxconverter-common). So lite provisions itself on first boot exactly as the full
+      # image does, and falls through to the same gate as every other deployment: models
+      # present, or a token configured to produce them.
+      if [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ]; then
+        if [ -d "$DIAR_NATIVE_MODELS_DIR" ] && [ -n "$(ls -A "$DIAR_NATIVE_MODELS_DIR" 2>/dev/null)" ]; then
+          WITH_DIAR_NATIVE_FLAG="auto"
+          echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
+        elif [ -n "${HUGGINGFACE_TOKEN:-}" ]; then
+          WITH_DIAR_NATIVE_FLAG="auto"
+          echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; no export yet, but HUGGINGFACE_TOKEN is set — backend will provision it on startup). Use --no-diar-native to skip."
+        fi
+      fi
+    fi
+  fi
+
+  # `predict` exists only for the --fresh aux-recording step (see the --fresh block in
+  # start_app), which has to know whether this decision will come out "load the sidecar"
+  # BEFORE $COMPOSE_FILES exists — fresh_write_aux/fresh_generate_overlay run long before
+  # the real caller reaches this same function later in start_app. It stops here on
+  # purpose: appending to $COMPOSE_FILES now would land the overlay before
+  # docker-compose.yml itself (COMPOSE_FILES is not yet initialized at that point), and
+  # that append gets clobbered anyway the moment start_app does
+  # `COMPOSE_FILES="-f docker-compose.yml"`. The decision made above (WITH_DIAR_NATIVE_FLAG
+  # plus the banner) is the only thing the caller needs, and it persists in the shell
+  # variable for the real call to pick up unchanged.
+  if [ "$mode" = "predict" ]; then
+    return 0
+  fi
+
+  # Add the native diarization sidecar if requested
+  if [ -n "${WITH_DIAR_NATIVE_FLAG:-}" ]; then
+    if [ -f "docker-compose.diar-native.yml" ]; then
+      # Lite pairing (issue #660): under --lite the workers that use this sidecar
+      # (backend, celery-cpu-worker — the latter serves extract_speaker_embeddings,
+      # NOT celery-embedding-worker, which is search indexing) run
+      # opentranscribe-backend-lite. The overlay's own default is the FULL backend
+      # image, so resolving docker-compose.yml + lite + diar-native without this
+      # produces the exact mismatched image pair described in B4: lite workers on
+      # one image, the sidecar on another. This must be exported before the
+      # dev-mode default below, which only fires when this is unset. Model source
+      # for lite used to be a separate decision on the premise that the lite image had no
+      # Python exporter toolchain — since #654 restored it to requirements-lite.txt, that
+      # premise is dead: lite provisions its own ONNX/PLDA export on first boot exactly
+      # like a full install (see resolve_diar_native_models_dir and DIAR_NATIVE_MODELS_DIR
+      # in .env.example). Lite's speaker embeddings stay PyAnnote-free-at-runtime either way.
+      [ -n "${LITE_FLAG:-}" ] && export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}}"
+
+      # The overlay defaults to the PUBLISHED backend image, which is correct for a
+      # self-hosted deployment but wrong in this checkout — dev builds the image
+      # locally as opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest} and never pushes it.
+      # Point the sidecar at the local build so it matches the workers it serves — reading
+      # OT_DEV_IMAGE_TAG (unset -> "latest" outside --fresh) keeps this in lockstep with the
+      # tag docker-compose.override.yml's other 13 services resolve to, so a --fresh stack's
+      # sidecar never ends up paired against the MAIN stack's :latest image.
+      if [ "$ENVIRONMENT" = "dev" ]; then
+        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}}"
+      fi
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
+      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
+
+      # The base overlay above is deliberately CPU-safe: it declares no device
+      # reservation and DIAR_MODE defaults to `cpu`, so it can load on a --lite or
+      # GPU-less host without `up` failing on "could not select device driver" (#660).
+      # The nvidia reservation and the `cuda` override live in this second file, gated on
+      # the same runtime probe add_gpu_overlay uses — without it a GPU host would silently
+      # run the sidecar on CPU, which is slower; embeddings stay EQUIVALENT for speaker
+      # matching (measured 2026-09-04: cosine 0.999999816 CPU-vs-CUDA — not bit-identical,
+      # and CUDA is not even bit-identical with itself at 2.86e-04 run to run) while
+      # diarization segment boundaries may differ by up to one segmentation frame
+      # (0.016875 s), so nothing would ever surface the mistake.
+      if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.diar-native-gpu.yml" ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native-gpu.yml"
+        echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~2.2 GB warm ORT arena while up."
+      else
+        echo "   diar-server on CPU (no nvidia runtime detected) — slower; embeddings identical," \
+             "diarization boundaries may differ by up to 0.016875s (#679)."
+      fi
+      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
+      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
+    else
+      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
+    fi
+  fi
+}
+
+# Append the PKI/mTLS overlay to $COMPOSE_FILES if --with-pki was passed.
+# Replaces two ~25-line blocks that used to be duplicated verbatim in
+# start_app() and reset() (issue: PKI test-env injection design doc).
+#
+# Dev vs prod: docker-compose.pki-dev.yml swaps in a Dockerfile.prod nginx in
+# front of the bind-mounted dev backend (real mTLS, no image rebuild needed for
+# a backend fix); docker-compose.pki.yml is the prod/nginx overlay. Either way
+# docker-compose.override.yml / docker-compose.prod.yml must already be in
+# $COMPOSE_FILES — start_app()/reset() add PKI after that base chain.
+#
+# Certificate generation and the test-env fragment are delegated to
+# scripts/pki/generate-test-env.sh, which is the ONLY thing that decides
+# whether certs need (re)issuing — see that script's header. This function
+# never opens .env; PKI_HTTPS_PORT/PKI_HTTP_PORT are read from whatever the
+# shell already has (a fresh deployment will have offset them beforehand).
+add_pki_overlay() {
+  if [ -z "$WITH_PKI_FLAG" ]; then
+    return
+  fi
+
+  local pki_compose_file
+  if [ "$ENVIRONMENT" = "dev" ]; then
+    pki_compose_file="docker-compose.pki-dev.yml"
+  else
+    pki_compose_file="docker-compose.pki.yml"
+  fi
+
+  if [ ! -f "$pki_compose_file" ]; then
+    echo "⚠️  --with-pki specified but $pki_compose_file not found"
+    return
+  fi
+
+  if ! ./scripts/pki/generate-test-env.sh --quiet \
+    --https-port "${PKI_HTTPS_PORT:-5182}" --http-port "${PKI_HTTP_PORT:-5187}"; then
+    echo "❌ Failed to generate PKI test env (scripts/pki/generate-test-env.sh)"
+    exit 1
+  fi
+
+  # Source the fragment AFTER .env (sourced at the top of this script), same
+  # ordering rule apply_gpu_device_override() follows for GPU_DEVICE_ID:
+  # PKI_HTTP_PORT is a live line in .env.example, so a pre-export would
+  # otherwise lose to it. .env itself is never opened by this function or by
+  # generate-test-env.sh.
+  set -a
+  # shellcheck source=scripts/pki/test-certs/pki-test.env
+  source scripts/pki/test-certs/pki-test.env
+  set +a
+
+  COMPOSE_FILES="$COMPOSE_FILES -f $pki_compose_file -f scripts/pki/test-certs/pki-test.compose.yml"
+  echo "🔐 Adding PKI authentication overlay ($pki_compose_file + generated test-env fragment)"
+  echo "   Access URL: ${PKI_E2E_URL:-https://localhost:${PKI_HTTPS_PORT:-5182}}"
+  echo "   Import client certificate from: scripts/pki/test-certs/clients/"
+  if [ "$ENVIRONMENT" = "dev" ]; then
+    echo "   ℹ️  Dev PKI frontend is a BUILT image — a *frontend* change still needs"
+    echo "      ./opentr.sh rebuild-frontend. Only the backend hot-reloads."
+  fi
+}
+
 #######################
 # FRESH DEPLOYMENT HELPERS
 #######################
@@ -546,11 +920,64 @@ FRESH_LDAP_SERVICES=(lldap)
 FRESH_MOCK_LLM_SERVICES=(mock-llm)
 # Document parsing sidecars (--with-documents). Both hard-code a container_name and
 # publish a loopback port, so both need the #347 isolation treatment or a fresh stack
-# collides with the main one on 5197/5198.
+# collides with the main one on 5197/5194.
 FRESH_DOCUMENTS_SERVICES=(docling-serve tika)
+# Mock cloud ASR provider (--with-mock-asr). Isolated like every other aux
+# overlay so a fresh stack cannot collide with the main one on port 5198.
+FRESH_MOCK_ASR_SERVICES=(mock-asr)
 # Native diarization sidecar (--with-diar-native). No published host port, but the
 # service still needs re-pinning into the fresh project so two stacks never share one.
 FRESH_DIAR_NATIVE_SERVICES=(diar-native)
+
+# Adversarial-audit finding: container names, ports and named volumes are all
+# namespaced by COMPOSE_PROJECT_NAME automatically, but a HOST BIND MOUNT is
+# not — it is a literal path on disk. docker-compose.yml mounts
+# DIAR_NATIVE_MODELS_DIR into `backend` READ-WRITE (the backend is what EXPORTS
+# the model set, native_provision.py), so a --fresh stack that inherited the
+# live value could re-export over, or corrupt, the 462MB export the main stack
+# is serving from. This is exactly the "own copy" resolution the --fresh
+# exclusion in add_diar_native_overlay was already removed to enable — a fresh
+# stack with a HUGGINGFACE_TOKEN provisions its OWN export here instead of
+# touching the live one, which is a real fresh-install rehearsal rather than a
+# read-only peek at somebody else's model set.
+#
+# Directory, not a bare path builder: kept as a function (not another
+# FRESH_*_PATH constant) because it has to derive from the already-sanitized
+# deployment name, same as fresh_project_name.
+fresh_diar_native_models_dir() {
+  echo "${FRESH_OVERLAY_DIR}/$(fresh_sanitize_name "$1")/diar-native-models"
+}
+
+# Create (idempotently) and correctly own a fresh deployment's isolated
+# diar-native export directory BEFORE `compose up` ever runs. Must happen
+# host-side, first: an absent bind-mount source is auto-created by dockerd as
+# root-owned the instant the container starts, and the backend (appuser, uid
+# 1000) then fails `provision-models` with exit 7 NOT_WRITABLE — the exact
+# ownership hazard scripts/common.sh's fix_model_cache_permissions was just
+# fixed to avoid for the main $MODEL_CACHE_DIR path. That fix does not cover
+# this directory: it is scoped to $MODEL_CACHE_DIR, and this one is
+# deliberately OUTSIDE it (see fresh_diar_native_models_dir above), so it
+# needs the same two-tier ownership fix (Docker helper container, then a
+# direct chown fallback) duplicated here rather than shared.
+fresh_prepare_diar_native_models_dir() {
+  local dir="$1"
+  mkdir -p "$dir"
+  local owner
+  owner=$(stat -c '%u' "$dir" 2>/dev/null || stat -f '%u' "$dir" 2>/dev/null || echo "unknown")
+  [ "$owner" = "1000" ] && return 0
+  if command -v docker &>/dev/null && \
+     docker run --rm -v "$dir:/models" busybox:latest \
+       sh -c "chown -R ${CONTAINER_UID_GID:-1000:999} /models && chmod -R 755 /models" \
+       >/dev/null 2>&1; then
+    return 0
+  fi
+  if chown -R "${CONTAINER_UID_GID:-1000:999}" "$dir" 2>/dev/null && chmod -R 755 "$dir" 2>/dev/null; then
+    return 0
+  fi
+  echo "⚠️  Warning: could not fix ownership of fresh diar-native models dir: $dir"
+  echo "   If provisioning fails with NOT_WRITABLE, chown it to ${CONTAINER_UID_GID:-1000:999} manually."
+  return 1
+}
 FRESH_SMB_SERVICES=(smb-test)
 FRESH_MONITORING_SERVICES=(prometheus grafana)
 # Real GPU-backed LLM (--with-llm-test). This was the ONE aux overlay #347 never
@@ -794,7 +1221,10 @@ FRESH_MOCK_LLM_PORT_VARS=(
 )
 FRESH_DOCUMENTS_PORT_VARS=(
   "DOCLING_SERVE_PORT=5197"     # docling-serve sidecar → :5001
-  "TIKA_PORT=5198"              # apache/tika           → :9998
+  "TIKA_PORT=5194"              # apache/tika           → :9998
+)
+FRESH_MOCK_ASR_PORT_VARS=(
+  "MOCK_ASR_PORT=5198"          # mock cloud ASR provider → :5198
 )
 FRESH_SMB_PORT_VARS=(
   "SMB_TEST_PORT=4450"          # samba → :445
@@ -806,6 +1236,15 @@ FRESH_MONITORING_PORT_VARS=(
 FRESH_LLM_TEST_PORT_VARS=(
   "LLM_TEST_PORT=5195"          # vLLM   → :8000
   "LLM_TEST_OLLAMA_PORT=5196"   # ollama → :11434
+)
+# docker-compose.pki-dev.yml publishes BOTH — declares no container_name (backend
+# and frontend are already re-pinned by FRESH_NAMED_SERVICES), but DOES publish
+# ports, so the --with-pki exemption in
+# backend/tests/unit/test_opentr_fresh_aux_isolation.py was wrong (issue: PKI
+# test-env injection design doc, finding #5) and is isolated here instead.
+FRESH_PKI_PORT_VARS=(
+  "PKI_HTTPS_PORT=5182"         # PKI nginx mTLS listener  → :8443
+  "PKI_HTTP_PORT=5187"          # PKI nginx plain listener → :8080
 )
 
 # Resolve and export the host ports a fresh stack publishes, offset by $1.
@@ -899,6 +1338,64 @@ fresh_port_in_use() {
   # bash /dev/tcp probe — no netstat/ss dependency.
   (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null && { exec 3>&- 3<&-; return 0; }
   return 1
+}
+
+# Resolve the host ports a NON-fresh stack will publish and refuse to start when
+# one is already taken by something that is not us.
+#
+# `--fresh` has had this check since #347 (see the block in the fresh branch
+# below); the ordinary `start` path never had one, and the failure mode is bad
+# out of proportion to the cause: `docker compose up` aborts PART WAY THROUGH on
+# the bind error, leaving every service it had not reached yet in `Created` --
+# frontend, all eight celery workers, flower, docs -- while postgres/redis/minio/
+# backend are up, so the stack looks half-alive rather than failed. E2E then
+# errors at fixture setup and every celery-backed test fails, which reads as
+# application breakage. Observed with an unrelated project holding 5183
+# (DOCS_PORT); it cost a full debugging cycle on a branch that was fine.
+#
+# `--wait` does not cover this, despite the comment at the `up` call: the bind
+# fails before any health check runs.
+#
+# Re-upping the SAME project is not a conflict -- `compose up -d` recreating
+# changed services is the normal way to apply a .env edit -- so a port held by
+# our own compose project is allowed through, matching the fresh path's rule.
+preflight_ports_or_die() {
+  local entry var base port busy="" holder
+  local project="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
+  local ours
+  ours="$(docker ps --filter "label=com.docker.compose.project=${project}" --format '{{.Names}}' 2>/dev/null | head -1)"
+  for entry in "$@"; do
+    var="${entry%%=*}"
+    base="${entry#*=}"
+    port="${!var:-$base}"
+    [[ "$port" =~ ^[0-9]+$ ]] || port="$base"
+    if fresh_port_in_use "$port"; then
+      busy="$busy $port"
+    fi
+  done
+  [ -z "$busy" ] && return 0
+  if [ -n "$ours" ]; then
+    # Our own stack already holds them -- this is a re-up in place.
+    return 0
+  fi
+  echo ""
+  echo "❌ Cannot start: these host ports are already bound:${busy}"
+  for port in $busy; do
+    holder="$(docker ps --format '{{.Names}}\t{{.Ports}}' 2>/dev/null | grep -E "[:.]${port}->" | cut -f1 | head -1)"
+    if [ -n "$holder" ]; then
+      echo "   ${port}  held by container '${holder}'"
+    else
+      echo "   ${port}  held by a non-Docker process on the host"
+      echo "        find it with:  lsof -iTCP:${port} -sTCP:LISTEN -P -n"
+    fi
+  done
+  echo ""
+  echo "   Free the port, or run an isolated stack beside it:"
+  echo "     ./opentr.sh start dev --fresh <name> --port-offset 100"
+  echo ""
+  echo "   Refusing rather than letting 'compose up' abort part way through and"
+  echo "   leave half the services in 'Created' (issue #553)."
+  exit 1
 }
 
 # Compute the resolved live data paths (NAS overlay active or not) and print
@@ -1003,6 +1500,9 @@ fresh_stop() {
   local chain
   chain="$(fresh_compose_chain "$name")"
   echo "🛑 Stopping fresh deployment '${name}' (project ${proj})..."
+  # Drain CUDA-holding workers before `down` reaches them (issue #782) -- same reasoning
+  # as the main dev stack's stop path, scoped to this isolated project only.
+  COMPOSE_PROJECT_NAME="$proj" ot_drain_gpu_workers "$chain"
   # --remove-orphans so an aux container from an earlier start with a --with-*
   # flag that is no longer recorded still comes down. Safe: the project is
   # isolated by construction, so nothing outside this deployment can be hit.
@@ -1096,8 +1596,32 @@ fresh_destroy() {
      "${FRESH_OVERLAY_DIR}/${name}.aux" \
      "${FRESH_OVERLAY_DIR}/${name}-ports.yml" \
      "${FRESH_OVERLAY_DIR}/${name}-baked.yml" 2>/dev/null | sed 's/^/     - /' || true
+  # The one host directory this deployment owns outright (fresh_diar_native_models_dir):
+  # its own diar-native export, not the live one. Listed separately from the
+  # generated-files glob above because it is a directory tree (up to ~462MB), not a
+  # small generated file, and deleting it is what stops a --fresh stack from leaking
+  # that export on every destroy the way llm-test's container used to leak a GPU (#347).
+  local diar_dir
+  diar_dir="$(fresh_diar_native_models_dir "$name")"
+  if [ -d "$diar_dir" ]; then
+    echo "   Isolated diar-native models directory to remove:"
+    echo "     - $diar_dir"
+  fi
+  # Project-scoped IMAGE TAGS (#759). A --fresh build writes
+  # `opentranscribe-{backend,frontend,docs}:otfresh-<name>` because start_app() exports
+  # OT_DEV_IMAGE_TAG="$FRESH_PROJECT"; without reclaiming them here, every fresh
+  # deployment that ever built leaves multi-GB images behind forever. Matched on the
+  # TAG being exactly this project's name, so `:latest` and every other deployment's
+  # tag are structurally unreachable from here.
+  local imgs
+  imgs="$(docker images --filter "reference=*:${proj}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | sort -u || true)"
+  if [ -n "$imgs" ]; then
+    echo "   Project-scoped image tags to remove:"
+    echo "$imgs" | sed 's/^/     - /'
+  fi
   echo ""
-  echo "   This touches ONLY this isolated project — no bind paths, no other stack."
+  echo "   This touches ONLY this isolated project and its own directories — no LIVE"
+  echo "   bind paths, no other stack."
   printf "   Proceed? (y/N) "
   read -r confirm
   if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
@@ -1105,17 +1629,126 @@ fresh_destroy() {
     return 0
   fi
 
+  # COMPOSE_PROFILES="*" (supported since Compose v2.24) is load-bearing here, not
+  # cosmetic: `docker compose down` only tears down services whose profile is ACTIVE
+  # for THIS invocation, not services that merely exist in the project. A --fresh
+  # deployment started with --gpu-scale (or --with-gpu-split / any other
+  # `profiles:`-gated service, e.g. celery-worker-gpu-scaled) leaves that container
+  # AND its named volumes running after a `fresh-destroy` that printed success —
+  # reproduced live 2026-09-05: `otfresh-xcard711-celery-worker-gpu-scaled` stayed
+  # "Up" and `otfresh-xcard711_pipeline_scratch` stayed mounted after this function
+  # reported "destroyed", because the down call carried no COMPOSE_PROFILES at all.
+  # Exactly the class of leak #347 closed for `--with-llm-test`'s vLLM container --
+  # profile-gated services need the same treatment here, generically, rather than
+  # enumerating every profile this repo happens to define today.
+  # Drain CUDA-holding workers before the destructive `down -v` below (issue #782).
+  COMPOSE_PROJECT_NAME="$proj" ot_drain_gpu_workers "$chain"
+
   # shellcheck disable=SC2086
-  COMPOSE_PROJECT_NAME="$proj" docker compose $chain down -v --remove-orphans 2>/dev/null || true
+  local _down_rc=0
+  COMPOSE_PROJECT_NAME="$proj" COMPOSE_PROFILES="*" docker compose $chain down -v --remove-orphans 2>/dev/null || _down_rc=$?
+
+  # The NETWORK is the third leak in this function (issue #772), and it was the one
+  # resource with no explicit reclaim step: volumes and image tags each get one below,
+  # the network got only whatever `down` managed. `down`'s failure was discarded by
+  # `2>/dev/null || true`, so a network it could not remove was indistinguishable from
+  # one it did — and unlike a leaked container, nothing later makes the leak visible.
+  #
+  # It is not hypothetical and it is not cheap: ELEVEN accumulated on this host, each
+  # holding a /16 out of Docker's default pool (172.17-172.31), until
+  # `docker network create` began failing HOST-WIDE with "all predefined address pools
+  # have been fully subnetted" — blocking unrelated projects and a release task, with
+  # nothing pointing back here.
+  #
+  # ⚠️ Removal genuinely can fail for a reason we cannot fix: Docker reports
+  # `has active endpoints` while the network shows `containers=0` and no container,
+  # running or stopped, is attached. That is a stale endpoint record and it survives
+  # teardown; only a daemon restart clears it. So the goal here is NOT to guarantee
+  # removal — it is to make the failure LOUD and name the cost, while the operator can
+  # still act, instead of discovering it weeks later as an unrelated host-wide error.
+  local _net="${proj}_default"
+  if docker network inspect "$_net" >/dev/null 2>&1; then
+    if docker network rm "$_net" >/dev/null 2>&1; then
+      echo "  removed leftover network ${_net}"
+    else
+      echo "⚠️  network ${_net} could NOT be removed and is now leaked." >&2
+      echo "    It still holds a subnet from Docker's default pool. Enough of these and" >&2
+      echo "    \`docker network create\` fails host-wide for every project on this machine." >&2
+      echo "    Check: docker network inspect ${_net} --format '{{len .Containers}}'" >&2
+      echo "    If that prints 0, the endpoints are stale and only a Docker daemon restart" >&2
+      echo "    clears them — \`docker network prune\` uses the same path and will also fail." >&2
+    fi
+  fi
+
+  # A non-zero `down` is worth saying out loud even when the network came away cleanly:
+  # it means something in the teardown did not do what it said, and every check below
+  # this point is then reporting on a partial teardown.
+  if [ "$_down_rc" -ne 0 ]; then
+    echo "⚠️  \`docker compose down\` exited ${_down_rc} for ${proj} — teardown may be incomplete." >&2
+    echo "    Re-run: ./opentr.sh fresh-destroy ${name}   (or inspect: docker ps -a --filter label=com.docker.compose.project=${proj})" >&2
+  fi
+
   # Catch any stragglers the compose chain didn't own.
   if [ -n "$vols" ]; then
     echo "$vols" | xargs -r docker volume rm 2>/dev/null || true
+  fi
+  # Reclaim the project-scoped image tags (#759). `docker compose down --rmi local` is NOT
+  # a substitute: it removes images the compose chain can still see, and a fresh deployment
+  # whose overlay has already been deleted, or which was built and then stopped, leaves tags
+  # the chain no longer resolves. Re-resolved here rather than reusing the `$imgs` captured
+  # before the confirmation prompt, so a build that finished in between is still caught.
+  # `docker rmi` on a tag UNTAGS when other tags share the image id, so this cannot delete
+  # an image `:latest` still points at.
+  local imgs_now
+  imgs_now="$(docker images --filter "reference=*:${proj}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | sort -u || true)"
+  if [ -n "$imgs_now" ]; then
+    echo "$imgs_now" | xargs -r docker rmi 2>/dev/null || true
   fi
   rm -f "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}.offset" \
         "${FRESH_OVERLAY_DIR}/${name}.aux" \
         "${FRESH_OVERLAY_DIR}/${name}-ports.yml" \
         "${FRESH_OVERLAY_DIR}/${name}-baked.yml" 2>/dev/null || true
-  echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + generated files)."
+
+  # Reclaim the isolated diar-native export directory (see the listing comment above for
+  # why this is handled separately from the generated-files glob). A bare `rm -rf ... ||
+  # true` cannot remove a tree that `fresh_prepare_diar_native_models_dir` chowned to
+  # CONTAINER_UID_GID (root, on a host with no subuid mapping for that gid) — it fails
+  # AND leaves every byte in place, but the `|| true` swallowed that as if there had been
+  # nothing to do, so the ✅ line below printed success while up to 462MB stayed on disk.
+  # Adversarial-audit finding: reproduced with `BEFORE: 5.1M ... AFTER: 5.1M`, i.e. the
+  # very #347 leak this directory's isolation exists to close. Retry once with the same
+  # docker-busybox chown fix_model_cache_permissions uses for the identical ownership
+  # hazard on the main $MODEL_CACHE_DIR path, then report what is ACTUALLY true on disk —
+  # never a fixed success line regardless of outcome.
+  local diar_dir_left=""
+  if [ -d "$diar_dir" ]; then
+    rm -rf "$diar_dir" 2>/dev/null || true
+    if [ -d "$diar_dir" ] && command -v docker &>/dev/null; then
+      local diar_dir_abs
+      diar_dir_abs="$(cd "$diar_dir" && pwd)"
+      docker run --rm -v "${diar_dir_abs}:/reclaim" busybox:latest \
+        chown -R "$(id -u):$(id -g)" /reclaim >/dev/null 2>&1 || true
+      rm -rf "$diar_dir" 2>/dev/null || true
+    fi
+    if [ -d "$diar_dir" ]; then
+      diar_dir_left="$diar_dir"
+    else
+      # Drop the now-empty per-deployment parent (.fresh/<name>/) too. `rmdir` refuses a
+      # non-empty directory, so this is a silent no-op if anything else still lives there.
+      rmdir "$(dirname "$diar_dir")" 2>/dev/null || true
+    fi
+  fi
+
+  if [ -n "$diar_dir_left" ]; then
+    echo "⚠️  Fresh deployment '${name}' destroy INCOMPLETE: containers, volumes and generated"
+    echo "   files were removed, but the isolated diar-native models directory could not be"
+    echo "   reclaimed — even after a docker-based chown attempt (likely root-owned from a"
+    echo "   container that provisioned it, with no docker daemon access to fix it here):"
+    echo "     - $diar_dir_left"
+    echo "   Remove it by hand (e.g. 'sudo rm -rf ${diar_dir_left}') to reclaim the space."
+  else
+    echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + generated files)."
+  fi
 }
 
 # Function to start the environment
@@ -1128,12 +1761,15 @@ start_app() {
   GPU_SCALE_FLAG=""
   GPU_SPLIT_FLAG=""
   GPU_DEVICE_OVERRIDE=""
+  DIAR_NATIVE_GPU_OVERRIDE=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
   WITH_DOCUMENTS_FLAG=""
+  WITH_MOCK_ASR_FLAG=""
+  WITH_SCRATCH_TMPFS_FLAG=""
   WITH_DIAR_NATIVE_FLAG=""
   NO_DIAR_NATIVE_FLAG=""
   WITH_LLM_TEST_FLAG=""
@@ -1179,6 +1815,22 @@ start_app() {
           exit 1
         fi
         GPU_DEVICE_OVERRIDE="$1"
+        shift
+        ;;
+      --diar-native-gpu)
+        shift
+        # Deliberately NARROWER than --gpu-device: it moves only DIAR_NATIVE_GPU,
+        # leaving GPU_SCALE_DEVICE_ID / GPU_DEVICE_ID / etc. wherever .env or
+        # --gpu-device already put them. Exists to test the cross-card arrangement
+        # the shipped defaults actually describe (issue #711 criterion 5:
+        # GPU_SCALE_DEVICE_ID defaults to 2, DIAR_NATIVE_GPU defaults to
+        # GPU_DEVICE_ID, i.e. 0) -- --gpu-device alone cannot express two different
+        # cards because it pins every var in GPU_DEVICE_VARS to the same value.
+        if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
+          echo "❌ --diar-native-gpu requires a GPU index (e.g. --diar-native-gpu 1)"
+          exit 1
+        fi
+        DIAR_NATIVE_GPU_OVERRIDE="$1"
         shift
         ;;
       --nas)
@@ -1242,6 +1894,14 @@ start_app() {
         ;;
       --with-documents)
         WITH_DOCUMENTS_FLAG="--with-documents"
+        shift
+        ;;
+      --with-mock-asr)
+        WITH_MOCK_ASR_FLAG="--with-mock-asr"
+        shift
+        ;;
+      --with-scratch-tmpfs)
+        WITH_SCRATCH_TMPFS_FLAG="--with-scratch-tmpfs"
         shift
         ;;
       --with-diar-native)
@@ -1349,10 +2009,14 @@ start_app() {
       _aux_services+=("${FRESH_DOCUMENTS_SERVICES[@]}")
       _aux_files+=("docker-compose.documents.yml")
     fi
-    if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
-      _aux_services+=("${FRESH_DIAR_NATIVE_SERVICES[@]}")
-      _aux_files+=("docker-compose.diar-native.yml")
+    if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
+      _port_vars+=("${FRESH_MOCK_ASR_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_MOCK_ASR_SERVICES[@]}")
+      _aux_files+=("docker-compose.mock-asr.yml")
     fi
+    # diar-native is handled separately, below, AFTER DIAR_NATIVE_MODELS_DIR is forced to
+    # this deployment's isolated export path — see that comment for why (issue: the
+    # aux-recording-vs-auto-load ordering finding on feat/diar-native-e2e).
     if [ -n "$WITH_SMB_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_SMB_PORT_VARS[@]}")
       _aux_services+=("${FRESH_SMB_SERVICES[@]}")
@@ -1367,6 +2031,10 @@ start_app() {
       _port_vars+=("${FRESH_LLM_TEST_PORT_VARS[@]}")
       _aux_services+=("${FRESH_LLM_TEST_SERVICES[@]}")
       _aux_files+=("docker-compose.llm-test.yml")
+    fi
+    if [ -n "$WITH_PKI_FLAG" ]; then
+      _port_vars+=("${FRESH_PKI_PORT_VARS[@]}")
+      _aux_files+=("docker-compose.pki-dev.yml" "scripts/pki/test-certs/pki-test.compose.yml")
     fi
     fresh_apply_port_offset "$_offset" "${_port_vars[@]}"
 
@@ -1407,10 +2075,66 @@ start_app() {
       echo "   as the main stack. Point them at a scratch dir before continuing if that matters."
     fi
 
+    # Redirect the native diarizer's model export to a directory owned by THIS
+    # fresh deployment, unconditionally — even over an explicit .env
+    # DIAR_NATIVE_MODELS_DIR, the same way NAS is forced off a few lines above
+    # regardless of .env. An explicit value in .env is set for the MAIN stack;
+    # left alone here it would apply just as ambiently to every fresh stack,
+    # which is precisely the live-data hazard this exists to close (see
+    # fresh_diar_native_models_dir's comment for the full finding).
+    # resolve_diar_native_models_dir (called from add_diar_native_overlay,
+    # later in this function) treats an already-exported DIAR_NATIVE_MODELS_DIR
+    # as an explicit override and returns it unexamined, so setting it here is
+    # sufficient — no change to that function is needed, and its own pinned
+    # resolution tests (which never set FRESH_FLAG) are unaffected.
+    export DIAR_NATIVE_MODELS_DIR
+    DIAR_NATIVE_MODELS_DIR="$(fresh_diar_native_models_dir "$FRESH_NAME")"
+
+    # Decide, right now, whether the native diarization sidecar will load for THIS
+    # deployment — using add_diar_native_overlay's own predicate (engine.diarizer_backend
+    # defaults to native AND the isolated DIAR_NATIVE_MODELS_DIR just above already holds
+    # an export OR a HUGGINGFACE_TOKEN is configured to produce one on this startup) —
+    # and record it in the aux set below if so.
+    #
+    # This MUST happen here, not left to start_app's real call (mode "start") to the same
+    # function later on: that call runs after $COMPOSE_FILES is built, which is after
+    # fresh_write_aux/fresh_generate_overlay a few lines down have already run. An
+    # AUTO-LOADED sidecar decided after the .aux file is written is recorded nowhere, so
+    # stop/status/fresh-destroy address a different compose chain than the one actually
+    # brought up — exactly the #347 shape .aux exists to prevent. `predict` mode makes the
+    # identical decision (setting WITH_DIAR_NATIVE_FLAG and printing the same banner)
+    # without touching $COMPOSE_FILES, which does not exist yet at this point in
+    # start_app; the real call later sees WITH_DIAR_NATIVE_FLAG already set and just adds
+    # the overlay, so the banner does not print twice.
+    #
+    # An explicit --with-diar-native (WITH_DIAR_NATIVE_FLAG already non-empty from CLI
+    # parsing above) is unaffected — add_diar_native_overlay's own auto-detect is guarded
+    # on the flag being unset, so `predict` is a no-op for that case and this block still
+    # records it correctly.
+    add_diar_native_overlay predict
+    if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
+      _aux_services+=("${FRESH_DIAR_NATIVE_SERVICES[@]}")
+      _aux_files+=("docker-compose.diar-native.yml")
+    fi
+
     fresh_write_offset "$FRESH_NAME" "$_offset"
     fresh_write_aux "$FRESH_NAME" ${_aux_files[@]+"${_aux_files[@]}"}
     FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" ${_aux_services[@]+"${_aux_services[@]}"})"
     export COMPOSE_PROJECT_NAME="$FRESH_PROJECT"
+
+    # --fresh isolates the compose PROJECT, named volumes, ports and container_names —
+    # it does NOT touch the docker IMAGE TAG a build writes to, and docker-compose.override.yml
+    # hard-codes bare `opentranscribe-backend:latest` (and frontend/docs) for every dev service.
+    # A build can happen here with NO --build flag: an unbuilt --with-* overlay (e.g.
+    # --with-diar-native) triggers one implicitly. Left unset, that build re-tags the SAME
+    # `:latest` the MAIN dev stack's already-running containers resolved to — invisible until
+    # its next restart-backend silently picks up this fresh deployment's code. Exporting
+    # OT_DEV_IMAGE_TAG here (docker-compose.override.yml interpolates
+    # `${OT_DEV_IMAGE_TAG:-latest}`) makes a fresh build write `opentranscribe-backend:otfresh-<name>`
+    # instead — same pattern as DIAR_NATIVE_MODELS_DIR a few lines above: force it unconditionally,
+    # not merely `:-`, because an ambient OT_DEV_IMAGE_TAG left over from a previous fresh shell
+    # session must not leak into THIS one.
+    export OT_DEV_IMAGE_TAG="$FRESH_PROJECT"
 
     echo ""
     echo "🧪 FRESH DEPLOYMENT '${FRESH_NAME}': isolated project + volumes; NAS overlay IGNORED; real data untouched."
@@ -1421,6 +2145,7 @@ start_app() {
       echo "   Port offset: none — standard dev ports"
     fi
     echo "   Published ports:$(fresh_port_summary)"
+    echo "   diar-native models: ${DIAR_NATIVE_MODELS_DIR} (isolated copy, not the live export)"
     echo ""
 
     # Force NAS off in fresh mode regardless of .env.
@@ -1439,18 +2164,16 @@ start_app() {
     if [ -n "$NO_BINDMOUNT_FLAG" ]; then
       echo "⚠️  --no-bindmount is only honored in fresh mode (--fresh); ignoring."
     fi
-  fi
 
-  # PKI requires production mode (nginx with mTLS)
-  if [ -n "$WITH_PKI_FLAG" ] && [ "$ENVIRONMENT" = "dev" ]; then
-    echo "❌ Error: PKI authentication requires production mode (nginx with mTLS)"
-    echo "   Use: ./opentr.sh start prod --build --with-pki"
-    echo ""
-    echo "   PKI cannot work in dev mode because:"
-    echo "   - Dev mode uses Vite dev server (no nginx)"
-    echo "   - PKI requires nginx to verify client certificates (mTLS)"
-    echo "   - Certificate headers must be set by nginx, not the browser"
-    exit 1
+    # Mirror image: the --fresh branch above unconditionally pins OT_DEV_IMAGE_TAG to
+    # this deployment's own project. This non-fresh branch must be equally
+    # unconditional in the OTHER direction — reset it to "latest" rather than leaving
+    # it unset, or an OT_DEV_IMAGE_TAG left exported in the invoking shell (a prior
+    # `--fresh` session, a CI job, a wrapper script) would silently carry over and
+    # make a plain `start dev` build/run the SHARED opentranscribe-backend against a
+    # stale fresh tag instead of :latest — the same cross-contamination this file
+    # exists to prevent, just mirrored.
+    export OT_DEV_IMAGE_TAG="latest"
   fi
 
   if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
@@ -1466,6 +2189,19 @@ start_app() {
   if [ -n "$GPU_DEVICE_OVERRIDE" ]; then
     apply_gpu_device_override "$GPU_DEVICE_OVERRIDE"
     warn_gpu_device_override_conflicts "$GPU_DEVICE_OVERRIDE"
+  fi
+
+  # Applied AFTER --gpu-device so a combined
+  # `--gpu-device 2 --diar-native-gpu 1` (or the reverse) can express two
+  # different cards; --gpu-device alone would have just pinned DIAR_NATIVE_GPU
+  # back to the same value as everything else.
+  if [ -n "$DIAR_NATIVE_GPU_OVERRIDE" ]; then
+    if ! [[ "$DIAR_NATIVE_GPU_OVERRIDE" =~ ^[0-9]+$ ]]; then
+      echo "❌ --diar-native-gpu must be a non-negative integer GPU index (got '$DIAR_NATIVE_GPU_OVERRIDE')"
+      exit 1
+    fi
+    export DIAR_NATIVE_GPU="$DIAR_NATIVE_GPU_OVERRIDE"
+    echo "🎯 --diar-native-gpu $DIAR_NATIVE_GPU_OVERRIDE: pinning the diar-native sidecar to host GPU $DIAR_NATIVE_GPU_OVERRIDE (overrides .env)"
   fi
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
@@ -1518,6 +2254,21 @@ start_app() {
 
     # Fix model cache permissions for non-root container
     fix_model_cache_permissions
+
+    # fix_model_cache_permissions only reaches $MODEL_CACHE_DIR. A --fresh
+    # deployment's diar-native export lives OUTSIDE it by design (see
+    # fresh_diar_native_models_dir), so it needs this same ownership fix
+    # applied to its own directory, BEFORE `compose up` — never after, per
+    # fresh_prepare_diar_native_models_dir's own comment on the NOT_WRITABLE
+    # hazard of letting dockerd create the bind-mount source itself.
+    if [ -n "$FRESH_FLAG" ]; then
+      fresh_prepare_diar_native_models_dir "$DIAR_NATIVE_MODELS_DIR"
+    fi
+
+    # Generate a real MinIO KMS secret key if .env still has .env.example's
+    # shipped placeholder, so a genuinely fresh `cp .env.example .env` boots
+    # MinIO's KMS auto-encryption without manual intervention (issue #614).
+    ensure_minio_kms_secret ".env"
 
     # Fetch the NLTK corpora BEFORE de-hardlinking them: nothing else prefetches
     # them, so they were fetched at runtime from inside the transcription and
@@ -1666,40 +2417,10 @@ start_app() {
     echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
   fi
 
-  # Add PKI overlay if requested
-  if [ -n "$WITH_PKI_FLAG" ]; then
-    if [ -f "docker-compose.pki.yml" ]; then
-      # Check for PKI certificates
-      if [ ! -f "scripts/pki/test-certs/ca/ca.crt" ]; then
-        echo "⚠️  PKI certificates not found. Generating test certificates..."
-        ./scripts/pki/setup-test-pki.sh || {
-          echo "❌ Failed to generate PKI certificates"
-          exit 1
-        }
-      fi
-
-      # Check for server certificate
-      if [ ! -f "scripts/pki/test-certs/nginx/server.crt" ] || [ ! -f "scripts/pki/test-certs/nginx/server.key" ]; then
-        echo "⚠️  HTTPS server certificate not found. Generating self-signed certificate..."
-        cd scripts/pki/test-certs/nginx || exit 1
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-          -keyout server.key -out server.crt \
-          -subj "/CN=${PKI_SERVER_NAME:-localhost}" \
-          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" || {
-          echo "❌ Failed to generate server certificate"
-          exit 1
-        }
-        cd - > /dev/null || exit 1
-      fi
-
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.pki.yml"
-      echo "🔐 Adding PKI authentication overlay (docker-compose.pki.yml)"
-      echo "   Access URL: https://localhost:${PKI_HTTPS_PORT:-5182}"
-      echo "   Import client certificate from: scripts/pki/test-certs/clients/"
-    else
-      echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
-    fi
-  fi
+  # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
+  # prod to docker-compose.pki.yml; cert generation + the test-env fragment
+  # are handled inside add_pki_overlay -> scripts/pki/generate-test-env.sh)
+  add_pki_overlay
 
   # Add mock LLM provider if requested
   if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
@@ -1719,38 +2440,43 @@ start_app() {
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.documents.yml"
       echo "📄 Adding document parsing sidecars (docker-compose.documents.yml)"
       echo "   docling-serve (OCR + layout, CPU only) — from containers: http://docling-serve:5001   from host: http://localhost:${DOCLING_SERVE_PORT:-5197}"
-      echo "   Apache Tika (legacy OLE2 .doc/.ppt/.xls + RTF)  — from containers: http://tika:9998   from host: http://localhost:${TIKA_PORT:-5198}"
+      echo "   Apache Tika (legacy OLE2 .doc/.ppt/.xls + RTF)  — from containers: http://tika:9998   from host: http://localhost:${TIKA_PORT:-5194}"
       echo "   Sets DOCUMENT_PARSER_URL + DOCUMENT_TIKA_URL on backend and the CPU workers."
     else
       echo "⚠️  --with-documents specified but docker-compose.documents.yml not found"
     fi
   fi
 
-  # Native diarization sidecar auto-load: `native` is the coded default engine, so a
-  # stack without the sidecar silently serves every file from the in-process PyAnnote
-  # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
-  # Guarded on the models dir existing — without it the sidecar restart-loops and
-  # `up --wait` would fail the whole startup on checkouts with no local model export.
-  # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
-  if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
-     && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
-     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
-    WITH_DIAR_NATIVE_FLAG="auto"
-    echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
-  fi
-
-  # Add the native diarization sidecar if requested
-  if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
-    if [ -f "docker-compose.diar-native.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
-      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
-      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
-      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
-      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
+  # Add mock cloud ASR provider if requested
+  if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
+    if [ -f "docker-compose.mock-asr.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-asr.yml"
+      echo "🤖 Adding mock cloud ASR provider (docker-compose.mock-asr.yml)"
+      echo "   From containers: http://mock-asr:5198   From host: http://localhost:${MOCK_ASR_PORT:-5198}"
+      echo "   Scenarios: ok (default) error malformed upload-reject"
     else
-      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
+      echo "⚠️  --with-mock-asr specified but docker-compose.mock-asr.yml not found"
     fi
   fi
+
+  # Add the opt-in tmpfs override for the pipeline_scratch handoff volume if requested
+  # (issue #661 E5). No isolation dispatch needed: the overlay declares neither `ports:`
+  # nor `container_name:`, only a driver override for the already project-namespaced
+  # `pipeline_scratch` volume — see the --fresh aux-isolation exemption comment in
+  # backend/tests/unit/test_opentr_fresh_aux_isolation.py.
+  if [ -n "$WITH_SCRATCH_TMPFS_FLAG" ]; then
+    if [ -f "docker-compose.scratch-tmpfs.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.scratch-tmpfs.yml"
+      echo "🧠 Adding RAM-backed scratch volume override (docker-compose.scratch-tmpfs.yml)"
+      echo "   pipeline_scratch is now tmpfs, size=${SCRATCH_TMPFS_SIZE:-2g}"
+    else
+      echo "⚠️  --with-scratch-tmpfs specified but docker-compose.scratch-tmpfs.yml not found"
+    fi
+  fi
+
+  # Native diarization sidecar. Shared with rebuild-backend so a rebuild can never
+  # drop celery-worker's DIAR_NATIVE_URL / shared pipeline_scratch diar/ handoff namespace — see add_diar_native_overlay.
+  add_diar_native_overlay start
 
   # Add real GPU-backed LLM test provider if requested
   if [ -n "$WITH_LLM_TEST_FLAG" ]; then
@@ -1806,8 +2532,10 @@ start_app() {
     if [ -f "docker-compose.watch.yml" ]; then
       WATCH_HOST_PATH="${WATCH_HOST_PATH:-./watch}"
       mkdir -p "$WATCH_HOST_PATH"
-      # Match the non-root container user (UID/GID 1000) so imports can read/write.
-      chown -R 1000:1000 "$WATCH_HOST_PATH" 2>/dev/null || true
+      # Match the non-root container user so imports can read/write. appuser is
+      # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
+      # bit is what the import path needs, but keep the GID honest.
+      chown -R "${CONTAINER_UID_GID:-1000:999}" "$WATCH_HOST_PATH" 2>/dev/null || true
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
@@ -1915,6 +2643,7 @@ start_app() {
     echo ""
     echo "🔎 DRY RUN — no containers started."
     echo "   COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-opentranscribe (default)}"
+    echo "   OT_DEV_IMAGE_TAG: ${OT_DEV_IMAGE_TAG:-latest} (fresh and non-fresh both set this explicitly)"
     echo "   Compose files:"
     # shellcheck disable=SC2086
     for _f in $COMPOSE_FILES; do
@@ -1945,10 +2674,33 @@ start_app() {
     write_live_data_markers
   fi
 
+  # Refuse to start when a host port we are about to publish is already taken by
+  # something that is not us (issue #553). The fresh path has had this since #347;
+  # without it here, a collision makes `compose up` abort PART WAY THROUGH and
+  # strand every service it had not reached in `Created`. Skipped in fresh mode,
+  # which ran its own offset-aware check earlier.
+  if [ -z "$FRESH_FLAG" ]; then
+    _pf_ports=("${FRESH_PORT_VARS[@]}")
+    [ -n "$WITH_LDAP_TEST_FLAG" ] && _pf_ports+=("${FRESH_LDAP_PORT_VARS[@]}")
+    [ -n "$WITH_MOCK_LLM_FLAG" ] && _pf_ports+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
+    [ -n "$WITH_MOCK_ASR_FLAG" ] && _pf_ports+=("${FRESH_MOCK_ASR_PORT_VARS[@]}")
+    [ -n "$WITH_SMB_TEST_FLAG" ] && _pf_ports+=("${FRESH_SMB_PORT_VARS[@]}")
+    [ -n "$WITH_MONITORING_FLAG" ] && _pf_ports+=("${FRESH_MONITORING_PORT_VARS[@]}")
+    [ -n "$WITH_LLM_TEST_FLAG" ] && _pf_ports+=("${FRESH_LLM_TEST_PORT_VARS[@]}")
+    # Keycloak (issue #630): this list previously covered every aux test overlay except
+    # keycloak-test/authentik-test, so a bound 8180 failed deep inside `compose up --wait`
+    # instead of failing fast here. Only Keycloak is added — Authentik is out of scope
+    # (scripts/run-dev-tests.sh's overlay table deliberately excludes it; see that file).
+    [ -n "$WITH_KEYCLOAK_TEST_FLAG" ] && _pf_ports+=("${FRESH_KEYCLOAK_PORT_VARS[@]}")
+    preflight_ports_or_die "${_pf_ports[@]}"
+  fi
+
   # Start services with appropriate compose files.
   # --wait blocks until every service is healthy (or the timeout elapses) so a
   # "created-but-never-started" container surfaces as a non-zero exit instead of
-  # a silent failure. --wait-timeout 700 covers the backend's 600s start_period.
+  # a silent failure. NOTE --wait does NOT cover a port-bind failure: that aborts
+  # before any health check runs, which is what preflight_ports_or_die above is
+  # for. --wait-timeout 700 covers the backend's 600s start_period.
   # shellcheck disable=SC2086
   if ! docker compose $COMPOSE_FILES up -d --wait --wait-timeout 700 $BUILD_CMD $RECREATE_CMD; then
     echo ""
@@ -2030,10 +2782,17 @@ reset_and_init() {
   GPU_SCALE_FLAG=""
   GPU_SPLIT_FLAG=""
   GPU_DEVICE_OVERRIDE=""
+  DIAR_NATIVE_GPU_OVERRIDE=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
+  WITH_MOCK_LLM_FLAG=""
+  WITH_MOCK_ASR_FLAG=""
+  WITH_SCRATCH_TMPFS_FLAG=""
+  WITH_DIAR_NATIVE_FLAG=""
+  NO_DIAR_NATIVE_FLAG=""
+  WITH_LLM_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_AUTHENTIK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
@@ -2043,6 +2802,9 @@ reset_and_init() {
   LITE_FLAG=""
   CPU_FLAG=""
   NO_NAS_FLAG=""
+  FRESH_FLAG=""
+  DRY_RUN_FLAG=""
+  NO_BINDMOUNT_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2072,6 +2834,15 @@ reset_and_init() {
         GPU_DEVICE_OVERRIDE="$1"
         shift
         ;;
+      --diar-native-gpu)
+        shift
+        if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
+          echo "❌ --diar-native-gpu requires a GPU index (e.g. --diar-native-gpu 1)"
+          exit 1
+        fi
+        DIAR_NATIVE_GPU_OVERRIDE="$1"
+        shift
+        ;;
       --nas)
         NAS_FLAG="--nas"
         shift
@@ -2098,12 +2869,48 @@ reset_and_init() {
         CPU_FLAG="--cpu"
         shift
         ;;
+      --dry-run)
+        DRY_RUN_FLAG="--dry-run"
+        shift
+        ;;
+      --no-bindmount)
+        # Only meaningful under --fresh, which reset refuses outright (see the
+        # --fresh|--port-offset|--seed-benchmark branch above) -- parsed so it is
+        # a recognized no-op rather than an "Unknown flag" warning, matching how
+        # start_app() itself already ignores it outside fresh mode.
+        NO_BINDMOUNT_FLAG="--no-bindmount"
+        shift
+        ;;
       --with-pki)
         WITH_PKI_FLAG="--with-pki"
         shift
         ;;
       --with-ldap-test)
         WITH_LDAP_TEST_FLAG="--with-ldap-test"
+        shift
+        ;;
+      --with-mock-llm)
+        WITH_MOCK_LLM_FLAG="--with-mock-llm"
+        shift
+        ;;
+      --with-mock-asr)
+        WITH_MOCK_ASR_FLAG="--with-mock-asr"
+        shift
+        ;;
+      --with-scratch-tmpfs)
+        WITH_SCRATCH_TMPFS_FLAG="--with-scratch-tmpfs"
+        shift
+        ;;
+      --with-diar-native)
+        WITH_DIAR_NATIVE_FLAG="--with-diar-native"
+        shift
+        ;;
+      --no-diar-native)
+        NO_DIAR_NATIVE_FLAG="--no-diar-native"
+        shift
+        ;;
+      --with-llm-test)
+        WITH_LLM_TEST_FLAG="--with-llm-test"
         shift
         ;;
       --with-keycloak-test)
@@ -2137,17 +2944,6 @@ reset_and_init() {
     esac
   done
 
-  # PKI requires production mode (nginx with mTLS)
-  if [ -n "$WITH_PKI_FLAG" ] && [ "$ENVIRONMENT" = "dev" ]; then
-    echo "❌ Error: PKI authentication requires production mode (nginx with mTLS)"
-    echo "   Use: ./opentr.sh reset prod --build --with-pki"
-    echo ""
-    echo "   PKI cannot work in dev mode because:"
-    echo "   - Dev mode uses Vite dev server (no nginx)"
-    echo "   - PKI requires nginx to verify client certificates (mTLS)"
-    echo "   - Certificate headers must be set by nginx, not the browser"
-    exit 1
-  fi
 
   if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale,gpu-split"
@@ -2162,6 +2958,16 @@ reset_and_init() {
   if [ -n "$GPU_DEVICE_OVERRIDE" ]; then
     apply_gpu_device_override "$GPU_DEVICE_OVERRIDE"
     warn_gpu_device_override_conflicts "$GPU_DEVICE_OVERRIDE"
+  fi
+
+  # See start_app()'s identical block for why this must come after --gpu-device.
+  if [ -n "$DIAR_NATIVE_GPU_OVERRIDE" ]; then
+    if ! [[ "$DIAR_NATIVE_GPU_OVERRIDE" =~ ^[0-9]+$ ]]; then
+      echo "❌ --diar-native-gpu must be a non-negative integer GPU index (got '$DIAR_NATIVE_GPU_OVERRIDE')"
+      exit 1
+    fi
+    export DIAR_NATIVE_GPU="$DIAR_NATIVE_GPU_OVERRIDE"
+    echo "🎯 --diar-native-gpu $DIAR_NATIVE_GPU_OVERRIDE: pinning the diar-native sidecar to host GPU $DIAR_NATIVE_GPU_OVERRIDE (overrides .env)"
   fi
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
@@ -2332,40 +3138,10 @@ reset_and_init() {
     echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
   fi
 
-  # Add PKI overlay if requested
-  if [ -n "$WITH_PKI_FLAG" ]; then
-    if [ -f "docker-compose.pki.yml" ]; then
-      # Check for PKI certificates
-      if [ ! -f "scripts/pki/test-certs/ca/ca.crt" ]; then
-        echo "⚠️  PKI certificates not found. Generating test certificates..."
-        ./scripts/pki/setup-test-pki.sh || {
-          echo "❌ Failed to generate PKI certificates"
-          exit 1
-        }
-      fi
-
-      # Check for server certificate
-      if [ ! -f "scripts/pki/test-certs/nginx/server.crt" ] || [ ! -f "scripts/pki/test-certs/nginx/server.key" ]; then
-        echo "⚠️  HTTPS server certificate not found. Generating self-signed certificate..."
-        cd scripts/pki/test-certs/nginx || exit 1
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-          -keyout server.key -out server.crt \
-          -subj "/CN=${PKI_SERVER_NAME:-localhost}" \
-          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" || {
-          echo "❌ Failed to generate server certificate"
-          exit 1
-        }
-        cd - > /dev/null || exit 1
-      fi
-
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.pki.yml"
-      echo "🔐 Adding PKI authentication overlay (docker-compose.pki.yml)"
-      echo "   Access URL: https://localhost:${PKI_HTTPS_PORT:-5182}"
-      echo "   Import client certificate from: scripts/pki/test-certs/clients/"
-    else
-      echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
-    fi
-  fi
+  # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
+  # prod to docker-compose.pki.yml; cert generation + the test-env fragment
+  # are handled inside add_pki_overlay -> scripts/pki/generate-test-env.sh)
+  add_pki_overlay
 
   # Add mock LLM provider if requested
   if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
@@ -2385,38 +3161,43 @@ reset_and_init() {
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.documents.yml"
       echo "📄 Adding document parsing sidecars (docker-compose.documents.yml)"
       echo "   docling-serve (OCR + layout, CPU only) — from containers: http://docling-serve:5001   from host: http://localhost:${DOCLING_SERVE_PORT:-5197}"
-      echo "   Apache Tika (legacy OLE2 .doc/.ppt/.xls + RTF)  — from containers: http://tika:9998   from host: http://localhost:${TIKA_PORT:-5198}"
+      echo "   Apache Tika (legacy OLE2 .doc/.ppt/.xls + RTF)  — from containers: http://tika:9998   from host: http://localhost:${TIKA_PORT:-5194}"
       echo "   Sets DOCUMENT_PARSER_URL + DOCUMENT_TIKA_URL on backend and the CPU workers."
     else
       echo "⚠️  --with-documents specified but docker-compose.documents.yml not found"
     fi
   fi
 
-  # Native diarization sidecar auto-load: `native` is the coded default engine, so a
-  # stack without the sidecar silently serves every file from the in-process PyAnnote
-  # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
-  # Guarded on the models dir existing — without it the sidecar restart-loops and
-  # `up --wait` would fail the whole startup on checkouts with no local model export.
-  # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
-  if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
-     && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
-     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
-    WITH_DIAR_NATIVE_FLAG="auto"
-    echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
-  fi
-
-  # Add the native diarization sidecar if requested
-  if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
-    if [ -f "docker-compose.diar-native.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
-      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
-      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
-      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
-      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
+  # Add mock cloud ASR provider if requested
+  if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
+    if [ -f "docker-compose.mock-asr.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-asr.yml"
+      echo "🤖 Adding mock cloud ASR provider (docker-compose.mock-asr.yml)"
+      echo "   From containers: http://mock-asr:5198   From host: http://localhost:${MOCK_ASR_PORT:-5198}"
+      echo "   Scenarios: ok (default) error malformed upload-reject"
     else
-      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
+      echo "⚠️  --with-mock-asr specified but docker-compose.mock-asr.yml not found"
     fi
   fi
+
+  # Add the opt-in tmpfs override for the pipeline_scratch handoff volume if requested
+  # (issue #661 E5). No isolation dispatch needed: the overlay declares neither `ports:`
+  # nor `container_name:`, only a driver override for the already project-namespaced
+  # `pipeline_scratch` volume — see the --fresh aux-isolation exemption comment in
+  # backend/tests/unit/test_opentr_fresh_aux_isolation.py.
+  if [ -n "$WITH_SCRATCH_TMPFS_FLAG" ]; then
+    if [ -f "docker-compose.scratch-tmpfs.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.scratch-tmpfs.yml"
+      echo "🧠 Adding RAM-backed scratch volume override (docker-compose.scratch-tmpfs.yml)"
+      echo "   pipeline_scratch is now tmpfs, size=${SCRATCH_TMPFS_SIZE:-2g}"
+    else
+      echo "⚠️  --with-scratch-tmpfs specified but docker-compose.scratch-tmpfs.yml not found"
+    fi
+  fi
+
+  # Native diarization sidecar. Shared with rebuild-backend so a rebuild can never
+  # drop celery-worker's DIAR_NATIVE_URL / shared pipeline_scratch diar/ handoff namespace — see add_diar_native_overlay.
+  add_diar_native_overlay start
 
   # Add real GPU-backed LLM test provider if requested
   if [ -n "$WITH_LLM_TEST_FLAG" ]; then
@@ -2472,8 +3253,10 @@ reset_and_init() {
     if [ -f "docker-compose.watch.yml" ]; then
       WATCH_HOST_PATH="${WATCH_HOST_PATH:-./watch}"
       mkdir -p "$WATCH_HOST_PATH"
-      # Match the non-root container user (UID/GID 1000) so imports can read/write.
-      chown -R 1000:1000 "$WATCH_HOST_PATH" 2>/dev/null || true
+      # Match the non-root container user so imports can read/write. appuser is
+      # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
+      # bit is what the import path needs, but keep the GID honest.
+      chown -R "${CONTAINER_UID_GID:-1000:999}" "$WATCH_HOST_PATH" 2>/dev/null || true
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
@@ -2524,7 +3307,28 @@ reset_and_init() {
     fi
   fi
 
+  # Dry-run: print exactly what WOULD run and exit before touching Docker — most
+  # important here of anywhere in this script, since the next step is `down -v`,
+  # which destroys the current stack's data. A --dry-run that silently proceeded
+  # to a real reset would be the opposite of what it promises.
+  if [ -n "$DRY_RUN_FLAG" ]; then
+    echo ""
+    echo "🔎 DRY RUN — no containers stopped, no volumes removed."
+    echo "   COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-opentranscribe (default)}"
+    echo "   Compose files:"
+    # shellcheck disable=SC2086
+    for _f in $COMPOSE_FILES; do
+      [ "$_f" = "-f" ] && continue
+      echo "     - $_f"
+    done
+    echo "   Would run: docker compose \$COMPOSE_FILES down -v"
+    echo "   ...then rebuild and start all services (--build)."
+    return 0
+  fi
+
   echo "🛑 Stopping all containers and removing volumes..."
+  # Drain CUDA-holding workers before the destructive `down -v` below (issue #782).
+  ot_drain_gpu_workers "$COMPOSE_FILES"
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES down -v
 
@@ -2533,6 +3337,10 @@ reset_and_init() {
 
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
+
+  # Generate a real MinIO KMS secret key if .env still has .env.example's
+  # shipped placeholder (issue #614).
+  ensure_minio_kms_secret ".env"
 
   # Fetch the NLTK corpora BEFORE de-hardlinking them (issue #491).
   ensure_nltk_corpora
@@ -2579,115 +3387,82 @@ reset_and_init() {
   print_access_info
 }
 
-# Function to backup the database
-# Usage: backup_database [--encrypt]
-#   --encrypt: pipe pg_dump straight into gpg (AES-256, passphrase prompt) so the
-#              plaintext dump never touches disk. Backups contain every user's
-#              transcripts - encrypt anything that leaves this machine.
-backup_database() {
-  ENCRYPT_BACKUP=false
-  if [[ "$1" == "--encrypt" ]]; then
-    ENCRYPT_BACKUP=true
-    if ! command -v gpg &> /dev/null; then
-      echo "❌ Error: gpg is required for encrypted backups (e.g. 'apt install gnupg')."
-      exit 1
-    fi
-  elif [[ -n "$1" ]]; then
-    echo "❌ Error: unknown backup option: $1"
-    echo "Usage: ./opentr.sh backup [--encrypt]"
-    exit 1
-  fi
-
-  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-  BACKUP_FILE="opentranscribe_backup_${TIMESTAMP}.sql"
-  mkdir -p ./backups
-
-  if [[ "$ENCRYPT_BACKUP" == true ]]; then
-    echo "📦 Creating encrypted database backup: ${BACKUP_FILE}.gpg..."
-    # Subshell with pipefail so a pg_dump failure isn't masked by gpg succeeding
-    if (set -o pipefail; docker compose exec -T postgres pg_dump -U postgres opentranscribe \
-        | gpg --symmetric --cipher-algo AES256 --output "./backups/${BACKUP_FILE}.gpg"); then
-      echo "✅ Encrypted backup created successfully: ./backups/${BACKUP_FILE}.gpg"
-      echo "   Restore with: ./opentr.sh restore ./backups/${BACKUP_FILE}.gpg"
-    else
-      rm -f "./backups/${BACKUP_FILE}.gpg"
-      echo "❌ Backup failed."
-      exit 1
-    fi
-  else
-    echo "📦 Creating database backup: ${BACKUP_FILE}..."
-    if docker compose exec -T postgres pg_dump -U postgres opentranscribe > "./backups/${BACKUP_FILE}"; then
-      echo "✅ Backup created successfully: ./backups/${BACKUP_FILE}"
-      echo "ℹ️  Tip: backups contain all user transcripts in plaintext - use './opentr.sh backup --encrypt' for off-box storage."
-    else
-      echo "❌ Backup failed."
-      exit 1
-    fi
-  fi
-}
-
-# Function to restore database from backup
-restore_database() {
-  BACKUP_FILE=$1
-
-  if [ -z "$BACKUP_FILE" ]; then
-    echo "❌ Error: Backup file not specified."
-    echo "Usage: ./opentr.sh restore [backup_file]"
-    exit 1
-  fi
-
-  if [ ! -f "$BACKUP_FILE" ]; then
-    echo "❌ Error: Backup file not found: $BACKUP_FILE"
-    exit 1
-  fi
-
-  # Transparently decrypt GPG-encrypted backups (created with './opentr.sh backup --encrypt')
-  RESTORE_SOURCE="$BACKUP_FILE"
-  TEMP_SQL=""
-  case "$BACKUP_FILE" in
-    *.gpg|*.asc)
-      if ! command -v gpg &> /dev/null; then
-        echo "❌ Error: gpg is required to restore encrypted backups (e.g. 'apt install gnupg')."
-        exit 1
-      fi
-      echo "🔓 Decrypting backup..."
-      TEMP_SQL=$(mktemp ./backups/.restore_XXXXXX)
-      if ! gpg --yes --output "$TEMP_SQL" --decrypt "$BACKUP_FILE"; then
-        rm -f "$TEMP_SQL"
-        echo "❌ Decryption failed."
-        exit 1
-      fi
-      RESTORE_SOURCE="$TEMP_SQL"
-      ;;
-  esac
-
-  echo "🔄 Restoring database from ${BACKUP_FILE}..."
-
-  # Stop services that use the database
-  docker compose stop backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
-
-  # Restore the database
-  if docker compose exec -T postgres psql -U postgres opentranscribe < "$RESTORE_SOURCE"; then
-    [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
-    echo "✅ Database restored successfully."
-    echo "🔄 Restarting services..."
-    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
-  else
-    [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
-    echo "❌ Database restore failed."
-    echo "🔄 Restarting services anyway..."
-    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
-    exit 1
-  fi
-}
+# backup_database / restore_database moved to scripts/common.sh (issue #613),
+# parameterized by a leading compose-files chain and front-end name so opentr.sh and
+# opentranscribe.sh share exactly one implementation of the DROP DATABASE restore path.
+# common.sh is sourced at the top of this file, so both functions are already in scope.
 
 # Function to restart backend services (backend, all celery workers, flower) without database reset
-restart_backend() {
-  echo "🔄 Restarting backend services (backend, all celery workers, celery-beat, flower)..."
+# Resolve which deployment the restart-* commands act on.
+#
+# The restart-* dispatch arms used to take NO arguments and call bare
+# `docker compose restart`, which resolves the DEFAULT compose project. So
+# `restart-backend --fresh <name>` did not merely ignore `--fresh` — it silently
+# restarted the main dev stack instead, printed "restarted successfully", and then
+# printed the default project's (often empty) container table. Two stacks, one of
+# them live, and no message distinguishing them.
+#
+# Sets RESTART_CHAIN / RESTART_PROJECT / RESTART_LABEL for the caller. Same
+# COMPOSE_PROJECT_NAME + fresh_compose_chain idiom fresh_stop/fresh_status use.
+restart_resolve_target() {
+  RESTART_CHAIN=""
+  RESTART_PROJECT=""
+  RESTART_LABEL="the default deployment"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --fresh)
+        shift
+        if [ $# -eq 0 ] || [ -z "${1:-}" ]; then
+          echo "❌ --fresh needs a deployment name (see: ./opentr.sh fresh-list)" >&2
+          return 2
+        fi
+        local _name
+        _name="$(fresh_sanitize_name "$1")"
+        if [ ! -f "${FRESH_OVERLAY_DIR}/${_name}.yml" ]; then
+          # Refuse rather than fall through to the default project — falling
+          # through is what restarted the live stack on a typo'd name.
+          echo "❌ No fresh deployment '${_name}' (no ${FRESH_OVERLAY_DIR}/${_name}.yml)." >&2
+          echo "   Known deployments: ./opentr.sh fresh-list" >&2
+          return 2
+        fi
+        RESTART_PROJECT="$(fresh_project_name "$_name")"
+        RESTART_CHAIN="$(fresh_compose_chain "$_name")"
+        RESTART_LABEL="fresh deployment '${_name}' (project ${RESTART_PROJECT})"
+        shift
+        ;;
+      *)
+        echo "❌ Unknown option for restart: $1" >&2
+        return 2
+        ;;
+    esac
+  done
+  return 0
+}
 
-  # Restart backend and all celery services in place
-  # Note: celery-worker-gpu-scaled is optional (scale: 0 by default) so we ignore errors for it
-  docker compose restart backend \
+# Run `docker compose` against the resolved target. Stderr is NOT discarded and the
+# exit status IS returned: the old code sent both to /dev/null, so "✅ restarted
+# successfully" printed whether or not anything had been restarted.
+restart_compose() {
+  if [ -n "$RESTART_PROJECT" ]; then
+    # shellcheck disable=SC2086
+    COMPOSE_PROJECT_NAME="$RESTART_PROJECT" docker compose $RESTART_CHAIN "$@"
+  else
+    # No --fresh: bare `docker compose`, which in a repo clone auto-loads
+    # docker-compose.override.yml. Byte-identical to the previous behaviour, so
+    # the default path is unchanged by this fix.
+    docker compose "$@"
+  fi
+}
+
+restart_backend() {
+  restart_resolve_target "$@" || return $?
+  echo "🔄 Restarting backend services on ${RESTART_LABEL} (backend, all celery workers, celery-beat, flower)..."
+
+  # -t "$OT_STOP_GRACE_GPU" (issue #782): compose v2.29.7's `restart` passes only
+  # options.Timeout, so a container created before docker-compose.yml carried
+  # stop_grace_period (StopTimeout still null) needs it spelled out here too.
+  local rc=0
+  restart_compose restart -t "$OT_STOP_GRACE_GPU" backend \
     celery-worker \
     celery-download-worker \
     celery-cpu-worker \
@@ -2696,63 +3471,152 @@ restart_backend() {
     celery-nlp-worker \
     celery-embedding-worker \
     celery-beat \
-    flower 2>/dev/null
+    flower || rc=$?
 
-  # Try to restart gpu-scaled worker if it exists (optional service)
-  docker compose restart celery-worker-gpu-scaled 2>/dev/null || true
+  # celery-worker-gpu-scaled is optional (scale: 0 unless --gpu-scale), so its
+  # absence is genuinely not an error — unlike everything above.
+  restart_compose restart -t "$OT_STOP_GRACE_GPU" celery-worker-gpu-scaled 2>/dev/null || true
 
-  echo "✅ Backend services restarted successfully."
+  if [ "$rc" -ne 0 ]; then
+    echo "❌ Backend restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
+    echo "   Nothing above was necessarily restarted — do not read this as a success." >&2
+    return "$rc"
+  fi
+  echo "✅ Backend services restarted successfully on ${RESTART_LABEL}."
 
   # Display container status
   echo "📊 Container status:"
-  docker compose ps
+  restart_compose ps
 }
 
 # Function to restart frontend only
 restart_frontend() {
-  echo "🔄 Restarting frontend service..."
+  restart_resolve_target "$@" || return $?
+  echo "🔄 Restarting frontend service on ${RESTART_LABEL}..."
 
-  # Restart frontend in place
-  docker compose restart frontend
-
-  echo "✅ Frontend service restarted successfully."
+  # No -t/drain here (issue #782): the frontend holds no CUDA context, so the default
+  # grace period is correct as-is. See backend/tests/unit/test_teardown_call_sites_drain.py's
+  # allowlist entry for this exact line.
+  local rc=0
+  restart_compose restart frontend || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "❌ Frontend restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
+    return "$rc"
+  fi
+  echo "✅ Frontend service restarted successfully on ${RESTART_LABEL}."
 
   # Display container status
   echo "📊 Container status:"
-  docker compose ps
+  restart_compose ps
 }
 
 # Function to restart all services without resetting the database
 restart_all() {
-  echo "🔄 Restarting all services without database reset..."
+  restart_resolve_target "$@" || return $?
+  echo "🔄 Restarting all services on ${RESTART_LABEL} without database reset..."
 
-  # Restart all services in place - docker compose handles dependency ordering
-  docker compose restart
-
-  echo "✅ All services restarted successfully."
+  # Restart all services in place - docker compose handles dependency ordering.
+  # -t "$OT_STOP_GRACE_GPU" (issue #782): see restart_backend()'s comment -- `restart`
+  # passes only options.Timeout, so pre-recreate containers need it explicit here too.
+  local rc=0
+  restart_compose restart -t "$OT_STOP_GRACE_GPU" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "❌ Restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
+    return "$rc"
+  fi
+  echo "✅ All services restarted successfully on ${RESTART_LABEL}."
 
   # Display container status
   echo "📊 Container status:"
-  docker compose ps
+  restart_compose ps
 }
 
 # Helper: stop all containers from both dev and prod compose chains, plus stragglers
+# Drain (b): container-driven counterpart to ot_drain_gpu_workers() (scripts/common.sh),
+# for stop_all_containers() specifically -- it runs BOTH a dev and a prod compose chain
+# below, so no single chain is guaranteed to be the one that actually started a given
+# service (e.g. after an overlay changed between the run that created a container and
+# this one). Reads the SAME overridable project labels the straggler loop in
+# stop_all_containers() uses, for the identical reason (issue #693): a bare name-prefix
+# match previously stopped-and-removed an unrelated container ("opentranscribe-homepage",
+# a dashboard app from a different compose project sharing the name prefix by
+# coincidence) on this host. Matches by NAME SUBSTRING, not prefix, so it also reaches
+# gpu-scale's celery-worker-gpu-scaled, gpu-split's celery-worker-gpu-{transcribe,diarize},
+# a --fresh project's otfresh-<name>-celery-worker, and diar-native's default
+# project-prefixed name (e.g. transcribe-app-diar-native-1) -- none of which carry the
+# bare "opentranscribe-celery-worker" name a literal match would assume. Backgrounded +
+# `wait` so N workers drain in PARALLEL, not N times OT_STOP_GRACE_GPU serially.
+#
+# ⚠️ A LABEL-based selector (e.g. com.opentranscribe.gpu=true) is tempting and WRONG:
+# labels are also baked at container CREATE time, so it would miss exactly the
+# pre-upgrade containers this helper exists to reach.
+ot_drain_gpu_workers_by_container() {
+  local pids=()
+  local gpu_container
+  for gpu_container in $( { docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' 2>/dev/null
+                            docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' 2>/dev/null
+                          } | sort -u ); do
+    case "$gpu_container" in
+      *celery-worker*|*celery-cpu-worker*|*celery-redaction*|*diar-native*)
+        docker stop -t "$OT_STOP_GRACE_GPU" "$gpu_container" 2>/dev/null &
+        pids+=("$!")
+        ;;
+    esac
+  done
+  local pid
+  for pid in "${pids[@]:-}"; do
+    [ -n "$pid" ] && wait "$pid" 2>/dev/null
+  done
+}
+
 stop_all_containers() {
-  # Dev compose chain
-  docker compose -f docker-compose.yml -f docker-compose.override.yml \
+  # Drain CUDA-holding workers before EITHER `down`/stop chain below reaches them
+  # (issue #782) -- see ot_drain_gpu_workers_by_container()'s docstring for why this is
+  # container-driven rather than chain-driven here specifically.
+  ot_drain_gpu_workers_by_container
+
+  # Dev compose chain. -f docker-compose.gpu-split.yml -f docker-compose.diar-native.yml
+  # and COMPOSE_PROFILES="*" close issue #782's N5 finding: without them, this chain never
+  # named the services gpu-split/diar-native define, so celery-worker-gpu-{transcribe,
+  # diarize}, -gpu-scaled and diar-native were reachable only by the straggler loop below
+  # (same fix shape fresh_destroy() already uses for the identical class of profile leak).
+  # shellcheck disable=SC2086
+  COMPOSE_PROFILES="*" docker compose -f docker-compose.yml -f docker-compose.override.yml \
     -f docker-compose.gpu.yml -f docker-compose.blackwell.yml \
-    -f docker-compose.gpu-scale.yml \
+    -f docker-compose.gpu-scale.yml -f docker-compose.gpu-split.yml \
+    -f docker-compose.diar-native.yml \
     -f docker-compose.nas.yml "$@" 2>/dev/null || true
 
-  # Prod compose chain
-  docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  # Prod compose chain. Same N5 fix as the dev chain above.
+  # shellcheck disable=SC2086
+  COMPOSE_PROFILES="*" docker compose -f docker-compose.yml -f docker-compose.prod.yml \
     -f docker-compose.local.yml -f docker-compose.gpu.yml \
     -f docker-compose.blackwell.yml -f docker-compose.gpu-scale.yml \
+    -f docker-compose.gpu-split.yml -f docker-compose.diar-native.yml \
     -f docker-compose.nas.yml \
     -f docker-compose.nginx.yml -f docker-compose.pki.yml "$@" 2>/dev/null || true
 
-  # Catch stragglers by container name pattern
-  for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^opentranscribe-|^transcribe-app-'); do
+  # Catch stragglers: containers left over from THIS project's compose chains
+  # that a `docker compose down` above didn't reach (e.g. an overlay that
+  # changed between runs). Filtered by compose PROJECT label, not a bare name
+  # prefix -- a prefix match previously stopped-and-removed an unrelated
+  # container on this host ("opentranscribe-homepage", a dashboard app from a
+  # different compose project sharing the name prefix by coincidence). Two
+  # project names are legitimate here: "opentranscribe" (every service with an
+  # explicit container_name) and "transcribe-app" (docker-compose.diar-native.yml's
+  # diar-native service has no explicit container_name, so compose falls back
+  # to the checkout directory's basename as the project name).
+  #
+  # The two project names are parameterised ONLY so the test that drives this
+  # real loop body (backend/tests/unit/test_opentr_stop_container_scoping.py)
+  # can point it at a throwaway namespace instead of the live stack -- running
+  # the loop unmodified against a developer's daemon destroyed 16 running
+  # containers (issue #693). Nothing in this script, and nothing shipped, ever
+  # sets them: unset, both expand to the literals they replaced, so `opentr.sh
+  # stop` behaves exactly as before.
+  for container in $( { docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' 2>/dev/null
+                        docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' 2>/dev/null
+                      } | sort -u ); do
     docker stop "$container" 2>/dev/null && docker rm "$container" 2>/dev/null || true
   done
 }
@@ -3015,36 +3879,53 @@ case "$1" in
     ;;
 
   backup)
-    backup_database "${2:-}"
+    # "" = bare `docker compose`, which in a repo clone auto-loads
+    # docker-compose.override.yml — byte-identical behaviour to before the move (issue #613).
+    backup_database "" "./opentr.sh" "${2:-}"
     ;;
 
   restore)
-    restore_database "${2:-}"
+    shift  # Remove 'restore' command
+    restore_database "" "./opentr.sh" "$@"  # Pass all remaining arguments (flags + file)
     ;;
 
   restart-backend)
-    restart_backend
+    shift
+    restart_backend "$@"
     ;;
 
   restart-frontend)
-    restart_frontend
+    shift
+    restart_frontend "$@"
     ;;
 
   restart-all)
-    restart_all
+    shift
+    restart_all "$@"
     ;;
 
   rebuild-backend)
     echo "🔨 Rebuilding backend services..."
     detect_and_configure_hardware
 
-    # Parse optional flags so NAS-configured deployments keep their mounts.
+    # Parse optional flags so NAS-configured deployments keep their mounts, and so
+    # the diar-native auto-detect below can be overridden either way.
     NAS_FLAG=""
+    WITH_DIAR_NATIVE_FLAG=""
+    NO_DIAR_NATIVE_FLAG=""
     shift || true  # drop "rebuild-backend"
     while [ $# -gt 0 ]; do
       case "$1" in
         --nas)
           NAS_FLAG="--nas"
+          shift
+          ;;
+        --with-diar-native)
+          WITH_DIAR_NATIVE_FLAG="--with-diar-native"
+          shift
+          ;;
+        --no-diar-native)
+          NO_DIAR_NATIVE_FLAG="--no-diar-native"
           shift
           ;;
         *)
@@ -3069,6 +3950,18 @@ case "$1" in
     # appear missing even though it's still on disk.
     add_nas_overlay
 
+    # Keep the native diarization sidecar's handoff wiring on celery-worker.
+    # Without this, a rebuilt worker has no DIAR_NATIVE_URL and loses the shared
+    # pipeline_scratch/diar/ handoff namespace (issue #661 E2 -- was a dedicated
+    # /tmp/diar-native mount before the consolidation), the sidecar cannot see the WAV
+    # it is handed, /diarize answers 422, and diarization silently degrades to the
+    # in-process PyAnnote fork -- same "correct-looking container, wrong storage"
+    # failure as the NAS note above, but with no user-visible symptom at all. `rebuild`
+    # mode keys off the sidecar container this deployment already has, so it never
+    # starts one nobody asked for; see add_diar_native_overlay for why that predicate
+    # and not the config one.
+    add_diar_native_overlay rebuild
+
     # --no-deps keeps postgres/minio/opensearch/redis containers exactly as
     # they were running. Only rebuild + recreate the services that actually
     # consume backend code -- every service in docker-compose.override.yml
@@ -3076,6 +3969,11 @@ case "$1" in
     # missing from this list for a while: it shares the image but has its own
     # entry, so it silently kept running stale code after every rebuild until
     # something recreated it another way.
+    #
+    # `diar-native` is deliberately NOT in this list even when its overlay is
+    # loaded: it runs a Rust binary out of the same image, so a Python-side change
+    # cannot affect it, and recreating it costs a fresh ~2.2 GB ORT warm-up on the
+    # GPU. Restart it explicitly when the image's diar-server binary itself changed.
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES up -d --build --no-deps \
       backend celery-worker celery-download-worker celery-cpu-worker \
@@ -3216,6 +4114,9 @@ case "$1" in
 
         # Stop any running bench stack cleanly
         echo "🛑 Stopping any running bench stack..."
+        # Drain otbench-celery-worker before `down` reaches it (issue #782) -- a real GPU
+        # worker, not a mock.
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         # Use 'down' (not 'stop') so containers are removed before volume rm.
         # docker volume rm fails silently when stopped containers still reference it.
@@ -3257,6 +4158,7 @@ case "$1" in
 
       stop)
         echo "🛑 Stopping bench stack..."
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE stop
         echo "✅ Bench stack stopped. Volumes preserved. Use 'bench clean' to wipe."
@@ -3264,6 +4166,7 @@ case "$1" in
 
       clean)
         echo "🗑  Stopping bench stack and wiping all bench volumes..."
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE down --remove-orphans 2>/dev/null || true
         docker volume rm \
@@ -3369,6 +4272,7 @@ case "$1" in
 
         # Wipe bench volumes for a clean slate
         echo "🗑  Wiping bench volumes for clean run..."
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE down --remove-orphans 2>/dev/null || true
         docker volume rm \
@@ -3444,6 +4348,7 @@ case "$1" in
         echo "   GPU idle between tasks (conc=3):  <  5 s"
         echo ""
         echo "🛑 Stopping bench stack (volumes kept for inspection)..."
+        ot_drain_gpu_workers "$BENCH_COMPOSE"
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE stop
         ;;

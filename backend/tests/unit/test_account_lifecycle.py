@@ -43,6 +43,7 @@ from app.auth.audit import AuditEventType
 from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 from app.models.user import User
+from tests.helpers import fake_request
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000bb"
 
@@ -435,12 +436,23 @@ class TestLastLoginIsStamped:
 
     def test_session_issue_stamps_it(self, token_env):
         user = _user()
+        before = datetime.now(UTC)
 
         login_module._generate_login_tokens(
-            cast(Any, _FakeDB()), user, USER_UUID, "user", "pytest", "10.0.0.1", auth_method="local"
+            fake_request(),
+            cast(Any, _FakeDB()),
+            user,
+            USER_UUID,
+            "user",
+            "pytest",
+            "10.0.0.1",
+            auth_method="local",
         )
 
-        assert user.last_login_at is not None
+        # The column exists to drive the inactive-account control (AC-2(3)), so the
+        # value has to be THIS login. A stamp of any other instant — a fixture default,
+        # a carried-over value — reads as "not None" and disables the control silently.
+        assert before <= user.last_login_at <= datetime.now(UTC)
 
     def test_a_write_failure_never_costs_the_session(self, token_env):
         """Bookkeeping is not allowed to 500 a login that already succeeded."""
@@ -451,6 +463,7 @@ class TestLastLoginIsStamped:
 
         db = _BrokenDB()
         response = login_module._generate_login_tokens(
+            fake_request(),
             cast(Any, _FakeDB()),
             _user(),
             USER_UUID,

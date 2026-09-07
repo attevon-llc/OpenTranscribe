@@ -50,10 +50,12 @@ from app.services.redaction.coverage import uncovered_detectors
 logger = logging.getLogger(__name__)
 
 #: Provider names (matching ``LLMService.LLMProvider``'s string values) that are
-#: this deployment's own self-hosted inference servers, whatever host they
-#: happen to be reached at. Compared by value, not by importing the enum, so
-#: this module never has to import ``llm_service`` at runtime — see
-#: :func:`is_local_provider`.
+#: ELIGIBLE for a ``base_url`` locality check — self-hosted-inference-server
+#: shapes whose endpoint is nonetheless genuinely free-form (issue: a ``vllm``
+#: config can legitimately point at a hosted vLLM SaaS). Compared by value, not
+#: by importing the enum, so this module never has to import ``llm_service`` at
+#: runtime — see :func:`is_local_provider`. ``custom`` is handled alongside
+#: these because it takes the identical check.
 _LOCAL_HOSTED_PROVIDERS = frozenset({"vllm", "ollama"})
 
 #: Hostnames that name "this machine" without needing a DNS round trip.
@@ -210,18 +212,31 @@ def is_local_provider(config: object) -> bool:
     ONE place that decision is keyed off the provider — callers must never infer
     locality from a global setting or a deployment flag.
 
-    Two ways a config is judged local:
+    ``provider`` being ``vllm`` or ``ollama`` is NOT enough on its own: both are
+    genuinely self-hostable, OpenAI-compatible endpoint shapes, but ``base_url``
+    is free-form user/operator input for both (``llm_service.py`` builds the
+    endpoint straight from it) and the one place ``base_url`` IS validated
+    (the SSRF guards, gated by ``LLM_ALLOW_PRIVATE_ENDPOINTS``, default
+    ``false``) *refuses* a private endpoint and *permits* a public one on a
+    stock deployment — the inverse of what a provider-name-only check assumed.
+    A user pointing a ``vllm`` config at a hosted vLLM SaaS must not have their
+    transcript unmasked just because the provider name says "vllm".
 
-    * ``provider`` is ``vllm`` or ``ollama`` — this deployment's own self-hosted
-      inference servers, whatever host they happen to be reached at.
-    * ``provider`` is ``custom`` (a generic OpenAI-compatible endpoint) **and**
-      its ``base_url`` names a loopback / RFC1918 / link-local / IPv6 ULA
-      address, or a bare "dotless" hostname — the shape of an unqualified
-      docker-compose/Kubernetes service name (``http://backend:8000``,
-      ``http://mock-llm:5199/v1``), which cannot resolve outside this
-      deployment's own network and would otherwise fail DNS in exactly the
-      environments (CI, a fresh dev stack) where treating a lookup failure as
-      "remote" would be wrong most often.
+    So all three of ``vllm``, ``ollama``, and ``custom`` take the identical
+    check: is a config's ``base_url`` a loopback / RFC1918 / link-local / IPv6
+    ULA address, or a bare "dotless" hostname — the shape of an unqualified
+    docker-compose/Kubernetes service name (``http://backend:8000``,
+    ``http://mock-llm:5199/v1``), which cannot resolve outside this
+    deployment's own network and would otherwise fail DNS in exactly the
+    environments (CI, a fresh dev stack) where treating a lookup failure as
+    "remote" would be wrong most often. A ``vllm``/``ollama`` config with no
+    ``base_url`` at all now reads remote (it used to read local) — that is
+    correct and inert: with no endpoint to reach, it cannot serve a model
+    either way.
+
+    Every other provider (``openai``, ``anthropic``, ``claude``, ``openrouter``,
+    ``bedrock``) is a hosted third-party API by construction and is never local,
+    whatever its ``base_url`` says.
 
     Every other provider (``openai``, ``anthropic``, ``claude``, ``openrouter``,
     ``bedrock``) is a hosted third-party API by construction and is never local,
@@ -251,9 +266,7 @@ def is_local_provider(config: object) -> bool:
         (including when ``config`` is ``None``).
     """
     provider = str(getattr(config, "provider", "") or "").strip().lower()
-    if provider in _LOCAL_HOSTED_PROVIDERS:
-        return True
-    if provider != "custom":
+    if provider not in _LOCAL_HOSTED_PROVIDERS and provider != "custom":
         return False
     return _custom_endpoint_is_local(getattr(config, "base_url", None))
 
@@ -292,7 +305,19 @@ def _custom_endpoint_is_local(base_url: str | None) -> bool:
         # mock-LLM fixture) have no resolver entry for it outside the app's own
         # network, and treating that lookup failure as "remote" would misclassify
         # the common case rather than the rare one.
-        return True
+        #
+        # Guard: an UNBRACKETED IPv6 literal in the URL also lands here — e.g.
+        # `urlparse("http://2001:db8::1/v1").hostname` returns `"2001"`, which
+        # has no dot and no letters. A real compose/K8s service name is never
+        # purely hex digits, so refuse anything that parses as an integer
+        # (covers decimal and, since Python 3 int() also accepts hex literals
+        # with a 0x prefix, the common malformed-IPv6 shapes) rather than
+        # misreading a public address as ours.
+        try:
+            int(hostname, 16)
+        except ValueError:
+            return True
+        return False
 
     from app.utils.url_validation import resolve_public_addresses
 

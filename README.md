@@ -4,6 +4,11 @@
   **AI-Powered Transcription and Media Analysis Platform**
 </div>
 
+> **Project status — active development.** The default branch tracks ongoing work and may
+> contain unreleased or in-progress features. For a stable deployment, install a published
+> [release](https://github.com/attevon-llc/OpenTranscribe/releases) — the one-line installer
+> below resolves the latest release automatically and pins your deployment to it.
+
 OpenTranscribe is a powerful, containerized web application for transcribing and analyzing audio/video files using state-of-the-art AI models. Built with modern technologies and designed for scalability, it provides an end-to-end solution for speech-to-text conversion, speaker identification, and content analysis.
 
 > **Note**: This application is 99.9% written by AI using frontier models from commercial providers, demonstrating the power of AI-assisted development.
@@ -17,6 +22,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 <p align="center"><em>Complete workflow: Login → Upload → Process → Transcribe → Speaker Identification → AI Tags & Collections</em></p>
 
 > 📚 **For detailed screenshots and visual guides**, see the [Complete Documentation](https://docs.opentranscribe.app)
+>
+> 🗺️ **Where this is going:** the [Roadmap](https://docs.opentranscribe.app/roadmap) shows what is in each release and how far along it is, generated from the issue tracker. [Release Themes](https://docs.opentranscribe.app/docs/developer-guide/roadmap) explains what each version is *for* and the exit criteria it has to meet.
 
 ## ✨ Key Features
 
@@ -203,7 +210,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### ⚡ **Performance & Scaling**
 - **Multi-GPU Worker Scaling**: Optional parallel processing on dedicated GPUs for high-throughput systems, including an optional ASR/diarization **GPU split** (`--with-gpu-split`) that runs transcription and diarization on separate GPUs
-- **Hybrid Mode**: Automatic CPU transcription + GPU/MPS diarization for small-VRAM GPUs and Apple Silicon
+- **Hybrid Mode**: Automatic CPU transcription + GPU diarization for small-VRAM GPUs (Linux/WSL2 with an NVIDIA GPU only — a containerized deployment on Apple Silicon has no Docker Metal passthrough and runs CPU-only via the `--lite` image, not MPS)
 - **Combined Transcription Engine**: Unified, backend-pluggable engine with admin-tunable runtime settings and per-worker metrics
 - **Fast Uploads**: Optional presigned direct-to-MinIO uploads with content-hash (imohash) deduplication and a shared-memory WAV handoff that removes redundant downloads from the processing pipeline
 - **Pipeline Timing Instrumentation**: Opt-in end-to-end wall-clock timing (`ENABLE_BENCHMARK_TIMING`) with admin timing endpoints
@@ -323,16 +330,30 @@ OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/attevon-
 
 The CPU-only choice is persisted to `.env` as `FORCE_CPU_MODE=true` so subsequent `./opentranscribe.sh start`/`restart` calls continue to skip the GPU overlay automatically.
 
+**🪶 Lite install (`--lite`):** `--cpu` still runs the full CUDA image, just without a GPU. `--lite`
+is different — it installs the much smaller CPU-only `opentranscribe-backend-lite` image, which
+carries no CUDA runtime and no local ASR model, and transcribes via a **cloud ASR provider** you
+configure after install. Implies `--cpu`, and persists `DEPLOYMENT_MODE=lite`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --lite
+
+# Unattended / CI equivalent
+OPENTRANSCRIBE_LITE=1 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
+```
+
+This is the only supported shape on a host with no NVIDIA GPU at all, and it is what arm64 hosts
+select automatically — the full CUDA image publishes no arm64 leg, so on Apple Silicon and other
+aarch64 machines the lite image is the only backend available.
+
 **⚠️ IMPORTANT - HuggingFace Setup:**
 The script will prompt you for your HuggingFace token during setup. **BEFORE running the installer:**
 
 1. **Get a FREE token:** Visit [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-2. **Accept BOTH gated model agreements** (required for speaker diarization):
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) - Click "Agree and access repository"
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) - Click "Agree and access repository"
+2. **Accept the gated model agreement** (required for speaker diarization): [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) - Click "Agree and access repository" (this is the only repo OpenTranscribe actually gates on; it's auto-approved)
 3. **Enter your token** when prompted by the installer
 
-If you provide a valid token with both model agreements accepted, AI models will be downloaded and cached before Docker starts, ensuring the app is ready to use immediately. If you skip this step, models will download on first use (10-30 minute delay).
+If you provide a valid token with the model agreement accepted, AI models will be downloaded and cached before Docker starts, ensuring the app is ready to use immediately. If you skip this step, models will download on first use (10-30 minute delay).
 
 Once setup is complete, start OpenTranscribe with:
 
@@ -426,7 +447,7 @@ GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
 # Configure in .env
 GPU_TRANSCRIBE_DEVICE_ID=0   # GPU for WhisperX (transcription)
 GPU_DIARIZE_DEVICE_ID=1      # GPU for PyAnnote (diarization)
-ENGINE_SHARED_VOLUME_PATH=/tmp/transcription  # shared volume mount path
+ENGINE_SHARED_VOLUME_PATH=/scratch/opentranscribe/engine  # per-task handoff dir on the pipeline_scratch volume
 
 # Start with GPU split
 ./opentr.sh start dev --with-gpu-split
@@ -513,18 +534,22 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 ```bash
 # Data operations (⚠️ DESTRUCTIVE)
 ./opentr.sh reset [dev|prod]     # Complete reset - deletes ALL data!
-./opentr.sh init-db              # Initialize database without container reset
+# Alembic migrations run automatically on dev backend startup — no separate init command needed.
 
 # Backup and restore
 ./opentr.sh backup               # Create timestamped database backup
 ./opentr.sh backup --encrypt     # GPG-encrypted backup (AES-256, no plaintext on disk)
-./opentr.sh restore [file]       # Restore from backup file (.sql or .gpg)
+./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] <file>  # REPLACE the database from a backup
+                                                         # (.sql, .dump, .sql.gpg, .dump.gpg; --from-s3 fetches by name first) — destructive
+
+# Production installs (no repo clone, no opentr.sh) use the identical commands via the
+# shipped management script instead: ./opentranscribe.sh backup / restore — same flags,
+# same behavior. See docs-site/docs/operations/backup-restore.md.
 ```
 
 ### **System Administration**
 ```bash
 # Maintenance
-./opentr.sh clean                # Remove unused containers and images
 ./opentr.sh health               # Check service health status
 ./opentr.sh shell [service]      # Open shell in container
 
@@ -825,7 +850,7 @@ LLM_PROVIDER=ollama                  # Local Ollama server
 - **📱 Small Models**: Even 3B Ollama models can handle hours of content via intelligent sectioning
 - **🚫 No LLM**: Leave `LLM_PROVIDER` empty. Transcription, diarization, redaction and full hybrid **search (keyword + semantic)** all still work — only summaries, topic suggestions, speaker-ID hints and AI Chat need a provider
 
-See [LLM_DEPLOYMENT_OPTIONS.md](LLM_DEPLOYMENT_OPTIONS.md) for detailed setup instructions.
+See [LLM Integration](docs-site/docs/features/llm-integration.md) for detailed setup instructions.
 
 #### **🗂️ Model Caching**
 
@@ -871,19 +896,15 @@ OpenTranscribe requires a HuggingFace token for speaker diarization and voice fi
 2. Click "New token" and select "Read" access
 3. Copy the generated token
 
-#### **2. Accept Model User Agreements** ⚠️ **CRITICAL - MUST ACCEPT BOTH!**
+#### **2. Accept Model User Agreement** ⚠️ **CRITICAL**
 
-**You MUST accept the user agreements for BOTH PyAnnote models or speaker diarization will fail:**
+**You MUST accept the user agreement for the PyAnnote diarization model or speaker diarization will fail:**
 
-1. **Segmentation Model** (Required):
-   - Visit: [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+1. **Speaker Diarization Model** (Required):
+   - Visit: [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — this is the only repo OpenTranscribe actually gates on (auto-approved, CC-BY-4.0)
    - Click: **"Agree and access repository"**
 
-2. **Speaker Diarization Model** (Required):
-   - Visit: [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-   - Click: **"Agree and access repository"**
-
-> **⚠️ Common Issue:** If you only accept one model agreement, downloads will fail with `'NoneType' object has no attribute 'eval'` error. You MUST accept BOTH agreements.
+> **⚠️ Common Issue:** If the agreement isn't accepted, downloads will fail with `'NoneType' object has no attribute 'eval'` or an HTTP 403/PermissionError. Older docs mentioned `pyannote/segmentation-3.0` and `pyannote/speaker-diarization-3.1` — that pair is optional and only helps the in-process PyAnnote engine's internal last-resort fallback; it is never a substitute for accepting `community-1`.
 
 #### **3. Configure Token**
 Add your token to the environment configuration:
@@ -1180,9 +1201,6 @@ docker stats
 # Check service status
 ./opentr.sh status
 
-# Clean up resources
-./opentr.sh clean
-
 # Full reset (⚠️ deletes all data)
 ./opentr.sh reset dev
 ```
@@ -1218,16 +1236,16 @@ docker stats
 - Fast NVMe storage
 - Load balancer for multiple instances
 
-#### **Low-VRAM / macOS Deployments — Hybrid Mode**
+#### **Low-VRAM Deployments — Hybrid Mode**
 
-For systems where the GPU cannot fit the full transcription model, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU while diarization stays on GPU/MPS. This requires only ~1.3 GB VRAM for PyAnnote and delivers speaker-diarized transcripts without a dedicated GPU.
+For systems where the GPU cannot fit the full transcription model, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU while diarization stays on GPU. This requires only ~1.3 GB VRAM for PyAnnote and delivers speaker-diarized transcripts without a dedicated GPU. This is a Linux/WSL2-with-NVIDIA-GPU feature — there is no GPU/MPS path available on macOS (Docker Desktop has no Metal passthrough), so macOS deployments use the `--lite` (CPU-only) image instead and run both stages on CPU.
 
 | Scenario | Transcription | Diarization | Trigger |
 |---|---|---|---|
 | GPU ≥ 8 GB + large-v3-turbo | GPU | GPU | Normal mode |
 | GPU 4–6 GB + large-v3-turbo | CPU (small model) | GPU | Auto hybrid |
-| macOS Apple Silicon (any) | CPU (small model) | MPS (PyAnnote fork) | Always hybrid |
-| `WHISPER_HYBRID_MODE=true` | CPU (small model) | GPU/MPS | Manual override |
+| macOS (any Apple Silicon) | CPU (small model) | CPU (`--lite` image) | Always CPU-only — no MPS in Docker |
+| `WHISPER_HYBRID_MODE=true` | CPU (small model) | GPU | Manual override (Linux/WSL2 + NVIDIA GPU only) |
 
 The CPU model defaults to `small` (int8, ~15–30× real-time on modern hardware). Override with `WHISPER_HYBRID_CPU_MODEL=medium` for better accuracy at the cost of speed.
 

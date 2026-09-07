@@ -107,4 +107,25 @@ describe('PickerSpeakersTab — server-side type-to-search', () => {
     await fireEvent.click(checkbox);
     expect(changed).toEqual([]);
   });
+
+  it('clears the pending debounce timer on destroy, so no request fires after unmount', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { findByPlaceholderText, unmount } = render(PickerSpeakersTab, {
+        props: { selected: [] },
+      });
+      const input = await findByPlaceholderText('chat.picker.searchSpeakers');
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+
+      await fireEvent.input(input, { target: { value: 'pri' } });
+      // Debounce timer is pending (300ms) — destroy the component before it fires.
+      unmount();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      // If the leaked timer had fired, this would be 2.
+      expect(get).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

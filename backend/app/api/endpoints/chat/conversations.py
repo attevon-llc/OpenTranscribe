@@ -128,14 +128,13 @@ def list_conversations(
         query = query.filter(ChatConversation.title.ilike(f"%{escaped}%"))
 
     total = query.count()
+    # A conversation that has never been messaged has no last_message_at; sorting
+    # those last pushed brand-new chats off page 1 entirely (30 rows) so they never
+    # appeared in the sidebar. created_at is the right fallback -- the sidebar's own
+    # date grouping and chat_retention already use exactly this coalesce.
+    recency = func.coalesce(ChatConversation.last_message_at, ChatConversation.created_at)
     rows = (
-        query.order_by(
-            ChatConversation.last_message_at.desc().nullslast(),
-            ChatConversation.id.desc(),
-        )
-        .offset(offset)
-        .limit(limit)
-        .all()
+        query.order_by(recency.desc(), ChatConversation.id.desc()).offset(offset).limit(limit).all()
     )
 
     counts = _message_counts(db, [row.id for row in rows])

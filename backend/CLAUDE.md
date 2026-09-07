@@ -52,9 +52,22 @@ Verify parity at any time — this is the check that would have caught the drift
 ```
 
 It diffs `pip freeze` in `backend/venv` against the **running** backend container, ignoring
-`pip`/`setuptools`/`wheel` (build tooling, different by construction). Venv-only packages are
-fine — `requirements-dev.txt` is deliberately not in the image. Image-only packages are a real
-gap: the gate cannot exercise them.
+`pip`/`setuptools`/`wheel` (build tooling, different by construction). Image-only packages are a
+real gap: the gate cannot exercise them.
+
+⚠️ **Venv-only packages are NOT unconditionally fine, and this check does not look at them.**
+`requirements-dev.txt` being venv-only is intended; an *undeclared* venv-only package is a
+different animal, because an extra importable package can change what the app does. Measured
+2026-08-28: `speechbrain==1.0.3` sat in `backend/venv` declared by no requirements file and
+required by nothing. `pyannote.audio` probes for it with `try: import speechbrain ... except
+ImportError`, and speechbrain 1.0.3 calls `torchaudio.list_audio_backends()` at *module import
+time* — an API torchaudio 2.11 removed — so the probe raised `AttributeError`, which that
+`except ImportError` does not catch. Result: `import pyannote.audio.pipelines` failed in the
+venv and worked in the image, from an identical requirements file. That is the whole of issue
+#577's "venv torchaudio drift" theory: not a pin problem, an orphan-package problem, and the
+parity check reported `shared=255 mismatched=0 image-only=0 PASS` throughout.
+`backend/venv/bin/pip list --not-required` lists the leaves to eyeball; 33 of them are currently
+undeclared, so this is not yet something the gate can fail on.
 
 Measured 2026-08-18 after this pinning landed: **281 packages shared, 0 image-only, 2 differing
 (`pip`, `setuptools`)** — from 120 apart, 18 at a major version. ⚠️ It compares against the
@@ -98,7 +111,7 @@ versions back — do it deliberately, in its own commit, so a dependency bump is
 diff instead of invisible in a rebuild. ⚠️ **Versions move forward only**: never downgrade a pin
 to reproduce a result, because that reintroduces the divergence this closes.
 
-Four files, one per environment, all fully pinned:
+One file per environment, all fully pinned:
 
 | File | Installed by |
 |---|---|
@@ -106,7 +119,13 @@ Four files, one per environment, all fully pinned:
 | `requirements-nodeps.txt` | the same, as a second `--no-deps` step |
 | `requirements-lite.txt` | `Dockerfile.lite` (CPU-only image) |
 | `requirements-ci.txt` | GitHub Actions (CPU-only) |
-| `requirements-dev.txt` | the venv only — pytest, linters, pre-commit |
+| `requirements-test.txt` | `Dockerfile.test` (GPU test image) **and** `requirements-dev.txt` |
+| `requirements-dev.txt` | the venv only — `requirements-test.txt` plus linters, pre-commit |
+
+`requirements-test.txt` holds pytest and the plugins `pyproject`'s `addopts` makes mandatory,
+and nothing else. It exists so a container can be made test-capable (`backend/Dockerfile.test`,
+issue #577) without also acquiring ruff/mypy/mutmut/Playwright; `requirements-dev.txt` includes
+it, so the pins cannot drift between the venv and that image.
 
 ⚠️ **A model or dataset the app cannot run without belongs in a requirements file, not in a
 `RUN` line.** `en_core_web_sm` — the spaCy pipeline Presidio tokenizes with — was installed by

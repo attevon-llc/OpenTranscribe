@@ -368,15 +368,3 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
         manager.disconnect(websocket, user.id)
-
-
-# Function to send notification to a user
-async def send_notification(user_id: int, notification_type: str, data: dict):
-    message = {"type": notification_type, "data": data}
-    await manager.send_personal_message(user_id, message)
-
-
-# Function to broadcast a notification to all connected users
-async def broadcast_notification(notification_type: str, data: dict):
-    message = {"type": notification_type, "data": data}
-    await manager.broadcast(message)

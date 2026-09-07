@@ -73,6 +73,23 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         _cleanup_temp(gpu_result.get("file_uuid"))
         return gpu_result
 
+    if gpu_result.get("status") == "split_forwarded":
+        # gpu-split topology (core.py::transcribe_gpu_task): this dict is what the
+        # transcribe-only leg returns to satisfy the OUTER pipeline chain's
+        # unconditional third link. It carries no user_id/speaker_mapping/etc. — the
+        # real completion belongs to diarize_gpu_task, which core.py already chained
+        # to a SEPARATE finalize_transcription invocation of its own. This call is
+        # that outer chain running against a payload that isn't the real result; it
+        # must be a no-op, not a KeyError (issue that made every --with-gpu-split job
+        # fail visibly even though diarization went on to complete correctly).
+        logger.debug(
+            "finalize_transcription: no-op for split_forwarded result (file_id=%s, "
+            "task_id=%s) — the real finalize runs after diarize_gpu_task",
+            gpu_result.get("file_id"),
+            gpu_result.get("task_id"),
+        )
+        return gpu_result
+
     file_uuid = gpu_result["file_uuid"]
     file_id = gpu_result["file_id"]
     user_id = gpu_result["user_id"]
@@ -134,7 +151,11 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                 logger.warning(f"Failed to dispatch rediarization: {e}")
         elif not diarization_disabled:
             if is_cloud_asr:
-                # Cloud ASR with provider diarization: dispatch GPU embedding extraction
+                # Cloud ASR with provider diarization: dispatch CPU embedding extraction.
+                # This is embedding extraction from already-known segments — no GPU
+                # diarization pass — so it belongs on the CPU queue, which lite mode
+                # (docker-compose.lite.yml) actually runs a worker for (issue #584;
+                # the GPU queue has zero consumers there).
                 send_progress_notification(
                     user_id, file_id, 0.80, "Dispatching speaker embedding extraction"
                 )
@@ -144,13 +165,13 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                     extract_speaker_embeddings_task.apply_async(
                         args=[str(file_uuid), speaker_mapping],
                         kwargs={"pipeline_task_id": task_id},
-                        queue=CeleryQueues.GPU,
+                        queue=CeleryQueues.CPU,
                     )
                     # Embedding task reads the preprocessed WAV; defer
                     # cleanup until it finishes (it cleans up itself).
                     defer_temp_cleanup = True
                     logger.info(
-                        f"Dispatched speaker embedding extraction to GPU queue for "
+                        f"Dispatched speaker embedding extraction to CPU queue for "
                         f"cloud-transcribed file {file_id}"
                     )
                 except Exception as e:

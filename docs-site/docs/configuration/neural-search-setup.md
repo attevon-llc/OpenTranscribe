@@ -23,7 +23,7 @@ Neural search uses machine learning embeddings to understand the semantic meanin
 - Works across synonyms, paraphrases, and different phrasings
 - Complements full-text search for comprehensive coverage
 
-:::tip Hybrid Search
+:::tip[Hybrid Search]
 OpenTranscribe combines BM25 full-text search with neural search using Reciprocal Rank Fusion (RRF). This gives you the speed of keyword search plus the intelligence of semantic search.
 :::
 
@@ -49,7 +49,7 @@ Before enabling neural search, ensure:
   [Performance Tuning](../operations/performance-tuning.md#opensearch-heap-what-it-is-actually-for).
 - **Available Disk Space**: ~80-480 MB per model, depending on which you select
 
-:::note Model Download
+:::note[Model Download]
 Models are downloaded automatically on first use. Ensure your OpenSearch container has internet access during initial setup.
 :::
 
@@ -73,7 +73,7 @@ that merely exists on Hugging Face fails registration at every version.
 Sizes, measured cross-lingual scores, and the warning about adding a model live in the
 [Admin Panel guide](../user-guide/admin-panel.md#embedding-model-selection).
 
-:::info Dimension is what makes a switch expensive
+:::info[Dimension is what makes a switch expensive]
 Moving between models of the *same* dimension is a re-embed. Changing dimension
 **recreates the index**. Four of the seven are 384-dimension, matching the default, so
 switching between them is the cheap and reversible path.
@@ -103,7 +103,7 @@ Changing models requires a full reindex of all transcripts, as the vector dimens
 1. Toggle **Enable Neural Search** to ON
 2. System will verify OpenSearch connectivity and ML Commons status
 
-:::warning ML Commons Check
+:::warning[ML Commons Check]
 If ML Commons is disabled, you'll see a warning. Contact your infrastructure team to enable the ML Commons plugin on your OpenSearch cluster.
 :::
 
@@ -131,7 +131,7 @@ If ML Commons is disabled, you'll see a warning. Contact your infrastructure tea
 2. System downloads and registers the embedding model
 3. Status indicator shows progress: "Downloading..." → "Registering..." → "Ready"
 
-:::note Initial Setup
+:::note[Initial Setup]
 First-time model registration takes 5-15 minutes depending on model size and internet speed. Monitor logs in container or check status from admin panel.
 :::
 
@@ -238,7 +238,7 @@ When you enable neural search or change models, you must reindex existing transc
 - View logs: `./opentr.sh logs opensearch`
 - Estimated speed: 100-500 transcripts/hour (model-dependent)
 
-:::note Large Indexes
+:::note[Large Indexes]
 For thousands of transcripts, reindexing runs in background. Users can continue using search while indexing occurs (searches use both indexed and un-indexed results).
 :::
 
@@ -248,6 +248,32 @@ New transcripts are automatically embedded when uploaded. Only use "Reindex All"
 - First enabling neural search
 - Changing embedding models
 - Recovering from indexing errors
+
+### Recovering Text-Only Files From a Neural Search Outage
+
+If the neural search backend is briefly unavailable (a slow or cold OpenSearch ML boot), files
+transcribed during that window are indexed as full-text only — they have no embedding vector and
+are excluded from neural/hybrid search until re-embedded.
+
+**The bootstrap itself self-heals automatically.** A background task retries neural search
+availability on a backoff, so new uploads resume getting embeddings again without any admin
+action once the backend recovers.
+
+**Files already indexed during the outage need one manual step.** They don't get an embedding
+added later on their own. To recover them:
+
+1. Go to **Settings** → **Search Configuration**
+2. If any files were left text-only, a banner reports the affected file count (separate from the
+   "neural search degraded" bootstrap banner — a file can be stuck here even after the backend
+   itself has fully recovered)
+3. Click **Re-embed Degraded Files**
+4. Confirm in the dialog, which shows the file and user counts affected
+5. Progress reports through the same reindex notification as **Reindex All Transcripts**
+
+:::note[Large Backlogs]
+The preview can be truncated on very large backlogs. If the banner says so after a re-embed
+completes, run **Re-embed Degraded Files** again to catch the remaining files.
+:::
 
 ## Frontend Features
 
@@ -279,7 +305,7 @@ Users can see which embedding model is active:
 - Dimensions
 - Batch indexing progress (if active)
 
-:::note Admin Setting
+:::note[Admin Setting]
 Model selection is an admin-only feature. Users can only see which model is active and view search preferences.
 :::
 
@@ -385,7 +411,7 @@ POST /api/search/validate
 
 4. Restart backend:
    ```bash
-   ./opentr.sh restart backend
+   ./opentr.sh restart-backend
    ```
 
 ### Issue: Embedding Generation Errors
@@ -494,9 +520,10 @@ POST /api/search/validate
    POST /api/admin/search/cancel-reindex
    ```
 
-4. Restart OpenSearch:
+4. Restart OpenSearch (`opentr.sh` has no single-service restart for OpenSearch, so this
+   restarts everything):
    ```bash
-   ./opentr.sh restart opensearch
+   ./opentr.sh restart-all
    ```
 
 ## Offline & Airgapped Setup
@@ -546,7 +573,7 @@ In admin settings:
 3. System will only use locally cached models
 4. No internet access required
 
-:::note Model Sync
+:::note[Model Sync]
 If adding new models to offline machine:
 1. Update models in step 1-2 on internet machine
 2. Transfer updated archive to offline machine
@@ -558,7 +585,7 @@ If adding new models to offline machine:
 
 ### Using Custom Models
 
-:::warning Advanced Only
+:::warning[Advanced Only]
 Custom model support requires backend code modifications. Only attempt if familiar with ONNX format and Python.
 :::
 

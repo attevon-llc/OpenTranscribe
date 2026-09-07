@@ -316,7 +316,7 @@ All commands run from `/opt/opentranscribe/`:
 ```bash
 sudo ./opentr.sh start              # Start all services
 sudo ./opentr.sh stop               # Stop all services
-sudo ./opentr.sh restart            # Restart all services
+sudo ./opentr.sh restart-all        # Restart all services
 sudo ./opentr.sh status             # Show service status
 sudo ./opentr.sh logs               # View all logs (Ctrl+C to exit)
 sudo ./opentr.sh logs backend       # View specific service logs
@@ -331,9 +331,9 @@ sudo ./opentr.sh shell backend      # Open shell in backend container
 
 **Maintenance:**
 ```bash
-sudo ./opentr.sh health             # Check health of all services
-sudo ./opentr.sh backup             # Create database backup
-sudo ./opentr.sh clean              # Clean up Docker resources
+sudo ./opentr.sh health              # Check health of all services
+sudo ./opentr.sh backup              # Create database backup
+sudo docker system prune -a          # Clean up unused Docker resources
 ```
 
 ### First-Time Setup
@@ -425,7 +425,7 @@ COMPUTE_TYPE=float16
 
 Then restart:
 ```bash
-sudo ./opentr.sh restart
+sudo ./opentr.sh restart-all
 ```
 
 ### Transcription Fails
@@ -482,7 +482,7 @@ BACKEND_PORT=8081      # Change from 8080
 
 Restart:
 ```bash
-sudo ./opentr.sh restart
+sudo ./opentr.sh restart-all
 ```
 
 ### Performance Issues
@@ -539,7 +539,7 @@ docker system df
 
 **Clean old logs:**
 ```bash
-sudo ./opentr.sh clean
+sudo docker system prune -a
 ```
 
 **Rotate logs:**

@@ -153,7 +153,7 @@
     border-color: var(--primary-color, #4f46e5);
   }
 
-  :global(.dark) .view-summary-btn:hover {
+  :global([data-theme='dark']) .view-summary-btn:hover {
     background: rgba(129, 140, 248, 0.12);
   }
 
@@ -184,12 +184,12 @@
     background: rgba(79, 70, 229, 0.06);
   }
 
-  :global(.dark) .summary-match-row {
+  :global([data-theme='dark']) .summary-match-row {
     background: rgba(255, 255, 255, 0.04);
   }
 
-  :global(.dark) .summary-match-row:hover,
-  :global(.dark) .summary-match-row:focus-visible {
+  :global([data-theme='dark']) .summary-match-row:hover,
+  :global([data-theme='dark']) .summary-match-row:focus-visible {
     background: rgba(129, 140, 248, 0.1);
   }
 

@@ -16,10 +16,6 @@ class SpeakerClusterBase(BaseModel):
     description: str | None = None
 
 
-class SpeakerClusterCreate(SpeakerClusterBase):
-    """Schema for creating a speaker cluster."""
-
-
 class SpeakerClusterUpdate(BaseModel):
     """Schema for updating a speaker cluster."""
 
@@ -80,12 +76,6 @@ class SpeakerClusterResponse(SpeakerClusterBase):
     model_config = {"from_attributes": True}
 
 
-class SpeakerClusterDetailResponse(SpeakerClusterResponse):
-    """Detailed response schema with members."""
-
-    members: list[SpeakerClusterMemberResponse] = []
-
-
 # --- Speaker Inbox ---
 
 
@@ -128,15 +118,6 @@ class MinorityAnalysisItem(BaseModel):
     recommendation: str  # likely_outlier, borderline, likely_valid
 
 
-class OutlierAnalysisResponse(BaseModel):
-    """Response for cluster outlier analysis."""
-
-    cluster_uuid: UUID
-    majority_gender: str
-    minority_gender: str
-    minority_analysis: list[MinorityAnalysisItem] = []
-
-
 class ClusterUnassignRequest(BaseModel):
     """Request to unassign speakers from a cluster."""
 
@@ -144,13 +125,6 @@ class ClusterUnassignRequest(BaseModel):
     blacklist: bool = Field(
         default=True, description="Prevent speakers from rejoining this cluster"
     )
-
-
-class ClusterUnassignResponse(BaseModel):
-    """Response for cluster unassign operation."""
-
-    unassigned_count: int
-    message: str
 
 
 class BatchVerifyRequest(BaseModel):
@@ -165,14 +139,6 @@ class BatchVerifyRequest(BaseModel):
     )
 
 
-class BatchVerifyResponse(BaseModel):
-    """Response schema for batch verification."""
-
-    updated_count: int
-    failed_count: int = 0
-    errors: list[str] = []
-
-
 class ReclusterRequest(BaseModel):
     """Request schema for triggering re-clustering."""
 
@@ -182,14 +148,6 @@ class ReclusterRequest(BaseModel):
     threshold: float | None = Field(
         None, ge=0.0, le=1.0, description="Clustering threshold (default 0.75)"
     )
-
-
-class ReclusterResponse(BaseModel):
-    """Response schema for re-clustering operation."""
-
-    status: str
-    task_id: str | None = None
-    message: str
 
 
 class ClusterSplitRequest(BaseModel):
@@ -221,13 +179,3 @@ class PaginatedClusterResponse(BaseModel):
     per_page: int = 20
     pages: int = 0
     last_clustered_at: datetime | None = None
-
-
-class PaginatedInboxResponse(BaseModel):
-    """Paginated list of inbox items."""
-
-    items: list[SpeakerInboxItem] = []
-    total: int = 0
-    page: int = 1
-    per_page: int = 20
-    pages: int = 0

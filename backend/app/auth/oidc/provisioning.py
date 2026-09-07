@@ -231,6 +231,7 @@ def sync_oidc_user_to_db(db, oidc_data: OIDCUserData, cfg=None):
             would be an account-existence oracle.
     """
     from app.auth.account_linking import assert_email_link_permitted
+    from app.auth.account_linking import assert_provider_id_link_permitted
     from app.auth.constants import AUTH_TYPE_LOCAL
     from app.auth.oidc.admission import assert_oidc_admission_permitted
     from app.auth.oidc.config import OIDCConfig
@@ -248,6 +249,17 @@ def sync_oidc_user_to_db(db, oidc_data: OIDCUserData, cfg=None):
     roles = oidc_data.get("roles") or []
 
     user = db.query(User).filter(User.oidc_subject == subject).first()
+    if user:
+        # A stored oidc_subject is not necessarily a deliberate admin link — JIT
+        # provisioning stamps it on ordinary first logins too, so a replayed or
+        # reassigned sub still needs the corroboration/super_admin guard.
+        assert_provider_id_link_permitted(
+            user,
+            provider=AUTH_TYPE_OIDC,
+            source_identifier=subject,
+            asserted_email=email,
+            failure_detail=LINK_REFUSED_DETAIL,
+        )
     if not user and email:
         user = db.query(User).filter(User.email == email).first()
         if user:

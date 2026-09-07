@@ -263,11 +263,13 @@ class TestExportControl:
 
 
 class TestSegmentEditing:
-    """Inline segment editing (issue #123 Phase 4) — cancel path only.
+    """Inline segment editing (issue #123 Phase 4) — cancel path, and a real save+reload.
 
-    Deliberately never saves: dev-environment transcripts must not be
-    mutated by tests. The cancel path still exercises the edit affordance,
-    textarea, and state restoration.
+    The cancel test uses ``detail_page`` (an ambient dev-dataset file) and never saves:
+    dev-environment transcripts must not be mutated by a test that only exercises
+    cancellation. The save test below needs the opposite guarantee — a real, persisted
+    write — so it uses its OWN ephemeral file (``owned_media_factory``, issue #541)
+    rather than touching ambient data.
     """
 
     def test_edit_segment_cancel_preserves_text(self, detail_page: Page) -> None:
@@ -291,6 +293,57 @@ class TestSegmentEditing:
 
         restored = (first_segment.locator(".segment-text").first.text_content() or "").strip()
         assert restored == original, "Cancel must restore the original segment text"
+
+    def test_edit_segment_save_persists_across_reload(
+        self, browser, auth_storage_state: str, admin_token: str, base_url: str, owned_media_factory
+    ) -> None:
+        """Saving an edited segment survives a full page reload (not just in-memory state).
+
+        Uses its own ephemeral file rather than ``detail_page``'s ambient one, because
+        this test — unlike its cancel-path sibling — genuinely persists a write.
+        """
+        media = owned_media_factory(admin_token)
+
+        context = browser.new_context(
+            storage_state=auth_storage_state,
+            viewport={"width": 1920, "height": 1080},
+            ignore_https_errors=True,
+        )
+        page = context.new_page()
+        try:
+            page.goto(f"{base_url}/files/{media['uuid']}")
+            page.wait_for_selector(".transcript-segment", timeout=25000)
+
+            first_segment = page.locator(".transcript-segment").first
+            original = (first_segment.locator(".segment-text").first.text_content() or "").strip()
+            assert original, "Segment under edit must have text"
+
+            unique_text = f"E2E SAVED EDIT {media['uuid'][:8]}"
+            assert unique_text != original, "the edit must actually change the text"
+
+            first_segment.hover()
+            edit_btn = first_segment.locator(".edit-button")
+            if edit_btn.count() == 0:
+                pytest.skip("Segment edit affordance not available on this view")
+            edit_btn.first.click()
+
+            textarea = page.locator(".segment-textarea")
+            expect(textarea.first).to_be_visible(timeout=5000)
+            textarea.first.fill(unique_text)
+
+            page.locator(".segment-edit-actions .save-button").first.click()
+            expect(page.locator(".segment-textarea")).to_have_count(0, timeout=10000)
+
+            saved = (first_segment.locator(".segment-text").first.text_content() or "").strip()
+            assert saved == unique_text, "Save must reflect the edited text immediately"
+
+            page.reload()
+            page.wait_for_selector(".transcript-segment", timeout=25000)
+            after_reload = page.locator(".transcript-segment").first.locator(".segment-text").first
+            expect(after_reload).to_have_text(unique_text, timeout=15000)
+        finally:
+            page.close()
+            context.close()
 
 
 class TestSpeakerEditor:

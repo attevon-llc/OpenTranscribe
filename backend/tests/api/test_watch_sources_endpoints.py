@@ -465,3 +465,97 @@ def test_list_email_configs_admin_200(client, super_admin_token_headers):
     response = client.get("/api/watch-sources/email-configs", headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
     assert "configs" in response.json()
+
+
+# ---------------------------------------------------------------------------
+# PUT /settings and PUT /email-configs/{uuid} — both are super_admin-only, not
+# just admin-only. `get_current_active_superuser` gates both routes (confirmed
+# from app/api/endpoints/watch_sources.py); a plain admin (is_superuser=False)
+# is refused exactly like an ordinary user.
+# ---------------------------------------------------------------------------
+
+
+def test_update_global_settings_plain_admin_403(client, admin_token_headers):
+    response = client.put(
+        "/api/watch-sources/settings",
+        headers=admin_token_headers,
+        json={"file_stability_seconds": 42},
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_update_email_config_plain_admin_403(client, admin_token_headers, db_session):
+    from app.models.email_notification_config import EmailNotificationConfig
+
+    config = EmailNotificationConfig(
+        uuid=uuid.uuid4(),
+        name=f"mailer-{uuid.uuid4().hex[:8]}",
+        provider="smtp",
+        smtp_host="smtp.invalid.example.com",
+        smtp_port=587,
+        from_address="noreply@example.com",
+    )
+    db_session.add(config)
+    db_session.commit()
+    db_session.refresh(config)
+
+    response = client.put(
+        f"/api/watch-sources/email-configs/{config.uuid}",
+        headers=admin_token_headers,
+        json={"name": "renamed"},
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_update_global_settings_superuser_200_persists(client, super_admin_token_headers):
+    response = client.put(
+        "/api/watch-sources/settings",
+        headers=super_admin_token_headers,
+        json={"file_stability_seconds": 77},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["file_stability_seconds"] == 77
+
+    # Confirm it actually persisted, not just echoed in the response.
+    follow_up = client.get("/api/watch-sources/settings", headers=super_admin_token_headers)
+    assert follow_up.status_code == status.HTTP_200_OK
+    assert follow_up.json()["file_stability_seconds"] == 77
+
+
+def test_update_email_config_partial_put_preserves_other_fields(
+    client, super_admin_token_headers, db_session
+):
+    """`EmailConfigUpdate` uses `exclude_unset`, so a PUT naming only ``name`` must
+    leave every other persisted field — notably SMTP host/port — untouched rather
+    than nulling them out via a silent full-replace."""
+    from app.models.email_notification_config import EmailNotificationConfig
+
+    config = EmailNotificationConfig(
+        uuid=uuid.uuid4(),
+        name=f"mailer-{uuid.uuid4().hex[:8]}",
+        provider="smtp",
+        smtp_host="smtp.original.example.com",
+        smtp_port=2525,
+        smtp_username="original-user",
+        from_address="original@example.com",
+    )
+    db_session.add(config)
+    db_session.commit()
+    db_session.refresh(config)
+
+    response = client.put(
+        f"/api/watch-sources/email-configs/{config.uuid}",
+        headers=super_admin_token_headers,
+        json={"name": "renamed-mailer"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["name"] == "renamed-mailer"
+    assert body["smtp_host"] == "smtp.original.example.com"
+    assert body["smtp_port"] == 2525
+    assert body["smtp_username"] == "original-user"
+    assert body["from_address"] == "original@example.com"
+
+    db_session.refresh(config)
+    assert config.smtp_host == "smtp.original.example.com"
+    assert config.smtp_port == 2525

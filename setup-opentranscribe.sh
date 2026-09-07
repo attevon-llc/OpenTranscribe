@@ -15,6 +15,12 @@
 #                              otherwise enable a GPU overlay that fails at
 #                              container start with an nvidia-container-cli
 #                              adapter error.
+#   OPENTRANSCRIBE_LITE        When non-empty, install the CPU-only lite deployment
+#                              (opentranscribe-backend-lite + cloud ASR) and persist
+#                              DEPLOYMENT_MODE=lite. Equivalent to --lite; implies
+#                              OPENTRANSCRIBE_FORCE_CPU, since that image ships no
+#                              CUDA runtime. This is distinct from FORCE_CPU alone,
+#                              which still runs the full CUDA image without a GPU.
 #
 # Env vars honored in unattended mode (all optional; any can be pre-set):
 #   PROJECT_DIR                Where to install (default: ./opentranscribe)
@@ -106,6 +112,28 @@ SSL_CONFIGURED=false
 # workloads. Default (unset) preserves the original auto-detect behaviour.
 FORCE_CPU="false"
 if [[ -n "${OPENTRANSCRIBE_FORCE_CPU:-}" ]]; then
+    FORCE_CPU="true"
+fi
+
+# LITE_MODE: when "true", persist DEPLOYMENT_MODE=lite into .env so the install runs the
+# CPU-only image (davidamacey/opentranscribe-backend-lite) with cloud ASR, via
+# opentranscribe.sh's get_compose_files() lite branch.
+#
+# Before this existed, DEPLOYMENT_MODE was written by the installer NOWHERE — the string
+# appears zero times in the pre-#667 installer — while opentranscribe.sh read it in four
+# places. So the shipped lite shape was reachable only by hand-editing .env after install,
+# or incidentally on arm64 (where arm64_deployment_preflight EXPORTS it per-run because the
+# CUDA image has no arm64 leg, without persisting it). `--lite` was additionally swallowed
+# by the unknown-argument arm below, which warned and then performed a FULL install — the
+# worst of both, since the warning scrolls past in a curl|bash and the user believes they
+# asked for lite.
+#
+# --lite implies --cpu: the lite image ships no CUDA runtime at all, so a GPU overlay over
+# it can only fail. The reverse is NOT true — --cpu on the full image is a supported shape
+# (CUDA runtime present, unused), which is why these stay two flags rather than one.
+LITE_MODE="false"
+if [[ -n "${OPENTRANSCRIBE_LITE:-}" ]]; then
+    LITE_MODE="true"
     FORCE_CPU="true"
 fi
 
@@ -449,443 +477,180 @@ create_configuration_files() {
     # Create database initialization files
     create_database_files
 
-    # Create comprehensive docker-compose.yml directly
-    create_production_compose
+    # Directory structure the manifest cannot express: it lists files, and an
+    # empty directory is not a file. nginx/ssl is where generate-ssl-cert.sh
+    # writes, and it must exist before the user runs setup-ssl.
+    mkdir -p nginx/ssl
+    mkdir -p scripts
+    touch nginx/ssl/.gitkeep
+
+    # Download every deployment artifact release-manifest.txt lists.
+    download_release_manifest_artifacts
 
     # Validate all downloaded files
     if ! validate_downloaded_files; then
         echo -e "${RED}❌ File validation failed${NC}"
         exit 1
     fi
-
-    # Download opentranscribe.sh management script
-    download_management_script
-
-    # Download NGINX/SSL configuration files
-    download_nginx_files
-
-    # Download model downloader scripts
-    download_model_downloader_scripts
-
-    # Create .env.example
-    create_production_env_example
 }
 
-create_production_compose() {
-    echo "✓ Downloading production docker-compose configuration..."
+# The repo's default branch, asked for at runtime rather than written down.
+#
+# Every hardcoded "master" in a download URL is a rename waiting to break installs, and
+# this script is about to be served from a branch that is renamed. Resolve it instead.
+# Echoes empty on any failure (offline, rate-limited, malformed) — callers MUST treat
+# empty as "no fallback available" and fail closed rather than guessing a name.
+resolve_default_branch() {
+    curl -fsSL --connect-timeout 10 --max-time 20 \
+        "https://api.github.com/repos/attevon-llc/OpenTranscribe" 2>/dev/null |
+        grep -m1 '"default_branch"' |
+        sed -E 's/.*"default_branch"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true
+}
+
+# Download every artifact listed in release-manifest.txt, at the resolved install ref.
+#
+# The file list lives in release-manifest.txt, NOT in this script. This installer used to
+# keep its own hardcoded list, and the two drifted: docker-compose.blackwell.yml and
+# docker-compose.backup.yml were listed in the manifest and downloaded by
+# `opentranscribe.sh update-full`, but never by a fresh install. Because
+# get_compose_files() guards overlay selection with `[ -f ... ]`, the miss was SILENT —
+# a fresh install on a Blackwell (SM_121) card fell back to the generic GPU overlay and
+# then crashed in NVRTC on the first transcription, which is the app's core function
+# (see docs/BLACKWELL_SETUP.md, issue #640).
+#
+# Mirrors the replay loop in opentranscribe.sh's update-full arm, with the same
+# optional/exec/preserve flag semantics, plus this script's retry-and-timeout behaviour.
+# Adding a file to a deployment is now a one-line change in release-manifest.txt.
+download_release_manifest_artifacts() {
+    echo "✓ Downloading deployment files listed in release-manifest.txt..."
 
     local max_retries=3
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch
     encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local github_raw="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}"
 
-    # Download base docker-compose.yml
-    echo "  Downloading base docker-compose.yml..."
-    local retry_count=0
-    local base_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.yml"
+    # The manifest itself is required. Guessing the file list is the bug this replaced,
+    # so refuse to install rather than fall back to an assumed set.
+    #
+    # WHY THERE IS A FALLBACK REF (issue #683)
+    #
+    # This installer is served from the default branch, but installs whatever
+    # resolve_install_ref() picks — the latest published GitHub Release. Those are two
+    # different refs, and release-manifest.txt was added AFTER the newest release at the
+    # time. So the current installer asked an older tag for a file that tag had never
+    # heard of, 404ed, and correctly-but-fatally refused: 100% of fresh installs died
+    # for 22 days.
+    #
+    # A release that ships its own manifest describes itself best, so that is still
+    # preferred. Only when the pinned ref predates the manifest do we borrow the list
+    # from the default branch. The ARTIFACTS are always fetched from the pinned ref
+    # ($github_raw) either way — only the file *list* falls back, so this cannot
+    # reintroduce an unpinned install.
+    #
+    # issue #723: a borrowed manifest is NEWER than the tag it is being applied to, so
+    # it can list a REQUIRED entry the tag genuinely never shipped (e.g. NOTICE, added
+    # required in 91128ecb the same day this was found). The `optional` flag alone does
+    # not absorb that skew — it only helps entries someone remembered to mark, and a
+    # required-on-principle file like NOTICE is deliberately never marked optional. So
+    # when the manifest had to be borrowed, a download failure for ANY entry is treated
+    # as "this tag predates the file" and skipped, never fatal — the tag's own manifest
+    # (the normal, non-borrowed case) is still enforced at full strictness.
+    local manifest_borrowed=0
+    if ! curl -fsSL --connect-timeout 10 --max-time 30 \
+        "$github_raw/release-manifest.txt" -o release-manifest.txt.new; then
+        rm -f release-manifest.txt.new
 
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$base_url" -o docker-compose.yml; then
-            if [ -s docker-compose.yml ] && grep -q "services:" docker-compose.yml; then
-                echo "  ✓ Downloaded base docker-compose.yml"
-                break
-            else
-                echo "  ⚠️  Downloaded base file appears invalid, retrying..."
-                rm -f docker-compose.yml
-            fi
+        local default_branch
+        default_branch=$(resolve_default_branch)
+
+        if [ -n "$default_branch" ] && [ "$default_branch" != "$branch" ] &&
+            curl -fsSL --connect-timeout 10 --max-time 30 \
+                "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${default_branch}/release-manifest.txt" \
+                -o release-manifest.txt.new; then
+            manifest_borrowed=1
+            echo -e "  ${YELLOW}⚠️${NC}  ${branch} predates release-manifest.txt — using the file list from '${default_branch}'."
+            echo "     Deployment files are still downloaded from ${branch}; files that release"
+            echo "     does not have are skipped, whether or not the manifest marks them optional."
         else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
+            rm -f release-manifest.txt.new
+            echo -e "${RED}❌ Failed to download release-manifest.txt from ${branch}${NC}"
+            echo "Refusing to install from an unknown artifact list."
+            echo "Alternative: You can manually download from: $github_raw/release-manifest.txt"
+            exit 1
         fi
+    fi
+    mv release-manifest.txt.new release-manifest.txt
 
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
+    local install_failed=0
+    local manifest_line artifact_path artifact_flags artifact_dir retry_count downloaded
+    while IFS= read -r manifest_line || [ -n "$manifest_line" ]; do
+        # Strip comments and blanks.
+        case "$manifest_line" in '' | '#'*) continue ;; esac
+
+        artifact_path=$(printf '%s' "$manifest_line" | cut -f1 | tr -d '[:space:]')
+        artifact_flags=$(printf '%s' "$manifest_line" | cut -s -f2)
+        [ -n "$artifact_path" ] || continue
+
+        # preserve = user-owned data; never clobber an existing copy.
+        case ",$artifact_flags," in
+            *,preserve,*)
+                if [ -f "$artifact_path" ]; then
+                    echo "  ↷ $artifact_path (preserved)"
+                    continue
+                fi
+                ;;
+        esac
+
+        artifact_dir=$(dirname "$artifact_path")
+        [ "$artifact_dir" = "." ] || mkdir -p "$artifact_dir"
+
+        retry_count=0
+        downloaded=0
+        while [ $retry_count -lt $max_retries ]; do
+            # Stage to .new so a failed attempt never truncates a good file.
+            if curl -fsSL --connect-timeout 10 --max-time 30 \
+                "$github_raw/$artifact_path" -o "${artifact_path}.new" &&
+                [ -s "${artifact_path}.new" ]; then
+                mv "${artifact_path}.new" "$artifact_path"
+                case ",$artifact_flags," in *,exec,*) chmod +x "$artifact_path" ;; esac
+                echo -e "  ${GREEN}✓${NC} $artifact_path"
+                downloaded=1
+                break
+            fi
+            rm -f "${artifact_path}.new"
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                sleep 2
+            fi
+        done
+
+        if [ "$downloaded" -eq 0 ]; then
+            case ",$artifact_flags," in
+                *,optional,*)
+                    echo -e "  ${YELLOW}⚠️${NC}  $artifact_path (optional, not in this release)"
+                    ;;
+                *)
+                    if [ "$manifest_borrowed" -eq 1 ]; then
+                        echo -e "  ${YELLOW}⚠️${NC}  $artifact_path (required by a newer manifest, but ${branch} predates it — skipped)"
+                    else
+                        echo -e "  ${RED}✗${NC}  $artifact_path (REQUIRED — download failed)"
+                        install_failed=1
+                    fi
+                    ;;
+            esac
         fi
-    done
+    done <release-manifest.txt
 
-    if [ $retry_count -ge $max_retries ]; then
-        echo -e "${RED}❌ Failed to download base docker-compose.yml${NC}"
+    if [ "$install_failed" -ne 0 ]; then
+        echo ""
+        echo -e "${RED}❌ One or more required deployment files failed to download.${NC}"
         echo "Please check your internet connection and try again."
-        echo "Alternative: You can manually download from: $base_url"
         exit 1
     fi
 
-    # Download production overrides docker-compose.prod.yml
-    echo "  Downloading production overrides docker-compose.prod.yml..."
-    retry_count=0
-    local prod_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$prod_url" -o docker-compose.prod.yml; then
-            if [ -s docker-compose.prod.yml ] && grep -q "services:" docker-compose.prod.yml; then
-                echo "  ✓ Downloaded production docker-compose.prod.yml"
-
-                # Download GPU overlay for NVIDIA acceleration (non-fatal)
-                download_gpu_overlay
-
-                # Download optional gpu-scale overlay (non-fatal)
-                download_gpu_scale_overlay
-
-                echo "✓ Production docker-compose configuration complete"
-                return 0
-            else
-                echo "  ⚠️  Downloaded prod file appears invalid, retrying..."
-                rm -f docker-compose.prod.yml
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    echo -e "${RED}❌ Failed to download docker-compose.prod.yml${NC}"
-    echo "Please check your internet connection and try again."
-    echo "Alternative: You can manually download from: $prod_url"
-    exit 1
-}
-
-download_gpu_overlay() {
-    # Download docker-compose.gpu.yml for NVIDIA GPU support
-    # This enables GPU acceleration when NVIDIA Container Toolkit is detected
-    echo "  Downloading docker-compose.gpu.yml (GPU acceleration support)..."
-
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local gpu_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.gpu.yml"
-
-    if curl -fsSL --connect-timeout 10 --max-time 30 "$gpu_url" -o docker-compose.gpu.yml 2>/dev/null; then
-        if [ -s docker-compose.gpu.yml ] && grep -q "celery-worker:" docker-compose.gpu.yml; then
-            echo "  ✓ Downloaded docker-compose.gpu.yml (GPU acceleration)"
-        else
-            echo "  ⚠️  Downloaded gpu file appears invalid, removing..."
-            rm -f docker-compose.gpu.yml
-        fi
-    else
-        echo "  ℹ️  docker-compose.gpu.yml not available (GPU support optional)"
-    fi
-}
-
-download_gpu_scale_overlay() {
-    # Optional: Download docker-compose.gpu-scale.yml for multi-GPU support
-    # This is non-fatal - users can skip if they don't have multi-GPU setups
-    echo "  Downloading optional docker-compose.gpu-scale.yml (multi-GPU support)..."
-
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local gpu_scale_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.gpu-scale.yml"
-
-    if curl -fsSL --connect-timeout 10 --max-time 30 "$gpu_scale_url" -o docker-compose.gpu-scale.yml 2>/dev/null; then
-        if [ -s docker-compose.gpu-scale.yml ] && grep -q "celery-worker-gpu-scaled:" docker-compose.gpu-scale.yml; then
-            echo "  ✓ Downloaded docker-compose.gpu-scale.yml (optional multi-GPU scaling)"
-        else
-            echo "  ⚠️  Downloaded gpu-scale file appears invalid, removing..."
-            rm -f docker-compose.gpu-scale.yml
-        fi
-    else
-        echo "  ℹ️  docker-compose.gpu-scale.yml not available (optional feature)"
-    fi
-}
-
-download_management_script() {
-    echo "✓ Downloading OpenTranscribe management script..."
-
-    # Download the opentranscribe.sh script from the repository
-    local max_retries=3
-    local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    # URL-encode the branch name (replace / with %2F)
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/opentranscribe.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o opentranscribe.sh; then
-            # Validate downloaded file
-            if [ -s opentranscribe.sh ] && grep -q "OpenTranscribe Management Script" opentranscribe.sh; then
-                chmod +x opentranscribe.sh
-                echo "✓ Downloaded and validated opentranscribe.sh"
-                return 0
-            else
-                echo "⚠️  Downloaded opentranscribe.sh appears invalid, retrying..."
-                rm -f opentranscribe.sh
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    echo -e "${YELLOW}⚠️  Failed to download opentranscribe.sh after $max_retries attempts${NC}"
-    echo "You can manually download from: $download_url"
-}
-
-download_nginx_files() {
-    echo "✓ Downloading NGINX/SSL configuration files..."
-
-    local max_retries=3
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-
-    # Create nginx and scripts directory structure
-    mkdir -p nginx/ssl
-    mkdir -p scripts
-    touch nginx/ssl/.gitkeep
-
-    # Download docker-compose.nginx.yml
-    echo "  Downloading docker-compose.nginx.yml..."
-    local retry_count=0
-    local nginx_compose_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.nginx.yml"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$nginx_compose_url" -o docker-compose.nginx.yml; then
-            if [ -s docker-compose.nginx.yml ] && grep -q "nginx:" docker-compose.nginx.yml; then
-                echo "  ✓ Downloaded docker-compose.nginx.yml"
-                break
-            else
-                echo "  ⚠️  Downloaded nginx compose file appears invalid, retrying..."
-                rm -f docker-compose.nginx.yml
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    if [ $retry_count -ge $max_retries ]; then
-        echo "  ⚠️  Could not download docker-compose.nginx.yml (HTTPS support optional)"
-    fi
-
-    # Download nginx/site.conf.template
-    echo "  Downloading nginx/site.conf.template..."
-    retry_count=0
-    local nginx_conf_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/nginx/site.conf.template"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$nginx_conf_url" -o nginx/site.conf.template; then
-            if [ -s nginx/site.conf.template ] && grep -q "server" nginx/site.conf.template; then
-                echo "  ✓ Downloaded nginx/site.conf.template"
-                break
-            else
-                echo "  ⚠️  Downloaded nginx config appears invalid, retrying..."
-                rm -f nginx/site.conf.template
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    if [ $retry_count -ge $max_retries ]; then
-        echo "  ⚠️  Could not download nginx/site.conf.template (HTTPS support optional)"
-    fi
-
-    # Download scripts/generate-ssl-cert.sh
-    echo "  Downloading scripts/generate-ssl-cert.sh..."
-    retry_count=0
-    local ssl_script_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/generate-ssl-cert.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$ssl_script_url" -o scripts/generate-ssl-cert.sh; then
-            if [ -s scripts/generate-ssl-cert.sh ] && grep -q "SSL Certificate" scripts/generate-ssl-cert.sh; then
-                chmod +x scripts/generate-ssl-cert.sh
-                echo "  ✓ Downloaded scripts/generate-ssl-cert.sh"
-                break
-            else
-                echo "  ⚠️  Downloaded SSL script appears invalid, retrying..."
-                rm -f scripts/generate-ssl-cert.sh
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    if [ $retry_count -ge $max_retries ]; then
-        echo "  ⚠️  Could not download scripts/generate-ssl-cert.sh (HTTPS support optional)"
-    fi
-
-    # Download scripts/fix-model-permissions.sh
-    echo "  Downloading scripts/fix-model-permissions.sh..."
-    retry_count=0
-    local fix_perms_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/fix-model-permissions.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$fix_perms_url" -o scripts/fix-model-permissions.sh; then
-            if [ -s scripts/fix-model-permissions.sh ] && grep -q "Permission" scripts/fix-model-permissions.sh; then
-                chmod +x scripts/fix-model-permissions.sh
-                echo "  ✓ Downloaded scripts/fix-model-permissions.sh"
-                break
-            else
-                echo "  ⚠️  Downloaded fix-permissions script appears invalid, retrying..."
-                rm -f scripts/fix-model-permissions.sh
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    if [ $retry_count -ge $max_retries ]; then
-        echo "  ⚠️  Could not download scripts/fix-model-permissions.sh"
-    fi
-
-    echo "✓ NGINX/SSL files download complete"
-}
-
-download_model_downloader_scripts() {
-    echo "✓ Downloading model downloader scripts..."
-
-    # Create scripts directory
-    mkdir -p scripts
-
-    # Download download-models.sh
-    local max_retries=3
-    local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/download-models.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/download-models.sh; then
-            if [ -s scripts/download-models.sh ] && grep -q "OpenTranscribe Model Downloader" scripts/download-models.sh; then
-                chmod +x scripts/download-models.sh
-                echo "✓ Downloaded and validated download-models.sh"
-                break
-            else
-                echo "⚠️  Downloaded download-models.sh appears invalid, retrying..."
-                rm -f scripts/download-models.sh
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    # Download download-models.py
-    retry_count=0
-    download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/download-models.py"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/download-models.py; then
-            if [ -s scripts/download-models.py ] && grep -q "Download all required AI models" scripts/download-models.py; then
-                echo "✓ Downloaded and validated download-models.py"
-                break
-            else
-                echo "⚠️  Downloaded download-models.py appears invalid, retrying..."
-                rm -f scripts/download-models.py
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    # Download common.sh (utility functions used by opentr.sh)
-    retry_count=0
-    download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/common.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/common.sh; then
-            if [ -s scripts/common.sh ] && grep -q "check_docker" scripts/common.sh; then
-                echo "✓ Downloaded and validated common.sh"
-                return 0
-            else
-                echo "⚠️  Downloaded common.sh appears invalid, retrying..."
-                rm -f scripts/common.sh
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    echo -e "${YELLOW}⚠️  Failed to download model downloader scripts${NC}"
-    echo "Models will be downloaded on first application run instead."
-}
-
-create_production_env_example() {
-    echo "✓ Downloading environment configuration template..."
-
-    # Download the official .env.example from the repository
-    local max_retries=3
-    local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    # URL-encode the branch name (replace / with %2F)
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/.env.example"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o .env.example; then
-            # Validate downloaded file
-            if [ -s .env.example ] && grep -q "POSTGRES_HOST" .env.example && grep -q "HUGGINGFACE_TOKEN" .env.example; then
-                echo "✓ Downloaded and validated .env.example"
-                return 0
-            else
-                echo "⚠️  Downloaded env file appears invalid, retrying..."
-                rm -f .env.example
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    echo -e "${RED}❌ Failed to download .env.example file after $max_retries attempts${NC}"
-    echo "Please check your internet connection and try again."
-    echo "Alternative: You can manually download from:"
-    echo "$download_url"
-    exit 1
+    echo "✓ All deployment files downloaded"
 }
 
 prompt_huggingface_token() {
@@ -939,14 +704,10 @@ prompt_huggingface_token() {
     echo "  4. Select 'Read' permissions"
     echo "  5. Copy the token"
     echo ""
-    echo -e "${CYAN}Step 2: Accept BOTH gated model agreements (CRITICAL!)${NC}"
-    echo -e "  ${RED}You MUST accept BOTH models or downloads will fail!${NC}"
+    echo -e "${CYAN}Step 2: Accept the gated model agreement (CRITICAL!)${NC}"
+    echo -e "  ${RED}You MUST accept this agreement or downloads will fail!${NC}"
     echo ""
-    echo "  1. Segmentation Model:"
-    echo "     https://huggingface.co/pyannote/segmentation-3.0"
-    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
-    echo ""
-    echo "  2. Speaker Diarization Model:"
+    echo "  Speaker Diarization Model (the only repo OpenTranscribe gates on):"
     echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
     echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
     echo ""
@@ -1047,10 +808,20 @@ resolve_install_ref() {
     fi
 
     print_info "Resolving the latest published release..."
-    local resolved=""
-    resolved=$(curl -fsSL --connect-timeout 10 --max-time 20 \
-        "https://api.github.com/repos/attevon-llc/OpenTranscribe/releases/latest" 2>/dev/null \
-        | grep -m1 '"tag_name"' | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/' || true)
+    # Retry before giving up. The unauthenticated GitHub API is rate-limited to 60/hour
+    # PER IP, so on any shared or NAT'd address -- a company network, a cloud host, CI --
+    # a single call failing is ordinary rather than exceptional, and without a retry that
+    # ends a real user's `curl | bash` install outright. Caught by the install-path gate
+    # on 2026-09-06, where the same job failed and then passed on a re-run with no code
+    # change; the gate was right, the installer was fragile.
+    local resolved="" _attempt
+    for _attempt in 1 2 3; do
+        resolved=$(curl -fsSL --connect-timeout 10 --max-time 20 \
+            "https://api.github.com/repos/attevon-llc/OpenTranscribe/releases/latest" 2>/dev/null \
+            | grep -m1 '"tag_name"' | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/' || true)
+        [ -n "$resolved" ] && break
+        [ "$_attempt" -lt 3 ] && sleep $((_attempt * 3))
+    done
 
     if [ -z "$resolved" ] || ! echo "$resolved" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
         # Unauthenticated GitHub API is rate-limited to 60/hour per IP, so a
@@ -1135,6 +906,18 @@ _write_hardware_settings() {
     # start/restart time. When "true", the management script skips GPU overlays
     # even if Docker reports an nvidia runtime.
     _upsert_env "FORCE_CPU_MODE" "${FORCE_CPU}"
+
+    # DEPLOYMENT_MODE: which backend IMAGE this install runs. Only written when --lite was
+    # asked for, so an ordinary install keeps whatever .env.example ships ("full") and an
+    # existing install is never silently switched by a re-run.
+    #
+    # This is the same exact string backend/app/services/asr/factory.py compares against
+    # ("lite", lower-cased) to refuse a local-ASR request with a clear error. Keying the
+    # overlay selection and the ASR guard off ONE value is deliberate: they cannot diverge
+    # into a stack running the lite image while the code believes a local model is available.
+    if [[ "$LITE_MODE" == "true" ]]; then
+        _upsert_env "DEPLOYMENT_MODE" "lite"
+    fi
 
     if [[ "$DETECTED_DEVICE" == "cpu" ]]; then
         if grep -q '^ENABLE_DIARIZATION=' .env; then
@@ -1918,8 +1701,7 @@ download_ai_models() {
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${RED}REMINDER: You need BOTH steps completed:${NC}"
         echo "  1. HuggingFace token (Read permissions)"
-        echo "  2. Accept BOTH gated model agreements:"
-        echo "     • https://huggingface.co/pyannote/segmentation-3.0"
+        echo "  2. Accept the gated model agreement:"
         echo "     • https://huggingface.co/pyannote/speaker-diarization-community-1"
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
@@ -1945,8 +1727,7 @@ download_ai_models() {
                 if [[ "$HUGGINGFACE_TOKEN" =~ ^hf_ ]]; then
                     print_success "HuggingFace token configured and saved to .env!"
                     echo ""
-                    echo -e "${YELLOW}⚠️  FINAL REMINDER:${NC} Ensure you accepted BOTH model agreements:"
-                    echo "   • pyannote/segmentation-3.0"
+                    echo -e "${YELLOW}⚠️  FINAL REMINDER:${NC} Ensure you accepted the model agreement:"
                     echo "   • pyannote/speaker-diarization-community-1"
                     echo ""
                 else
@@ -2019,15 +1800,20 @@ download_ai_models() {
     # Create models directory structure with proper permissions
     print_info "Creating model cache directories with proper permissions..."
 
-    # Create main directory and subdirectories
-    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml
+    # Create main directory and subdirectories. diar-native lands at the top level
+    # (mounted at /models, not under ~/.cache like the others) — see
+    # scripts/download-models.sh's own mkdir block for why it is included here anyway:
+    # `bash scripts/download-models.sh models` below runs the diar-native download group
+    # too, and its bind-mount source must exist and be owned correctly before that runs.
+    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml models/diar-native
 
     # Set ownership to prevent permission issues in non-root containers
     # Container runs as UID 1000, so we need to ensure host directories are accessible
     if [ "$(id -u)" -eq 0 ]; then
         # Running as root - explicitly set ownership to UID 1000 for container compatibility
         echo "  Detected root user - setting ownership to UID 1000 for container compatibility"
-        chown -R 1000:1000 models
+        # appuser is uid 1000 / gid 999 in the backend image (issue #580).
+        chown -R 1000:999 models
     else
         # Running as regular user - ensure current user owns the directories
         current_uid=$(id -u)
@@ -2040,7 +1826,7 @@ download_ai_models() {
     chmod -R 755 models
 
     # Verify directories are writable
-    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ]; then
+    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ] && [ -w models/diar-native ]; then
         echo "✓ Model cache directories created with proper permissions"
     else
         print_warning "Model directories exist but may not be writable"
@@ -2076,10 +1862,10 @@ download_ai_models() {
         echo "  • First transcription attempt may fail if models can't download"
         echo ""
         echo -e "${YELLOW}Most common cause: Missing gated model access${NC}"
-        echo "  You likely have NOT accepted BOTH PyAnnote model agreements"
+        echo "  You likely have NOT accepted the PyAnnote model agreement"
         echo ""
         echo -e "${CYAN}To fix before starting:${NC}"
-        echo "  1. Accept both model agreements (URLs shown above)"
+        echo "  1. Accept the model agreement (URL shown above)"
         echo "  2. Wait 1-2 minutes for permissions to propagate"
         echo "  3. Run: cd $PROJECT_DIR && bash scripts/download-models.sh models"
         echo ""
@@ -2094,10 +1880,9 @@ download_ai_models() {
             print_error "Setup aborted - please fix model access and run setup again"
             echo ""
             echo "Quick fix steps:"
-            echo "  1. Accept: https://huggingface.co/pyannote/segmentation-3.0"
-            echo "  2. Accept: https://huggingface.co/pyannote/speaker-diarization-community-1"
-            echo "  3. Wait 1-2 minutes"
-            echo "  4. Run setup again"
+            echo "  1. Accept: https://huggingface.co/pyannote/speaker-diarization-community-1"
+            echo "  2. Wait 1-2 minutes"
+            echo "  3. Run setup again"
             exit 1
         fi
 
@@ -2447,6 +2232,14 @@ main() {
                 FORCE_CPU="true"
                 shift
                 ;;
+            --lite)
+                # CPU-only lite image + cloud ASR. Implies --cpu (the lite image carries no
+                # CUDA runtime), and persists DEPLOYMENT_MODE=lite so opentranscribe.sh
+                # selects docker-compose.lite.yml on every subsequent start, not just this one.
+                LITE_MODE="true"
+                FORCE_CPU="true"
+                shift
+                ;;
             --version)
                 # Pin to a specific release. Equivalent to OPENTRANSCRIBE_VERSION.
                 OPENTRANSCRIBE_VERSION="${2:-}"
@@ -2463,9 +2256,16 @@ main() {
             -h|--help)
                 echo "OpenTranscribe installer"
                 echo ""
-                echo "Usage: setup-opentranscribe.sh [--cpu] [--version vX.Y.Z] [--branch <ref>]"
+                echo "Usage: setup-opentranscribe.sh [--cpu] [--lite] [--version vX.Y.Z] [--branch <ref>]"
                 echo ""
                 echo "Options:"
+                echo "  --lite      Install the CPU-only 'lite' deployment: the much"
+                echo "              smaller opentranscribe-backend-lite image, with"
+                echo "              transcription done by a cloud ASR provider you"
+                echo "              configure after install instead of a local GPU"
+                echo "              model. Implies --cpu. Persists DEPLOYMENT_MODE=lite."
+                echo "              This is the only supported shape on hosts with no"
+                echo "              NVIDIA GPU at all, and the default on arm64."
                 echo "  --cpu       Install in CPU-only mode. Skips NVIDIA GPU"
                 echo "              detection and configures the stack to run"
                 echo "              without the GPU compose overlay. Use this on"
@@ -2486,14 +2286,22 @@ main() {
                 echo ""
                 echo "Environment variables (see script header for the full list):"
                 echo "  OPENTRANSCRIBE_FORCE_CPU  Non-empty = same as --cpu"
+                echo "  OPENTRANSCRIBE_LITE       Non-empty = same as --lite"
                 echo "  OPENTRANSCRIBE_UNATTENDED Non-empty = skip all prompts"
                 echo "  OPENTRANSCRIBE_VERSION    Same as --version"
                 echo "  OPENTRANSCRIBE_BRANCH     Same as --branch"
                 exit 0
                 ;;
             *)
-                echo -e "${YELLOW}⚠️  Unknown argument: $1 (ignored)${NC}"
-                shift
+                # FATAL, not a warning. This arm used to warn and continue, which meant a user
+                # who asked for a deployment shape the installer did not understand got a
+                # DIFFERENT shape installed plus one yellow line that scrolls off the top of a
+                # `curl | bash`. `--lite` was exactly that case for as long as the flag did not
+                # exist. Exit 2 (misuse) matches how --version/--branch already reject a missing
+                # value, so the installer has one consistent answer for "that is not a thing".
+                echo -e "${RED}❌ Unknown argument: $1${NC}" >&2
+                echo "   Run with --help to see the supported flags." >&2
+                exit 2
                 ;;
         esac
     done
@@ -2502,7 +2310,12 @@ main() {
     resolve_install_ref
     export OPENTRANSCRIBE_BRANCH OT_IMAGE_TAG
 
-    if [[ "$FORCE_CPU" == "true" ]]; then
+    if [[ "$LITE_MODE" == "true" ]]; then
+        echo -e "${BLUE}ℹ️  Lite (CPU-only) install mode selected — DEPLOYMENT_MODE=lite${NC}"
+        echo "   Backend image: opentranscribe-backend-lite (no CUDA, no local ASR model)"
+        echo "   Transcription requires a cloud ASR provider, configured after install"
+        echo "   in Settings. See docs: API-Lite Deployment."
+    elif [[ "$FORCE_CPU" == "true" ]]; then
         echo -e "${BLUE}ℹ️  CPU-only install mode selected${NC}"
     fi
 

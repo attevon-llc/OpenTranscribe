@@ -21,6 +21,20 @@ nohup ./scripts/build-all.sh > build-$(date +%Y%m%d-%H%M%S).log 2>&1 &
 
 See [docs/BUILD_PIPELINE.md](../docs/BUILD_PIPELINE.md) for complete documentation.
 
+## Testing & dev-cycle scripts
+
+This README covers the build/offline-package/model-download family only. The ~60 test-gate,
+e2e, and release-rehearsal scripts (including the two below) are documented in
+[scripts/CLAUDE.md](CLAUDE.md)'s "Which script to reach for" — read that file for the full
+picture rather than this list, which stays short on purpose.
+
+```bash
+./scripts/run-dev-tests.sh --full     # quick "does my branch work" check (backend+e2e+frontend,
+                                       # one command, one consolidated report; minutes)
+./scripts/test-matrix.sh all          # exhaustive deployment-mode rehearsal (dev/prod/lite/PKI/
+                                       # GPU-scale/fresh-install/upgrade); run before a release
+```
+
 ## Scripts Overview
 
 - **[build-all.sh](#complete-build-pipeline)** - Complete build pipeline (Docker + security + offline package)
@@ -367,7 +381,7 @@ Downloads all required AI models for offline packaging:
 # Set environment variables
 export HUGGINGFACE_TOKEN=your_token_here
 export WHISPER_MODEL=large-v3-turbo
-export DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
+export DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
 
 # Run in Docker container (container runs as appuser, not root)
 docker run --rm \

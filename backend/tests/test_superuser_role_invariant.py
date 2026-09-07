@@ -218,5 +218,10 @@ def test_super_admin_gate_denies_regular_admin(client, admin_token_headers):
 
 
 def test_super_admin_gate_allows_super_admin(client, super_admin_token_headers):
+    """A super admin is admitted to a super-admin-only route.
+
+    Was ``!= 403``, which also passes on a 500. ``/admin/auth-config/status`` is
+    super_admin-gated (backend/app/api/CLAUDE.md) and returns 200 for a super admin.
+    """
     resp = client.get("/api/admin/auth-config/status", headers=super_admin_token_headers)
-    assert resp.status_code != 403
+    assert resp.status_code == 200, resp.text

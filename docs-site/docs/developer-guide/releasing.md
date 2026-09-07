@@ -10,7 +10,7 @@ A release is a set of **independently runnable, skippable, resumable stages**
 driven by `scripts/release.sh`. Nothing here is a checklist you follow by hand;
 the mechanics are code, and the gates fail loudly.
 
-:::info Why it works this way
+:::info[Why it works this way]
 The process used to be three markdown checklists that disagreed with each other.
 The most recent release proved the cost: one of them documented "append a row to
 `expected-schemas.tsv`", nothing enforced it, and the row was silently skipped —
@@ -18,7 +18,11 @@ so the file that called itself "the single source of truth for the schema versio
 of each release" was wrong and no one noticed for four months.
 
 Every rule below is either **derived at run time** or **enforced by a check**.
-Nothing depends on remembering.
+Nothing depends on remembering. The same failure shape recurred once more
+(issue #783): `FROM_VERSIONS` was documented as running the upgrade scenario
+once per source, and did nothing — assigned into a variable, read by no loop.
+It is now the derivation described under [The two rehearsal scenarios](#the-two-rehearsal-scenarios)
+below, guarded by a test that fails on any documented knob nothing reads.
 :::
 
 ## The command
@@ -114,10 +118,10 @@ rather than silently ignored.
 | `build` | Local images with the version build-args — **pushes nothing** | no |
 | `scan` | Trivy/Grype against the **locally built** images | no |
 | `rehearse` | Fresh-install and upgrade scenarios | no |
-| `tag` | Annotated tag + push | **yes** |
+| `tag` | Annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
 | `publish` | Multi-arch push of `:vX.Y.Z` only | **yes** |
 | `smoke` | Install from Docker Hub; verify both architectures | no |
-| `promote` | Move `:latest` **by digest** | **yes** |
+| `promote` | Move `:latest` **by digest** — refuses to move it backwards on a backport | **yes** |
 | `finish` | GitHub release + assets | **yes** |
 
 ### Ordering rules that must not be reordered
@@ -133,6 +137,78 @@ rather than silently ignored.
 - **`:latest` moves by `docker buildx imagetools create`**, a manifest copy — so
   `:latest` and `:vX.Y.Z` are provably the same bytes, not two builds that happen
   to share a source tree.
+- **The release branch is cut at `tag`, from the tag it just pushed — never from
+  `master`.** `70-tag.sh` derives `release/<major>.<minor>` from the version
+  (`v0.5.1` → `release/0.5`) after the tag exists, then asserts the tag is an
+  ancestor of `origin/release/<major>.<minor>` — asking origin, not the local
+  ref, because that is what a hotfix operator will clone. A tag cut from
+  somewhere other than this branch fails right here.
+- **`promote` refuses to move `:latest` backwards.** It resolves the newest
+  published release from git tags × Docker Hub before touching anything; if the
+  version being promoted is OLDER than that, the copy is skipped and `:latest`
+  is left alone — a pass, not a failure. See
+  [Cutting a patch release](#cutting-a-patch-release).
+
+## Cutting a patch release
+
+Entry condition: the release must be **revertible by pulling the previous
+image** — the same rule [the roadmap states for what belongs in a
+patch](roadmap.md#between-the-themed-releases-patch-releases), linked here
+rather than restated, because a duplicated "what goes in a patch" list is
+exactly the kind of table that rotted before (`expected-schemas.tsv`). If
+reverting needs a migration, a data fix, or a config change, it was never a
+patch.
+
+**The branch.** `release/<major>.<minor>` is cut from the **tag**, by
+`70-tag.sh`, the first time a minor ships — never from `master`. It is now
+covered by the same CI as `master` (pre-commit, seam-guard, and
+`release-validate.yml` all trigger on `release/**`), and by a GitHub ruleset
+that blocks force-push, deletion, and direct pushes without a PR.
+
+**The procedure**, verbatim:
+
+```bash
+git switch release/0.5
+git switch -c hotfix/NNN-short-description
+git cherry-pick -x <sha-from-master>
+gh pr create --base release/0.5
+# ... review, merge ...
+git switch release/0.5 && git pull
+./scripts/release.sh run 0.5.1 --patch
+```
+
+**What `--patch` does.** It VERIFIES a claim, it does not declare one — there is
+no flag anywhere that says "this is a patch" (see [Version facts are derived,
+never recorded](#version-facts-are-derived-never-recorded)). `release.sh`
+resolves the version delta against the highest git tag strictly below the
+target:
+
+- If that delta is not a patch (minor, major, or no base tag at all), `--patch`
+  is **misuse** — exit 2. Nothing about the release was evaluated, so this is a
+  wrong invocation, not a gate that ran and failed.
+- If it IS a patch, the diff since the base tag is checked against a widened
+  trigger set — an Alembic migration, a `Dockerfile`, a dependency-lock file, a
+  `docker-compose*.yml`, or either installer script. Touching any of them means
+  the rehearsal runs in full, exactly as without `--patch`. Touching none of
+  them means `rehearse`'s three scenarios are WAIVED, recorded in the ledger as
+  `status=done detail=patch-rehearsal-waived: <reason>` — a stable, greppable
+  prefix distinguishable from `--skip` (`status=skipped`) and
+  `--force-rehearse` (`status=overridden`). An empty diff against the base tag
+  is treated as a derivation failure, not "nothing changed", and refuses to
+  waive.
+
+**`:latest` and backports.** If the version being promoted is older than the
+newest already-published release — a hotfix landing after a newer minor has
+shipped — `promote` leaves `:latest` alone. That is asserted as a pass, not
+skipped as a non-check: moving `:latest` backwards would silently downgrade
+every existing user on their next pull.
+
+**The back-merge.** After the release, `release/<major>.<minor>` must be merged
+back into `master` so the hotfix isn't lost the next time that branch is
+touched. ⚠️ **This step has no gate today** — it is the part of the procedure
+most likely to be forgotten, and is flagged here as a known gap rather than a
+solved one. A scheduled workflow that fails when a `release/*` branch has
+commits unreachable from `master` would close it; none exists yet.
 
 ## Criteria live in one file
 
@@ -147,6 +223,10 @@ accepted CVE with no reachable path — never to turn a red run green.
 
 ## The two rehearsal scenarios
 
+These rehearse the same `./opentranscribe.sh update` path a real operator runs; see
+[Upgrading](../operations/upgrading.md) for the operator-facing failure-recovery guidance this
+rehearsal is meant to keep accurate.
+
 ```bash
 ./opentr.sh stop            # required — see below
 ./scripts/release-tests/test-fresh-install.sh
@@ -157,20 +237,37 @@ accepted CVE with no reachable path — never to turn a red run green.
 
 - **TO** comes from the `VERSION` file. It has to: when they run, the new tag
   does not exist yet and the new images are not on Docker Hub.
-- **FROM** is the newest git tag below TO that **also has published Docker Hub
-  images**. A tag with no images is not something a user could be running, so it
-  is not a valid upgrade source.
+- **FROM** is DERIVED as a **set**, not a single value (issue #783): the newest
+  git tag with published Docker Hub images from each of the last
+  `OT_UPGRADE_SOURCE_MINORS` (default **2**) minor series strictly below TO. For
+  v0.5.0 that set is `{v0.4.1, v0.3.3}`. A patch TO collapses to a single hop —
+  a patch adds no Alembic revisions, so a second hop would re-measure the same
+  migration chain at full price for no extra coverage.
 
 This is deliberate. GitLab deleted their equivalent CI job because it read the
 previous version from a checked-in file that went stale, and silently validated
 an upgrade nobody was performing.
 
-Overrides: `FROM_VERSION`, `TO_VERSION`, and `FROM_VERSIONS` (plural,
-space-separated) to run the scenario once per source. Use `FROM_VERSIONS` on
-minor and major releases to keep the **oldest supported** upgrade exercised —
-once auto-detection moves FROM forward, the older path stops being tested.
+`test-upgrade.sh` **re-execs itself once per derived source** (never an
+in-process loop — a `gr_die` in any hop must not lose the evidence about the
+*other* hops), tearing its own stack down between hops so the next one can bind
+the same stock names and ports. Each hop's evidence lands under its own
+`TEST_ROOT/from-<version>/`; a roll-up `REPORT.md` + `hops.tsv` land at the
+top-level `TEST_ROOT`. `./scripts/release-tests/test-upgrade.sh --list-sources`
+prints the set that would be used and starts nothing (no docker, no
+containers — only Docker Hub manifest lookups), so you can sanity-check the
+derivation before committing to a multi-hour run.
 
-:::warning The live stack must be stopped
+Overrides: `FROM_VERSION` (singular) pins exactly one hop and disables the
+dispatcher entirely; `TO_VERSION` overrides the target; `FROM_VERSIONS`
+(plural, space-separated) REPLACES the derived set outright and still runs
+once per listed source. `FROM_VERSIONS` is an override of the derivation, not
+what "enables" multi-hop — the derivation runs on its own, is what keeps the
+**oldest supported** upgrade path exercised as auto-detection moves FROM
+forward, and is the mechanism that closed the second half of this
+pattern (see the admonition above): a documented feature that did not exist.
+
+:::warning[The live stack must be stopped]
 The scenarios run under the installer's stock container names and ports
 5173-5180 **by design**, so they exercise exactly what a real user gets. They
 cannot run alongside a live deployment, and `lib/guardrails.sh` refuses to start
@@ -180,6 +277,16 @@ also refuses any path under the live data directories and requires an
 
 For a stack that runs *beside* the live one, use
 `./opentr.sh start dev --fresh <name> --port-offset N` instead.
+:::
+
+:::tip[Non-interactive or backgrounded runs need `--yes`]
+The `I UNDERSTAND` confirmation above reads from a tty. Under a backgrounded or
+otherwise non-interactive invocation there is no tty to read from, and the prompt
+fails with `No such device or address` rather than hanging. Pass `--yes` to skip
+it (both scripts also accept `--cleanup`, `--force`, and `test-upgrade.sh` also
+takes `--no-rollback`/`--only-rollback` — see each script's own `--help`).
+`scripts/release/65-rehearse.sh` already passes `--yes` on both scenarios when
+driven through `./scripts/release.sh rehearse`.
 :::
 
 ### What the upgrade scenario proves
@@ -271,14 +378,61 @@ workstation after the tag, and the installer resolves "latest" from the GitHub
 Release — publishing it in CI would point new users at a version whose images do
 not exist yet. `finish` owns that, and refuses until this workflow is green.
 
-:::note Why publishing is local
-The backend production image is ~13.8 GB. GitHub's free runners cannot build it —
-that is why `docker-publish.yml`'s backend ARM64 job is disabled. ARM64 builds use
-a remote builder over SSH (`scripts/setup-remote-builder.sh`), which turns a 2-3
-hour QEMU emulation into roughly 20 minutes of native build.
+**`release/**` gets the same coverage as `master`.** A hotfix PR merges onto
+`release/<major>.<minor>`, not `master`, and that branch produces the next tag
+— it must not be able to land machine-unreviewed code. `pre-commit.yml` and
+`release-validate.yml` trigger on pull requests into `release/**`; `seam-guard.yml`
+triggers on both pull requests into it and pushes to it, matching how it already
+covers `master`. A GitHub ruleset on `release/*` additionally blocks force-push,
+branch deletion, and direct pushes without a PR.
+
+:::note[Why publishing is local]
+The backend production image is ~13.8 GB. GitHub's free runners cannot build it.
+`.github/workflows/docker-publish.yml` is now **retired** entirely (issue #680): it
+was a second publisher using the old `:latest-amd64` / `:latest-arm64` grammar, and
+its final step assembled `:latest` by hand — which would overwrite the index
+`promote` had copied by digest, silently breaking the ":latest and :vX.Y.Z are the
+same bytes" guarantee. Publishing happens only through `./scripts/release.sh`.
+ARM64 legs use a remote builder over SSH (`scripts/setup-remote-builder.sh`), which
+turns 2-3 hours of QEMU emulation into roughly 20 minutes of native build.
 :::
 
+### What gets published, and under what tags
+
+Capability lives in the **repository** and is restated in the **tag**. Do not copy this
+table into another file — `./scripts/docker-build-push.sh list-platforms` prints it, and
+`80-publish.sh` derives its checks from that command rather than from any hardcoded
+architecture list:
+
+| Repository | Capability | Legs published | Index | `:latest` |
+|---|---|---|---|---|
+| `opentranscribe-backend` | `cuda` | `vX.Y.Z-cuda-amd64` | `vX.Y.Z` | digest-copy of index |
+| `opentranscribe-backend-lite` | `cpu` | `vX.Y.Z-cpu-amd64`, `vX.Y.Z-cpu-arm64` | `vX.Y.Z` | digest-copy |
+| `opentranscribe-frontend` | — | (no capability legs) | `vX.Y.Z` | digest-copy |
+| `opentranscribe-docs` | — | (no capability legs) | `vX.Y.Z` | digest-copy |
+
+`vX.Y.Z-cuda-arm64` is **reserved in the grammar but not built**: there is no aarch64 CUDA
+torch wheel at the pinned version, `onnxruntime-gpu` publishes no aarch64 wheels at all, and
+diar-native ships no CUDA arm64 build of its sidecar. So the full image is **amd64-only**, and
+`opentranscribe.sh` defaults an arm64 host to the lite image with an explanation.
+
+`publish` verifies structure, not just existence — the pre-#680 check only grepped the
+manifest for an architecture string, which a *degraded but present* arm64 leg passes:
+
+1. each `-<cap>-<arch>` leg tag declares **exactly one** platform, the declared one;
+2. each `vX.Y.Z` index declares **exactly** the declared platform set — a missing platform
+   fails **and so does an extra one**;
+3. legs of the **same** capability are equivalent: identical layer count, size ratio within
+   1.25 (lite/frontend/docs) or 2.00 (full). Never compared across capabilities — the whole
+   point is that a CUDA image and a CPU image have no reason to be the same size, which is
+   why "arm64 is 8.4× smaller" went unnoticed for as long as it did.
+
 ## Before you start
+
+Cutting a release is not the place to discover a regression. Run the
+[full local test matrix](full-test-matrix.md) on the branch first — its Stage 1 is what
+`preflight`/`verify` run automatically, and its Stage 3 rehearsal legs are exactly what
+`rehearse` runs below; this page does not re-derive those steps.
 
 `preflight` checks all of this, but knowing it saves a cycle:
 
@@ -299,6 +453,8 @@ hour QEMU emulation into roughly 20 minutes of native build.
 - [Deployment configuration](../operations/deployment-configuration.md) — the
   permutations the matrix validates
 - [Testing](./testing.md) — the suites the `test` stage runs
+- [Full application test matrix](./full-test-matrix.md) — the staged local matrix this
+  pipeline's stages implement pieces of
 
 ### In the repository
 

@@ -17,8 +17,10 @@ the commit that makes them real — resolving every UUID in a single query and
 handing ``dispatch_speaker_rename`` the whole batch so it can coalesce per file.
 
 **Record before the overwrite.** The old name is what the chunks were indexed
-with (``display_name or name``); once the new value is committed, Postgres cannot
-say what it used to be.
+with — resolved via ``canonical_speaker_label_for_row``
+(``app/utils/speaker_labels.py``), the SAME resolver the chunk-index writers use,
+not the ad hoc ``display_name or name`` chain this module used before issue #605.
+Once the new value is committed, Postgres cannot say what it used to be.
 """
 
 from __future__ import annotations

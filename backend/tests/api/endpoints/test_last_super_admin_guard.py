@@ -57,6 +57,21 @@ def _super_admin_count(db_session) -> int:
     return int(db_session.query(User).filter(User.role == ROLE_SUPER_ADMIN).count())
 
 
+def _neutralize_other_super_admins(db_session, keep: User) -> None:
+    """Demote every OTHER active super_admin so ``keep`` is provably the sole one.
+
+    This runs against the live dev database (see ``backend/tests/CLAUDE.md``), which
+    already carries real super_admin accounts (e.g. the seeded admin). Without this,
+    "the last super_admin" tests below would silently pass or fail depending on how
+    many real accounts happen to exist, rather than on the guard.
+    """
+    others = db_session.query(User).filter(User.role == ROLE_SUPER_ADMIN, User.id != keep.id).all()
+    for other in others:
+        other.role = "user"
+        other.is_superuser = False
+    db_session.commit()
+
+
 class TestGdprEraseUserGuards:
     """``POST /api/admin/gdpr/erase-user/{uuid}`` — the most destructive route."""
 
@@ -153,6 +168,51 @@ class TestAdminDeleteUserCompositionKeepsOneSuperAdmin:
         )
 
         assert response.status_code == status.HTTP_200_OK
+
+
+class TestUpdateUserDeactivationGuard:
+    """``PUT /api/users/{uuid}`` with ``is_active: false`` — the fifth route.
+
+    The role-change and delete guards were already wired; this route wrote
+    ``is_active=False`` unguarded, so deactivating the last super_admin locked the
+    deployment out exactly as demoting it would, with no HTTPException in between.
+    """
+
+    def test_deactivating_the_last_super_admin_is_refused(
+        self, client, super_admin_token_headers, super_admin_user, db_session
+    ):
+        _neutralize_other_super_admins(db_session, super_admin_user)
+
+        response = client.put(
+            f"/api/users/{super_admin_user.uuid}",
+            json={"is_active": False},
+            headers=super_admin_token_headers,
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "last super_admin" in response.json()["detail"]
+
+        db_session.expire_all()
+        refreshed = db_session.query(User).filter(User.id == super_admin_user.id).one()
+        assert refreshed.is_active is True
+
+    def test_deactivating_a_non_last_super_admin_is_permitted(
+        self, client, super_admin_token_headers, db_session
+    ):
+        """The positive control, so "refuse everything" cannot satisfy the guard alone."""
+        victim = _make_super_admin(db_session)
+
+        response = client.put(
+            f"/api/users/{victim.uuid}",
+            json={"is_active": False},
+            headers=super_admin_token_headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        db_session.expire_all()
+        refreshed = db_session.query(User).filter(User.id == victim.id).one()
+        assert refreshed.is_active is False
 
 
 class TestTheGuardItself:

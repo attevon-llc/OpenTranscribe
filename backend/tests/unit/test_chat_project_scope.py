@@ -51,6 +51,12 @@ def test_empty_scope_with_no_project_stays_empty():
     """Empty must stay empty — downstream that means 'all accessible'."""
     result = resolve_effective_scope(conversation(), None)
     assert result.is_empty
+    # Spell out every axis, as `test_project_without_a_scope_does_not_narrow_anything`
+    # does: `is_empty` is a derived flag, and a resolver that populated one axis while
+    # leaving the flag stale would narrow the search with the flag still saying "all".
+    assert result.file_uuids == []
+    assert result.collection_uuids == []
+    assert result.tag_names == []
 
 
 def test_empty_conversation_inherits_the_project_scope():

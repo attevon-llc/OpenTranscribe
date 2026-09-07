@@ -57,6 +57,70 @@ def _is_speaker_attribute_detection_enabled(user_id: int) -> bool:
     return system_enabled
 
 
+def _resolve_file_id_for_tracking(file_uuid: str) -> int | None:
+    """Best-effort file_id lookup so the Task row can be created up front.
+
+    Returns None when the file cannot be resolved — Task.media_file_id is a
+    foreign key, so a row can't be created without a real target, and the
+    routine "file not found" outcome is still handled and returned by
+    ``_detect_speaker_attributes`` regardless.
+    """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    try:
+        with session_scope() as db:
+            media_file = get_file_by_uuid(db, file_uuid)
+            return int(media_file.id) if media_file else None
+    except Exception as exc:  # noqa: BLE001 — tracking must never block detection
+        logger.debug("File id resolution for task tracking failed for %s: %s", file_uuid, exc)
+        return None
+
+
+def _create_and_start_task_record(task_id: str, user_id: int, file_id: int) -> None:
+    """Create the Task row and mark it in_progress, in its own short session.
+
+    Best-effort: a bookkeeping failure here must never block detection itself.
+    """
+    from app.utils.task_utils import create_task_record
+    from app.utils.task_utils import update_task_status
+
+    try:
+        with session_scope() as db:
+            create_task_record(db, task_id, user_id, file_id, "speaker_attribute_detection")
+            update_task_status(db, task_id, "in_progress", progress=0.1)
+    except Exception as exc:  # noqa: BLE001 — tracking must never block detection
+        logger.warning("Could not create task record for %s: %s", task_id, exc)
+
+
+def _update_attr_task(
+    task_id: str,
+    status: str,
+    *,
+    progress: float | None = None,
+    error_message: str | None = None,
+) -> None:
+    """Record a status/progress transition, in its own short session.
+
+    No-op (with a log line) when no Task row exists — e.g. tracking was
+    skipped because the file couldn't be resolved up front. Best-effort by
+    design: ``update_task_status`` already no-ops quietly on a missing row.
+    """
+    from app.utils.task_utils import update_task_status
+
+    try:
+        with session_scope() as db:
+            update_task_status(
+                db,
+                task_id,
+                status,
+                progress=progress,
+                error_message=error_message,
+                completed=status in ("completed", "failed", "skipped"),
+            )
+    except Exception as exc:  # noqa: BLE001 — tracking must never mask the real outcome
+        logger.warning("Could not update task record %s to %s: %s", task_id, status, exc)
+
+
 def _dispatch_llm_speaker_identification(file_uuid: str) -> None:
     """Dispatch the LLM speaker identification task for a media file.
 
@@ -108,6 +172,33 @@ def _store_gender_results(
             speaker_obj.attributes_predicted_at = now
 
     return updated_count
+
+
+_MODEL_LOAD_TIMEOUT_SECONDS = 60
+
+
+def _load_models_with_timeout(service, timeout: float = _MODEL_LOAD_TIMEOUT_SECONDS) -> None:
+    """Load the gender-detection model with a bounded wait.
+
+    ``Wav2Vec2*.from_pretrained`` makes a HuggingFace Hub metadata request before
+    falling back to the local cache, and — unlike the ffmpeg segment fetches below,
+    which are bounded both by their own ``subprocess.run(timeout=30)`` and by the
+    pool's per-future ``result(timeout=30)`` — that call carries no wall-clock bound
+    of its own. On a degraded or blocked network it can sit doing nothing (0% CPU)
+    for the rest of the task's budget, indistinguishable from a task that isn't
+    running at all until the Celery hard ``time_limit`` kills it.
+
+    Delegates to :func:`app.utils.hf_hub_offline.load_with_timeout` — the same
+    one-shot-thread-pool idiom used below and by every other HuggingFace Hub load
+    site in this codebase, kept as one implementation rather than four.
+    """
+    from app.utils.hf_hub_offline import load_with_timeout
+
+    load_with_timeout(
+        service.load_models,
+        timeout=timeout,
+        label="Gender-detection model load",
+    )
 
 
 def _run_gender_inference_parallel(
@@ -176,6 +267,16 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     global three-hour one — a stalled run used to hold a slot for hours, and eight of them
     wedged the whole pool so no import could proceed at all.
     """
+    # Task tracking — issue #622: this task previously ran with ZERO Task-row
+    # visibility, so a run that stalled well past its own ~87-90 s comment (below)
+    # was indistinguishable from "not running at all" until the hard time_limit
+    # killed it. Resolve the file up front so the row exists before the slow
+    # work starts, matching every sibling post-processing task.
+    task_id = self.request.id
+    file_id = _resolve_file_id_for_tracking(file_uuid)
+    if file_id is not None:
+        _create_and_start_task_record(task_id, user_id, file_id)
+
     # Idempotency guard: gender inference is minutes of CPU-bound wav2vec2 per
     # file, and rediarize/recovery flows can dispatch the same detection again
     # before the first finishes (observed 6-deep on one file). Duplicates would
@@ -188,6 +289,7 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     # same answer. attributes_predicted_at is the marker either path sets.
     if _attributes_already_predicted(file_uuid):
         logger.info("Speaker attributes already present for %s; skipping detection", file_uuid)
+        _update_attr_task(task_id, "skipped", progress=1.0)
         _dispatch_llm_speaker_identification(file_uuid)
         return {"status": "skipped", "reason": "already_predicted"}
 
@@ -199,13 +301,14 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
             logger.info(
                 f"Attribute detection already in progress for {file_uuid}; skipping duplicate"
             )
+            _update_attr_task(task_id, "skipped", progress=1.0)
             _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "duplicate_in_progress"}
     except Exception:
         _guard = None  # Redis unavailable — proceed unguarded
 
     try:
-        return _detect_speaker_attributes(file_uuid, user_id)
+        return _detect_speaker_attributes(file_uuid, user_id, task_id)
     finally:
         if _guard is not None:
             with contextlib.suppress(Exception):  # lock expires via TTL anyway
@@ -298,7 +401,7 @@ def _load_detection_inputs(file_uuid: str) -> dict | None:
     }
 
 
-def _detect_speaker_attributes(file_uuid: str, user_id: int):
+def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
     """Inner implementation of detect_speaker_attributes_task.
 
     Runs in three phases, and the split is load-bearing: the DB session is open
@@ -322,6 +425,7 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int):
     try:
         if not _is_speaker_attribute_detection_enabled(user_id):
             logger.info("Speaker attribute detection disabled, skipping")
+            _update_attr_task(task_id, "skipped", progress=1.0)
             _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "disabled"}
 
@@ -329,17 +433,24 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int):
         inputs = _load_detection_inputs(file_uuid)
         if inputs is None:
             logger.error(f"Media file {file_uuid} not found for attribute detection")
+            # A row may already exist (the file resolved fine at task start but
+            # vanished before this re-read — a genuine race, not a routine skip).
+            _update_attr_task(task_id, "failed", error_message="file_not_found")
             return {"status": "error", "reason": "file_not_found"}
 
         file_id = inputs["file_id"]
         if not inputs["speaker_ids"]:
             logger.info(f"No speakers found for file {file_id}, skipping")
+            _update_attr_task(task_id, "skipped", progress=1.0)
             _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "no_speakers"}
 
         if not inputs["segment_count"]:
+            _update_attr_task(task_id, "skipped", progress=1.0)
             _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "no_segments"}
+
+        _update_attr_task(task_id, "in_progress", progress=0.3)
 
         # Phase 2 — audio + inference. NO DB session is held here.
         audio_source = minio_client.presigned_get_object(
@@ -361,13 +472,18 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int):
                 work_items.append((speaker_id, seg))
 
         service = get_cached_attribute_service()
-        service.load_models()
+        # Passed explicitly (not relying on the parameter default) so tests can
+        # monkeypatch `_MODEL_LOAD_TIMEOUT_SECONDS` and exercise the timeout
+        # path in well under a second instead of the real 60s.
+        _load_models_with_timeout(service, timeout=_MODEL_LOAD_TIMEOUT_SECONDS)
 
         speaker_probs, speaker_clip_counts = _run_gender_inference_parallel(
             audio_source,
             work_items,
             service,
         )
+
+        _update_attr_task(task_id, "in_progress", progress=0.8)
 
         # Phase 3 — write (DB session reopened, Postgres only). Speakers are
         # re-read here because the objects from phase 1 belong to a session that
@@ -400,6 +516,7 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int):
             {"file_id": file_uuid, "task": "speaker_attributes"},
         )
 
+        _update_attr_task(task_id, "completed", progress=1.0)
         _dispatch_llm_speaker_identification(file_uuid)
 
         return {
@@ -412,5 +529,6 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int):
     except Exception as e:
         logger.error(f"Speaker attribute detection failed for {file_uuid}: {e}")
         logger.error("Full traceback:", exc_info=True)
+        _update_attr_task(task_id, "failed", error_message=str(e))
         _dispatch_llm_speaker_identification(file_uuid)
         return {"status": "error", "message": str(e)}

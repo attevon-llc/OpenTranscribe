@@ -164,14 +164,14 @@
     border: 1px solid var(--tag-border, #bbf7d0);
   }
 
-  :global(.dark) .review-chip.tag { background: rgba(22, 163, 74, 0.15); border-color: rgba(22, 163, 74, 0.3); }
+  :global([data-theme='dark']) .review-chip.tag { background: rgba(22, 163, 74, 0.15); border-color: rgba(22, 163, 74, 0.3); }
 
   .review-chip.collection {
     background: var(--primary-bg, #eff6ff); color: var(--primary-color, #3b82f6);
     border: 1px solid var(--primary-border, #bfdbfe);
   }
 
-  :global(.dark) .review-chip.collection { background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); }
+  :global([data-theme='dark']) .review-chip.collection { background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); }
 
   .review-chip.extract {
     background: rgba(16, 185, 129, 0.12); color: #10b981;

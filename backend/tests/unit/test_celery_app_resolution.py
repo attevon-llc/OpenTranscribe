@@ -185,3 +185,20 @@ def test_every_task_route_points_at_a_registered_task(registered_task_names):
     unresolvable = sorted(exact - registered_task_names)
 
     assert not unresolvable, f"task_routes keys naming no registered task: {unresolvable}"
+
+
+def test_session_cap_sweep_is_fully_wired(registered_task_names):
+    """Issue #632: the periodic ceiling sweep needs all three registrations, or it
+    is dead weight — importable, but beat never dispatches it and a stray direct
+    call would land on the wrong queue.
+    """
+    from app.core.celery import celery_app
+
+    assert "app.tasks.session_cap" in celery_app.conf.include
+    assert "session.cap_sweep" in registered_task_names
+
+    assert "session.cap_sweep" in celery_app.conf.task_routes
+    assert celery_app.conf.task_routes["session.cap_sweep"]["queue"] == "utility"
+
+    beat_tasks = {entry["task"] for entry in celery_app.conf.beat_schedule.values()}
+    assert "session.cap_sweep" in beat_tasks

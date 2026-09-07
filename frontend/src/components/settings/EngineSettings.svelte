@@ -14,8 +14,8 @@
   }
 
   interface EngineSettingsResponse {
-    transcriber_backend: EngineSettingValue<string>;
     diarizer_backend: EngineSettingValue<string>;
+    diarizer_require_sidecar: EngineSettingValue<boolean>;
     boundary_smoothing_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_recheck_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_cosine_margin: EngineSettingValue<number>;
@@ -32,8 +32,8 @@
   let settings: EngineSettingsResponse | null = null;
 
   // Draft values (bound to form controls)
-  let draftTranscriberBackend = 'faster_whisper';
   let draftDiarizerBackend = 'native';
+  let draftDiarizerRequireSidecar = false;
   let draftBoundarySmoothing = false;
   let draftAcousticRecheck = false;
   let draftAcousticCosineMargin = 0.05;
@@ -48,8 +48,8 @@
     try {
       const res = await axiosInstance.get<EngineSettingsResponse>('/admin/engine-settings');
       settings = res.data;
-      draftTranscriberBackend = settings.transcriber_backend.value;
       draftDiarizerBackend = settings.diarizer_backend.value;
+      draftDiarizerRequireSidecar = settings.diarizer_require_sidecar.value;
       draftBoundarySmoothing = settings.boundary_smoothing_enabled.value;
       draftAcousticRecheck = settings.boundary_acoustic_recheck_enabled.value;
       draftAcousticCosineMargin = settings.boundary_acoustic_cosine_margin.value;
@@ -67,19 +67,19 @@
 
     // Only send keys where the draft differs from the current server value
     const payload: Partial<{
-      transcriber_backend: string;
       diarizer_backend: string;
+      diarizer_require_sidecar: boolean;
       boundary_smoothing_enabled: boolean;
       boundary_acoustic_recheck_enabled: boolean;
       boundary_acoustic_cosine_margin: number;
       boundary_acoustic_max_word_dur: number;
     }> = {};
 
-    if (draftTranscriberBackend !== settings.transcriber_backend.value) {
-      payload.transcriber_backend = draftTranscriberBackend;
-    }
     if (draftDiarizerBackend !== settings.diarizer_backend.value) {
       payload.diarizer_backend = draftDiarizerBackend;
+    }
+    if (draftDiarizerRequireSidecar !== settings.diarizer_require_sidecar.value) {
+      payload.diarizer_require_sidecar = draftDiarizerRequireSidecar;
     }
     if (draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value) {
       payload.boundary_smoothing_enabled = draftBoundarySmoothing;
@@ -137,8 +137,8 @@
   }
 
   $: isDirty = settings !== null && (
-    draftTranscriberBackend !== settings.transcriber_backend.value ||
     draftDiarizerBackend !== settings.diarizer_backend.value ||
+    draftDiarizerRequireSidecar !== settings.diarizer_require_sidecar.value ||
     draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value ||
     draftAcousticRecheck !== settings.boundary_acoustic_recheck_enabled.value ||
     Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value ||
@@ -163,42 +163,6 @@
     </div>
 
     <div class="settings-form">
-
-      <!-- Transcriber Backend -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <label for="transcriber-backend">{$t('settings.engineSettings.transcriberBackend')}</label>
-            <span class="source-badge {sourceClass(settings.transcriber_backend.source)}">
-              {sourceLabel(settings.transcriber_backend.source)}
-            </span>
-            {#if settings.transcriber_backend.source !== 'default'}
-              <button
-                class="reset-btn"
-                on:click={() => resetKey('transcriber_backend')}
-                disabled={resetInProgress === 'transcriber_backend' || saving}
-                title={$t('settings.engineSettings.resetKey')}
-              >
-                {#if resetInProgress === 'transcriber_backend'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
-          <select
-            id="transcriber-backend"
-            bind:value={draftTranscriberBackend}
-            class="form-select"
-            disabled={saving || resetInProgress !== null}
-          >
-            <option value="faster_whisper">faster_whisper</option>
-            <option value="whisperx">whisperx</option>
-            <option value="cloud">cloud</option>
-          </select>
-        </div>
-      </div>
 
       <!-- Diarizer Backend -->
       <div class="form-row">
@@ -232,6 +196,43 @@
             <option value="native">native (default)</option>
             <option value="pyannote">pyannote (failover)</option>
           </select>
+        </div>
+      </div>
+
+      <!-- Require Diarization Sidecar -->
+      <div class="form-row">
+        <div class="form-field">
+          <div class="field-label-row">
+            <span class="field-name">{$t('settings.engineSettings.diarizerRequireSidecar')}</span>
+            <span class="source-badge {sourceClass(settings.diarizer_require_sidecar.source)}">
+              {sourceLabel(settings.diarizer_require_sidecar.source)}
+            </span>
+            {#if settings.diarizer_require_sidecar.source !== 'default'}
+              <button
+                class="reset-btn"
+                on:click={() => resetKey('diarizer_require_sidecar')}
+                disabled={resetInProgress === 'diarizer_require_sidecar' || saving}
+                title={$t('settings.engineSettings.resetKey')}
+              >
+                {#if resetInProgress === 'diarizer_require_sidecar'}
+                  <Spinner size="small" />
+                {:else}
+                  {$t('settings.engineSettings.resetKey')}
+                {/if}
+              </button>
+            {/if}
+          </div>
+          <label class="toggle-label" for="diarizer-require-sidecar-input">
+            <input
+              id="diarizer-require-sidecar-input"
+              type="checkbox"
+              class="toggle-input"
+              bind:checked={draftDiarizerRequireSidecar}
+              disabled={saving || resetInProgress !== null}
+            />
+            <span class="toggle-switch"></span>
+            <span class="toggle-text help-text">{$t('settings.engineSettings.diarizerRequireSidecarHelp')}</span>
+          </label>
         </div>
       </div>
 
@@ -486,7 +487,7 @@
 
   .source-db {
     background: rgba(var(--primary-color-rgb), 0.12);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
   :global([data-theme='dark']) .source-db {
     background: rgba(var(--primary-color-rgb), 0.2);
@@ -618,7 +619,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color, #3b82f6);
+    background: var(--primary-color, var(--primary-color));
   }
 
   .toggle-input:checked + .toggle-switch::after {
@@ -663,7 +664,7 @@
   }
 
   .btn-primary {
-    background: var(--primary-color, #3b82f6);
+    background: var(--primary-color, var(--primary-color));
     color: white;
     box-shadow: 0 1px 4px rgba(var(--primary-color-rgb), 0.2);
   }

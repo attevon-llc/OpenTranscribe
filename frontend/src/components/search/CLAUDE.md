@@ -19,7 +19,8 @@ coordinator), plus the full-transcript match browser opened from a result card.
   consecutive same-speaker segments, classifies keyword vs semantic by **time-range overlap** with
   the hit's occurrences, and drives prev/next match (Enter / Shift+Enter), paging in more segments
   until the target match resolves.
-- `SearchSortDropdown.svelte` — sort field + direction; `relevance` is `noDirection` (always desc).
+- Sort control is `$components/ui/SortDropdown.svelte` (shared with gallery, H2), consumed
+  directly by `routes/search/+page.svelte` with `relevance` as a `noDirection` option (always desc).
 - `SearchPagination.svelte` — windowed pager (1–5, then current ±2). **Also used by
   `$components/fileStatus/TasksGrid.svelte`** — keep it search-agnostic.
 
@@ -50,5 +51,3 @@ coordinator), plus the full-transcript match browser opened from a result card.
   rebuilds the loaded range **in place** — don't flip `loading` there or the view flickers.
 - `SearchResultCard` re-implements `formatDuration`/`formatFileSize`/`formatDate` locally instead of
   using `$lib/utils/formatting` — don't copy that into new cards.
-- `SearchSortDropdown` hand-rolls its menu (with `$lib/actions/clickOutside`) rather than using
-  `$components/ui/Dropdown.svelte`.

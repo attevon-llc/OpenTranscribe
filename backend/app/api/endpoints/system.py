@@ -53,6 +53,11 @@ def get_system_capabilities(request: Request) -> dict[str, Any]:
         # can surface a "report content" / takedown contact link. See
         # docs/abuse-and-takedown.md.
         "abuse_contact_email": settings.ABUSE_CONTACT_EMAIL,
+        # Admin-configurable server-side upload ceiling (issue G10). `None` means
+        # the admin set MAX_UPLOAD_BYTES=0 (no limit) — the frontend must not
+        # invent one. Kept in step with `validate_file_size_for_tenant`
+        # (files/upload.py), which is what actually enforces it.
+        "max_upload_bytes": settings.MAX_UPLOAD_BYTES,
     }
 
 

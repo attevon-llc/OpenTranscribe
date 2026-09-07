@@ -22,4 +22,8 @@ export interface Collection {
   default_prompt_name?: string | null;
   default_prompt_id?: string | null;
   share_count?: number;
+  /** True if shared with (not owned by) the caller. Mirrors `CollectionWithCount.is_shared`. */
+  is_shared?: boolean;
+  /** Caller's effective permission — `'owner' | 'editor' | 'viewer'`. Defaults to `'owner'` server-side. */
+  my_permission?: string;
 }

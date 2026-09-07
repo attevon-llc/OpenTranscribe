@@ -246,6 +246,30 @@ def test_tag_on_shared_file_is_visible_to_the_recipient(
     assert shared_tag_name in _tag_names(client.get("/api/tags", headers=user_token_headers))
 
 
+def test_a_quarantined_shared_files_tag_stops_being_visible(
+    client, user_token_headers, normal_user, other_user, db_session
+):
+    """Adversarial-review follow-up (A2's leak class): ``get_accessible_file_ids_subquery``
+    has no notion of quarantine — it is ownership/sharing only — so the "attached
+    to an accessible file" arm of ``_visible_to`` kept surfacing a tag owned by
+    someone ELSE, reachable only through a file shared with the caller, after
+    that file was taken down and started 404ing everywhere else."""
+    tag_name = _unique("QuarantinedSharedTag")
+    tag = _make_tag(db_session, name=tag_name, user_id=other_user.id)
+    their_file = _make_file(db_session, other_user)
+    _attach(db_session, their_file, tag)
+    _share_file(db_session, other_user, normal_user, their_file)
+
+    # Visible before the takedown...
+    assert tag_name in _tag_names(client.get("/api/tags", headers=user_token_headers))
+
+    their_file.is_quarantined = True
+    db_session.commit()
+
+    # ...and gone after it.
+    assert tag_name not in _tag_names(client.get("/api/tags", headers=user_token_headers))
+
+
 def test_unattached_tag_of_a_sharing_user_stays_private(
     client, user_token_headers, normal_user, other_user, db_session
 ):

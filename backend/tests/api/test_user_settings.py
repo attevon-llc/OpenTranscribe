@@ -17,9 +17,24 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from fastapi import status
 
+from tests.helpers import stub_public_dns
+
 _BASE = "/api/user-settings"
+
+
+@pytest.fixture
+def _public_media_host_dns(monkeypatch):
+    """Let ``*.example.com`` resolve, for the media-source tests only.
+
+    Storing a media source resolves the hostname and refuses non-public addresses
+    (audit A1); ``example.com`` subdomains do not exist in real DNS, so without this
+    these tests would 422 for "cannot resolve" rather than exercising the CRUD contract
+    they are about.
+    """
+    stub_public_dns(monkeypatch)
 
 
 # ===========================================================================
@@ -528,7 +543,9 @@ def test_media_sources_empty(client, user_token_headers):
     assert resp.json() == {"sources": [], "shared_sources": []}
 
 
-def test_media_source_create_password_never_returned(client, user_token_headers):
+def test_media_source_create_password_never_returned(
+    client, user_token_headers, _public_media_host_dns
+):
     """The encrypted password is write-only — no response surface echoes it."""
     secret = "super-secret-pw-12345"  # noqa: S105 - test fixture, not a real credential
     resp = client.post(
@@ -553,7 +570,7 @@ def test_media_source_create_password_never_returned(client, user_token_headers)
     assert secret not in listing.text
 
 
-def test_media_source_duplicate_hostname_is_400(client, user_token_headers):
+def test_media_source_duplicate_hostname_is_400(client, user_token_headers, _public_media_host_dns):
     host = f"dup-{uuid.uuid4().hex[:8]}.example.com"
     payload = {"hostname": host, "provider_type": "mediacms", "verify_ssl": True}
     first = client.post(f"{_BASE}/media-sources", json=payload, headers=user_token_headers)
@@ -563,7 +580,9 @@ def test_media_source_duplicate_hostname_is_400(client, user_token_headers):
     assert "already exists" in second.json()["detail"]
 
 
-def test_media_source_update_other_user_404(client, user_token_headers, other_user_auth_headers):
+def test_media_source_update_other_user_404(
+    client, user_token_headers, other_user_auth_headers, _public_media_host_dns
+):
     """A media source is invisible (404) to a non-owner on update."""
     created = client.post(
         f"{_BASE}/media-sources",
@@ -583,7 +602,7 @@ def test_media_source_update_other_user_404(client, user_token_headers, other_us
     assert resp.json()["detail"] == "Media source not found"
 
 
-def test_media_source_delete_round_trip(client, user_token_headers):
+def test_media_source_delete_round_trip(client, user_token_headers, _public_media_host_dns):
     created = client.post(
         f"{_BASE}/media-sources",
         json={

@@ -230,11 +230,33 @@ class _Cfg:
 def test_a_local_provider_is_recognised_as_local():
     """The precondition for the endpoint's quota skip. Without this the skip
     below would be unreachable and its test would pass vacuously.
+
+    `base_url` must be a real local endpoint — `is_local_provider` now keys
+    `vllm`/`ollama` locality on it too (a `vllm` config can legitimately point
+    at a hosted SaaS, and a bare provider name no longer decides it).
     """
     from app.services.redaction.llm_guard import is_local_provider
 
-    assert is_local_provider(_Cfg("vllm")) is True
-    assert is_local_provider(_Cfg("ollama")) is True
+    assert is_local_provider(_Cfg("vllm", base_url="http://localhost:8012/v1")) is True
+    assert is_local_provider(_Cfg("ollama", base_url="http://localhost:11434")) is True
+
+
+def test_a_hosted_vllm_provider_is_not_local_so_the_quota_applies():
+    """A `vllm`-provider config pointed at a hosted SaaS is a genuine
+
+    third-party API call — the quota must still apply, the opposite of the
+    self-hosted-GPU case above.
+    """
+    from unittest.mock import patch
+
+    from app.services.redaction.llm_guard import is_local_provider
+
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=(["93.184.216.34"], ""),
+    ):
+        cfg = _Cfg("vllm", base_url="https://vllm.some-saas.example/v1")
+        assert is_local_provider(cfg) is False
 
 
 def test_a_remote_provider_is_not_local_so_the_quota_still_applies():

@@ -84,7 +84,7 @@ When enabled, it runs during the GPU stage while the audio and the per-speaker v
 2. Compares the result against every speaker's voiceprint.
 3. Reassigns the word to the best-matching speaker — but only if that match is clearly better than the current one.
 
-:::info It only relabels existing words
+:::info[It only relabels existing words]
 The acoustic re-check **never invents, adds, or removes a word**. It only changes the *speaker* of words the transcription already produced. If the transcript doesn't contain a "yeah", the re-check will not conjure one.
 :::
 

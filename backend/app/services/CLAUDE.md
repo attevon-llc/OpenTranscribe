@@ -134,6 +134,62 @@ Two judgement calls worth not re-litigating blindly:
   legitimately uploading to that tenant the next day, and acting on it would destroy
   data nobody asked to erase. They are counted as `org_member_manual_review` instead.
 
+## Speaker embeddings: two backends, one model (issue #571)
+
+`speaker_embedding_service.py` no longer always loads a model. For **v4** (256-d) it prefers
+`native_embedding_client.py` — the diar-native sidecar's `/embed_window` — and loads nothing
+in-process; the sidecar runs the **same** `pyannote/wespeaker-voxceleb-resnet34-LM` weights,
+re-exported to ONNX. That is measured, not assumed: over 134 AMI ground-truth single-speaker
+windows (6 meetings, 21 speakers) the two paths agree at cosine **0.9999997** (min 0.9999993)
+on identical audio, against a same-speaker mean of 0.846 and a different-speaker mean of 0.094.
+`tests/integration/test_native_embedding_equivalence.py` re-asserts it against both real
+implementations.
+
+Backend selection lives in one predicate, `SpeakerEmbeddingService._native_backend_usable()`:
+
+| Condition | Backend |
+|---|---|
+| v4, sidecar healthy, `USE_NATIVE_SPEAKER_EMBEDDINGS` unset/true, default model | `native` |
+| **v3** (`pyannote/embedding`, 512-d) | `pyannote` — always |
+| `USE_NATIVE_SPEAKER_EMBEDDINGS=false` | `pyannote` |
+| sidecar unreachable at construction, or failing mid-run | `pyannote` |
+| an explicitly pinned non-default `model_name` | `pyannote` |
+
+- **v3 is excluded on purpose, and it is the whole reason a switch exists.** `pyannote/embedding`
+  is a *different network*, not a different export — 512-d, and no linear map relates it to the
+  256-d WeSpeaker space. Routing v3 at the sidecar would write 256-d vectors into a 512-d index.
+  A 512-d install leaves PyAnnote by the migration that already exists
+  (`tasks/embedding_migration_v4.py`, `docs-site/docs/configuration/embedding-migration.md`), and
+  because those tasks ask for a service **by mode**, they inherit the native backend for their v4
+  half for free — the same one switch governs a live transcription and a migration batch.
+- **`USE_NATIVE_SPEAKER_EMBEDDINGS` stays an escape hatch, not a dead flag.** It keeps its
+  existing meaning on the diarizer-centroid path (`tasks/transcription/embeddings.py`) and now
+  also forces this service in-process, so one variable fully reverts to PyAnnote.
+- **`model_name` names the WEIGHTS, `backend` names how they run.** `get_cached_embedding_service`
+  keys its warm cache on `(mode, model_name)`; a sidecar-specific name there would miss on every
+  lookup and rebuild the service per call.
+- **Fallback is sticky for the instance's lifetime.** A sidecar loss mid-run loads the in-process
+  model and flips `backend`, matching `NativeSpeakerDiarizer`'s mid-job fallback. It returns to
+  native only via `clear_embedding_cache()`.
+
+> ⚠️ **The sidecar's window length is load-bearing, and getting it wrong fails SILENTLY.**
+> `/embed_window` embeds a fixed **160,000-sample (10 s)** window under an *all-ones* 589-frame
+> mask (`diar-core`'s `MaskedEmbeddingInput`). A shorter clip is **zero-padded to 10 s and the
+> padding is pooled at full weight** — you get back a plausible unit-norm 256-vector, nothing
+> raises, nothing logs. Measured cosine against the in-process model by clip length:
+>
+> | 0.8 s | 1 s | 2 s | 3 s | 5 s | 8 s | 10 s |
+> |---|---|---|---|---|---|---|
+> | +0.012 | +0.028 | +0.007 | +0.081 | +0.239 | +0.901 | **+1.000** |
+>
+> At 3 s the sidecar's own speaker discrimination collapses to **EER 39.6%** where the in-process
+> model scores 0.1% on the very same windows. `NativeSpeakerDiarizer.embed_window` posted the raw
+> slice until #571, so the acoustic boundary re-check (default OFF) was scoring noise.
+> **Never post a clip to `/embed_window` directly** — go through
+> `native_embedding_client.fit_to_window`, which repeat-fills short clips (measured 0.989 vs the
+> in-process model) and tiles long ones (0.9977–0.9996 at 20–60 s), capped at
+> `NATIVE_EMBEDDING_MAX_TILES` because nothing upstream bounds segment duration.
+
 ## Object storage: `storage_backend.py` + `minio_service.py`
 
 `minio_service` is the API (upload/download/presign/lifecycle, ~60 call sites plus the
@@ -186,7 +242,7 @@ every difference between the two backends (issue #284 A1.11/A1.12):
 ## LLM features (optional)
 
 `llm_service.py` is a **synchronous** client on purpose (Celery tasks; no asyncio conflicts).
-`LLMProvider` = openai · vllm · ollama · anthropic · openrouter · custom (`claude` is a
+`LLMProvider` = openai · vllm · ollama · anthropic · openrouter · bedrock · custom (`claude` is a
 deprecated alias for `anthropic`).
 
 - **Resolution order**: `create_from_user_settings(user_id)` → falls back to
@@ -194,6 +250,15 @@ deprecated alias for `anthropic`).
   `LLM_PROVIDER` and no user config = transcription-only; `create_from_system_settings`
   returns `None` and callers must handle it. `custom` is **user-config only** — it always
   returns `None` from system settings.
+- **`bedrock` is the one SDK-based provider** (`SDK_PROVIDERS`, `llm_bedrock.py`): boto3's
+  Converse API, not an HTTP endpoint. No `api_key` — credentials resolve via boto3's standard
+  chain (IAM role, profile, or environment) — and no per-configuration region: both
+  `create_from_system_settings` and a per-user `bedrock` row call through to the SAME
+  deployment-wide `settings.BEDROCK_REGION`/`BEDROCK_MODEL_NAME` (system-fallback validated in
+  `_get_provider_config`; the runtime call sites in `llm_service.py` read `settings.BEDROCK_REGION`
+  directly, never `self.config`). A user config only ever supplies the model ID. Reasoning-probe
+  support is deliberately **not** wired (`llm_reasoning.PROBEABLE_PROVIDERS` excludes it) — see
+  that section below for why a provider needs a live measurement first, not just an enum entry.
 - Per-user keys are AES-encrypted (`utils/encryption.encrypt_api_key`) and never returned;
   edit mode reuses the stored key when the request omits `api_key`.
 - Summarization: BLUF, speaker analysis with talk time, action items, decisions, follow-ups,

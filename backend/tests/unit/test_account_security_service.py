@@ -61,6 +61,7 @@ from app.core.config import settings
 from app.core.security import verify_token
 from app.models.refresh_token import RefreshToken
 from app.services import account_security_service
+from tests.helpers import fake_request
 
 
 @pytest.fixture
@@ -158,7 +159,12 @@ def test_reissue_current_session_survives_the_epoch_it_was_just_issued_under(
 
     response = Response()
     account_security_service.reissue_current_session(
-        db_session, normal_user, response, user_agent="pytest", ip_address="127.0.0.1"
+        db_session,
+        normal_user,
+        response,
+        fake_request(),
+        user_agent="pytest",
+        ip_address="127.0.0.1",
     )
 
     access_token = _cookie_value(response, "access_token")

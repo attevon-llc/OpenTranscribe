@@ -24,6 +24,18 @@
     c.name.toLowerCase().includes(filterQuery.toLowerCase())
   );
 
+  /**
+   * Reactive so the checkboxes actually follow the selection.
+   *
+   * `checked={isSelected(uuid)}` names a FUNCTION, and Svelte tracks the
+   * variables an expression references — not what the function closes over. So
+   * `selectedCollections` was never a dependency of that binding and the
+   * checkbox kept its stale state when a chip was removed: deselected as a chip,
+   * still ticked in the list. Referencing `selectedUuids` makes the dependency
+   * explicit.
+   */
+  $: selectedUuids = new Set(selectedCollections.map((c) => c.uuid));
+
   function isSelected(uuid: string): boolean {
     return selectedCollections.some(c => c.uuid === uuid);
   }
@@ -117,7 +129,7 @@
         <label class="item-row">
           <input
             type="checkbox"
-            checked={isSelected(collection.uuid)}
+            checked={selectedUuids.has(collection.uuid)}
             on:change={() => toggleCollection(collection)}
           />
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

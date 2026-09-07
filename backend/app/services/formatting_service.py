@@ -50,6 +50,8 @@ from app.schemas.media import TranscriptSegment
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.time_format import format_timestamp_simple
+from app.utils.time_format import format_timestamp_with_tenths
 
 logger = logging.getLogger(__name__)
 
@@ -60,38 +62,35 @@ class FormattingService:
     @staticmethod
     def format_duration(seconds: float | None) -> str | None:
         """
-        Format duration in seconds to MM:SS format.
+        Format duration in seconds to MM:SS (or H:MM:SS past one hour).
 
         Args:
             seconds: Duration in seconds
 
         Returns:
-            Formatted duration string (e.g., "5:23") or None
+            Formatted duration string (e.g., "5:23" or "2:05:00") or None
         """
         if seconds is None or seconds <= 0:
             return None
 
-        minutes = int(seconds // 60)
-        remaining_seconds = int(seconds % 60)
-        return f"{minutes}:{remaining_seconds:02d}"
+        return format_timestamp_simple(seconds)
 
     @staticmethod
     def format_duration_with_millis(seconds: float | None) -> str | None:
         """
-        Format duration with milliseconds for timestamps.
+        Format duration with milliseconds for timestamps (MM:SS.f, or H:MM:SS.f
+        past one hour — matching ``format_duration``'s hour-carrying).
 
         Args:
             seconds: Duration in seconds
 
         Returns:
-            Formatted duration string (e.g., "0:45.2") or None
+            Formatted duration string (e.g., "0:45.2" or "1:05:30.0") or None
         """
         if seconds is None or seconds < 0:
             return None
 
-        minutes = int(seconds // 60)
-        remaining_seconds = seconds % 60
-        return f"{minutes}:{remaining_seconds:04.1f}"
+        return format_timestamp_with_tenths(seconds)
 
     @staticmethod
     def format_upload_date(upload_time: datetime | None) -> str | None:
@@ -368,30 +367,6 @@ class FormattingService:
             segment_dict["text"] = "[redacted — masking unavailable]"
             segment_dict["redactions"] = None
             segment_dict["toxicity"] = None
-
-    @staticmethod
-    def format_file_size(file_size: int | None) -> str | None:
-        """
-        Format file size in bytes to human-readable format.
-
-        Args:
-            file_size: File size in bytes
-
-        Returns:
-            Formatted file size string (e.g., "2.5 MB") or None
-        """
-        if file_size is None or file_size <= 0:
-            return None
-
-        # Convert to appropriate unit
-        if file_size < 1024:
-            return f"{file_size} B"
-        elif file_size < 1024 * 1024:
-            return f"{file_size / 1024:.1f} KB"
-        elif file_size < 1024 * 1024 * 1024:
-            return f"{file_size / (1024 * 1024):.1f} MB"
-        else:
-            return f"{file_size / (1024 * 1024 * 1024):.1f} GB"
 
     @staticmethod
     def format_speaker_name(speaker: Speaker) -> str:

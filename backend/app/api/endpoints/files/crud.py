@@ -46,6 +46,7 @@ def get_media_file_by_uuid(
     is_admin: bool = False,
     *,
     organization_id: OrgScope = UNSCOPED,
+    min_permission: str = "viewer",
 ) -> MediaFile:
     """
     Get a media file by UUID and user ID.
@@ -58,6 +59,12 @@ def get_media_file_by_uuid(
         organization_id: Active org id, None for personal, or UNSCOPED (default,
             legacy = no gate). Threaded from ``ctx.org_id`` by request handlers so
             cross-tenant files 404/403 (default-deny).
+        min_permission: Minimum sharing permission level required on the sharing
+            path ("viewer", "editor", or "owner"; see
+            ``PermissionService.PERMISSION_LEVELS``). Defaults to "viewer",
+            preserving prior behavior for read-only call sites. Mutating
+            endpoints should pass ``min_permission="editor"``. Does not affect
+            the admin bypass or direct-ownership fast path.
 
     Returns:
         MediaFile object
@@ -72,7 +79,12 @@ def get_media_file_by_uuid(
         return get_file_by_uuid(db, file_uuid)
     else:
         return get_file_by_uuid_with_permission(
-            db, file_uuid, user_id, is_admin=is_admin, organization_id=organization_id
+            db,
+            file_uuid,
+            user_id,
+            is_admin=is_admin,
+            organization_id=organization_id,
+            min_permission=min_permission,
         )
 
 
@@ -860,7 +872,12 @@ def update_media_file(
     """
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=organization_id,
+        min_permission="editor",
     )
     file_id = db_file.id  # Get internal ID for OpenSearch update
 
@@ -946,7 +963,12 @@ def delete_media_file(
 
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=organization_id,
+        min_permission="editor",
     )
     file_id = db_file.id  # Get internal ID for task operations
 
@@ -981,9 +1003,22 @@ def delete_media_file(
 
     # Delegate the actual destroy to the single canonical implementation so the
     # interactive, bulk, retention, and orphan-cleanup paths all behave identically.
+    from app.services.file_cleanup_service import LEGAL_HOLD_ERROR_CODE
     from app.services.file_cleanup_service import purge_media_file
 
     result = purge_media_file(db, db_file)
+    if result.get("refused_legal_hold"):
+        # A legal hold is a deliberate, actionable refusal, not a server fault:
+        # the admin has to release the hold first. Reporting it as a 500 told the
+        # caller the delete had broken rather than that it had been declined.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": LEGAL_HOLD_ERROR_CODE,
+                "message": result.get("error"),
+                "file_id": str(db_file.uuid),
+            },
+        )
     if not result["deleted"]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1016,7 +1051,12 @@ def update_single_transcript_segment(
     # Verify user owns the file or is admin
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=organization_id,
+        min_permission="editor",
     )
     file_id = db_file.id  # Get internal ID for segment query
 
@@ -1036,11 +1076,17 @@ def update_single_transcript_segment(
             status_code=status.HTTP_404_NOT_FOUND, detail="Transcript segment not found"
         )
 
-    # Update fields
+    # Update fields. Explicit allow-list rather than a blind setattr loop over
+    # whatever the schema happens to declare — `TranscriptSegmentUpdate` is the wire
+    # contract, not a safe-to-apply set of ORM attribute names (issue #722: an earlier
+    # blind loop let a client rewrite the segment's primary key, and separately crash
+    # the request by sending a UUID into the integer `speaker_id` FK).
+    mutable_segment_fields = ("start_time", "end_time", "text")
     update_fields = segment_update.model_dump(exclude_unset=True)
     text_changed = "text" in update_fields and update_fields["text"] != segment.text
-    for field, value in update_fields.items():
-        setattr(segment, field, value)
+    for field in mutable_segment_fields:
+        if field in update_fields:
+            setattr(segment, field, update_fields[field])
 
     # If the text changed, re-run redaction detection for THIS segment only so the
     # edited text never bypasses masking. The API process preloads no ML detectors,
@@ -1057,6 +1103,17 @@ def update_single_transcript_segment(
 
     db.commit()
     db.refresh(segment)
+
+    # The text is what search/RAG chunk documents are built from — a stale
+    # index otherwise serves the pre-edit wording indefinitely (issue #666).
+    # Debounced per file so editing many segments in a row queues one
+    # re-index, not one per PUT.
+    if text_changed:
+        from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+        dispatch_transcript_reindex(
+            file_id=db_file.id, file_uuid=str(db_file.uuid), user_id=int(db_file.user_id)
+        )
 
     # Manually construct Pydantic response with all required fields
     return TranscriptSegmentSchema(

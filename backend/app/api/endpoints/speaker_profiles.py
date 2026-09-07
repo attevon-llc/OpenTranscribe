@@ -24,9 +24,10 @@ from app.models.media import SpeakerProfile
 from app.models.user import User
 from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
-from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.error_handlers import ErrorHandler
 from app.utils.uuid_helpers import get_speaker_by_uuid
 from app.utils.uuid_helpers import get_speaker_profile_by_uuid
@@ -264,6 +265,41 @@ def create_speaker_profile(
         raise ErrorHandler.internal_error() from e
 
 
+def _dispatch_profile_rename_propagation(
+    renames: list[tuple[str, str]], new_name: str | None
+) -> None:
+    """Replay a committed profile rename into ``transcript_chunks`` (issue #675).
+
+    Chunk documents snapshot the speaker display name at index time, and nothing
+    repairs a merely-*wrong* value: ``search_index_maintenance`` only finds files
+    with no chunks at all. So a profile rename that skipped this left search facets,
+    chat's speaker-scoped ``terms`` filter and every citation serving the old name
+    until someone happened to reindex the file.
+
+    ``dispatch_speaker_rename`` is the single entry point every rename path uses
+    (``tasks/rename_propagation_task.py``); it coalesces the pairs per file, so one
+    task is queued per affected file however many members that file holds.
+
+    **No ``speaker_id``.** That argument exists so the task can re-resolve the
+    current name at run time and converge when two renames race. A profile-wide
+    rename sweeps many speakers at once and has no single id to re-read — the
+    omission is the documented contract, not an oversight.
+
+    Best-effort by design, and it must stay that way: the rename is already
+    committed, so an unreachable broker must not turn it into a caller-visible
+    failure. The chunk plane then stays stale until the next reindex, which is
+    exactly the pre-#405 behaviour.
+    """
+    if not renames or not new_name:
+        return
+    try:
+        from app.tasks.rename_propagation_task import dispatch_speaker_rename
+
+        dispatch_speaker_rename(renames, new_name)
+    except Exception as exc:  # noqa: BLE001 — a committed rename must not 500 on dispatch
+        logger.warning(f"Could not queue chunk-plane profile rename propagation: {exc}")
+
+
 @router.put("/profiles/{profile_uuid}", response_model=dict[str, Any])
 def update_speaker_profile(
     profile_uuid: str,
@@ -272,7 +308,16 @@ def update_speaker_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Update a speaker profile."""
+    """Update a speaker profile.
+
+    A name change is **not** a metadata edit. ``SpeakerProfile.name`` is not a
+    field of any search document; what the chunk plane carries is each member
+    speaker's canonical label, so renaming the profile re-applies the new name to
+    every member (the invariant every other profile-linking path upholds — see
+    ``services/speaker_profile_rename``) and then replays the change into
+    ``transcript_chunks``. Doing only one half would leave Postgres and the index
+    disagreeing in whichever direction was skipped.
+    """
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
 
@@ -281,6 +326,7 @@ def update_speaker_profile(
         )
 
         profile_id = profile.id
+        renames: list[tuple[str, str]] = []
 
         if name:
             # Check for name conflicts
@@ -301,12 +347,29 @@ def update_speaker_profile(
                 )
 
             profile.name = name  # type: ignore[assignment]
+            # Collected BEFORE the commit below: these are the names the chunk
+            # documents were indexed with, and after the commit Postgres can no
+            # longer say what they were (issue #405).
+            renames = apply_profile_name_to_speakers(
+                db,
+                int(profile_id),
+                name,
+                restrict_to_user_id=None if current_user.is_admin else current_user.id,
+            )
 
         if description is not None:
             profile.description = description  # type: ignore[assignment]
 
         db.commit()
         db.refresh(profile)
+
+        # ─── POST-COMMIT REGION ───────────────────────────────────────────────
+        # The rename is durable from here, so nothing below may raise a 500 that
+        # tells the client it did not happen — the broad handler's `db.rollback()`
+        # cannot undo it. Dispatch AFTER the commit, never before: a rolled-back
+        # rename that reached the index would leave the new name existing only
+        # there (`SpeakerRenameTracker.flush`'s reasoning, same rule).
+        _dispatch_profile_rename_propagation(renames, name)
 
         # updated_at populated by server_default after refresh
         assert profile.updated_at is not None
@@ -323,6 +386,52 @@ def update_speaker_profile(
         logger.exception(f"Error updating speaker profile: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e
+
+
+def _queue_retroactive_matching_after_assignment(
+    *,
+    speaker_uuid: str,
+    user_id: int,
+    speaker_id: int,
+    old_profile_id: int | None,
+    new_profile_id: int,
+    media_file_id: int,
+) -> None:
+    """Re-score the library once a speaker has been attached to a profile.
+
+    A ``SpeakerProfile`` has no voiceprint until a speaker is attached, so this
+    assignment is the moment the profile first becomes matchable. This endpoint
+    queued nothing at all, so every other recording of that voice — including the
+    other clusters of it in the same file — stayed unmatched with an empty Inbox.
+
+    ``display_name_changed=False`` is load-bearing: it routes the task to the
+    profile-change branch (``_should_rescore_after_profile_change``) rather than
+    the labeling workflow, which would re-run profile auto-creation over an
+    assignment the user just made explicitly.
+
+    Fail-open: the assignment is already committed by the time this runs, so a
+    broker error must not report the assignment as failed.
+    """
+    try:
+        process_speaker_update_background.delay(
+            speaker_uuid=speaker_uuid,
+            user_id=user_id,
+            display_name="",
+            speaker_id=speaker_id,
+            old_profile_id=old_profile_id,
+            new_profile_id=new_profile_id,
+            was_auto_labeled=False,
+            display_name_changed=False,
+            media_file_id=media_file_id,
+        )
+    except Exception:
+        logger.exception(
+            "Speaker %s was assigned to profile %s (COMMITTED) but retroactive "
+            "matching could not be queued. Cross-recording suggestions for this "
+            "profile will be missing until another speaker update runs.",
+            speaker_id,
+            new_profile_id,
+        )
 
 
 @router.post("/speakers/{speaker_uuid}/assign-profile", response_model=dict[str, Any])
@@ -347,6 +456,10 @@ def assign_speaker_to_profile(
         if not file_perm:
             raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
         speaker_id = speaker.id
+        # Read before the assignment writes over it — the task's re-score gate
+        # compares old against new to tell an attach from a no-op.
+        prior_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+        media_file_id = int(speaker.media_file_id)
 
         # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
@@ -355,29 +468,61 @@ def assign_speaker_to_profile(
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 
-        # Initialize services
-        embedding_service = SpeakerEmbeddingService()
-        matching_service = SpeakerMatchingService(db, embedding_service)
+        # assign_speaker_to_profile is a DB write (updates the speaker row, commits, then
+        # flushes the rename tracker) — never construct SpeakerEmbeddingService here: it
+        # imports pyannote and loads the embedding model, which the API/CI image doesn't
+        # ship (→ 500 on every call) and which would load a full GPU model per request even
+        # where it does, despite assign_speaker_to_profile never touching
+        # self.embedding_service at all. Same pattern as get_speaker_occurrences below.
+        matching_service = SpeakerMatchingService(db, None)
 
         # Assign speaker to profile
         updated_speaker = matching_service.assign_speaker_to_profile(
             int(speaker_id), int(profile_id), confidence
         )
 
-        # Update collections in OpenSearch
-        # For now, we'll use a default collection (could be expanded)
-        update_speaker_collections(str(speaker.uuid), int(profile_id), str(profile.uuid), [])
-
-        db.commit()
-
-        return {
-            "speaker_id": str(speaker.uuid),
-            "profile_id": str(profile.uuid),
-            "profile_name": profile.name,
-            "confidence": confidence,
-            "verified": updated_speaker.verified,
-            "status": "assigned",
-        }
+        # ─── POST-COMMIT REGION ───────────────────────────────────────────────
+        # assign_speaker_to_profile commits (72d34861: the rename tracker must only
+        # reach the chunk plane after the DB write is durable). From here on the
+        # except block's `db.rollback()`-adjacent handling below CANNOT undo the
+        # assignment, so nothing in this region may raise a 500 that tells the
+        # client it did not happen. update_speaker_collections is itself fail-open
+        # (it logs and returns on any OpenSearch error), so the only way to raise
+        # here is a DB read for an expired ORM attribute — which is exactly the
+        # case this guard covers (issue #620 item 8).
+        try:
+            speaker_uuid_str = str(speaker.uuid)
+            profile_uuid_str = str(profile.uuid)
+            response: dict[str, Any] = {
+                "speaker_id": speaker_uuid_str,
+                "profile_id": profile_uuid_str,
+                "profile_name": profile.name,
+                "confidence": confidence,
+                "verified": bool(updated_speaker.verified),
+                "status": "assigned",
+            }
+            # Update collections in OpenSearch
+            # For now, we'll use a default collection (could be expanded)
+            update_speaker_collections(speaker_uuid_str, int(profile_id), profile_uuid_str, [])
+            _queue_retroactive_matching_after_assignment(
+                speaker_uuid=speaker_uuid_str,
+                user_id=int(current_user.id),
+                speaker_id=int(speaker_id),
+                old_profile_id=prior_profile_id,
+                new_profile_id=int(profile_id),
+                media_file_id=int(media_file_id),
+            )
+        except Exception:
+            logger.exception(
+                "Speaker %s was assigned to profile %s and the write is COMMITTED, but "
+                "building the response / updating the OpenSearch speaker doc failed. "
+                "Reporting success: the durable state is correct; re-run a speaker "
+                "reindex if the search plane looks stale.",
+                speaker_id,
+                profile_id,
+            )
+            return {"status": "assigned", "profile_id": str(profile_uuid)}
+        return response
 
     except HTTPException:
         raise

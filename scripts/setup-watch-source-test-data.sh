@@ -79,7 +79,8 @@ if touch -d "90 days ago" "$TARGET_DIR/old_recording.mp4" 2>/dev/null; then
 else
   warn "Could not backdate old_recording.mp4 (touch -d unsupported)"
 fi
-chown -R 1000:1000 "$TARGET_DIR" 2>/dev/null || true
+# appuser in the backend image is uid 1000 / gid 999, not 1000:1000 (issue #580).
+chown -R "${CONTAINER_UID_GID:-1000:999}" "$TARGET_DIR" 2>/dev/null || true
 success "Local folder seeded"
 
 # ---- MinIO S3 bucket (optional) ----

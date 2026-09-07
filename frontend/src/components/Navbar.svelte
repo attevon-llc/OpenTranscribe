@@ -13,8 +13,8 @@
   import { isCloudEdition } from "$lib/edition";
   import { refreshUsage, refreshBilling } from "$lib/cloud";
 
-  // Import the centralized notification store
-  import { showNotificationsPanel, toggleNotificationsPanel, notifications } from '../stores/notifications';
+  // Import the centralized notification panel store
+  import { showNotificationsPanel, toggleNotificationsPanel } from '../stores/notificationsPanel';
   import { unreadCount } from '../stores/websocket';
 
   // Import recording store
@@ -673,7 +673,7 @@
 
   .tab-button:hover {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .tab-button.active {
@@ -689,7 +689,7 @@
     transform: translateX(-50%);
     width: calc(100% - 1rem);
     height: 3px;
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     border-radius: 2px;
   }
 
@@ -720,11 +720,11 @@
 
   .nav-link:hover {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .nav-link.active {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
   }
 
@@ -1321,14 +1321,14 @@
   .control-btn:hover {
     background: var(--hover-color);
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     transform: scale(1.02);
   }
 
   .pause-btn:hover {
     background: rgba(59, 130, 246, 0.1);
     border-color: #3b82f6;
-    color: #3b82f6;
+    color: var(--primary-on-surface);
   }
 
   .stop-btn:hover {
@@ -1352,11 +1352,11 @@
   .modal-btn:hover {
     background: var(--hover-color);
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .modal-btn:hover svg {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     stroke: var(--primary-color);
     opacity: 1;
   }

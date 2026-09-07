@@ -16,7 +16,9 @@ source "${SCRIPT_DIR}/offline-common.sh"
 
 # Load .env file if it exists and HUGGINGFACE_TOKEN is not already set
 if [ -z "$HUGGINGFACE_TOKEN" ] && [ -f .env ]; then
-    HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" .env | cut -d'=' -f2)
+    # python-dotenv, not grep/cut (issue #590) -- see gpu-scale-smoke.sh's read_env
+    # for the inline-comment corruption class this replaces.
+    HUGGINGFACE_TOKEN=$(python3 "${SCRIPT_DIR}/lib/env_reader.py" .env HUGGINGFACE_TOKEN)
     export HUGGINGFACE_TOKEN
 fi
 
@@ -126,10 +128,17 @@ extract_docker_images() {
     mapfile -t INFRASTRUCTURE_IMAGES < <(extract_infrastructure_images)
 
     # Add production application images (these use 'build:' in dev, pre-built images in prod)
+    #
+    # OT_IMAGE_TAG (issue #781/N7), unset defaults to "latest" — today's behaviour, unchanged.
+    # Without it, a developer building a package for v0.5.0 after v0.6.0 has shipped has no
+    # way to pin WHICH version gets pulled/saved here: ":latest" on Docker Hub always means
+    # "newest", never "the version I'm packaging". copy_configuration()'s image-sync loop
+    # rewrites the packaged docker-compose.offline.yml to match this same tag, so what gets
+    # `docker load`ed and what the compose file asks for stay consistent.
     APPLICATION_IMAGES=(
-        "davidamacey/opentranscribe-backend:latest"
-        "davidamacey/opentranscribe-frontend:latest"
-        "davidamacey/opentranscribe-docs:latest"
+        "davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}"
+        "davidamacey/opentranscribe-frontend:${OT_IMAGE_TAG:-latest}"
+        "davidamacey/opentranscribe-docs:${OT_IMAGE_TAG:-latest}"
     )
 
     # Combine all images
@@ -173,6 +182,11 @@ setup_directories() {
     mkdir -p "${PACKAGE_DIR}/models/nltk_data"
     mkdir -p "${PACKAGE_DIR}/models/sentence-transformers"
     mkdir -p "${PACKAGE_DIR}/models/opensearch-ml"
+    # Native diarizer (diar-server) ONNX/PLDA export. An air-gapped install cannot
+    # provision this itself (no network to HuggingFace), so the tarball must carry it —
+    # same reasoning as every other model group here, just mounted at /models rather
+    # than under a ~/.cache/* subdirectory.
+    mkdir -p "${PACKAGE_DIR}/models/diar-native"
     mkdir -p "${PACKAGE_DIR}/config"
     mkdir -p "${PACKAGE_DIR}/database"
     mkdir -p "${PACKAGE_DIR}/scripts"
@@ -219,6 +233,7 @@ download_models() {
     mkdir -p "${temp_model_cache}/nltk_data"
     mkdir -p "${temp_model_cache}/sentence-transformers"
     mkdir -p "${temp_model_cache}/opensearch-ml"
+    mkdir -p "${temp_model_cache}/diar-native"
 
     # Run backend container with model download script
     print_info "Running model download in Docker container..."
@@ -239,7 +254,7 @@ download_models() {
         $gpu_args \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${WHISPER_MODEL:-large-v3-turbo}" \
-        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
+        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}" \
         -e USE_GPU="${USE_GPU:-true}" \
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
         -e OPENSEARCH_MODELS="${OPENSEARCH_MODELS:-}" \
@@ -249,6 +264,7 @@ download_models() {
         -v "${temp_model_cache}/nltk_data:/home/appuser/.cache/nltk_data" \
         -v "${temp_model_cache}/sentence-transformers:/home/appuser/.cache/sentence-transformers" \
         -v "${temp_model_cache}/opensearch-ml:/home/appuser/.cache/opensearch-ml" \
+        -v "${temp_model_cache}/diar-native:/models" \
         -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
         davidamacey/opentranscribe-backend:latest \
         python /app/download-models.py
@@ -290,6 +306,14 @@ download_models() {
         print_warning "No OpenSearch neural models found to copy"
     fi
 
+    if [ -d "${temp_model_cache}/diar-native" ] && [ "$(ls -A ${temp_model_cache}/diar-native 2>/dev/null)" ]; then
+        cp -r "${temp_model_cache}/diar-native"/* "${PACKAGE_DIR}/models/diar-native/"
+        print_info "  Copied native diarizer (diar-server) export"
+    else
+        print_warning "No native diarizer export found to copy — DIAR_NATIVE_MODEL_SET may be"
+        print_warning "unset, HUGGINGFACE_TOKEN may lack access, or this backend image predates it"
+    fi
+
     # Check if model manifest was created (it's inside the huggingface cache dir)
     if [ -f "${temp_model_cache}/huggingface/model_manifest.json" ]; then
         cp "${temp_model_cache}/huggingface/model_manifest.json" "${PACKAGE_DIR}/models/"
@@ -321,6 +345,22 @@ copy_configuration() {
     print_info "Copying docker-compose.gpu-scale.yml (multi-GPU scaling)..."
     cp docker-compose.gpu-scale.yml "${PACKAGE_DIR}/config/docker-compose.gpu-scale.yml"
 
+    # Copy docker-compose.diar-native.yml so an air-gapped install can run the native
+    # diarization sidecar entirely from what shipped in the package -- it has no network
+    # to fetch this overlay later. opentr-offline.sh loads it only once weights are
+    # present under models/diar-native/ (populated above by download_models()).
+    print_info "Copying docker-compose.diar-native.yml (native diarization sidecar)..."
+    cp docker-compose.diar-native.yml "${PACKAGE_DIR}/config/docker-compose.diar-native.yml"
+    # The GPU half is a separate file so the base overlay stays loadable on a CPU-only
+    # host (#660). Both must ship: with only the first, an air-gapped GPU install gets a
+    # CPU-bound sidecar that produces identical output, so the mistake never surfaces.
+    # Copied unconditionally like every other overlay above — it is non-optional in
+    # release-manifest.txt, and an `[ -f ]` guard here reads as hand-built chain
+    # selection to test_compose_bringup_delegation, which is a real distinction worth
+    # keeping sharp: this function COPIES files into a package, it never selects a chain.
+    print_info "Copying docker-compose.diar-native-gpu.yml (sidecar GPU reservation)..."
+    cp docker-compose.diar-native-gpu.yml "${PACKAGE_DIR}/config/docker-compose.diar-native-gpu.yml"
+
     # Sync infrastructure image versions from docker-compose.yml to docker-compose.offline.yml
     print_info "Syncing infrastructure image versions to docker-compose.offline.yml..."
 
@@ -340,6 +380,21 @@ copy_configuration() {
     done
 
     print_success "Infrastructure images synced (base + offline override pattern)"
+
+    # Sync application image versions too (issue #781/N7). docker-compose.offline.yml's own
+    # header explains why the file in THIS REPO stays literal `:latest`: build-offline-package
+    # `docker save`s and install-offline-package.sh `docker load`s back under the SAME tags,
+    # so `:latest` is what an air-gapped install actually has on disk when OT_IMAGE_TAG is
+    # unset. But when a developer DOES set OT_IMAGE_TAG (to pin which version got pulled and
+    # saved above), the PACKAGED copy must ask for that same tag — otherwise the package loads
+    # image `davidamacey/opentranscribe-backend:v0.5.0` and then every service definition in
+    # its own docker-compose.offline.yml still asks for `:latest`, which was never loaded, and
+    # `pull_policy: never` means compose has nowhere left to get it from.
+    for repo in opentranscribe-backend opentranscribe-frontend opentranscribe-docs; do
+        sed -i "s|davidamacey/${repo}:latest|davidamacey/${repo}:${OT_IMAGE_TAG:-latest}|g" "$temp_compose"
+    done
+
+    print_success "Application image tags synced to OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}"
 
     # Copy .env.example file (required by installation script)
     print_info "Copying .env.example..."

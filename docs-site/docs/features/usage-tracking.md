@@ -27,7 +27,7 @@ message content or transcript text**:
 
 Records are keyed on the message, so a retry or a replay cannot double-count.
 
-:::note Usage history outlives conversations
+:::note[Usage history outlives conversations]
 Usage records are stored separately from conversations on purpose. If you enable
 chat retention, deleting old conversations does **not** erase your usage history —
 which would otherwise destroy your own accounting the moment you turned retention
@@ -66,7 +66,7 @@ When any model in the window is unpriced, the response sets `cost_incomplete` so
 total is never presented as complete when it isn't. A confident `$0.00` is a worse
 answer than an honest blank.
 
-:::note Amazon Bedrock reports tokens only
+:::note[Amazon Bedrock reports tokens only]
 Bedrock is operated by AWS with its own rate card, separate from Anthropic's
 first-party pricing. Estimating Bedrock spend from Anthropic's published rates
 would produce a confidently wrong number, so OpenTranscribe reports Bedrock usage

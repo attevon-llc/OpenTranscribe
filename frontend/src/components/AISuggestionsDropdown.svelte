@@ -219,16 +219,16 @@
     gap: 4px;
     font-size: 11px;
     font-weight: 500;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .ai-badge svg {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .suggestion-count {
     background: var(--primary-light);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     padding: 2px 6px;
     border-radius: 10px;
     font-size: 10px;
@@ -303,7 +303,7 @@
   }
 
   .btn-save {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
@@ -392,7 +392,7 @@
 
   .chip-add:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.1);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .chip-edit:hover:not(:disabled) {

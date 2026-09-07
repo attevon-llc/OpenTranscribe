@@ -50,6 +50,11 @@
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Reserve the scrollbar's width whether or not it's needed. Without this, a page
+     whose content height crosses the viewport threshold on tab/content switches
+     (e.g. the Architecture page's variable-height diagrams) visibly shifts left/
+     right as the scrollbar appears and disappears. */
+  scrollbar-gutter: stable;
 }
 
 .navbar {

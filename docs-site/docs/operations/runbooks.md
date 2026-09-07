@@ -574,7 +574,7 @@ alembic downgrade <revision_id>
 - Test migrations with `./opentr.sh reset dev` before deploying
 - Back up the database before applying new migrations in production:
   ```bash
-  ./opentr.sh backup
+  ./opentranscribe.sh backup
   ```
 
 ---
@@ -664,7 +664,7 @@ services:
 
 1. Back up the database first:
    ```bash
-   ./opentr.sh backup
+   ./opentranscribe.sh backup
    ```
 2. Update the password in PostgreSQL:
    ```bash

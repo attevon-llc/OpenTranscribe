@@ -92,22 +92,104 @@ describe('GalleryActionButtons — bulk tag entries', () => {
 
     // The modal does both add and remove (and, for a single file, the full chip
     // editor), so three doors to one dialog were three things to explain.
-    expect(screen.getByRole('button', { name: 'Tags' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add or Edit Tags' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add Tag' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Remove Tag' })).toBeNull();
   });
 
-  it('opens tagging with no selection, exactly like Add to collection', async () => {
-    // Both attach metadata to files, so they behave the same: neither is gated
-    // on a selection. With none, the manager opens instead of bulk apply.
+  it('names the tags entry for what it does to the selection', async () => {
+    // A bare "Tags" beside "Add to Collection" did not say whether it added,
+    // removed, or opened a manager. Both entries now describe the action they
+    // perform on the selected files.
     render(GalleryActionButtons, { props: { files: [] } });
     await openOrganizeMenu();
 
-    const tags = screen.getByRole('button', { name: 'Tags' });
-    expect(tags).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add or Edit Tags' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tags' })).toBeNull();
+  });
+
+  it('applies tags to the selection and closes the menu', async () => {
+    select(['a']);
+    render(GalleryActionButtons, {
+      props: { files: [{ uuid: 'a', status: 'completed' }] as never },
+    });
+    await openOrganizeMenu();
+
+    const tags = screen.getByRole('button', { name: 'Add or Edit Tags' });
     await fireEvent.click(tags);
     expect(gallery.triggerTags).toHaveBeenCalledTimes(1);
     // Choosing an entry closes the menu, like the neighbouring entries.
-    expect(screen.queryByRole('button', { name: 'Tags' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add or Edit Tags' })).toBeNull();
+  });
+
+  it('disables both metadata entries when nothing is selected', async () => {
+    // They act on the selection, so offering them with none invites the user to
+    // "add to" or "edit" nothing. The toolbar's own Collections and Tags
+    // buttons still open the managers, so nothing becomes unreachable.
+    render(GalleryActionButtons, { props: { files: [] } });
+    await openOrganizeMenu();
+
+    expect(screen.getByRole('button', { name: 'Add to Collection' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add or Edit Tags' })).toBeDisabled();
+  });
+
+  it('enables them once a file is selected', async () => {
+    select(['a']);
+    render(GalleryActionButtons, {
+      props: { files: [{ uuid: 'a', status: 'completed' }] as never },
+    });
+    await openOrganizeMenu();
+
+    expect(screen.getByRole('button', { name: 'Add to Collection' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add or Edit Tags' })).not.toBeDisabled();
+  });
+});
+
+describe('GalleryActionButtons — actions that need a selection are disabled without one', () => {
+  const completed = [{ uuid: 'a', status: 'completed' }] as never;
+
+  it('disables every Organize export entry when nothing is selected', async () => {
+    render(GalleryActionButtons, { props: { files: [] } });
+    await openOrganizeMenu();
+
+    // Export writes a transcript for each selected file. With none selected it
+    // produced an empty download and no error — the Process menu already gates
+    // its entries on the selection, so this read as one toolbar with two rules.
+    for (const name of ['Export SRT', 'Export WebVTT', 'Export Text']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+    }
+  });
+
+  it('enables the export entries once a completed file is selected', async () => {
+    // The control: same markup, same menu, opposite outcome driven only by the
+    // selection — so the assertion above cannot be passing on a permanently
+    // disabled button.
+    select(['a']);
+    render(GalleryActionButtons, { props: { files: completed } });
+    await openOrganizeMenu();
+
+    for (const name of ['Export SRT', 'Export WebVTT', 'Export Text']) {
+      expect(screen.getByRole('button', { name })).not.toBeDisabled();
+    }
+  });
+
+  it('leaves export disabled when the selected file has no transcript yet', async () => {
+    select(['b']);
+    render(GalleryActionButtons, {
+      props: { files: [{ uuid: 'b', status: 'processing' }] as never },
+    });
+    await openOrganizeMenu();
+
+    expect(screen.getByRole('button', { name: 'Export SRT' })).toBeDisabled();
+  });
+
+  it('disables Delete with no selection and enables it with one', async () => {
+    const { unmount } = render(GalleryActionButtons, { props: { files: [] } });
+    expect(screen.getByTitle('Permanently delete the selected files')).toBeDisabled();
+    unmount();
+
+    select(['a']);
+    render(GalleryActionButtons, { props: { files: completed } });
+    expect(screen.getByTitle('Permanently delete the selected files')).not.toBeDisabled();
   });
 });

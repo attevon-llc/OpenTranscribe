@@ -62,18 +62,41 @@ class _EmptyQuery:
         return []
 
 
+class _EmptyExecuteResult:
+    """Stand-in for the ``Result`` of ``enforce_session_ceiling``'s raw UPDATE.
+
+    Always reports zero rows revoked — nothing in this module exercises the
+    ceiling's actual eviction behaviour (that lives in
+    ``tests/unit/test_session_ceiling.py`` against a real Postgres session);
+    this fake only needs to make ``create_refresh_token``'s post-insert
+    enforcement call not blow up.
+    """
+
+    def fetchall(self):
+        return []
+
+
 class _FakeDB:
     """Minimal ``Session`` stand-in that records what was added."""
 
     def __init__(self):
         self.added: list = []
         self.commits = 0
+        self.flushes = 0
 
     def query(self, model):
         return _EmptyQuery()
 
     def add(self, obj):
         self.added.append(obj)
+
+    def flush(self):
+        # Real Session.flush() assigns the PK; nothing here reads row.id before
+        # `refresh()` does the same, so this only needs to count the call.
+        self.flushes += 1
+
+    def execute(self, *args, **kwargs):
+        return _EmptyExecuteResult()
 
     def commit(self):
         self.commits += 1
@@ -298,6 +321,7 @@ class TestLegacyRowsSurviveTheUpgrade:
         """The grandfathering is bounded: the successor row carries real caps."""
         monkeypatch.setattr(service, "revoke_token", lambda *a, **k: True)
         legacy = _session_row(last_activity_at=None, absolute_expires_at=None)
+        before = datetime.now(UTC)
 
         _token, new_row = service.rotate_refresh_token(
             db=_FakeDB(),
@@ -308,8 +332,12 @@ class TestLegacyRowsSurviveTheUpgrade:
             role="user",
         )
 
-        assert new_row.absolute_expires_at is not None
-        assert new_row.last_activity_at is not None
+        # "Not None" would also be satisfied by a ceiling of 1970 or of ten years out.
+        # The bound is what makes the grandfathering *bounded*: the successor carries
+        # the deployment's real 8-hour cap, computed from now.
+        assert new_row.absolute_expires_at >= before + timedelta(minutes=479)
+        assert new_row.absolute_expires_at <= datetime.now(UTC) + timedelta(minutes=480)
+        assert datetime.now(UTC) - new_row.last_activity_at < timedelta(seconds=5)
 
 
 # ── the deleted implementation stays deleted ─────────────────────────────────────
@@ -358,7 +386,11 @@ class TestTimeoutsAreDatabaseBacked:
             staticmethod(lambda db, key: stored.get(key)),
         )
 
-        assert token_service_module._session_lifetime_minutes(_FakeDB()) == (5, 60)
+        assert token_service_module._session_lifetime_minutes(_FakeDB()) == (
+            5,
+            60,
+            settings.MAX_CONCURRENT_SESSIONS,
+        )
 
     def test_an_unreadable_configuration_degrades_to_the_environment(self, monkeypatch):
         """A config read must not be able to break token issue or verification."""
@@ -367,4 +399,8 @@ class TestTimeoutsAreDatabaseBacked:
 
         broken = SimpleNamespace()  # no .query at all
 
-        assert token_service_module._session_lifetime_minutes(broken) == (15, 480)
+        assert token_service_module._session_lifetime_minutes(broken) == (
+            15,
+            480,
+            settings.MAX_CONCURRENT_SESSIONS,
+        )

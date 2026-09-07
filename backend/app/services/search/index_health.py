@@ -204,8 +204,12 @@ def rebuild_chunks_index() -> bool:
             return False
 
         result = dispatch_reindex_for_every_owner(triggered_by=admin_ids[0])
+        # `reindex_users`, not `dispatched` — the helper has never returned a
+        # `dispatched` key, so `.get(..., 0)` silently reported "0 owners" on
+        # every repair, however many it actually fanned out to (issue #692).
+        # A direct subscript would have raised the first time this ran.
         logger.warning(
-            f"Dispatched repair reindex for {index_name}: {result.get('dispatched', 0)} owners"
+            f"Dispatched repair reindex for {index_name}: {result.get('reindex_users', 0)} owners"
         )
 
     # The index is legitimately EMPTY until the coordinators finish, so there is

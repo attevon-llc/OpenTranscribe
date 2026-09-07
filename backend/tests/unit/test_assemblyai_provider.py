@@ -243,3 +243,55 @@ def test_vocabulary_truncation_does_cap_a_longer_list_by_count(tmp_path):
     word_boost = call_kwargs["config"].word_boost
     assert len(word_boost) == 1000
     assert word_boost == vocabulary[:1000]
+
+
+# ── Rate-limit taxonomy (issue Lane 5) ────────────────────────────────────────
+
+
+class _FakeSDKError(Exception):
+    """Stand-in for a real vendor SDK exception carrying a `.status_code`.
+
+    Real SDK exception classes declare this attribute themselves; plain ``Exception``
+    does not, so it is declared here purely so the assignment below type-checks.
+    """
+
+    status_code: int
+
+
+def test_429_status_code_is_classified_as_asr_rate_limited(tmp_path):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"RIFF....WAVEfmt ")
+    provider = _provider()
+
+    with patch("assemblyai.Transcriber") as mock_cls:
+        rate_limit_exc = _FakeSDKError("too many requests")
+        rate_limit_exc.status_code = 429  # matches the SDK's exception shape
+        mock_cls.return_value.transcribe.side_effect = rate_limit_exc
+
+        with pytest.raises(ASRRateLimitedError) as excinfo:
+            provider.transcribe(str(audio_path), ASRConfig())
+
+    assert excinfo.value.provider == "assemblyai"
+
+
+def test_non_429_error_stays_a_plain_runtime_error(tmp_path):
+    """Negative control: an error with no rate-limit status must NOT be classified as
+    retryable.
+    """
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"RIFF....WAVEfmt ")
+    provider = _provider()
+
+    with patch("assemblyai.Transcriber") as mock_cls:
+        server_error = _FakeSDKError("internal error")
+        server_error.status_code = 500
+        mock_cls.return_value.transcribe.side_effect = server_error
+
+        with pytest.raises(RuntimeError, match="AssemblyAI transcription failed") as excinfo:
+            provider.transcribe(str(audio_path), ASRConfig())
+
+    assert not isinstance(excinfo.value, ASRRateLimitedError)

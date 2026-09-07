@@ -41,6 +41,7 @@ class TaskStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 class ReprocessRequest(BaseModel):
@@ -246,10 +247,6 @@ class SpeakerBase(BaseModel):
     verified: bool = False
 
 
-class SpeakerCreate(SpeakerBase):
-    embedding_vector: list[float] | None = None
-
-
 class SpeakerUpdate(BaseModel):
     # Server-side enforcement of the speaker-label length cap (the frontend also
     # validates display_name <= 100 chars; the backend is the system of record).
@@ -294,15 +291,6 @@ class SpeakerProfileBase(BaseModel):
     description: str | None = None
 
 
-class SpeakerProfileCreate(SpeakerProfileBase):
-    pass
-
-
-class SpeakerProfileUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-
-
 class SpeakerProfile(SpeakerProfileBase, UUIDBaseSchema):
     """Speaker profile with UUID as public identifier"""
 
@@ -320,16 +308,6 @@ class SpeakerCollectionBase(BaseModel):
     name: str
     description: str | None = None
     is_public: bool = False
-
-
-class SpeakerCollectionCreate(SpeakerCollectionBase):
-    pass
-
-
-class SpeakerCollectionUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    is_public: bool | None = None
 
 
 class SpeakerCollection(SpeakerCollectionBase, UUIDBaseSchema):
@@ -350,16 +328,22 @@ class TranscriptSegmentBase(BaseModel):
     overlap_confidence: float | None = None
 
 
-class TranscriptSegmentCreate(TranscriptSegmentBase):
-    pass  # media_file_id will be from URL path
-
-
 class TranscriptSegmentUpdate(BaseModel):
-    id: int | None = None  # Optional since segment is identified by UUID in URL
+    """Fields a client may edit via ``PUT .../transcript/segments/{segment_uuid}``.
+
+    Deliberately excludes ``id`` (the segment is identified by the path UUID, and the
+    primary key must never be client-writable) and ``speaker_id`` (speaker reassignment
+    has its own endpoint, ``PUT /transcripts/segments/{uuid}/speaker``, which resolves
+    the UUID to the ORM's integer FK correctly — see issue #722). ``extra="forbid"`` so a
+    client sending either (or any other unsupported field) gets a 422, not a silently
+    dropped write.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     start_time: float | None = None
     end_time: float | None = None
     text: str | None = None
-    speaker_id: UUID | None = None
 
 
 class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):
@@ -445,14 +429,6 @@ class TranscriptSegmentsPage(BaseModel):
 
 class MediaFileBase(BaseModel):
     filename: str
-
-
-class MediaFileCreate(MediaFileBase):
-    storage_path: str
-    duration: float | None = None
-    language: str | None = None
-    file_hash: str | None = None
-    thumbnail_path: str | None = None
 
 
 class DerivedCandidate(BaseModel):
@@ -1061,11 +1037,6 @@ class TaskBase(BaseModel):
     media_file_id: UUID | None = None
 
 
-class TaskCreate(TaskBase):
-    id: str  # Celery task ID (string, not UUID)
-    user_id: UUID
-
-
 class TaskUpdate(BaseModel):
     status: str | None = None
     progress: float | None = None
@@ -1140,10 +1111,6 @@ class AnalyticsBase(BaseModel):
     overall_analytics: OverallAnalytics | None = None
 
 
-class AnalyticsCreate(AnalyticsBase):
-    pass  # media_file_id will be from context
-
-
 class Analytics(AnalyticsBase, UUIDBaseSchema):
     """Analytics with UUID as public identifier"""
 
@@ -1212,35 +1179,6 @@ class VideoFormat(StrEnum):
     MP4 = "mp4"
     MKV = "mkv"
     WEBM = "webm"
-
-
-class SubtitleRequest(BaseModel):
-    """Request schema for generating subtitles."""
-
-    include_speakers: bool = Field(True, description="Include speaker labels in subtitles")
-    format: SubtitleFormat = Field(SubtitleFormat.SRT, description="Subtitle format")
-
-
-class VideoWithSubtitlesRequest(BaseModel):
-    """Request schema for video with embedded subtitles."""
-
-    output_format: VideoFormat | None = Field(
-        None, description="Output video format (auto-detect if not specified)"
-    )
-    include_speakers: bool = Field(True, description="Include speaker labels in subtitles")
-    force_regenerate: bool = Field(
-        False, description="Force regeneration even if cached version exists"
-    )
-
-
-class VideoWithSubtitlesResponse(BaseModel):
-    """Response schema for video with embedded subtitles."""
-
-    download_url: str = Field(..., description="URL to download the video with embedded subtitles")
-    format: str = Field(..., description="Video format")
-    cache_key: str = Field(..., description="Cache key for the processed video")
-    expires_at: datetime = Field(..., description="When the download URL expires")
-    file_size: int | None = Field(None, description="Size of the processed video file")
 
 
 class SubtitleValidationResult(BaseModel):

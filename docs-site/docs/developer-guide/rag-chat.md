@@ -258,7 +258,7 @@ Scenario models select canned behavior so you can drive the app's real error han
 | `mock-error` | Simulated provider error |
 | `mock-slow` | Slow streaming, for testing cancel / stop-generating behavior |
 
-:::warning Never start it as a bare host process
+:::warning[Never start it as a bare host process]
 The mock server binds port 5199. Running it outside the container blocks that process instead
 of serving requests. Always start it via `--with-mock-llm` so it runs on the app's Docker
 network.

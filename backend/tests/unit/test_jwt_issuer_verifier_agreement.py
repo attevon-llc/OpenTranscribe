@@ -84,18 +84,33 @@ CONFIGURATIONS = [
 ]
 
 
+class _FakeExecuteResult:
+    """Reports zero rows, so the post-insert ceiling UPDATE finds nothing to revoke."""
+
+    def fetchall(self):
+        return []
+
+
 class _FakeSession:
     """The narrowest stand-in that ``create_refresh_token`` actually uses.
 
     Deliberately not the ``db_session`` fixture: refresh-token *signing* is the
     defect under test and it has nothing to do with the database, so this test must
-    not be one of the ~5,000 that queue on the shared Postgres. ``add``/``commit``/
-    ``refresh`` are the whole surface; ``get_auth_settings`` raises on this object
-    and the issuer's own ``except Exception`` degrades to the ``.env`` values, which
-    is the documented behaviour (``_session_lifetime_minutes``).
+    not be one of the ~5,000 that queue on the shared Postgres. ``add``/``flush``/
+    ``execute``/``commit``/``refresh`` are the whole surface; ``get_auth_settings``
+    raises on this object and the issuer's own ``except Exception`` degrades to the
+    ``.env`` values, which is the documented behaviour (``_session_lifetime_minutes``).
+    ``flush``/``execute`` exist only so ``create_refresh_token``'s post-insert
+    concurrent-session-ceiling enforcement (issue #632) has somewhere to land —
+    that enforcement is itself covered in ``test_session_ceiling.py``, not here.
     """
 
     def add(self, _obj) -> None: ...
+
+    def flush(self) -> None: ...
+
+    def execute(self, *_args, **_kwargs) -> _FakeExecuteResult:
+        return _FakeExecuteResult()
 
     def commit(self) -> None: ...
 

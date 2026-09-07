@@ -53,6 +53,13 @@ describe('getProviderDefaults', () => {
   it('falls back to an empty object for an unknown provider', () => {
     expect(LLMSettingsApi.getProviderDefaults('not-a-real-provider')).toEqual({});
   });
+
+  it('returns bedrock defaults with no base_url (SDK call, not an HTTP endpoint)', () => {
+    const defaults = LLMSettingsApi.getProviderDefaults('bedrock');
+    expect(defaults.provider).toBe('bedrock');
+    expect(defaults.model_name).toBeTruthy();
+    expect(defaults.base_url).toBeUndefined();
+  });
 });
 
 describe('getProviderDisplayName', () => {
@@ -67,6 +74,10 @@ describe('getProviderDisplayName', () => {
 
   it('falls back to echoing the raw provider string when unrecognized', () => {
     expect(LLMSettingsApi.getProviderDisplayName('mystery-provider')).toBe('mystery-provider');
+  });
+
+  it('maps bedrock to its display name', () => {
+    expect(LLMSettingsApi.getProviderDisplayName('bedrock')).toBe('AWS Bedrock');
   });
 });
 

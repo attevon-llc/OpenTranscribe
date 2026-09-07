@@ -67,7 +67,7 @@
     border: 1px solid var(--border-color);
   }
 
-  :global(.dark) .toast {
+  :global([data-theme='dark']) .toast {
     background: var(--background-color);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     border-color: var(--border-color);
@@ -98,7 +98,7 @@
     min-width: 0;
   }
 
-  :global(.dark) .toast-message {
+  :global([data-theme='dark']) .toast-message {
     color: var(--text-primary);
   }
 
@@ -120,7 +120,7 @@
     color: var(--text-primary);
   }
 
-  :global(.dark) .toast-close:hover {
+  :global([data-theme='dark']) .toast-close:hover {
     background: rgba(255, 255, 255, 0.1);
   }
 </style>

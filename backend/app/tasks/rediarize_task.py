@@ -121,18 +121,31 @@ def _prepare_audio(
     content_type: str,
     filename: str,
     file_uuid: str | None = None,
-) -> str:
+) -> tuple[str, str | None]:
     """Get a 16 kHz WAV on local disk for diarization.
 
-    Prefers the preprocessed temp WAV staged by the main pipeline (via
-    scratch volume when available, MinIO temp as fallback). When the
-    temp WAV isn't present, falls back to downloading the original from
-    MinIO and re-running the FFmpeg conversion.
+    Returns ``(audio_file_path, temp_dir_to_clean)``. ``temp_dir_to_clean`` is ``None`` when
+    ``audio_file_path`` is the scratch-volume WAV itself (issue #661 E2) — the caller must NOT
+    rmtree that directory, since it is ``pipeline_scratch``'s ``<file_uuid>/`` namespace, still
+    needed by other consumers (speaker_embedding, postprocess) and cleaned up on its own
+    lifetime by ``scratch_volume.cleanup`` elsewhere. It is non-``None`` (and must be rmtree'd
+    by the caller) for every other path: the legacy MinIO-temp download and the from-scratch
+    reconvert-from-original fallback, both of which allocate a throwaway ``tempfile.mkdtemp``.
 
-    Caller is responsible for cleanup of the returned temp directory.
+    Prefers, in order: (1) the scratch-volume WAV already staged by the main pipeline — read
+    directly, no copy, since diarize() can now open a path anywhere under the pipeline_scratch
+    root (issue #661 E2 phase 1.3's containment fix); (2) the preprocessed MinIO-temp WAV; (3)
+    downloading the original from MinIO and re-running the FFmpeg conversion.
     """
     from app.tasks.transcription.audio_processor import get_audio_file_extension
     from app.tasks.transcription.audio_processor import prepare_audio_for_transcription
+    from app.utils import scratch_volume
+
+    if file_uuid:
+        scratch_path = scratch_volume.scratch_audio_path(file_uuid)
+        if scratch_volume.is_scratch_available() and scratch_path.exists():
+            logger.info("rediarize: reusing scratch-volume WAV directly (no copy)")
+            return str(scratch_path), None
 
     temp_dir = tempfile.mkdtemp(prefix="rediarize_")
 
@@ -141,7 +154,7 @@ def _prepare_audio(
             audio_file_path = os.path.join(temp_dir, "audio.wav")
             download_temp_audio(file_uuid, audio_file_path)
             logger.info("rediarize: reusing preprocessed WAV from temp")
-            return audio_file_path
+            return audio_file_path, temp_dir
         except Exception as temp_err:
             logger.warning(
                 f"rediarize: temp WAV fetch failed ({temp_err}); falling back to original"
@@ -155,7 +168,7 @@ def _prepare_audio(
         f.write(file_data.read())
 
     audio_file_path = prepare_audio_for_transcription(temp_file_path, content_type, temp_dir)
-    return audio_file_path
+    return audio_file_path, temp_dir
 
 
 def _run_diarization(
@@ -163,14 +176,20 @@ def _run_diarization(
     min_speakers: int | None,
     max_speakers: int | None,
     num_speakers: int | None,
+    wav_path: str | None = None,
 ):
-    """Run PyAnnote diarization on audio.
+    """Run diarization (native sidecar or in-process PyAnnote fallback) on audio.
+
+    ``wav_path``, when given, is a path the native sidecar can open directly (issue #661) —
+    threaded through ``engine.stages._run_diarize`` so a ``NativeSpeakerDiarizer`` gets it and
+    a plain ``SpeakerDiarizer`` (PyAnnote) never sees the extra kwarg it doesn't accept.
 
     Returns:
         Tuple of (diarize_df, overlap_info, native_embeddings).
     """
     from app.transcription.audio import load_audio
     from app.transcription.config import TranscriptionConfig
+    from app.transcription.engine.stages import _run_diarize
     from app.transcription.model_manager import ModelManager
 
     config = TranscriptionConfig.from_environment(
@@ -183,7 +202,7 @@ def _run_diarization(
     audio = load_audio(audio_file_path)
     manager = ModelManager.get_instance()
     diarizer = manager.get_diarizer(config)
-    diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
+    diarize_df, overlap_info, native_embeddings = _run_diarize(diarizer, audio, wav_path)
 
     return diarize_df, overlap_info, native_embeddings
 
@@ -281,8 +300,9 @@ def rediarize_task(  # noqa: C901
         # Step 2: Download and prepare audio (prefers the preprocessed WAV
         # staged in scratch / MinIO temp — Phase 2 PR #4).
         send_progress_notification(user_id, file_id, 0.15, "Downloading audio")
-        audio_file_path = _prepare_audio(storage_path, content_type, filename, file_uuid=file_uuid)
-        temp_dir = os.path.dirname(audio_file_path)
+        audio_file_path, temp_dir = _prepare_audio(
+            storage_path, content_type, filename, file_uuid=file_uuid
+        )
 
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.25)
@@ -292,7 +312,11 @@ def rediarize_task(  # noqa: C901
         step_start = time.perf_counter()
 
         diarize_df, overlap_info, native_embeddings = _run_diarization(
-            audio_file_path, min_speakers, max_speakers, num_speakers
+            audio_file_path,
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            wav_path=audio_file_path if temp_dir is None else None,
         )
 
         import numpy as np
@@ -444,11 +468,26 @@ def rediarize_task(  # noqa: C901
         except Exception as e:
             logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
 
+        # Rediarization always reassigns which speaker every segment belongs
+        # to, which changes both the chunk plane's speaker snapshot/turn
+        # grouping and the full-document index — so it needs a re-index
+        # UNCONDITIONALLY, not only when a caller happened to also request
+        # the 'search_indexing' stage (issue #666). A rediarize-only run
+        # (e.g. from the reprocess UI with just "Re-diarize" checked) used to
+        # dispatch nothing at all, leaving search/RAG attributing every
+        # segment to its pre-rediarize speaker indefinitely.
+        from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+        dispatch_transcript_reindex(file_id=file_id, file_uuid=file_uuid, user_id=user_id)
+
         # Step 10: Dispatch remaining downstream tasks.
         # Remove speaker_llm — it's chained from detect_speaker_attributes_task
         # to ensure gender/age context is available for LLM identification.
+        # Remove search_indexing — the reindex above already (debounced)
+        # covers it, and dispatching the non-debounced full task again here
+        # would race it and duplicate the work.
         if downstream_tasks:
-            filtered = [s for s in downstream_tasks if s != "speaker_llm"]
+            filtered = [s for s in downstream_tasks if s not in ("speaker_llm", "search_indexing")]
             if filtered:
                 _dispatch_downstream(filtered, file_uuid, file_id=file_id, user_id=user_id)
 
@@ -477,6 +516,22 @@ def rediarize_task(  # noqa: C901
 
                     media_file.error_category = categorize_error(error_msg).value
                     db.commit()
+
+                    # A failure anywhere from Step 6 (segments saved) onward
+                    # leaves already-committed speaker/segment changes in
+                    # Postgres with no corresponding reindex — the happy-path
+                    # dispatch above never runs. Dispatch is idempotent/
+                    # debounced (`reindex_dispatch.dispatch_transcript_reindex`),
+                    # so firing it unconditionally on any failure, once the
+                    # file is resolved, is cheap insurance rather than a
+                    # signal that something was actually saved.
+                    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+                    dispatch_transcript_reindex(
+                        file_id=int(media_file.id),
+                        file_uuid=file_uuid,
+                        user_id=int(media_file.user_id),
+                    )
                 except Exception as file_err:
                     logger.warning(f"Could not update file error status: {file_err}")
         except Exception as update_err:

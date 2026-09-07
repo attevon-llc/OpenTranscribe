@@ -288,6 +288,34 @@ class TestRunParallelCloudAsrAndDiarization:
         ):
             _run_parallel_cloud_asr_and_diarization(ctx, "/fake/audio.wav", ASRConfig(), asr, None)
 
+    def test_asr_rate_limited_error_is_reraised_unchanged_not_wrapped(
+        self, cloud_asr_seams, normal_user
+    ):
+        """An ASRRateLimitedError from the ASR leg must reach the caller AS an
+        ASRRateLimitedError, not wrapped in a plain RuntimeError — transcribe_gpu_task's
+        `except ASRRateLimitedError` retry clause matches on the type, and a wrapped error
+        would silently turn the retry off for every diarization_source="pyannote" job.
+        """
+        from app.services.asr.errors import ASRRateLimitedError
+
+        ctx = _make_ctx(normal_user, "task-5")
+        rate_limited = ASRRateLimitedError(
+            "deepgram: too many requests", provider="deepgram", retry_after=12.5
+        )
+        asr = FakeASRProvider(error=rate_limited)
+        diarize = FakeDiarizeProvider(
+            result=DiarizeResult(segments=[], num_speakers=0, provider_name="pyannote")
+        )
+
+        with (
+            patch(_DIARIZE_FACTORY_CREATE, return_value=diarize),
+            pytest.raises(ASRRateLimitedError) as excinfo,
+        ):
+            _run_parallel_cloud_asr_and_diarization(ctx, "/fake/audio.wav", ASRConfig(), asr, None)
+
+        assert excinfo.value is rate_limited
+        assert excinfo.value.retry_after == 12.5
+
 
 class TestRunCloudAsrPipeline:
     """Vocabulary filtering, translation gating and speaker-config resolution

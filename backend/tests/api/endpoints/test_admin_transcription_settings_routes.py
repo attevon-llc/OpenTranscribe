@@ -153,6 +153,40 @@ def test_retry_zero_means_unlimited_and_is_accepted(
     assert response.json()["max_retries"] == 0
 
 
+def test_retry_zero_actually_means_unlimited_when_checked(
+    client, admin_token_headers, db_session, clean_transcription_settings
+):
+    """The write-path test above only proves the sentinel round-trips through
+    the API. It does NOT exercise `should_retry_file`, the function every retry
+    entry point (files/management.py, user_files.py, tasks.py,
+    task_recovery_service.py) actually calls -- and that function used to
+    compute `retry_count < 0`, which is never true, so `max_retries=0` gave
+    every file ZERO retries instead of the documented unlimited. Call it
+    directly, at several retry_count values, so a regression here can't hide
+    behind a mocked or stubbed retry entry point.
+    """
+    response = client.put(RETRY, headers=admin_token_headers, json={"max_retries": 0})
+    assert response.status_code == status.HTTP_200_OK
+
+    for retry_count in (0, 1, 50, 10_000):
+        assert sss.should_retry_file(db_session, retry_count) is True, (
+            f"max_retries=0 must mean unlimited, but retry_count={retry_count} was refused"
+        )
+
+
+def test_retry_nonzero_ceiling_still_enforced(
+    client, admin_token_headers, db_session, clean_transcription_settings
+):
+    """Control: a real (non-zero) ceiling still behaves as a ceiling, so the
+    max_retries==0 special case above doesn't swallow the normal path too."""
+    response = client.put(RETRY, headers=admin_token_headers, json={"max_retries": 3})
+    assert response.status_code == status.HTTP_200_OK
+
+    assert sss.should_retry_file(db_session, 2) is True
+    assert sss.should_retry_file(db_session, 3) is False
+    assert sss.should_retry_file(db_session, 4) is False
+
+
 # ---------------------------------------------------------------------------
 # Garbage cleanup
 # ---------------------------------------------------------------------------

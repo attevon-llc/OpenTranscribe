@@ -18,6 +18,49 @@ from .context import TranscriptionContext
 
 logger = logging.getLogger(__name__)
 
+# Bounded wait for the migration lock (issue #657, defect 4). Live
+# transcription and a running v4 migration batch both resolve the embedding
+# model through the same (mode, model_name)-keyed warm cache
+# (speaker_embedding_service.get_cached_embedding_service); with no
+# coordination they alternate the cache and each pays a 40-60s reload.
+# Waiting here is deliberately bounded rather than an indefinite pause -
+# migration_lock_service has a 4h safety-net TTL for a crashed migration,
+# and a wedged migration must never permanently starve transcription.
+_MIGRATION_LOCK_WAIT_TIMEOUT_SECONDS = 30
+_MIGRATION_LOCK_POLL_INTERVAL_SECONDS = 2
+
+
+def _wait_for_migration_lock_to_clear() -> None:
+    """Back off briefly while a v4 embedding migration holds the lock.
+
+    Best-effort: if Redis is unreachable ``is_active()`` returns False and
+    this is a no-op, matching MigrationLockService's own fail-open behavior
+    for lock state (a lock that cannot be observed cannot be waited on).
+    """
+    import time
+
+    from app.services.migration_lock_service import migration_lock
+
+    if not migration_lock.is_active():
+        return
+
+    waited = 0.0
+    logger.info(
+        "Speaker embedding extraction: migration lock is active, backing off "
+        "for up to %ds to avoid thrashing the warm model cache",
+        _MIGRATION_LOCK_WAIT_TIMEOUT_SECONDS,
+    )
+    while waited < _MIGRATION_LOCK_WAIT_TIMEOUT_SECONDS and migration_lock.is_active():
+        time.sleep(_MIGRATION_LOCK_POLL_INTERVAL_SECONDS)
+        waited += _MIGRATION_LOCK_POLL_INTERVAL_SECONDS
+
+    if migration_lock.is_active():
+        logger.warning(
+            "Speaker embedding extraction: migration lock still active after "
+            "%ds, proceeding anyway (will contend for the warm model cache)",
+            _MIGRATION_LOCK_WAIT_TIMEOUT_SECONDS,
+        )
+
 
 def _process_speaker_embeddings(
     ctx: TranscriptionContext, audio_file_path: str, processed_segments: list, speaker_mapping: dict
@@ -35,6 +78,9 @@ def _process_speaker_embeddings(
     hardware_config = detect_hardware()
     hardware_config.optimize_memory_usage()
     logger.info(f"TIMING: GPU sync completed in {time.perf_counter() - sync_start:.3f}s")
+
+    # Real pause point for a running v4 migration (issue #657, defect 4).
+    _wait_for_migration_lock_to_clear()
 
     # Use cached embedding service (warm model, avoids 40-60s cold start)
     cache_start = time.perf_counter()

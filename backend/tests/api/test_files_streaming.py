@@ -114,17 +114,20 @@ def test_thumbnail_public_file_no_auth_passes_authz(client, normal_user, db_sess
     """A public file's thumbnail bypasses the auth gate (no 401).
 
     With MinIO reachable the missing object then yields 404 from storage; the point
-    pinned here is that the public-file branch never demands authentication.
+    pinned here is that the public-file branch never demands authentication. That was
+    previously pinned by a standalone ``!= 401`` assertion, which also passes on a 500 —
+    but the exact-status assertion in each branch below already forbids 401 (neither
+    200 nor 404 IS 401), so the weak check added nothing beyond what they already
+    enforce; it is removed rather than kept alongside them.
     """
     media_file = _make_file(
         db_session, normal_user, is_public=True, thumbnail_path="thumbs/missing.webp"
     )
     response = client.get(f"/api/files/{media_file.uuid}/thumbnail")
-    assert response.status_code != status.HTTP_401_UNAUTHORIZED
     if _MINIO_REACHABLE:
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.status_code == status.HTTP_404_NOT_FOUND, response.text
     else:
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_200_OK, response.text
         assert "public" in response.headers["Cache-Control"]
 
 

@@ -17,7 +17,6 @@
   export let speakerList: Speaker[] = [];
   export let currentTime: number = 0;
   export let diarizationDisabled: boolean = false;
-  export let isEditingTranscript: boolean = false;
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
   export let savingTranscript: boolean = false;
@@ -212,8 +211,7 @@
     scrollbarIndicatorEnabled = !!(
       transcriptSegments &&
       transcriptSegments.length > 10 && // Only show for transcripts with substantial content
-      currentTime >= 0 &&
-      !isEditingTranscript // Hide during transcript editing
+      currentTime >= 0
     );
   }
 
@@ -245,6 +243,14 @@
 
   function handleSpeakerCreated(event: CustomEvent) {
     dispatch('speakerCreatedFromDropdown', event.detail);
+  }
+
+  // Accepting an unconfirmed speaker suggestion from a segment's dropdown (#741).
+  // Forwarded verbatim onto the same `speakerUpdate` contract the speaker editor
+  // panel uses, so the route's validation / linked-profile confirmation / rename
+  // propagation all run — rather than a second path doing the same job.
+  function handleSpeakerUpdate(event: CustomEvent) {
+    dispatch('speakerUpdate', event.detail);
   }
 </script>
 
@@ -334,6 +340,7 @@
                       mediaFileUuid={file?.uuid?.toString() || ''}
                       on:change={handleSegmentSpeakerChange}
                       on:speakerCreated={handleSpeakerCreated}
+                      on:speakerUpdate={handleSpeakerUpdate}
                     />
                   </div>
                   {/if}
@@ -415,6 +422,7 @@
                   mediaFileUuid={file?.uuid?.toString() || ''}
                   on:change={handleSegmentSpeakerChange}
                   on:speakerCreated={handleSpeakerCreated}
+                  on:speakerUpdate={handleSpeakerUpdate}
                 />
               </div>
               {/if}
@@ -479,7 +487,7 @@
       {currentTime}
       {transcriptSegments}
       containerElement={transcriptContainer?.querySelector('.transcript-display')}
-      disabled={isEditingTranscript || !file?.transcript_segments?.length}
+      disabled={!file?.transcript_segments?.length}
       on:seekToPlayhead={handleSeekToPlayhead}
     />
   {/if}
@@ -500,7 +508,7 @@
 
   .reading-progress-fill {
     height: 100%;
-    background: #3b82f6;
+    background: var(--primary-color);
     transition: width 0.1s ease-out;
     border-radius: 0;
   }
@@ -646,7 +654,7 @@
   .segment-time {
     font-size: 12px;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-family: monospace;
     white-space: nowrap;
     min-width: fit-content;
@@ -725,7 +733,7 @@
     padding: 8px 12px;
     background: none;
     border: none;
-    color: #3b82f6;
+    color: var(--primary-on-surface);
     cursor: pointer;
     font-size: 12px;
     font-weight: 400;
@@ -784,7 +792,7 @@
   }
 
   .segment-edit-actions .save-button {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
@@ -850,12 +858,12 @@
     background: rgba(59, 130, 246, 0.1);
     border-radius: 0 6px 0 0;
     font-size: 12px;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-weight: 600;
   }
 
   .overlap-indicator svg {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     opacity: 0.8;
   }
 
@@ -876,7 +884,7 @@
     top: 40px;
     bottom: 8px;
     width: 2px;
-    background: #3b82f6;
+    background: var(--primary-color);
     opacity: 0.3;
     border-radius: 1px;
   }

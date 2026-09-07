@@ -19,6 +19,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from unittest.mock import patch
+from urllib.parse import urlparse
+
+import pytest
 
 from app.services.redaction.llm_guard import is_local_provider
 
@@ -42,11 +45,63 @@ def test_a_remote_hosted_provider_is_masked():
 
 
 def test_vllm_is_unmasked():
-    assert is_local_provider(_Config(provider="vllm", base_url=None)) is True
+    """`base_url=None` on its own no longer classifies local. Pass the real
+
+    coded default (`config.py:1080`'s `VLLM_BASE_URL`) so this asserts the
+    common case a `vllm` deployment actually has, not a config that could
+    never reach a model.
+    """
+    cfg = _Config(provider="vllm", base_url="http://localhost:8012/v1")
+    assert is_local_provider(cfg) is True
 
 
 def test_ollama_is_unmasked():
-    assert is_local_provider(_Config(provider="ollama", base_url=None)) is True
+    """Same as above, `config.py:1088`'s `OLLAMA_BASE_URL` default."""
+    cfg = _Config(provider="ollama", base_url="http://localhost:11434")
+    assert is_local_provider(cfg) is True
+
+
+def test_a_hosted_vllm_endpoint_is_masked():
+    """A `vllm`-provider config whose `base_url` names a public SaaS host is
+
+    remote — the gap this lane closes. Must-fire: red against the
+    pre-fix code, which trusted `provider == "vllm"` alone.
+    """
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=(["93.184.216.34"], ""),
+    ):
+        cfg = _Config(provider="vllm", base_url="https://vllm.some-saas.example/v1")
+        assert is_local_provider(cfg) is False
+
+
+def test_a_hosted_ollama_endpoint_is_masked():
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=(["93.184.216.34"], ""),
+    ):
+        cfg = _Config(provider="ollama", base_url="https://ollama.some-saas.example/v1")
+        assert is_local_provider(cfg) is False
+
+
+def test_a_compose_hosted_vllm_is_still_local():
+    """A `vllm` config at a docker-compose service name stays local, and
+
+    without a DNS round trip — mirrors `test_dotless_docker_hostname_is_
+    unmasked_without_dns` for the `custom` provider.
+    """
+    with patch("app.utils.url_validation.resolve_public_addresses") as mocked:
+        cfg = _Config(provider="vllm", base_url="http://vllm:8000/v1")
+        assert is_local_provider(cfg) is True
+        mocked.assert_not_called()
+
+
+def test_vllm_with_no_base_url_fails_closed():
+    """A `vllm` config with no endpoint to reach reads remote — inert (it
+
+    cannot serve a model either way), but no longer a special-cased `True`.
+    """
+    assert is_local_provider(_Config(provider="vllm", base_url=None)) is False
 
 
 def test_custom_saas_host_is_masked():
@@ -84,7 +139,8 @@ def test_force_floor_locked_and_local_still_masks():
     admin-floor awareness and must not — that decision is `cfg.redact_before_llm_locked`,
     resolved elsewhere.
     """
-    assert is_local_provider(_Config(provider="vllm")) is True
+    cfg = _Config(provider="vllm", base_url="http://localhost:8012/v1")
+    assert is_local_provider(cfg) is True
 
 
 # --------------------------------------------------------------------------- #
@@ -97,7 +153,40 @@ def test_no_base_url_is_masked():
     assert is_local_provider(_Config(provider="custom", base_url="")) is False
 
 
-def test_unparseable_base_url_is_masked():
+def test_an_unterminated_ipv6_bracket_raises_from_urlparse_and_is_masked():
+    """`urlparse` genuinely raises `ValueError` on this input — confirmed by
+
+    direct execution: ``urlparse("http://[::1")`` -> ``ValueError: Invalid
+    IPv6 URL``. This is the one input in this file that reaches the
+    ``except ValueError`` arm around the ``urlparse`` call in
+    `_custom_endpoint_is_local`; `test_unparseable_base_url_is_masked`'s old
+    fixture (`"::not a url::"`) does NOT raise — it exits via the empty-
+    hostname guard instead (see `test_a_string_that_is_not_a_url_has_no_
+    hostname_and_is_masked` below), so this test used to claim coverage it
+    never exercised.
+    """
+    cfg = _Config(provider="custom", base_url="http://[::1")
+    assert is_local_provider(cfg) is False
+
+
+def test_the_unterminated_bracket_really_raises():
+    """Guard-on-the-guard: pins the raw `urlparse` behaviour so a future
+
+    Python version making this permissive fails loudly HERE, rather than the
+    `except ValueError` arm silently going untested again the way it did
+    before this file was corrected.
+    """
+    with pytest.raises(ValueError, match="Invalid IPv6 URL"):
+        urlparse("http://[::1")
+
+
+def test_a_string_that_is_not_a_url_has_no_hostname_and_is_masked():
+    """`urlparse("::not a url::")` does NOT raise — it parses cleanly to a
+
+    hostname-less result, so this exits via the empty-hostname guard
+    (`test_no_hostname_in_url_is_masked`'s branch), never the
+    `except ValueError` arm above.
+    """
     assert is_local_provider(_Config(provider="custom", base_url="::not a url::")) is False
 
 
@@ -130,6 +219,78 @@ def test_metadata_blocked_reason_is_masked():
     ):
         cfg = _Config(provider="custom", base_url="http://metadata.example/v1")
         assert is_local_provider(cfg) is False
+
+
+# --------------------------------------------------------------------------- #
+# IP literals, both families — `_is_local_address`'s ipv4_mapped unwrap and its
+# is_loopback/is_link_local/is_private disjunction, previously covered only by
+# one IPv4-private case. All IP literals below need no DNS patching.
+# --------------------------------------------------------------------------- #
+
+
+def test_ipv4_loopback_literal_is_unmasked():
+    cfg = _Config(provider="custom", base_url="http://127.0.0.1:8000/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv6_loopback_literal_is_unmasked():
+    cfg = _Config(provider="custom", base_url="http://[::1]:8000/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv6_unique_local_address_is_unmasked():
+    """`fd00::/8` — the IPv6 ULA range, read by `is_private`."""
+    cfg = _Config(provider="custom", base_url="http://[fd00::1]/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv6_link_local_is_unmasked():
+    cfg = _Config(provider="custom", base_url="http://[fe80::1]/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv4_link_local_literal_is_unmasked():
+    """`169.254.169.254` — the AWS/GCP/Azure metadata address, as a URL
+
+    LITERAL rather than a resolved DNS answer. This never reaches the
+    cloud-metadata-refusal path in `url_validation` (that only fires on a
+    resolved lookup) — deliberately inert here, since a literal IP is
+    classified straight from the address, not from a metadata probe.
+    """
+    cfg = _Config(provider="custom", base_url="http://169.254.169.254/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv4_mapped_ipv6_loopback_is_unmasked():
+    """`::ffff:127.0.0.1` unwraps to the IPv4 loopback it maps."""
+    cfg = _Config(provider="custom", base_url="http://[::ffff:127.0.0.1]/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv4_mapped_ipv6_public_address_is_masked():
+    """Must-fire: proves the ipv4_mapped unwrap DISCRIMINATES rather than
+
+    blanket-approving every `::ffff:*` address.
+    """
+    cfg = _Config(provider="custom", base_url="http://[::ffff:8.8.8.8]/v1")
+    assert is_local_provider(cfg) is False
+
+
+def test_public_ipv6_literal_is_masked():
+    cfg = _Config(provider="custom", base_url="http://[2001:4860:4860::8888]/v1")
+    assert is_local_provider(cfg) is False
+
+
+def test_public_ipv4_literal_is_masked():
+    cfg = _Config(provider="custom", base_url="http://8.8.8.8/v1")
+    assert is_local_provider(cfg) is False
+
+
+# Note: `203.0.113.x` (RFC 5737 documentation range) is NOT a good "public"
+# fixture here — Python's `ipaddress.is_private` classifies the entire RFC 5737
+# range as private (see `test_mixed_public_and_private_addresses_is_masked`'s
+# docstring above), so it would misleadingly read as local. Use a real routed
+# address like `8.8.8.8` for anything meant to prove "this is public".
 
 
 def test_unknown_provider_is_masked():
@@ -182,4 +343,5 @@ def test_dotless_docker_hostname_is_unmasked_without_dns():
 
 
 def test_provider_is_case_and_whitespace_insensitive():
-    assert is_local_provider(_Config(provider=" VLLM ")) is True
+    cfg = _Config(provider=" VLLM ", base_url="http://localhost:8012/v1")
+    assert is_local_provider(cfg) is True

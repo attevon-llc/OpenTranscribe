@@ -278,7 +278,11 @@ def _run_batch(monkeypatch, file_ids: list[int], *args: Any) -> dict[str, Any]:
             return 7
 
     monkeypatch.setattr(reindex_task, "_load_reindex_page", _page)
-    monkeypatch.setattr(reindex_task, "_is_cancellation_requested", lambda user_id: False)  # noqa: ARG005
+    monkeypatch.setattr(
+        reindex_task,
+        "_is_cancellation_requested",
+        lambda user_id, run_id=None: False,  # noqa: ARG005
+    )
     monkeypatch.setattr(
         "app.services.search.indexing_service.TranscriptIndexingService", _FakeIndexing
     )

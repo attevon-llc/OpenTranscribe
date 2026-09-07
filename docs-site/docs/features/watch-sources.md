@@ -54,7 +54,7 @@ delete-after-import if you ask it to).
   Microsoft 365 (Graph), or on-prem Exchange — attached per source, so one address can be told
   only about the source it cares about, and only about failures if that is all you want.
 
-:::warning Email notifications are experimental
+:::warning[Email notifications are experimental]
 Email delivery has not yet been verified against a live mail provider. The configuration and
 UI are complete, but **test your setup before relying on it** for production alerts.
 :::
@@ -65,7 +65,7 @@ Everything is managed from **Settings → Watch Sources**. Each user manages the
 administrators additionally get an "All Sources" view, the shared email-notification configs,
 and the global tuning knobs.
 
-:::note Changed in v0.5.0
+:::note[Changed in v0.5.0]
 The shared email-notification configs and the global tuning knobs (Global Settings panel) now
 require the **super_admin** role rather than `admin`. Managing your own sources is unaffected —
 that stays open to every user.
@@ -82,7 +82,7 @@ feature any other file does (search, speakers, summaries, export). The watch sou
 per-file history showing what was imported, skipped (and why), stitched, or errored — open it
 with **Files** on the source card.
 
-:::note New in v0.6.0
+:::note[New in v0.6.0]
 The per-file history and per-source email links are now reachable from the UI. The backend kept
 this data all along, but there was no screen for it, so a failed import could only be seen as a
 number in an error count.

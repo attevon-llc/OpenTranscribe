@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OpenTranscribe — Search & Indexing",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "query-path", "label": "Query path", "focus": ["user", "search_api", "fusion", "opensearch", "filter", "response"], "note": "A search request from the browser to a ranked, filtered result." },
+      { "id": "ranking", "label": "Hybrid ranking", "focus": ["fusion", "opensearch"], "note": "RRF fusion combines BM25 keyword scores with kNN semantic scores in one OpenSearch pipeline." },
+      { "id": "write-path", "label": "Indexing (write path)", "focus": ["celery", "chunker", "opensearch"], "note": "How a transcript becomes searchable in the first place." }
+    ]
+  },
+  "lanes": [
+    { "id": "web", "label": "API / Web" },
+    { "id": "index", "label": "OpenSearch" },
+    { "id": "write", "label": "Indexing (write path)" }
+  ],
+  "phases": [
+    { "id": "query", "label": "Query", "fromCol": 0, "toCol": 2, "variant": "emphasis" },
+    { "id": "postprocess", "label": "Filter + return", "fromCol": 3, "toCol": 4, "variant": "dashed" }
+  ],
+  "mainPath": ["user", "search_api", "fusion", "opensearch", "filter", "response"],
+  "nodes": [
+    { "id": "user", "lane": "web", "col": 0, "type": "external", "label": "User", "sublabel": "search box", "width": 132 },
+    { "id": "search_api", "lane": "web", "col": 1, "type": "backend", "label": "Search API", "sublabel": "parse query + filters", "width": 132 },
+    { "id": "fusion", "lane": "index", "col": 2, "type": "backend", "label": "RRF Fusion", "sublabel": "BM25 + kNN, one pipeline", "width": 132 },
+    { "id": "opensearch", "lane": "index", "col": 3, "type": "database", "label": "OpenSearch", "sublabel": "hybrid ranked hits", "width": 132 },
+    { "id": "filter", "lane": "web", "col": 4, "type": "security", "label": "Filter", "sublabel": "quarantine + snippet redaction", "width": 132 },
+    { "id": "response", "lane": "web", "col": 5, "type": "frontend", "label": "Results", "sublabel": "highlighted snippets", "width": 132 },
+    { "id": "celery", "lane": "write", "col": 0, "type": "messagebus", "label": "Celery", "sublabel": "post-transcription", "width": 132 },
+    { "id": "chunker", "lane": "write", "col": 1, "type": "backend", "label": "Chunker", "sublabel": "chunk + embed transcript", "width": 132 }
+  ],
+  "edges": [
+    { "id": "ask", "from": "user", "to": "search_api", "label": "query + filters", "variant": "emphasis" },
+    { "id": "build", "from": "search_api", "to": "fusion", "variant": "emphasis" },
+    { "id": "run", "from": "fusion", "to": "opensearch", "variant": "emphasis" },
+    { "id": "hits", "from": "opensearch", "to": "filter", "label": "ranked hits", "variant": "dashed" },
+    { "id": "return", "from": "filter", "to": "response", "variant": "emphasis" },
+    { "id": "index-dispatch", "from": "celery", "to": "chunker", "variant": "emphasis" },
+    { "id": "index-write", "from": "chunker", "to": "opensearch", "label": "index chunks + whole-doc", "variant": "dashed", "fromSide": "top", "toSide": "bottom" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "One pipeline, two signals", "items": ["cosinesimil returns (1+cosine)/2, not raw cosine — every kNN read converts back", "RRF combines lexical (BM25) and semantic (kNN) ranks server-side"] },
+    { "dot": "rose", "title": "Filtering happens after ranking", "items": ["Quarantined files are dropped from hits before the client ever sees them", "Snippet redaction masks PII in highlighted text, independent of ranking"] },
+    { "dot": "emerald", "title": "Write path is async", "items": ["Chunking + embedding runs once per transcript, dispatched right after finalize", "Legacy whole-doc index kept alongside chunk-level index for back-compat"] }
+  ]
+}

@@ -14,6 +14,7 @@ security-reports/**/*.json
 backend/tests/api/endpoints/test_auth_comprehensive.py:hashicorp-tf-password:479
 backend/tests/e2e/conftest.py:hashicorp-tf-password:33
 backend/tests/e2e/conftest.py:hashicorp-tf-password:34
+backend/tests/integration/test_lite_mode_mocked_providers.py:hashicorp-tf-password:75
 backend/tests/e2e/test_auth_buttons.py:hashicorp-tf-password:38
 backend/tests/e2e/test_auth_buttons.py:hashicorp-tf-password:39
 backend/tests/e2e/test_auth_buttons.py:hashicorp-tf-password:40
@@ -36,3 +37,4 @@ backend/tests/test_auth_config_integration.py:hashicorp-tf-password:273
 scripts/run-auth-e2e.sh:hashicorp-tf-password:35
 backend/tests/test_selective_reprocess.py:hashicorp-tf-password:25
 scripts/benchmark_transcription.sh:hashicorp-tf-password:19
+backend/tests/e2e/test_collection_management.py:hashicorp-tf-password:39

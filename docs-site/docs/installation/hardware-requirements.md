@@ -22,7 +22,7 @@ For small-scale testing or low-volume transcription work:
 - Transcription speed: ~0.5-1x realtime (slower than playback)
 - Suitable for: Testing, development, occasional use
 
-:::warning CPU-Only Limitations
+:::warning[CPU-Only Limitations]
 CPU-only mode provides significantly slower transcription speeds (0.5-1x realtime) compared to GPU acceleration (~40x realtime with large-v3-turbo, full pipeline). For production use or regular transcription work, GPU acceleration is strongly recommended.
 :::
 
@@ -52,17 +52,20 @@ For regular use and production deployments:
 - Example: 1-hour video processes in ~50 seconds
 - Suitable for: Production use, high-volume transcription
 
-:::tip GPU Memory Requirements
+:::tip[GPU Memory Requirements]
 - **Transcription only**: 4-6GB VRAM
 - **Transcription + Diarization**: 6-8GB VRAM
 - **Multiple concurrent jobs**: 10-12GB+ VRAM
-- **Hybrid mode (low-VRAM / macOS)**: ~1.3GB VRAM for diarization only — transcription runs on CPU
+- **Hybrid mode (low-VRAM NVIDIA GPUs)**: ~1.3GB VRAM for diarization only — transcription runs on CPU
 :::
 
-:::info Hybrid Mode for Low-VRAM GPUs and macOS
+:::info[Hybrid Mode for Low-VRAM GPUs — and why macOS is not one]
 If your GPU has less than ~5 GB of usable VRAM, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU (small model, int8) while speaker diarization stays on GPU. This requires only ~1.3 GB VRAM for PyAnnote and still produces fully diarized transcripts.
 
-On **macOS (Apple Silicon)**, hybrid mode is always active — PyAnnote runs on MPS while faster-whisper runs on CPU (MPS transcription support is unreliable).
+On **macOS (Apple Silicon)**, use the `--lite` (CPU-only) image — Docker Desktop
+on macOS has no Metal/GPU passthrough, so every container is CPU-only there
+regardless of host chip. There is no MPS acceleration path available inside a
+container on this platform; expect CPU-class timings.
 
 See [Performance Tuning → Hybrid Mode](../operations/performance-tuning.md#hybrid-mode) for configuration details.
 :::
@@ -107,7 +110,7 @@ See [Multi-GPU Scaling](../configuration/multi-gpu-scaling.md) for configuration
 | High Performance | p3.2xlarge | V100 (16GB) | 8 | 61GB | ~$3.06/hour |
 | Multi-GPU | p3.8xlarge | 4x V100 | 32 | 244GB | ~$12.24/hour |
 
-:::tip Cost Optimization
+:::tip[Cost Optimization]
 - Use spot instances for non-critical workloads (50-70% cost savings)
 - Stop instances when not in use
 - Consider reserved instances for 24/7 deployments (40-60% savings)
@@ -196,7 +199,7 @@ The following ports must be available:
 | Platform | NVIDIA GPU | Notes |
 |----------|------------|-------|
 | Linux | ✅ Full support | Best performance |
-| macOS | N/A — Apple Silicon | Hybrid mode auto-enabled: PyAnnote on MPS, transcription on CPU |
+| macOS | N/A — no Docker Metal passthrough | CPU-only via the `--lite` image — no MPS acceleration in a container |
 | Windows | ✅ via WSL2 | CUDA in WSL2 required |
 
 ## Verification Commands
@@ -274,7 +277,8 @@ For enterprise deployments:
 
 1. Set up NAS with 10GbE connection
 2. Mount NAS storage on Docker host
-3. Update `UPLOAD_DIR` and `MODEL_CACHE_DIR` in `.env`
+3. Configure the NAS overlay (`docker-compose.nas.yml`, auto-loaded from `.env` —
+   see [Fresh Deployments](../operations/fresh-deployments.md)) and set `MODEL_CACHE_DIR`
 4. Migrate existing data
 
 **Benefits**: Centralized storage, easier backups, unlimited expansion

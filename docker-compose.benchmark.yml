@@ -1,14 +1,46 @@
+# Hand-run, one-shot GPU services for the diarization pipeline.
+#
+#   diarization-probe  — VRAM/throughput characterization (scripts/vram-probe-diarization.py)
+#   diarization-tests  — the @pytest.mark.gpu diarization suites (issue #577)
+#
+# Neither appears in any `COMPOSE_FILES=` chain in opentr.sh: they are started by hand
+# with `docker compose run --rm`, never by `./opentr.sh start`. See
+# backend/tests/unit/test_opentr_gpu_device_flag.py for why that scoping matters.
+
+# Everything both services share EXCEPT volumes. Volumes are listed per service on
+# purpose — they differ by one entry and a YAML merge key cannot append to a sequence,
+# so an anchor here would silently give both services the same mounts.
+x-diarization-gpu-common: &diarization-gpu-common
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    - OPENTRANSCRIBE_IN_CONTAINER=1
+    - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+    - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0}
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            capabilities: [gpu]
+            # Falls back to the stack's own GPU rather than a bare 0: on a multi-GPU
+            # host, card 0 is frequently someone else's. Set DIARIZATION_PROBE_GPU to
+            # pin these one-shot runs somewhere other than the worker's card.
+            device_ids: ['${DIARIZATION_PROBE_GPU:-${GPU_DEVICE_ID:-0}}']
+  working_dir: /app
+  # Override the production entrypoint so these are one-shot tools
+  entrypoint: []
+  # No restart — these are benchmark/test services, not long-running workers
+  restart: "no"
+
 services:
   diarization-probe:
+    <<: *diarization-gpu-common
     image: opentranscribe-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    env_file: .env
-    environment:
-      - OPENTRANSCRIBE_IN_CONTAINER=1
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
-      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0}
     volumes:
       # Source code (same as dev celery-worker) — gives access to app.* modules
       - ./backend:/app
@@ -21,22 +53,64 @@ services:
       # Bind-mount the local pyannote-audio fork over site-packages so Phase A
       # characterization patches (e.g. PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE) apply
       # without rebuilding the image.
+      #
+      # ⚠️ Hard-coded host path. If that checkout is absent, Docker creates an EMPTY
+      # directory and mounts it over pyannote.audio, breaking every import with no
+      # error message about the mount. That is why diarization-tests below does not
+      # inherit this mount — a regression gate must run against the pyannote the image
+      # ships, not against whatever is checked out beside it.
       - /mnt/nvm/repos/pyannote-audio-fork/src/pyannote/audio:/home/appuser/.local/lib/python3.13/site-packages/pyannote/audio:ro
       # Model cache — same mounts as the production worker so no re-downloads
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              device_ids: ['${DIARIZATION_PROBE_GPU:-0}']
-    working_dir: /app
-    # Override the production entrypoint so this is a one-shot tool
-    entrypoint: []
     command: ["python", "scripts/vram-probe-diarization.py", "--help"]
-    # No restart — this is a benchmark service, not a long-running worker
-    restart: "no"
+
+  # The GPU diarization test runner (issue #577).
+  #
+  # Separate image, NOT `opentranscribe-backend:latest`: building the probe rebuilds and
+  # re-tags the exact image the live dev stack and every Celery worker run from. This
+  # target is additive (Dockerfile.test = prod image + pytest) and lands on its own tag,
+  # so building it can never disturb a running stack.
+  #
+  # Run it through ./scripts/run-diarization-gpu-tests.sh, which builds the image first
+  # and passes the flags these gpu-marked suites need (`-o addopts=""`, `-m gpu`).
+  diarization-tests:
+    <<: *diarization-gpu-common
+    image: opentranscribe-backend-test:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+      args:
+        BASE_IMAGE: ${DIARIZATION_TEST_BASE_IMAGE:-opentranscribe-backend:latest}
+    volumes:
+      # Source + tests. ./backend lands on /app, so the suites are at /app/tests/...
+      - ./backend:/app
+      - ./scripts:/app/scripts:ro
+      # test_diarizer_lifecycle / test_diarization_perf_gates read BENCHMARK_ROOT
+      - ./benchmark/test_audio:/app/benchmark/test_audio:ro
+      # test_diarization_regression reads the Phase A.3 reference RTTMs from here
+      - ./docs:/app/docs
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+    command:
+      - python
+      - -m
+      - pytest
+      - tests/integration/test_diarizer_lifecycle.py
+      - tests/integration/test_diarization_perf_gates.py
+      - tests/integration/test_diarization_regression.py
+      # The project default selector is `-m 'not integration and not gpu'`, which
+      # deselects every test in these three files. Clearing addopts and asking for
+      # `-m gpu` is what makes them run at all.
+      - -o
+      - addopts=
+      - -m
+      - gpu
+      - -v
+      # /app is a bind mount of the repo — don't drop a root-owned .pytest_cache in it.
+      - -p
+      - no:cacheprovider

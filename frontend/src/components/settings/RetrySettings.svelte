@@ -248,7 +248,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
   }
 
   .toggle-input:checked + .toggle-switch::after {

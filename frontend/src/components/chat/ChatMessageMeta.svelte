@@ -252,7 +252,7 @@
     border: 1px solid rgba(var(--primary-color-rgb), 0.35);
     border-radius: 999px;
     background-color: rgba(var(--primary-color-rgb), 0.08);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.76rem;
     font-weight: 500;
     cursor: pointer;

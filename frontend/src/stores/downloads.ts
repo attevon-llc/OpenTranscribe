@@ -1,5 +1,4 @@
 import { writable, get } from 'svelte/store';
-import { addNotification } from './notifications';
 import { toastStore } from './toast';
 import { t } from '$stores/locale';
 
@@ -15,29 +14,6 @@ export interface DownloadState {
   error?: string;
   notificationId?: string;
 }
-
-// i18n key fragments per download type, so notifications match what is actually
-// being downloaded (e.g. audio downloads don't claim to be "adding subtitles").
-const DOWNLOAD_COPY: Record<
-  DownloadType,
-  { started: string; preparing: string; processing: string }
-> = {
-  video_with_subtitles: {
-    started: 'downloads.videoDownloadStarted',
-    preparing: 'downloads.preparingWithSubtitles',
-    processing: 'downloads.addingSubtitles',
-  },
-  original_video: {
-    started: 'downloads.downloadStarted',
-    preparing: 'downloads.preparingDownload',
-    processing: 'downloads.preparingDownload',
-  },
-  audio: {
-    started: 'downloads.audioDownloadStarted',
-    preparing: 'downloads.preparingAudio',
-    processing: 'downloads.extractingAudio',
-  },
-};
 
 function createDownloadStore() {
   const { subscribe, set, update } = writable<Record<string, DownloadState>>({});
@@ -61,17 +37,6 @@ function createDownloadStore() {
         }
 
         canStart = true;
-
-        const copy = DOWNLOAD_COPY[downloadType];
-
-        // Add persistent notification
-        addNotification({
-          title: get(t)(copy.started),
-          message: get(t)(copy.preparing, { filename }),
-          type: 'info',
-          read: false,
-          data: { file_id: fileId, download_type: downloadType },
-        });
 
         // Create download state
         downloads[fileId] = {
@@ -102,34 +67,7 @@ function createDownloadStore() {
         if (progress !== undefined) download.progress = progress;
         if (error) download.error = error;
 
-        const copy = DOWNLOAD_COPY[download.downloadType];
-
-        // Update notification based on status
         switch (status) {
-          case 'processing':
-            addNotification({
-              title: get(t)('downloads.processingVideo'),
-              message: get(t)(copy.processing, {
-                filename: download.filename,
-              }),
-              type: 'info',
-              read: false,
-              data: { file_id: fileId, download_type: 'processing' },
-            });
-            break;
-
-          case 'downloading':
-            addNotification({
-              title: get(t)('downloads.processingVideo'),
-              message: get(t)(copy.processing, {
-                filename: download.filename,
-              }),
-              type: 'info',
-              read: false,
-              data: { file_id: fileId, download_type: 'ready' },
-            });
-            break;
-
           case 'completed':
             // Remove from active downloads after a delay
             setTimeout(() => {
@@ -144,17 +82,6 @@ function createDownloadStore() {
             break;
 
           case 'error':
-            addNotification({
-              title: get(t)('downloads.downloadFailed'),
-              message: get(t)('downloads.failedToProcess', {
-                filename: download.filename,
-                error: error || get(t)('downloads.unknownError'),
-              }),
-              type: 'error',
-              read: false,
-              data: { file_id: fileId, download_type: 'video_error' },
-            });
-
             toastStore.error(
               get(t)('downloads.downloadFailedError', {
                 error: error || get(t)('downloads.unknownError'),

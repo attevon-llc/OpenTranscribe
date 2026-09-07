@@ -162,7 +162,7 @@ function appendChild(nodes: TraceNode[], parentKey: string, child: TraceNode): T
  * @param prev - The state so far, or undefined for the first frame of a turn.
  * @param frame - One `trace` SSE frame.
  */
-export function applyTraceFrame(prev: TraceState | undefined, frame: TraceFrame): TraceState {
+function applyTraceFrame(prev: TraceState | undefined, frame: TraceFrame): TraceState {
   const state = prev ?? emptyTraceState();
   const key = traceNodeKey(frame);
   const existing = findNode(state.roots, (n) => n.key === key);
@@ -217,7 +217,7 @@ export function applyTraceFrame(prev: TraceState | undefined, frame: TraceFrame)
  * Called after each fold. Separate from `applyTraceFrame` so the parking rule
  * and the claiming rule can be read — and tested — independently.
  */
-export function reparentOrphans(state: TraceState): TraceState {
+function reparentOrphans(state: TraceState): TraceState {
   const byId = new Map<string, TraceNode>();
   for (const node of state.roots) {
     if (node.nodeId) byId.set(node.nodeId, node);

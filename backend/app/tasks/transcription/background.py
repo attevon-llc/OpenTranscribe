@@ -93,7 +93,10 @@ def _run_post_gpu_background(
             is_cloud_asr = result.get("asr_provider") and result.get("asr_provider") != "local"
 
             if is_cloud_asr:
-                # Cloud ASR: no native embeddings available, dispatch GPU task
+                # Cloud ASR: no native embeddings available, dispatch CPU task.
+                # Embedding extraction from known segments needs no GPU diarization
+                # pass, so it belongs on the CPU queue — lite mode runs zero workers
+                # on the GPU queue (issue #584).
                 send_progress_notification(
                     ctx.user_id, ctx.file_id, 0.78, "Dispatching speaker embedding extraction"
                 )
@@ -102,10 +105,10 @@ def _run_post_gpu_background(
 
                     extract_speaker_embeddings_task.apply_async(
                         args=[str(ctx.file_uuid), speaker_mapping],
-                        queue=CeleryQueues.GPU,
+                        queue=CeleryQueues.CPU,
                     )
                     logger.info(
-                        f"Dispatched speaker embedding extraction to GPU queue for "
+                        f"Dispatched speaker embedding extraction to CPU queue for "
                         f"cloud-transcribed file {ctx.file_id}"
                     )
                 except Exception as e:

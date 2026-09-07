@@ -372,6 +372,7 @@ class TestAuditLogScoping:
 
     def test_every_category_has_keys_to_filter_on(self):
         """An empty key list is what used to disable the filter."""
+        assert AuthConfigService.CONFIG_CATEGORIES, "no config categories to check"
         for category, keys in AuthConfigService.CONFIG_CATEGORIES.items():
             assert keys, f"category {category} has no keys"
 
@@ -574,7 +575,9 @@ class TestSchemasDriveTheValidation:
         A required field would make an unrelated single-field save fail with a
         confusing "field required" 400.
         """
+        assert CATEGORY_SCHEMAS, "no category schemas to check"
         for category, model in CATEGORY_SCHEMAS.items():
+            assert model.model_fields, f"{category} schema has no fields"
             for name, field in model.model_fields.items():
                 assert not field.is_required(), f"{category}.{name} has no default"
 
@@ -582,6 +585,7 @@ class TestSchemasDriveTheValidation:
         """``DATA_TYPE_MAPPING`` drives storage/read conversion; keep it in step."""
         expected = {bool: "bool", int: "int", str: "string"}
 
+        assert CATEGORY_SCHEMAS, "no category schemas to check"
         for model in CATEGORY_SCHEMAS.values():
             for name, field in model.model_fields.items():
                 declared = AuthConfigService.DATA_TYPE_MAPPING.get(name)

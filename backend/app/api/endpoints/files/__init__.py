@@ -69,6 +69,7 @@ from .streaming import get_thumbnail_streaming_response
 from .streaming import validate_file_exists
 from .subtitles import router as subtitles_router
 from .summary_status import router as summary_status_router
+from .transcript_export import router as transcript_export_router
 from .upload import process_file_upload
 from .url_processing import router as url_processing_router
 from .waveform import router as waveform_router
@@ -131,6 +132,7 @@ router.include_router(prepare_upload.router, prefix="", tags=["files"])
 router.include_router(complete_upload.router, prefix="", tags=["files"])
 router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
+router.include_router(transcript_export_router, prefix="", tags=["files"])
 router.include_router(waveform_router, prefix="", tags=["waveform"])
 router.include_router(url_processing_router, prefix="", tags=["url-processing"])
 router.include_router(segments_router, prefix="", tags=["files"])
@@ -397,7 +399,13 @@ def get_metadata_filters_endpoint(
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ):
     """Get available metadata filters like formats, codecs, etc."""
-    return get_metadata_filters(db, ctx.user.id, ownership=ownership, organization_id=ctx.org_id)
+    return get_metadata_filters(
+        db,
+        ctx.user.id,
+        ownership=ownership,
+        organization_id=ctx.org_id,
+        is_admin=ctx.user.is_admin,
+    )
 
 
 # =============================================================================
@@ -893,7 +901,10 @@ def download_stream(
         try:
             ready = _resolve_ready_download(db_file, mode, variant)
         except HTTPException as e:
-            return sse("error", {"message": e.detail})
+            # `_resolve_ready_download`'s only raise site is the 422 below, but the
+            # "code" here stays a fixed literal slug — never `e.detail` itself — so
+            # the SSE contract guard (test_chat_sse_contract.py) can pin it structurally.
+            return sse("error", {"code": "transcript_not_ready", "message": e.detail})
         return sse("ready", ready) if ready else None
 
     async def event_stream():
@@ -942,7 +953,10 @@ def download_stream(
                     continue
                 except RedisError as e:
                     logger.warning(f"Download SSE pubsub error for {file_uuid}: {e}")
-                    yield sse("error", {"message": "Connection interrupted."})
+                    yield sse(
+                        "error",
+                        {"code": "connection_interrupted", "message": "Connection interrupted."},
+                    )
                     return
                 if msg is None:
                     yield ": keepalive\n\n"  # comment frame keeps proxies from closing
@@ -1123,7 +1137,12 @@ def clear_video_cache(
     # line and crashed a second time with NameError (issue #284 A0.6).
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = int(db_file.id)  # Internal ID for cache operations
     filename = str(db_file.filename)  # Plain data: the cache keys derive from it
@@ -1185,7 +1204,12 @@ def refresh_analytics(
     # broad handler and re-wrapped, doubling the `from e` chain.
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = db_file.id  # Internal ID for analytics refresh
 

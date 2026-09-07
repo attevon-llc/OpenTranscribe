@@ -14,9 +14,7 @@ inside `SettingsModal`. Media/transcript search is server-side hybrid keyword+se
   locales for free and picks up enumerated option labels built from template-literal keys.
 - `fuzzyMatcher.ts` — thin fuse.js wrapper. The only custom part is NFD case/diacritic folding
   applied to both the indexed values and the query, so "vídeo" ⇄ "video".
-- `findInText.ts` — literal Ctrl+F-style find plus a wrap-around next/prev state machine.
-  **Currently has no callers** outside its test (see Gotchas).
-- Each of the three ships a colocated `*.test.ts` (Vitest) that locks its behavior.
+- Each module ships a colocated `*.test.ts` (Vitest) that locks its behavior.
 
 ## Conventions / patterns
 
@@ -44,6 +42,11 @@ inside `SettingsModal`. Media/transcript search is server-side hybrid keyword+se
   accent-folded normalized string and misalign with the original display label. Highlight separately
   with `$lib/utils/searchHighlight`, and every `{@html}` must go through `sanitizeHighlightHtml`
   (`$lib/utils/sanitizeHtml`) — `SettingsSearch.svelte` does this.
-- `findInText.ts` is tested but unused: its header says it was extracted from `TranscriptSearch`,
-  yet `TranscriptSearch.svelte` still runs its own inline `computeMatches`. Wire the component to it
-  or drop the module — don't add a third in-document find implementation.
+- In-document find lives in `TranscriptSearch.svelte`'s `computeMatches` (plain-text, indexOf over
+  loaded segment text + speaker labels) and `search/SearchTranscriptModal.svelte`'s
+  `buildMatchPositions` (time-range: classifies keyword-vs-semantic matches by overlap against
+  segment start/end times). These solve genuinely different problems — one indexes raw text
+  offsets, the other resolves against timed transcript segments — and are not duplicates of each
+  other. A third module (`findInText.ts`, literal Ctrl+F-style find) was extracted here but never
+  wired to either caller and was deleted (H3). Do not add a generic `findInText`-style module
+  without a concrete second consumer that actually needs it.

@@ -703,7 +703,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.5rem 1rem;
@@ -768,7 +768,7 @@
 
   .provider-badge {
     background: rgba(var(--primary-color-rgb), 0.12);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .experimental-badge {
@@ -837,11 +837,11 @@
   .btn-test {
     background: transparent;
     border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .btn-test:hover:not(:disabled) {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
   }
 
@@ -852,7 +852,7 @@
   }
 
   .btn-edit:hover:not(:disabled) {
-    background: #3b82f6;
+    background: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
   }
@@ -924,7 +924,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.5rem 1.1rem;
@@ -955,7 +955,7 @@
     padding: 1px 6px; border-radius: 10px;
     font-size: 0.625rem; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.5px;
-    background: rgba(var(--primary-color-rgb), 0.12); color: var(--primary-color);
+    background: rgba(var(--primary-color-rgb), 0.12); color: var(--primary-on-surface);
     margin-left: 0.5rem; vertical-align: middle;
   }
   :global([data-theme='dark']) .share-badge { background: rgba(var(--primary-color-rgb), 0.2); color: #60a5fa; }
@@ -993,7 +993,7 @@
     width: 12px; height: 12px; background: white;
     border-radius: 50%; transition: transform 0.2s;
   }
-  .toggle-input:checked + .toggle-switch { background: #3b82f6; }
+  .toggle-input:checked + .toggle-switch { background: var(--primary-color); }
   .toggle-input:checked + .toggle-switch::after { transform: translateX(12px); }
   .toggle-text { user-select: none; }
 
@@ -1067,7 +1067,7 @@
 
   .cap-neutral {
     background: rgba(var(--primary-color-rgb), 0.08);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .admin-section-header {
@@ -1178,7 +1178,7 @@
   }
 
   .model-actions .btn-primary {
-    background: var(--primary-color, #3b82f6);
+    background: var(--primary-color, var(--primary-color));
     color: white;
   }
 

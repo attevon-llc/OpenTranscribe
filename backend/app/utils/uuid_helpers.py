@@ -196,17 +196,6 @@ def get_llm_config_by_uuid(db: Session, uuid: UUID | str) -> UserLLMSettings:
     return get_by_uuid(db, UserLLMSettings, uuid, error_message="LLM configuration not found")
 
 
-def get_asr_config_by_uuid(db: Session, uuid: "UUID | str") -> "Any":
-    """Get ASR configuration by UUID.
-
-    Uses a lazy import so the function is available even before the
-    UserASRSettings model has been created by the companion agent.
-    """
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
-
-    return get_by_uuid(db, UserASRSettings, uuid, error_message="ASR configuration not found")
-
-
 # Generic ownership gate
 def require_resource_owner(
     resource: Any,
@@ -265,6 +254,7 @@ def get_file_by_uuid_with_permission(
     is_admin: bool = False,
     *,
     organization_id: OrgScope = UNSCOPED,
+    min_permission: str = "viewer",
 ) -> MediaFile:
     """
     Get media file by UUID with permission check.
@@ -281,6 +271,12 @@ def get_file_by_uuid_with_permission(
         organization_id: Active org id, None for personal, or UNSCOPED (default,
             legacy = no gate). When an org id (or explicit None) is passed,
             cross-scope files are rejected even via the sharing path (default-deny).
+        min_permission: Minimum sharing permission level required on the sharing
+            path ("viewer", "editor", or "owner"; see
+            ``PermissionService.PERMISSION_LEVELS``). Defaults to "viewer",
+            preserving prior behavior for read-only call sites. Mutating
+            endpoints should pass ``min_permission="editor"``. Does not affect
+            the admin bypass or direct-ownership fast path.
 
     Returns:
         MediaFile instance
@@ -288,6 +284,7 @@ def get_file_by_uuid_with_permission(
     Raises:
         HTTPException: 404 if not found, 403 if no permission
     """
+    from app.services.permission_service import PERMISSION_LEVELS
     from app.services.permission_service import PermissionService
     from app.services.takedown_service import is_hidden_for
 
@@ -326,6 +323,11 @@ def get_file_by_uuid_with_permission(
     # Check shared access via PermissionService (already in tenant scope above)
     permission = PermissionService.get_file_permission(db, file.id, user_id)
     if permission is not None:
+        if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires {min_permission} permission on this file",
+            )
         return file
 
     raise HTTPException(
@@ -393,69 +395,6 @@ def get_collection_by_uuid_with_permission(
 
 
 # Sharing-aware permission helpers (return permission level)
-def get_file_by_uuid_with_sharing(
-    db: Session,
-    uuid: UUID | str,
-    user_id: int,
-    is_admin: bool = False,
-    min_permission: str = "viewer",
-    *,
-    organization_id: OrgScope = UNSCOPED,
-) -> tuple[MediaFile, str]:
-    """
-    Get file by UUID with permission-aware access checking.
-
-    Returns (file, effective_permission) tuple. Admin users bypass
-    permission checks and receive 'owner' as their effective permission.
-
-    Args:
-        db: Database session
-        uuid: File UUID
-        user_id: Current user ID
-        is_admin: Whether the user has admin privileges
-        min_permission: Minimum required permission level
-        organization_id: Active org id, None for personal, or UNSCOPED (default,
-            legacy = no gate) so community callers are unaffected.
-
-    Returns:
-        Tuple of (MediaFile, effective_permission_string)
-
-    Raises:
-        HTTPException: 404 if not found, 403 if insufficient permission
-    """
-    from app.services.permission_service import PERMISSION_LEVELS
-    from app.services.permission_service import PermissionService
-
-    file = get_file_by_uuid(db, uuid)
-
-    # Admin bypass
-    if is_admin:
-        return file, "owner"
-
-    # Tenant gate: out-of-scope files are not authorized (default-deny).
-    if not _resource_in_tenant_scope(file, organization_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this file",
-        )
-
-    # Check permission via PermissionService
-    permission = PermissionService.get_file_permission(db, file.id, user_id)
-    if permission is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this file",
-        )
-
-    if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Requires {min_permission} permission on this file",
-        )
-
-    return file, permission
-
-
 def get_collection_by_uuid_with_sharing(
     db: Session,
     uuid: UUID | str,

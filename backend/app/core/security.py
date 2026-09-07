@@ -6,7 +6,6 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Any
 
-from fastapi import Cookie
 from fastapi import HTTPException
 from fastapi import status
 from joserfc import jwt
@@ -346,21 +345,6 @@ def verify_and_update_password(
     return is_valid, new_hash
 
 
-def needs_rehash(hashed_password: str) -> bool:
-    """
-    Check if a password hash needs to be upgraded.
-
-    This is useful for batch checking without requiring the plaintext password.
-
-    Args:
-        hashed_password: The stored password hash
-
-    Returns:
-        True if the hash uses a deprecated scheme and should be upgraded
-    """
-    return pwd_context.needs_update(hashed_password)  # type: ignore[no-any-return]
-
-
 def needs_rehash_for_fips_v3(hashed_password: str) -> bool:
     """
     Check if a password hash needs to be upgraded for FIPS 140-3 compliance.
@@ -442,19 +426,6 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
     if not verify_password(password, str(user.hashed_password)):
         return None
     return user  # type: ignore[no-any-return]
-
-
-def get_token_from_cookie(access_token: str | None = Cookie(None)) -> str:
-    """
-    Extract the JWT token from the cookie
-    """
-    if not access_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return access_token
 
 
 def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> dict[str, Any]:

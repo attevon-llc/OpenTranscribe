@@ -27,8 +27,16 @@ Instead:
 - To free a GPU, stop the worker container — never signal the process inside it.
 - If a task looks stuck, read `./opentr.sh logs celery-worker` first. A long transcription is
   usually still running.
-- **Ask before anything destructive.** GPU 1 (RTX 3080 Ti) is this project's only GPU; GPUs 0 and 2
-  are reserved for unrelated work and must never be touched.
+- **Ask before anything destructive.** GPU 1 (RTX 3080 Ti) is this project's primary card.
+  ⛔ GPU 0 genuinely runs unrelated work (`tritonserver`, plus a standalone `b3c` /
+  `diar-server:issue1` container) and **must never be touched**. **GPU 2 (RTX A6000) IS usable
+  by this project** — it generally hosts this machine's vLLM, but that is not always running.
+  **Check `nvidia-smi`; if GPU 2 is idle, USE IT and run the multi-GPU tests** rather than
+  skipping them (owner's instruction, 2026-09-05).
+  ⚠️ Treating this host as single-GPU is a documented cost, not a safe default: it left #711's
+  cross-card verification unrun for weeks and made #713 record a *hardware* blocker for
+  something that only needed an idle card. `--gpu-scale`, `gpu-split`, `-m gpu`,
+  `run-diarization-gpu-tests.sh` and the `--with-llm-test` legs all belong on GPU 1 + GPU 2.
 
 ## ⚠️ CRITICAL: Local Code vs Docker Hub Images
 
@@ -129,6 +137,9 @@ app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`, `mock-reasoning`
 testable). Never start it as a
 bare host process: it binds 5199 and then blocks the container. Fixtures and the
 full table: `backend/tests/CLAUDE.md`.
+`--with-mock-asr` is the sibling overlay — a mocked cloud ASR (Gladia stand-in) provider at
+`http://mock-asr:5198`, so `--lite`-mode ASR can be exercised with no vendor account either;
+same fixture/table location.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
 
@@ -175,7 +186,17 @@ Run with `./opentr.sh start dev --gpu-scale` — **the flag is what enables scal
 
 ### Docker build & push (production images)
 
-Skill: `.claude/skills/docker-build-push/SKILL.md` (multi-arch requires `USE_REMOTE_BUILDER=true`).
+Skill: `.claude/skills/docker-build-push/SKILL.md` (any build including `linux/arm64` requires
+`USE_REMOTE_BUILDER=true`, or it runs under QEMU).
+
+**Capability lives in the REPOSITORY and is restated in the TAG** (issue #680):
+`opentranscribe-backend` is CUDA, `opentranscribe-backend-lite` is CPU, and each publishes
+`vX.Y.Z-<cap>-<arch>` legs assembled into a `vX.Y.Z` index whose digest `:latest` is then copied
+from. **`PLATFORMS` is an explicit override, not a default** — the old both-arch default is how a
+CPU-only arm64 backend got published under the CUDA image's tag. Never transcribe the platform
+set into a doc or a script: ask `./scripts/docker-build-push.sh list-platforms`
+(`component<TAB>capability<TAB>platforms`), which is the single home for it. Full table and the
+reason `cuda-arm64` is reserved-but-unbuilt: `scripts/CLAUDE.md`.
 
 ### Cutting a release — `./scripts/release.sh`, never by hand
 
@@ -214,6 +235,19 @@ preflight → bump → verify → test → build → scan → rehearse
   reads as current until you `reset`, so reset before a real run.
 - `rehearse` runs both scenarios and **requires the live stack stopped**; it
   refuses (exit 3) and prints the command rather than stopping it for you.
+  `test-upgrade.sh` now runs to completion across all 18 phases, including the
+  backup/rollback tail — previously masked by a `set -e` harness bug that
+  silently truncated the script at the first non-fatal-by-design digest mismatch
+  (`scripts/CLAUDE.md`'s rehearsal gotchas). That is not a claim the rehearsal
+  always passes. The gap this used to name (#619) was **closed** 2026-08-28, but
+  its fix is a **best-effort settle, not a guarantee**: phases 15/17 wait for each
+  table's content digest to stop moving rather than tracking every async writer by
+  name, so a slow enough write can still land after the synchronization point. See
+  `full-test-matrix.md`'s coverage table for what each leg does and does not prove.
+- Running `test-upgrade.sh`/`test-fresh-install.sh` directly (not through
+  `rehearse`) in a backgrounded or non-interactive shell needs `--yes` — the
+  `I UNDERSTAND` confirmation prompt has no tty to read from and fails with
+  `No such device or address` otherwise.
 
 Full guide: `docs-site/docs/developer-guide/releasing.md` (Developer Guide →
 Releasing). Agent interface: `.claude/skills/release/SKILL.md`. Gate definitions:
@@ -239,8 +273,27 @@ Run the full suite before committing — not just the staged subset, and through
 concurrency-guarded wrapper, not bare `pre-commit` (issue #434):
 
 ```bash
-scripts/safe-precommit.sh run --all-files    # the gate CI mirrors
+scripts/safe-precommit.sh run --all-files                      # commit-stage tier
+scripts/safe-precommit.sh run --all-files --hook-stage pre-push # push-stage tier
 ```
+
+**The gate is TIERED (issue #688), and CI runs BOTH tiers.** The commit stage is the fast
+edit loop (eslint + svelte-check, bandit over the staged files); the push stage carries the
+two whole-tree jobs that dominated it — the frontend production `vite build` and
+`bandit -r backend/`. ⚠️ `pre-commit run --all-files` with no `--hook-stage` runs
+**default-stage hooks only** (`default_stages: [pre-commit]`), so "I ran pre-commit" no
+longer means "I ran everything CI runs" — run the second line too before pushing.
+`.github/workflows/pre-commit.yml` has a step per stage and
+`backend/tests/unit/test_precommit_stage_ci_parity.py` fails if a hook ever sits in a stage
+CI does not invoke.
+
+**One-time local setup, per checkout:** `pre-commit install --install-hooks` — the config's
+`default_install_hook_types` now wires `pre-commit`, `commit-msg` and `pre-push`, but it
+only affects a *future* install; an already-installed checkout has just the `pre-commit`
+script and neither the push tier nor conventional-commit message linting fires until you
+re-run it. ⚠️ **Never run it from a git worktree**: `.git/hooks` there resolves to the
+shared common git dir, so you would rewrite the hooks of the main checkout and every other
+worktree at once.
 
 The wrapper (`scripts/safe-precommit.sh`, self-test: `scripts/safe-precommit-selftest.sh`)
 refuses to start — rather than racing silently — when either of the two *known* unsafe
@@ -292,7 +345,7 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 >
 > `--all-files` is always correct in CI, where nothing else is writing.
 
-Hook inventory is in `.pre-commit-config.yaml`. The frontend hook only fires when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
+Hook inventory is in `.pre-commit-config.yaml`. The frontend hooks (`frontend-check` at commit stage, `frontend-build` at push stage) only fire when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
 
 ### ⚠️ Fix the finding, never silence it
 
@@ -335,6 +388,17 @@ Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]
                                           # flags: --coverage --e2e-smoke --cleanup
 ```
 
+For a quick "does my current branch work" check during normal development — backend gate + e2e
++ frontend check, chained, one consolidated report — use `./scripts/run-dev-tests.sh --full`
+(or `--fast` for a smoke-e2e variant, `--backend-only`/`--e2e-only`/`--frontend-only` for a
+single phase; mode flags compose). It auto-starts/stops whatever auth/LLM test overlays the
+requested phase needs (mock-LLM, Keycloak, LDAP) and reconciles the DB config it flips back on
+exit — `--all-overlays`/`--with-gpu-scale`/`--no-overlays`/`--list-overlays`/`--dry-run` control
+this; see `scripts/CLAUDE.md` for the full flag table. This is **not** the same job as
+`scripts/test-matrix.sh` (the exhaustive deployment-mode rehearsal across
+dev/prod/lite/PKI/GPU-scale/fresh-install/upgrade, run before cutting a release, not during
+ordinary development).
+
 MinIO/OpenSearch-backed tests **auto-enable** when the dev stack is reachable (conftest TCP-probes localhost:5178/5180) and skip otherwise. Coverage is configured report-only (`pytest --cov=app`, `npm run test:coverage`).
 
 ### Four tools that keep the suite honest (issue #431)
@@ -369,24 +433,35 @@ python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
   measurement cycles on the Redis-retry bug; `python -m cProfile -o out.prof -m pytest <test>`
   found it in one.
 
-Current (measured 2026-08-13, load average ~10 on 48 cores — quote the command, not the
-number, if you are unsure): backend **6,623 passed / 62 real skips / 104 s** (from
-4,752 / 458 / 511 s); frontend **669 passed / 76 files / 21.6 s**; e2e **341 collected,
-271 passed / 1 failed** (`test_promote_publishes_to_the_shared_vocabulary`), plus 8
-visual-regression baselines currently failing. The junit XML reports 146 skipped because
-it counts the 84 xfails; 62 is the real skip count.
+Current (measured 2026-09-05, load average 9→56 on 48 cores — quote the command, not the
+number, if you are unsure, and note this was measured under load, not a clean run): backend
+**12,882 passed / 148 skipped / 154-182 s** wall.
 
-**These numbers rot — re-derive rather than trust them.** The previous values above were
-wrong by 1,294 backend tests and 188 frontend tests when checked. `./scripts/run-backend-tests.sh
---summary` and `cd frontend && npm run test` answer in seconds.
+**These numbers rot — re-derive rather than trust them.** Prior values in this file have been
+wrong by over a thousand tests when checked. `./scripts/run-backend-tests.sh --summary` and
+`cd frontend && npm run test` answer in seconds. The root `baseline.xml` is a stale
+**5,473-test artifact from Aug 11** — regenerate or delete it before trusting any
+`--baseline` comparison against it today.
 
-Barrier clusters: none remain at sub-second scale, but a residual ~9 s DDL cluster does —
-21 of the 35 tests over 5 s are `v3xx_migration_consistency` tests from 8 different modules
-all landing near 9 s, which is the `ddl_exclusive` advisory-lock queue. DDL modules are
-~418 s of the ~1,197 s summed CPU. Far better than the 414-of-511 s it started from, but
-"zero barrier clusters" overstates it. Regenerate the timing baseline with
-`./scripts/run-backend-tests.sh && cp /tmp/ot-backend-tests/last.xml baseline.xml` — it is
-gitignored, because a committed measurement rots.
+**The DDL/`ddl_exclusive` barrier claim in earlier versions of this file was measured and
+refuted (2026-09-05).** Actual cost: DDL modules were **262 s of 2,031 s (12.9%)** and
+**239 s of 1,580 s (15.1%)** summed CPU across two runs — not the previously claimed
+418/1,197. Zero `v3xx_migration_consistency` tests appear above 3.5 s. The 43
+`ddl_exclusive`-marked tests sum to 59.5-68.8 s (3.4-3.8% of total), with the slowest single
+test at 2.91 s and none in the slowest 30 overall. An A/B run with all `ddl_exclusive` tests
+deselected showed the barrier costs only **+12.9 s to +5.8 s** — smaller than the
+**21.0-28.1 s of same-config run-to-run noise** observed between otherwise-identical runs.
+Tellingly, the timing-cluster detector still fires with **zero** DDL tests selected: its
+"barrier suspects" at 13k tests are not the advisory-lock queue, they're the CPU-bound tail
+under 48-way worker contention. The detector's underlying premise — that unrelated tests
+sharing a duration band can't be coincidence — held at 5k tests and does not at 13k.
+
+**The real cost is collection, not any barrier.** `pytest tests/ -k
+"zzz_no_such_test_zzz" -n auto` — matching zero tests — still took **96.3 s wall** (48
+workers each collecting the entire tree); `-n 16` dropped that to 78.3 s, and
+`--collect-only -n0` (single worker) took 44.5 s. That means roughly **96 s of a ~154 s
+suite is spent before a single test runs** — 6-10x the DDL barrier's cost, and the actual
+place to look for a speedup.
 
 ### E2E (pytest + Playwright)
 
@@ -410,7 +485,7 @@ System tool at `~/bin/browser-tools/browse.js` — opens URL, runs actions (`fil
 
 Configured via `MODEL_CACHE_DIR` in `.env` (default `./models`). Volumes mount each cache (`huggingface`, `torch`, `nltk_data`, `sentence-transformers`, `opensearch-ml`) into the container's `~/.cache/...`. `opensearch-ml` is also mounted read-only at `/ml-models` in the OpenSearch container.
 
-Models persist across rebuilds (~2.5 GB total). Permissions auto-fixed by `./opentr.sh` startup; manual fix: `./scripts/fix-model-permissions.sh` (chowns to UID/GID 1000:1000 — the non-root container user).
+Models persist across rebuilds (~2.5 GB total). Permissions auto-fixed by `./opentr.sh` startup; manual fix: `./scripts/fix-model-permissions.sh` (chowns to `$CONTAINER_UID_GID`, default **1000:999** — the non-root `appuser`, whose GID is 999 because the Dockerfile uses `groupadd -r`; issue #580).
 
 ## Where subsystem detail lives
 
@@ -435,7 +510,8 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | RAG chat pipeline (retrieval, masking, prompting) | `backend/app/services/chat/CLAUDE.md` |
 | **RAG design: the standard patterns and what runs them** | `docs-site/docs/developer-guide/rag-design-and-validation.md` |
 | **RAG evaluation: how quality is measured, and the traps** | `docs-site/docs/developer-guide/rag-evaluation.md` |
-| **RAG/chat: what is measured, what is NOT, and what to do next** | **issue [#461](https://github.com/attevon-llc/OpenTranscribe/issues/461)** — opens with a phased execution order. Start there before touching retrieval. |
+| **RAG/chat: what is measured, what is NOT, and what to do next** | **issue [#461](https://github.com/attevon-llc/OpenTranscribe/issues/461)** — CLOSED, but still the map: read its phased execution order before touching retrieval. The measurements it deferred are the six open `epic:rag-quality` issues on **v0.6.0** (#462, #464, #506, #523, #526, #532); four of those are already BUILT behind default-off flags, so the work is running the measurement that decides whether the flag flips on. |
+| **Release themes: what each version is FOR, and its exit criteria** | `docs-site/docs/developer-guide/roadmap.md` (Developer Guide → Release Themes). The **live** issue/milestone view is the generated `/roadmap` page — never hand-edit its data, run `python3 scripts/generate-roadmap.py`. |
 | Pluggable ASR providers | `backend/app/services/asr/CLAUDE.md` |
 | Pluggable diarization providers | `backend/app/services/diarization/CLAUDE.md` |
 | OpenSearch indexing + neural/hybrid search | `backend/app/services/search/CLAUDE.md` |
@@ -444,9 +520,10 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Test suite: markers, gates, E2E fixtures | `backend/tests/CLAUDE.md` |
 | Repo scripts + destructive-op warnings | `scripts/CLAUDE.md` |
 | Release pipeline (12 stages, ledger, gates) | `docs-site/docs/developer-guide/releasing.md` |
+| Full local test matrix (4 stages, overlay sub-matrix) | `docs-site/docs/developer-guide/full-test-matrix.md` |
 | Frontend SPA (+ 24 folder-level files) | `frontend/CLAUDE.md` |
 
-> **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. Full table: `backend/app/services/search/CLAUDE.md`.
+> **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. **It applies to WRITES too** (issue #674): a threshold sent *into* OpenSearch (`min_score`) needs the inverse, `(1 + raw_cosine) / 2`, and no read-site audit can find a bad one. Both directions are named functions in `backend/app/utils/cosine_space.py` — call them. Full table: `backend/app/services/search/CLAUDE.md`.
 
 > **Chat retrieval trap (issue #52), as amended by the redaction policy of 2026-08-13:** the
 > `transcript_chunks` index stores transcript text **UNREDACTED**. Whether it must be masked before
@@ -455,13 +532,17 @@ subsystem, and put new subsystem detail **there**, not in this file.
 > still gets masked text (sending unredacted PII to a third party is a data-egress event). Key that
 > off the **provider**, never a global setting.
 >
-> ⚠️ **The provider keying is DECIDED, NOT BUILT.** No code branches on the provider — only the
-> CLAUDE.md files were amended — so **input masking applies to every provider today** and a local
-> deployment is *not* currently less protected than before the decision. **Output redaction landed
-> first, deliberately**: `services/chat/output_redactor.py` masks what the model *writes*,
-> sentence-buffered, gated on `cfg.enabled and cfg.enabled_categories` (the **display** policy, not
-> the `redact_before_llm` **egress** policy). Land the provider keying before it and the gap is
-> real, between two commits, on a deployment that believes it is protected.
+> ✅ **The provider keying is BUILT and shipped**, not just decided. `chat/service.py._prepare_context`
+> resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn and threads it as
+> `unmask_for_local` to all three masking call sites (`mask_chunks`, and both `mask_digests` calls).
+> A **local** model (a `vllm`/`ollama`/`custom` config whose `base_url` resolves to
+> loopback/RFC1918/link-local/a docker-compose hostname) receives excerpt text unmasked; a
+> **remote/cloud provider** still gets masked text. The classification **fails closed** — any
+> ambiguity reads as remote. An admin's `redaction.force_redact_before_llm` lock always wins the
+> local exemption. Full detail: `backend/app/services/chat/CLAUDE.md`. **Output redaction**
+> (`services/chat/output_redactor.py`, masks what the model *writes*, gated on
+> `cfg.enabled and cfg.enabled_categories`) is a separate, independent layer — the **display**
+> policy, not the `redact_before_llm` **egress** policy this section describes.
 >
 > ⚠️ **Two maskers, not interchangeable.** `redactor.mask_chunks()` addresses text by **time
 > range**; `redactor.mask_digests()` by **provenance** (`segment_ids`). A digest through the chunk
@@ -521,6 +602,19 @@ subsystem, and put new subsystem detail **there**, not in this file.
 - Conventional commits: `<type>(<scope>): <summary>`.
 - `.env` is never overwritten without confirmation; `.env.example` is the editable template — keep new vars in sync.
 - Keep code files under ~300 lines; Google-style Python docstrings; light/dark mode parity for any frontend change.
+- **i18n is a requirement of EVERY release, not a task in one of them.** Any change that adds or
+  edits user-facing copy must land the string in all **12** locales
+  (`frontend/src/lib/i18n/locales`: ar de en es fr it ja ko nl pt ru zh), and `ar` is RTL — check
+  it renders, don't assume. Two traps:
+  - **`npm run check:i18n` enforces key PARITY, not translation.** A key copied into all 12 files
+    with English text passes the gate and ships untranslated. Parity is the floor, not the goal.
+  - **It is a CI-only check** (`.github/workflows/pre-commit.yml`), *not* a pre-commit hook, so a
+    local commit that breaks parity looks clean and fails the PR. Run it yourself:
+    `cd frontend && npm run check:i18n`.
+
+  This bites hardest on releases that touch a lot of copy at once, and on any long-lived branch:
+  every locale file is a shared edit surface, so a branch that sits unmerged collects conflicts in
+  all 12 at the same time.
 - No mocking in production code paths — mocks belong in test fixtures only.
 - Real integration testing: if a test depends on Redis/Postgres/OpenSearch, run against the real service or document the dependency. Don't silently skip.
 - **LLM speaker-ID suggestions are never auto-applied** — they are surfaced with confidence scores for manual verification only.

@@ -45,6 +45,16 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+#: The predicate for "this chunk-plane document was never embedded at all" (issue #626,
+#: the follow-up to #625's neural-search-degraded-window fix). ``index_transcript_chunks``
+#: writes ``chunk["embedding_model"] = None`` when the neural pipeline was unavailable at
+#: index time, so an OpenSearch document with no ``embedding_model`` field is a text-only
+#: write with no vector — not to be confused with :data:`EMBEDDING_MODEL_UNKNOWN`
+#: (``"neural"``), which DID get a vector, just an unattributed one. Targeting the literal
+#: string ``"neural"`` here would re-embed documents that already have real vectors and
+#: silently skip the actually-degraded ones.
+DEGRADED_PREDICATE_MUST_NOT: list[dict[str, Any]] = [{"exists": {"field": "embedding_model"}}]
+
 #: The value ``embedding_model`` carries when the model behind the vector is not
 #: known. It is deliberately the literal string every pre-#437 document already
 #: holds, so "unknown" is one bucket and not two.
@@ -345,3 +355,123 @@ def reset_search_provenance_advisory() -> None:
 
     with _advisory_lock:
         _advisory_cache = None
+
+
+# --------------------------------------------------------------------------- #
+# Enumerating text-only files for the operator-triggered re-embed (#626)      #
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class DegradedFile:
+    """One (owner, file) pair with at least one chunk-plane document carrying no vector."""
+
+    user_id: int
+    file_uuid: str
+
+
+def survey_degraded_files(
+    *, limit: int = 500, index_name: str | None = None
+) -> tuple[list[DegradedFile], bool]:
+    """Enumerate files with chunk-plane documents that carry no ``embedding_model`` at all.
+
+    These are the files stranded by a neural-search degraded window (#625): indexed while
+    the pipeline was unavailable, so they hold text-only documents with no vector and never
+    self-heal — nothing re-embeds them until they are reindexed.
+
+    Uses a ``composite`` aggregation over ``(user_id, file_uuid)``, paginated by
+    ``after_key`` rather than a bounded ``terms`` aggregation — the same pattern
+    ``backfill_speaker_id_fields_task`` uses (``tasks/search_indexing_task.py``) to scale
+    past the 50,000-bucket ``terms`` ceiling a large-corpus degraded window could hit.
+
+    Args:
+        limit: Maximum number of distinct files to collect in one call.
+        index_name: Index to survey. Defaults to the configured chunks index.
+
+    Returns:
+        A tuple of ``(files, truncated)``. ``truncated=True`` means ``limit`` was hit and
+        the returned list is a bounded PAGE, not the whole population — callers must not
+        treat it as complete.
+
+    Fails closed: no OpenSearch client, a missing index, or any ``OpenSearchException``
+    returns ``([], False)`` and logs. An empty return on failure is otherwise
+    indistinguishable from "genuinely nothing is degraded" — callers must inspect the
+    surrounding log / report an explicit failure reason rather than trust an empty list
+    alone.
+    """
+    from opensearchpy.exceptions import OpenSearchException
+
+    from app.core.config import settings
+    from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
+    from app.services.opensearch_service import opensearch_client
+
+    index = index_name or settings.OPENSEARCH_CHUNKS_INDEX
+
+    if not opensearch_client:
+        logger.warning("survey_degraded_files: no OpenSearch client available")
+        return [], False
+
+    try:
+        if not opensearch_client.indices.exists(index=index):
+            logger.warning(f"survey_degraded_files: index {index} does not exist")
+            return [], False
+    except OpenSearchException as e:
+        logger.warning(f"survey_degraded_files: could not check index existence: {e}")
+        return [], False
+
+    files: list[DegradedFile] = []
+    after_key: dict[str, Any] | None = None
+
+    while len(files) < limit:
+        page_size = min(100, limit - len(files))
+        composite: dict[str, Any] = {
+            "size": page_size,
+            "sources": [
+                {"user_id": {"terms": {"field": "user_id"}}},
+                {"file_uuid": {"terms": {"field": "file_uuid"}}},
+            ],
+        }
+        if after_key:
+            composite["after"] = after_key
+
+        try:
+            response: dict[str, Any] = opensearch_client.search(
+                index=index,
+                body={
+                    "size": 0,
+                    "query": {
+                        "bool": {
+                            "filter": [chunk_plane_clause()],
+                            "must_not": DEGRADED_PREDICATE_MUST_NOT,
+                        }
+                    },
+                    "aggs": {"files": {"composite": composite}},
+                },
+            )
+        except OpenSearchException as e:
+            logger.warning(f"survey_degraded_files: candidate survey failed: {e}")
+            return [], False
+
+        files_agg = (response.get("aggregations") or {}).get("files", {})
+        buckets = files_agg.get("buckets", [])
+        if not buckets:
+            break
+
+        for bucket in buckets:
+            key = bucket.get("key", {})
+            user_id, file_uuid = key.get("user_id"), key.get("file_uuid")
+            if user_id is None or file_uuid is None:
+                continue
+            files.append(DegradedFile(user_id=int(user_id), file_uuid=str(file_uuid)))
+
+        after_key = files_agg.get("after_key")
+        if not after_key:
+            break
+
+    # Truncated exactly when the limit stopped collection with more pages still
+    # available — i.e. the last page fetched still carried an after_key. A
+    # population that ends exactly at `limit` (no further page) is complete, not
+    # truncated.
+    truncated = len(files) >= limit and after_key is not None
+
+    return files, truncated

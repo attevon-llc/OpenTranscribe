@@ -151,6 +151,21 @@ Configuration-only assertions would have passed against a backstop that did noth
 
 ## Gotchas
 
+- **A restore is not finished until you decide which image serves it.** The backend
+  migrates on startup (`run_migrations()`, below), so restarting the *previously-running*
+  image over a database that was just restored to an OLDER dump silently rolls the
+  backup forward — before an operator ever gets to see it in its original restored form
+  (issue #610; the officially documented rollback recipe reproduced this verbatim).
+  `restore_database` (scripts/common.sh, shared by `opentr.sh restore` and
+  `opentranscribe.sh restore` — issue #613) now reads the live database's alembic head before touching
+  anything and holds the app services **stopped** on a head mismatch, printing the two
+  supported next moves (`./opentranscribe.sh update --rollback`, or `--migrate-forward`
+  if the forward migration is genuinely wanted). The decision is a pure function,
+  `pg_restore_restart_decision` in `scripts/common.sh`, tested independently of
+  Docker/Postgres in `backend/tests/unit/test_restore_restart_decision.py`. This does
+  **not** touch `run_migrations()` itself — normal `./opentranscribe.sh update` still
+  auto-migrates exactly as before; the fix is entirely in the host-side restore/rollback
+  tooling's sequencing, not the migration runner.
 - **The `pg_advisory_lock(42)` guard covers the migration — keep it that way.** Fixed in
   issue #284 A1.4: `run_migrations()` takes the lock on a **dedicated `lock_engine` /
   `lock_conn`** held open across `command.upgrade()`, and the `finally` unlocks on that same

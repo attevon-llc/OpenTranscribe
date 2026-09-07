@@ -20,6 +20,9 @@ import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
+from tests.env_gate import gate_enabled
+from tests.fixtures.search_corpus import GOLD
+
 pytestmark = pytest.mark.search
 
 # This module used to define its own ``FRONTEND_URL`` constant here. A module constant is
@@ -186,6 +189,73 @@ class TestSearchExecution:
                 )
 
 
+class TestSearchResultClickThrough:
+    """A result card's two ways to read more: navigate to the file, or preview in-place.
+
+    Read-only against the dev corpus: neither test creates or mutates anything, so no
+    data-hygiene cleanup is needed (mirrors `test_known_query_returns_result_cards`'s
+    skip pattern for a corpus that has no match in this environment).
+    """
+
+    def _first_result_card(self, page: Page):
+        # `.results-list`'s first child is sometimes a `.no-keyword-notice` banner
+        # ("No exact matches found. Showing related content."), not a card — scope to
+        # `.result-card` explicitly rather than `.results-list > *` (which the
+        # non-emptiness checks elsewhere in this module use for a different purpose:
+        # counting ANY rendered outcome, card or notice, not addressing a specific one).
+        card = page.locator(".results-list .result-card").first
+        expect(card).to_be_visible(timeout=15000)
+        return card
+
+    def test_clicking_a_result_title_navigates_to_the_file_detail_page(self, search_page: Page):
+        """`.result-title` is a real link to the file detail page, not a JS-only handler."""
+        _run_search(search_page, KNOWN_QUERY)
+        search_page.wait_for_timeout(2000)
+        if search_page.locator(".results-list").count() == 0:
+            pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
+
+        card = self._first_result_card(search_page)
+        href = card.locator(".result-title").get_attribute("href")
+        assert href and href.startswith("/files/"), (
+            f"Result title has no /files/<uuid> link: {href!r}"
+        )
+
+        card.locator(".result-title").click()
+        search_page.wait_for_url(lambda url: "/search" not in url, timeout=15000)
+        assert href in search_page.url
+
+        # Not just a URL change — confirms the file detail page actually rendered
+        # (rules out a 500/blank page behind the right URL).
+        expect(search_page.locator(".transcript-segment").first).to_be_visible(timeout=15000)
+
+    def test_view_transcript_opens_the_modal_and_highlights_the_match(self, search_page: Page):
+        """`.view-transcript-btn` opens the in-place modal — no navigation, real highlights."""
+        _run_search(search_page, KNOWN_QUERY)
+        search_page.wait_for_timeout(2000)
+        if search_page.locator(".results-list").count() == 0:
+            pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
+
+        card = self._first_result_card(search_page)
+        card.locator(".view-transcript-btn").click()
+
+        # `.search-transcript-modal-wrapper` is a plain, unsized wrapper div around the
+        # actual modal chrome — it renders in the DOM but never has visible dimensions of
+        # its own, so a visibility check must target the dialog inside it instead.
+        modal = search_page.locator(".search-transcript-modal-wrapper")
+        expect(modal.locator('[role="dialog"]')).to_be_visible(timeout=10000)
+        # Opening the modal must NOT navigate away from /search.
+        assert "/search" in search_page.url
+
+        expect(modal.locator(".nav-count")).to_be_visible(timeout=10000)
+        expect(modal.locator("button.nav-btn")).to_have_count(2)
+
+        # A stable highlight class (not the transient post-scroll pulse, which
+        # self-removes after 3.5s) proves the match was actually located and marked,
+        # not just that the modal opened.
+        highlights = modal.locator(".search-keyword-match, .search-semantic-segment")
+        expect(highlights.first).to_be_visible(timeout=10000)
+
+
 class TestSearchResultType:
     """Result-type toggle (issue #462: transcripts vs summaries)."""
 
@@ -227,6 +297,98 @@ class TestSearchResultType:
         search_page.wait_for_load_state("networkidle")
         search_page.wait_for_timeout(1500)
         assert "type=summaries" not in search_page.url
+
+
+class TestSearchKnownCorpusRanking:
+    """UI-layer ranking check against the known-ground-truth search-quality corpus.
+
+    Every other test in this module is corpus-agnostic (skips when the dev corpus
+    doesn't happen to contain a match). This class is the opposite: it seeds the
+    same self-contained 6-file corpus ``tests/test_search_quality.py`` uses
+    (``tests/fixtures/search_corpus.py`` / ``search_corpus_stack.py``, injected via
+    the production corpus-injection tool — real chunking/embedding/indexing, no
+    ASR) and asserts the FIRST rendered result card is the known-correct file. The
+    API-level suite already proves ranking correctness at the HTTP layer; this
+    proves the UI actually renders that order rather than dropping or reshuffling
+    it.
+
+    Query choice: ``"surveillance"`` is a ``KEYWORD_QUERIES`` entry whose gold file
+    (``sq-espionage``) is the ONLY corpus file containing that word — so it is the
+    sole keyword match in every mode, and ``TestRelevanceOrder`` in
+    ``test_search_quality.py`` already establishes that a keyword match always
+    outranks semantic-only results. That makes rank-1 deterministic in BOTH the
+    ``keyword`` (Exact) and ``hybrid`` (Smart — the only two modes this UI
+    exposes, see ``+page.svelte``'s ``.mode-toggle``) toggle positions, without
+    depending on the corpus's separate, only-top-3-calibrated semantic-ranking
+    claims (see the ``artificial intelligence`` skip in ``test_search_quality.py``).
+
+    Gated like ``test_search_quality.py``: seeding six files through the real
+    injection/indexing pipeline is expensive, so this only runs with
+    ``RUN_SEARCH_QUALITY_TESTS=true``.
+    """
+
+    _QUERY = "surveillance"
+    _GOLD_MEETING_ID = next(iter(GOLD[_QUERY]["gold"]))  # "sq-espionage"
+
+    @pytest.fixture
+    def corpus_search_page(
+        self, page: Page, base_url: str, search_corpus, search_corpus_user
+    ) -> Page:
+        """Log in as the corpus-owning throwaway user (not the shared admin) and open /search.
+
+        The corpus is injected under its own ``searchqual-<uuid8hex>@example.invalid``
+        user (see ``search_corpus_stack.py``), so the shared ``admin``/``gallery_page``
+        session used by every other test in this module would see zero results here.
+        """
+        page.goto(base_url)
+        page.wait_for_selector("#email", timeout=15000)
+        page.fill("#email", search_corpus_user["email"])
+        page.fill("#password", search_corpus_user["password"])
+        page.click("button[type=submit]")
+        page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
+        page.goto(f"{base_url}/search")
+        page.wait_for_selector(".search-page", timeout=15000)
+        return page
+
+    def _first_result_file_uuid(self, page: Page) -> str:
+        first_card = page.locator(".results-list > *").first
+        expect(first_card).to_be_visible(timeout=15000)
+        href = first_card.locator(".result-title").get_attribute("href")
+        assert href and href.startswith("/files/"), (
+            f"First result card has no /files/<uuid> link: {href!r}"
+        )
+        return href.removeprefix("/files/")
+
+    @pytest.mark.skipif(
+        not gate_enabled("RUN_SEARCH_QUALITY_TESTS"),
+        reason="Needs the self-seeded search-quality corpus (RUN_SEARCH_QUALITY_TESTS=true)",
+    )
+    def test_keyword_mode_ranks_gold_file_first(
+        self, corpus_search_page: Page, search_corpus
+    ) -> None:
+        """Exact/keyword mode renders the sole keyword-matching file as result #1."""
+        expected_uuid = search_corpus["meeting_id_to_file_uuid"][self._GOLD_MEETING_ID]
+        # ``.mode-toggle`` only renders once a search has already run (see
+        # ``TestSearchControls``'s docstring) — so a search must execute in the default
+        # (hybrid) mode first before the toggle button exists to click.
+        _run_search(corpus_search_page, self._QUERY)
+        mode_toggle = corpus_search_page.locator(".mode-toggle .mode-btn")
+        expect(mode_toggle.first).to_be_visible(timeout=15000)
+        mode_toggle.nth(1).click()  # "Exact"
+        corpus_search_page.wait_for_load_state("networkidle")
+        assert self._first_result_file_uuid(corpus_search_page) == expected_uuid
+
+    @pytest.mark.skipif(
+        not gate_enabled("RUN_SEARCH_QUALITY_TESTS"),
+        reason="Needs the self-seeded search-quality corpus (RUN_SEARCH_QUALITY_TESTS=true)",
+    )
+    def test_hybrid_mode_ranks_gold_file_first(
+        self, corpus_search_page: Page, search_corpus
+    ) -> None:
+        """Smart/hybrid mode (the default) also renders it as result #1."""
+        expected_uuid = search_corpus["meeting_id_to_file_uuid"][self._GOLD_MEETING_ID]
+        _run_search(corpus_search_page, self._QUERY)
+        assert self._first_result_file_uuid(corpus_search_page) == expected_uuid
 
 
 class TestSearchControls:

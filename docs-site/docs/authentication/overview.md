@@ -102,7 +102,7 @@ IdP was misconfigured would have no way back into the screen that undoes it.
 | `admin` | User accounts, tasks, search and speaker maintenance, data integrity, retention |
 | `super_admin` | Authentication config, role changes, audit log, ASR provider, engine settings, backups, media mirror, watch sources, redaction policy |
 
-:::warning Changed in v0.5.0
+:::warning[Changed in v0.5.0]
 Six panels moved from `admin` to `super_admin`: **ASR provider**, **Engine configuration**,
 **Backups**, **Media Mirror**, **Watch sources**, and the **Redaction policy** floor. If a
 plain `admin` administers any of those today, promote them before upgrading.
@@ -260,7 +260,7 @@ used to probe which addresses exist.
 **Operator remedy**: link the account deliberately instead of by coincidence — set the
 account's provider identifier from the admin UI, or change one of the two addresses.
 
-:::warning Behaviour change in v0.5.0
+:::warning[Behaviour change in v0.5.0]
 **Authentik hardcodes `email_verified` to `false` and Entra ID omits the claim entirely.** On
 those providers an OIDC login will no longer take over a pre-existing local account with the
 same address. Use one of the two remedies above.

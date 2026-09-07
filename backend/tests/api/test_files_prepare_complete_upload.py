@@ -426,6 +426,107 @@ def test_complete_object_never_uploaded_400(client, user_token_headers, normal_u
     assert "did not complete successfully" in response.json()["detail"]
 
 
+def test_a_stat_object_outage_does_not_delete_the_file_row(
+    client, user_token_headers, normal_user, db_session
+):
+    """B1: a transient storage error from stat_object (MinIO restart, network
+    hiccup) must NOT be treated as proof the object is missing. It used to be
+    swallowed into ``None`` — indistinguishable from a genuine NoSuchKey — and
+    ``/complete`` deleted the user's already-uploaded ``media_file`` row and
+    told them the upload failed, while the bytes sat safely in the bucket."""
+    from minio.error import S3Error
+
+    file_uuid = str(uuid.uuid4())
+    media_file = MediaFile(
+        uuid=file_uuid,
+        filename="outage.wav",
+        storage_path=f"media/test/outage-{file_uuid}.wav",
+        content_type="audio/wav",
+        file_size=4096,
+        status="pending",
+        is_public=False,
+        user_id=normal_user.id,
+    )
+    db_session.add(media_file)
+    db_session.commit()
+
+    outage = S3Error(
+        response=None,
+        code="InternalError",
+        message="simulated storage outage",
+        resource=f"/{file_uuid}",
+        request_id="test",
+        host_id="test",
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "app.services.minio_service.minio_client.stat_object",
+            lambda *a, **k: (_ for _ in ()).throw(outage),
+        )
+        response = client.post(
+            "/api/files/complete", headers=user_token_headers, json={"file_id": file_uuid}
+        )
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    db_session.expire_all()
+    still_there = db_session.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+    assert still_there is not None
+    assert still_there.status == "pending"
+
+
+def test_a_minio_unreachable_outage_does_not_delete_the_file_row(
+    client, user_token_headers, normal_user, db_session
+):
+    """B1 (adversarial-review follow-up): the exception a REAL MinIO-down
+    scenario raises is not ``S3Error`` — minio-py's ``stat_object`` calls
+    urllib3's ``PoolManager.urlopen`` directly, and when the connection is
+    refused/unreachable urllib3 retries internally and then raises
+    ``urllib3.exceptions.MaxRetryError``, which is not a subclass of
+    ``MinioException``/``S3Error`` at all (confirmed empirically: pointing a
+    real ``Minio`` client at a closed port raises exactly this type).
+    Catching only ``S3Error`` let this specific outage shape propagate as an
+    unhandled 500 instead of the intended 503-please-retry, and — worse —
+    left it indistinguishable from the codepath that deletes an orphan row,
+    since nothing caught it before request teardown."""
+    from urllib3.connection import HTTPConnection
+    from urllib3.connectionpool import HTTPConnectionPool
+    from urllib3.exceptions import MaxRetryError
+    from urllib3.exceptions import NewConnectionError
+
+    file_uuid = str(uuid.uuid4())
+    media_file = MediaFile(
+        uuid=file_uuid,
+        filename="unreachable.wav",
+        storage_path=f"media/test/unreachable-{file_uuid}.wav",
+        content_type="audio/wav",
+        file_size=4096,
+        status="pending",
+        is_public=False,
+        user_id=normal_user.id,
+    )
+    db_session.add(media_file)
+    db_session.commit()
+
+    pool_error = NewConnectionError(
+        HTTPConnection("localhost"), "Failed to establish a new connection: refused"
+    )
+    outage = MaxRetryError(HTTPConnectionPool("localhost"), "/bucket/object", reason=pool_error)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "app.services.minio_service.minio_client.stat_object",
+            lambda *a, **k: (_ for _ in ()).throw(outage),
+        )
+        response = client.post(
+            "/api/files/complete", headers=user_token_headers, json={"file_id": file_uuid}
+        )
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    db_session.expire_all()
+    still_there = db_session.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+    assert still_there is not None
+    assert still_there.status == "pending"
+
+
 @pytest.mark.skipif(not S3_LIVE, reason="full presigned round-trip requires MinIO (SKIP_S3=False)")
 def test_prepare_then_complete_round_trip(client, user_token_headers, sample_wav_bytes):
     """End-to-end presigned flow: prepare → land bytes in MinIO → complete.

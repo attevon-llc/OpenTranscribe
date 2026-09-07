@@ -89,6 +89,33 @@ def fingerprint_transcript_segments(transcript_segments) -> str:
     )
 
 
+def _llm_is_configured(user_id: int | None) -> bool:
+    """Is an LLM provider available for this user?
+
+    Called BEFORE the task announces any progress. ``_handle_no_llm_configured``
+    deliberately sends no notification — having no provider is a deployment
+    choice, not a per-file failure, and flagging it per file would bury real
+    failures. But the task used to emit "Generating AI summary with LLM — 50%"
+    and two frames before it, and only then discover there was nothing to call.
+    With nothing terminal following, that left the notification panel pinned at
+    50% on a file that was completely finished.
+
+    Resolving availability first keeps the silence and removes the stranded
+    frame. The service this opens is closed immediately; the summary path
+    creates its own moments later, which costs one settings read and keeps
+    ownership of the long-lived client in one place.
+    """
+    service = (
+        LLMService.create_from_user_settings(user_id)
+        if user_id
+        else LLMService.create_from_system_settings()
+    )
+    if service is None:
+        return False
+    service.close()
+    return True
+
+
 def _handle_no_llm_configured(
     file_id: int, user_id: int, filename: str, task_id: str
 ) -> dict[str, Any]:
@@ -641,6 +668,12 @@ def summarize_transcript_task(
 
         # Phase 2 — the slow phase. NO DB session is held from here until the
         # write below: an LLM completion over the whole transcript.
+        # Resolve provider availability BEFORE announcing anything: the
+        # not-configured path is deliberately silent, so a progress frame sent
+        # ahead of it has nothing to close it out. See `_llm_is_configured`.
+        if not _llm_is_configured(user_id):
+            return _handle_no_llm_configured(file_id, user_id, inputs["filename"], task_id)
+
         action = "regeneration" if force_regenerate else "generation"
         send_summary_notification(
             user_id, file_id, "processing", f"AI summary {action} started", 10

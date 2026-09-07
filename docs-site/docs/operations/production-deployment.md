@@ -124,13 +124,15 @@ For internal deployments, generate self-signed certificates:
 
 ### HuggingFace Token
 
-A HuggingFace token is required for downloading PyAnnote speaker diarization models. You must accept the model license agreements on the HuggingFace website before the token will work.
+A HuggingFace token is required for downloading the PyAnnote speaker diarization pipeline. You
+must accept its model license agreement — **from the same account that issues the token** — or
+the token will fail with HTTP 403 as if it were invalid. The gate is per-account, not just
+per-repo.
 
 1. Create an account at [huggingface.co](https://huggingface.co)
-2. Accept the license for [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-3. Accept the license for [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-4. Generate an access token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-5. Add to your `.env` file: `HF_TOKEN=hf_your_token_here`
+2. Accept the license for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — it's CC-BY-4.0 and auto-approved (no waiting list). This is the only gated model either diarization engine loads; see [HuggingFace Token Setup](../installation/huggingface-setup.md) for the older `speaker-diarization-3.1` / `segmentation-3.0` pair this replaced.
+3. Generate an access token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+4. Add to your `.env` file: `HUGGINGFACE_TOKEN=hf_your_token_here`
 
 ### Pre-Download AI Models
 
@@ -216,8 +218,8 @@ ssl_session_tickets off;
 # HSTS -- force HTTPS for one year
 add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-# Large file uploads (audio/video up to 10 GB)
-client_max_body_size 10G;
+# Large file uploads (audio/video up to 15 GB, matching MAX_UPLOAD_BYTES's default)
+client_max_body_size 15G;
 client_body_timeout 600s;
 ```
 
@@ -303,13 +305,13 @@ POSTGRES_DB=opentranscribe
 Use the built-in backup command:
 
 ```bash
-./opentr.sh backup
+./opentranscribe.sh backup
 ```
 
 This creates a timestamped SQL dump in the `backups/` directory. For automated backups, add a cron job:
 
 ```bash
-0 2 * * * cd /opt/opentranscribe && ./opentr.sh backup
+0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup
 ```
 
 ---
@@ -357,7 +359,7 @@ MinIO encryption covers **media files only**. Transcript text also lives in Post
 OpenSearch index, neither of which has built-in at-rest encryption — protect those with
 full-disk encryption (LUKS/dm-crypt) or by placing the data volumes on an encrypted
 filesystem. See [Security Hardening](security-hardening.md#data-protection) for the full
-data-protection picture, including encrypted backups (`./opentr.sh backup --encrypt`).
+data-protection picture, including encrypted backups (`./opentranscribe.sh backup --encrypt`).
 :::
 
 ### Access Key Rotation
@@ -386,7 +388,7 @@ when it's in effect. See [Environment Variables](../configuration/environment-va
 for the full variable reference, including presigned-URL TTL clamping
 (`PRESIGNED_URL_MAX_SECONDS`) and the multipart-upload threshold.
 
-:::note AWS S3's 5 GiB single-PUT ceiling
+:::note[AWS S3's 5 GiB single-PUT ceiling]
 MinIO accepts a single-PUT object up to 5 TiB; AWS S3 rejects one above 5 GiB. On
 `STORAGE_BACKEND=s3`, uploads above that size are always routed through the multipart path, so
 this only affects very large source files, not typical media uploads.
@@ -429,7 +431,7 @@ OpenTranscribe handles this rather than degrading silently:
 
 **Alert on `security_state_degraded_total`.** A non-zero rate means a security control is running without its shared state store. There is deliberately no configuration flag to disable this behaviour -- an off-switch on a security control tends to get flipped during exactly the incident it guards against.
 
-:::warning Run Redis highly available in production
+:::warning[Run Redis highly available in production]
 On AWS, use **ElastiCache for Redis with Multi-AZ and automatic failover** rather than a single Redis container. Failover then takes seconds instead of leaving the cluster in the degraded state above for the length of an outage.
 
 Note that Redis is also the Celery broker, so a Redis outage stops transcription regardless -- highly available Redis protects throughput and security posture together.
@@ -691,7 +693,7 @@ Generate strong, unique values for each of these:
 | Redis Password | `REDIS_PASSWORD` | `openssl rand -base64 24` |
 | Flower Password | `FLOWER_PASSWORD` | `openssl rand -base64 16` |
 | MinIO Encryption Key | `MINIO_KMS_SECRET_KEY` | `echo "key:$(openssl rand -base64 32)"` |
-| HuggingFace Token | `HF_TOKEN` | _(from huggingface.co)_ |
+| HuggingFace Token | `HUGGINGFACE_TOKEN` | _(from huggingface.co)_ |
 
 ### Credential Rotation
 
@@ -751,7 +753,7 @@ docker inspect --format='{{.Name}}: {{.State.Health.Status}}' \
 
 ```bash
 # 1. Verify environment file
-cat .env | grep -E "^(POSTGRES_PASSWORD|SECRET_KEY|MINIO_ROOT_PASSWORD|REDIS_PASSWORD|HF_TOKEN)" \
+cat .env | grep -E "^(POSTGRES_PASSWORD|SECRET_KEY|MINIO_ROOT_PASSWORD|REDIS_PASSWORD|HUGGINGFACE_TOKEN)" \
   | sed 's/=.*/=***/' # Confirm secrets are set without revealing them
 
 # 2. Fix model cache permissions
@@ -795,7 +797,7 @@ docker exec opentranscribe-celery-worker nvidia-smi
 2. **Configure authentication** -- Navigate to Settings and configure your preferred authentication method(s).
 3. **Test a transcription** -- Upload a short audio file and verify the full pipeline (upload, transcription, diarization, search indexing).
 4. **Set up monitoring** -- Configure alerting on container health checks and disk usage.
-5. **Schedule backups** -- Add `./opentr.sh backup` to cron for automated database backups.
+5. **Schedule backups** -- Add `./opentranscribe.sh backup` to cron for automated database backups.
 
 ---
 
@@ -810,7 +812,7 @@ POSTGRES_DB=opentranscribe
 MINIO_ROOT_USER=opentranscribe-admin
 MINIO_ROOT_PASSWORD=<openssl rand -base64 24>
 REDIS_PASSWORD=<openssl rand -base64 24>
-HF_TOKEN=hf_your_token_here
+HUGGINGFACE_TOKEN=hf_your_token_here
 
 # === NGINX ===
 NGINX_SERVER_NAME=transcribe.example.com

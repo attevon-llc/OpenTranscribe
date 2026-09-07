@@ -15,6 +15,15 @@
 
   export let collectionUuid: string;
   export let collectionName: string;
+  /**
+   * Whether the current user may manage shares on this collection (add/remove
+   * targets, change permissions). Must be computed by the caller from real
+   * ownership data (e.g. `collection.my_permission === 'owner'`) — never
+   * hardcode this true. Backend still enforces this server-side
+   * (`_require_collection_owner`), but a non-owner should not be shown
+   * controls that will 403 when used.
+   */
+  export let canManage: boolean = false;
 
   const dispatch = createEventDispatcher();
 
@@ -237,7 +246,7 @@
         {:else}
           <CurrentSharesList
             {shares}
-            canManage={true}
+            {canManage}
             {collectionUuid}
           />
         {/if}
@@ -286,7 +295,7 @@
     border-radius: 6px;
   }
 
-  :global(.dark) .permission-guide {
+  :global([data-theme='dark']) .permission-guide {
     background: rgba(59, 130, 246, 0.08);
     border-color: rgba(59, 130, 246, 0.2);
   }
@@ -457,7 +466,7 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 1.2rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 8px;

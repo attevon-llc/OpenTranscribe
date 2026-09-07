@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OpenTranscribe — Transcription Pipeline",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "happy-path", "label": "Upload to searchable transcript", "focus": ["user", "backend", "dispatch", "preprocess", "asr", "diarize", "postprocess", "index", "notify"], "note": "The full path from an uploaded file to a searchable, speaker-labeled transcript." },
+      { "id": "gpu-work", "label": "GPU-bound work", "focus": ["preprocess", "asr", "diarize"], "note": "ASR and diarization run on Celery's gpu queue; this is the expensive part of the pipeline." },
+      { "id": "post-processing", "label": "Post-processing + delivery", "focus": ["postprocess", "index", "notify"], "note": "Boundary correction, redaction, DB write, search indexing, and the WebSocket notification back to the user." }
+    ]
+  },
+  "lanes": [
+    { "id": "web", "label": "API / Web" },
+    { "id": "pipeline", "label": "Celery Pipeline (gpu/cpu queues)" },
+    { "id": "data", "label": "Data + Search" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "Intake", "fromCol": 0, "toCol": 1 },
+    { "id": "gpu", "label": "ASR + diarization", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "wrapup", "label": "Post-process + deliver", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["user", "backend", "dispatch", "preprocess", "asr", "diarize", "postprocess", "index"],
+  "nodes": [
+    { "id": "user", "lane": "web", "col": 0, "type": "external", "label": "User", "sublabel": "uploads media", "width": 132 },
+    { "id": "backend", "lane": "web", "col": 1, "type": "backend", "label": "FastAPI", "sublabel": "stores to MinIO", "width": 132 },
+    { "id": "dispatch", "lane": "pipeline", "col": 1, "type": "messagebus", "label": "Celery Dispatch", "sublabel": "gpu queue", "width": 132 },
+    { "id": "preprocess", "lane": "pipeline", "col": 2, "type": "backend", "label": "Preprocess", "sublabel": "extract/normalize audio", "width": 132 },
+    { "id": "asr", "lane": "pipeline", "col": 3, "type": "backend", "label": "ASR", "sublabel": "WhisperX (local/cloud)", "width": 132 },
+    { "id": "diarize", "lane": "pipeline", "col": 4, "type": "backend", "label": "Diarization", "sublabel": "PyAnnote / diar-native", "width": 132 },
+    { "id": "postprocess", "lane": "pipeline", "col": 5, "type": "backend", "label": "Post-process", "sublabel": "boundary fix, redact, write DB", "tag": "Postgres", "width": 170 },
+    { "id": "index", "lane": "data", "col": 5, "type": "database", "label": "Index", "sublabel": "OpenSearch hybrid index", "width": 132 },
+    { "id": "notify", "lane": "web", "col": 5, "type": "messagebus", "label": "Notify", "sublabel": "WebSocket to browser", "width": 132 }
+  ],
+  "edges": [
+    { "id": "upload", "from": "user", "to": "backend", "label": "upload", "variant": "default" },
+    { "id": "enqueue", "from": "backend", "to": "dispatch", "label": "enqueue", "variant": "emphasis" },
+    { "id": "start-preprocess", "from": "dispatch", "to": "preprocess", "variant": "default" },
+    { "id": "run-asr", "from": "preprocess", "to": "asr", "variant": "emphasis" },
+    { "id": "run-diarize", "from": "asr", "to": "diarize", "label": "speaker turns", "variant": "emphasis" },
+    { "id": "run-postprocess", "from": "diarize", "to": "postprocess", "variant": "emphasis" },
+    { "id": "index-transcript", "from": "postprocess", "to": "index", "label": "index for search", "variant": "dashed" },
+    { "id": "notify-user", "from": "postprocess", "to": "notify", "label": "transcript ready", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Async by design", "items": ["Upload returns immediately; all heavy work runs on Celery", "gpu queue: ASR + diarization; cpu/nlp queues: redaction, facts, embeddings"] },
+    { "dot": "rose", "title": "Correctness steps", "items": ["Boundary correction (smoother) trims speaker-turn overlap, ~-32% WSER", "Redaction runs before the transcript is considered final"] },
+    { "dot": "emerald", "title": "Delivery", "items": ["OpenSearch gets the searchable copy; Postgres stays system of record", "Frontend learns completion via WebSocket, not polling"] }
+  ]
+}

@@ -41,7 +41,7 @@ ls -la models/
 touch models/huggingface/test.txt && rm models/huggingface/test.txt
 ```
 
-:::tip Prevention
+:::tip[Prevention]
 The latest setup script automatically creates directories with correct permissions. For new installations, use the one-line installer:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
@@ -130,7 +130,7 @@ TORCH_DEVICE=cuda
 GPU_DEVICE_ID=0
 
 # Restart services
-./opentr.sh restart
+./opentr.sh restart-all
 ```
 
 See [GPU Setup](./gpu-setup.md) for complete installation guide.
@@ -216,9 +216,7 @@ nvidia-smi | grep "CUDA Version"
 
 **Solution**:
 
-1. **Accept BOTH model agreements**:
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+1. **Accept the model agreement** for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — the only repo OpenTranscribe actually gates on. (Older docs mentioned `pyannote/segmentation-3.0` and `pyannote/speaker-diarization-3.1` — that pair is optional and only helps the in-process PyAnnote engine's internal last-resort fallback; it is never a substitute for accepting `community-1`.)
 
 2. **Verify token in `.env`**:
    ```bash
@@ -230,7 +228,7 @@ nvidia-smi | grep "CUDA Version"
    - Visit [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
    - Create new read token
    - Update `.env`
-   - Restart: `./opentr.sh restart`
+   - Restart: `./opentr.sh restart-all`
 
 See [HuggingFace Setup](./huggingface-setup.md) for detailed guide.
 
@@ -253,7 +251,7 @@ ls -la models/
 sudo chown -R 1000:1000 models/
 
 # 3. Restart services
-./opentr.sh restart
+./opentr.sh restart-all
 ```
 
 ## Transcription Issues
@@ -293,7 +291,7 @@ docker restart celery-worker
 
 **5. Full restart**:
 ```bash
-./opentr.sh restart
+./opentr.sh restart-all
 ```
 
 ### Incorrect Transcription Results

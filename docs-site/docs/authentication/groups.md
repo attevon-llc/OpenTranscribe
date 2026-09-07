@@ -12,7 +12,7 @@ to an in-app group, to a role grant, or to both.
 
 Added by migration `v378_idp_group_mapping`.
 
-:::note Admin panel covers LDAP and OIDC
+:::note[Admin panel covers LDAP and OIDC]
 Settings → Authentication → **Group mappings** (`GroupMappingSettings`) lets a super_admin
 create, edit, delete and dry-run-test LDAP and OIDC mappings without touching the API. It offers
 only `ldap`/`oidc` as the source, so a **`proxy`-sourced mapping still has to be created through

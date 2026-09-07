@@ -23,7 +23,6 @@ import {
   type ChatMessage,
   type ChatMessageMetadata,
   type ChatScope,
-  type ChatSource,
   type ChatStreamEvent,
   type ChatWarningCode,
   type ContextEstimate,
@@ -822,8 +821,3 @@ function createChatStore() {
 }
 
 export const chatStore = createChatStore();
-
-/** Convenience for components that only need the sources of a message. */
-export function messageSources(message: ChatMessage): ChatSource[] {
-  return message.citations ?? [];
-}

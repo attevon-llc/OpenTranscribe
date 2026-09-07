@@ -7,6 +7,8 @@ Falls back to in-memory storage if Redis is unavailable.
 Configuration is managed via settings:
 - RATE_LIMIT_AUTH_PER_MINUTE: Rate limit for auth endpoints (default: 10)
 - RATE_LIMIT_API_PER_MINUTE: Rate limit for general API endpoints (default: 100)
+- RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE: Rate limit for handlers that fetch a caller-supplied
+  LLM base_url (default: 10)
 - RATE_LIMIT_ENABLED: Enable/disable rate limiting (default: True)
 - RATE_LIMIT_TRUSTED_PROXIES: Comma-separated list of trusted proxy IPs/CIDRs
 """
@@ -100,6 +102,35 @@ def _get_key_func() -> Callable[[Request], str]:
     return key_func
 
 
+def user_or_ip_key(request: Request) -> str:
+    """Rate-limit key: the authenticated user's id, falling back to client IP.
+
+    Used for handlers where a per-IP bucket is meaningless — a router with no
+    admin gate, behind nginx, where every request currently shares one IP-derived
+    bucket per proxy hop until ``RATE_LIMIT_TRUSTED_PROXIES`` is configured (issue
+    #668). Keying on the user id sidesteps that: it is set by
+    ``get_current_active_user`` onto ``request.state.user_id`` while resolving the
+    endpoint's own ``current_user`` dependency, which FastAPI runs *before* calling
+    the ``@limiter.limit``-wrapped endpoint function, so it is already present by
+    the time this key func runs. Falls back to the shared IP resolver for any
+    request that never resolved a user (should not happen on an authenticated
+    route, but a key func must never raise).
+
+    Args:
+        request: The current request.
+
+    Returns:
+        ``f"user:{id}"`` when a user id is known, else the resolved client IP.
+    """
+    user_id = getattr(request.state, "user_id", None)
+    if user_id is not None:
+        return f"user:{user_id}"
+
+    from app.utils.client_ip import resolve_client_ip
+
+    return resolve_client_ip(request)
+
+
 def _create_limiter() -> Limiter:
     """
     Create and configure the rate limiter instance.
@@ -179,6 +210,19 @@ def get_api_rate_limit() -> str:
         Rate limit string in slowapi format (e.g., "100/minute").
     """
     return f"{settings.RATE_LIMIT_API_PER_MINUTE}/minute"
+
+
+def get_llm_outbound_rate_limit() -> str:
+    """Rate limit string for handlers that fetch a caller-supplied LLM ``base_url``.
+
+    Covers ``POST /llm-settings/test`` and the ``GET .../models`` discovery
+    handlers (issue #676) — deliberately tighter than :func:`get_api_rate_limit`,
+    see the ``RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE`` docstring in ``core/config.py``.
+
+    Returns:
+        Rate limit string in slowapi format (e.g., "10/minute").
+    """
+    return f"{settings.RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE}/minute"
 
 
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:

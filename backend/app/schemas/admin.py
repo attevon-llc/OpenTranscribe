@@ -30,21 +30,6 @@ class RetryConfigUpdate(BaseModel):
         return v
 
 
-class SystemSettingResponse(BaseModel):
-    """Response schema for a single system setting"""
-
-    key: str
-    value: str | None
-    description: str | None
-    updated_at: str | None
-
-
-class AllSettingsResponse(BaseModel):
-    """Response schema for all system settings"""
-
-    settings: dict[str, dict]
-
-
 class GarbageCleanupConfig(BaseModel):
     """Response schema for garbage cleanup configuration"""
 

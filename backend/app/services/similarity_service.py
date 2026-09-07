@@ -17,6 +17,9 @@ import numpy as np
 import torch
 from torch.nn import functional as nn_functional
 
+from app.utils.cosine_space import opensearch_score_from_raw_cosine
+from app.utils.cosine_space import raw_cosine_from_opensearch_score
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,7 +44,10 @@ class SimilarityService:
             embedding2: Second embedding vector (numpy array or torch tensor)
 
         Returns:
-            Cosine similarity score between 0 and 1
+            Cosine similarity in ``[-1, 1]`` — the same space as
+            :meth:`opensearch_similarity_search`'s ``similarity`` and as the
+            ``SPEAKER_CONFIDENCE_*`` constants. Negatives are real and are
+            preserved (issue #690).
         """
         # Convert to torch tensors and move to appropriate device
         if isinstance(embedding1, np.ndarray):
@@ -57,68 +63,20 @@ class SimilarityService:
             embedding1.unsqueeze(0), embedding2.unsqueeze(0), dim=1
         ).item()
 
-        # Ensure result is in valid range and return as Python float
-        return float(max(0.0, min(1.0, similarity)))
-
-    @staticmethod
-    def batch_cosine_similarity(
-        query_embedding: np.ndarray | torch.Tensor,
-        target_embeddings: list[np.ndarray | torch.Tensor],
-    ) -> list[float]:
-        """
-        GPU-accelerated batch cosine similarity using PyTorch.
-
-        Processes all comparisons in parallel using vectorized tensor operations.
-
-        Args:
-            query_embedding: Single query embedding
-            target_embeddings: List of target embeddings to compare against
-
-        Returns:
-            List of similarity scores in the same order as target_embeddings
-        """
-        if not target_embeddings:
-            return []
-
-        # Convert all inputs to torch tensors
-        if isinstance(query_embedding, np.ndarray):
-            query_tensor = torch.from_numpy(query_embedding).float()
-        else:
-            query_tensor = query_embedding.float()
-
-        target_tensors = []
-        for target in target_embeddings:
-            if isinstance(target, np.ndarray):
-                target_tensors.append(torch.from_numpy(target).float())
-            else:
-                target_tensors.append(target.float())
-
-        # Stack targets into a single tensor and move to device
-        targets_matrix = torch.stack(target_tensors).to(SimilarityService.device)
-        query_tensor = query_tensor.to(SimilarityService.device)
-
-        # Compute all similarities at once using PyTorch's vectorized operations
-        similarities = nn_functional.cosine_similarity(
-            query_tensor.unsqueeze(0).expand(targets_matrix.size(0), -1), targets_matrix, dim=1
-        )
-
-        # Convert to Python floats and ensure valid range
-        result = []
-        for sim in similarities:
-            score = float(sim.item())
-            result.append(max(0.0, min(1.0, score)))
-
-        return result
+        # Bound float32 rounding to cosine's real domain — NOT to [0, 1].
+        # Clamping the negative half to 0.0 made "opposite" and "orthogonal"
+        # indistinguishable and put this method in a different space from
+        # `opensearch_similarity_search` on the same class (issue #690).
+        return float(max(-1.0, min(1.0, similarity)))
 
     @staticmethod
     def opensearch_similarity_search(
         embedding: list[float] | np.ndarray | torch.Tensor,
         user_id: int,
         index_name: str = "speakers",
-        threshold: float = 0.7,
+        min_raw_cosine: float = 0.7,
         max_results: int = 50,
         exclude_ids: list[int] | None = None,
-        boost_recent: bool = True,
         organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """
@@ -127,18 +85,31 @@ class SimilarityService:
         Leverages OpenSearch's native HNSW algorithm with cosine similarity for
         optimal performance at scale.
 
+        The gate is stated in **raw cosine** and converted to OpenSearch's
+        ``cosinesimil`` score space on the way out, so callers never have to know
+        the index's scoring convention (issue #674).
+
         Args:
             embedding: Query embedding vector (any format)
             user_id: User ID for filtering
             index_name: OpenSearch index to search
-            threshold: Minimum similarity threshold
+            min_raw_cosine: Minimum **raw cosine** similarity a hit must reach,
+                in ``[-1, 1]`` — the same space as ``SPEAKER_CONFIDENCE_*`` and as
+                the ``similarity`` this function returns. Never pass a value
+                already in ``cosinesimil`` score space.
             max_results: Maximum number of results (increased default)
             exclude_ids: Optional list of IDs to exclude from results
-            boost_recent: Whether to boost recent embeddings in scoring
             organization_id: Active org id (None = personal) — tenant gate.
 
         Returns:
-            List of similarity matches with scores and metadata
+            List of similarity matches whose ``similarity`` is **raw cosine** in
+            ``[-1, 1]`` — the same space :meth:`cosine_similarity` returns.
+
+        Note:
+            There is deliberately no recency boost. A ``boost_recent`` parameter
+            was documented here as an active scoring behaviour and referenced
+            nowhere in the body, so the signature promised a feature the search
+            never had (issue #690). Ranking is pure kNN cosine.
         """
         from app.services.opensearch_service import _speaker_org_filter_clauses
         from app.services.opensearch_service import opensearch_client
@@ -182,7 +153,10 @@ class SimilarityService:
                 "display_name",
                 "confidence",
             ],
-            "min_score": threshold,
+            # `min_score` is compared against the index's `cosinesimil` score,
+            # which is `(1 + cosine) / 2` — NOT raw cosine. Writing a raw-cosine
+            # value straight in here gates at roughly half the named similarity.
+            "min_score": opensearch_score_from_raw_cosine(min_raw_cosine),
         }
 
         if opensearch_client is None:
@@ -194,7 +168,7 @@ class SimilarityService:
         # Convert OpenSearch cosinesimil scores to raw cosine similarity
         results = []
         for hit in response.get("hits", {}).get("hits", []):
-            similarity = 2.0 * float(hit["_score"]) - 1.0
+            similarity = raw_cosine_from_opensearch_score(hit["_score"])
 
             result = {
                 "similarity": similarity,
@@ -203,7 +177,8 @@ class SimilarityService:
             results.append(result)
 
         logger.info(
-            f"OpenSearch kNN search returned {len(results)} results above threshold {threshold}"
+            f"OpenSearch kNN search returned {len(results)} results "
+            f"above raw cosine {min_raw_cosine}"
         )
         return results
 
@@ -250,7 +225,7 @@ class SimilarityService:
         query_embedding: np.ndarray | torch.Tensor,
         candidate_embeddings: np.ndarray | torch.Tensor | list[np.ndarray],
         k: int = 10,
-        threshold: float = 0.7,
+        min_raw_cosine: float = 0.7,
     ) -> list[tuple[int, float]]:
         """
         Find top-k most similar embeddings using GPU-accelerated operations.
@@ -259,7 +234,10 @@ class SimilarityService:
             query_embedding: Query embedding
             candidate_embeddings: Pool of candidate embeddings
             k: Number of top results to return
-            threshold: Minimum similarity threshold
+            min_raw_cosine: Minimum **raw cosine** similarity, in ``[-1, 1]``.
+                This path computes cosine directly in torch, so no
+                ``cosinesimil`` conversion applies — the name says so rather than
+                leaving the space to be inferred (issue #674).
 
         Returns:
             List of (index, similarity_score) tuples sorted by similarity (highest first)
@@ -293,7 +271,7 @@ class SimilarityService:
         )
 
         # Filter by threshold and get top-k
-        valid_indices = torch.where(similarities >= threshold)[0]
+        valid_indices = torch.where(similarities >= min_raw_cosine)[0]
         if len(valid_indices) == 0:
             return []
 

@@ -38,6 +38,21 @@
 # Not wired into --fresh isolation (scripts/CLAUDE.md, issue #347 pattern): a real
 # model load is GPU-heavy and meant for one deliberate manual test session at a time,
 # not routine parallel fresh/e2e stacks that could contend for the same GPU.
+#
+# ⚠️ The default model (Gemma 4 E4B AWQ 4-bit) does NOT fit a 12 GB card (issue #608),
+# regardless of LLM_TEST_VLLM_GPU_UTIL / --max-num-batched-tokens / --max-num-seqs /
+# --max-model-len — none of those bound weight loading or torch.compile's inductor
+# autotuning scratch, which is where the measured floor actually comes from. Measured
+# on an idle RTX 3080 Ti (11.62 GiB visible): weights alone load at ~8.85-9.3 GiB, and
+# the default VLLM_COMPILE mode's autotuning then tries to allocate another ~1.25 GiB
+# on top (~10.6-10.9 GiB total attempted against 11.62 GiB free) and OOMs. Full numbers
+# and both failure modes: docs-site/docs/developer-guide/full-test-matrix.md's Cycle 2A
+# section. LLM_TEST_VLLM_EXTRA_ARGS is the escape hatch: set it to `--enforce-eager` to
+# disable torch.compile/CUDA graph capture (the standard vLLM VRAM workaround for a
+# constrained card) — empty by default, so the proven larger-GPU (GPU 2, 49 GiB) path
+# is completely unaffected. NOT verified to make this specific model fit a 12 GB card;
+# untested by issue #608 because the flag did not exist yet. Confirm it actually fits
+# before relying on it, or use a smaller model via LLM_TEST_MODEL.
 services:
   llm-test-vllm:
     # gemma4-cu130: the exact image already proven on this host's GPU 2 for Gemma 4
@@ -61,6 +76,7 @@ services:
       --max-num-seqs ${LLM_TEST_VLLM_MAX_SEQS:-16}
       --max-num-batched-tokens ${LLM_TEST_VLLM_BATCHED_TOKENS:-20000}
       --enable-prefix-caching
+      ${LLM_TEST_VLLM_EXTRA_ARGS:-}
     environment:
       # Standard var name huggingface_hub reads inside the container, sourced from
       # the project's existing HUGGINGFACE_TOKEN .env convention (see header).

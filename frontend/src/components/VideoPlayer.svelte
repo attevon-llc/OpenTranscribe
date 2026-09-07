@@ -6,6 +6,7 @@
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { formatTimeWithMillis } from '$lib/utils/formatting';
+  import { applyMediaSeek, waitForMediaMetadata, HAVE_METADATA } from '$lib/utils/mediaReady';
   import Spinner from './ui/Spinner.svelte';
 
   export let videoUrl: string = '';
@@ -34,66 +35,77 @@
     dispatch('retry');
   }
 
+  // Monotonic id of the most recent seek request. A late-resolving wait belonging
+  // to a superseded seek must not overwrite the newer target.
+  let seekRequestId = 0;
+  let seekSpinnerTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleSpinnerFallback(ms: number) {
+    if (seekSpinnerTimer !== null) clearTimeout(seekSpinnerTimer);
+    seekSpinnerTimer = setTimeout(() => {
+      seekSpinnerTimer = null;
+      isSeeking = false;
+    }, ms);
+  }
+
   // External seek function for waveform and transcript clicks
   export async function seekToTime(time: number) {
-    if (!player) {
+    // Use the raw bound element, not `(player as any).media` — that requires
+    // Plyr to have been constructed first, which is itself async (this
+    // component's own `$: if (videoUrl && mediaElement && !player)
+    // initializePlyr()`). A caller (e.g. the `?t=` deep-link handler) firing
+    // in the same reactivity flush as this component's mount can land here
+    // BEFORE that reactive statement has run, i.e. while `player` is still
+    // null. The old code's `if (!player) return` silently dropped exactly
+    // that seek — the same "act on not-yet-ready state" shape #649 found and
+    // fixed in WaveformPlayer's click handler, here unmasked by removing the
+    // caller's incidental delay rather than caused by it. `mediaElement` is
+    // bound directly on the <video>/<audio> tag and needs no Plyr instance.
+    const media = mediaElement ?? ((player as any)?.media as HTMLMediaElement | undefined);
+    if (!media) {
       return;
     }
 
-    // Show seeking spinner immediately
+    const requestId = ++seekRequestId;
+
+    // Show seeking spinner immediately, and keep it up until `seeked` fires
+    // rather than clearing it on a blind short timer.
     isSeeking = true;
+    scheduleSpinnerFallback(30000);
 
-    const media = (player as any).media as HTMLMediaElement | undefined;
+    // Issue the seek to the media element FIRST, without waiting for metadata.
+    // Before `loadedmetadata` the assignment is not discarded — the element
+    // records it as the default playback start position, so the browser fetches
+    // the byte range for the target as soon as it has parsed the container
+    // index. The previous implementation awaited `loadedmetadata` (up to a
+    // hard-coded 15s) plus a fixed 150ms *before* touching the element, which
+    // added that entire wait to every seek issued during page load.
+    const appliedDirectly = applyMediaSeek(media, time);
 
-    // For large files (especially audio), the media may not have metadata loaded yet
-    // when this is called from the ?t= parameter handler on page load.
-    // Wait for loadedmetadata before attempting to seek.
-    if (media && media.readyState < 1) {
-      await new Promise<void>((resolve) => {
-        const onReady = () => {
-          media.removeEventListener('loadedmetadata', onReady);
-          media.removeEventListener('canplay', onReady);
-          resolve();
-        };
-        media.addEventListener('loadedmetadata', onReady, { once: true });
-        media.addEventListener('canplay', onReady, { once: true });
-        // Check if already ready (race condition with event)
-        if (media.readyState >= 1) {
-          media.removeEventListener('loadedmetadata', onReady);
-          media.removeEventListener('canplay', onReady);
-          resolve();
-          return;
-        }
-        // Timeout for very large files (15s)
-        setTimeout(() => {
-          media.removeEventListener('loadedmetadata', onReady);
-          media.removeEventListener('canplay', onReady);
-          resolve();
-        }, 15000);
-      });
-      // Brief delay to let Plyr process its own metadata/ready handlers
-      // so its internal duration is valid (Plyr bails on seek if duration is 0)
-      await new Promise(r => setTimeout(r, 150));
-    }
-
-    // Update player time via Plyr
-    player.currentTime = time;
-    // Also set directly on the media element as fallback — Plyr's setter
-    // checks `if (!this.duration) return` which can bail if Plyr hasn't
-    // finished initializing its internal state yet
-    if (media) {
-      media.currentTime = time;
-    }
     currentTime = time;
+    dispatch('timeupdate', { currentTime: time, duration });
 
-    // Dispatch the seek event to parent
-    dispatch('timeupdate', {
-      currentTime: time,
-      duration: duration
-    });
+    if (media.readyState < HAVE_METADATA) {
+      // Plyr's own `currentTime` setter bails while its duration is still 0, so
+      // its progress bar would stay at zero. Re-apply through Plyr once metadata
+      // lands — this only syncs the control UI, the seek itself already happened.
+      const ready = await waitForMediaMetadata(media);
+      if (requestId !== seekRequestId) return;
+      if (!ready && !appliedDirectly) {
+        // Metadata never arrived and the direct assignment failed; nothing more
+        // we can usefully do without guessing.
+        return;
+      }
+      if (!appliedDirectly) applyMediaSeek(media, time);
+    }
 
-    // Fallback: clear spinner if 'seeked' event never fires
-    setTimeout(() => { isSeeking = false; }, 5000);
+    // Keep Plyr's internal clock in sync (progress bar, time readout) —
+    // best-effort: `player` may still not exist yet if this resolved before
+    // Plyr was constructed, in which case Plyr will simply pick up the
+    // media element's already-seeked position when it initializes.
+    if (player && Math.abs((player.currentTime ?? 0) - time) > 0.05) {
+      player.currentTime = time;
+    }
   }
 
   // External function to update subtitles when transcript becomes available or is edited
@@ -271,8 +283,21 @@
         dispatch('seeking');
       });
       newPlayer.on('seeked', () => {
+        if (seekSpinnerTimer !== null) {
+          clearTimeout(seekSpinnerTimer);
+          seekSpinnerTimer = null;
+        }
         isSeeking = false;
         dispatch('seeked');
+      });
+      // A media error while seeking would otherwise leave the spinner up until
+      // the fallback timer.
+      newPlayer.on('error', () => {
+        if (seekSpinnerTimer !== null) {
+          clearTimeout(seekSpinnerTimer);
+          seekSpinnerTimer = null;
+        }
+        isSeeking = false;
       });
 
     } catch (error) {
@@ -386,7 +411,7 @@
       <audio
         bind:this={mediaElement}
         id="player"
-        preload="auto"
+        preload="metadata"
         playsinline
       >
         <source src={videoUrl} type={file.content_type} />
@@ -398,7 +423,7 @@
       <video
         bind:this={mediaElement}
         id="player"
-        preload="auto"
+        preload="metadata"
         playsinline
       >
         <source src={videoUrl} type={file?.content_type || 'video/mp4'} />
@@ -1006,7 +1031,7 @@
   }
 
   .retry-button {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 8px 16px;

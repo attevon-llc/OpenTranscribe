@@ -17,7 +17,9 @@ Where things live:
 
 .. warning::
    ``cosinesimil`` returns ``(1 + cosine) / 2``, never raw cosine. Every kNN
-   score read must convert with ``2.0 * hit["_score"] - 1.0``.
+   score read must convert with ``2.0 * hit["_score"] - 1.0``, and every
+   threshold *written* into a query (``min_score``) needs the inverse
+   ``(1 + raw_cosine) / 2`` — see :mod:`app.utils.cosine_space` (issue #674).
 """
 
 from typing import Any

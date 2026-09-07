@@ -194,22 +194,6 @@ describe('isAvailable', () => {
   });
 });
 
-describe('getProviders', () => {
-  it('returns the provider list on success', async () => {
-    const data = { providers: ['openai', 'anthropic'], total: 2, message: 'ok' };
-    mockAxiosInstance.get.mockResolvedValue({ data });
-
-    expect(await llmService.getProviders()).toEqual(data);
-    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/llm/providers');
-  });
-
-  it('throws with a resolved error message on failure', async () => {
-    mockAxiosInstance.get.mockRejectedValue(new Error('unreachable'));
-
-    await expect(llmService.getProviders()).rejects.toThrow('unreachable');
-  });
-});
-
 describe('testConnection', () => {
   it('returns the connection test result on success', async () => {
     const data = { success: true, message: 'connected', provider: 'openai', model: 'gpt-4o' };

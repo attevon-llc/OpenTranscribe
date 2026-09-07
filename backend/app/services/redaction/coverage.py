@@ -50,6 +50,29 @@ def uncovered_detectors(media_file, cfg: EffectiveRedactionConfig) -> set[str]:
       opposite on every count: it is a deployment fault, the same file would have been
       examined on a properly provisioned box, and installing the dependency plus a
       re-scan fixes it.
+
+      ⚠️ **It only excuses a detector for a language it could identify** (issue #545). Its
+      normalizer used to echo anything it did not understand, so ``"eng"`` / ``"English"``
+      / ``"en "`` were compared against ``REDACTION_PII_LANGUAGES`` (``{"en"}``), found
+      absent, and subtracted here as a "language skip" — a permanent product limit that was
+      nothing of the sort. It now returns every detector for an undeterminable language, so
+      ``relied_on`` below stays full and whatever the scan did not run is reported as a real
+      gap rather than excused. That is deliberately the *widest* of the three inputs to this
+      function: over-reporting a gap costs an inline re-detection, under-reporting it sends
+      an unexamined transcript to a provider.
+
+      ⚠️ **"Stays full" here is necessary but was not, on its own, sufficient.** This module
+      only reads what a scan *reports* it covered (``media_file.redaction_coverage``); it
+      cannot see what the scan actually did. For a while ``detect_and_store`` read this same
+      "every detector supported" answer as permission to actually RUN the English-hardcoded
+      profanity/PII/toxicity detectors on text of an unresolvable language, and since a
+      pass that does not raise gets credited, ``redaction_coverage`` came back full and
+      ``relied_on - covered`` was empty — no gap, in spite of this function's own logic
+      being correct. ``detect_and_store`` now declines to run those detectors at all for an
+      unresolvable language (``app/services/redaction/service.py``, gated on
+      ``normalize_language(media.language) is None``, independent of this function's
+      return value), so ``covered`` genuinely omits them and this module's "stays full"
+      finally produces the observable gap its docstring always claimed.
     * :func:`~app.services.redaction.config.blocking_detector_failures` says which of
       the remaining gaps this policy actually cares about. That narrowness is the whole
       reason the control is safe to turn on: ``pii`` is not a default category, so a

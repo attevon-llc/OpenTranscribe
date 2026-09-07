@@ -172,7 +172,7 @@
   }
   .owner-badge {
     background: rgba(99, 102, 241, 0.15);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
   .badge-success {
     background: rgba(34, 197, 94, 0.15);

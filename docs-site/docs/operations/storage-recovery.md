@@ -12,7 +12,7 @@ PostgreSQL and OpenSearch. If you ever lose the database but the media in MinIO
 survives, you can **rebuild the catalog in place** without re-downloading or
 re-uploading a single file.
 
-:::info When you'd use this
+:::info[When you'd use this]
 - A database volume was deleted, corrupted, or restored from a stale backup, but the MinIO bucket is intact.
 - You're migrating to a fresh database and want to re-attach existing media.
 - Restoring a Postgres backup is always the **first** choice (it preserves transcripts, speakers, and edits). Storage recovery is for when no good database backup exists — it re-derives everything by reprocessing the media.
@@ -84,7 +84,7 @@ video** (so there's no risk of rate-limiting or IP blocks):
   by matching on duration (±2 s, unique-match-only in both directions, so an
   ambiguous match is left untitled rather than mistitled).
 
-:::note Honest expectation
+:::note[Honest expectation]
 Durations collide on a large library, so duration-matching auto-titles only the
 files with distinctive lengths. Everything else is recovered and processed with
 its object-key filename as a placeholder title — lossless, just unlabelled.

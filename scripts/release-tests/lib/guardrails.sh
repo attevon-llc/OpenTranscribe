@@ -34,6 +34,12 @@ gr_log()  { echo -e "${GR_BLUE}[guardrails]${GR_NC} $*"; }
 gr_ok()   { echo -e "${GR_GREEN}[guardrails] ✓${GR_NC} $*"; }
 gr_warn() { echo -e "${GR_YELLOW}[guardrails] ⚠${GR_NC} $*" >&2; }
 gr_die()  { echo -e "${GR_RED}${GR_BOLD}[guardrails] ✗ FATAL:${GR_NC} $*" >&2; exit 1; }
+# An operator declining a confirmation is NOT a gate failure, and the difference is the shared
+# exit-code contract scripts/release.sh and scripts/test-matrix.sh both publish: 0 pass, 1 gate
+# failed, 2 misuse, 3 precondition unmet, 4 OPERATOR ABORT. The confirmation gate used to
+# gr_die (exit 1), so declining the `I UNDERSTAND` prompt was reported all the way up as a
+# failed rehearsal — a matrix leg 3 FAIL that nothing had actually tested.
+gr_abort() { echo -e "${GR_YELLOW}${GR_BOLD}[guardrails] aborted:${GR_NC} $*" >&2; exit 4; }
 
 # ─── Protected paths (NEVER touch) ──────────────────────────────────────────
 # These are resolved with realpath before comparison so symlinks cannot be
@@ -73,6 +79,30 @@ gr_path_inside() {
     needle="$(gr_realpath "$1")"
     parent="$(gr_realpath "$2")"
     [[ "$needle" == "$parent" || "$needle" == "$parent"/* ]]
+}
+
+# ─── EXIT-check registry ────────────────────────────────────────────────────
+#
+# Several guardrails need to run a check on EVERY exit path (a scenario that
+# dies halfway is exactly when a stray write is most likely and least
+# expected). `trap` REPLACES rather than stacks, so a second `trap ... EXIT`
+# would silently drop the first one's check — this is what let that actually
+# happen once. Register a function name instead of building a bigger trap
+# string each time; gr_run_exit_checks is the single EXIT handler and runs
+# every registered check in registration order.
+GR_EXIT_CHECKS=()
+
+gr_run_exit_checks() {
+    trap - EXIT
+    local check
+    for check in "${GR_EXIT_CHECKS[@]}"; do
+        "$check"
+    done
+}
+
+gr_register_exit_check() {
+    GR_EXIT_CHECKS+=("$1")
+    trap gr_run_exit_checks EXIT
 }
 
 # ─── Guardrail checks ───────────────────────────────────────────────────────
@@ -138,28 +168,51 @@ gr_check_mount_path() {
 }
 
 gr_check_container_names() {
-    # Refuse if any container that matches the production prefix is currently
-    # RUNNING. We expect the caller to have stopped the live deployment first
-    # (via ./opentr.sh stop), so opentranscribe-* containers should be gone.
-    local running
-    running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
-    if [[ -n "$running" ]]; then
-        gr_die "live opentranscribe-* containers still running:
-$running
+    # Refuse if any container belonging to the live `opentranscribe` OR
+    # `transcribe-app` compose PROJECT is currently RUNNING. We expect the
+    # caller to have stopped the live deployment first (via ./opentr.sh stop).
+    #
+    # Filtered by the compose project label, not a bare name prefix: an
+    # unrelated container on this host (e.g. a homepage/dashboard app named
+    # "opentranscribe-homepage", from a totally different compose project)
+    # can share the name prefix without being this project's stack at all,
+    # and would never actually collide on container_name during create
+    # (this scenario only ever creates opentranscribe-backend,
+    # opentranscribe-postgres, etc. — never opentranscribe-homepage). A naive
+    # `--filter 'name=^opentranscribe-'` reports a false positive that then
+    # refuses to start for a reason that was never true.
+    #
+    # ⚠️ BOTH project labels, not just one (issue #783 finding N1) — the SAME
+    # ${OPENTR_STOP_PROJECT_LABEL:-opentranscribe} / ${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}
+    # mechanism scripts/release/10-preflight.sh's live-stack check uses, not a
+    # second definition. A repo clone's compose project defaults to the
+    # DIRECTORY name, so `./opentr.sh start dev` from this checkout runs under
+    # `transcribe-app`, while a curl/one-liner install runs under
+    # `opentranscribe` — checking only the latter let this refuse-if-running
+    # guard pass with the dev stack fully up.
+    local running running_alt running_all
+    running=$(docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' || true)
+    running_alt=$(docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' || true)
+    running_all="$(printf '%s\n%s' "$running" "$running_alt" | sed '/^$/d' | sort -u)"
+    if [[ -n "$running_all" ]]; then
+        gr_die "live opentranscribe-*/transcribe-app-* containers still running:
+$running_all
 
 Stop them first with: ./opentr.sh stop  (preserves all data)"
     fi
     # Stopped opentranscribe-* containers (from a previous live `down`) would
     # also collide on container_name during create — flag them so the caller
     # can decide whether to remove them.
-    local stopped
-    stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
-    if [[ -n "$stopped" ]]; then
-        gr_warn "stopped opentranscribe-* containers exist (will collide on create):"
-        echo "$stopped" >&2
+    local stopped stopped_alt stopped_all
+    stopped=$(docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' || true)
+    stopped_alt=$(docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' || true)
+    stopped_all="$(printf '%s\n%s' "$stopped" "$stopped_alt" | sed '/^$/d' | sort -u)"
+    if [[ -n "$stopped_all" ]]; then
+        gr_warn "stopped opentranscribe-*/transcribe-app-* containers exist (will collide on create):"
+        echo "$stopped_all" >&2
         gr_warn "the test driver will 'docker rm' them in phase 0 (no data loss — bind mounts persist)"
     fi
-    gr_ok "no live opentranscribe-* containers running"
+    gr_ok "no live opentranscribe-*/transcribe-app-* containers running"
 }
 
 gr_check_volume_names() {
@@ -186,6 +239,47 @@ gr_check_ports_free() {
         gr_die "required ports already in use: ${occupied[*]}"
     fi
     gr_ok "ports free: ${TEST_PORTS:-<none>}"
+}
+
+# gr_wait_for_stock_containers_gone [TIMEOUT_S]
+#   Poll until no container carries the stock 'opentranscribe' compose project label.
+#   Used by test-upgrade.sh's multi-hop dispatcher (issue #783) between hops: every
+#   scenario deliberately ends with its stack UP on the installer's stock container
+#   names and ports 5173-5180, so the NEXT hop's preflight would refuse to start while
+#   the previous one's containers are still going away asynchronously at the docker
+#   level (a container in 'Removing' still holds its port bindings).
+#
+#   ⚠️ The filter string below is BYTE-IDENTICAL to scripts/release/65-rehearse.sh's
+#   own `stock_containers()` on purpose (test_upgrade_multi_source.py asserts this) --
+#   both are asking the exact same question ("is a stock-named opentranscribe-* stack
+#   still around"), and a second, independently-typed copy of that filter string is a
+#   second chance for the two to quietly drift apart. Deliberately NOT shared as a
+#   sourced function: 65-rehearse.sh sources only criteria-lib.sh and has no dependency
+#   on this test-harness library, and giving a release STAGE a dependency on the TEST
+#   HARNESS to save a few lines is the wrong trade.
+#
+#   Captured, never `docker ps ... | grep -q .`: this library runs under
+#   `set -euo pipefail`, and `grep -q` closes the pipe on its first match, so `docker
+#   ps` can die with SIGPIPE mid-write and turn "the stack IS still up" into a
+#   reported all-clear.
+gr_wait_for_stock_containers_gone() {
+    local timeout_s="${1:-60}"
+    local waited=0
+    local names
+    while true; do
+        names="$(docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}')"
+        if [[ -z "$names" ]]; then
+            gr_ok "stock opentranscribe-* containers gone"
+            return 0
+        fi
+        if (( waited >= timeout_s )); then
+            gr_warn "stock opentranscribe-* containers did not go away within ${timeout_s}s:"
+            echo "$names" >&2
+            return 3
+        fi
+        sleep 2
+        waited=$(( waited + 2 ))
+    done
 }
 
 gr_check_disk_space() {
@@ -233,7 +327,7 @@ EOF
     printf "Type 'I UNDERSTAND' to proceed: "
     read -r reply </dev/tty
     if [[ "$reply" != "I UNDERSTAND" ]]; then
-        gr_die "confirmation not given; aborting"
+        gr_abort "confirmation not given"
     fi
 }
 
@@ -283,6 +377,22 @@ gr_cleanup() {
     # Without this the run leaves its database behind and the NEXT fresh
     # install silently inherits it (issue #408).
     gr_cleanup_owned_stock_resources
+
+    # 3c. Opt-in reset of stale stock-named volumes left by an EARLIER run this
+    # one does not own (gr_cleanup_owned_stock_resources deliberately leaves
+    # those alone — "leaving $vol alone — it existed before this run" — which is
+    # correct in general but is exactly what let leg "3"'s stock volumes survive
+    # into "3-lite"/"3-pki": those legs' own --cleanup calls could stop leg "3"'s
+    # containers but not remove volumes leg "3" never recorded owning, so the very
+    # next fresh-install's preflight found the previous run's Postgres credentials
+    # still there and refused. This reuses gr_check_stale_stock_volumes — the same
+    # live-marker-verified removal gr_preflight already runs — rather than a raw
+    # `docker volume rm`, and only fires when the caller explicitly opts in via
+    # OT_RELEASE_TEST_RESET_VOLUMES=1 (test-matrix.sh's inter-leg cleanup does this;
+    # a plain `--cleanup` a human runs by hand is unaffected).
+    if [[ "${OT_RELEASE_TEST_RESET_VOLUMES:-}" == "1" ]]; then
+        gr_check_stale_stock_volumes
+    fi
 
     # 4. Remove TEST_ROOT contents — but only if TEST_ROOT is still within the allowed area
     if [[ -n "${TEST_ROOT:-}" && -d "$TEST_ROOT" ]]; then
@@ -464,10 +574,7 @@ gr_fingerprint_repo_env() {
         GR_REPO_ENV_FINGERPRINT="absent"
         gr_log "no repo .env to fingerprint"
     fi
-    # Checked on EVERY exit path, not just the happy one — a scenario that dies
-    # halfway is exactly when a stray write is most likely and least expected.
-    # The trap clears itself first so gr_die's exit cannot re-enter it.
-    trap 'trap - EXIT; gr_assert_repo_env_untouched' EXIT
+    gr_register_exit_check gr_assert_repo_env_untouched
 }
 
 gr_assert_repo_env_untouched() {
@@ -595,4 +702,149 @@ gr_preflight() {
     gr_check_disk_space 80 10
     gr_confirmation_gate
     gr_ok "all preflight checks passed"
+}
+
+# ─── Rollback-tail guardrails (issue #598) ──────────────────────────────────
+#
+# test-upgrade.sh's rollback phases run `DROP DATABASE`, which none of the
+# checks above needed to guard against — the fresh-install and forward-upgrade
+# scenarios never destroy a database, only create or migrate one. These three
+# are called explicitly by the rollback phases, not from gr_preflight, because
+# they are not needed by test-fresh-install.sh or test-lite-mode.sh.
+
+# gr_assert_target_is_test_database CONTAINER EXPECTED_DB ENV_FILE
+#   Called immediately before every destructive DB operation in the rollback
+#   tail (the DROP DATABASE inside `restore_database`, invoked here through
+#   `opentranscribe.sh restore` — the shipped production command, issue #613 —
+#   and the swap `opentranscribe.sh update --rollback` performs). All four
+#   conditions below
+#   must hold or it dies — any inability to determine an answer counts as
+#   "this is live" (fail closed, same policy as gr_volume_has_live_marker).
+gr_assert_target_is_test_database() {
+    local container="$1" expected_db="$2" env_file="$3"
+
+    # (a) the container must carry our release-test label — the same label
+    # cp_inject_labels stamps on every service this run creates.
+    local label
+    label="$(docker inspect "$container" \
+        --format '{{index .Config.Labels "com.opentranscribe.release-test"}}' 2>/dev/null || echo "")"
+    if [[ -z "$label" ]]; then
+        gr_die "gr_assert_target_is_test_database: container '$container' carries no
+           com.opentranscribe.release-test label — refusing a destructive DB
+           operation against a container this run cannot prove it owns"
+    fi
+
+    # (b) the volume backing postgres must not be one this run found
+    # PRE-EXISTING at preflight (gr_stamp_owned_resources' 'preexisting=' list)
+    # — that is someone else's database, not this run's.
+    local vol
+    vol="$(docker inspect "$container" \
+        --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' \
+        2>/dev/null || echo "")"
+    if [[ -z "$vol" ]]; then
+        gr_die "gr_assert_target_is_test_database: could not resolve the postgres data
+           volume for container '$container' — refusing (fail closed)"
+    fi
+    if [[ -f "$GR_OWNED_STAMP" ]] && grep -qxF "preexisting=$vol" "$GR_OWNED_STAMP"; then
+        gr_die "gr_assert_target_is_test_database: volume '$vol' existed BEFORE this run
+           started — refusing to drop a database this run does not own"
+    fi
+
+    # (c) no live-data marker, probed from inside a container per
+    # gr_volume_has_live_marker's own doc comment (a host-side stat on the
+    # root-owned mountpoint would silently report "no marker" for every
+    # volume, which is the exact mistake that once deleted a live one).
+    if gr_volume_has_live_marker "$vol"; then
+        gr_die "gr_assert_target_is_test_database: volume '$vol' carries the
+           .opentranscribe-live-data marker — REFUSING a destructive operation"
+    fi
+
+    # (d) the resolved POSTGRES_DB must match the staged .env this run wrote
+    # — catches a stage pointed at the wrong directory before it drops the
+    # wrong database.
+    local configured_db
+    # python-dotenv, not grep/cut (issue #590).
+    configured_db="$(python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/env_reader.py" "$env_file" POSTGRES_DB)"
+    configured_db="${configured_db:-opentranscribe}"
+    if [[ "$configured_db" != "$expected_db" ]]; then
+        gr_die "gr_assert_target_is_test_database: staged .env at '$env_file' has
+           POSTGRES_DB='$configured_db', expected '$expected_db'"
+    fi
+
+    gr_ok "target database '$expected_db' in container '$container' verified as this run's own test database"
+}
+
+# ─── The repo's own ./backups/ is never a test artifact ─────────────────────
+#
+# `backup`/`restore` (scripts/common.sh's shared implementation, invoked here through
+# the staged `opentranscribe.sh` — issue #613; `opentr.sh` uses the identical
+# relative-CWD write but a bare `docker compose` with no `-f` chain of its own)
+# write ./backups relative to CWD. A staging mistake that ran the staged
+# opentranscribe.sh from the repo root — or forgot to stage it at all — would write
+# this run's dumps (containing every seeded user's transcripts in plaintext)
+# into the developer's own checkout. Same measured-not-asserted pattern as
+# gr_fingerprint_repo_env: fingerprint before, verify after, fail loudly on any
+# difference, checked on every exit path via gr_register_exit_check (which
+# ADDS this check to whatever gr_fingerprint_repo_env already registered,
+# rather than a second `trap ... EXIT` clobbering it).
+GR_REPO_BACKUPS_DIR="${GR_REPO_BACKUPS_DIR:-/mnt/nvm/repos/transcribe-app/backups}"
+GR_REPO_BACKUPS_FINGERPRINT=""
+
+gr_fingerprint_repo_backups() {
+    if [[ -d "$GR_REPO_BACKUPS_DIR" ]]; then
+        GR_REPO_BACKUPS_FINGERPRINT="$(find "$GR_REPO_BACKUPS_DIR" -type f -printf '%P %s\n' 2>/dev/null \
+            | LC_ALL=C sort | sha256sum | awk '{print $1}')"
+        gr_ok "fingerprinted repo ./backups (must be unchanged at exit)"
+    else
+        GR_REPO_BACKUPS_FINGERPRINT="absent"
+        gr_log "no repo ./backups directory to fingerprint — will refuse if one appears"
+    fi
+
+    gr_register_exit_check gr_assert_repo_backups_untouched
+}
+
+gr_assert_repo_backups_untouched() {
+    [[ -n "$GR_REPO_BACKUPS_FINGERPRINT" ]] || return 0
+
+    local now
+    if [[ -d "$GR_REPO_BACKUPS_DIR" ]]; then
+        now="$(find "$GR_REPO_BACKUPS_DIR" -type f -printf '%P %s\n' 2>/dev/null \
+            | LC_ALL=C sort | sha256sum | awk '{print $1}')"
+    else
+        now="absent"
+    fi
+
+    if [[ "$now" != "$GR_REPO_BACKUPS_FINGERPRINT" ]]; then
+        gr_die "the repo's ./backups directory CHANGED during this release test.
+           before: $GR_REPO_BACKUPS_FINGERPRINT
+           after:  $now
+           A release test must stage 'opentranscribe.sh backup'/'restore' under TEST_ROOT
+           and never invoke them from the repo root. See gr_assert_not_repo_cwd."
+    fi
+    gr_ok "repo ./backups directory unchanged"
+}
+
+# gr_assert_not_repo_cwd [DIR]
+#   Refuses to proceed if DIR (default: $PWD) resolves to the repo root, any
+#   other GR_PROTECTED_PATHS entry, or anywhere outside TEST_ROOT. Call this
+#   immediately before invoking a staged copy of opentranscribe.sh (or opentr.sh):
+#   both write ./backups relative to CWD, so running either from the wrong
+#   directory would drop the database of — or write dumps into — the live
+#   deployment's own tree.
+gr_assert_not_repo_cwd() {
+    local dir="${1:-$PWD}"
+    local resolved
+    resolved="$(gr_realpath "$dir")"
+    local protected
+    for protected in "${GR_PROTECTED_PATHS[@]}"; do
+        if gr_path_inside "$resolved" "$protected"; then
+            gr_die "gr_assert_not_repo_cwd: refusing to run a staged opentr.sh from
+               '$resolved' — resolves under protected path '$protected'"
+        fi
+    done
+    if ! gr_path_inside "$resolved" "${TEST_ROOT:-/nonexistent-test-root}"; then
+        gr_die "gr_assert_not_repo_cwd: refusing to run a staged opentr.sh from
+           '$resolved' — it must be inside TEST_ROOT ('${TEST_ROOT:-<unset>}')"
+    fi
+    gr_ok "staged opentr.sh CWD '$resolved' is inside TEST_ROOT, not the repo"
 }

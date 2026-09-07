@@ -96,6 +96,7 @@ from app.services.account_security_service import audit_role_change
 from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import revoke_all_sessions
+from app.utils.stats_helpers import format_bytes
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -304,19 +305,19 @@ def get_gpu_usage():
         ]
 
 
-def format_bytes(byte_count):
-    """Format bytes to a human-readable string"""
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if byte_count < 1024 or unit == "TB":
-            return f"{byte_count:.2f} {unit}"
-        byte_count /= 1024
-
-
 def _delete_user_speakers(db: Session, user_id: int) -> None:
-    """Delete all speakers for a user, including OpenSearch embeddings.
+    """Delete all speakers for a user. Pure DB — no OpenSearch here (issue #715).
 
-    Collects speaker UUIDs before bulk SQL delete so OpenSearch can be cleaned
-    even though the bulk operation bypasses ORM instance-level callbacks.
+    This used to remove each speaker's OpenSearch embedding itself, one round trip
+    per speaker, from inside the caller's open transaction (``delete_admin_user``'s
+    ``db.begin_nested()`` savepoint, or the bare request transaction in
+    ``users.delete_user``) — holding locks, including ``ACCESS SHARE`` on
+    ``media_file`` taken moments later, for as long as OpenSearch took to answer. The
+    caller now reads every speaker UUID via
+    ``file_cleanup_service.load_account_purge_plans`` **before** this function runs
+    and removes the embeddings via ``purge_account_external_copies`` **after** its own
+    transaction commits, with no session held — the same phase split
+    ``_delete_user_owned_records`` already uses for ``SpeakerProfile`` avatars.
 
     **The segment detach is not optional.** ``transcript_segment.speaker_id`` is a
     plain FK with ``ON DELETE NO ACTION``, and this runs *before*
@@ -354,16 +355,6 @@ def _delete_user_speakers(db: Session, user_id: int) -> None:
     db.query(Speaker).filter(Speaker.user_id == user_id).delete(synchronize_session=False)
     logger.info("Speakers deleted from DB")
 
-    # Clean OpenSearch embeddings after bulk DB delete (non-fatal)
-    try:
-        from app.services.opensearch_service import remove_speaker_embedding
-
-        for uuid in speaker_uuids:
-            remove_speaker_embedding(uuid)
-        logger.info(f"Removed {len(speaker_uuids)} speaker embeddings from OpenSearch")
-    except Exception as e:
-        logger.warning(f"OpenSearch speaker cleanup failed during user {user_id} deletion: {e}")
-
 
 def _delete_user_owned_records(db: Session, user_id: int) -> None:
     """Delete all user-owned records that are not covered by DB-level CASCADE.
@@ -388,6 +379,21 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     ``user_id`` can find them. They are ``ON DELETE SET NULL`` at the database
     level instead (``v387``), which is enforced for every deletion path including
     ones that do not exist yet.
+
+    **``SpeakerProfile.avatar_path`` objects are NOT deleted here** (issue #695). This
+    function bulk-deletes the ``speaker_profile`` rows below, so by the time it could
+    act there is nothing left to read a path off of — the same shape as
+    ``_delete_user_media_files`` and object storage. The caller reads every avatar path
+    via ``file_cleanup_service.load_account_purge_plans`` **before** this function runs
+    and destroys the objects via ``purge_account_external_copies`` after the
+    transaction commits.
+
+    **Nor are the profiles' OpenSearch embeddings** (issue #715). This used to remove
+    each one itself, one round trip per profile, from inside the caller's open
+    transaction — the same defect ``_delete_user_speakers`` had. The caller now reads
+    every profile UUID via ``load_account_purge_plans`` alongside the avatar paths and
+    removes the embeddings via ``purge_account_external_copies`` after the transaction
+    commits.
     """
     # Speaker collections and their members
     sc_ids = [
@@ -412,9 +418,8 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         db.query(Collection).filter(Collection.user_id == user_id).delete(synchronize_session=False)
         logger.info(f"Deleted {len(col_ids)} collections for user {user_id}")
 
-    # Speaker profiles — collect UUIDs first so OpenSearch can be cleaned
-    profile_rows = db.query(SpeakerProfile.uuid).filter(SpeakerProfile.user_id == user_id).all()
-    profile_uuids = [str(row[0]) for row in profile_rows]
+    # Speaker profiles. OpenSearch embeddings are NOT removed here — see the
+    # docstring; the caller's purge plan already has every UUID.
     profiles_deleted = (
         db.query(SpeakerProfile)
         .filter(SpeakerProfile.user_id == user_id)
@@ -422,14 +427,6 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     )
     if profiles_deleted:
         logger.info(f"Deleted {profiles_deleted} speaker profiles for user {user_id}")
-        try:
-            from app.services.opensearch_service import remove_profile_embedding
-
-            for puuid in profile_uuids:
-                remove_profile_embedding(puuid)
-            logger.info(f"Removed {len(profile_uuids)} profile embeddings from OpenSearch")
-        except Exception as e:
-            logger.warning(f"OpenSearch profile cleanup failed during user {user_id} deletion: {e}")
 
     # Comments
     comments_deleted = (
@@ -482,8 +479,80 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         logger.info(f"Deleted {doc_count} documents for user {user_id}")
 
 
+def _assert_no_files_under_legal_hold(db: Session, user_id: int) -> None:
+    """Refuse to delete an account that still owns legally-held evidence (issue #689).
+
+    ``_delete_user_media_files`` ends in a **bulk** ``query(MediaFile).delete()``. A bulk
+    delete emits one statement, loads no instances, and consults no ``legal_hold`` — so
+    it does not reach ``file_cleanup_service.purge_media_file`` and inherits none of
+    #664's refusal. Deleting a user therefore destroyed their held files, object row and
+    all, which is the one failure mode a legal hold exists to prevent, and it is
+    irreversible.
+
+    **The whole deletion is refused, not just the held files.** Deleting everything
+    *except* them would leave ``media_file`` rows owned by an account that no longer
+    exists (``media_file.user_id`` is a plain ``NO ACTION`` FK, so the ``user`` delete
+    would then fail anyway, mid-cascade); silently reassigning them to another owner
+    would invent a retention policy nobody chose. Refusing matches what the GDPR path
+    already does by accident — ``gdpr_erasure_service`` skips held files, and that same
+    FK then keeps the account alive — and what ``purge_media_file`` now does on purpose.
+
+    ``is_quarantined`` is deliberately **not** part of this check, mirroring
+    ``purge_media_file``. Quarantine is a review state an admin legitimately ends by
+    deleting the offending upload — and deleting an abusive *account* is the commonest
+    reason to have quarantined its files in the first place, so blocking on it would
+    turn a takedown into a shield. Only the unattended retention sweep refuses to touch
+    a file under review (``tasks/cleanup._select_expired_files``).
+
+    There is deliberately **no override argument**: an argument that skips the guard is
+    the guard's own failure mode. The supported path is to lift the hold first —
+    ``takedown_service.release_file(..., clear_legal_hold=True)``, exposed as
+    ``POST /api/admin/files/{file_uuid}/release`` — and then delete the account.
+
+    Args:
+        db: Database session.
+        user_id: Internal id of the account being deleted.
+
+    Raises:
+        HTTPException: 409 ``FILE_UNDER_LEGAL_HOLD``, naming how many files are held,
+            when the account owns at least one.
+    """
+    from app.services.file_cleanup_service import LEGAL_HOLD_ERROR_CODE
+
+    held_count = (
+        db.query(func.count(MediaFile.id))
+        .filter(MediaFile.user_id == user_id, MediaFile.legal_hold.is_(True))
+        .scalar()
+    ) or 0
+    if not held_count:
+        return
+
+    noun = "file" if held_count == 1 else "files"
+    message = (
+        f"refused: this account owns {held_count} {noun} under an active legal hold "
+        "and cannot be deleted. Release the hold before deleting."
+    )
+    logger.error(f"user deletion: REFUSED to delete user {user_id} — {message}")
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "error": LEGAL_HOLD_ERROR_CODE,
+            "message": message,
+            "files_under_legal_hold": held_count,
+        },
+    )
+
+
 def _delete_user_media_files(db: Session, user_id: int) -> None:
     """Delete all media files and related records for a user.
+
+    **A user owning any file under an active legal hold is REFUSED before anything is
+    deleted** (:func:`_assert_no_files_under_legal_hold`, issue #689). The check runs
+    here as well as in each endpoint because a guard in one caller protects one caller;
+    the endpoints call it *first* so that the two earlier passes
+    (``_delete_user_owned_records``, ``_delete_user_speakers``) have not already
+    destroyed anything by the time the refusal is raised, and this call is the backstop
+    that a future caller inherits without having to remember.
 
     **Why the children are deleted by hand here.** ``MediaFile`` declares
     ``cascade="all, delete-orphan"`` on eight relationships, but four of the
@@ -512,10 +581,23 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
     file would block the bulk delete. Scope both by ``media_file_id``, not by
     ``user_id``.
 
+    **Object storage is deliberately NOT touched here** (issue #695). The bulk delete
+    below is exactly why: it never loads a ``MediaFile`` instance, so there is nothing
+    to read a ``storage_path`` off of by the time this function could act on one. The
+    caller reads the storage plan with ``file_cleanup_service.load_account_purge_plans``
+    **before** calling this function, and destroys the objects with
+    ``purge_account_external_copies`` **after** its own transaction commits — see
+    ``delete_admin_user``'s docstring for the phase split and why.
+
     Args:
         db: Database session
         user_id: ID of the user whose media files to delete
+
+    Raises:
+        HTTPException: 409 when the user owns a file under an active legal hold.
     """
+    _assert_no_files_under_legal_hold(db, user_id)
+
     media_ids = [
         row[0] for row in db.query(MediaFile.id).filter(MediaFile.user_id == user_id).all()
     ]
@@ -694,6 +776,25 @@ async def get_admin_stats(
 
         # Get AI model configuration
         from app.core.config import settings
+        from app.transcription.diarizer_native import describe_diarizer_status
+        from app.transcription.diarizer_native import sidecar_diagnostics
+
+        # Single resolver, shared with /system/stats (app/utils/stats_helpers.py) — issue
+        # #672's second half. This used to be a hand-rolled, UNVALIDATED copy of the
+        # diarizer_backend resolution (via engine_settings._resolve_setting) with its own
+        # description table; it disagreed with the other panel's answer on a bad config
+        # value, and both of them reported the CONFIGURED backend rather than the one
+        # actually serving. describe_diarizer_status() does a bounded (<=5s, TTL-cached)
+        # network probe when the configured backend is "native", so it is offloaded to a
+        # thread — this handler is `async def` and a probe run inline would stall every
+        # other in-flight request on this worker's event loop for the same 5s.
+        diarizer_status = await asyncio.to_thread(describe_diarizer_status)
+        # issue #656 Step 9: a live, deployment-wide "can it serve right now" probe — same
+        # asyncio.to_thread offload as above and for the same reason (a synchronous 5s probe
+        # inline would block this worker's whole event loop). Kept even when the configured
+        # backend is "pyannote" so an admin can see whether the sidecar has come back before
+        # switching to it.
+        sidecar_info = await asyncio.to_thread(sidecar_diagnostics)
 
         models_info = {
             "whisper": {
@@ -702,9 +803,20 @@ async def get_admin_stats(
                 "purpose": "Speech Recognition & Transcription",
             },
             "diarization": {
-                "name": settings.PYANNOTE_MODEL,
-                "description": "PyAnnote Speaker Diarization 3.1",
+                # Weights are shared by both engines (local_provider.py); the engine
+                # actually serving is what varies. "description" reports the EFFECTIVE
+                # engine — what is really running — since that is the question this panel
+                # exists to answer; "configured_backend"/"using_fallback" carry the other
+                # half (what was asked for) so an operator can tell "native, and it's
+                # working" from "native, and I'm silently on the fallback".
+                "name": "pyannote/speaker-diarization-community-1",
+                "description": diarizer_status["effective_description"],
                 "purpose": "Speaker Identification & Segmentation",
+                "configured_backend": diarizer_status["configured"],
+                "configured_description": diarizer_status["configured_description"],
+                "effective_backend": diarizer_status["effective"],
+                "using_fallback": diarizer_status["using_fallback"],
+                "sidecar": sidecar_info,
             },
         }
 
@@ -828,7 +940,7 @@ def create_admin_user(
         ) from e
 
 
-@router.delete("/users/{user_uuid}", response_model=dict[str, str])
+@router.delete("/users/{user_uuid}", response_model=dict[str, Any])
 def delete_admin_user(
     user_uuid: str,
     request: Request,
@@ -837,17 +949,33 @@ def delete_admin_user(
 ):
     """Delete a user and all their data (admin only).
 
+    **Phase boundary (issue #695).** The three cascade helpers below delete
+    ``media_file`` (and every table hanging off it) via **bulk** SQL — one statement,
+    no instances loaded, no cascade — which never reaches ``file_cleanup_service``'s
+    object-storage/OpenSearch destroy. Left alone, every deleted account's recordings
+    stayed in MinIO forever. The fix keeps that bulk delete (it is why
+    ``_delete_user_media_files`` exists — see its docstring) but reads the storage plan
+    with ``load_account_purge_plans`` **before** the savepoint, and destroys those
+    external copies with ``purge_account_external_copies`` **after** ``db.commit()`` —
+    with no transaction open, matching ``purge_media_file``'s own phase split. Doing
+    that I/O on a live session previously wedged the DB for up to 1h26m
+    (``idle in transaction``); doing it inside the savepoint would have meant a slow
+    MinIO/OpenSearch round trip holds a lock for the whole cascade.
+
     Args:
         user_uuid: UUID of the user to delete
         db: Database session
         current_user: Current admin user
 
     Returns:
-        Success message
+        ``{"message": str, "storage_objects_failed": int}`` — the count is 0 when
+        every external object was confirmed gone.
 
     Raises:
         HTTPException: If user not found or deletion not allowed
     """
+    from app.services.file_cleanup_service import load_account_purge_plans
+    from app.services.file_cleanup_service import purge_account_external_copies
     from app.utils.uuid_helpers import get_user_by_uuid
 
     logger.info(f"Admin deleting user with UUID: {user_uuid}")
@@ -870,12 +998,21 @@ def delete_admin_user(
 
         _assert_not_last_super_admin(db, user, ROLE_USER)
 
+        # Legally-held evidence outranks the deletion, and the refusal has to land
+        # BEFORE the first of the three cascade passes: a partial destroy followed by a
+        # 409 is worse than either outcome on its own (issue #689).
+        _assert_no_files_under_legal_hold(db, int(user_id))
+
+        # Phase 0 — read the storage/OpenSearch plan while the rows still exist and the
+        # transaction is open. Postgres reads only; no object storage touched yet.
+        purge_plan = load_account_purge_plans(db, int(user_id))
+
         # Capture what the audit record needs before the row is gone: after the commit
         # the ORM object is expired, so reading user.email would re-query a deleted row.
         deleted_snapshot = DeletedUser.of(user)
         client_ip, user_agent = _get_client_info(request)
 
-        # Delete all user data atomically using a savepoint
+        # Phase 1 — delete all user data atomically using a savepoint
         savepoint = db.begin_nested()
         try:
             _delete_user_owned_records(db, int(user_id))
@@ -889,15 +1026,23 @@ def delete_admin_user(
             raise
         db.commit()
 
+        # Phase 2 — object storage + OpenSearch. NO transaction is held here. The rows
+        # are already gone, so a failure here is NOT retryable: it must be visible
+        # (residual_errors -> PARTIAL audit outcome + ERROR log), never swallowed.
+        residual_errors = purge_account_external_copies(purge_plan)
+
         # This endpoint destroys a user, their files and their transcripts irreversibly
         # and recorded NOTHING — while its twin, DELETE /api/users/{uuid}, performs the
         # identical deletion through these same three helpers and does audit it. Emitted
         # after the commit, matching that twin, so a failed delete leaves no record of a
         # deletion that did not happen. FedRAMP AU-2/AU-12, GDPR Art. 30(2)(d).
-        audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent)
+        audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent, residual_errors)
 
         logger.info(f"User deletion completed successfully: {user_id}")
-        return {"message": "User deleted successfully"}
+        return {
+            "message": "User deleted successfully",
+            "storage_objects_failed": len(residual_errors),
+        }
 
     except HTTPException:
         raise

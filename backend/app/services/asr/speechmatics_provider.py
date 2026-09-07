@@ -19,6 +19,10 @@ from collections.abc import Callable
 from typing import Any
 
 from .base import ASRProvider
+from .errors import ASRRateLimitedError
+from .errors import http_status_of
+from .errors import is_rate_limit_status
+from .errors import retry_after_of
 from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
@@ -143,6 +147,13 @@ class SpeechmaticsProvider(ASRProvider):
             transcript = asyncio.run(_run())
         except Exception as exc:
             sanitized = self._sanitize_error(str(exc), self._api_key)
+            if is_rate_limit_status(http_status_of(exc)):
+                logger.warning("Speechmatics rate-limited for file=%s: %s", filename, sanitized)
+                raise ASRRateLimitedError(
+                    f"Speechmatics rate limited: {sanitized}",
+                    provider="speechmatics",
+                    retry_after=retry_after_of(exc),
+                ) from exc
             logger.error("Speechmatics transcription failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"Speechmatics transcription failed: {sanitized}") from exc
 

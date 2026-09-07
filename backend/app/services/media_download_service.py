@@ -1417,6 +1417,18 @@ class MediaDownloadService:
                 logger.warning("No thumbnail URL found in media metadata")
                 return None
 
+            # `is_safe_url` above (`:846`) only validates the SUBMITTED page URL — this is
+            # yt-dlp's EXTRACTED metadata for that page, which a malicious page (via a
+            # generic extractor) can point at an arbitrary internal/link-local target. Same
+            # SSRF class as the submitted-URL check; same guard, applied to what is actually
+            # fetched.
+            safe, reason = is_safe_url(thumbnail_url)
+            if not safe:
+                logger.warning(
+                    "SSRF blocked: %s for thumbnail URL: %s", reason, thumbnail_url[:200]
+                )
+                return None
+
             # Download the thumbnail
             response = requests.get(thumbnail_url, timeout=30)
             response.raise_for_status()

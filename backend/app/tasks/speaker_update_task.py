@@ -22,6 +22,7 @@ import logging
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
+from app.models.media import Speaker
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,50 @@ def _load_completion_notification(speaker_uuid: str) -> dict:
             "profile_uuid": str(speaker.profile.uuid) if speaker.profile else None,
             "media_file_uuid": str(speaker.media_file.uuid) if speaker.media_file else None,
         }
+
+
+def _should_rescore_after_profile_change(
+    *,
+    display_name_changed: bool,
+    display_name: str | None,
+    old_profile_id: int | None,
+    new_profile_id: int | None,
+) -> bool:
+    """Should this update re-score the library against a profile's voiceprint?
+
+    A ``SpeakerProfile`` has no voiceprint until a speaker is attached to it, so
+    an assignment is the moment the profile first becomes matchable. Nothing
+    scored at that moment: ``trigger_retroactive_matching`` was reachable only
+    behind the rename gate below, so a profile could be created, one cluster
+    attached, and every other recording of the same voice left unmatched with an
+    empty Inbox.
+
+    Deliberately FALSE for a rename (that keeps the labeling workflow, which also
+    runs ``auto_create_or_assign_profile`` — needed there, and wrong to re-run
+    here), for a detach (no profile gained a voiceprint), and for an unchanged
+    profile (a no-op update must not queue a full-library similarity pass).
+    """
+    if display_name_changed and display_name and display_name.strip():
+        return False
+    return new_profile_id is not None and old_profile_id != new_profile_id
+
+
+def _rescore_against_profile(speaker_id: int) -> dict[str, int]:
+    """Run retroactive matching for a speaker that was just attached to a profile.
+
+    Calls ``trigger_retroactive_matching`` directly rather than
+    ``_handle_speaker_labeling_workflow``: the speaker already carries the
+    profile, so the workflow's ``auto_create_or_assign_profile`` step has nothing
+    to do and would re-resolve an assignment the user just made explicitly.
+    """
+    from app.api.endpoints.speaker_update import trigger_retroactive_matching
+
+    with session_scope() as db:
+        speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+        if speaker is None:
+            logger.warning(f"Speaker {speaker_id} disappeared before profile re-scoring")
+            return {"auto_applied_count": 0, "suggested_count": 0}
+        return trigger_retroactive_matching(speaker, db)
 
 
 @celery_app.task(
@@ -191,6 +236,20 @@ def process_speaker_update_background(
             logger.debug(f"Running retroactive matching for speaker {speaker_uuid}")
             with session_scope() as db:
                 result = _handle_speaker_labeling_workflow(db, speaker_id, display_name)
+            if result:
+                auto_applied_count = result.get("auto_applied_count", 0)
+                suggested_count = result.get("suggested_count", 0)
+        elif _should_rescore_after_profile_change(
+            display_name_changed=display_name_changed,
+            display_name=display_name,
+            old_profile_id=old_profile_id,
+            new_profile_id=new_profile_id,
+        ):
+            logger.debug(
+                f"Re-scoring library after speaker {speaker_uuid} was attached to "
+                f"profile {new_profile_id}"
+            )
+            result = _rescore_against_profile(speaker_id)
             if result:
                 auto_applied_count = result.get("auto_applied_count", 0)
                 suggested_count = result.get("suggested_count", 0)

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {execFileSync} from 'node:child_process';
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
@@ -28,7 +29,54 @@ function resolveVersion(): string {
   }
 }
 
+// Compares dotted-numeric version prefixes (major.minor.patch, ignoring any
+// pre-release/build suffix) without pulling in a semver dependency.
+function compareVersions(a: string, b: string): number {
+  const parse = (v: string): number[] => v.match(/^\d+\.\d+\.\d+/)![0].split('.').map(Number);
+  const [aParts, bParts] = [parse(a), parse(b)];
+  for (let i = 0; i < 3; i++) {
+    if (aParts[i] !== bParts[i]) return aParts[i] - bParts[i];
+  }
+  return 0;
+}
+
+// Issue #686: VERSION is bumped by release.sh's `bump` stage long before `finish`
+// publishes the GitHub Release, so between those two points VERSION names a version
+// that doesn't exist yet. resolveVersion() only validated shape, never that the
+// version was published, so the badge could render a syntactically valid lie.
+//
+// Fixed with option 2 from the issue: derive "is this ahead of the newest release"
+// locally from git tags, no network call required.
+//
+// This only works when a git checkout with tag history is reachable (the ../VERSION
+// fs-read path above — e.g. the GitHub Pages deploy in .github/workflows/deploy-docs.yml,
+// which fetches full history + tags for exactly this reason). The Docker build
+// (docs-site/Dockerfile.prod) has no .git in its build context at all — only OT_VERSION
+// is passed in — so git is unreachable there and this fails closed to "not dev": by the
+// time that image is actually published, the release pipeline's tag stage has already
+// run (build -> tag -> publish), so OT_VERSION corresponds to a real release. Also fails
+// closed to "not dev" if the current version IS the newest tag, or is somehow behind it.
+function isUnpublishedVersion(candidate: string): boolean {
+  if (!candidate) return false;
+  try {
+    const tags = execFileSync('git', ['tag', '--list', 'v[0-9]*.[0-9]*.[0-9]*'], {
+      cwd: __dirname,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .split('\n')
+      .map((t) => t.trim().replace(/^v/, ''))
+      .filter((t) => /^\d+\.\d+\.\d+$/.test(t));
+    if (tags.length === 0) return false;
+    const newestTag = tags.reduce((best, t) => (compareVersions(t, best) > 0 ? t : best));
+    return compareVersions(candidate, newestTag) > 0;
+  } catch {
+    return false;
+  }
+}
+
 const version = resolveVersion();
+const versionIsDev = isUnpublishedVersion(version);
 const githubRepo = 'https://github.com/attevon-llc/OpenTranscribe';
 
 // When building for in-app embedding (DOCS_BASE_URL=/docs/), the NGINX proxy strips
@@ -77,6 +125,7 @@ const config: Config = {
   // Exposed to the client via useDocusaurusContext().siteConfig.customFields
   customFields: {
     version,
+    versionIsDev,
     githubRepo,
   },
 
@@ -120,6 +169,22 @@ const config: Config = {
       defaultMode: 'dark',
       respectPrefersColorScheme: true,
     },
+    // This site is built and deployed from the default branch (deploy-docs.yml), while
+    // the installer deliberately installs the latest published RELEASE. Those are two
+    // different points in history, so the docs can legitimately describe features that
+    // have not shipped yet. Say so rather than letting a reader discover it.
+    //
+    // No version number here on purpose: it would be a hand-maintained fact that rots,
+    // and the repo's rule is that version facts are DERIVED, never recorded. The link
+    // sends readers to the release list, which is always current.
+    announcementBar: {
+      id: 'active-development',
+      content:
+        'OpenTranscribe is under active development. These docs track the default branch and may ' +
+        'describe features not yet in the latest ' +
+        '<a target="_blank" rel="noopener" href="https://github.com/attevon-llc/OpenTranscribe/releases">release</a>.',
+      isCloseable: true,
+    },
     navbar: {
       title: 'OpenTranscribe',
       logo: {
@@ -140,6 +205,8 @@ const config: Config = {
         //   position: 'left',
         //   label: 'API Reference',
         // },
+        {to: '/architecture', label: 'Architecture', position: 'left'},
+        {to: '/roadmap', label: 'Roadmap', position: 'left'},
         {to: '/blog', label: 'Blog', position: 'left'},
         {
           href: githubRepo,

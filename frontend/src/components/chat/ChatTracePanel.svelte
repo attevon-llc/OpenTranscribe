@@ -232,7 +232,7 @@
     padding: 0.05rem 0.35rem;
     border-radius: 999px;
     background-color: rgba(var(--primary-color-rgb), 0.14);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 0.64rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;

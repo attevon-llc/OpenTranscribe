@@ -11,6 +11,7 @@ Run with visible browser:
     pytest backend/tests/e2e/test_auth_flow.py -v --headed
 """
 
+import re
 import uuid
 from collections.abc import Iterator
 
@@ -222,7 +223,8 @@ class TestRegistrationFlow:
             # Wait for the navigation itself — the navbar button can render
             # a beat before goto("/") completes.
             page.wait_for_url(lambda url: "register" not in url.lower(), timeout=15000)
-            page.wait_for_selector(".user-button", timeout=15000)
+            expect(page).not_to_have_url(re.compile(r"/register"))
+            expect(page.locator(".user-button")).to_be_visible(timeout=15000)
         finally:
             _delete_user_by_email(api_helper, email)
 
@@ -245,9 +247,12 @@ class TestRegistrationFlow:
         page.click("button:has-text('Create Account')")
         # Deterministic settle rather than a guessed duration (issue #431).
         page.wait_for_load_state("networkidle")
-        # Should show error or stay on registration page
-        still_on_register = "register" in page.url or page.locator("#confirmPassword").is_visible()
-        assert still_on_register, "Should not proceed with mismatched passwords"
+        # BOTH halves, not an `or` chain over them: the chain is true on a page that
+        # crashed to a blank document and on one that navigated away with a stale field
+        # still in the DOM, so it could not fail for the reason the test is named for.
+        expect(page).to_have_url(re.compile(r"/register"))
+        expect(page.locator("#confirmPassword")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
 
     def test_registration_weak_password(self, page: Page, base_url: str, registration_email: str):
         """Test registration validates password strength."""
@@ -266,9 +271,10 @@ class TestRegistrationFlow:
         page.click("button:has-text('Create Account')")
         # Deterministic settle rather than a guessed duration (issue #431).
         page.wait_for_load_state("networkidle")
-        # Should show error or validation message
-        still_on_register = "register" in page.url or page.locator("#password").is_visible()
-        assert still_on_register, "Should validate password strength"
+        # See test_registration_password_mismatch for why the `or` chain could not fail.
+        expect(page).to_have_url(re.compile(r"/register"))
+        expect(page.locator("#password")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
 
     def test_registration_duplicate_email_fails(self, page: Page, base_url: str):
         """Test registration fails for existing email."""

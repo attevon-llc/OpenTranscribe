@@ -25,6 +25,7 @@ import pytest
 from app.services.chat.redactor import mask_chunks
 from app.services.chat.redactor import mask_digests
 from app.services.chat.settings import ChatSettings
+from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.search.chunk_retrieval import ChunkHit
 
 pytestmark = pytest.mark.unit
@@ -365,3 +366,333 @@ def test_prepare_context_completes_with_no_llm_configured(monkeypatch):
     assert overview is None
     assert len(masked) == 1
     assert masked[0].content == "plain content, nothing to detect"
+
+
+# --------------------------------------------------------------------------- #
+# Layer A: the resolver + both kwargs builders (`chat/service.py`)
+#
+# `_prepare_context`'s D6 test above proves the call site survives `llm=None`;
+# these prove the RESOLVER itself distinguishes local from remote before any
+# of the four call sites below are reached.
+# --------------------------------------------------------------------------- #
+
+_LOCAL_LLM = SimpleNamespace(
+    config=SimpleNamespace(provider="vllm", base_url="http://localhost:8012/v1")
+)
+_REMOTE_LLM = SimpleNamespace(config=SimpleNamespace(provider="openai", base_url=None))
+
+
+def test_a_local_llm_config_resolves_the_exemption():
+    from app.services.chat.service import _unmask_for_local
+
+    assert _unmask_for_local(_LOCAL_LLM) is True
+    assert _unmask_for_local(_REMOTE_LLM) is False
+
+
+def test_both_kwargs_builders_carry_the_exemption():
+    from app.services.chat.service import _build_digest_mask_kwargs
+    from app.services.chat.service import _build_mask_kwargs
+
+    settings = ChatSettings()
+    assert _build_mask_kwargs(_LOCAL_LLM, settings) == {"unmask_for_local": True}
+    assert _build_mask_kwargs(_REMOTE_LLM, settings) == {}
+    assert _build_digest_mask_kwargs(_LOCAL_LLM) == {"unmask_for_local": True}
+    assert _build_digest_mask_kwargs(_REMOTE_LLM) == {}
+
+
+# --------------------------------------------------------------------------- #
+# Layer B: all FOUR masker call sites reachable from `_prepare_context`
+# actually receive the resolved kwarg. Mock-only on its own (audited below,
+# together with Layer C's real-content assertions, which is what discharges
+# that finding) — reuses the `_null_session`/`retrieve_context`/
+# `_drop_quarantined_hits` scaffold `test_prepare_context_completes_with_no_
+# llm_configured` above already established.
+# --------------------------------------------------------------------------- #
+
+
+def _recording_masker(recorded: list[tuple[str, dict]], label: str):
+    """A masker stand-in that records its kwargs and returns real MaskedChunks
+
+    (not raw hits) so downstream code that reads `.content`/`.source` off the
+    return value — `_emit_expansion`, `build_file_summaries` — keeps working.
+    """
+    from app.services.chat.redactor import MaskedChunk
+
+    def _fn(_session_factory, items, _user_id, **kwargs):
+        recorded.append((label, kwargs))
+        return [MaskedChunk(source=item, content=item.content, was_masked=False) for item in items]
+
+    return _fn
+
+
+def _drive_prepare_context(
+    monkeypatch, *, llm, decision, chunks=None, digests=None, file_uuids=None
+):
+    """Run the real `_prepare_context` with retrieval/routing stubbed and the
+
+    two maskers replaced by recorders. Returns the recorded ``(site, kwargs)``
+    list. Shares the D6 test's `_null_session` scaffold above.
+    """
+    from app.services.chat import router as chat_router
+    from app.services.chat import service as chat_service
+    from app.services.chat.retrieval import RetrievalResult
+
+    recorded: list[tuple[str, dict]] = []
+
+    monkeypatch.setattr(chat_router, "route", lambda *_a, **_kw: decision)
+    monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
+    monkeypatch.setattr(
+        chat_service,
+        "retrieve_context",
+        lambda **_kwargs: RetrievalResult(
+            chunks=chunks or [], digests=digests or [], retrieved=len(chunks or [])
+        ),
+    )
+    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    monkeypatch.setattr(
+        "app.services.redaction.config.resolve_effective_config",
+        lambda db, user_id: _cfg(enabled=False, redact_before_llm=False),
+    )
+    monkeypatch.setattr(chat_service, "mask_chunks", _recording_masker(recorded, "chunk"))
+    monkeypatch.setattr(
+        "app.services.chat.redactor.mask_digests", _recording_masker(recorded, "digest")
+    )
+
+    chat_service._prepare_context(
+        user_id=1,
+        organization_id=None,
+        question="What did they decide?",
+        history=[],
+        settings=ChatSettings(),
+        file_uuids=file_uuids,
+        speakers=list(decision.speakers) or None,
+        search_mode="hybrid",
+        llm=llm,
+        rewrite_enabled=False,
+    )
+    return recorded
+
+
+def _assert_all_recorded(recorded, *, expect_local: bool, expected_count: int):
+    assert len(recorded) == expected_count
+    for _site, kwargs in recorded:
+        if expect_local:
+            assert kwargs.get("unmask_for_local") is True
+        else:
+            assert "unmask_for_local" not in kwargs
+
+
+@pytest.mark.parametrize("llm,expect_local", [(_LOCAL_LLM, True), (_REMOTE_LLM, False)])
+def test_chunk_and_ranked_digest_sites_receive_the_local_exemption(monkeypatch, llm, expect_local):
+    """Sites 1 and 2: `mask_chunks` and the ranked-digest `mask_digests` call.
+
+    Route stays at its default (chunk tier only, no digest routing), so
+    `_resolve_summary_tier` falls straight to the already-masked ranked leg
+    and issues no THIRD masker call — this test isolates exactly these two
+    sites.
+    """
+    from app.services.chat.router import Route
+
+    hit = _chunk("plain content")
+    digest_hit = _digest_hit("plain digest content")
+    recorded = _drive_prepare_context(
+        monkeypatch, llm=llm, decision=Route(), chunks=[hit], digests=[digest_hit], file_uuids=None
+    )
+    _assert_all_recorded(recorded, expect_local=expect_local, expected_count=2)
+    assert {site for site, _ in recorded} == {"chunk", "digest"}
+
+
+@pytest.mark.parametrize("llm,expect_local", [(_LOCAL_LLM, True), (_REMOTE_LLM, False)])
+def test_speaker_scope_map_site_receives_the_local_exemption(monkeypatch, llm, expect_local):
+    """Site 3: the speaker-scoped map inside `_resolve_summary_tier`
+
+    (``Route.wants_speaker_digest_map``). Mutually exclusive with site 4 below
+    — a speaker-scoped summarize turn never also runs the plain scope map.
+    """
+    from app.services.chat import mapreduce as chat_mapreduce
+    from app.services.chat.mapreduce import DigestScopeHits
+    from app.services.chat.router import INTENT_SUMMARIZE
+    from app.services.chat.router import TIER_CHUNK
+    from app.services.chat.router import Route
+
+    hit = _chunk("plain content")
+    map_hit = _digest_hit("plain map content")
+    decision = Route(intent=INTENT_SUMMARIZE, tiers=(TIER_CHUNK,), speakers=("Dana",))
+    assert decision.wants_speaker_digest_map is True
+    assert decision.wants_digest is False  # precondition: no second digest-plane call
+
+    monkeypatch.setattr(
+        chat_mapreduce,
+        "scope_speaker_digest_hits",
+        lambda *_a, **_kw: DigestScopeHits([map_hit], {}),
+    )
+    recorded = _drive_prepare_context(
+        monkeypatch, llm=llm, decision=decision, chunks=[hit], digests=[], file_uuids=["uuid-1"]
+    )
+    _assert_all_recorded(recorded, expect_local=expect_local, expected_count=2)
+    assert {site for site, _ in recorded} == {"chunk", "digest"}
+
+
+@pytest.mark.parametrize("llm,expect_local", [(_LOCAL_LLM, True), (_REMOTE_LLM, False)])
+def test_scope_map_site_receives_the_local_exemption(monkeypatch, llm, expect_local):
+    """Site 4: the bounded-scope map inside `_resolve_summary_tier`
+
+    (``Route.wants_digest`` and a bounded ``file_uuids``, no speaker filter).
+    """
+    from app.services.chat import mapreduce as chat_mapreduce
+    from app.services.chat.mapreduce import DigestScopeHits
+    from app.services.chat.router import TIER_CHUNK
+    from app.services.chat.router import TIER_DIGEST
+    from app.services.chat.router import Route
+
+    hit = _chunk("plain content")
+    map_hit = _digest_hit("plain map content")
+    decision = Route(tiers=(TIER_CHUNK, TIER_DIGEST))
+    assert decision.wants_digest is True
+    assert decision.wants_speaker_digest_map is False  # precondition: no site-3 call instead
+
+    monkeypatch.setattr(
+        chat_mapreduce, "scope_digest_hits", lambda *_a, **_kw: DigestScopeHits([map_hit], {})
+    )
+    recorded = _drive_prepare_context(
+        monkeypatch, llm=llm, decision=decision, chunks=[hit], digests=[], file_uuids=["uuid-1"]
+    )
+    _assert_all_recorded(recorded, expect_local=expect_local, expected_count=2)
+    assert {site for site, _ in recorded} == {"chunk", "digest"}
+
+
+# --------------------------------------------------------------------------- #
+# Layer C: the EFFECT, not just the flag. The real `mask_chunks`/`mask_digests`
+# run (no masker stubbing) against text carrying REAL detectable PII — per
+# `redaction/CLAUDE.md`'s warning, "555-1234" is NOT Presidio-detectable and
+# would pass this test whether or not masking ran, so this uses a real email
+# address instead. Together with Layer B these discharge the mock-only
+# finding `scripts/audit-tests.py` would otherwise raise against Layer B alone.
+# --------------------------------------------------------------------------- #
+
+_PII_TEXT = "Email me at alice@example.com to confirm"
+
+
+def _real_cfg(*, redact_before_llm_locked: bool) -> EffectiveRedactionConfig:
+    """A REAL ``EffectiveRedactionConfig`` (not the SimpleNamespace ``_cfg``
+
+    stand-in above) — ``RedactionService.mask_segment`` reads ``cfg.allowlist``
+    and other fields the stand-in never populated, so using it here would have
+    every call fail closed to `""` regardless of masking, which proves nothing
+    about genuine detection either way.
+    """
+    from app.core.constants import DEFAULT_REDACTION_PII_ENTITIES
+
+    return EffectiveRedactionConfig(
+        enabled=True,
+        enabled_categories={"pii"},
+        pii_entities=set(DEFAULT_REDACTION_PII_ENTITIES),
+        redact_before_llm=True,
+        redact_before_llm_locked=redact_before_llm_locked,
+    )
+
+
+def _db_no_cached_spans(status="done", *, user_id=1):
+    """Forces the INLINE masking path (real Presidio, not a cached-span rebuild)
+
+    — the same shape `test_the_inline_detector_runs_with_no_db_session_open`
+    documents ("no segments -> inline path") in `test_chat_redactor.py`.
+    """
+    return _db_with(status, [], user_id=user_id)
+
+
+def test_a_local_turn_actually_leaves_chunk_text_unmasked():
+    """The real masker, not a stub: a local turn's chunk keeps its PII verbatim;
+
+    the remote arm (same setup, same PII, only the flag differs) is the
+    control — without it a masker that never masks anything would also pass.
+    """
+    with patch(
+        "app.services.redaction.config.resolve_effective_config",
+        return_value=_real_cfg(redact_before_llm_locked=False),
+    ):
+        local_masked = mask_chunks(
+            _factory(_db_no_cached_spans()), [_chunk(_PII_TEXT)], user_id=1, unmask_for_local=True
+        )
+        remote_masked = mask_chunks(
+            _factory(_db_no_cached_spans()), [_chunk(_PII_TEXT)], user_id=1, unmask_for_local=False
+        )
+
+    assert "alice@example.com" in local_masked[0].content
+    assert "alice@example.com" not in remote_masked[0].content
+
+
+def test_the_admin_lock_overrides_the_local_exemption_for_chunks():
+    """`redact_before_llm_locked=True` + a local provider still masks — the
+
+    force floor beats the per-provider exemption, for this deployment's own
+    vLLM/Ollama included.
+    """
+    with patch(
+        "app.services.redaction.config.resolve_effective_config",
+        return_value=_real_cfg(redact_before_llm_locked=True),
+    ):
+        masked = mask_chunks(
+            _factory(_db_no_cached_spans()), [_chunk(_PII_TEXT)], user_id=1, unmask_for_local=True
+        )
+
+    assert "alice@example.com" not in masked[0].content
+
+
+def _db_digest_no_cached_provenance(status="pending", *, user_id=1):
+    """Forces `_gather_digest_plans`'s ``sentences is None`` branch (the digest
+
+    inline path) by failing the ``redaction_status == done`` gate: the batched
+    ``file_facts`` read happens first, then one scan lookup per hit, and no
+    further query runs once the status check fails the gate.
+    """
+    db = MagicMock()
+    facts_q = MagicMock()
+    facts_q.filter.return_value.all.return_value = []
+    scan_q = MagicMock()
+    scan_q.filter.return_value.first.return_value = SimpleNamespace(
+        id=6, redaction_status=status, redaction_coverage=None, language="en", user_id=user_id
+    )
+    db.query.side_effect = [facts_q, scan_q]
+    return db
+
+
+def test_a_local_turn_actually_leaves_digest_text_unmasked():
+    """The digest-plane counterpart: real `mask_digests`, real PII, a remote
+
+    control.
+    """
+    with patch(
+        "app.services.redaction.config.resolve_effective_config",
+        return_value=_real_cfg(redact_before_llm_locked=False),
+    ):
+        local_masked = mask_digests(
+            _factory(_db_digest_no_cached_provenance()),
+            [_digest_hit(_PII_TEXT)],
+            user_id=1,
+            unmask_for_local=True,
+        )
+        remote_masked = mask_digests(
+            _factory(_db_digest_no_cached_provenance()),
+            [_digest_hit(_PII_TEXT)],
+            user_id=1,
+            unmask_for_local=False,
+        )
+
+    assert "alice@example.com" in local_masked[0].content
+    assert "alice@example.com" not in remote_masked[0].content
+
+
+def test_the_admin_lock_overrides_the_local_exemption_for_digests():
+    with patch(
+        "app.services.redaction.config.resolve_effective_config",
+        return_value=_real_cfg(redact_before_llm_locked=True),
+    ):
+        masked = mask_digests(
+            _factory(_db_digest_no_cached_provenance()),
+            [_digest_hit(_PII_TEXT)],
+            user_id=1,
+            unmask_for_local=True,
+        )
+
+    assert "alice@example.com" not in masked[0].content

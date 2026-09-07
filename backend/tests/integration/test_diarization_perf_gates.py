@@ -5,21 +5,48 @@ in the ``-m gpu`` phase of ``scripts/run-integration-tests.sh`` and need a physi
 GPU. The thresholds encode Phase A.2 measurements: deviating from them is a
 regression worth failing the build for.
 
-Run (in-container). ``-o addopts=""`` is required because the project default
-selector excludes ``gpu``:
+Run (in-container — the prod image has no pytest, so this needs the test image;
+issue #577). ``-o addopts=`` is required because the project default selector
+excludes ``gpu``:
 
-    docker compose -f docker-compose.yml -f docker-compose.override.yml \\
-                   -f docker-compose.gpu.yml -f docker-compose.benchmark.yml \\
-                   run --rm --entrypoint "" diarization-probe \\
-        python -m pytest /app/tests/integration/test_diarization_perf_gates.py \\
-                         -v -o addopts="" -m gpu
+    ./scripts/run-diarization-gpu-tests.sh \\
+        tests/integration/test_diarization_perf_gates.py -v -o addopts= -m gpu
 
 Refs: plan i-need-a-full-stateful-origami.md D.4, D.5, D.6.
+
+⚠️ **Issue #669 — this module measures ONLY the PyAnnote engine, not diar-native.**
+``pipeline`` (below) is literally ``pyannote.audio.Pipeline.from_pretrained(...)``, and
+``PERF_GATES_S`` was measured against the fork on an A6000 (see the comment on that dict).
+diar-native (speakrs) is a different binary with a different runtime profile — carrying
+these thresholds over to it would silently apply "how fast PyAnnote is on an A6000" as a
+pass/fail bar for a Rust/ONNX pipeline nobody has ever timed here, which is worse than no
+gate: it can widen by construction (native happens to come in under a PyAnnote number for
+unrelated reasons) or fail by construction (native has a different, legitimate profile)
+with neither outcome meaning anything.
+
+**No native perf gate exists in this module.** Per repo policy (root CLAUDE.md: GPU 1 is
+shared and a benchmark must never be run unasked), the native thresholds are NOT measured
+here. To add them for real:
+
+    1. Build the same benchmark inputs this module already reads:
+       ``/app/benchmark/test_audio/{0.5h_1899s.wav,2.2h_7998s.wav}`` (see
+       ``docs/diarization-vram-profile/README.md`` for provenance).
+    2. In a GPU window on this project's GPU (slot 1, RTX 3080 Ti — NOT the A6000s
+       reserved for other work), run diar-native's own timing harness (or the same
+       wall-clock pattern as ``test_wall_time_regression`` below, but calling the sidecar's
+       ``/diarize`` instead of the pyannote ``pipeline``) against both files, several times,
+       and record median + spread.
+    3. Set a new ``NATIVE_PERF_GATES_S`` dict from that measurement (headroom factor
+       chosen the same way as the PyAnnote gates: ~1.3-1.5x median), in its own test
+       function — do not fold it into ``PERF_GATES_S``/``test_wall_time_regression``, which
+       stay PyAnnote-only so the docstring-vs-code claim never drifts again.
+    4. Until step 3 lands, any native-path perf test must be ``xfail(strict=False,
+       reason=...)`` or a named ``skip`` pointing at this comment — never a carried-over
+       PyAnnote number, and never a threshold widened to pass by construction.
 """
 
 from __future__ import annotations
 
-import ctypes
 import gc
 import os
 import time
@@ -29,6 +56,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests import gpu_memory
 from tests.helpers import does_not_raise
 
 pytestmark = [pytest.mark.gpu, pytest.mark.slow]
@@ -61,7 +89,19 @@ def ensure_container() -> None:
 
 
 @pytest.fixture(scope="module")
-def pipeline(ensure_container: None):
+def co_tenant_gpu_pids(ensure_container: None) -> frozenset[int]:
+    """PIDs already on the GPU before this PROCESS allocated anything on it.
+
+    `pipeline` depends on this so it is resolved first, but the value itself is memoised
+    process-wide by `gpu_memory.co_tenant_pids` — a per-module snapshot would include this
+    process's own PID whenever an earlier module (e.g. test_diarizer_lifecycle) already
+    left a CUDA context behind, and the soak below would then subtract its own memory.
+    """
+    return gpu_memory.co_tenant_pids()
+
+
+@pytest.fixture(scope="module")
+def pipeline(co_tenant_gpu_pids: frozenset[int]):
     """Shared pipeline: load once, run many times (soak + coexistence)."""
     import torch
     from pyannote.audio import Pipeline
@@ -77,27 +117,6 @@ def pipeline(ensure_container: None):
     del p
     gc.collect()
     torch.cuda.empty_cache()
-
-
-def _nvml_used_mb() -> float:
-    try:
-        lib = ctypes.CDLL("libnvidia-ml.so.1")
-        lib.nvmlInit_v2()
-        handle = ctypes.c_void_p()
-        lib.nvmlDeviceGetHandleByIndex(0, ctypes.byref(handle))
-
-        class _Mem(ctypes.Structure):
-            _fields_ = [
-                ("total", ctypes.c_ulonglong),
-                ("free", ctypes.c_ulonglong),
-                ("used", ctypes.c_ulonglong),
-            ]
-
-        mem = _Mem()
-        lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
-        return float(mem.used) / (1024**2)
-    except Exception:
-        return 0.0
 
 
 def _load_audio_dict(path: Path) -> dict:
@@ -138,6 +157,7 @@ def test_wall_time_regression(
 
 def test_soak_no_vram_creep(
     pipeline,
+    co_tenant_gpu_pids: frozenset[int],
 ) -> None:
     """D.5 — repeated invocations must not grow peak VRAM across runs."""
     import torch
@@ -151,11 +171,21 @@ def test_soak_no_vram_creep(
     peaks: list[float] = []
     for _ in range(SOAK_RUNS):
         torch.cuda.empty_cache()
-        before = _nvml_used_mb()
-        pipeline(audio)
+        # Co-tenant processes are subtracted from both ends of every run's delta: on a
+        # shared card their allocations otherwise land in `peaks` and read as our drift.
+        before = gpu_memory.usage_excluding(gpu_memory.read(), co_tenant_gpu_pids)
+        # A FRESH dict per invocation. The fork's Phase-5 patch frees the waveform by
+        # `del file["waveform"]` on the caller's own dict (speaker_diarization.py, right
+        # after embedding extraction), so re-submitting the same object raises
+        # "Neither 'waveform' nor 'audio' is available for this file" on run 2 — which is
+        # exactly what this soak did the first time it was ever executed (issue #577).
+        # A shallow copy, not a re-read: the tensor must be the SAME object every run or
+        # the per-run NVML deltas this test compares are not measuring the same work.
+        pipeline(dict(audio))
         torch.cuda.synchronize()
-        after = _nvml_used_mb()
-        peaks.append(after - before)
+        sample = gpu_memory.read()
+        gpu_memory.assert_self_is_measured(sample, co_tenant_gpu_pids)
+        peaks.append(gpu_memory.usage_excluding(sample, co_tenant_gpu_pids) - before)
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -232,12 +262,13 @@ def test_coexistence_under_simulated_cap(
         gc.collect()
         torch.cuda.empty_cache()
 
-    # Diarization with budget matching the simulated cap headroom.
-    # cap_gb*1024 - 500(cuda) - 750(whisper reserve) = budget_mb
-    budget_mb = max(800, int(cap_gb * 1024 - 500 - 750))
-    os.environ["DIARIZATION_VRAM_BUDGET_MB"] = str(budget_mb)
-
-    with does_not_raise(f"diarization must fit in its {budget_mb} MB share of the cap"):
+    # Diarization must fit in whatever headroom is left under the simulated cap
+    # after Whisper. There is no budget knob to hand it a share explicitly —
+    # DIARIZATION_VRAM_BUDGET_MB was removed in 7ed7456e once Phase-A measurement
+    # showed the fixed EMBEDDING_BATCH_SIZE = 16 pipeline (diarizer.py) already
+    # holds a predictable ~1 GB footprint on its own, so the only real enforcement
+    # left is `set_per_process_memory_fraction` above, applied process-wide.
+    with does_not_raise(f"diarization must fit under the remaining {cap_gb} GB cap"):
         d = SpeakerDiarizer(cfg)
         d.load_model()
         d.unload_model()

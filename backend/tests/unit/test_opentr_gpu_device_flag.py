@@ -25,9 +25,9 @@ documented rather than merely present:
 * ``LLM_TEST_GPU_DEVICE_ID`` — ``--with-llm-test`` pins a multi-GB LLM to a
   *different* card on purpose so it never contends with transcription. Moving it
   with the flag would cause the exact OOM that separation exists to prevent.
-* ``GPU_CLUSTERING_DEVICE`` and the container-side copy of ``GPU_DEVICE_ID`` —
-  read inside the container from ``env_file: .env``, never interpolated by
-  compose, so no shell export can reach them at all.
+* The container-side copy of ``GPU_DEVICE_ID`` — read inside the container from
+  ``env_file: .env``, never interpolated by compose, so no shell export can
+  reach it at all.
 
 The static tests encode the contract. :func:`test_the_flag_beats_a_dotenv_value`
 and its control reproduce the original defect end to end in a sandbox checkout
@@ -157,8 +157,8 @@ def test_the_deliberate_exclusions_are_documented_not_just_omitted():
             f"{name} is excluded from --gpu-device but show_help() never mentions it; "
             "a user cannot tell that from a bug."
         )
-    # The two vars no shell export can reach are the other half of the promise.
-    assert "GPU_CLUSTERING_DEVICE" in help_text
+    # The container-side copy no shell export can reach is the other half of
+    # the promise.
     assert "env_file" in help_text
 
 

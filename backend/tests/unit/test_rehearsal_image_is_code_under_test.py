@@ -199,3 +199,88 @@ def test_the_check_is_not_applied_to_hub_mode():
         "the subject of the test and its revision legitimately differs, so this would "
         "refuse every hub-mode rehearsal."
     )
+
+
+# ------------------------------------------------- ancestor + image-inputs refinement
+
+
+def test_a_scripts_only_commit_does_not_demand_a_rebuild(tmp_path: Path):
+    """Strictness has its own failure mode: a gate people must bypass to work.
+
+    An exact-HEAD comparison would force a multi-GB rebuild after a commit touching only
+    ``scripts/`` or ``backend/tests/`` — neither of which is in the image
+    (``backend/.dockerignore`` lists ``tests/``, verified against ``ls /app`` in the built
+    image). The accurate question is whether the image's own BUILD INPUTS changed.
+
+    Driven against this repository's real history, so it cannot pass on a fabricated graph.
+    """
+    head = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    ).stdout.strip()
+    # The most recent ancestor that changed nothing under the image inputs. If HEAD itself
+    # touched them there is nothing to assert here, so skip rather than fake it.
+    probe = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(REPO_ROOT),
+            "diff",
+            "--quiet",
+            "HEAD~1",
+            "HEAD",
+            "--",
+            "backend",
+            "frontend",
+            "docs-site",
+            ":(exclude)backend/tests",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if probe.returncode != 0:
+        pytest.skip("HEAD changed image inputs; no scripts-only commit to exercise here")
+
+    parent = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD~1"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    ).stdout.strip()
+
+    result = _drive(
+        f'if gr_assert_image_is_the_code_under_test "some/image:vX" "{head}"; '
+        f'then echo "RESULT=ACCEPTED"; else echo "RESULT=REFUSED"; fi',
+        _with_fake_docker(tmp_path, parent),
+    )
+    assert "RESULT=ACCEPTED" in result.stdout, (
+        "an image built one commit back, where that commit touched no image input, was "
+        "refused. That is a rebuild treadmill, and a gate that must be bypassed to get "
+        f"work done stops being a gate:\n{result.stdout}\n{result.stderr}"
+    )
+
+
+def test_a_commit_that_is_not_an_ancestor_is_refused(tmp_path: Path):
+    """An image from a divergent branch is not 'slightly old', it is a different lineage."""
+    head = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    ).stdout.strip()
+    result = _drive(
+        f'if gr_assert_image_is_the_code_under_test "some/image:vX" "{head}"; '
+        f'then echo "RESULT=ACCEPTED"; else echo "RESULT=REFUSED"; fi',
+        _with_fake_docker(tmp_path, _FAKE_SHA_B),  # not a commit in this repo at all
+    )
+    assert "RESULT=ACCEPTED" not in result.stdout, (
+        "an image whose revision is not an ancestor of HEAD was accepted; the "
+        "no-image-inputs-changed shortcut must never fire for an unrelated lineage"
+    )

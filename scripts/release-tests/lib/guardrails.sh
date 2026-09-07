@@ -623,12 +623,31 @@ gr_assert_image_is_the_code_under_test() {
            evidence about this release."
     fi
 
+    # An EXACT match is too strict, and being too strict here is its own failure mode: it
+    # would demand a multi-GB rebuild after a commit that only touched scripts/, which is
+    # how a gate gets routinely bypassed. The accurate question is not "was this built at
+    # HEAD" but "is it built from the current state of the code that goes INTO it".
+    #
+    # So: the image's commit must be an ancestor of HEAD (not a divergent branch), and
+    # nothing under the image's own build inputs may have changed since. A `scripts/` edit
+    # is then free; a `backend/` edit correctly forces a rebuild.
     if [[ "$actual" != "$expected" ]]; then
+        local repo="${REPO_ROOT:-.}"
+        # backend/tests is excluded because it is NOT in the image: backend/.dockerignore
+        # lists `tests/`, and `ls /app` in the built image confirms it (verified, not
+        # assumed — the Dockerfile's `COPY . .` reads as if it ships everything).
+        # A test-only commit must not demand a multi-GB rebuild.
+        if git -C "$repo" merge-base --is-ancestor "$actual" "$expected" 2>/dev/null &&
+           git -C "$repo" diff --quiet "$actual" "$expected" -- \
+               backend frontend docs-site ':(exclude)backend/tests' 2>/dev/null; then
+            gr_ok "$image predates HEAD but no image input changed since ${actual:0:12}"
+            return 0
+        fi
         local behind=""
-        if behind="$(git -C "${REPO_ROOT:-.}" rev-list --count "$actual..$expected" 2>/dev/null)"; then
-            behind=" (${behind} commits behind)"
+        if behind="$(git -C "$repo" rev-list --count "$actual..$expected" 2>/dev/null)"; then
+            behind=" (${behind} commits behind, with changes under backend/frontend/docs-site)"
         else
-            behind=""
+            behind=" (not an ancestor of HEAD)"
         fi
         if [[ "${OT_RELEASE_TEST_ALLOW_STALE_IMAGE:-}" == "1" ]]; then
             gr_warn "OT_RELEASE_TEST_ALLOW_STALE_IMAGE=1 — rehearsing '$image' built from

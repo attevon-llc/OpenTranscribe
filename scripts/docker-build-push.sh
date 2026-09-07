@@ -457,11 +457,47 @@ build_output_flag() {
 # always :vX.Y.Z, plus :latest unless the caller is going to move :latest by
 # digest afterwards. This is the historical single multi-platform-build/single-tag
 # shape, unchanged by the #680 capability-tag grammar.
+#
+# ⚠️ IN LOCAL MODE THE BARE TAG IS AMBIGUOUS, so a per-arch alias is added beside it.
+#
+# `--load` cannot export a multi-arch manifest, so `40-build.sh` builds one leg per
+# declared platform — one `docker-build-push.sh` invocation each, with an explicit
+# `PLATFORMS=<one arch>`. For frontend/docs that meant every leg wrote the SAME
+# `repo:vX.Y.Z` tag, so the tag ended up on whichever leg was built LAST. The platform
+# table lists amd64 before arm64, therefore `opentranscribe-frontend:vX.Y.Z`,
+# `opentranscribe-docs:vX.Y.Z` (and, via build_one_leg's own bare-tag alias,
+# `opentranscribe-backend-lite:vX.Y.Z`) all ended up ARM64 on this amd64 host. That is not a
+# speed problem, it is a correctness one: `security-scan.sh`'s local resolution had no leg
+# tag to fall back to for frontend/docs and dropped through to a Hub pull of a tag that is
+# not published yet (COULD NOT SCAN), and `test-fresh-install.sh` / `test-lite-mode.sh`
+# reuse exactly this bare tag, so both rehearsals would run a foreign-architecture image
+# under QEMU or die with `exec format error`.
+#
+# `build_one_leg` already solved this for capability-bearing components: it writes an
+# unambiguous `repo:vX.Y.Z-<cap>-<arch>` leg tag as well. This gives frontend/docs the same
+# thing (`-multiarch-<arch>`, since that IS their declared capability), which is what
+# `resolve_platform_image`'s existing `repo:${tag}-*` leg search then finds. `40-build.sh`
+# re-points the bare tag at the HOST leg as its last step and asserts the architecture.
+#
+# Local mode only. In push mode a single multi-platform build produces one index under the
+# bare tag and there is no per-arch artefact for such an alias to name.
+#
+# Args: $1 repo · $2 component (optional; needed only to derive the local leg alias)
 build_tag_args() {
-    local repo="$1"
+    local repo="$1" component="${2:-}"
     local args=("--tag" "${repo}:${VERSION_FULL}")
     if [ "${PUSH_LATEST}" = "true" ]; then
         args+=("--tag" "${repo}:latest")
+    fi
+    if [ "${BUILD_MODE}" = "local" ] && [ -n "${component}" ]; then
+        # assert_local_mode_is_single_platform() guarantees one platform here; the `%%,*`
+        # is belt-and-braces so a future caller cannot produce a leg tag naming two arches.
+        local arch
+        arch="$(build_platforms "${component}")"
+        arch="${arch%%,*}"
+        if [ -n "${arch}" ]; then
+            args+=("--tag" "$(build_leg_tag "${repo}" "${COMPONENT_CAPABILITY[${component}]}" "${arch#linux/}")")
+        fi
     fi
     printf '%s\n' "${args[@]}"
 }
@@ -681,7 +717,7 @@ build_frontend() {
     build_announce "Building frontend image" "${component}" || return 0
 
     local tag_args identity_args
-    mapfile -t tag_args < <(build_tag_args "${REPO_FRONTEND}")
+    mapfile -t tag_args < <(build_tag_args "${REPO_FRONTEND}" "${component}")
     mapfile -t identity_args < <(build_identity_labels)
 
     cd frontend
@@ -707,7 +743,7 @@ build_docs() {
     build_announce "Building docs image" "${component}" || return 0
 
     local tag_args identity_args
-    mapfile -t tag_args < <(build_tag_args "${REPO_DOCS}")
+    mapfile -t tag_args < <(build_tag_args "${REPO_DOCS}" "${component}")
     mapfile -t identity_args < <(build_identity_labels)
 
     cd docs-site

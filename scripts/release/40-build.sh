@@ -100,6 +100,87 @@ record platform-table-readable pass "$legs_declared leg(s) declared"
 record every-declared-leg-built pass "$legs_built leg(s) built"
 echo -e "${GREEN}built ${legs_built} architecture leg(s)${NC}" >&2
 
+# ── The bare repo:vX.Y.Z tag must name the HOST leg ──────────────────────────────────
+#
+# `--load` cannot export a multi-arch manifest, so the loop above ran ONE build per declared
+# platform and every one of them also wrote the bare `repo:$VERSION` tag. Docker tags are not
+# additive: the LAST writer wins. The platform table lists amd64 before arm64, so on this amd64
+# host `opentranscribe-frontend:$VERSION`, `opentranscribe-docs:$VERSION` and
+# `opentranscribe-backend-lite:$VERSION` all ended up pointing at the ARM64 leg.
+#
+# This is a CORRECTNESS bug, not a cosmetic one, and it is invisible downstream:
+#   * `test-fresh-install.sh:237-263` and `test-lite-mode.sh:243-252` reuse `repo:$VERSION`
+#     when it already exists locally (no architecture check) — so the rehearsal that is
+#     supposed to prove this release installs would run a foreign-arch image under QEMU, or
+#     die with `exec format error`, for a reason that says nothing about the release.
+#   * `security-scan.sh`'s local resolution DOES search leg tags, but frontend/docs had none
+#     to find in local mode (fixed alongside this, in docker-build-push.sh's build_tag_args),
+#     so it fell through to a Hub pull of a tag that is not published yet → COULD NOT SCAN.
+#
+# The loop's own baked-version check below already knew this ("checking [the bare tag] would
+# silently test a different artifact depending on table ordering") and worked around it by
+# using the leg tag. That was the right call for that one check and left every OTHER consumer
+# holding the ambiguous tag. Re-pointing it here fixes it once, for all of them.
+#
+# Deliberately a re-TAG, not a rebuild: the host leg was just built and the leg tag is
+# unambiguous, so this is a pointer move with no chance of producing different bytes.
+#
+# --- BEGIN bare-tag-host-arch ---
+# (extracted verbatim and driven against a fake docker by
+#  backend/tests/unit/test_build_bare_tag_host_arch.py — keep the markers)
+declare -A ALL_REPO_FOR_COMPONENT=()
+while IFS=$'\t' read -r component repo; do
+    [[ -n "$component" && -n "$repo" ]] || continue
+    [[ "$component" == "blackwell" ]] && continue   # publishes :blackwell, never :vX.Y.Z
+    ALL_REPO_FOR_COMPONENT["$component"]="$repo"
+done < <(./scripts/security-scan.sh list-repos)
+
+host_arch="${HOST_PLATFORM#linux/}"
+bare_retagged=0
+bare_wrong=()
+bare_no_host_leg=()
+while IFS=$'\t' read -r component capability platforms; do
+    [[ "$component" == "blackwell" ]] && continue
+    repo="${ALL_REPO_FOR_COMPONENT[${component}]:-}"
+    [[ -n "$repo" ]] || continue
+    if [[ ",${platforms}," != *",${HOST_PLATFORM},"* ]]; then
+        bare_no_host_leg+=("${component}")
+        continue
+    fi
+    leg_tag="${repo}:${VERSION}-${capability}-${host_arch}"
+    if ! docker tag "$leg_tag" "${repo}:${VERSION}" 2>/dev/null; then
+        bare_wrong+=("${component}: no ${leg_tag} to re-tag from")
+        continue
+    fi
+    # Read the artefact back, never the command's exit status: `docker tag` succeeding says
+    # only that a name was written. Same discipline as security-scan.sh's post-pull check.
+    actual="$(docker image inspect "${repo}:${VERSION}" --format '{{.Architecture}}' 2>/dev/null)"
+    if [[ "$actual" != "$host_arch" ]]; then
+        bare_wrong+=("${repo}:${VERSION} reports '${actual:-<unreadable>}', expected ${host_arch}")
+        continue
+    fi
+    echo -e "${GREEN}PASS  ${repo}:${VERSION} -> ${host_arch} leg${NC}" >&2
+    bare_retagged=$((bare_retagged + 1))
+done < <(./scripts/docker-build-push.sh list-platforms)
+
+if (( ${#bare_wrong[@]} )); then
+    record bare-tag-is-host-arch fail "${bare_wrong[*]}" \
+        "./scripts/release.sh build $VERSION   # the host leg did not build, or its leg tag is missing"
+    echo -e "${RED}the bare :$VERSION tag does not name the ${host_arch} leg: ${bare_wrong[*]}${NC}" >&2
+    build_fail_out 1
+elif (( bare_retagged == 0 )); then
+    # Zero checked is COULD NOT CHECK, never "nothing to do" — the same empty-set rule the
+    # legs_declared branch above applies. A host with no matching leg for ANY component would
+    # otherwise pass this silently while every rehearsal ran a foreign image.
+    record bare-tag-is-host-arch not-measured \
+        "no component declares a ${HOST_PLATFORM} leg (${bare_no_host_leg[*]:-none listed})" \
+        "build on a host matching one of the declared platforms"
+else
+    record bare-tag-is-host-arch pass \
+        "$bare_retagged bare tag(s) point at the ${host_arch} leg"
+fi
+# --- END bare-tag-host-arch ---
+
 # The image must be able to state what it is. This is the check that would have
 # caught the build-arg omission in the documented `docker build` commands.
 #

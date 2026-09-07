@@ -1,0 +1,50 @@
+# Build context exclusions for docs-site/Dockerfile.
+#
+# ⚠️ node_modules IS A CORRECTNESS EXCLUSION HERE, NOT JUST A SIZE ONE.
+#
+# The Dockerfile does `COPY package*.json ./` -> `RUN npm ci` -> `COPY . .` (the standard
+# cache-the-dependency-layer shape frontend/Dockerfile.prod also uses). Without this file,
+# that final `COPY . .` overwrites the /app/node_modules the `npm ci` layer just built with
+# the HOST's tree — which was installed for the host's platform and Node version, not the
+# build stage's node:26-alpine. It also invalidates the cached dependency layer on every
+# source change, so `npm ci` re-runs regardless.
+#
+# Size, measured on this checkout: docs-site is 1.1 GB across 40,164 files, of which
+# node_modules is 918 MB / 39,171 files and build/ is 64 MB. Every one of those bytes was
+# being uploaded to the daemon on every `docker build`, only to be discarded.
+#
+# The three excluded directories are exactly the ones the image REBUILDS: `npm ci` recreates
+# node_modules, `npm run build` recreates build/ and .docusaurus/.
+#
+# scripts/release-tests/lib/compose-patch.sh's cp_stage_docs_context excludes the same three
+# for the rehearsal's `cp` of this tree — a .dockerignore does not govern `cp`, so both are
+# needed and they are kept in step deliberately.
+
+# Dependencies (see the note above — correctness, not just size)
+node_modules/
+
+# Docusaurus build outputs
+build/
+.docusaurus/
+
+# Environment
+.env
+.env.*
+
+# VCS / editor / OS
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docker itself
+Dockerfile*
+.dockerignore
+
+# Logs and caches
+*.log
+.cache/
+.npm/

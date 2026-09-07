@@ -20,7 +20,13 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-# Copy source and build with /docs/ base URL
+# Copy source and build with /docs/ base URL.
+#
+# ⚠️ THIS LINE DEPENDS ON docs-site/.dockerignore EXCLUDING node_modules. Without it, this
+# COPY overwrites the /app/node_modules the `npm ci` layer above just produced with the host's
+# tree — installed for the host's platform and Node version, not this stage's node:26-alpine —
+# and invalidates that cached layer on every source edit. The build context was also 1.1 GB
+# (918 MB of it node_modules) rather than 45 MB. Do not delete that file.
 COPY . .
 ARG DOCS_BASE_URL=/docs/
 ENV DOCS_BASE_URL=$DOCS_BASE_URL

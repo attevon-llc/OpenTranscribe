@@ -1320,10 +1320,10 @@ phase_07_swap_to_new() {
     # checkout, but this staged "after" tree didn't, so the docs container's
     # own upgrade was silently skipped ("unable to prepare context") instead
     # of actually being exercised.
-    if [[ -d "$REPO_ROOT/docs-site" ]]; then
-        rm -rf "$stage_after/docs-site"
-        cp -r "$REPO_ROOT/docs-site" "$stage_after/docs-site"
-    fi
+    # Build artifacts excluded — see cp_stage_docs_context in lib/compose-patch.sh. The bare
+    # `cp -r` this replaces copied 1.1 GB / 40,164 files (918 MB of it node_modules) per
+    # staging, twice a hop, two hops a rehearsal.
+    cp_stage_docs_context "$REPO_ROOT/docs-site" "$stage_after/docs-site"
 
     cp_inject_labels "$stage_after/docker-compose.yml" "$TEST_LABEL"
     cp_inject_labels "$stage_after/docker-compose.prod.yml" "$TEST_LABEL"
@@ -1963,10 +1963,7 @@ phase_13_stage_rollback_tree() {
     # aborts entirely on the docs build failure and NONE of them start (issue #618) —
     # not just docs. A real user always has docs-site/ in their checkout; only this
     # staged rehearsal tree needs it copied in explicitly.
-    if [[ -d "$REPO_ROOT/docs-site" ]]; then
-        rm -rf "$stage_rollback/docs-site"
-        cp -r "$REPO_ROOT/docs-site" "$stage_rollback/docs-site"
-    fi
+    cp_stage_docs_context "$REPO_ROOT/docs-site" "$stage_rollback/docs-site"
 
     cp_inject_labels "$stage_rollback/docker-compose.prod.yml" "$TEST_LABEL"
     cp_force_pull_policy "$stage_rollback/docker-compose.prod.yml" never

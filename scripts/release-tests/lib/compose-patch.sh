@@ -151,3 +151,56 @@ svc["image"] = f"{repo}:{tag}"
 Path(path).write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
 PY
 }
+
+# cp_stage_docs_context SRC_DOCS_DIR DEST_DOCS_DIR
+#   Stage docs-site/ into a rehearsal tree WITHOUT its build artifacts.
+#
+# WHY THIS EXISTS
+#
+# docker-compose.prod.yml declares `build: context: ./docs-site` for the docs service. The
+# staged rehearsal trees force `pull_policy: never`, so that directory has to exist and
+# `docker compose config` has to validate — a real user always has it in their checkout, only
+# these staged trees need it copied in.
+#
+# It was copied with a bare `cp -r`. MEASURED on this checkout: docs-site is 1.1 GB across
+# 40,164 files, of which node_modules alone is 918 MB / 39,171 files (plus build/ at 64 MB and
+# .docusaurus at 1.3 MB). test-upgrade.sh stages it twice per hop and runs
+# OT_UPGRADE_SOURCE_MINORS=2 hops, so a rehearsal copied ~4.4 GB / 160,000 files it has no use
+# for. Excluding the three artifact directories leaves 45 MB / 287 files.
+#
+# ⚠️ `docs-site/.dockerignore` does NOT help here and is not a substitute. It governs what
+# `docker build` sends to the daemon; `cp` has never heard of it. Both are needed, for two
+# different copies of the same tree — hence the exclusion list living here as well.
+#
+# The excluded directories are exactly the ones the image REBUILDS: `npm ci` recreates
+# node_modules and `npm run build` recreates build/ and .docusaurus/. Copying a host-built
+# node_modules into a build context is worse than useless — the Dockerfile's `COPY . .` would
+# overwrite the layer `npm ci` just produced, with a tree built for whatever platform the host
+# happens to be.
+#
+# rsync when available, tar otherwise: both preserve permissions and neither needs the caller
+# to enumerate what to KEEP (a keep-list goes stale silently the first time docs-site grows a
+# directory; an exclude-list of build artifacts does not).
+CP_DOCS_STAGE_EXCLUDES=(node_modules build .docusaurus)
+
+cp_stage_docs_context() {
+    local src="$1" dst="$2"
+    [[ -d "$src" ]] || return 0
+
+    rm -rf "$dst"
+    mkdir -p "$dst"
+
+    local ex args=()
+    if command -v rsync >/dev/null 2>&1; then
+        for ex in "${CP_DOCS_STAGE_EXCLUDES[@]}"; do args+=(--exclude "/$ex"); done
+        if rsync -a "${args[@]}" "$src/" "$dst/"; then
+            return 0
+        fi
+        # Fall through to tar rather than leaving a half-copied tree behind.
+        rm -rf "$dst"
+        mkdir -p "$dst"
+        args=()
+    fi
+    for ex in "${CP_DOCS_STAGE_EXCLUDES[@]}"; do args+=(--exclude "./$ex"); done
+    tar -C "$src" -cf - "${args[@]}" . | tar -C "$dst" -xf -
+}

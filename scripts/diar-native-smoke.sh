@@ -37,6 +37,42 @@
 # overriding the `ort` crate's silent-CPU-fallback default, so a CUDA load failure
 # crash-loops rather than quietly serving on CPU.
 #
+# THE PRECONDITION: WHY "IS IT ON GPU?" IS NOT THE FIRST QUESTION
+# ---------------------------------------------------------------
+# This script used to assert device residency without ever asking what mode the
+# sidecar was CONFIGURED for, and that is wrong in both directions. A sidecar
+# deliberately in `DIAR_MODE=cpu` — legitimate on a CPU-only host, under `--lite`,
+# or under an explicit `DIAR_NATIVE_MODE=cpu` — was reported as "the CUDA execution
+# provider did not register" about a container never asked to load one. And the
+# obvious repair (skip whenever the mode is not `cuda`) would have buried the real
+# 2026-09-07 defect, where the sidecar was on CPU *because
+# docker-compose.diar-native-gpu.yml was never loaded on a GPU host* — a `grep -q`
+# + `pipefail` SIGPIPE inversion in opentr.sh's runtime probe, see
+# backend/tests/unit/test_opentr_docker_probe_sigpipe.py.
+#
+# So three signals decide, not one, and one of the outcomes is a real FAILURE:
+#
+#   DIAR_MODE=cuda                                    -> measure residency
+#   not cuda, host has no nvidia runtime              -> NOT MEASURED (4)
+#   not cuda, container HOLDS a device reservation    -> NOT MEASURED (4): the GPU
+#                                                        overlay IS loaded and an
+#                                                        operator forced CPU
+#   not cuda, nvidia runtime, NO device reservation   -> FAIL (1): the GPU overlay
+#                                                        was not in the chain
+#
+# `HostConfig.DeviceRequests` is what separates the last two: it is the only
+# evidence, readable from the container itself, of whether
+# docker-compose.diar-native-gpu.yml (the sole home of the sidecar's device
+# reservation) made it into the compose chain. `FORCE_CPU_MODE=true` in .env and
+# `OT_DIAR_NATIVE_EXPECT_CPU=1` are the two EXPLICIT opt-outs; nothing else
+# downgrades the failure, because "could not check" and "deliberately CPU" must not
+# be the same answer.
+#
+# Kept deliberately in step with the pytest port of this script,
+# backend/tests/integration/test_diar_native_smoke_live.py — its
+# `classify_gpu_residency_precondition` is the same table, and
+# backend/tests/unit/test_diar_native_gpu_precondition.py pins it.
+#
 # Usage:
 #   scripts/diar-native-smoke.sh              # check the running sidecar
 #   scripts/diar-native-smoke.sh --json       # machine-readable verdict
@@ -62,7 +98,26 @@ fail() {
     exit "${2:-1}"
 }
 
-command -v nvidia-smi >/dev/null 2>&1 || fail "nvidia-smi not available — cannot verify GPU residency" 4
+# "Examined nothing, legitimately" — a DIFFERENT outcome from "checked and failed",
+# and the repo's standing rule is that the two must never share a channel
+# (backend/tests/CLAUDE.md: "a NOT MEASURED phase is not a pass"; security-scan.sh's
+# 1-vs-2). Exit 4 already carried that meaning here, but every path reaching it
+# still emitted `"status":"fail"`, so the machine-readable half said the opposite of
+# the exit code. Neither caller (test-fresh-install.sh, test-upgrade.sh) parses the
+# status field — both dispatch on the exit code and embed this text verbatim — so
+# the distinct value is purely additional information, not a contract change.
+not_measured() {
+    if [[ $JSON -eq 1 ]]; then
+        printf '{"status":"not-measured","reason":%s}\n' \
+            "$(printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+    else
+        echo "⊘ NOT MEASURED: $1" >&2
+    fi
+    exit 4
+}
+
+command -v nvidia-smi >/dev/null 2>&1 || \
+    not_measured "nvidia-smi not available — cannot verify GPU residency"
 
 # shellcheck source=lib/compose-project.sh
 source "$REPO_ROOT/scripts/lib/compose-project.sh"
@@ -72,7 +127,7 @@ source "$REPO_ROOT/scripts/lib/compose-project.sh"
 # name filter — an unscoped `name=diar-native` reads whatever stack happens to be up on
 # this host (e.g. the live dev one) instead of the one this check is meant to examine.
 CONTAINER="$(overlay_container_name diar-native)"
-[[ -n "$CONTAINER" ]] || fail "no running diar-native container in compose project $(compose_project_name) (start it with ./opentr.sh start dev --with-diar-native)" 4
+[[ -n "$CONTAINER" ]] || not_measured "no running diar-native container in compose project $(compose_project_name) (start it with ./opentr.sh start dev --with-diar-native)"
 
 read -r RESTARTING RESTART_COUNT PID < <(
     docker inspect --format '{{.State.Restarting}} {{.RestartCount}} {{.State.Pid}}' "$CONTAINER"
@@ -92,13 +147,66 @@ read_env() {
     [[ -f "$ENV_FILE" ]] || return 0
     python3 "$REPO_ROOT/scripts/lib/env_reader.py" "$ENV_FILE" "$1"
 }
+
+# ---------------------------------------------------------------- precondition
+# See the header block: decide whether a residency claim is meaningful here at all,
+# BEFORE measuring anything. Every reader below captures into a variable first and
+# post-processes — never `<docker …> | grep -q`/`awk … exit`, whose early-exiting
+# reader can SIGPIPE the producer and, under this script's `set -o pipefail`, turn a
+# match into a non-match. That inversion is the very defect this precondition exists
+# to detect, so reproducing it here would be its own punchline.
+
+# DIAR_MODE as the RUNNING container was configured with — the only thing that
+# reflects which compose files were actually merged. `awk` with no `exit` reads to
+# EOF, so nothing can take SIGPIPE.
+CONTAINER_ENV="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$CONTAINER")"
+CONFIGURED_MODE="$(printf '%s\n' "$CONTAINER_ENV" | awk -F= '$1 == "DIAR_MODE" { print $2 }')"
+
+if [[ "$CONFIGURED_MODE" != "cuda" ]]; then
+    DESCRIBED_MODE="${CONFIGURED_MODE:-<unset>}"
+
+    # Direct evidence of whether docker-compose.diar-native-gpu.yml was in the chain:
+    # it is the ONLY file declaring the sidecar's device reservation. `docker inspect`
+    # renders an absent one as the JSON literal `null`.
+    DEVICE_REQUESTS="$(docker inspect --format '{{json .HostConfig.DeviceRequests}}' "$CONTAINER")"
+    HAS_RESERVATION=0
+    case "$DEVICE_REQUESTS" in
+        ""|null|"[]") ;;
+        *) HAS_RESERVATION=1 ;;
+    esac
+
+    # `--format '{{json .Runtimes}}'` rather than scanning `docker info`'s prose: no
+    # pipe, no substring ambiguity. A daemon that cannot answer reads as "no nvidia",
+    # which only ever SOFTENS the verdict below (fail -> not measured) — the opposite
+    # default would manufacture a defect report out of a docker outage.
+    DOCKER_RUNTIMES="$(docker info --format '{{json .Runtimes}}' 2>/dev/null || true)"
+    HOST_NVIDIA=0
+    case "$DOCKER_RUNTIMES" in
+        *'"nvidia"'*) HOST_NVIDIA=1 ;;
+    esac
+
+    FORCE_CPU="$(read_env FORCE_CPU_MODE)"
+
+    if [[ "${FORCE_CPU,,}" == "true" ]]; then
+        not_measured "sidecar configured DIAR_MODE=$DESCRIBED_MODE and FORCE_CPU_MODE=true in .env — this deployment opted out of GPU entirely"
+    elif [[ -n "${OT_DIAR_NATIVE_EXPECT_CPU:-}" ]]; then
+        not_measured "sidecar configured DIAR_MODE=$DESCRIBED_MODE and OT_DIAR_NATIVE_EXPECT_CPU is set — operator declared this deployment deliberately CPU-only"
+    elif [[ $HOST_NVIDIA -eq 0 ]]; then
+        not_measured "sidecar configured DIAR_MODE=$DESCRIBED_MODE and this host's Docker daemon exposes no nvidia runtime — CPU is the correct configuration here"
+    elif [[ $HAS_RESERVATION -eq 1 ]]; then
+        not_measured "sidecar configured DIAR_MODE=$DESCRIBED_MODE while holding an nvidia device reservation — docker-compose.diar-native-gpu.yml IS loaded and an explicit DIAR_NATIVE_MODE override chose CPU"
+    else
+        fail "sidecar is configured DIAR_MODE=$DESCRIBED_MODE with NO nvidia device reservation, on a host whose Docker daemon DOES expose the nvidia runtime. docker-compose.diar-native-gpu.yml was not in the compose chain that created $CONTAINER, so every /diarize call is being served on CPU. Re-start the stack with \`./opentr.sh start dev\` and check its output says 'diar-server on GPU <n>' rather than 'diar-server on CPU (no nvidia runtime detected)'. If this deployment is deliberately CPU-only (--lite / --cpu), set OT_DIAR_NATIVE_EXPECT_CPU=1."
+    fi
+fi
+
 EXPECTED_GPU="${DIAR_NATIVE_GPU:-$(read_env DIAR_NATIVE_GPU)}"
 [[ -n "$EXPECTED_GPU" ]] || EXPECTED_GPU="${GPU_DEVICE_ID:-$(read_env GPU_DEVICE_ID)}"
 [[ -n "$EXPECTED_GPU" ]] || EXPECTED_GPU=0
 
 EXPECTED_UUID="$(nvidia-smi --query-gpu=index,uuid --format=csv,noheader \
     | awk -F', *' -v idx="$EXPECTED_GPU" '$1 == idx {print $2}')"
-[[ -n "$EXPECTED_UUID" ]] || fail "configured GPU index $EXPECTED_GPU does not exist on this host" 4
+[[ -n "$EXPECTED_UUID" ]] || not_measured "configured GPU index $EXPECTED_GPU does not exist on this host"
 
 RESIDENCY="$(nvidia-smi --query-compute-apps=pid,gpu_uuid,used_memory --format=csv,noheader \
     | awk -F', *' -v pid="$PID" '$1 == pid {print $2 "|" $3}')"

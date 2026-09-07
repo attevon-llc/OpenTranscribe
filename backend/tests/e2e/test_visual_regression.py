@@ -16,13 +16,25 @@ PNG under ``__screenshots__/`` using a small numpy pixel diff (numpy + Pillow ar
 already project deps — no new dependency). A change fails only when the fraction
 of differing pixels exceeds a small tolerance (anti-aliasing slack).
 
-First run (or after an intentional UI change), write/refresh the baselines::
+**To refresh the baselines, use the wrapper — not the env var**::
 
-    UPDATE_SCREENSHOTS=1 pytest backend/tests/e2e/test_visual_regression.py -v
+    ./scripts/e2e/update-visual-baselines.sh --reason "<what changed in the UI>"
+    ./scripts/e2e/update-visual-baselines.sh --reason "..." --surface chat_trace
 
-Then re-run WITHOUT the env var to compare against the committed baselines::
+``UPDATE_SCREENSHOTS=1`` below is the raw mechanism and is deliberately NOT the
+documented path. It writes whatever the stack in front of it renders, so run
+against the shared dev stack it bakes the developer's own library content into
+the reference image — which is not hypothetical: ``chat_trace`` reproduced
+*itself* to 0.0253% on the shared stack while differing 3.06% from the committed
+baseline, entirely because masked chips carrying real corpus counts changed the
+flex-wrap point of their row. The wrapper refuses the shared stack, stands up the
+isolated seeded one, shows the per-surface diff before anything is accepted, and
+records the reason and the commit each image came from.
 
-    pytest backend/tests/e2e/test_visual_regression.py -v
+Then re-run WITHOUT update mode to compare against the committed baselines::
+
+    pytest backend/tests/e2e/test_visual_regression.py -v \
+        --base-url=... --backend-url=...   # the isolated stack's ports
 
 Requirements:
 - An ISOLATED, seeded stack — never the shared live dev stack (issue #451):
@@ -128,9 +140,11 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
         # success, so the first run was green too.
         pytest.fail(
             f"No baseline for '{name}' at {baseline_path}. A screenshot is only "
-            f"a baseline once a human has looked at it. Generate it deliberately "
-            f"with UPDATE_SCREENSHOTS=1 and review the image in the diff before "
-            f"committing it."
+            f"a baseline once a human has looked at it. Generate it with:\n"
+            f"    ./scripts/e2e/update-visual-baselines.sh "
+            f"--reason '<why>' --surface {name.rsplit('-', 1)[0]}\n"
+            f"which captures against an isolated seeded stack and shows you the "
+            f"image before it is accepted."
         )
 
     current = _png_to_array(png_bytes)
@@ -146,8 +160,12 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
         pytest.fail(
             f"Visual regression on '{name}': {fraction:.2%} of pixels changed "
             f"(tolerance {DIFF_TOLERANCE:.2%}). Wrote {actual_path.name} for "
-            f"inspection. If intentional, refresh with "
-            f"UPDATE_SCREENSHOTS=1 pytest backend/tests/e2e/test_visual_regression.py"
+            f"inspection. If the UI legitimately changed, refresh with:\n"
+            f"    ./scripts/e2e/update-visual-baselines.sh "
+            f"--reason '<why>' --surface {name.rsplit('-', 1)[0]}\n"
+            f"NOT with a bare UPDATE_SCREENSHOTS=1 against this stack — if this "
+            f"is the shared dev stack, that records its library content as the "
+            f"reference image and the next upload invalidates it again."
         )
 
 
@@ -209,10 +227,11 @@ def transcribed_file_uuid(owned_transcribed_file: dict[str, Any]) -> str:
     were captured from a seeded recording. Refresh them deliberately, with a human
     looking at the images::
 
-        UPDATE_SCREENSHOTS=1 pytest backend/tests/e2e/test_visual_regression.py \
-            -k file_detail --base-url=... --backend-url=...
+        ./scripts/e2e/update-visual-baselines.sh \
+            --reason "file_detail now uses the owned 10s clip" --surface file_detail
 
-    against the isolated stack this module requires. Nothing goes red in the meantime:
+    which stands up the isolated stack this module requires, shows the diff, and
+    records the commit the image came from. Nothing goes red in the meantime:
     ``_skip_unless_isolated_stack`` deselects ``file_detail`` on the shared dev stack
     that ``scripts/e2e/run-e2e.sh`` drives, so no comparison against the stale baseline
     happens there.
@@ -606,6 +625,84 @@ def _assert_masks(page: Page, surface: str) -> list[Any]:
     return regions
 
 
+#: Width every masked `chat_trace` chip is forced to before capture, in CSS px.
+#:
+#: Arbitrary by design — the region is painted over by the mask, so the number
+#: is never compared. What matters is that it is a CONSTANT.
+_TRACE_CHIP_PINNED_WIDTH_PX = 64
+
+
+def _pin_masked_geometry(page: Page, surface: str) -> None:
+    """Freeze the *size* of `chat_trace`'s masked chips, not just their pixels.
+
+    ⚠️ **Masking hides a value; it does not stop that value changing the
+    LAYOUT.** This is the `settings` failure of 2026-09-06 in its second form,
+    and it took the same shape: a baseline that was really measuring how much
+    content the deployment holds. `settings` was fixed by capturing the element
+    instead of the viewport — `chat_trace` was already doing that, which is why
+    it was left out of `_NEEDS_ISOLATED_STACK` with the claim that "masking
+    makes them fully reproducible on the shared stack too". Measured
+    2026-09-07, that claim is false.
+
+    Mechanism: `ChatTraceNode.svelte` lays its row out in a `flex-wrap: wrap`
+    box, and `.trace-chip` / `.trace-ms` render real numbers — retrieval counts
+    ("12 found"), the kept/dropped pair, the character budget, the per-stage
+    milliseconds. Those numbers have different DIGIT COUNTS on different
+    corpora, so the chips have different widths, so the row wraps at a
+    different point. On the `Budgeted` row it wrapped to two lines against the
+    seeded stack the baseline was captured on and to one line against the
+    shared dev stack, which shifts every row below it.
+
+    The measurement that settles it, both against the committed baseline:
+
+    ==========================================  =========
+    comparison                                  differs
+    ==========================================  =========
+    shared-stack run 1 vs shared-stack run 2      0.0253%
+    shared-stack run vs committed baseline        3.06%
+    ==========================================  =========
+
+    A surface that reproduces itself to 0.03% is not flaky. The 3.06% is
+    entirely the corpus: three one-pixel-wide columns at the right edge of
+    three masks (a digit's width) plus rows 423-492, the reflowed `Budgeted`
+    and `Answered` rows. Nothing above row 203 differs at all.
+
+    Pinning the chips to a constant width removes the last input the library
+    has into this image, and that was measured rather than assumed: with the
+    pin applied, two captures whose chip text was forced to ``"9"`` and to
+    ``"1234567 kept · 987654321 dropped"`` are **identical to 0.0000%**. Without
+    it, a single digit's width moves a row.
+
+    The cost is that a chip's own width is no longer compared — which costs
+    nothing that was being compared anyway, since the mask already paints over
+    it — while row order, marker shapes, labels, outcome badges, reasons, and
+    the skipped-row de-emphasis all still are.
+
+    ⚠️ **The committed baselines predate this and must be refreshed once**, by a
+    human looking at the images, on the isolated seeded stack the module
+    docstring specifies. Do not refresh them from the shared dev stack: the
+    other four surfaces' baselines came from the isolated one, and mixing
+    provenance is how this suite's baselines rotted the last time.
+    """
+    if surface != "chat_trace":
+        return
+    selectors = ",".join(
+        f"{TRACE_PANEL} {selector}" for selector in _VOLATILE_SELECTORS["chat_trace"]
+    )
+    page.add_style_tag(
+        content=(
+            f"{selectors}{{box-sizing:border-box!important;"
+            f"width:{_TRACE_CHIP_PINNED_WIDTH_PX}px!important;"
+            f"min-width:{_TRACE_CHIP_PINNED_WIDTH_PX}px!important;"
+            f"max-width:{_TRACE_CHIP_PINNED_WIDTH_PX}px!important;"
+            "overflow:hidden!important;white-space:nowrap!important}"
+        )
+    )
+    # The style tag reflows the panel; the comparison is a pixel diff, so there is
+    # no locator to auto-wait on (same reasoning as `_stabilize`'s settle).
+    page.wait_for_timeout(300)
+
+
 #: Host:port pairs that mean "the shared dev stack", not an isolated `--fresh`
 #: deployment. Matches conftest's own `FRONTEND_URL`/`BACKEND_URL` defaults
 #: (``localhost:5173``/``localhost:5174``) — the same signal the module
@@ -616,8 +713,17 @@ _SHARED_STACK_HOSTS = ("localhost:5173", "localhost:5174", "127.0.0.1:5173", "12
 #: Surfaces where masking cannot fully remove non-determinism — row/page-height
 #: drift from a changing card/cluster count, or (`file_detail`) two runs simply
 #: picking a different newest file. These need an isolated, seeded stack to be
-#: meaningfully green; `chat_trace` and `settings` are NOT in this set because
-#: masking makes them fully reproducible on the shared stack too.
+#: meaningfully green.
+#:
+#: ⚠️ `settings` and `chat_trace` stay OUT of this set, but the reason is not the
+#: one this comment used to give ("masking makes them fully reproducible"). Each
+#: needed a second, specific repair before that was true, because masking alone
+#: is not enough for either: `settings` is captured as an ELEMENT so the gallery
+#: behind the modal is not in frame, and `chat_trace` additionally has its masked
+#: chips pinned to a constant width by `_pin_masked_geometry`, because their
+#: digit count was reflowing the panel. Do not move a surface out of this set on
+#: the strength of adding a mask — measure two runs against two different
+#: corpora first.
 _NEEDS_ISOLATED_STACK = frozenset({"gallery", "speakers", "file_detail"})
 
 
@@ -637,11 +743,14 @@ def _skip_unless_isolated_stack(surface: str, base_url: str, backend_url: str) -
         pytest.skip(
             f"'{surface}' visual capture needs an isolated, seeded stack — the shared dev "
             f"stack's file/cluster counts change between runs and cannot be fully masked "
-            f"(row/page-height drift). Run: ./opentr.sh start dev --fresh visual "
-            f"--port-offset 100 --seed-benchmark --with-mock-llm, then pytest "
-            f"backend/tests/e2e/test_visual_regression.py -v "
-            f"--base-url=http://localhost:5273 --backend-url=http://localhost:5274 "
-            f"(ports shift with --port-offset; wait for seeded files to leave 'processing' first)."
+            f"(row/page-height drift). To capture or refresh it, run:\n"
+            f"    ./scripts/e2e/update-visual-baselines.sh "
+            f"--reason '<why>' --surface {surface}\n"
+            f"which brings that stack up (--fresh visual --port-offset 100 "
+            f"--seed-benchmark --with-mock-llm), waits for the seeded media to leave "
+            f"'processing', and tears it down again. To COMPARE against it without "
+            f"updating, add --keep and re-run this module with --base-url/--backend-url "
+            f"pointed at the offset ports it prints."
         )
 
 
@@ -789,6 +898,10 @@ def test_visual_regression(
                 f"populate the retrieval cache (saw {cached.count()}), so this baseline "
                 "records a cache MISS and will not reproduce once the cache is warm."
             )
+            # Ordered AFTER `_assert_masks`: the pin is applied to the same
+            # selectors that assertion just proved are still matching, so a
+            # renamed class fails there rather than silently pinning nothing.
+            _pin_masked_geometry(page, "chat_trace")
         else:  # pragma: no cover - defensive
             pytest.fail(f"Unknown surface: {surface}")
 

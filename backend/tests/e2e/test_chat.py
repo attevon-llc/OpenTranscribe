@@ -518,11 +518,60 @@ def test_gallery_chat_with_selection_hands_off_context(
     does not auto-wait, could also fire simply because the grid had not painted
     yet. ``owned_transcribed_file`` puts a card in the gallery, so the checkbox is
     waited for rather than counted.
+
+    ⚠️ **The gallery has no checkboxes until selection mode is entered.**
+    ``VirtualGrid.svelte`` renders the per-card ``.file-selector`` label inside
+    ``{#if isSelecting}``, and ``isSelecting`` is flipped by the toolbar's "Select
+    files" button (``GalleryActionButtons.svelte``'s ``.select-btn``). So the old
+    ``checkbox.count() == 0`` skip did not fire "on an empty library" — it fired on
+    EVERY run, on any library, because the element it counted cannot exist before
+    that click. This test has never once exercised the hand-off it is named for;
+    swapping the skip for ``to_be_attached`` only changed how it reported that.
+    ``[data-testid="gallery-chat-with-selected"]`` lives in the same ``{#if}``
+    branch, which is corroboration: the button the test clicks is not on screen
+    either until selection mode is on.
+
+    Three further things the old shape got wrong, each of which the skip hid:
+
+    1. The tick goes to the ``.file-selector`` LABEL, not the ``<input>``. The
+       input is the Apple-Photos-style hidden control and its sibling
+       ``.checkmark`` span covers it, so ``checkbox.check()`` times out with
+       ``<span class="checkmark"> intercepts pointer events``. The label is what
+       a pointer lands on and it carries the component's ``on:click`` handler.
+    2. The card is addressed **by the owned file's name**, not ``.first``. The
+       gallery is newest-first over the whole shared library, so ``.first`` is
+       whatever anyone last uploaded — observed here as an ``error``-status
+       leftover, which leaves ``hasCompletedSelected`` false and the button
+       permanently disabled. The name is matched rather than the ``href``
+       because ``VirtualGrid`` rewrites the card link to ``'#'`` in selection
+       mode, so a ``a[href="/files/{uuid}"]`` locator stops matching at exactly
+       the moment it is needed.
+    3. "Chat with N" is inside the **Process dropdown**, not on the toolbar —
+       ``{#if showProcessMenu}``, opened by ``.process-btn``. Clicking the
+       testid without opening the menu can only ever time out.
     """
-    checkbox = gallery_page.locator('.file-card input[type="checkbox"]').first
-    expect(checkbox).to_be_attached(timeout=15_000)
-    checkbox.check()
-    gallery_page.locator('[data-testid="gallery-chat-with-selected"]').click()
+    filename = owned_transcribed_file["detail"]["filename"]
+
+    # No data-testid on these three controls; they are the components' own
+    # classes, and each is asserted rather than clicked blind so a rename fails
+    # loudly here instead of as a mystery timeout further down.
+    select_files = gallery_page.locator(".gallery-action-buttons .select-btn")
+    expect(select_files).to_be_visible(timeout=15_000)
+    select_files.click()
+
+    card = gallery_page.locator(".file-card").filter(has_text=filename)
+    expect(card).to_have_count(1, timeout=15_000)
+    card.scroll_into_view_if_needed()
+    card.locator(".file-selector").click()
+    expect(card.locator('input[type="checkbox"]')).to_be_checked(timeout=15_000)
+
+    gallery_page.locator(".gallery-action-buttons .process-btn").click()
+    chat_with_selected = gallery_page.locator('[data-testid="gallery-chat-with-selected"]')
+    # Enabled, not merely visible: the button renders disabled unless a COMPLETED
+    # file is selected, and clicking a disabled button is a silent no-op that
+    # would surface as the unrelated `wait_for_url` timing out.
+    expect(chat_with_selected).to_be_enabled(timeout=15_000)
+    chat_with_selected.click()
 
     gallery_page.wait_for_url("**/chat", timeout=20_000)
     expect(gallery_page.locator('[data-testid="chat-scope-files"]')).to_be_visible(timeout=15_000)
@@ -566,7 +615,25 @@ def test_context_can_be_turned_off(
 def test_chat_controls_persist_across_reload(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
-    """Per-conversation settings are stored server-side, not just in the tab."""
+    """Per-conversation settings are stored server-side, not just in the tab.
+
+    ⚠️ The toggle is OPTIMISTIC. ``chatStore.setUseContext`` (``stores/chat.ts``)
+    updates local state and only then awaits ``PATCH /api/chat/conversations/{uuid}``,
+    so ``chat-context-off`` becomes visible while the write is still in flight —
+    and a ``reload()`` at that moment aborts it. The test then reloaded, read the
+    server's unchanged value, and failed a persistence assertion against a request
+    that never completed.
+
+    That is a test defect, not a product one, and it was checked rather than
+    assumed: driving the same API by hand — ``POST`` a conversation, ``PATCH
+    {"settings": {"use_context": false}}``, re-``GET`` — returns
+    ``use_context: false`` and ``settings.use_context: false``. So the round trip
+    works; only the browser's timing was wrong.
+
+    Waiting on the response rather than sleeping also strengthens the test: the
+    PATCH's status is now asserted, so a server-side rejection fails here, naming
+    the request, instead of surfacing as an unexplained missing chip after reload.
+    """
     title = unique_conversation_title("persistence")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
@@ -580,8 +647,21 @@ def test_chat_controls_persist_across_reload(
         gallery_page.goto(f"{base_url}/chat/{uuid}")
         gallery_page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=30_000)
 
+        def _is_settings_patch(response) -> bool:
+            return response.request.method == "PATCH" and f"/chat/conversations/{uuid}" in (
+                response.url
+            )
+
         gallery_page.locator('[data-testid="chat-controls-toggle"]').click()
-        gallery_page.locator('[data-testid="chat-use-context-toggle"]').uncheck()
+        with gallery_page.expect_response(_is_settings_patch, timeout=30_000) as patch_info:
+            gallery_page.locator('[data-testid="chat-use-context-toggle"]').uncheck()
+        patch_response = patch_info.value
+        assert patch_response.status == 200, (
+            f"PATCH of use_context returned {patch_response.status}: {patch_response.text()}"
+        )
+        assert patch_response.json()["use_context"] is False, (
+            "the server accepted the PATCH but still reports use_context=true"
+        )
         expect(gallery_page.locator('[data-testid="chat-context-off"]')).to_be_visible(
             timeout=15_000
         )

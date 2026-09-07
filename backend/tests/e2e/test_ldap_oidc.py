@@ -746,7 +746,7 @@ class TestLDAPLogin:
 class TestOIDCConfiguration:
     """Configure Keycloak via the admin UI."""
 
-    def test_configure_oidc_settings(self, admin_page, backend_url: str):
+    def test_configure_oidc_settings(self, admin_page, base_url: str):
         """Open settings, go to Authentication > OIDC/Keycloak, fill in config, and save."""
         page = admin_page
         _open_settings_auth_tab(page, "OIDC")
@@ -771,8 +771,21 @@ class TestOIDCConfiguration:
         page.fill("#oidc_client_id", KC_CLIENT_ID)
         page.fill("#oidc_client_secret", KC_CLIENT_SECRET)
 
-        # Callback URL - must point to the backend callback endpoint
-        page.fill("#oidc_callback_url", f"{backend_url}/api/auth/oidc/callback")
+        # Callback URL — the SPA's `/login` route, NOT `<backend>/api/auth/oidc/callback`.
+        #
+        # This value is both the `redirect_uri` the IdP sends the BROWSER to and the
+        # `redirect_uri` replayed at token exchange (`auth/oidc/flow.py`), so it has to be a
+        # page the SPA serves. `/login` reads `?code=&state=` on mount and XHRs them to
+        # `GET /api/auth/oidc/callback`, which answers with JSON + `Set-Cookie`.
+        #
+        # It used to be `{backend_url}/api/auth/oidc/callback`, which navigates the browser
+        # straight at that JSON endpoint: cookies are set, but the response is a JSON document
+        # on the BACKEND origin and the user never returns to the app. The tests below could
+        # not see it — they wrapped the whole flow in `except Exception: pass` — so the wrong
+        # value survived. `docs/OIDC_SETUP.md`, `docs/AUTH_DEPLOYMENT_GUIDE.md`,
+        # `docs-site/docs/authentication/oidc.md`, `.env.example` and `oidc.py`'s own module
+        # docstring all say "frontend login page, NOT backend API"; this now agrees with them.
+        page.fill("#oidc_callback_url", f"{base_url}/login")
 
         # Role mapping
         page.fill("#oidc_admin_role", "admin")
@@ -931,13 +944,26 @@ class TestHybridAuthentication:
         page.close()
 
     def test_login_page_shows_keycloak_button(self, browser_context, base_url: str):
-        """Login page should display the Keycloak/SSO login button when Keycloak is enabled."""
+        """Login page should display the Keycloak/SSO login button when Keycloak is enabled.
+
+        ``expect(...).to_be_visible``, not ``count() > 0`` — the same auto-waiting
+        assertion ``_start_oidc_login`` already uses on this exact locator.
+        ``count()`` does not wait, and the login card is gated behind
+        ``authMethodsLoaded`` (``login/+page.svelte``): until ``GET
+        /api/auth/methods`` answers, the page renders a spinner and the SSO button
+        does not exist yet. ``networkidle`` does not close that window — this test
+        was observed failing in 2 of 4 consecutive class runs and passing every
+        time it ran alone, with the button provably present in a real browser
+        (``document.querySelectorAll('button.oidc-button').length === 1``) and
+        26/26 ``200``s on ``/api/auth/methods`` in the run that passed.
+
+        Found while fixing the two OIDC login tests below, which used to burn
+        60 s of timeout doing nothing; with them completing, the class runs in
+        ~36 s instead of ~145 s and this race started landing.
+        """
         page = browser_context.new_page()
         page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
-        kc_button = page.locator("button.oidc-button")
-        assert kc_button.count() > 0, (
-            "Keycloak login button should be visible when Keycloak is enabled"
-        )
+        expect(page.locator("button.oidc-button")).to_be_visible(timeout=OIDC_REDIRECT_MS)
         page.close()

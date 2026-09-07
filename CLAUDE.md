@@ -146,7 +146,7 @@ Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`,
 ### Document parsing sidecars (`--with-documents`)
 
 ```bash
-./opentr.sh start dev --with-documents       # docling-serve :5197 + Apache Tika :5198
+./opentr.sh start dev --with-documents       # docling-serve :5197 + Apache Tika :5194
 ```
 
 The document plane is **three tiers and only two are containers** (#362 / #403 Stage 6):
@@ -167,7 +167,7 @@ The document plane is **three tiers and only two are containers** (#362 / #403 S
   ASR worker's only GPU.
 - **Both publish on 127.0.0.1 only** — each converts arbitrary user bytes with no auth. They
   are published at all so host-side pytest can drive the real tiers; the corpus suites
-  auto-enable by TCP probe (`DOCLING_SERVE_PORT` 5197 / `TIKA_PORT` 5198), so the flag alone is
+  auto-enable by TCP probe (`DOCLING_SERVE_PORT` 5197 / `TIKA_PORT` 5194), so the flag alone is
   enough and no env plumbing is needed. Requiring `DOCUMENT_PARSER_URL` in the host env was a
   silent-skip trap: the overlay sets it inside the *containers*.
 - **Images are pinned by digest.** Coverage numbers in `tests/unit/test_document_tika_tier.py`

@@ -87,7 +87,7 @@ def _tika_url() -> str | None:
     """
     url = os.environ.get("DOCUMENT_TIKA_URL", "").strip()
     if not url:
-        url = f"http://localhost:{os.environ.get('TIKA_PORT', '5198')}"
+        url = f"http://localhost:{os.environ.get('TIKA_PORT', '5194')}"
     host = url.split("//", 1)[-1].split("/", 1)[0]
     hostname, _, port = host.partition(":")
     try:
@@ -103,7 +103,7 @@ needs_tika = pytest.mark.skipif(
         "No reachable Apache Tika. This tier cannot be proven without one — a mocked Tika "
         "would only prove the mock, and the defect this file exists for was a real server "
         "answering HTTP 200 with an empty body. Start one with "
-        "`./opentr.sh start dev --with-documents` (publishes 127.0.0.1:5198), or point "
+        "`./opentr.sh start dev --with-documents` (publishes 127.0.0.1:5194), or point "
         "DOCUMENT_TIKA_URL at an existing server."
     ),
 )

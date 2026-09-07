@@ -1415,7 +1415,7 @@ DOCUMENT_PARSER_URL = _os.environ.get("DOCUMENT_PARSER_URL", "").strip()
 # Base URL of the optional Apache Tika container. Empty (the default) means legacy OLE2
 # and RTF uploads are refused with "convert to .docx or .pdf first" — a better answer
 # than a worse parse. Same loopback-only publication as the sidecar above (TIKA_PORT,
-# default 5198), for the same reason.
+# default 5194), for the same reason.
 DOCUMENT_TIKA_URL = _os.environ.get("DOCUMENT_TIKA_URL", "").strip()
 
 # --- DB-backed defaults (SystemSettings keys in the comments) ----------------

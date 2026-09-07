@@ -73,7 +73,7 @@ services:
     ports:
       # Loopback only, same reasoning as docling-serve above: an unauthenticated extractor
       # for arbitrary bytes. In-network callers use http://tika:9998.
-      - "127.0.0.1:${TIKA_PORT:-5198}:9998"
+      - "127.0.0.1:${TIKA_PORT:-5194}:9998"
     healthcheck:
       # The image has wget but NOT curl — checked, don't "fix" this to curl.
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9998/version"]

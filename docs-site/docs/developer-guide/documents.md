@@ -175,7 +175,7 @@ already imported torch and made an in-process check unreliable), `test_watch_sou
 ## Infrastructure
 
 `docker-compose.documents.yml`, `./opentr.sh start dev --with-documents` (docling-serve on
-:5197, Tika on :5198, both bound to `127.0.0.1` only — no auth, so they're not exposed beyond the
+:5197, Tika on :5194, both bound to `127.0.0.1` only — no auth, so they're not exposed beyond the
 host). See root `CLAUDE.md`'s "Document parsing sidecars" section for the full detail, including
 why the slim tier must stay torch-free and why raw bytes go to Tika untyped (an internal MIME
 type sent as `Content-Type` gets treated as a detection override and can silently produce an

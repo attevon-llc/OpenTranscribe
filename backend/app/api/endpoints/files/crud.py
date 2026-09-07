@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import datetime
 from typing import Any
+from typing import NamedTuple
 
 from fastapi import HTTPException
 from fastapi import status
@@ -593,20 +594,106 @@ def audit_unredacted_reveal(
         logger.debug(f"Audit log for unredacted view failed: {e}")
 
 
-def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
-    """Kick off redaction detection for a completed file that never had it (legacy).
+class RedactionScanDispatch(NamedTuple):
+    """Outcome of :func:`claim_and_dispatch_redaction_scan`.
 
-    Sets status to 'pending' immediately so concurrent reads don't re-dispatch,
-    and **withdraws that claim if the publish never reached the broker**.
+    ``queued`` is the only thing a caller may branch on. ``task_id`` is for the
+    operator-facing message and is ``None`` whenever the broker handed back
+    something without an ``id`` — never a signal that the publish failed.
+    """
 
-    The claim has to be written first: two readers opening the same unscanned file
-    would otherwise queue two scans of it. But `pending` asserts "a scan is coming",
-    and `detect_and_store` — the only writer of a terminal status — is precisely what
-    failed to be queued. Leaving the row at `pending` after a failed publish therefore
-    strands it: `_redaction_pending` re-dispatches only from NULL, so nothing ever
-    looks at the file again and its transcript is withheld for the life of the row,
-    from an error the user is never shown. An unreachable broker is not exotic — a
-    restarting Redis, a rebuild, or an out-of-process test harness all produce it.
+    queued: bool
+    task_id: str | None
+
+
+def _withdraw_redaction_claim(db: Session, db_file: MediaFile, previous_status: str | None) -> None:
+    """Undo a ``pending`` claim whose scan was never published — but only if it still stands.
+
+    Deliberately a guarded ``UPDATE ... WHERE redaction_status = 'pending'`` rather
+    than an ORM attribute write. Undoing the claim is correct only while the claim is
+    the row's current state. Between our commit and this call another session may
+    legitimately have moved it on: a re-scan queued by
+    ``RedactionService._mark_redaction_stale`` after a segment edit, or a worker
+    already writing ``processing``/``done``. An unconditional write would then either
+    resurrect the old ``done`` — making cached spans that no longer cover the text
+    authoritative again — or cancel a scan that is genuinely running. The guard costs
+    one indexed UPDATE and removes the whole class.
+
+    Never raises: this runs on an error path, and a failure to withdraw is logged as
+    the stranding it is rather than replacing the caller's exception.
+    """
+    try:
+        withdrawn = (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.id == db_file.id,
+                MediaFile.redaction_status == C.REDACTION_STATUS_PENDING,
+            )
+            .update({MediaFile.redaction_status: previous_status}, synchronize_session=False)
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.exception(
+            "File %s is stranded at 'pending' with no scan queued; its transcript will "
+            "stay withheld until the status is cleared",
+            db_file.id,
+        )
+        return
+
+    if not withdrawn:
+        logger.info(
+            "Not withdrawing the redaction claim on file %s: another writer moved it off "
+            "'pending' since we claimed it, so that writer's status is the current one.",
+            db_file.id,
+        )
+
+
+def claim_and_dispatch_redaction_scan(
+    db: Session, db_file: MediaFile, *, surface: str
+) -> RedactionScanDispatch:
+    """Claim ``pending``, publish the detection scan, and withdraw the claim if it never landed.
+
+    **One implementation on purpose.** Two call sites need this exact protocol — the
+    lazy dispatch on a transcript read (:func:`_lazy_dispatch_redaction`) and the
+    bulk/selective "Redact" action
+    (``endpoints/files/management._handle_redact_action``) — and the second shipped
+    without the withdrawal, which is how files got stranded. A second copy of a
+    recovery protocol is a second chance to omit half of it.
+
+    The claim has to be written *before* the publish: two readers opening the same
+    unscanned file, or two overlapping bulk batches, would otherwise queue two scans.
+    But ``pending`` asserts "a scan is coming", and ``detect_and_store`` — the only
+    writer of a terminal status — is exactly what failed to be queued. Nothing else in
+    the system recovers such a row:
+
+    * :func:`_redaction_pending` re-dispatches only from ``NULL``, so no later read
+      retries it.
+    * ``RedactionService._mark_redaction_stale`` short-circuits when the status is
+      already ``pending``/``processing`` (its ``already_queued`` branch), so editing a
+      segment does not retry it either.
+    * ``redaction_reindex_all_task`` defaults to ``only_stale=True``, which filters on
+      ``redaction_model_version``; a file that *was* scanned once keeps the current
+      version and is therefore **skipped** by the admin backfill.
+
+    A stranded row consequently withholds its transcript on all four surfaces that
+    share ``export_policy.export_masking_is_pending`` — the transcript read, the
+    single-file subtitle download, the bulk-export ZIP and the burned-in subtitle
+    render — until a superuser re-runs the reindex with ``only_stale=false``. An
+    unreachable broker is not exotic: a restarting Redis, a rebuild, or an
+    out-of-process test harness all produce it.
+
+    Args:
+        db: Session owning ``db_file``. Committed here (twice at most).
+        db_file: A completed file to scan. Whatever status it currently holds is
+            captured and restored on a failed publish, so this is safe to call from
+            ``NULL`` (never scanned) and from ``done`` (an explicit re-scan) alike.
+        surface: Short name of the caller, for the operator-facing log only.
+
+    Returns:
+        :class:`RedactionScanDispatch`. ``queued`` is False when the status commit
+        failed (nothing was claimed) or when the publish raised (the claim was
+        withdrawn); in both cases no scan is running.
     """
     previous_status = db_file.redaction_status
     try:
@@ -614,25 +701,34 @@ def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
         db.commit()
     except Exception as e:  # noqa: BLE001
         db.rollback()
-        logger.warning(f"Could not mark file {db_file.id} pending for redaction: {e}")
-        return
+        logger.warning(
+            "Could not mark file %s pending for redaction (%s): %s", db_file.id, surface, e
+        )
+        return RedactionScanDispatch(queued=False, task_id=None)
 
     try:
         from app.tasks.redaction_task import redaction_detect_task
 
-        redaction_detect_task.delay(file_id=db_file.id, user_id=int(db_file.user_id))
+        task = redaction_detect_task.delay(file_id=int(db_file.id), user_id=int(db_file.user_id))
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"Lazy redaction dispatch failed for file {db_file.id}: {e}")
-        try:
-            db_file.redaction_status = previous_status
-            db.commit()
-        except Exception:  # noqa: BLE001
-            db.rollback()
-            logger.exception(
-                "File %s is stranded at 'pending' with no scan queued; its transcript will "
-                "stay withheld until the status is cleared",
-                db_file.id,
-            )
+        logger.warning("Redaction dispatch failed for file %s (%s): %s", db_file.id, surface, e)
+        _withdraw_redaction_claim(db, db_file, previous_status)
+        return RedactionScanDispatch(queued=False, task_id=None)
+
+    task_id = getattr(task, "id", None)
+    return RedactionScanDispatch(queued=True, task_id=str(task_id) if task_id else None)
+
+
+def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
+    """Kick off redaction detection for a completed file that never had it (legacy).
+
+    Only legal from ``redaction_status IS NULL`` — see :func:`_redaction_pending`,
+    which is its sole caller and gates on exactly that. The claim/publish/withdraw
+    protocol itself is :func:`claim_and_dispatch_redaction_scan`, shared with the
+    bulk "Redact" action; this wrapper exists to carry that precondition, which the
+    shared helper deliberately does not impose (a re-scan is legal from any status).
+    """
+    claim_and_dispatch_redaction_scan(db, db_file, surface="lazy dispatch on transcript read")
 
 
 def _redaction_pending(db: Session, cfg: Any, db_file: MediaFile) -> bool:

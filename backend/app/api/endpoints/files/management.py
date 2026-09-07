@@ -824,10 +824,16 @@ def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActi
 
     Re-runs redaction detection for a completed file (e.g., old files that predate the
     feature, or to apply a settings change). Idempotent — replaces cached spans.
+
+    The status claim and its withdrawal are ``crud.claim_and_dispatch_redaction_scan``,
+    shared with the lazy dispatch on a transcript read. This site used to set
+    ``pending``, commit, and then publish unguarded, which made pressing "Redact" on a
+    healthy file a way to withhold its transcript permanently whenever the broker was
+    momentarily unreachable — see that helper for why nothing else recovers the row.
     """
     import os
 
-    from app.core import constants as C  # noqa: N812
+    from app.api.endpoints.files.crud import claim_and_dispatch_redaction_scan
     from app.models.media import MediaFile
 
     db_file = db.query(MediaFile).filter_by(id=file_id).first()
@@ -846,19 +852,35 @@ def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActi
             error="NO_TRANSCRIPT",
         )
 
-    # Mark pending so the UI shows the "Redacting…" state immediately.
-    db_file.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
-    db.commit()
+    if os.environ.get("SKIP_CELERY", "False").lower() == "true":
+        # Nothing is published in test mode, so nothing claims `pending` either: a
+        # `pending` with no scan behind it is the stranding this function was fixed
+        # for, and it is no more recoverable because a test wrote it.
+        return BulkActionResult(
+            file_uuid=file_uuid, success=True, message="Redaction prepared (test mode)"
+        )
 
-    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        from app.tasks.redaction_task import redaction_detect_task
+    # Claims `pending` first — that is what shows the UI's "Redacting…" state and what
+    # stops a second overlapping batch queueing a duplicate scan — and withdraws the
+    # claim if the publish never reached the broker.
+    dispatch = claim_and_dispatch_redaction_scan(db, db_file, surface="bulk redact action")
+    if not dispatch.queued:
+        # Reported as a per-file failure rather than swallowed. The row is back at the
+        # status it had, so the file is exactly as readable as before the click, and
+        # the caller can retry the batch.
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="Could not queue redaction — the task broker is unreachable. "
+            "Nothing was changed; try again.",
+            error="DISPATCH_FAILED",
+        )
 
-        task = redaction_detect_task.delay(file_id=file_id, user_id=int(db_file.user_id))
-        message = f"Redaction started (task: {task.id})"
-    else:
-        message = "Redaction prepared (test mode)"
-
-    return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
+    return BulkActionResult(
+        file_uuid=file_uuid,
+        success=True,
+        message=f"Redaction started (task: {dispatch.task_id})",
+    )
 
 
 def _handle_tag_action(

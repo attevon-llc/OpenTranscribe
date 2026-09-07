@@ -349,16 +349,22 @@ def _inject_transcript(
         #
         # `inject_meeting` leaves `redaction_status` NULL — the transcription
         # pipeline sets it, and injection skips the pipeline. But
-        # `api/endpoints/files/crud.py::_withheld_for_redaction` treats
+        # `api/endpoints/files/crud.py::_redaction_pending` treats
         # `None | pending | processing` alike, so `GET /api/files/{uuid}` and
         # `/segments` both answer `transcript_segments: []` with
         # `redaction_pending: true` **forever**. Measured directly: 12 rows in
-        # `transcript_segment`, 0 through the API. That is a live defect in the
+        # `transcript_segment`, 0 through the API. That was a live defect in the
         # injector itself, not something this fixture introduced — every corpus
-        # `app/scripts/corpus_injection` has ever written has an unreadable
+        # `app/scripts/corpus_injection` had ever written had an unreadable
         # transcript in the product, which the RAG eval harness never noticed
         # because it calls `retrieve_chunks` in-process and never touches the
         # HTTP file surface.
+        #
+        # ⚠️ Still required, despite `injector.dispatch_redaction`. That repair
+        # is called from `corpus_injection/__main__.py` only — `inject_meeting`,
+        # which is what this fixture calls, still returns a row with
+        # `redaction_status` NULL. Re-checked 2026-09-07: `dispatch_redaction`
+        # has exactly two call sites, the CLI and its own unit test.
         #
         # The honest repair here would be to dispatch the real `redaction.detect`
         # task, but the E2E process has no broker: `tests/conftest.py` sets

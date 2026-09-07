@@ -1393,6 +1393,7 @@
   "auth.signIn": "Inloggen",
   "auth.signInToAccount": "Log in op uw account",
   "auth.signingIn": "Bezig met inloggen...",
+  "auth.loadingSignInOptions": "Aanmeldopties laden…",
   "auth.createAccount": "Account aanmaken",
   "auth.creatingAccount": "Account aanmaken...",
   "auth.createNewAccount": "Een nieuw account aanmaken",

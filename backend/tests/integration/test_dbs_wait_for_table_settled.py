@@ -43,6 +43,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.integration.throwaway_pg import _READY_TIMEOUT
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not available"),
@@ -83,7 +85,7 @@ def _postgres_image_tag() -> str:
     return match.group(1)
 
 
-def _wait_ready(container: str, timeout: float = 30.0) -> None:
+def _wait_ready(container: str, timeout: float = _READY_TIMEOUT) -> None:
     deadline = time.monotonic() + timeout
     last: subprocess.CompletedProcess[str] | None = None
     consecutive = 0

@@ -114,6 +114,7 @@ Configure auth via Admin UI (Settings → Authentication); DB config takes prece
 ```bash
 ./opentr.sh start dev --with-ldap-test       # LDAP at localhost:3890, UI :17170 (admin/admin_password)
 ./opentr.sh start dev --with-keycloak-test   # a Keycloak IdP to test OIDC against, localhost:8180 (admin/admin)
+                                             # ⚠️ FIRST START TAKES ~10 MINUTES — see below
 ./opentr.sh start dev --with-authentik-test  # an Authentik IdP to test OIDC against, localhost:9022 (bootstrap: admin@example.com/admin_password)
 ./opentr.sh start prod --build --with-pki    # PKI/mTLS at https://localhost:5182 (prod-only — Vite can't do mTLS)
 ```
@@ -140,6 +141,19 @@ full table: `backend/tests/CLAUDE.md`.
 `--with-mock-asr` is the sibling overlay — a mocked cloud ASR (Gladia stand-in) provider at
 `http://mock-asr:5198`, so `--lite`-mode ASR can be exercised with no vendor account either;
 same fixture/table location.
+⚠️ **Keycloak is slow to start and that is normal, not a hang.** `start-dev` re-runs Quarkus
+augmentation on **every** start (the output lands in `/opt/keycloak/lib/quarkus`, which is not on
+the volume, so nothing is reused), and its `JarResultBuildStep` walks the built tree calling
+`File.setReadable` per entry. Measured 2026-09-06 on this host: **~600 s** before it listens, then
+Quarkus starts in ~16 s. The healthcheck therefore allows `start_period: 900s` — it was 60s + 5×30s
+= 210s, which marked a perfectly healthy Keycloak unhealthy at 3.5 minutes, failed `up --wait`, and
+aborted `run-dev-tests.sh --full` **before a single test ran**. A container sitting at 0.2% CPU
+here is doing I/O-bound work, not deadlocked; check the thread dump before concluding otherwise.
+The real fix is to pre-run `kc.sh build` in a small custom image and start `--optimized` (~16 s);
+that is worth doing and is not yet done. The image is **pinned** (`26.4.7`) like every other
+dependency — it was `:latest`, which meant the gate's auth phase ran against whatever Keycloak
+shipped that morning. `smallstep/step-ca` is still `:latest` and wants the same treatment.
+
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
 

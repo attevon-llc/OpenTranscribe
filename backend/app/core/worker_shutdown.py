@@ -73,6 +73,42 @@ def shutdown_requested() -> bool:
     return _SHUTDOWN.is_set()
 
 
+class TranscriptionAbortedError(Exception):
+    """A long-running GPU stage stood down because the worker is shutting down.
+
+    Issue #809. Raised by a cooperative-abort checkpoint, never by a failure: the work was
+    not attempted-and-broken, it was *interrupted*, and the caller is expected to requeue
+    it rather than mark the file errored.
+
+    Deliberately a plain exception rather than ``celery.exceptions.Reject``. The
+    transcription engine must stay importable on a CPU-only worker and in a bare pytest
+    process, so it cannot depend on celery; the TASK layer is what translates this into
+    ``Reject(requeue=True)``. Keeping the translation at that boundary is also what makes
+    the abort testable without a broker.
+    """
+
+
+def raise_if_shutting_down(where: str) -> None:
+    """Cooperative-abort checkpoint. Call at a bounded point in a long GPU loop.
+
+    Issue #809, and the reason it cannot be solved with more signal wiring: every GPU
+    worker runs ``--pool=threads``, and celery's warm shutdown calls
+    ``executor.shutdown(wait=True)``, which blocks ``worker_shutdown`` until the running
+    task RETURNS. No handler can preempt a decode already in flight — so the task has to
+    stand down on its own. Releasing models from ``worker_shutting_down`` instead is not
+    an alternative: that fires while the CUDA kernel is still live.
+
+    ``where`` names the checkpoint in the log, so an abort says which stage stood down
+    rather than only that one did.
+
+    Raises:
+        TranscriptionAbortedError: if a shutdown signal has already been received.
+    """
+    if _SHUTDOWN.is_set():
+        logger.info("cooperative abort at %s — worker is shutting down", where)
+        raise TranscriptionAbortedError(f"worker shutting down; stood down at {where}")
+
+
 def _force_exit() -> None:
     """Watchdog fallback: the release did not complete within its budget.
 

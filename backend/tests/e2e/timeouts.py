@@ -1,0 +1,34 @@
+"""Shared Playwright wait budgets for the E2E suite.
+
+Not a test module (no ``test_`` prefix), so pytest imports it and collects nothing from it.
+
+**Why these are constants and not literals.** Before this file, ``wait_for_selector("#email",
+timeout=...)`` appeared **65 times across 15 files** at two different values (10000 and 15000)
+with no stated reason for either. A budget copied 65 times cannot be revised — it can only
+drift, and when it is wrong it is wrong in 65 places at once. The repo's rule (see
+``backend/tests/CLAUDE.md``) is: name the constant, put the measurement beside it.
+"""
+
+from __future__ import annotations
+
+#: How long to wait for the login form to exist after navigating to /login.
+#:
+#: 30 s, raised from a copy-pasted 10000/15000, and it is NOT a flake workaround — the
+#: contract genuinely changed. ``login/+page.svelte`` used to paint the credential form
+#: immediately against local-only placeholder defaults, then insert the SSO/PKI/register
+#: elements once ``getAuthMethods()`` resolved. That shifted the layout under the user (and
+#: under Playwright's click), so the card is now gated on ``authMethodsLoaded`` and renders
+#: once, in its final shape. ``#email`` therefore no longer appears on the first paint: it
+#: appears after the auth-methods round trip.
+#:
+#: So the honest budget is "app shell + one API call", and the app shell is itself gated on
+#: ``{#if $authReady}`` behind ``initAuth()``'s ``GET /auth/session`` — which carries a **60 s**
+#: axios timeout. 10 s was already under-budget for that even before the change; it simply
+#: happened to pass while the form rendered ahead of the fetch. Under the full gate (3
+#: Playwright workers, 48 pytest workers, a backend under load) it timed out and produced 3
+#: failures in ``test_auth_buttons.py`` on 2026-09-06 that had nothing to do with auth.
+#:
+#: 30 s matches the sibling app-shell waits already in ``conftest.py``
+#: (``.gallery-action-buttons``, ``.gallery-header-right``) and ``test_search.py``'s
+#: ``.search-page``. Reaching it still means a real failure, and one worth 30 s of evidence.
+LOGIN_FORM_READY_MS = 30_000

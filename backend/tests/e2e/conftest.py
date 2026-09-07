@@ -68,6 +68,8 @@ if _backend_dir not in sys.path:
 # same env vars this dev stack exposes) — imported here for its **module-level side effects
 # only** (setting `os.environ` before any `app.*` import happens), not registered as a plugin,
 # so its own fixtures / its own `pytest_plugins` entries don't leak into this rootdir.
+from timeouts import LOGIN_FORM_READY_MS
+
 import tests.conftest  # noqa: F401,E402 — side effects only, see above
 
 # ``tests/conftest.py`` registers ``search_corpus``/``search_corpus_token``/``neural_available``
@@ -336,7 +338,7 @@ def login_page(page: Page, base_url: str):
     """
     with page.expect_response(lambda r: "/api/auth/methods" in r.url, timeout=20000):
         page.goto(base_url)
-    page.wait_for_selector("#email", timeout=10000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     return page
 
 
@@ -354,7 +356,7 @@ def authenticated_page(page: Page, base_url: str):
     is a separate, larger change and out of scope here.
     """
     page.goto(base_url)
-    page.wait_for_selector("#email", timeout=10000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
     # Login as admin
     page.fill("#email", TEST_ADMIN_EMAIL)
@@ -394,7 +396,7 @@ def shared_auth_state(browser, base_url: str):
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector("#email", timeout=15000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
@@ -862,7 +864,7 @@ def second_user_auth_state(browser, base_url: str, second_user: dict[str, str]):
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector("#email", timeout=15000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     page.fill("#email", second_user["email"])
     page.fill("#password", second_user["password"])
     page.click("button[type=submit]")
@@ -1022,7 +1024,7 @@ class AuthHelper:
     def login(self, email: str, password: str) -> bool:
         """Login with credentials. Returns True if successful."""
         self.page.goto(self.base_url)
-        self.page.wait_for_selector("#email", timeout=10000)
+        self.page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
         self.page.fill("#email", email)
         self.page.fill("#password", password)
         self.page.click("button[type=submit]")

@@ -1382,6 +1382,7 @@
   "auth.signIn": "Вход",
   "auth.signInToAccount": "Войдите в свой аккаунт",
   "auth.signingIn": "Вход...",
+  "auth.loadingSignInOptions": "Загрузка вариантов входа…",
   "auth.createAccount": "Создать аккаунт",
   "auth.creatingAccount": "Создание аккаунта...",
   "auth.createNewAccount": "Создать новый аккаунт",

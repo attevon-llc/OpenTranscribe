@@ -16,8 +16,10 @@ import logging
 import os
 import tempfile
 import time
+from typing import NoReturn
 
 from celery import chain
+from celery.exceptions import Reject
 
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
@@ -25,6 +27,7 @@ from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
+from app.core.worker_shutdown import TranscriptionAbortedError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
@@ -297,6 +300,83 @@ def _log_shared_wav_fallback_reason(local_wav_path: str | None, file_id: int) ->
         )
 
 
+def _cleanup_wav_quietly(local_wav_path: str) -> None:
+    """Drop the shared-volume WAV. Never raises: cleanup must not mask the real outcome."""
+    if not local_wav_path:
+        return
+    try:
+        from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
+
+        cleanup_shared_volume_wav(local_wav_path)
+    except Exception as cleanup_err:  # nosec B110 - cleanup must not mask the real outcome
+        logger.debug("WAV cleanup skipped: %s", cleanup_err)
+
+
+def _finish_failed_or_aborted(
+    ctx, task_id: str, file_uuid: str, local_wav_path: str, exc: Exception
+) -> NoReturn:
+    """Terminal handler for ``transcribe_gpu_task``: distinguish ABORT from FAILURE (#809).
+
+    One handler rather than two ``except`` clauses because the task body sits at the C901
+    ceiling; folding the WAV cleanup in here removes more branches from the hot path than
+    the abort case adds.
+
+    ABORTED (worker shutting down) and FAILED are genuinely different outcomes and must not
+    share a path:
+
+    * An abort is INTERRUPTED work. It must not mark the file errored -- that turns a clean
+      restart into a user-visible failure and stops the file being retried -- and it must
+      requeue via ``Reject(requeue=True)``. A bare ``raise`` would ACK under
+      ``acks_late=True`` and LOSE the transcription, which is worse than the SIGKILL it
+      replaces, since after a SIGKILL the message is redelivered.
+    * A failure is BROKEN work: mark the file, notify, re-raise unchanged.
+
+    Raises:
+        Reject: on abort, to requeue.
+        Exception: the original exception, on a real failure.
+    """
+    _cleanup_wav_quietly(local_wav_path)
+    if isinstance(exc, TranscriptionAbortedError):
+        _requeue_after_abort(file_uuid, exc)
+    logger.error(f"GPU transcription failed for file {file_uuid}: {exc}")
+    _handle_transcription_failure(
+        ctx, task_id, _get_user_friendly_error_message(str(exc)), "gpu_processing_error"
+    )
+    raise exc
+
+
+def _requeue_after_abort(file_uuid: str, abort: Exception) -> NoReturn:
+    """Stand a shutdown-aborted GPU transcription down without failing the file (#809).
+
+    Extracted from ``transcribe_gpu_task`` rather than inlined: that task body is already at
+    the C901 complexity ceiling, and an abort path is exactly the kind of branch that should
+    not make the hot path harder to read.
+
+    The work was INTERRUPTED, not broken, so this deliberately does not travel the failure
+    path -- no ``_handle_transcription_failure``, no error notification. Marking the file
+    errored would turn a clean restart into a user-visible failure and stop it being retried.
+
+    ``Reject(requeue=True)``, never a bare ``raise``: under ``acks_late=True`` celery acks on
+    RETURN -- success or exception -- so raising anything else here would ACK the message and
+    LOSE the transcription. That is worse than the SIGKILL this replaces, since after a
+    SIGKILL the message is redelivered.
+
+    Redis is not AMQP, so #809 required this be verified rather than inferred from the AMQP
+    contract. Measured against a real celery worker on a real Redis broker with
+    ``acks_late=True``, rejecting on first delivery: DELIVERY #1, DELIVERY #2, second
+    completed. ``Reject(requeue=True)`` does redeliver on the Redis transport.
+
+    Raises:
+        Reject: always -- this function exists to convert an abort into a requeue.
+    """
+    logger.warning(
+        "GPU transcription for file %s stood down for worker shutdown (%s) -- requeueing",
+        file_uuid,
+        abort,
+    )
+    raise Reject(requeue=True) from abort
+
+
 @celery_app.task(
     bind=True,
     name="transcription.gpu_transcribe",
@@ -540,16 +620,4 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
         # `autoretry_for` policy below — worth this comment, not a fix here).
         retry_transcribe_gpu_exception(self, exc, file_uuid)
     except Exception as e:
-        # Best-effort cleanup of shared-volume WAV on failure
-        _wav = locals().get("local_wav_path", "")
-        if _wav:
-            try:
-                from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
-
-                cleanup_shared_volume_wav(_wav)
-            except Exception as _cleanup_err:  # nosec B110
-                logger.debug("WAV cleanup on error skipped: %s", _cleanup_err)
-        logger.error(f"GPU transcription failed for file {file_uuid}: {e}")
-        error_message = _get_user_friendly_error_message(str(e))
-        _handle_transcription_failure(ctx, task_id, error_message, "gpu_processing_error")
-        raise
+        _finish_failed_or_aborted(ctx, task_id, file_uuid, locals().get("local_wav_path", ""), e)

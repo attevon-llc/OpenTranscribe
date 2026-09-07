@@ -179,6 +179,7 @@
   "auth.signIn": "Anmelden",
   "auth.signInToAccount": "Melden Sie sich bei Ihrem Konto an",
   "auth.signingIn": "Anmeldung läuft...",
+  "auth.loadingSignInOptions": "Anmeldeoptionen werden geladen…",
   "auth.unexpectedError": "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.",
   "auth.username": "Benutzername",
   "auth.usernamePlaceholder": "Wählen Sie einen Benutzernamen",

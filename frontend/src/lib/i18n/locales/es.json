@@ -179,6 +179,7 @@
   "auth.signIn": "Iniciar Sesión",
   "auth.signInToAccount": "Inicia sesión en tu cuenta",
   "auth.signingIn": "Iniciando sesión...",
+  "auth.loadingSignInOptions": "Cargando opciones de inicio de sesión…",
   "auth.unexpectedError": "Ocurrió un error inesperado. Por favor intenta más tarde.",
   "auth.username": "Nombre de Usuario",
   "auth.usernamePlaceholder": "Elige un nombre de usuario",

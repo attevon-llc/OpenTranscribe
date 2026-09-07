@@ -80,6 +80,19 @@ REAL_PROJECT_LABEL_ALT = "transcribe-app"
 
 LABEL_FILTER_PREFIX = "label=com.docker.compose.project="
 
+#: Budget for any subprocess call that reaches the REAL docker daemon (creating, removing, or
+#: driving the loop over throwaway containers).
+#:
+#: Measured 2026-09-06: at 60 s, `docker run -d ... alpine:3.20 sleep 300` timed out and failed
+#: two tests in this file during a `run-dev-tests.sh --full` run. Creating a trivial container
+#: is normally sub-second — but during a full gate the daemon is concurrently building overlay
+#: images and fielding calls from 48 pytest workers, and every call here is a round-trip to it.
+#: Nothing about the code under test was wrong; the number was.
+#:
+#: Deliberately NOT applied to the fake-`docker`-on-PATH helper: that one never reaches a
+#: daemon, so a slow run there would be a real hang worth failing fast on.
+_DOCKER_OP_TIMEOUT = 120
+
 _END_OF_RECORD = "<<<END>>>"
 
 _FAKE_DOCKER = f"""#!/bin/bash
@@ -181,7 +194,7 @@ def _run_real_loop(loop_text: str, namespace: tuple[str, str]) -> None:
     subprocess.run(
         ["bash", "-c", loop_text],
         capture_output=True,
-        timeout=60,
+        timeout=_DOCKER_OP_TIMEOUT,
         env=_env_without_overrides(
             **{PROJECT_LABEL_VAR: primary, PROJECT_LABEL_ALT_VAR: alternate}
         ),
@@ -266,14 +279,57 @@ def throwaway_containers():
         if project_label is not None:
             cmd += ["--label", f"com.docker.compose.project={project_label}"]
         cmd += ["alpine:3.20", "sleep", "300"]
-        subprocess.run(cmd, capture_output=True, check=True, timeout=60)
+
+        # Registered for cleanup BEFORE the daemon is asked to create it. `docker run` timing
+        # out is a CLIENT-side give-up, not a guarantee the container was not created — so a
+        # name appended only on success leaks precisely the containers this fixture exists to
+        # guarantee the removal of. Teardown tolerates a name that never came into being.
         created.append(name)
+
+        # Same budget and retry as teardown below, for the same measured reason: at 60s both
+        # of these tests FAILED here during a --full gate run (2026-09-06), because creating
+        # even a trivial `alpine sleep` container is a round-trip to a docker daemon that is
+        # concurrently building overlay images and serving 48 pytest workers. Nothing about
+        # the code under test was wrong.
+        for attempt in (1, 2):
+            try:
+                subprocess.run(cmd, capture_output=True, check=True, timeout=_DOCKER_OP_TIMEOUT)
+                return name
+            except subprocess.TimeoutExpired:
+                if attempt == 2:
+                    raise
+                # The timed-out attempt may hold the name on the daemon; a plain retry would
+                # then fail with "name is already in use" and hide the real cause.
+                subprocess.run(
+                    ["docker", "rm", "-f", name], capture_output=True, timeout=_DOCKER_OP_TIMEOUT
+                )
         return name
 
     yield _make
 
+    # Shares _DOCKER_OP_TIMEOUT with the CREATE path above rather than carrying its own
+    # number: removal is not faster than creation under load, and two constants would drift.
+    #
+    # Retried once rather than simply widened. A timeout here is not cosmetic — it means
+    # a real container is still running on the host, and a teardown that gives up quietly
+    # leaks it. The second attempt is what makes the raise below mean "genuinely stuck",
+    # and the message names the container so it can be removed by hand.
     for name in created:
-        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
+        for attempt in (1, 2):
+            try:
+                subprocess.run(
+                    ["docker", "rm", "-f", name],
+                    capture_output=True,
+                    timeout=_DOCKER_OP_TIMEOUT,
+                )
+                break
+            except subprocess.TimeoutExpired:
+                if attempt == 2:
+                    raise AssertionError(
+                        f"could not remove throwaway container {name!r} after two "
+                        "attempts — it is still running on this host; remove it with "
+                        f"`docker rm -f {name}`"
+                    ) from None
 
 
 def _container_exists(name: str) -> bool:
@@ -523,7 +579,7 @@ def _run_real_gpu_drain(function_text: str, namespace: tuple[str, str]) -> None:
     subprocess.run(
         ["bash", "-c", script],
         capture_output=True,
-        timeout=60,
+        timeout=_DOCKER_OP_TIMEOUT,
         env=_env_without_overrides(
             **{
                 PROJECT_LABEL_VAR: primary,

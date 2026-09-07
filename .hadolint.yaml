@@ -14,6 +14,10 @@ trustedRegistries:
   - docker.io
   - ghcr.io
   - nvcr.io
+  # Red Hat's registry — the OFFICIAL publisher of the Keycloak image
+  # (docker/keycloak/Dockerfile). Added as a trusted source rather than suppressing DL3026,
+  # because the rule is doing its job: it should keep flagging registries we have not vetted.
+  - quay.io
 
 # Override default rules severity
 override:

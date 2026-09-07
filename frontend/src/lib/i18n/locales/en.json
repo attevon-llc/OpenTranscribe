@@ -1393,6 +1393,7 @@
   "auth.signIn": "Sign In",
   "auth.signInToAccount": "Sign in to your account",
   "auth.signingIn": "Signing In...",
+  "auth.loadingSignInOptions": "Loading sign-in options…",
   "auth.createAccount": "Create Account",
   "auth.creatingAccount": "Creating account...",
   "auth.createNewAccount": "Create a new account",

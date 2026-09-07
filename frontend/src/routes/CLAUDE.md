@@ -38,6 +38,22 @@ there is no server-side rendering of app data.
 
 ## Gotchas
 
+- **Don't paint a page against placeholder config and then correct it — gate the render on the
+  fetch.** `login/+page.svelte` initialises `authMethods` to a local-only deployment
+  (`oidc_enabled: false`, `ldap_enabled: false`, `allow_registration: false`) and then replaces
+  it with `getAuthMethods()`. On any deployment that actually enables SSO the answer _differs_
+  from those defaults, so the SSO buttons, the PKI button and the register link were inserted
+  into an already-painted card — moving the submit button under the user's cursor. It is a real
+  CLS defect for anyone on a slow connection, and it made the whole auth E2E suite
+  non-deterministic: `wait_for_selector('#email')` returned on the pre-fetch paint, the fills
+  succeeded, and the click then raced the reflow. **58 auth tests failed this way on
+  2026-09-06** while the same files passed 29/29 against an idle stack — the fetch is only slow
+  enough to lose when the machine is busy, which is exactly when the gate runs. It stayed hidden
+  for months because the local-only defaults _matched_ reality whenever OIDC was off; enabling
+  Keycloak is what exposed it. The card now renders a spinner until `authMethodsLoaded`.
+  ⚠️ That flag must be set in a **`finally`** — this `onMount` body has no try/catch of its own,
+  so gating the UI on a request that can reject would strand the page on its placeholder and
+  turn a transient backend blip into "nobody can sign in". Fail **open** to the local form.
 - This is a static SPA — `+page.ts` load runs in the browser; data-loading routes set `ssr = false`.
   Don't add server `load` functions expecting a Node server; there is none in production.
 - `+error.svelte` is the catch-all for unmatched routes (no real 404 from a server).

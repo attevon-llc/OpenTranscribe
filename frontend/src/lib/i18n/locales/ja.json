@@ -1392,6 +1392,7 @@
   "auth.signIn": "サインイン",
   "auth.signInToAccount": "アカウントにサインイン",
   "auth.signingIn": "サインイン中...",
+  "auth.loadingSignInOptions": "サインイン方法を読み込んでいます…",
   "auth.createAccount": "アカウントを作成",
   "auth.creatingAccount": "アカウントを作成中...",
   "auth.createNewAccount": "新しいアカウントを作成",

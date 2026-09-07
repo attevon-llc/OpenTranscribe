@@ -14,6 +14,7 @@ Run:
 
 import pytest
 from playwright.sync_api import expect
+from timeouts import LOGIN_FORM_READY_MS
 
 pytestmark = pytest.mark.responsive
 
@@ -73,7 +74,7 @@ class TestLoginResponsive:
 
     def test_login_form_renders(self, anon_page, base_url: str):
         anon_page.goto(base_url)
-        anon_page.wait_for_selector("#email", timeout=15000)
+        anon_page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
         expect(anon_page.locator("#email")).to_be_visible()
         expect(anon_page.locator("#password")).to_be_visible()
         expect(anon_page.locator("button[type=submit]")).to_be_visible()

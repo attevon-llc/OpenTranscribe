@@ -19,6 +19,7 @@ Run:
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import LOGIN_FORM_READY_MS
 
 from tests.env_gate import gate_enabled
 from tests.fixtures.search_corpus import GOLD
@@ -39,7 +40,17 @@ NONSENSE_QUERY = "zxqv-no-such-term-9817263"
 def search_page(gallery_page: Page, base_url: str) -> Page:
     """Navigate the pre-authenticated session to /search."""
     gallery_page.goto(f"{base_url}/search")
-    gallery_page.wait_for_selector(".search-page", timeout=15000)
+    # 30s, matching the `.gallery-action-buttons` / `.gallery-header-right` waits in
+    # conftest — not 15s, which is what this carried and what errored once in the
+    # 2026-09-06 full run.
+    #
+    # `.search-page` is the page's ROOT div and sits behind no `{#if}` of its own, so its
+    # absence never means "search is slow" — it means the app SHELL has not rendered.
+    # `+layout.svelte` gates the entire app on `{#if $authReady}`, which is set only after
+    # `initAuth()`'s `GET /auth/session` resolves behind a 60s axios timeout, and `goto()`
+    # is a full page load that re-runs that probe. Budgeting 15s for something gated on a
+    # 60s probe reports a busy backend as a broken search page.
+    gallery_page.wait_for_selector(".search-page", timeout=30000)
     return gallery_page
 
 
@@ -341,7 +352,7 @@ class TestSearchKnownCorpusRanking:
         session used by every other test in this module would see zero results here.
         """
         page.goto(base_url)
-        page.wait_for_selector("#email", timeout=15000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
         page.fill("#email", search_corpus_user["email"])
         page.fill("#password", search_corpus_user["password"])
         page.click("button[type=submit]")

@@ -1393,6 +1393,7 @@
   "auth.signIn": "로그인",
   "auth.signInToAccount": "계정에 로그인하세요",
   "auth.signingIn": "로그인 중...",
+  "auth.loadingSignInOptions": "로그인 옵션을 불러오는 중…",
   "auth.createAccount": "계정 만들기",
   "auth.creatingAccount": "계정 생성 중...",
   "auth.createNewAccount": "새 계정 만들기",

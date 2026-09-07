@@ -76,6 +76,7 @@ from _visual_diff import diff_fraction as _diff_fraction
 from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import LOGIN_FORM_READY_MS
 
 pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet stack)
 
@@ -401,7 +402,7 @@ def _login(page: Page, base_url: str) -> None:
     if page.locator(".user-button").count():
         page.wait_for_selector(".user-button", timeout=10000)
         return
-    page.wait_for_selector("#email", timeout=15000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
@@ -789,12 +790,30 @@ def test_visual_regression(
                 mask=_volatile_regions(page, surface),
                 mask_color="#ff00ff",
             )
+        elif surface == "settings":
+            # Capture the MODAL, not the page — the same reasoning as chat_trace above, and
+            # for a failure measured on 2026-09-06.
+            #
+            # This used to capture the viewport, which meant the image included the GALLERY
+            # BEHIND the overlay: its tag chips, speaker chips, date-range control and media
+            # cards. Every one of those is dev-database content. The baseline was recorded
+            # against a near-empty library, and both themes failed at 1.11% / tolerance 0.50%
+            # as soon as the stack held two files — with the Settings modal itself
+            # pixel-identical in baseline and actual. The suite was measuring how much data is
+            # in the database, not the UI, so refreshing the baseline would only have deferred
+            # the same failure to the next upload.
+            #
+            # Cropping to the modal is what makes the surface's name true. Masking cannot fix
+            # this one: the background's card COUNT changes the layout of the region, and a
+            # mask is a fixed rectangle over an element that may not even be present.
+            png_bytes = page.locator(".settings-modal").screenshot(
+                animations="disabled",
+                mask=_volatile_regions(page, surface),
+                mask_color="#ff00ff",
+            )
         else:
-            # The settings modal is an overlay; capture the viewport (not full page)
-            # so a long scrolled background doesn't add nondeterministic height.
-            full_page = surface != "settings"
             png_bytes = page.screenshot(
-                full_page=full_page,
+                full_page=True,
                 animations="disabled",
                 mask=_volatile_regions(page, surface),
                 mask_color="#ff00ff",

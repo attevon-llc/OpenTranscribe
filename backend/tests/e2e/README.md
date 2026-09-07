@@ -227,6 +227,7 @@ See `tests/AUTH_TEST_SETUP.md` for container setup instructions.
 import pytest
 from playwright.sync_api import Page, expect
 
+
 class TestMyFeature:
     """Test description."""
 

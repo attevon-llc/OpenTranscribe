@@ -37,6 +37,7 @@ from conftest import delete_media_file
 from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import LOGIN_FORM_READY_MS
 
 # The `gallery` marker is REGISTERED in e2e/pytest.ini and root CLAUDE.md documents
 # `./scripts/e2e/run-e2e.sh -m gallery` as a supported selector — but nothing in the tree
@@ -126,7 +127,7 @@ def auth_storage_state(browser, base_url: str, api_token: str):  # type: ignore[
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector("#email", timeout=15000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")

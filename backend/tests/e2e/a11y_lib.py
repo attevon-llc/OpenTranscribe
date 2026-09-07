@@ -18,6 +18,7 @@ from typing import Any
 
 from axe_playwright_python.sync_playwright import Axe
 from playwright.sync_api import Page
+from timeouts import LOGIN_FORM_READY_MS
 
 # Impacts we gate on. "minor"/"moderate" are tolerated (legacy debt, low value).
 GATED_IMPACTS = frozenset({"serious", "critical"})
@@ -69,7 +70,7 @@ def form_login_with_retry(page: Page, base_url: str, attempts: int = 4) -> None:
             if page.locator(".user-button").count():
                 page.wait_for_selector(".user-button", timeout=10000)
                 return
-            page.wait_for_selector("#email", timeout=15000)
+            page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
             page.fill("#email", "admin@example.com")
             page.fill("#password", "password")
             page.click("button[type=submit]")

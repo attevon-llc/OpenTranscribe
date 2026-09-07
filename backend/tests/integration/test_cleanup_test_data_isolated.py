@@ -42,6 +42,8 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from tests.integration.throwaway_pg import _READY_TIMEOUT
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not available"),
@@ -122,7 +124,7 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _wait_ready(port: int, password: str, timeout: float = 30.0) -> None:
+def _wait_ready(port: int, password: str, timeout: float = _READY_TIMEOUT) -> None:
     deadline = time.monotonic() + timeout
     consecutive = 0
     last_exc: Exception | None = None

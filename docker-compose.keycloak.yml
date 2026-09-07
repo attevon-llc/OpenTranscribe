@@ -15,14 +15,30 @@
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:latest
-    command: start-dev
+    # Built locally so Quarkus augmentation happens ONCE at image-build time instead of on
+    # every container start. `start-dev` re-augments each boot and the output is not on the
+    # volume, so nothing is reused: measured ~600 s to "Listening on" here, which blew the
+    # healthcheck budget, failed `up --wait`, and aborted `run-dev-tests.sh --full` before a
+    # single test ran. The pre-built image starts in ~19 s (25 s to healthy). See
+    # docker/keycloak/Dockerfile for the full measurement.
+    #
+    # The version is PINNED there, not `:latest` (issue #492 — the gate's auth phase must not
+    # run against whatever Keycloak shipped that morning). It is 26.7.3: the version this host
+    # was already running. ⚠️ Do not "pin back" to an older tag — an earlier revision of this
+    # file pinned 26.4.7, which is a DOWNGRADE against a `keycloak_data` volume written by
+    # 26.7.3, and this repo's rule is that versions move forward only.
+    build:
+      context: ./docker/keycloak
+    image: opentranscribe-keycloak-test:26.7.3
+    # `--optimized` tells Keycloak the build is already done. It REQUIRES that the build-time
+    # options baked into the image (KC_DB, KC_HEALTH_ENABLED) match at run time, or startup
+    # refuses rather than silently re-augmenting.
+    command: ["start", "--optimized", "--http-enabled=true", "--hostname-strict=false"]
     security_opt:
       - no-new-privileges:true
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KC_PROXY: edge
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
@@ -43,8 +59,17 @@ services:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000;echo -e \"GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n\" >&3;grep -q '200 OK' <&3"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      # MEASURED. With the pre-built `--optimized` image above, Keycloak reaches
+      # "Listening on" in ~19 s and `up --wait` returns healthy in ~25 s (measured 2026-09-06,
+      # both stock `docker run` and an isolated compose project).
+      #
+      # 120 s is ~5x that headroom, for a cold image pull or a host also building images and
+      # running a 48-worker pytest. It was 900 s while the container still re-augmented on
+      # every boot (~600 s); that budget is obsolete now that the build happens once, at image
+      # build time. Do not raise it again without re-measuring — a large budget here hides a
+      # regression in the image rather than reporting one.
+      start_period: 120s
 
   # Step CA for PKI testing (dev only)
   # Start with: docker compose -f docker-compose.keycloak.yml --profile pki up -d

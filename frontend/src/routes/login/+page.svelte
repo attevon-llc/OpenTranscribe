@@ -113,6 +113,15 @@
     login_banner_classification: "UNCLASSIFIED",
   };
 
+  // False until `getAuthMethods()` has answered — success OR failure. The sign-in UI is gated
+  // on it so the card is painted once, in its final shape, rather than corrected afterwards.
+  //
+  // It must also become true on FAILURE, and the `catch` below sets it: the defaults describe a
+  // working local-only login, so a backend that cannot answer should still show the form. Gating
+  // a login page on a request that can fail, with no fallback, is how a transient blip turns
+  // into "nobody can sign in".
+  let authMethodsLoaded = false;
+
   // The username/password form serves BOTH local accounts and LDAP — LDAP
   // credentials are posted to the same /auth/login endpoint — so it must not be
   // gated on `local_enabled` alone, or an LDAP-only deployment loses its only
@@ -185,8 +194,30 @@
         }
       }
 
-      // Fetch available auth methods
-      authMethods = await getAuthMethods();
+      // Fetch available auth methods.
+      //
+      // Nothing that depends on the ANSWER is rendered until this resolves — see
+      // `authMethodsLoaded` below. The defaults above describe a local-only deployment, so
+      // rendering against them and then correcting inserts the SSO buttons, the PKI button,
+      // the forgot-password row and the register link into an already-painted card. That is a
+      // layout shift for a real user, and it made the whole auth E2E suite non-deterministic:
+      // `wait_for_selector('#email')` returned on the pre-fetch paint, the fills succeeded, and
+      // the click then raced the reflow. 58 auth tests failed that way on 2026-09-06 while the
+      // same file passed 29/29 against an idle stack — the fetch is only slow enough to lose
+      // when the machine is busy, which is precisely when the full gate runs.
+      //
+      // The `finally` is load-bearing, not defensive dressing: this onMount body has no
+      // try/catch of its own, so before this the call could only reject as an unhandled
+      // promise. With the UI gated on the flag, that would leave the card stuck on its
+      // placeholder and make a transient backend blip indistinguishable from "sign-in is
+      // down". Failing open to the local-only defaults is the safe direction for a login page.
+      try {
+        authMethods = await getAuthMethods();
+      } catch (err) {
+        console.error('Could not load auth methods; falling back to local sign-in', err);
+      } finally {
+        authMethodsLoaded = true;
+      }
 
       // Check for banner settings. The notice is shown on every visit: there is
       // no client-side "already acknowledged" shortcut any more, because the only
@@ -1026,6 +1057,14 @@
           </button>
         </div>
       </div>
+    {:else if !authMethodsLoaded}
+      <!-- Painted until /auth/methods answers. Everything below depends on which methods the
+           deployment accepts, so rendering it against the defaults and correcting afterwards
+           moves the submit button under the user's cursor (and under Playwright's click). -->
+      <div class="auth-methods-loading" aria-live="polite" aria-busy="true">
+        <Spinner size="small" />
+        <p>{$t('auth.loadingSignInOptions')}</p>
+      </div>
     {:else}
       <!-- Normal Login Form. Hidden entirely when neither local nor LDAP
            credentials are accepted — otherwise the user fills it in and the
@@ -1208,7 +1247,8 @@
     justify-content: center;
   }
 
-  .external-auth-loading {
+  .external-auth-loading,
+  .auth-methods-loading {
     display: flex;
     flex-direction: column;
     align-items: center;

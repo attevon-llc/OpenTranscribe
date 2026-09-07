@@ -19,6 +19,7 @@ import re
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import LOGIN_FORM_READY_MS
 
 
 class TestLoginFormValidation:
@@ -27,7 +28,7 @@ class TestLoginFormValidation:
     def test_email_field_required(self, page: Page, base_url: str):
         """Test email/username field is required."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Try to submit with only password
         page.fill("#password", "password")
@@ -41,7 +42,7 @@ class TestLoginFormValidation:
     def test_password_field_required(self, page: Page, base_url: str):
         """Test password field is required."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Try to submit with only email
         page.fill("#email", "admin@example.com")
@@ -54,7 +55,7 @@ class TestLoginFormValidation:
     def test_both_fields_required(self, page: Page, base_url: str):
         """Test form doesn't submit when both fields empty."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.click("button[type=submit]")
         # Client-side validation should block submission outright, so the field is still
@@ -71,7 +72,7 @@ class TestLoginSuccess:
     def test_login_with_email(self, page: Page, base_url: str):
         """Test login with email address."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.fill("#email", "admin@example.com")
         page.fill("#password", "password")
@@ -85,7 +86,7 @@ class TestLoginSuccess:
     def test_login_with_username(self, page: Page, base_url: str):
         """Test login with username instead of email."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Try username (may or may not be supported)
         page.fill("#email", "admin")
@@ -99,7 +100,7 @@ class TestLoginSuccess:
     def test_login_redirects_to_gallery(self, page: Page, base_url: str):
         """Test successful login redirects to gallery/dashboard."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.fill("#email", "admin@example.com")
         page.fill("#password", "password")
@@ -113,7 +114,7 @@ class TestLoginSuccess:
     def test_login_shows_user_info(self, page: Page, base_url: str):
         """Test logged in state shows user information."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.fill("#email", "admin@example.com")
         page.fill("#password", "password")
@@ -135,7 +136,7 @@ class TestLoginFailure:
         and poisons every later test in the suite.
         """
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.fill("#email", "nosuchuser-e2e@example.com")
         page.fill("#password", "wrongpassword")
@@ -157,7 +158,7 @@ class TestLoginFailure:
     def test_nonexistent_user(self, page: Page, base_url: str):
         """Test login fails for non-existent user."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.fill("#email", "nonexistent@example.com")
         page.fill("#password", "anypassword")
@@ -173,7 +174,7 @@ class TestLoginFailure:
     def test_case_sensitive_email(self, page: Page, base_url: str):
         """Test email is case-insensitive for login."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Try uppercase email
         page.fill("#email", "ADMIN@EXAMPLE.COM")
@@ -187,7 +188,7 @@ class TestLoginFailure:
     def test_whitespace_in_credentials(self, page: Page, base_url: str):
         """Test handling of whitespace in credentials."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Try with leading/trailing whitespace
         page.fill("#email", "  admin@example.com  ")
@@ -204,7 +205,7 @@ class TestLoginFailure:
         Nonexistent account — see test_wrong_password (lockout poisoning).
         """
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.fill("#email", "nosuchuser-e2e@example.com")
         page.fill("#password", "wrongpassword")
@@ -230,7 +231,7 @@ class TestLoginSecurity:
     def test_password_field_obscured(self, page: Page, base_url: str):
         """Test password field hides input."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         password_input = page.locator("#password")
         expect(password_input).to_have_attribute("type", "password")
@@ -238,7 +239,7 @@ class TestLoginSecurity:
     def test_password_visibility_toggle(self, page: Page, base_url: str):
         """Test password visibility can be toggled."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         password_input = page.locator("#password")
         toggle_btn = page.locator("[data-testid=toggle-password], button:near(#password)").first
@@ -269,7 +270,7 @@ class TestLoginSecurity:
         thing (a blocked request cannot authenticate), so this assertion covers both outcomes.
         """
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Attempt multiple failed logins against a NONEXISTENT account —
         # hammering the real admin account trips the progressive per-account
@@ -293,7 +294,7 @@ class TestLoginSession:
         """Test session persists after page refresh."""
         # Login first
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.fill("#email", "admin@example.com")
         page.fill("#password", "password")
@@ -313,7 +314,7 @@ class TestLoginSession:
         """Test session persists across navigation."""
         # Login first
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.fill("#email", "admin@example.com")
         page.fill("#password", "password")
@@ -336,7 +337,7 @@ class TestLoginUI:
     def test_page_loads_correctly(self, page: Page, base_url: str):
         """Test login page loads with all elements."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Check essential elements
         expect(page.locator("#email")).to_be_visible()
@@ -346,7 +347,7 @@ class TestLoginUI:
     def test_logo_displayed(self, page: Page, base_url: str):
         """Test logo is displayed on login page."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         logo = page.locator("img[alt*=logo], .logo, [class*=logo]")
         expect(logo.first).to_be_visible()
@@ -354,7 +355,7 @@ class TestLoginUI:
     def test_register_link_visible(self, page: Page, base_url: str):
         """Test register link is visible."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         register_link = page.locator("a[href*=register]")
         expect(register_link.first).to_be_visible()
@@ -362,7 +363,7 @@ class TestLoginUI:
     def test_forgot_password_link(self, page: Page, base_url: str):
         """Test forgot password link exists (if implemented)."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         forgot_link = page.locator("a:has-text('Forgot'), a:has-text('Reset')")
         # May or may not exist
@@ -372,7 +373,7 @@ class TestLoginUI:
     def test_submit_button_text(self, page: Page, base_url: str):
         """Test submit button has appropriate text."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         submit_btn = page.locator("button[type=submit]")
         btn_text = submit_btn.inner_text().lower()
@@ -388,7 +389,7 @@ class TestAlternativeAuth:
     def test_keycloak_option_visible(self, page: Page, base_url: str):
         """Test Keycloak/SSO login option is visible if enabled."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         keycloak_btn = page.locator("button:has-text('Keycloak'), button:has-text('SSO')")
         # May or may not be present
@@ -398,7 +399,7 @@ class TestAlternativeAuth:
     def test_certificate_option_visible(self, page: Page, base_url: str):
         """Test certificate/PKI login option is visible if enabled."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         pki_btn = page.locator("button:has-text('Certificate'), button:has-text('PKI')")
         # May or may not be present
@@ -412,7 +413,7 @@ class TestLoginAccessibility:
     def test_form_labels_present(self, page: Page, base_url: str):
         """Test form fields have associated labels."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Check for labels
         email_label = page.locator(
@@ -426,7 +427,7 @@ class TestLoginAccessibility:
     def test_keyboard_navigation(self, page: Page, base_url: str):
         """Test form can be completed with keyboard only."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Tab to email, type, tab to password, type, enter to submit
         page.keyboard.press("Tab")  # Focus email
@@ -442,7 +443,7 @@ class TestLoginAccessibility:
     def test_autofocus_on_email(self, page: Page, base_url: str):
         """Test email field is focused on page load."""
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         # Check if email field has autofocus
         email_focused = page.evaluate("document.activeElement.id === 'email'")
@@ -471,7 +472,7 @@ class TestLoginConsoleErrors:
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
 
         page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
         page.fill("#email", "admin@example.com")
         page.fill("#password", "password")

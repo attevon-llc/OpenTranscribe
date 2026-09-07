@@ -53,6 +53,8 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from tests.integration.throwaway_pg import _READY_TIMEOUT
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not available"),
@@ -108,7 +110,7 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _wait_ready(port: int, password: str, timeout: float = 30.0) -> None:
+def _wait_ready(port: int, password: str, timeout: float = _READY_TIMEOUT) -> None:
     """Poll ``SELECT 1`` in a bounded loop until TWO CONSECUTIVE successes.
 
     The official postgres image starts the server once to run initdb, stops it, then

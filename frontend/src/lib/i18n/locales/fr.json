@@ -179,6 +179,7 @@
   "auth.signIn": "Se connecter",
   "auth.signInToAccount": "Connectez-vous à votre compte",
   "auth.signingIn": "Connexion en cours...",
+  "auth.loadingSignInOptions": "Chargement des options de connexion…",
   "auth.unexpectedError": "Une erreur inattendue s'est produite. Veuillez réessayer plus tard.",
   "auth.username": "Nom d'utilisateur",
   "auth.usernamePlaceholder": "Choisissez un nom d'utilisateur",

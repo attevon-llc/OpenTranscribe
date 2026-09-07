@@ -28,6 +28,7 @@ import pytest
 import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import LOGIN_FORM_READY_MS
 
 # URLs come from the `base_url` / `backend_url` fixtures in tests/e2e/conftest.py rather than
 # module-level constants: a constant is evaluated at import time, so it can never see
@@ -142,7 +143,7 @@ def _api_get_mfa_status(backend_url: str, token: str) -> dict:
 def _login_browser(page: Page, base_url: str, email: str, password: str):
     """Log in via the browser."""
     page.goto(f"{base_url}/login")
-    page.wait_for_selector("#email", timeout=10000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     page.fill("#email", email)
     page.fill("#password", password)
     page.click("button[type=submit]")

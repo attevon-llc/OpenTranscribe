@@ -251,10 +251,57 @@ assets=("${present_sboms[@]}" "${checksum_assets[@]}")
 [[ -f "${checksum_dir}/SHA256SUMS" ]] && assets+=("${checksum_dir}/SHA256SUMS")
 # --- END release-assets ---
 
+# ─────────────────────────────────── "Latest" is a POLICY decision, not a constant (G4) ──
+#
+# `--latest` was passed unconditionally. `90-promote.sh` already refuses to move Docker
+# `:latest` backwards on a hotfix cut from an old release/<minor> branch (issue #784), and
+# this stage would then have moved the GITHUB "Latest" pointer backwards anyway — the one
+# the installer actually resolves (`setup-opentranscribe.sh`'s release resolution, and
+# `verify-install-paths.sh`'s "default one-liner" path). So the guard that exists to stop a
+# backport downgrading every user held for the images and leaked at the install script.
+#
+# The same two authorities decide it, through the SAME predicate 90-promote.sh uses rather
+# than a second implementation: git tags for the candidate list, Docker Hub as the filter.
+#
+# `newest_published_release` returning 1 means "I do not know", never "nothing is
+# published" — and "I don't know whether this is a downgrade" is not a licence to move the
+# pointer every new user follows. Refuse (this stage's contract has no code for a
+# precondition; 1 = refused or failed).
+#
+# ⚠️ `--latest=false` is an EXPLICIT false, not an omitted flag. Omitting it hands the
+# decision to GitHub's own "automatic based on date and version" heuristic, which is exactly
+# the guess this block exists to replace.
+#
+# --- BEGIN latest-policy ---
+# (extracted verbatim and driven against stub predicates by
+#  backend/tests/unit/test_release_finish_latest_policy.py — keep the markers)
+# shellcheck source=scripts/release/patch-lib.sh
+source "$SCRIPT_DIR/patch-lib.sh"
+
+latest_flag="--latest"
+if ! newest_published=$(newest_published_release); then
+    record github-latest-policy not-measured \
+        "could not resolve the newest published release from git tags x Docker Hub" \
+        "check network access / DOCKERHUB_USERNAME, then re-run finish"
+    echo -e "${RED}cannot determine the newest published release — refusing to mark \"Latest\" blind${NC}" >&2
+    fail_out 1 '"resolve Docker Hub / git-tag access, then re-run finish"'
+fi
+if ver_lt "$VERSION" "$newest_published"; then
+    latest_flag="--latest=false"
+    record github-latest-policy pass \
+        "$VERSION < $newest_published — backport: GitHub \"Latest\" is left on $newest_published"
+    echo -e "${YELLOW}${VERSION} is older than ${newest_published} — this release will NOT be marked \"Latest\"${NC}" >&2
+    echo -e "${YELLOW}  (the installer resolves \"latest\"; marking a backport would downgrade every new install)${NC}" >&2
+else
+    record github-latest-policy pass \
+        "$VERSION >= $newest_published — marking \"Latest\" does not move it backwards"
+fi
+# --- END latest-policy ---
+
 echo -e "${YELLOW}Creating the GitHub Release for $VERSION (published, not draft)${NC}" >&2
 if ! gh release create "$VERSION" \
     --title "$VERSION" \
-    --latest \
+    "$latest_flag" \
     --notes "$notes" \
     "${assets[@]}"; then
     record github-release-created fail "gh release create failed" \

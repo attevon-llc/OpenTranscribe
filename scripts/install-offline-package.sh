@@ -108,8 +108,16 @@ validate_system() {
     if command_exists nvidia-smi; then
         print_info "Checking NVIDIA GPU..."
         if nvidia-smi > /dev/null 2>&1; then
+            # Captured whole, then trimmed to the first line — NOT `nvidia-smi ... | head -1`.
+            # This script runs under `set -euo pipefail` and nvidia-smi prints ONE LINE PER
+            # GPU, so on any multi-GPU host `head -1` exits after the first, nvidia-smi takes
+            # SIGPIPE (141), `pipefail` makes that the pipeline's status, and the ASSIGNMENT
+            # aborts the OFFLINE INSTALLER — at the GPU-detection step, on exactly the hosts
+            # this branch exists to serve. Same `grep -c` reasoning as the toolkit check below,
+            # applied to an early-exiting `head` rather than an early-exiting `grep`.
             local gpu_info
-            gpu_info=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
+            gpu_info=$(nvidia-smi --query-gpu=name --format=csv,noheader)
+            gpu_info="${gpu_info%%$'\n'*}"
             print_success "GPU detected: $gpu_info"
 
             # Check NVIDIA Container Toolkit (check for package, not by running container)
@@ -124,10 +132,17 @@ validate_system() {
             # `grep -c` reads the whole stream, so there is no early exit to race.
             local toolkit_version
             if [ "$(dpkg -l 2>/dev/null | grep -c nvidia-container-toolkit)" -gt 0 ]; then
-                toolkit_version=$(dpkg -l 2>/dev/null | grep nvidia-container-toolkit | awk '{print $3}' | head -1)
+                # ...and the same again for the version read: a Debian host normally carries
+                # BOTH `nvidia-container-toolkit` and `nvidia-container-toolkit-base`, so awk
+                # emits two lines and `head -1` leaves it with SIGPIPE. Trim in-shell instead.
+                toolkit_version=$(dpkg -l 2>/dev/null | grep nvidia-container-toolkit | awk '{print $3}')
+                toolkit_version="${toolkit_version%%$'\n'*}"
                 print_success "NVIDIA Container Toolkit installed: $toolkit_version"
             elif [ "$(rpm -qa 2>/dev/null | grep -c nvidia-container-toolkit)" -gt 0 ]; then
-                toolkit_version=$(rpm -qa 2>/dev/null | grep nvidia-container-toolkit | head -1)
+                # Same again on the RPM side: `nvidia-container-toolkit` and
+                # `nvidia-container-toolkit-base` both match, so `head -1` would SIGPIPE grep.
+                toolkit_version=$(rpm -qa 2>/dev/null | grep nvidia-container-toolkit)
+                toolkit_version="${toolkit_version%%$'\n'*}"
                 print_success "NVIDIA Container Toolkit installed: $toolkit_version"
             else
                 print_warning "NVIDIA GPU detected but Container Toolkit not installed"

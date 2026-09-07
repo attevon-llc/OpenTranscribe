@@ -208,7 +208,12 @@ for k in sorted(interesting):
     local c
     for c in opentranscribe-celery-worker opentranscribe-celery-cpu-worker \
              opentranscribe-celery-nlp-worker opentranscribe-backend; do
-        if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$c"; then
+        # `grep -cx ... -gt 0`, never `| grep -qx`. This file runs under `set -euo pipefail`;
+        # `grep -q` exits at its first match, `docker ps` can then take SIGPIPE (141), and
+        # `pipefail` turns that MATCH into a non-match — silently dropping a running worker's
+        # log tail from the ONE dump that exists because diagnostics were previously lost to
+        # teardown (see scripts/CLAUDE.md's ac_dump_failure_diagnostics note).
+        if [ "$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx "$c")" -gt 0 ]; then
             ac_warn "  ── last 40 log lines: $c"
             docker logs --tail 40 "$c" 2>&1 | sed 's/^/    /' || true
         fi
@@ -356,7 +361,11 @@ print(v if v else "")
     # old FROM-release schema/API predating #706. Fall back to the
     # unscoped log grep so a genuinely old-schema stack is measured as
     # best-effort rather than reported as a hard failure.
-    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$worker_container"; then
+    # `grep -cx ... -eq 0`, never `! ... | grep -qx` — same SIGPIPE + pipefail inversion as
+    # above. Here it costs a MEASUREMENT: a running worker read as absent returns
+    # "absent:none", so the diarization-engine verdict is recorded as undeterminable for a
+    # stack that could have been measured.
+    if [ "$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx "$worker_container")" -eq 0 ]; then
         echo "absent:none"
         return 0
     fi

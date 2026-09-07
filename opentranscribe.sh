@@ -382,6 +382,24 @@ fix_model_cache_permissions() {
 }
 
 detect_nvidia_runtime() {
+    # ⚠️ THIS `| grep -q` IS SAFE ONLY BECAUSE THIS FILE DOES NOT SET `pipefail`.
+    # DO NOT ADD `set -o pipefail` TO THIS SCRIPT WITHOUT REWRITING THIS PROBE.
+    #
+    # `grep -q` exits at its first match while `docker info` is still writing, so
+    # `docker info` takes SIGPIPE and exits 141. Without pipefail the pipeline's
+    # status is grep's (0 = matched) and the answer is correct. WITH pipefail the
+    # 141 wins and a MATCH is read as a NON-MATCH — intermittently, once per a few
+    # hundred invocations, which is how it survives review.
+    #
+    # That inversion is not hypothetical: it is exactly what happened in opentr.sh
+    # (`set -uo pipefail`), where it dropped docker-compose.gpu.yml AND
+    # docker-compose.diar-native-gpu.yml and ran an entire dev stack on CPU, and in
+    # setup-opentranscribe.sh (`set -uo pipefail` + `set -e`), where the wrong answer
+    # is written into the user's .env and never re-detected. Both now capture
+    # `docker info` into a variable and substring-match; see
+    # `docker_runtime_has_nvidia` in either file, and
+    # backend/tests/unit/test_opentr_docker_probe_sigpipe.py.
+    #
     # Check if NVIDIA Container Runtime is available
     if docker info 2>/dev/null | grep -q "Runtimes.*nvidia"; then
         echo "nvidia"

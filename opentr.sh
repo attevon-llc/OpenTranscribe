@@ -341,6 +341,66 @@ build_prod_images() {
   echo "✅ Local production images built successfully"
 }
 
+# Does the Docker daemon expose the NVIDIA container runtime?
+#
+#   0 = yes · 1 = checked, and no · 2 = COULD NOT CHECK (daemon gave nothing usable)
+#
+# The 1-vs-2 split is this repo's standing convention for "checked and negative"
+# versus "no evidence either way" (security-scan.sh's 1-vs-2,
+# scripts/lib/manifest_platform_check.py's 1-vs-3), and it earns its keep here: the
+# caller degrades the ENTIRE stack to CPU on a negative, so "the daemon did not
+# answer" must not be reported as "this host has no GPU support".
+#
+# ⚠️ NEVER WRITE THIS AS `docker info | grep -q nvidia`. That is exactly what it was,
+# and under this script's `set -o pipefail` it SILENTLY INVERTS: `grep -q` exits at
+# its first match while `docker info` is still writing, `docker info` then dies with
+# SIGPIPE (141), and pipefail makes the pipeline's status 141 — so a MATCH is read as
+# a NON-match. It is a race, so it is intermittent and looks like anything but a bug
+# in this line. Measured on this host, idle: `rc=141` once per 200-600 invocations;
+# the gate starts a stack right after a teardown, when the daemon is busiest.
+#
+# What it cost on 2026-09-07 (`/tmp/ot-run-dev-tests.ahnET0/overlay-bringup.log`):
+# `./opentr.sh start dev` printed "NVIDIA GPU detected but Container Toolkit not
+# available", dropped BOTH docker-compose.gpu.yml and docker-compose.diar-native-gpu.yml
+# from the chain, and the whole dev stack — celery-worker included — came up with
+# `HostConfig.DeviceRequests: null`. The sidecar served ~68 real /diarize requests with
+# `device="cpu"` and nothing surfaced it, which is precisely the silent degradation
+# docker-compose.diar-native-gpu.yml's own header warns about.
+#
+# Capturing into a variable first means there is no pipe left to break; the retry
+# covers a genuinely busy daemon. `case` rather than `[[ == * ]]` so the test stays
+# readable next to the `return` codes.
+#
+# ⚠️ THERE IS A SECOND COPY OF THIS FUNCTION, IN setup-opentranscribe.sh, AND THE TWO
+# MUST MOVE TOGETHER. That script is fetched and run standalone (`curl -fsSL … | bash`),
+# so it can have no sourcing dependency on this repo and the duplication is deliberate.
+# Its copy is the more severe of the two: it PERSISTS its verdict into the user's .env
+# and never re-detects, so one inverted probe pins a real GPU host to CPU permanently.
+#
+# Guarded by backend/tests/unit/test_opentr_docker_probe_sigpipe.py.
+docker_runtime_has_nvidia() {
+  local info="" rc=0 attempt=0
+  for attempt in 1 2 3; do
+    info="$(docker info 2>/dev/null)"
+    rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "$info" ]; then
+      break
+    fi
+    if [ "$attempt" -lt 3 ]; then
+      sleep 1
+    fi
+  done
+
+  if [ "$rc" -ne 0 ] || [ -z "$info" ]; then
+    return 2
+  fi
+
+  case "$info" in
+    *nvidia*) return 0 ;;
+    *)        return 1 ;;
+  esac
+}
+
 # Function to detect and configure hardware
 detect_and_configure_hardware() {
   echo "🔍 Detecting hardware configuration..."
@@ -389,8 +449,12 @@ detect_and_configure_hardware() {
     export COMPUTE_TYPE="float16"
     export USE_GPU="true"
 
-    # Check for NVIDIA Container Toolkit (efficient method)
-    if docker info 2>/dev/null | grep -q nvidia; then
+    # Check for NVIDIA Container Toolkit. See docker_runtime_has_nvidia's header for
+    # why this is a function call and not `docker info | grep -q nvidia`.
+    local toolkit_rc=0
+    docker_runtime_has_nvidia
+    toolkit_rc=$?
+    if [ "$toolkit_rc" -eq 0 ]; then
       echo "✅ NVIDIA Container Toolkit available"
 
       # Detect Blackwell architecture (compute capability 12.x)
@@ -404,8 +468,18 @@ detect_and_configure_hardware() {
         export IS_BLACKWELL_GPU=""
       fi
     else
-      echo "⚠️  NVIDIA GPU detected but Container Toolkit not available"
-      echo "   Falling back to CPU mode"
+      # "could not check" and "checked, no toolkit" are DIFFERENT outcomes and must
+      # read differently — collapsing them is what made a transient daemon hiccup
+      # indistinguishable from a CPU-only host for as long as it took to notice.
+      if [ "$toolkit_rc" -eq 2 ]; then
+        echo "⚠️  COULD NOT DETERMINE whether the NVIDIA Container Toolkit is available"
+        echo "   (\`docker info\` returned nothing usable after 3 attempts — busy daemon?)"
+      else
+        echo "⚠️  NVIDIA GPU detected but Container Toolkit not available"
+      fi
+      echo "   Falling back to CPU mode: NO GPU overlay will be loaded, so celery-worker"
+      echo "   and the diar-native sidecar will run on CPU (slower, and silently so)."
+      echo "   On a GPU host, re-run this command once \`docker info\` reports the nvidia runtime."
       export DOCKER_RUNTIME=""
       export TORCH_DEVICE="cpu"
       export COMPUTE_TYPE="int8"
@@ -624,11 +698,20 @@ add_nas_overlay() {
 # `basename "$(pwd)"` is the same resolution preflight_ports_or_die already uses; a
 # checkout in a differently-named directory must keep working, so this is derived and
 # never hardcoded. (test_the_probe_resolves_the_project_from_the_checkout_directory)
+#
+# ⚠️ NOT `docker ps ... | grep -q .` — see docker_runtime_has_nvidia's header. Under
+# this script's `set -o pipefail`, `grep -q` exiting on the first line can kill
+# `docker ps` with SIGPIPE and turn a MATCH into a non-match. Here that inversion
+# reads as "this deployment has no sidecar", which drops the overlay from
+# `rebuild-backend` and hands celery-worker back the silent PyAnnote fallback this
+# probe exists to prevent. Capture first; there is then no pipe to break.
 diar_native_container_present() {
   local project="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
-  docker ps -a --format '{{.ID}}' \
+  local ids
+  ids="$(docker ps -a --format '{{.ID}}' \
     --filter "label=com.docker.compose.project=${project}" \
-    --filter "label=com.docker.compose.service=diar-native" 2>/dev/null | grep -q .
+    --filter "label=com.docker.compose.service=diar-native" 2>/dev/null)"
+  [ -n "$ids" ]
 }
 
 # Append the native diarization sidecar overlay to $COMPOSE_FILES. Mirrors
@@ -3709,7 +3792,9 @@ check_health() {
   if docker compose exec -T flower curl -s "http://localhost:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck" > /dev/null 2>&1; then
     echo "OK (http://localhost:${FLOWER_PORT:-5175}/${FLOWER_URL_PREFIX:-flower}/)"
   else
-    if docker compose ps flower 2>/dev/null | grep -q "Up"; then
+    # `grep -c` + a count test, never `grep -q` — see docker_runtime_has_nvidia's header
+    # for why a `-q` reader silently inverts these pipelines under `set -o pipefail`.
+    if [ "$(docker compose ps flower 2>/dev/null | grep -c "Up")" -gt 0 ]; then
       echo "⚠️ Flower container running but not responding"
     else
       echo "⚠️ Flower not running"
@@ -3724,7 +3809,7 @@ check_health() {
       echo "OK (https://$NGINX_SERVER_NAME)"
     else
       # Check if container is running but not responding
-      if docker compose ps nginx 2>/dev/null | grep -q "Up"; then
+      if [ "$(docker compose ps nginx 2>/dev/null | grep -c "Up")" -gt 0 ]; then
         echo "⚠️ NGINX running but not responding"
       else
         echo "⚠️ NGINX not running"
@@ -3938,7 +4023,9 @@ case "$1" in
       gpu_service="${gpu_entry%%:*}"
       gpu_profile="${gpu_entry##*:}"
       container="${COMPOSE_PROJECT_NAME:-opentranscribe}-${gpu_service}"
-      if docker ps --filter "name=^${container}$" --filter "status=running" -q | grep -q .; then
+      # `-q` already emits ids only, so a non-empty capture IS the test — no grep, and
+      # therefore no `grep -q`/pipefail inversion (docker_runtime_has_nvidia's header).
+      if [ -n "$(docker ps --filter "name=^${container}$" --filter "status=running" -q)" ]; then
         echo "🎯 ${gpu_service} is active — rebuilding it too"
         # shellcheck disable=SC2086
         COMPOSE_PROFILES="$gpu_profile" docker compose $COMPOSE_FILES up -d --build --no-deps "$gpu_service"
@@ -4257,7 +4344,7 @@ case "$1" in
         docker ps --format 'table {{.Names}}\t{{.Status}}' | grep "$BENCH_CONTAINER_PREFIX"
 
         # Verify the worker is up
-        if ! docker ps --format '{{.Names}}' | grep -q "^${WORKER}$"; then
+        if [ "$(docker ps --format '{{.Names}}' | grep -c "^${WORKER}$")" -eq 0 ]; then
           echo "❌ Worker container '${WORKER}' not running — check logs."
           # shellcheck disable=SC2086
           docker compose $BENCH_COMPOSE logs --tail=30 celery-worker
@@ -4374,7 +4461,7 @@ case "$1" in
         # container names (otfresh-<name>-*), before exporting anything.
         if [[ -n "$RAG_FRESH_NAME" ]]; then
           RAG_OS_CONTAINER="otfresh-${RAG_FRESH_NAME}-opensearch"
-          if ! docker ps --format '{{.Names}}' | grep -q "^${RAG_OS_CONTAINER}$"; then
+          if [ "$(docker ps --format '{{.Names}}' | grep -c "^${RAG_OS_CONTAINER}$")" -eq 0 ]; then
             echo "❌ '${RAG_OS_CONTAINER}' is not running — the corpus is indexed there."
             echo "   Start it:  ./opentr.sh start dev --fresh ${RAG_FRESH_NAME} --port-offset ${RAG_PORT_OFFSET}"
             exit 1

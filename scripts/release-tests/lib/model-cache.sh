@@ -132,15 +132,41 @@ mc_assert_no_hardlinks() {
     local context="${2:-model cache}"
     [[ -d "$dir" ]] || return 0
 
-    local offenders
-    offenders=$(find "$dir" -type f -links +1 2>/dev/null | head -5)
-    if [[ -n "$offenders" ]]; then
-        local count
-        count=$(find "$dir" -type f -links +1 2>/dev/null | wc -l)
+    # ⚠️ NO `find ... | head -5` HERE, AND NO PIPE INTO AN EARLY-EXITING CONSUMER AT ALL.
+    #
+    # This was `offenders=$(find "$dir" -type f -links +1 2>/dev/null | head -5)`. Callers
+    # source this lib after guardrails.sh, which sets `set -euo pipefail` (guardrails.sh:19).
+    # `head -5` closes the pipe after the fifth path, `find` dies of SIGPIPE, pipefail makes
+    # **141** the status of the command substitution, and `set -e` aborts the script on the
+    # ASSIGNMENT — before the `gr_die` two lines below ever runs.
+    #
+    # So the guard produced a bare, unexplained `exit 141` with NO output whatsoever, in
+    # exactly the case it exists to report: MEASURED with a nested tree shaped like real
+    # nltk_data, 40/40 runs at the incident's own **130** poisoned files aborted silently
+    # (0/40 at 6 and at 30 — the flat 6-file case never reproduced it, which is why the shape
+    # survived review). The nltk-pathsec incident this whole file was written for had 130.
+    #
+    # `find -print0` into a `while read` (the same idiom mc_break_hardlinks above already
+    # uses) has no early-exiting consumer, so nothing can SIGPIPE: the reader drains the
+    # producer to EOF. The display trim then happens in-shell on the captured array, via
+    # `${offenders[@]:0:5}` — deliberately not `printf ... | head -5`, which would reintroduce
+    # the identical hazard (printf is a builtin, but a builtin producer still exits 141 once
+    # its output exceeds the pipe buffer and the reader has gone).
+    local -a offenders=()
+    local f
+    while IFS= read -r -d '' f; do
+        offenders+=("$f")
+    done < <(find "$dir" -type f -links +1 -print0 2>/dev/null)
+
+    if (( ${#offenders[@]} > 0 )); then
+        local count=${#offenders[@]}
+        # Full list captured above; only the DISPLAY is trimmed. `count` is the real total.
+        local shown
+        shown=$(printf '%s\n' "${offenders[@]:0:5}")
         gr_die "$context: $count file(s) under $dir are multiply linked (st_nlink>1)." \
                $'\n'"       nltk >=3.10 pathsec refuses these (CWE-59) and EVERY transcription" \
                $'\n'"       will fail with 'Security Violation [pathsec.open]'." \
-               $'\n'"       First offenders:"$'\n'"$offenders"
+               $'\n'"       First offenders:"$'\n'"$shown"
     fi
     gr_ok "$context: no multiply-linked files under $(basename "$dir") (nltk pathsec safe)"
 }

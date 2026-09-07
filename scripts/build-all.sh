@@ -144,8 +144,16 @@ preflight_checks() {
     fi
     print_success "Docker is running"
 
-    # Check Docker Hub login
-    if ! docker info | grep -q "Username"; then
+    # Check Docker Hub login.
+    #
+    # `grep -c ... -eq 0`, never `! ... | grep -q`. This script runs under `set -euo pipefail`
+    # and `grep -q` exits at its FIRST match, so `docker info` — which fills its template from
+    # daemon RPCs and is therefore still writing — takes SIGPIPE (141), and `pipefail` makes
+    # that the PIPELINE's status. A logged-in operator then reads as logged out and the build
+    # aborts. NOT made safe by `docker info` being small (1,609 B here): output size is not the
+    # variable, elapsed time between the matching write and the last write is. Measured
+    # 2026-09-07, a 40-BYTE producer with 2 ms between two writes inverted 300/300.
+    if [ "$(docker info | grep -c "Username")" -eq 0 ]; then
         print_error "Not logged into Docker Hub. Please run: docker login"
         exit 1
     fi
@@ -324,8 +332,14 @@ generate_final_summary() {
     # Offline package
     if [ -d "${PROJECT_ROOT}/offline-package-build" ]; then
         echo -e "\n  ${YELLOW}Offline Package:${NC}"
+        # Captured whole, then trimmed to the first line — NOT `find ... | head -1`. This
+        # script runs under `set -euo pipefail`, and offline-package-build accumulates one
+        # .tar.xz per build: with two or more present `head -1` exits after the first, `find`
+        # takes SIGPIPE (141), `pipefail` makes that the pipeline's status, and the ASSIGNMENT
+        # aborts the script — here, in the summary, after every build has already succeeded.
         local package_file
-        package_file=$(find "${PROJECT_ROOT}/offline-package-build" -maxdepth 1 -name "*.tar.xz" -type f 2>/dev/null | head -1)
+        package_file=$(find "${PROJECT_ROOT}/offline-package-build" -maxdepth 1 -name "*.tar.xz" -type f 2>/dev/null)
+        package_file="${package_file%%$'\n'*}"
         if [ -n "$package_file" ]; then
             local package_size
             package_size=$(du -sh "$package_file" 2>/dev/null | cut -f1)
@@ -388,7 +402,9 @@ interactive_setup() {
 
     # Step 1: Check Docker login
     echo -e "${BLUE}[1/4] Checking Docker login...${NC}"
-    if ! docker info | grep -q "Username"; then
+    # `grep -c ... -eq 0`, never `! ... | grep -q` — see check_prerequisites above for the
+    # measured reason (SIGPIPE + pipefail turns a MATCH into a non-match).
+    if [ "$(docker info | grep -c "Username")" -eq 0 ]; then
         echo -e "${RED}❌ Not logged into Docker Hub${NC}"
         echo "Please run: docker login"
         exit 1

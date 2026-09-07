@@ -1205,8 +1205,14 @@ phase_06b_pre_upgrade_backup() {
     pushd "$manager_stage" >/dev/null
     ./opentranscribe.sh backup || { popd >/dev/null; gr_die "'./opentranscribe.sh backup' failed"; }
     popd >/dev/null
+    # Captured whole, then trimmed to the first line — NOT `ls -t ... | head -1`. This script
+    # runs under `set -euo pipefail`: `head -1` exits after the first line, so with more than
+    # one dump present `ls` takes SIGPIPE (141), `pipefail` makes 141 the pipeline's status,
+    # and the ASSIGNMENT then aborts the whole script with no error trace — the #617/#618
+    # silent-truncation family, in the phase that is supposed to prove a backup restores.
     local manager_dump
-    manager_dump="$(ls -t "$manager_stage/backups"/opentranscribe_backup_*.sql 2>/dev/null | head -1)"
+    manager_dump="$(ls -t "$manager_stage/backups"/opentranscribe_backup_*.sql 2>/dev/null)"
+    manager_dump="${manager_dump%%$'\n'*}"
     [[ -n "$manager_dump" && -s "$manager_dump" ]] \
         || gr_die "'./opentranscribe.sh backup' produced no dump file"
     gr_ok "opentranscribe.sh-wrapper backup: $manager_dump"
@@ -1651,8 +1657,23 @@ PY
     local before_routes="$TEST_ROOT/snapshots/before/routes.txt"
     local after_routes="$TEST_ROOT/snapshots/after/routes.txt"
     if [[ -s "$before_routes" && -s "$after_routes" ]]; then
-        local removed added
-        removed=$(comm -23 "$before_routes" "$after_routes" | head -20)
+        # Captured whole, then capped in-shell — NOT `comm ... | head -20`. Under
+        # `set -euo pipefail` a release that removed more than 20 routes would make `head`
+        # exit at line 20, `comm` take SIGPIPE (141), `pipefail` make 141 the pipeline's
+        # status, and this ASSIGNMENT abort the script — truncating every phase after it
+        # exactly as #617 did, and doing so precisely when the finding is most severe.
+        # The capture is deliberately NOT `|| true`-guarded: a genuine `comm` failure must
+        # still abort rather than yield an empty `removed`, which would pass the assertion
+        # below vacuously. `mapfile` reads a here-string (temp-file backed, measured safe at
+        # 3 MB), so the cap itself introduces no new pipeline.
+        local removed added all_removed
+        local -a removed_lines=()
+        all_removed="$(comm -23 "$before_routes" "$after_routes")"
+        removed=""
+        if [[ -n "$all_removed" ]]; then
+            mapfile -t -n 20 removed_lines <<<"$all_removed"
+            removed="$(printf '%s\n' "${removed_lines[@]}")"
+        fi
         added=$(comm -13 "$before_routes" "$after_routes" | wc -l)
 
         as_assert "no API route removed by the upgrade" '[[ -z "$removed" ]]'
@@ -1894,7 +1915,16 @@ phase_12_assert_rollback_precondition() {
     # dotenv key -- python-dotenv (and read_env_value) would never see it, so this
     # one deliberately keeps its own grep rather than gaining a second helper
     # parameter for a single caller.
-    prev_tag="$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)"
+    # Two separate aborts removed here, both of the #617/#618 silent-truncation family and
+    # both reached through the SAME `set -euo pipefail` assignment:
+    #   1. `| head -1` exits after the first line, so a .env carrying more than one commented
+    #      marker leaves `tr` with SIGPIPE (141) -> pipefail -> the assignment kills the script.
+    #   2. With NO marker at all, `grep` exits 1, pipefail makes the pipeline 1, and the
+    #      assignment kills the script BEFORE the very next line's `${prev_tag:-<absent>}` --
+    #      i.e. the assertion is written to report absence and could never actually do it.
+    # `cut`/`tr` read to EOF, so trimming in-shell leaves no early-exiting reader.
+    prev_tag="$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d ' "' || true)"
+    prev_tag="${prev_tag%%$'\n'*}"
     # python-dotenv, not grep/cut (issue #590).
     current_tag="$(python3 "$SCRIPT_DIR/../lib/env_reader.py" "$env_file" OT_IMAGE_TAG)"
     as_assert_eq "rollback precondition: # OT_PREVIOUS_IMAGE_TAG recorded as FROM" "$FROM_VERSION" "${prev_tag:-<absent>}"
@@ -2109,7 +2139,12 @@ phase_15_restore_and_assert() {
     if [[ "${ROLLBACK_INJECT_FAULT:-}" == "truncate" ]]; then
         restore_source="$TEST_ROOT/backups/pre-upgrade-${FROM_VERSION}.truncated.sql"
         local copy_line
-        copy_line="$(grep -n '^COPY public\.media_file ' "$shipped_dump" | head -1 | cut -d: -f1)"
+        # `|| true` + in-shell trim, not `| head -1`: on NO match `grep` exits 1, pipefail
+        # makes the pipeline 1, and this assignment aborts the script one line before the
+        # `gr_die` written to explain exactly that case — replacing a named cause with a
+        # bare exit. (`head -1` is also an early-exiting reader; both go at once.)
+        copy_line="$(grep -n '^COPY public\.media_file ' "$shipped_dump" | cut -d: -f1 || true)"
+        copy_line="${copy_line%%$'\n'*}"
         [[ -n "$copy_line" ]] || gr_die "ROLLBACK_INJECT_FAULT=truncate: could not find media_file's COPY line in $shipped_dump"
         head -n "$(( copy_line + 1 ))" "$shipped_dump" > "$restore_source"
         gr_warn "ROLLBACK_INJECT_FAULT=truncate — restoring a dump cut mid-way through media_file's COPY block; R-1 is expected to still report success (0), R-2/R-8 below are EXPECTED to FAIL"
@@ -2146,8 +2181,12 @@ phase_15_restore_and_assert() {
     # schema-head mismatch (the FROM backup vs. the still-running TO image, exactly
     # this scenario) now leaves services stopped by design — see
     # scripts/common.sh's pg_restore_restart_decision.
+    # Captured whole, then trimmed to the first line. The filter is anchored, so `head -1`
+    # was already a no-op — but under `set -euo pipefail` it is a no-op that can abort the
+    # script on SIGPIPE, and R-13 is the direct regression assertion for #610.
     local backend_running
-    backend_running="$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-backend$' | head -1)"
+    backend_running="$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-backend$')"
+    backend_running="${backend_running%%$'\n'*}"
     as_assert_eq "R-13: restore left the application stopped (no auto-migration window)" "" "${backend_running:-}"
 
     as_record SKIP "R-12: no live writer at the moment of the drop" \

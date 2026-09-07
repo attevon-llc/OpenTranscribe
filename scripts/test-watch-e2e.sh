@@ -10,7 +10,11 @@ set -euo pipefail
 
 CONTAINER="${WATCH_E2E_CONTAINER:-opentranscribe-backend}"
 
-if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
+# `grep -c ... -eq 0`, never `! ... | grep -q`. This script runs under `set -euo pipefail`;
+# `grep -q` exits at its first match, `docker ps` can then take SIGPIPE (141), and `pipefail`
+# turns that MATCH into a non-match — so a running stack reads as absent and this refuses to
+# run. `grep -c` reads the whole stream, so there is no early exit to race.
+if [ "$(docker ps --format '{{.Names}}' | grep -c "^${CONTAINER}$")" -eq 0 ]; then
   echo "ERROR: container '${CONTAINER}' is not running. Start the stack with:"
   echo "  ./opentr.sh start dev --with-watch"
   exit 1

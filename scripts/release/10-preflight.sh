@@ -217,7 +217,14 @@ if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
     record remote-builder fail \
         "buildx builder '$BUILDER' not found — publish cannot produce a multi-arch manifest" \
         "./scripts/setup-remote-builder.sh setup"
-elif docker buildx inspect "$BUILDER" 2>/dev/null | grep -qi 'error'; then
+# `grep -c ... -gt 0`, never `| grep -qi`. This stage runs under `set -euo pipefail`, so a
+# `grep -q` that exits at its first match leaves `docker buildx inspect` — which is talking to
+# a REMOTE builder over SSH, i.e. slow, with real time between its writes — to take SIGPIPE
+# (141), and `pipefail` reports that as the pipeline's status. A builder with a node in error
+# would then read as healthy and `record remote-builder pass`, moving the identical failure to
+# `publish` at hour three: exactly the outcome the comment above says this check exists to
+# prevent. `grep -c` reads the whole stream, so there is no early exit to race.
+elif [ "$(docker buildx inspect "$BUILDER" 2>/dev/null | grep -ci 'error')" -gt 0 ]; then
     endpoint="$(docker context inspect remote-arm64 --format '{{.Endpoints.docker.Host}}' 2>/dev/null || echo '?')"
     record remote-builder fail \
         "builder '$BUILDER' has a node in error (endpoint: $endpoint)" \

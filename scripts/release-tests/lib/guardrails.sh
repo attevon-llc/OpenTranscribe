@@ -231,7 +231,13 @@ gr_check_ports_free() {
     # Fail fast if any required host port is already bound.
     local occupied=()
     for port in ${TEST_PORTS:-}; do
-        if ss -tlnH 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"; then
+        # `grep -cE ... -gt 0`, never `| grep -qE`. This file runs under `set -euo pipefail`;
+        # `grep -q` exits at its first match, so `awk` (117 listening sockets on this host)
+        # takes SIGPIPE and `pipefail` reports the pipeline as failed — i.e. a port that IS
+        # bound reads as free. This is a GUARDRAIL whose entire job is to fail fast before a
+        # release test binds the stock ports, so an inversion here defeats the check silently
+        # and the collision surfaces later as an unrelated-looking stack failure.
+        if [ "$(ss -tlnH 2>/dev/null | awk '{print $4}' | grep -cE "[:.]${port}$")" -gt 0 ]; then
             occupied+=("$port")
         fi
     done

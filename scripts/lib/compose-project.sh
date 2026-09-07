@@ -104,11 +104,32 @@ compose_project_name() {
 # overlay_container_name SERVICE
 #   The running container for a compose SERVICE in the live project, or "" if none.
 #   Works regardless of container_name — including services that declare none.
+#   ⚠️ Deliberately NOT `docker ps ... | head -1`. A pipeline is this function's last command,
+#   so the PIPELINE's status becomes the FUNCTION's return status — and `head -1` exits after
+#   the first line, which under `set -o pipefail` hands the caller SIGPIPE's 141 whenever the
+#   filters match more than one container (a scaled service: `celery-worker-gpu-scaled` under
+#   --gpu-scale is exactly that shape). Almost every caller writes
+#   `X="$(overlay_container_name svc)"`, and an assignment from a 141 aborts the calling script
+#   under `set -e` with no error message — measured: `bash -c 'set -euo pipefail;
+#   g(){ seq 1 200000 | head -1; }; x="$(g)"; echo REACHED'` exits 141 and never prints.
+#   Capturing into a variable and trimming in-shell leaves no pipe to break, and returns 0
+#   for "none" exactly as the value contract above says.
+#   ⚠️ `rc` is captured and re-returned EXPLICITLY, and that is not defensive noise. Every
+#   caller writes `X="$(overlay_container_name svc)"`, and bash's `inherit_errexit` is OFF by
+#   default — so `set -e` does NOT apply inside a command substitution's subshell, and the only
+#   thing that reaches the caller is the subshell's FINAL exit status. The old pipeline
+#   propagated a genuine `docker ps` failure for free, because the pipeline WAS the function's
+#   last command. Rewriting it as capture-then-`printf` silently made `printf`'s 0 the answer,
+#   which turns "the daemon is unreachable" into "this service has no container" at all fifteen
+#   call sites. Measured: `bash -c 'set -euo pipefail; f(){ local v; v="$(false)"; echo AFTER; };
+#   X="$(f)"; echo REACHED'` prints REACHED and exits 0.
 overlay_container_name() {
-    local service="$1"
-    docker ps \
+    local service="$1" names="" rc=0
+    names="$(docker ps \
         --filter "label=com.docker.compose.project=$(compose_project_name)" \
         --filter "label=com.docker.compose.service=${service}" \
         --filter "status=running" \
-        --format '{{.Names}}' 2>/dev/null | head -1
+        --format '{{.Names}}' 2>/dev/null)" || rc=$?
+    printf '%s\n' "${names%%$'\n'*}"
+    return "$rc"
 }

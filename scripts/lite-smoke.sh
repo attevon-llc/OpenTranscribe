@@ -32,7 +32,12 @@ fail() {
 
 # The backend container name is not fixed under --fresh, so resolve by name substring
 # rather than hardcoding a compose project prefix.
-BACKEND_CONTAINER="$(docker ps --filter "name=backend" --format '{{.Names}}' | head -1)"
+# Captured whole, then trimmed to the first line — NOT `docker ps ... | head -1`. This script
+# runs under `set -euo pipefail`, and `name=backend` is an unanchored SUBSTRING filter that
+# matches several containers on a normal stack: `head -1` exits after the first, `docker ps`
+# takes SIGPIPE (141), and `pipefail` makes the ASSIGNMENT abort the smoke test silently.
+BACKEND_CONTAINER="$(docker ps --filter "name=backend" --format '{{.Names}}')"
+BACKEND_CONTAINER="${BACKEND_CONTAINER%%$'\n'*}"
 [[ -n "$BACKEND_CONTAINER" ]] || fail "no running backend container — start the stack first (./opentr.sh start dev --lite)" 4
 
 HEALTH_STATUS="$(docker inspect --format '{{.State.Health.Status}}' "$BACKEND_CONTAINER" 2>/dev/null || echo "none")"

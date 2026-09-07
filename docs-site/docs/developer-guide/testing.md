@@ -222,6 +222,107 @@ pytest backend/tests/e2e/test_login.py::TestLoginSuccess -v
 | `TestRegistrationSuccess` | Success flow |
 | `TestRegistrationUI` | UI elements |
 
+## Visual regression baselines
+
+`backend/tests/e2e/test_visual_regression.py` takes a full-page screenshot of five
+surfaces (gallery, file detail, speakers, the Settings modal, the chat trace panel) in
+both light and dark themes, and compares each against a committed PNG under
+`backend/tests/e2e/__screenshots__/`. A run fails when more than `DIFF_TOLERANCE`
+(0.50%) of pixels differ.
+
+### Refreshing a baseline: use the script
+
+```bash
+./scripts/e2e/update-visual-baselines.sh --reason "settings modal redesign"
+
+# one surface only — the usual case
+./scripts/e2e/update-visual-baselines.sh --reason "trace rows regrouped" --surface chat_trace
+
+# non-interactive (a backgrounded shell has no tty to confirm on)
+./scripts/e2e/update-visual-baselines.sh --reason "..." --yes
+
+./scripts/e2e/update-visual-baselines.sh --help
+```
+
+It brings up an isolated, seeded stack (`--fresh visual --port-offset 100
+--seed-benchmark --with-mock-llm`), waits for the seeded media to leave `processing`,
+captures, prints a per-surface old-vs-new percentage with the actual/diff images written
+to a `/tmp/ot-visual-baselines/<timestamp>/` directory it names, asks you to confirm,
+writes a provenance sidecar per image, and stops the stack again. `--keep` leaves it
+running (useful for the verification re-run it prints); `--destroy` also removes its
+volumes.
+
+### Why not `UPDATE_SCREENSHOTS=1`
+
+That env var is the raw mechanism the test module implements, and it is **not** the
+supported path. It writes whatever the stack in front of it renders — so against the
+shared dev stack it records the developer's own library content as the reference image.
+Measured on `chat_trace`, 2026-09-07:
+
+| comparison | differs |
+|---|---|
+| shared-stack run 1 vs shared-stack run 2 | 0.0253% |
+| shared-stack run vs committed baseline | **3.06%** |
+
+A surface reproducing *itself* to 0.03% is not flaky. The 3.06% was entirely the corpus:
+masked chips carrying real retrieval counts have different digit widths on different
+libraries, which moved the `flex-wrap` point of their row and shifted every row below it.
+The suite's own history is the same story four more times — a `settings` baseline that
+was really photographing the gallery *behind* the modal, `gallery`/`speakers` baselines
+bound to one deployment's upload dates, and 28 frontend commits of drift that nothing
+reported.
+
+### What the script refuses, and why each check exists
+
+| Refusal | Because |
+|---|---|
+| `--port-offset 0`, or a resolved port matching `_SHARED_STACK_HOSTS` | those *are* the shared dev stack's ports |
+| a compose project in `OPENTR_LIVE_PROJECTS` | `opentranscribe` / `transcribe-app` are the live stack |
+| the capture ports being owned by some *other* compose project | the two checks above are statements of intent; only this one observes what is actually listening, and it is what catches a `--fresh` stack that failed to start while something else holds the port |
+| a stack with no bind mount of **this** checkout at `/app` | prod / nginx / PKI overlays serve pre-built `davidamacey/opentranscribe-*` images, so a capture there photographs the *published* UI while every other symptom of success is present |
+| `--gpu-device 0` | GPU 0 runs unrelated work on this host |
+
+The port and surface constants are **read out of** `test_visual_regression.py` and
+`opentr.sh` at run time rather than copied, so the script and the suite cannot come to
+disagree about which ports are "shared" or which surfaces exist.
+`backend/tests/unit/test_visual_baseline_update_tool.py` drives each of these functions
+directly (with a stubbed `docker` for the two observation checks) and asserts they are
+invoked from `main` — a check that is defined but never called is indistinguishable, in
+every log the tool produces, from a check that passed.
+
+### Provenance: which code produced this image
+
+Each accepted baseline gets a JSON sidecar at
+`backend/tests/e2e/screenshot-provenance/<surface>-<theme>.json` recording the reason,
+the `HEAD` sha, the branch, whether the working tree was **dirty** at capture, the stack
+it was captured on, and how much it differed from the image it replaced. Commit the PNG
+and its sidecar together.
+
+Two deliberate choices:
+
+- **Per surface, not one manifest for the set.** `--surface` makes subset capture a
+  first-class operation, and a set-wide manifest would restate a sha for the nine images
+  that were *not* recaptured — lying about exactly the thing it exists to record.
+- **Outside `__screenshots__/`.** The release gate `visual-baselines-fresh`
+  (`scripts/release/30-verify.sh`) reads `git log -1 -- backend/tests/e2e/__screenshots__`,
+  so a text file committed in that directory could clear a staleness gate with no pixel
+  recaptured.
+
+A dirty tree is warned about loudly and recorded, not refused: the normal shape of this
+work is "change the UI, look at it, recapture", and demanding a commit first only
+encourages a throwaway one. But a baseline captured from uncommitted source cannot be
+regenerated by anyone else — the sha in its sidecar does not describe the pixels — so it
+must never be silently indistinguishable from a clean capture.
+
+### Do not widen `DIFF_TOLERANCE`
+
+`_visual_diff.py` argues the point itself: a tolerance that absorbs known noise is a
+tolerance that cannot also catch a small real change. Non-determinism is removed at the
+source instead — masking volatile regions, capturing the *element* rather than the
+viewport, and pinning masked chips to a constant width so their digit count cannot
+reflow the panel. After those fixes, two captures whose chip text was forced to `"9"`
+and to `"1234567 kept · 987654321 dropped"` are identical to **0.0000%**.
+
 ## Test quality: a test that cannot fail is worse than no test
 
 It buys false confidence and hides the defect it was written to catch. This repo has

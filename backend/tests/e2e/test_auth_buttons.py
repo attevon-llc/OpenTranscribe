@@ -32,6 +32,7 @@ Run:
 from typing import cast
 
 import pytest
+from ldap_fixture_users import LDAP_ADMIN
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 from timeouts import LOGIN_FORM_READY_MS
@@ -67,8 +68,13 @@ def _idp_reachable(timeout: float = 3.0) -> bool:
 # Test credentials
 ADMIN_EMAIL = "admin@example.com"
 ADMIN_PASSWORD = "password"
-LDAP_USERNAME = "ldap-admin"
-LDAP_PASSWORD = "admin_password"
+# NOT a local copy. test_ldap_oidc.py's session-autouse `ensure_lldap_running` ldappasswd's
+# this account on every run, so a second spelling here is a race under `--dist loadfile`: the
+# loser's bind fails, falls through to local auth, and feeds ldap-admin's progressive lockout
+# bucket (`canonical_identifier` collapses an ldap_uid onto the account's email). Both gated
+# TestLDAPLogin tests failed that way in the 2026-09-04 --full log. See ldap_fixture_users.py.
+LDAP_USERNAME = LDAP_ADMIN.uid
+LDAP_PASSWORD = LDAP_ADMIN.password
 
 # Identifiers that resolve to NO account, local or LDAP. Failing logins must target
 # these: account lockout is per-account and progressive (app/auth/lockout.py keys the

@@ -82,8 +82,17 @@ STAGE_ARG=""
 #
 # exit-contract selects how the leg's exit code is READ, because this repo has
 # two conventions and conflating them would misreport results:
-#   standard  0 pass · non-zero fail            (release.sh / this script's own)
+#   standard  0 pass · non-zero fail · 3 blocked · 4 operator abort · 5 NOT MEASURED
+#                                                 (release.sh / this script's own)
 #   smoke     0 pass · 1 fail · 4 NOT MEASURED  (gpu-scale/diar-native/lite-smoke)
+#
+# ⚠️ NOT MEASURED is **5** under `standard` and **4** under `smoke`, deliberately. 4 is
+# already "operator abort" in the standard contract, so a standard leg that verified nothing
+# needed a code of its own rather than a reinterpretation of one in use — otherwise
+# run-dev-tests.sh's honest "a phase declined to be counted" would print as
+# `ABORT — the leg reported an operator abort`, which is the exact class of false verdict
+# this contract exists to prevent.
+#
 # Note 4 means "operator abort" in the standard contract and "not measured" in
 # the smoke one. That divergence is real and pre-existing; declaring it per leg
 # is how this script reads each verdict correctly instead of calling a smoke
@@ -94,7 +103,7 @@ STAGE_ARG=""
 # EXIT_NOT_MEASURED (5). See the note beside that constant.
 LEGS=(
     "1.1|1|safe-precommit full run|scripts/safe-precommit.sh run --all-files|standard"
-    "1.2|1|backend test summary|scripts/run-backend-tests.sh --summary|standard"
+    "1.2|1|backend test summary|scripts/run-backend-tests.sh --require-fresh --summary|standard"
     "1.3|1|backend + frontend test-quality audits|python3 scripts/audit-tests.py backend/tests|standard"
     "1.4|1|frontend check (no rebuild)|scripts/frontend-check.sh --no-claude --check-only|standard"
     "1.5|1|docs-site build|cd docs-site && npm run build|standard"
@@ -374,6 +383,19 @@ run_leg() {
         echo "BLOCKED  $id  $desc  (precondition unmet, ${elapsed}s — see $log_file)" >> "$REPORT_FILE"
         info "  ${YELLOW}BLOCKED${NC} — precondition unmet inside the leg; see $log_file"
         return $EXIT_PRECONDITION
+    fi
+    # Standard contract, exit 5 = NOT MEASURED. Distinct from the smoke contract's 4 for the
+    # reason the LEGS header gives: under `standard`, 4 is already "operator abort", so a leg
+    # that verified nothing needed a code of its own rather than a reinterpretation of one that
+    # is in use. run-dev-tests.sh (leg 2a) returns it when a phase declined to be counted.
+    if [[ "$contract" == "standard" && $leg_rc -eq $EXIT_NOT_MEASURED ]]; then
+        local std_reason
+        std_reason="$(not_measured_reason "$log_file")"
+        echo "SKIP  $id  $desc  — NOT MEASURED: $std_reason  (see $log_file)" >> "$REPORT_FILE"
+        info "  ${YELLOW}SKIP${NC} — NOT MEASURED: $std_reason"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        SKIPPED_LEGS+=("$id: $std_reason")
+        return 0
     fi
     if [[ "$contract" == "smoke" && $leg_rc -eq 4 ]]; then
         local reason

@@ -22,6 +22,10 @@
 #   ./scripts/run-backend-tests.sh tests/unit       # a subset
 #   ./scripts/run-backend-tests.sh --gated          # + the RUN_*-gated suites
 #   ./scripts/run-backend-tests.sh --summary        # re-report, no re-run
+#   ./scripts/run-backend-tests.sh --require-fresh --summary
+#                                                   # ...but refuse if the saved run is from a
+#                                                   # different commit or older than
+#                                                   # OT_SUMMARY_MAX_AGE_S (default 7200)
 #   ./scripts/run-backend-tests.sh --failures       # list failures, no re-run
 #   ./scripts/run-backend-tests.sh --log            # path to the full log
 
@@ -36,6 +40,12 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC
 OUT_DIR="${OT_TEST_OUT_DIR:-/tmp/ot-backend-tests}"
 LOG="$OUT_DIR/last.log"
 XML="$OUT_DIR/last.xml"
+# Provenance of the published artifacts: which commit was checked out, and when. Without it
+# `--summary` will happily re-report a run from any date against any tree — and did:
+# scripts/test-matrix.sh's leg 1.2 is `--summary`, i.e. it runs NO tests, so on 2026-09-06 the
+# matrix's "backend test summary" leg passed by reading a 986-byte, two-day-old artifact from
+# a different commit. A gate whose evidence has no expiry is not a gate.
+META="$OUT_DIR/last.meta"
 # Each run writes to its own PID-scoped files and only publishes to last.* when
 # it finishes. Without this, starting a short run while a long one is in flight
 # has the short one overwrite last.* and then the reporting modes describe the
@@ -47,8 +57,46 @@ mkdir -p "$OUT_DIR"
 
 # ── Reporting from the saved artifacts (no pytest) ─────────────────────────
 
+# Refuse to re-report an artifact that does not describe the tree in front of us.
+#
+# Two independent conditions, either of which makes the summary a statement about something
+# else: a different commit, or one older than OT_SUMMARY_MAX_AGE_S (uncommitted work moves the
+# tree without moving the SHA, so age is the only thing that catches that). Missing metadata is
+# a refusal too, not a pass — an artifact from before this check existed is exactly the case it
+# was added for.
+assert_summary_is_fresh() {
+    local want_sha="$1"
+    local max_age="${OT_SUMMARY_MAX_AGE_S:-7200}"
+    if [[ ! -f "$META" ]]; then
+        echo -e "${RED}NOT MEASURED: $XML has no $META beside it, so there is no evidence it" >&2
+        echo -e "  describes this tree. Run the suite: $0${NC}" >&2
+        return 1
+    fi
+    local ran_sha ran_epoch age
+    # shellcheck disable=SC1090
+    ran_sha=$(sed -n 's/^sha=//p' "$META")
+    ran_epoch=$(sed -n 's/^epoch=//p' "$META")
+    age=$(( $(date +%s) - ${ran_epoch:-0} ))
+    if [[ "$ran_sha" != "$want_sha" ]]; then
+        echo -e "${RED}NOT MEASURED: the saved run is from commit ${ran_sha:-<unknown>}, the tree" >&2
+        echo -e "  is at $want_sha. Re-reporting it would describe different code. Run: $0${NC}" >&2
+        return 1
+    fi
+    if (( age > max_age )); then
+        echo -e "${RED}NOT MEASURED: the saved run is ${age}s old (limit ${max_age}s, set" >&2
+        echo -e "  OT_SUMMARY_MAX_AGE_S to change). Uncommitted work moves the tree without" >&2
+        echo -e "  moving the SHA, so age is the only guard against that. Run: $0${NC}" >&2
+        return 1
+    fi
+    echo -e "${GREEN}artifact is from ${ran_sha:0:12}, ${age}s ago${NC}" >&2
+    return 0
+}
+
 report_summary() {
     [[ -f "$XML" ]] || { echo -e "${YELLOW}no previous run at $XML${NC}" >&2; return 1; }
+    if [[ -n "${REQUIRE_FRESH_SHA:-}" ]]; then
+        assert_summary_is_fresh "$REQUIRE_FRESH_SHA" || return 1
+    fi
     python3 - "$XML" <<'PY'
 import sys, xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
@@ -108,6 +156,19 @@ else:
             print(f"      {msg}")
 PY
 }
+
+# `--require-fresh [<sha>]` before `--summary`: assert the saved artifact describes this tree.
+# Defaults to HEAD when no sha is given.
+if [[ "${1:-}" == "--require-fresh" ]]; then
+    shift
+    if [[ -n "${1:-}" && "${1:-}" != --* ]]; then
+        REQUIRE_FRESH_SHA="$1"; shift
+    else
+        REQUIRE_FRESH_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null)"
+        [[ -n "$REQUIRE_FRESH_SHA" ]] || {
+            echo -e "${RED}--require-fresh: not a git checkout and no sha given${NC}" >&2; exit 2; }
+    fi
+fi
 
 case "${1:-}" in
     --summary)  report_summary; exit $? ;;
@@ -219,6 +280,10 @@ rc=${PIPESTATUS[0]}
 # Publish atomically, only now that this run is complete.
 mv -f "$RUN_LOG" "$LOG"
 [[ -f "$RUN_XML" ]] && mv -f "$RUN_XML" "$XML"
+# Provenance, so `--summary --require-fresh` can tell whether this describes the current tree.
+printf 'sha=%s\nepoch=%s\n' \
+    "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)" \
+    "$(date +%s)" > "$META"
 
 echo
 report_summary

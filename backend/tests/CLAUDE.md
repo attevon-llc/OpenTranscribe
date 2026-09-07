@@ -1,5 +1,28 @@
 # backend/tests — the whole test tree (api, unit, e2e, integration, redaction, transcription, onnx)
 
+## ⚠️ A NOT MEASURED phase is not a pass, and the gate's exit code now says so
+
+`run-integration-tests.sh` prints `⊘ … NOT MEASURED` for a phase that declined to be counted
+(mass skips past the ceiling, or a check with no evidence) — and for months it then **exited
+0**, so `run-dev-tests.sh` recorded the backend phase `PASS` and `scripts/release/60-test.sh`
+recorded `integration-gate pass` for a release, on a run whose largest phase (733 s, 21 skips)
+had explicitly refused to count itself. It now **exits 4**; `run-dev-tests.sh` renders a
+`NOT MEASURED` row and exits **5**, and `60-test.sh` records `integration-gate not-measured`
+(blocking).
+
+⚠️ **The two codes differ on purpose.** In the repo-wide *standard* contract (`release.sh`,
+`test-matrix.sh`'s leg contract) **4 already means operator abort**, so a script invoked under
+it needs 5 — otherwise an honest "a phase verified nothing" prints as
+`ABORT — the leg reported an operator abort`. `run-integration-tests.sh` can use 4 because it
+has no prompt and no abort path. Pinned by `unit/test_test_matrix_execution.py`'s
+`test_the_two_exit_contracts_are_read_separately` and
+`unit/test_integration_gate_skip_ceiling.py`.
+
+Every pytest phase in the gate now runs with **`-rs`** and writes `--junitxml` into
+`$GATE_ARTIFACT_DIR` (default `/tmp/ot-integration-gate`), because the 2026-09-06 gate's
+21 + 18 + 78 + 56 skips had **no recorded reason anywhere** — diagnosing them meant re-running a
+733-second phase by hand.
+
 ## Purpose
 
 `./scripts/run-integration-tests.sh` is **THE pre-merge gate**: ungated suite → all `RUN_*`
@@ -52,7 +75,23 @@ what it appears to. A green one from the wrong schema is worse.
 
 ## Markers and gates
 
-- Registered (pyproject): `slow`, `unit`, `pki`, `e2e`, `integration`, `gpu`, `models`. `addopts` =
+- **A test that cannot run here is DESELECTED by marker, never left to skip.** A skip inflates
+  the phase's skip total toward `run-integration-tests.sh`'s ceiling, and once the phase trips
+  that ceiling it reports NOT MEASURED — so a permanently-skipping test does not merely prove
+  nothing itself, it buries the skips that mean something. Two markers exist for this:
+  - **`multi_gpu`** — needs a multi-*worker* GPU topology (`--gpu-scale` / `--gpu-split`, i.e. a
+    running `celery-worker-gpu-scaled` or `celery-worker-gpu-diarize`), **not merely a second
+    card**. The gate DETECTS that topology and selects these back in when it is up, so this
+    hides no coverage on a host that can run them — which matters, because root `CLAUDE.md` is
+    explicit that GPU 2 is usable and that treating this host as single-GPU is a documented cost.
+    6 tests, all in `test_gpu_scale_smoke_live` / `test_diar_native_cross_card_placement_live` /
+    `test_diar_native_multigpu_provider_live`.
+  - **`opt_in_gate`** — expensive or deployment-scoped, behind its own `RUN_*` variable
+    (`RUN_EXPORT_CAPABILITY_TEST`, `RUN_INDEX_AUDIT`). The env gate inside the test is still the
+    authority on whether the work happens; the marker only stops an opt-in-by-design test from
+    being counted. `--export-capability` selects the first back in.
+- Registered (pyproject): `slow`, `unit`, `pki`, `e2e`, `integration`, `gpu`, `models`,
+  `multi_gpu`, `opt_in_gate`. `addopts` =
   `-n auto --dist loadgroup --tb=short -q --strict-markers -m 'not integration and not gpu'`;
   `norecursedirs=["tests/e2e"]`. **`--strict-markers` makes an unregistered marker a collection
   error** — register any new marker in `[tool.pytest.ini_options] markers` or collection fails.

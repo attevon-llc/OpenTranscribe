@@ -76,6 +76,13 @@ this file is for.
   10s-clip transcription (1 segment, 19 words), real diarization, real search hit on a word
   pulled from the actual transcript, real chat answer from the real model — 3/3 passed (99s),
   llm-test-vllm correctly stopped afterward since this run started it.
+- ⚠️ **`run-backend-tests.sh --summary` runs NO tests** — it re-reports
+  `/tmp/ot-backend-tests/last.xml`. `test-matrix.sh` leg 1.2 is that command, so on 2026-09-06
+  the matrix's "backend test summary" leg passed by reading a **986-byte, two-day-old, 5-test**
+  artifact from a different commit. `--require-fresh [<sha>]` (leg 1.2 now passes it) refuses an
+  artifact with no `last.meta`, from a different commit, or older than `OT_SUMMARY_MAX_AGE_S`
+  (default 7200) — missing metadata is a refusal, not a pass. The run path writes `last.meta`
+  (`sha=`/`epoch=`) when it publishes.
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
   Runs the ungated suite, then all `RUN_*`-gated security suites twice (FIPS off, then `FIPS_MODE=true`),
   then `-m integration`, then `-m gpu`, then **model-vs-schema drift**
@@ -217,7 +224,16 @@ this file is for.
     now be the URL argument of a real HTTP client call. `--fail-on-uncovered` makes it gate;
     the default stays exit 0 so existing callers are unbroken.
   - `run-mutation-tests.sh` — see the mutation section in `backend/tests/CLAUDE.md`. Opt-in,
-    never in the gate or CI. **`--clean` when you are done**: it leaves ~330k lines of
+    never in the gate or CI (except `--check-baseline`, which reads results rather than
+    producing them). ⚠️ **`--check-baseline` now exits 4 on a PARTIAL measurement, not only on
+    zero.** "0 of 6 is not a pass" was half the rule: on 2026-09-06 it measured **1 of 6**,
+    printed `⊘ NOT MEASURED (5/6)` naming the other five, and exited **0**, so the gate rendered
+    the phase as `✓ Mutation ratchet passed` with five sixths of a security-critical ratchet
+    unmeasured. Since the other five are unmeasured *because their source or test list changed
+    since the last run*, expect the gate to report NOT MEASURED here until someone measures
+    them (30-90 min each) — or sets `MUTATION_RATCHET_PARTIAL_OK=1` **deliberately**, which is
+    recorded in the output rather than assumed in the exit code.
+    **`--clean` when you are done**: it leaves ~330k lines of
     deliberately corrupted source in `backend/mutants/`, which is gitignored but which
     filesystem-walking tools still see (bandit failed a commit on a finding inside a mutant, and
     needs the `*/mutants/*` exclusion because the hook runs `bandit -r backend/` from the root).

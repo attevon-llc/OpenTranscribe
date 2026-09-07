@@ -52,6 +52,14 @@ rc=0
 
 if (( rc == 0 )); then
     record integration-gate pass
+elif (( rc == 4 )); then
+    # Exit 4 = at least one phase declined to be counted (a mass-skipped phase, or a check
+    # with no evidence). It is neither a pass nor a failure, and recording it as either has
+    # already misled a release: the 2026-09-06 run recorded `integration-gate pass` on a gate
+    # whose 733-second integration phase had printed NOT MEASURED for itself. Blocking, per
+    # release-criteria.yaml — a release must not ship on a gate that verified nothing.
+    record integration-gate not-measured "run-integration-tests.sh exited 4 (NOT MEASURED)" \
+        "read the ⊘ phases above; each names what it declined to count and why"
 else
     record integration-gate fail "run-integration-tests.sh exited $rc" \
         "read the per-phase output above; re-run ./scripts/run-integration-tests.sh"

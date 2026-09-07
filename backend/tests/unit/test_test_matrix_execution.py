@@ -383,3 +383,59 @@ def test_the_doc_and_the_script_still_agree():
         )
     assert "### Stage 3 — lite-mode full rehearsal" in doc
     assert re.search(r"PKI/mTLS is prod", doc, re.IGNORECASE)
+
+
+@pytest.mark.parametrize(
+    ("contract", "leg_rc", "expected_rc", "expected_word"),
+    [
+        # ⚠️ The collision this pins. Under `standard`, 4 is OPERATOR ABORT and 5 is
+        # NOT MEASURED; under `smoke`, 4 is NOT MEASURED. Reading a standard-contract 4 as
+        # "not measured" would report a declined `I UNDERSTAND` prompt as a test verdict, and
+        # reading a 5 as a failure would report an honest "I could not measure this" as a
+        # regression. run-dev-tests.sh (leg 2a, standard) returns 5.
+        ("standard", 4, 4, "ABORT"),
+        ("standard", 5, 0, "SKIP"),
+        ("standard", 3, 3, "BLOCKED"),
+        ("standard", 1, 1, "FAIL"),
+        ("smoke", 4, 0, "SKIP"),
+        ("smoke", 1, 1, "FAIL"),
+    ],
+)
+def test_the_two_exit_contracts_are_read_separately(
+    tmp_path: Path, contract: str, leg_rc: int, expected_rc: int, expected_word: str
+):
+    """Drive the REAL verdict block out of run_leg, one exit code at a time.
+
+    Extracted rather than reimplemented: a test that restates the mapping passes against a
+    script that has stopped implementing it, which is the failure mode this whole file exists
+    for.
+    """
+    source = _matrix_source()
+    start = source.index("    if [[ $leg_rc -eq 0 ]]; then")
+    end = source.index("    return $EXIT_GATE\n", start) + len("    return $EXIT_GATE\n")
+    verdict_block = source[start:end]
+
+    report = tmp_path / "report.txt"
+    log_file = tmp_path / "leg.log"
+    log_file.write_text("something happened\nNOT MEASURED: the corpus is absent\n")
+
+    snippet = (
+        "info() { :; }\n"
+        "GREEN=''; YELLOW=''; RED=''; NC=''\n"
+        "EXIT_ABORT=4; EXIT_PRECONDITION=3; EXIT_GATE=1; EXIT_NOT_MEASURED=5\n"
+        "SKIP_COUNT=0; declare -a SKIPPED_LEGS=()\n"
+        "not_measured_reason() { grep -m1 -i 'not measured' \"$1\"; }\n"
+        f'REPORT_FILE="{report}"\n'
+        f'log_file="{log_file}"\n'
+        f'contract="{contract}"; leg_rc={leg_rc}; elapsed=1; id="X"; desc="d"\n'
+        "verdict() {\n" + verdict_block + "}\n"
+        "verdict\n"
+    )
+    rc, out = _run_shell(snippet)
+    assert rc == expected_rc, (
+        f"contract={contract} leg_rc={leg_rc} returned {rc}, expected {expected_rc}: {out}"
+    )
+    written = report.read_text() if report.exists() else ""
+    assert written.startswith(expected_word), (
+        f"contract={contract} leg_rc={leg_rc} recorded {written!r}, expected a {expected_word} row"
+    )

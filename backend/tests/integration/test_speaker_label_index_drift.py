@@ -312,6 +312,11 @@ def test_a_chunk_referencing_a_deleted_speaker_is_reported_as_orphaned(
     assert drift == [], "an orphan has no row to disagree with, so it is not drift"
 
 
+# `opt_in_gate` so run-integration-tests.sh DESELECTS this rather than counting it as a skip.
+# The skipif below is still the authority on whether it runs; the marker only stops a test that
+# is opt-in BY DESIGN from inflating the phase's skip total toward the ceiling. `RUN_INDEX_AUDIT`
+# with `-m "integration and opt_in_gate"` is how you actually run it.
+@pytest.mark.opt_in_gate
 @pytest.mark.skipif(
     os.environ.get("RUN_INDEX_AUDIT", "").lower() not in {"1", "true"},
     reason=(

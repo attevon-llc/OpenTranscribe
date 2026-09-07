@@ -38,6 +38,13 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from ldap_fixture_users import LDAP_ADMIN
+from ldap_fixture_users import LDAP_NEGATIVE
+from ldap_fixture_users import LDAP_REGULAR
+from ldap_fixture_users import LLDAP_ADMIN_PASSWORD
+from ldap_fixture_users import LLDAP_ADMIN_USER
+from ldap_fixture_users import LLDAP_BASE_DN
+from ldap_fixture_users import LLDAP_BIND_DN
 from playwright.sync_api import expect
 
 from tests.env_gate import gate_enabled
@@ -62,20 +69,19 @@ KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8180")
 APP_ADMIN_EMAIL = "admin@example.com"
 APP_ADMIN_PASSWORD = "password"
 
-# LLDAP admin credentials
-LLDAP_ADMIN_USER = "admin"
-LLDAP_ADMIN_PASSWORD = "admin_password"
-LLDAP_BASE_DN = "dc=example,dc=com"
-LLDAP_BIND_DN = f"uid={LLDAP_ADMIN_USER},ou=people,{LLDAP_BASE_DN}"
+# LLDAP admin + fixture-account credentials come from ldap_fixture_users, which
+# scripts/lib/dev-test-overlays.sh ALSO reads when it seeds the accounts before pytest starts.
+# They used to be declared here and again in test_auth_buttons.py and again in that shell
+# script, with two different passwords for ldap-admin; whichever ran last won, the loser's bind
+# fell through to local auth, and the failures piled into ldap-admin's progressive lockout
+# bucket. See ldap_fixture_users.py's docstring.
+LDAP_ADMIN_USER = LDAP_ADMIN.uid
+LDAP_ADMIN_EMAIL = LDAP_ADMIN.email
+LDAP_ADMIN_PASSWORD = LDAP_ADMIN.password
 
-# Test user credentials
-LDAP_ADMIN_USER = "ldap-admin"
-LDAP_ADMIN_EMAIL = "ldap-admin@example.com"
-LDAP_ADMIN_PASSWORD = "LdapAdmin123"
-
-LDAP_REGULAR_USER = "ldap-user"
-LDAP_REGULAR_EMAIL = "ldap-user@example.com"
-LDAP_REGULAR_PASSWORD = "LdapUser123"
+LDAP_REGULAR_USER = LDAP_REGULAR.uid
+LDAP_REGULAR_EMAIL = LDAP_REGULAR.email
+LDAP_REGULAR_PASSWORD = LDAP_REGULAR.password
 
 # A real LLDAP account that is NEVER logged in successfully, reserved for the
 # wrong-password test. Rejecting a bad bind for a user that exists is a different branch
@@ -84,13 +90,9 @@ LDAP_REGULAR_PASSWORD = "LdapUser123"
 # (canonical_identifier resolves an ldap_uid to the local account's email), and lockout is
 # progressive. Because this uid never authenticates successfully, the app never provisions
 # a local User for it, so its bucket belongs to no account and locking it costs nothing.
-LDAP_NEGATIVE_USER = "ldap-negative"
-LDAP_NEGATIVE_EMAIL = "ldap-negative@example.com"
-# Deliberately not this account's password — the test asserts the bind is REJECTED, so any
-# value that is wrong will do. Spelled out rather than made to look like a credential: a
-# realistic-looking string here is both a secret-scanner finding and a standing invitation
-# for someone to "fix" it into a working password, which would silently invert the test.
-LDAP_NEGATIVE_PASSWORD = "wrong-password-on-purpose"  # noqa: S105
+LDAP_NEGATIVE_USER = LDAP_NEGATIVE.uid
+LDAP_NEGATIVE_EMAIL = LDAP_NEGATIVE.email
+LDAP_NEGATIVE_PASSWORD = LDAP_NEGATIVE.password
 
 KC_ADMIN_USER = "kc-admin"
 KC_ADMIN_EMAIL = "kc-admin@example.com"

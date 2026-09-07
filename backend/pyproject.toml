@@ -123,6 +123,8 @@ markers = [
     "gpu: tests requiring a physical GPU — deselected from the fast suite, run by the gate, and the only selection that keeps CUDA devices visible (issue #719)",
     "models: tests requiring ML model weights (Presidio/GLiNER/toxicity) — skipped in fast CI",
     "ddl_exclusive: performs schema DDL (DROP/ALTER TABLE) needing full DB-wide exclusivity, not just self-consistency — see tests/conftest.py's advisory-lock isolation (issue #389)",
+    "multi_gpu: needs a MULTI-WORKER GPU topology (--gpu-scale / --gpu-split), i.e. a running celery-worker-gpu-scaled or celery-worker-gpu-diarize container — NOT merely a second card. run-integration-tests.sh deselects these when that topology is absent and selects them when it is present, so they are visibly absent from the count rather than inflating it as skips",
+    "opt_in_gate: deliberately not part of any default run — an expensive or deployment-scoped check behind its own RUN_* variable (RUN_EXPORT_CAPABILITY_TEST, RUN_INDEX_AUDIT). The marker exists so the gate can DESELECT them rather than count them as skips: a permanently-skipping test inflates the skip total toward the ceiling and buries the skips that mean something",
 ]
 norecursedirs = ["tests/e2e"]
 

@@ -38,3 +38,11 @@ scripts/run-auth-e2e.sh:hashicorp-tf-password:35
 backend/tests/test_selective_reprocess.py:hashicorp-tf-password:25
 scripts/benchmark_transcription.sh:hashicorp-tf-password:19
 backend/tests/e2e/test_collection_management.py:hashicorp-tf-password:39
+# LLDAP's own bootstrap admin password, set by docker-compose.ldap-test.yml's
+# LLDAP_LDAP_USER_PASS and already published in CLAUDE.md, docs/LDAP_AUTH.md and
+# docs-site. Same class as the test_ldap_keycloak.py entries above: a throwaway IdP
+# container that only ever runs on a developer machine. This is the LAST remaining
+# literal for it — the per-account fixture passwords moved out of the three places that
+# disagreed and into this module's FixtureUser table, which is why the entry is here and
+# not in a test file.
+backend/tests/e2e/ldap_fixture_users.py:hashicorp-tf-password:36

@@ -65,6 +65,15 @@ cd "$REPO_ROOT" || exit 1
 EXIT_GATE=1
 EXIT_MISUSE=2
 EXIT_PRECONDITION=3
+# A phase that verified nothing is neither a pass nor a failure, and must not be absorbed into
+# either. ⚠️ **5, not 4** — matching scripts/test-matrix.sh:46's own EXIT_NOT_MEASURED, not
+# run-integration-tests.sh's internal 4. In the repo-wide "standard" exit contract (release.sh,
+# and test-matrix.sh's leg contract, which is what runs THIS script as leg 2a) 4 already means
+# **operator abort**, so returning 4 here would have made a not-measured backend phase report as
+# `ABORT — the leg reported an operator abort`. run-integration-tests.sh can use 4 because it
+# has no prompt and no abort path; this script is invoked under the standard contract and
+# cannot. The translation happens at the boundary, in run_phase below.
+EXIT_NOT_MEASURED=5
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
@@ -364,6 +373,15 @@ run_phase() {
     if [[ "$rc" -eq 0 ]]; then
         PHASE_STATUS+=("PASS")
         echo -e "${GREEN}<==${NC} $name — PASS (${elapsed}s)"
+    elif [[ "$rc" -eq 4 ]]; then
+        # NOT MEASURED is its own verdict, distinct from both. run-integration-tests.sh exits
+        # 4 when one of its phases declined to be counted (mass skips, or a check with no
+        # evidence). Folding that into PASS is what let a 733-second phase that had printed
+        # "NOT MEASURED" for itself be reported here as a green backend phase; folding it into
+        # FAIL would be a lie in the other direction and would train people to ignore it.
+        # Recorded here, re-emitted as EXIT_NOT_MEASURED (5) at the bottom — see that constant.
+        PHASE_STATUS+=("NOT MEASURED (phase exit 4)")
+        echo -e "${YELLOW}<==${NC} $name — NOT MEASURED, exit 4 (${elapsed}s)"
     else
         PHASE_STATUS+=("FAIL (exit $rc)")
         echo -e "${RED}<==${NC} $name — FAIL exit $rc (${elapsed}s)"
@@ -420,7 +438,13 @@ overall_rc=0
 for i in "${!PHASE_NAMES[@]}"; do
     status="${PHASE_STATUS[$i]}"
     printf "  %-55s %s (%ss)\n" "${PHASE_NAMES[$i]}" "$status" "${PHASE_SECONDS[$i]}"
-    [[ "$status" == PASS ]] || overall_rc=$EXIT_GATE
+    case "$status" in
+        PASS) ;;
+        "NOT MEASURED"*)
+            # A real failure anywhere still wins: NOT MEASURED must never downgrade a FAIL.
+            [[ "$overall_rc" -eq 0 ]] && overall_rc=$EXIT_NOT_MEASURED ;;
+        *) overall_rc=$EXIT_GATE ;;
+    esac
 done
 echo "=============================================================="
 # Overlay audit trail (B7): so a green run is auditable — was Keycloak actually up for real, or
@@ -444,6 +468,10 @@ fi
 echo "=============================================================="
 if [[ "$overall_rc" -eq 0 ]]; then
     echo -e "${GREEN}ALL PHASES PASSED${NC}"
+elif [[ "$overall_rc" -eq "$EXIT_NOT_MEASURED" ]]; then
+    echo -e "${YELLOW}NO PHASE FAILED, BUT ONE OR MORE VERIFIED NOTHING${NC} — exit $EXIT_NOT_MEASURED."
+    echo -e "${YELLOW}A NOT MEASURED phase is not a green run. The phase log names what it${NC}"
+    echo -e "${YELLOW}declined to count (every pytest phase runs with -rs; grep for SKIPPED).${NC}"
 else
     echo -e "${RED}ONE OR MORE PHASES FAILED${NC} — see logs above for the failing phase(s)"
 fi

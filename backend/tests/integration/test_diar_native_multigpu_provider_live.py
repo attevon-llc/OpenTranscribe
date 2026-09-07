@@ -62,7 +62,14 @@ import requests
 
 from tests.compose_project import compose_service_container
 
-pytestmark = [pytest.mark.integration, pytest.mark.gpu, pytest.mark.slow]
+# `multi_gpu`: this file needs a MULTI-WORKER GPU TOPOLOGY (a running
+# celery-worker-gpu-scaled / celery-worker-gpu-diarize, i.e. `--gpu-scale` or
+# `--gpu-split`), not merely a second card. Without it every test here SKIPS, and a skip
+# is the one outcome that looks like a pass — these were 7 of the integration phase's 21
+# skips, which pushed the phase past its ceiling and made it report NOT MEASURED.
+# run-integration-tests.sh DESELECTS the marker when the topology is absent (so they are
+# visibly not counted) and SELECTS it when the topology is up, so this hides no coverage.
+pytestmark = [pytest.mark.integration, pytest.mark.gpu, pytest.mark.slow, pytest.mark.multi_gpu]
 
 BACKEND_PORT = os.environ.get("BACKEND_PORT", "5174")
 BASE_URL = f"http://localhost:{BACKEND_PORT}/api"

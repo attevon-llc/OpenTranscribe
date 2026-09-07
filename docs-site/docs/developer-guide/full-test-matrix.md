@@ -107,7 +107,7 @@ still exits 0?" and write that test first.
 | # | Command | Pass criterion |
 |---|---|---|
 | 1 | `scripts/safe-precommit.sh run --all-files` | Exit 0, no `files were modified by this hook` |
-| 2 | `./scripts/run-backend-tests.sh --summary` | Exit 0, 0 failures |
+| 2 | `./scripts/run-backend-tests.sh --require-fresh --summary` | Exit 0, 0 failures. ⚠️ `--summary` runs **no tests** — it re-reports `/tmp/ot-backend-tests/last.xml`. `--require-fresh` (added 2026-09-07) refuses an artifact from a different commit or older than `OT_SUMMARY_MAX_AGE_S` (default 7200s); without it this leg passed on a two-day-old, 5-test artifact from another commit. Run the suite first: `./scripts/run-backend-tests.sh` |
 | 3 | `python3 scripts/audit-tests.py backend/tests` + `python3 scripts/audit-tests.py --selftest`; `cd frontend && npm run test:audit && npm run test:audit:selftest` | Exit 0, no `SELF-TEST BROKEN`, DEFERRED (backlog) count not increased vs the prior run |
 | 4 | `./scripts/frontend-check.sh --no-claude --check-only` | Exit 0 |
 | 5 | `cd docs-site && npm run build` | Exit 0 |

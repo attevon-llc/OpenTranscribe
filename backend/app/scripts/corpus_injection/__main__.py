@@ -113,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     from app.scripts.corpus_injection import manifest as manifest_mod
     from app.scripts.corpus_injection.adapters import build_adapter
     from app.scripts.corpus_injection.injector import dispatch_indexing
+    from app.scripts.corpus_injection.injector import dispatch_redaction
     from app.scripts.corpus_injection.injector import inject_meeting
 
     target = describe_target()
@@ -198,6 +199,12 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
             db.commit()
             if record.action != "skipped":
                 record.index_task_id = dispatch_indexing(record, user_id, mode=args.dispatch)
+                # The transcription pipeline's `_dispatch_redaction` equivalent. Without
+                # it an injected transcript is withheld by the read gate for any owner
+                # who masks — see `injector.dispatch_redaction`.
+                record.redaction_task_id = dispatch_redaction(
+                    db, record, user_id, mode=args.dispatch
+                )
             records.append(record)
             turns_by_file[record.file_uuid] = turn_rows
             logger.info(

@@ -141,4 +141,8 @@ class InjectionRecord:
     language: str
     action: str  # "created" | "updated" | "skipped" | "dry-run"
     index_task_id: str | None = None
+    #: Set when the owner masks and a detection scan was queued. ``None`` means no
+    #: scan was needed (redaction off for the owner) or the run was rows-only — not
+    #: that one was skipped by mistake. See ``injector.dispatch_redaction``.
+    redaction_task_id: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)

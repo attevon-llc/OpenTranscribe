@@ -596,16 +596,43 @@ def audit_unredacted_reveal(
 def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
     """Kick off redaction detection for a completed file that never had it (legacy).
 
-    Sets status to 'pending' immediately so concurrent reads don't re-dispatch.
+    Sets status to 'pending' immediately so concurrent reads don't re-dispatch,
+    and **withdraws that claim if the publish never reached the broker**.
+
+    The claim has to be written first: two readers opening the same unscanned file
+    would otherwise queue two scans of it. But `pending` asserts "a scan is coming",
+    and `detect_and_store` — the only writer of a terminal status — is precisely what
+    failed to be queued. Leaving the row at `pending` after a failed publish therefore
+    strands it: `_redaction_pending` re-dispatches only from NULL, so nothing ever
+    looks at the file again and its transcript is withheld for the life of the row,
+    from an error the user is never shown. An unreachable broker is not exotic — a
+    restarting Redis, a rebuild, or an out-of-process test harness all produce it.
     """
+    previous_status = db_file.redaction_status
     try:
         db_file.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
         db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning(f"Could not mark file {db_file.id} pending for redaction: {e}")
+        return
+
+    try:
         from app.tasks.redaction_task import redaction_detect_task
 
         redaction_detect_task.delay(file_id=db_file.id, user_id=int(db_file.user_id))
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Lazy redaction dispatch failed for file {db_file.id}: {e}")
+        try:
+            db_file.redaction_status = previous_status
+            db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            logger.exception(
+                "File %s is stranded at 'pending' with no scan queued; its transcript will "
+                "stay withheld until the status is cleared",
+                db_file.id,
+            )
 
 
 def _redaction_pending(db: Session, cfg: Any, db_file: MediaFile) -> bool:

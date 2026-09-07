@@ -1275,10 +1275,17 @@ async def get_ollama_models(
             # `original_url`: the resolver does the pinning, so the request keeps its
             # hostname and aiohttp derives SNI + certificate name from it unaided.
             # `allow_redirects=False`: a pin covers one hop.
-            session.get(target.original_url, allow_redirects=False) as response,
+            #
+            # Bound as `http_response`, not `response`: this handler already has a
+            # `response: Response` parameter (slowapi injects the rate-limit headers
+            # through it), and rebinding that name to an `aiohttp.ClientResponse`
+            # shadowed it — leaving the two objects one identifier apart in a body
+            # that reads `.status`/`.json()` off one and would want `.headers` on
+            # the other. Its two sibling fetchers already have distinct scopes.
+            session.get(target.original_url, allow_redirects=False) as http_response,
         ):
-            if response.status == 200:
-                data = await response.json()
+            if http_response.status == 200:
+                data = await http_response.json()
                 models = []
 
                 if "models" in data:
@@ -1303,12 +1310,14 @@ async def get_ollama_models(
                     "message": f"Found {len(models)} models on Ollama server",
                 }
             else:
-                error_text = await response.text()
+                error_text = await http_response.text()
                 return {
                     "success": False,
                     "models": [],
                     "total": 0,
-                    "message": f"Failed to fetch models: HTTP {response.status} - {error_text}",
+                    "message": (
+                        f"Failed to fetch models: HTTP {http_response.status} - {error_text}"
+                    ),
                 }
     except aiohttp.ClientError as e:
         return {

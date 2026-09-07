@@ -239,9 +239,9 @@ def _find_min_permission_editor_sites() -> list[tuple[str, int]]:
 MUTATING_ENDPOINTS: list[tuple[str, int]] = [
     ("files/__init__.py", 1139),
     ("files/__init__.py", 1206),
-    ("files/crud.py", 874),
-    ("files/crud.py", 965),
-    ("files/crud.py", 1053),
+    ("files/crud.py", 901),
+    ("files/crud.py", 992),
+    ("files/crud.py", 1080),
     ("files/management.py", 206),
     ("files/management.py", 258),
     ("files/management.py", 356),

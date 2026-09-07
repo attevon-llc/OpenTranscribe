@@ -72,6 +72,41 @@
   let videoElementChecked = false;
   let collections: Collection[] = [];
 
+  /**
+   * Timers owned by this page.
+   *
+   * Every deferred callback below touches the DOM (`document.querySelector`, a
+   * `scrollIntoView`, a `classList` mutation). An uncancelled one keeps running
+   * against a page the user has already navigated away from: in the browser it
+   * scrolls or restyles a detached node, and under jsdom the environment is torn
+   * down first, so the callback throws `ReferenceError: document is not defined`
+   * as an *unhandled* error — an intermittent red run with no failing test.
+   *
+   * Schedule through `scheduleTimeout` rather than calling `setTimeout`
+   * directly: it refuses to schedule once the component is gone (a late-resolving
+   * fetch can still reach this code after destroy) and `onDestroy` cancels
+   * whatever is still pending.
+   */
+  let pageDestroyed = false;
+  let pendingTimers: ReturnType<typeof setTimeout>[] = [];
+
+  function scheduleTimeout(callback: () => void, delayMs: number): void {
+    if (pageDestroyed) return;
+    const handle = setTimeout(() => {
+      pendingTimers = pendingTimers.filter((pending) => pending !== handle);
+      if (pageDestroyed) return;
+      callback();
+    }, delayMs);
+    pendingTimers.push(handle);
+  }
+
+  function cancelPendingTimers(): void {
+    for (const handle of pendingTimers) {
+      clearTimeout(handle);
+    }
+    pendingTimers = [];
+  }
+
   // UI state
   let showMetadata = false;
   let isTagsExpanded = false;
@@ -486,7 +521,7 @@
       }
 
       // Wait for DOM update then scroll to target segment
-      setTimeout(() => scrollToAndHighlight(segmentUuid), 300);
+      scheduleTimeout(() => scrollToAndHighlight(segmentUuid), 300);
     } catch (error) {
       console.error('Error loading segments up to target:', error);
       toastStore.error($t('fileDetail.failedToLoadMoreSegments'));
@@ -503,7 +538,7 @@
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.classList.add('highlight-flash');
-      setTimeout(() => el.classList.remove('highlight-flash'), 2000);
+      scheduleTimeout(() => el.classList.remove('highlight-flash'), 2000);
     }
   }
 
@@ -1942,6 +1977,12 @@
   });
 
   onDestroy(() => {
+    // Cancel every deferred DOM callback FIRST — see `scheduleTimeout`. `pageDestroyed`
+    // also stops anything still in flight (a late fetch resolution) from scheduling a
+    // new one after this teardown has run.
+    pageDestroyed = true;
+    cancelPendingTimers();
+
     // Player cleanup is now handled by VideoPlayer component
     playerInitialized = false;
 
@@ -2037,7 +2078,7 @@
     if (!segment) return;
     const segId = segment.uuid || segment.id || `${segment.start_time}-${segment.end_time}`;
     // Wait for DOM to update with the active-segment class
-    setTimeout(() => {
+    scheduleTimeout(() => {
       const el = document.querySelector(`[data-segment-id="${segId}"]`);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2048,7 +2089,7 @@
   // Reactive statement to re-initialize player if videoUrl changes
   $: if (videoUrl && !playerInitialized && !isLoading) {
     // Video URL available but no player, scheduling initialization
-    setTimeout(() => {
+    scheduleTimeout(() => {
       if (!playerInitialized) {
         initializePlayer();
       }

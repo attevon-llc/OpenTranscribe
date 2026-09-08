@@ -371,13 +371,30 @@ gr_cleanup() {
         docker rm -f $ids >/dev/null 2>&1 || true
     fi
 
-    # 2. Remove volumes matching our label
+    # 2. Remove volumes matching our label OR our compose project (same ordering
+    #    argument as the containers above: a volume declared by an overlay the installer
+    #    added after the labelling step carries no release-test label).
     local vols
-    vols=$(docker volume ls -q --filter "label=$TEST_LABEL" || true)
+    vols=$(
+        {
+            docker volume ls -q --filter "label=$TEST_LABEL"
+            docker volume ls -q --filter "label=com.docker.compose.project=$TEST_PROJECT_NAME"
+        } 2>/dev/null | sort -u || true
+    )
     if [[ -n "$vols" ]]; then
         for vol in $vols; do
+            # ⚠️ BOTH the hyphenated and underscored prefixes. compose prefixes a volume
+            # with the project name VERBATIM — hyphens are legal in a project name — so a
+            # `ot-reltest-lite` project produces `ot-reltest-lite_postgres_data`. This case
+            # matched only the underscored form, so the guard meant to stop the WRONG volume
+            # being deleted refused every RIGHT one:
+            #   ⚠ refusing to remove volume 'ot-reltest-lite_postgres_data' — name does not
+            #     match test prefix
+            # The stale Postgres then survived into the next lite run, whose backend died with
+            # `password authentication failed for user "postgres"` — exactly the failure
+            # gr_check_stale_stock_volumes warns about, one scenario over (2026-09-07).
             case "$vol" in
-                "${TEST_PROJECT_NAME//-/_}"*|ot_reltest_*)
+                "${TEST_PROJECT_NAME}"*|"${TEST_PROJECT_NAME//-/_}"*|ot_reltest_*|ot-reltest-*)
                     gr_log "removing volume $vol"
                     docker volume rm "$vol" >/dev/null 2>&1 || true
                     ;;

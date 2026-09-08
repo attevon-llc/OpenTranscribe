@@ -1160,6 +1160,66 @@ preflight_upgrade_env() {
     return 1
 }
 
+# Pull the images an upgrade needs, tolerating a pull failure ONLY when every one of
+# them is already present locally.
+#
+# `docker compose pull` always contacts the registry — `pull_policy: never` does not
+# apply to an explicit pull — so an upgrade to a tag that is not on Docker Hub aborts
+# even when the images are sitting on the host. Two real cases:
+#
+#   1. The RELEASE REHEARSAL. It exists to prove an upgrade works BEFORE the images are
+#      published; the tag it upgrades to is unpublished by definition. Without this, the
+#      only way to make the upgrade scenario pass is to publish first — i.e. to publish
+#      images before anything has shown they work, which is the exact thing the gate is
+#      for. (Measured 2026-09-07: phase 08 died on `manifest for
+#      davidamacey/opentranscribe-backend:v0.5.0 not found`.)
+#   2. An operator upgrading offline or on a flaky link, having already `docker load`ed
+#      or pre-pulled the images.
+#
+# ⚠️ It is NOT a silent fallback. Continuing is only allowed when every image the compose
+# chain names is present locally — a missing one is still fatal — and it says loudly which
+# images it is proceeding with, so "the pull failed" can never be mistaken for "the pull
+# was not needed". A stale local image is the hazard here, and naming them is what lets an
+# operator notice one.
+compose_pull_for_upgrade() {
+    local compose_files="$1"
+
+    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
+    if docker compose $compose_files pull; then
+        return 0
+    fi
+
+    local images missing=() img
+    # Captured, never piped into a short-circuiting reader (SIGPIPE/pipefail rule).
+    # shellcheck disable=SC2086
+    if ! images="$(docker compose $compose_files config --images 2>/dev/null)"; then
+        echo -e "${RED}❌ Image pull failed and the compose chain's image list could not be${NC}"
+        echo -e "${RED}   read, so it cannot be shown that the images are present locally.${NC}"
+        return 1
+    fi
+
+    while IFS= read -r img; do
+        [ -n "$img" ] || continue
+        docker image inspect "$img" >/dev/null 2>&1 || missing+=("$img")
+    done <<< "$images"
+
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo -e "${RED}❌ Image pull failed and these images are not available locally:${NC}"
+        printf '   %s\n' "${missing[@]}" >&2
+        echo -e "${RED}   Refusing to continue — the upgrade would start with missing images.${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}⚠️  Image pull failed, but every image this upgrade needs is already${NC}"
+    echo -e "${YELLOW}   present locally. Continuing with the LOCAL images:${NC}"
+    while IFS= read -r img; do
+        [ -n "$img" ] || continue
+        echo -e "${YELLOW}     $img${NC}"
+    done <<< "$images"
+    echo -e "${YELLOW}   If you expected a newer build, check your network and re-run.${NC}"
+    return 0
+}
+
 # Bring the stack down for an upgrade, tolerating the stale-network race.
 #
 # `docker compose down` removes the containers and then the network. The daemon
@@ -1756,7 +1816,7 @@ case "${1:-help}" in
 
         preflight_upgrade_env || exit 1
         compose_down_for_upgrade "$compose_files" || exit 1
-        docker compose $compose_files pull
+        compose_pull_for_upgrade "$compose_files" || exit 1
 
         if ! perform_phased_restart "$compose_files"; then
             echo -e "${RED}❌ Upgrade did not complete successfully.${NC}"
@@ -1916,7 +1976,7 @@ case "${1:-help}" in
         # rather than after it is torn down (#410).
         preflight_upgrade_env || exit 1
         compose_down_for_upgrade "$compose_files" || exit 1
-        docker compose $compose_files pull
+        compose_pull_for_upgrade "$compose_files" || exit 1
 
         # Same phased startup `update` uses. This path previously did a bare
         # `up -d`, which lets compose's dependency resolver give up on the

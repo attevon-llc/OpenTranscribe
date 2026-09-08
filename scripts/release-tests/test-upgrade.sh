@@ -2237,6 +2237,18 @@ phase_15_restore_and_assert() {
         "enforced inside scripts/common.sh's restore_database via DROP DATABASE ... WITH (FORCE) and its own client-stop sequence (#599) — not independently observable from outside that function without instrumenting it"
 
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/restored/db-fingerprint"
+    # F-4 (phase 17) compares the recovered row set against THIS one.
+    # ⚠️ NOT snapshot_state: that also queries the API (files.json, routes.txt,
+    # version.json), and R-13 above has just asserted the restore leaves the application
+    # STOPPED on purpose — so those calls would all fail here. Only the DB half is
+    # meaningful at this point, written with the same query snapshot_state uses.
+    # ⚠️ And it must be WRITTEN: without it F-4 would compare against a file that does not
+    # exist and pass over an empty set — the exact way R-6 passed for its entire life.
+    mkdir -p "$TEST_ROOT/snapshots/restored"
+    docker exec "$pg" psql -U postgres -d opentranscribe -tAc \
+        "SELECT id, filename, status FROM media_file ORDER BY id" \
+        > "$TEST_ROOT/snapshots/restored/media_files.txt" 2>/dev/null \
+        || : > "$TEST_ROOT/snapshots/restored/media_files.txt"
     # R-6 below reads this. It was NEVER written: `snapshots/restored/tables.txt` had
     # exactly one reference in the whole tree — the `sort` that consumed it. `sort` on a
     # missing file prints nothing, so `comm -12` saw an empty set, `leaked` was always
@@ -2316,7 +2328,17 @@ phase_15_restore_and_assert() {
     [[ -s "$TEST_ROOT/.restored-head.err" ]] && restored_head_err="$(head -c 200 "$TEST_ROOT/.restored-head.err" | tr '\n' ' ')"
     local from_worktree="$TEST_ROOT/worktree-${FROM_VERSION}"
     if derived_from_head="$(ver_alembic_head "$from_worktree/backend" 2>/dev/null)"; then
-        if [[ -z "$restored_head" ]]; then
+        if grep -q "pre-Alembic schema" "$TEST_ROOT/snapshots/before/alembic_head.txt" 2>/dev/null; then
+            # ⚠️ Check whether the premise APPLIES before asserting it. FROM releases below
+            # the Alembic cutover never created alembic_version at all — phase 06b already
+            # recorded that as "(alembic_version table absent — pre-Alembic schema)". R-7
+            # derived an expected head from the FROM worktree's migration chain and demanded
+            # the DB match it, so on the v0.3.3 hop it reported a restore failure for a table
+            # that release never wrote. The backup and the restore were both correct.
+            # The same guard already exists at the phase-10 equivalent of this check.
+            as_record SKIP "R-7: alembic_version restored to the FROM release's own head" \
+                "${FROM_VERSION} predates Alembic in this project (no alembic_version table exists to restore); the derived head '${derived_from_head}' describes the migration chain, not anything that release ever wrote to the DB"
+        elif [[ -z "$restored_head" ]]; then
             as_record FAIL "R-7: alembic_version restored to the FROM release's own head" \
                 "could not read alembic_version after the restore (expected '${derived_from_head}'). psql said: ${restored_head_err:-<no stderr captured>}"
         else
@@ -2691,31 +2713,38 @@ phase_17_roll_forward_again() {
     # real, expected change that is not damage either way.
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/recovered/db-fingerprint"
 
-    # ⚠️ The oracle is the POST-UPGRADE state, not the pre-upgrade one. The recovery loop is
-    # upgrade -> roll back -> roll forward, so a successful recovery lands where the FIRST
-    # upgrade landed. Comparing against `before` asserts that the TO migrations change no
-    # FROM-era value, which is simply not true: media_file.status normalises from
-    # "COMPLETED" to "completed" between v0.3.3 and v0.5.0, so the v0.3.3 hop failed F-4 for
-    # doing exactly what it is supposed to do. (`before` vs `restored` IS asserted, by R-2 in
-    # phase 15 — that is where "the rollback gave me my data back" belongs.)
-    local before_cols="$TEST_ROOT/snapshots/before/db-fingerprint/media_file.columns"
-    local after_digest_file="$TEST_ROOT/snapshots/after/media_file.from-cols.digest"
-    local after_digest recovered_digest
-    if [[ ! -s "$before_cols" ]]; then
-        as_record SKIP "F-4: media_file content digest matches the post-upgrade state" \
-            "the FROM-release column list was never captured, so a like-for-like digest is not reproducible"
-    elif [[ ! -s "$after_digest_file" ]]; then
-        # Refuse rather than fall back to the pre-upgrade digest: a wrong oracle produces a
-        # confident FAIL about the product for a defect in the harness.
-        as_record FAIL "F-4: media_file content digest matches the post-upgrade state" \
-            "the post-upgrade FROM-column digest was never recorded (phase 14), so there is nothing to compare against — NOT evidence about the recovery"
-    elif recovered_digest="$(dbs_digest_baseline_columns "$pg" postgres opentranscribe media_file "$before_cols")"; then
-        after_digest="$(cat "$after_digest_file")"
-        as_assert_eq "F-4: media_file content digest matches the post-upgrade state" \
-            "$after_digest" "$recovered_digest"
+    # F-4: the recovery preserved exactly the rows the ROLLBACK restored.
+    #
+    # ⚠️ Neither whole-table digest oracle works here, and both were tried on 2026-09-07:
+    #   * vs the PRE-upgrade snapshot — fails on any migration that legitimately rewrites a
+    #     FROM-era value. media_file.status normalises "COMPLETED" -> "completed" between
+    #     v0.3.3 and v0.5.0, so this reported recovery damage for a migration doing its job.
+    #   * vs the POST-upgrade snapshot — fails because the rollback is SUPPOSED to lose data.
+    #     File 3 (uploaded after the backup) is present post-upgrade and correctly absent
+    #     after recovery; R-5 asserts that absence deliberately.
+    # A digest cannot separate "a migration rewrote a value" from "a row went missing", which
+    # is the only thing this check actually cares about. So compare IDENTITY instead: the set
+    # of (id, filename) the recovery ended with must equal the set the restore produced.
+    # Migrations may rewrite values freely; losing or inventing a row is the real failure.
+    local restored_ids="$TEST_ROOT/snapshots/restored/media_files.txt"
+    if [[ ! -s "$restored_ids" ]]; then
+        as_record FAIL "F-4: recovery preserved exactly the rows the rollback restored" \
+            "the restored row list was never captured, so there is nothing to compare against — NOT evidence about the recovery"
     else
-        as_record SKIP "F-4: media_file content digest matches the post-upgrade state" \
-            "a column present at ${FROM_VERSION} no longer exists at ${TO_VERSION} (DROP/RENAME); compare by column set, not by digest"
+        local recovered_ids="$TEST_ROOT/snapshots/recovered/media_files.txt"
+        mkdir -p "$TEST_ROOT/snapshots/recovered"
+        docker exec "$pg" psql -tA -F'|' -U postgres opentranscribe \
+            -c "SELECT id, filename FROM media_file ORDER BY id;" > "$recovered_ids" 2>/dev/null \
+            || : > "$recovered_ids"
+        # Compare ids+filenames only. `status` deliberately excluded: the restored snapshot
+        # records it in the FROM release's casing and the roll-forward normalises it.
+        if diff -q <(cut -d'|' -f1,2 "$restored_ids" | sort) \
+                   <(cut -d'|' -f1,2 "$recovered_ids" | sort) >/dev/null 2>&1; then
+            as_record PASS "F-4: recovery preserved exactly the rows the rollback restored"
+        else
+            as_record FAIL "F-4: recovery preserved exactly the rows the rollback restored" \
+                "row set differs. restored-only/recovered-only: $(diff <(cut -d'|' -f1,2 "$restored_ids" | sort) <(cut -d'|' -f1,2 "$recovered_ids" | sort) | tr '\n' ' ' | head -c 200)"
+        fi
     fi
 
     # F-5: hybrid search returns hits (reindex recovered).

@@ -113,46 +113,77 @@ def test_r7_reports_why_it_could_not_read_the_head():
 # ------------------------------------------- F-4 must compare against the RIGHT baseline
 
 
-def test_f4_compares_the_recovery_against_the_post_upgrade_state():
-    """The recovery loop ends where the FIRST upgrade ended, not where the deployment began.
+def test_f4_compares_row_identity_not_a_content_digest():
+    """No whole-table digest oracle is correct here, and BOTH candidates were tried and failed.
 
-    F-4 compared the recovered rows against the PRE-upgrade snapshot, which asserts that the
-    TO migrations rewrite no FROM-era value. That is simply untrue: measured 2026-09-07,
-    ``media_file.status`` is ``COMPLETED`` at v0.3.3 and ``completed`` at v0.5.0 — an
-    intentional enum-case normalisation — so the v0.3.3 hop failed F-4 for the product doing
-    exactly what it is supposed to do. The v0.4.1 hop passed only because that migration
-    predates v0.4.1, which is what made it look version-specific rather than wrong.
+    * **vs the PRE-upgrade snapshot** — fails on any migration that legitimately rewrites a
+      FROM-era value. Measured 2026-09-07: ``media_file.status`` is ``COMPLETED`` at v0.3.3 and
+      ``completed`` at v0.5.0, an intentional enum-case normalisation, so the v0.3.3 hop failed
+      F-4 for the product doing exactly what it is supposed to do.
+    * **vs the POST-upgrade snapshot** — fails because the rollback is SUPPOSED to lose data.
+      Measured on the same run: post-upgrade rows are ids ``2, 3`` and recovered rows are
+      ``1, 2``. File 3 was uploaded *after* the backup, so its absence is correct — R-5 asserts
+      that absence deliberately. This was my own first "fix" and it was wrong.
 
-    ⚠️ No coverage is lost. "the rollback gave me my data back" is a DIFFERENT claim and is
-    asserted separately by phase 15's before-vs-restored comparison (verified passing on the
-    same run: `PASS restore: media_file content digest unchanged`).
+    A digest cannot separate "a migration rewrote a value" (fine) from "a row went missing"
+    (the actual failure), so F-4 compares row IDENTITY — (id, filename) — against the set the
+    ROLLBACK restored. ``status`` is excluded for the enum-case reason above.
     """
     body = _phase_17_body()
-    assert "snapshots/after/media_file.from-cols.digest" in body, (
-        "F-4 does not use the post-upgrade FROM-column digest as its oracle. Comparing the "
-        "recovered state against the PRE-upgrade snapshot makes any legitimate data "
-        "migration look like recovery damage."
+    assert "snapshots/restored/media_files.txt" in body, (
+        "F-4 does not compare against the RESTORED row set. Neither the pre- nor the "
+        "post-upgrade snapshot is a valid oracle for the recovery loop (see this test's "
+        "docstring — both were measured and both produce a confident FAIL about the product "
+        "for behaviour that is correct)."
     )
     assert "snapshots/before/db-fingerprint/media_file.digest" not in body, (
-        "F-4 still reads the PRE-upgrade digest as its expected value — that is the wrong "
-        "oracle for a recovery loop"
+        "F-4 still reads the PRE-upgrade digest, which fails on any legitimate data migration"
+    )
+    assert "cut -d'|' -f1,2" in body, (
+        "F-4 no longer projects to (id, filename). Comparing whole rows reintroduces the "
+        "status-casing false failure the identity comparison exists to avoid."
     )
 
 
-def test_the_post_upgrade_from_column_digest_is_actually_recorded():
-    """Non-vacuity: an oracle nothing writes is the R-6 failure mode all over again."""
+def test_the_restored_row_set_is_actually_recorded():
+    """Non-vacuity: an oracle nothing writes is the R-6 failure mode all over again.
+
+    This nearly shipped — the F-4 rewrite read ``snapshots/restored/media_files.txt`` while
+    nothing in the script wrote it, which would have compared against an absent file.
+    """
     text = UPGRADE.read_text(encoding="utf-8")
-    writes = re.findall(r'>\s*"\$TEST_ROOT/snapshots/after/media_file\.from-cols\.digest"', text)
+    # `: > file` (the truncate-on-failure fallback beside it) is deliberately NOT counted:
+    # it guarantees the file EXISTS, which is the opposite of guaranteeing it holds the rows.
+    writes = re.findall(r'(?<!:)\s>\s*"\$TEST_ROOT/snapshots/restored/media_files\.txt"', text)
     assert len(writes) == 1, (
-        "snapshots/after/media_file.from-cols.digest must be written exactly once (found "
-        f"{len(writes)}). If nothing writes it, F-4's oracle never exists — exactly how R-6 "
-        "passed unconditionally for its whole life."
+        "snapshots/restored/media_files.txt must be populated by exactly one real query "
+        f"(found {len(writes)}). If nothing writes it, F-4's oracle never exists — exactly "
+        "how R-6 passed unconditionally for its whole life."
     )
-    # It has to be recorded from the POST-UPGRADE database, i.e. beside the `after`
-    # fingerprint. Written at any other point it would describe the wrong state.
-    assert "snapshots/after/db-fingerprint" in text.split(writes[0])[0][-1200:], (
-        "the post-upgrade FROM-column digest is not recorded next to the `after` "
-        "fingerprint, so it may not describe the post-upgrade state at all"
+    assert "SELECT id, filename, status FROM media_file ORDER BY id" in text, (
+        "the restored row set is no longer captured with the same projection the before/after "
+        "snapshots use, so F-4 would compare two differently-shaped files"
+    )
+
+
+def test_the_restored_rows_are_not_read_through_the_stopped_api():
+    """R-13 has just asserted the restore leaves the application STOPPED, on purpose.
+
+    ``snapshot_state`` is the obvious way to write that snapshot and is the wrong one: it also
+    queries the API (files.json, routes.txt, version.json), every call of which would fail at
+    this point. Only the DB half is meaningful here.
+    """
+    text = UPGRADE.read_text(encoding="utf-8")
+    marker = '"$TEST_ROOT/snapshots/restored/media_files.txt"'
+    assert marker in text, (
+        "there is no restored-snapshot write site to check, so this guard would pass by "
+        "describing nothing — see test_the_restored_row_set_is_actually_recorded"
+    )
+    before_write = text.split(marker)[0]
+    tail = before_write[-2000:]
+    assert "snapshot_state restored" not in tail, (
+        "the restored snapshot is taken with snapshot_state, which makes API calls against an "
+        "application R-13 has just asserted is stopped"
     )
 
 
@@ -170,4 +201,59 @@ def test_a_missing_oracle_is_a_failure_not_a_fallback():
     assert "NOT evidence about the recovery" in body, (
         "the missing-oracle failure does not say that it is a harness problem rather than a "
         "finding about the release"
+    )
+
+
+# --------------------------------------------- R-7 must not demand a head that never existed
+
+
+def _r7_block(text: str) -> str:
+    """The R-7 assertion block, anchored on its verdict LABEL.
+
+    Anchoring on the bare string "R-7" finds a passing mention in a comment ~70 lines earlier
+    and silently windows the wrong region — which is how the first draft of this guard failed
+    against a correct script.
+    """
+    label = "R-7: alembic_version restored to the FROM release's own head"
+    assert label in text, "the R-7 verdict label has changed; re-point this guard"
+    first = text.index(label)
+    last = text.rindex(label)
+    return text[max(0, first - 2000) : last + 500]
+
+
+def test_r7_skips_when_the_from_release_predates_alembic():
+    """v0.3.3 is bootstrapped by ``init_db.sql`` and has no ``alembic_version`` table at all.
+
+    R-7 derived an expected head (``v020_add_system_settings``) from the FROM worktree's
+    migration chain and asserted the restored database matched it — for a release that never
+    wrote that table. The restore was correct; the assertion was measuring a row the FROM
+    release does not create. ``snapshots/before/alembic_head.txt`` literally records
+    ``(alembic_version table absent — pre-Alembic schema)``, and phase 13 already carries a
+    guard saying so, so the fact was available and simply not consulted here.
+
+    A SKIP, not a silent pass: "this release has no head to restore" and "the head restored
+    correctly" are different statements and the report must not conflate them.
+    """
+    text = UPGRADE.read_text(encoding="utf-8")
+    window = _r7_block(text)
+    assert "pre-Alembic schema" in window, (
+        "R-7 does not consult snapshots/before/alembic_head.txt for the pre-Alembic sentinel, "
+        "so it still demands an alembic_version row from a FROM release that never creates one"
+    )
+    assert 'as_record SKIP "R-7' in window, (
+        "R-7 does not SKIP on a pre-Alembic FROM release. Passing it silently would claim the "
+        "head was verified; failing it blames the product for the harness's wrong expectation."
+    )
+
+
+def test_r7_still_asserts_the_head_on_an_alembic_from_release():
+    """The must-still-fire half: the skip must be conditional, not a deletion.
+
+    The v0.4.1 hop DOES have an alembic_version row and R-7 passing there is real evidence.
+    """
+    text = UPGRADE.read_text(encoding="utf-8")
+    window = _r7_block(text)
+    assert 'as_record FAIL "R-7' in window or "as_assert" in window, (
+        "R-7 can no longer fail at all — the pre-Alembic skip has swallowed the assertion "
+        "instead of narrowing it"
     )

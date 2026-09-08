@@ -163,14 +163,8 @@ def _detect_hardware(script: Path, stubs: Path) -> tuple[str, str]:
 def _sidecar_probe(script: Path, stubs: Path) -> tuple[int, str]:
     """Run the real ``diar_native_container_present`` under ``set -uo pipefail``."""
     text = script.read_text(encoding="utf-8")
-    # ⚠️ The probe CALLS ot_project_names (it must try every project name this deployment
-    # may run under). Extracting the probe alone leaves that undefined, and bash's
-    # `command not found` is 127 -- a non-zero the probe returns as "no sidecar", i.e. the
-    # exact inversion this file exists to detect. The harness would then report a SIGPIPE
-    # bug that is really its own missing dependency.
     body = (
         "set -uo pipefail\n"
-        f"{_function_source(text, 'ot_project_names')}\n"
         f"{_function_source(text, 'diar_native_container_present')}\n"
         "diar_native_container_present\n"
         'printf "RESULT_RC=[%s]\\n" "$?"\n'

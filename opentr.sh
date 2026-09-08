@@ -706,18 +706,11 @@ add_nas_overlay() {
 # `rebuild-backend` and hands celery-worker back the silent PyAnnote fallback this
 # probe exists to prevent. Capture first; there is then no pipe to break.
 diar_native_container_present() {
-  local project ids=""
-  # Every project name this deployment may be running under -- see ot_project_names.
-  # A single name here matched 0 containers against a stack running as `opentranscribe`
-  # and silently dropped the overlay.
-  while read -r project; do
-    [ -n "$project" ] || continue
-    if [ -z "$ids" ]; then
-      ids="$(docker ps -a --format '{{.ID}}' \
-        --filter "label=com.docker.compose.project=${project}" \
-        --filter "label=com.docker.compose.service=diar-native" 2>/dev/null)"
-    fi
-  done < <(ot_project_names)
+  local project ids
+  project="$(ot_compose_project)"
+  ids="$(docker ps -a --format '{{.ID}}' \
+    --filter "label=com.docker.compose.project=${project}" \
+    --filter "label=com.docker.compose.service=diar-native" 2>/dev/null)"
   [ -n "$ids" ]
 }
 
@@ -1427,44 +1420,29 @@ fresh_write_aux() {
   fi
 }
 
-# Print every compose project name this deployment may be running under, most
-# authoritative first, one per line.
+# The compose project THIS invocation will use -- exactly what compose itself resolves:
+# an explicit COMPOSE_PROJECT_NAME, else the directory basename.
 #
-# ⚠️ THERE IS NO SINGLE ANSWER, AND ASSUMING ONE HAS BROKEN THIS SCRIPT TWICE IN
-# OPPOSITE DIRECTIONS.
-#   * A stack started from a checkout gets compose's default: the DIRECTORY basename
-#     (`transcribe-app` here).
-#   * A stack started by the installer / `opentranscribe.sh` runs as `opentranscribe`.
-# A developer machine can have been through both. Measured 2026-09-08 on this host:
-# every running container is labelled `opentranscribe`, while `basename "$(pwd)"` is
-# `transcribe-app`.
+# ⚠️ THERE IS EXACTLY ONE RIGHT ANSWER HERE, AND IT IS NOT "any project we might be".
+# A tempting generalisation -- also accept `opentranscribe`, since that is what the
+# installer names its stack -- was tried on 2026-09-08 and is WRONG, because the release
+# REHEARSAL stacks deliberately run under that same stock name on the standard ports
+# (scripts/CLAUDE.md: "they bind the standard 5173-5180 ports under the stock
+# opentranscribe-* names ... by design"). Treating a leftover rehearsal stack as "ours,
+# a re-up in place" waves the port preflight through, and `compose up` then dies on the
+# first hard-coded container_name:
+#     Conflict. The container name "/opentranscribe-opensearch" is already in use
+# -- precisely the part-way-through startup failure the preflight exists to prevent.
+# A leftover rehearsal stack is NOT this deployment, however similar its containers look.
 #
-# What each wrong guess cost:
-#   * `preflight_ports_or_die` resolved only the directory name, did not recognise the
-#     live stack as ours, and REFUSED TO START — reporting the developer's own eleven
-#     published ports as a foreign process squatting on them. That killed a dev-gate run
-#     at overlay bring-up.
-#   * `diar_native_container_present` resolved only the directory name and matched 0
-#     containers (vs 1 under the real project), so it dropped the sidecar overlay and
-#     handed celery-worker the SILENT in-process PyAnnote fallback the probe exists to
-#     prevent. Worse than the refusal precisely because the stack still comes up green.
-#
-# `ot_stop` has always filtered on both (OPENTR_STOP_PROJECT_LABEL / _ALT); this is that
-# rule, shared, so a fourth call site cannot invent a fifth answer.
-#
-# An explicitly-set COMPOSE_PROJECT_NAME comes FIRST and alone-first for a reason: the
-# `--fresh` helpers set it per-invocation, and an isolated stack must never be told its
-# ports belong to the main one.
-ot_project_names() {
-  if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
-    echo "${COMPOSE_PROJECT_NAME}"
-  fi
-  echo "${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}"
-  echo "${OPENTR_STOP_PROJECT_LABEL_ALT:-$(basename "$(pwd)")}"
+# `ot_stop`'s OPENTR_STOP_PROJECT_LABEL/_ALT pair answers a DIFFERENT question -- "clean
+# up anything of ours, including a leftover rehearsal stack" -- and must stay two-valued.
+ot_compose_project() {
+  echo "${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
 }
 
 # Return 0 when host port $1 is published by a container belonging to THIS deployment
-# (any of ot_project_names), 1 otherwise -- including when nothing published it at all
+# (ot_compose_project), 1 otherwise -- including when nothing published it at all
 # (a non-Docker listener is by definition not ours).
 #
 # ⚠️ THE EXEMPTION MUST BE PER PORT. It used to be all-or-nothing: if any container of
@@ -1478,7 +1456,7 @@ ot_project_names() {
 # ⚠️ NOT `docker ps | grep -q` -- see docker_runtime_has_nvidia's header. Captured first,
 # so there is no pipe for the reader to close early and no SIGPIPE to invert the answer.
 ot_port_holder_is_ours() {
-  local port="$1" listing name ports holder="" label project
+  local port="$1" listing name ports holder="" label
   # ⚠️ NO PIPES anywhere in here, deliberately. Every reader that could sit downstream of
   # `docker ps`/`docker inspect` -- grep -q, head -1, cut | head -- exits before EOF, and
   # an external binary that queries a daemon has RPC-length gaps between its writes, so
@@ -1498,11 +1476,7 @@ ot_port_holder_is_ours() {
   label="$(docker inspect "$holder" \
     --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null)"
   [ -n "$label" ] || return 1
-  while read -r project; do
-    [ -n "$project" ] || continue
-    [ "$label" = "$project" ] && return 0
-  done < <(ot_project_names)
-  return 1
+  [ "$label" = "$(ot_compose_project)" ]
 }
 
 # Return 0 if a TCP port is already bound on localhost, 1 otherwise.

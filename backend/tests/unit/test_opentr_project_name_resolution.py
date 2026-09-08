@@ -1,38 +1,33 @@
-"""``opentr.sh`` must have ONE answer to "which compose project is this deployment".
+"""``opentr.sh`` must resolve the compose project the way COMPOSE does — and only that way.
 
-It had three, and only one of them was right.
+⚠️ **This module previously asserted the opposite, and was wrong.** It claimed opentr.sh had
+"three answers and only one was right", on the evidence that every container on the host
+carried ``com.docker.compose.project=opentranscribe`` while ``basename "$(pwd)"`` yields
+``transcribe-app``, so the port preflight refused to start and the diar-native probe matched
+nothing.
 
-A checkout in ``/mnt/nvm/repos/transcribe-app`` makes compose default the project to
-``transcribe-app``. A stack started under the one-liner / ``opentranscribe.sh`` runs as
-``opentranscribe``. **Both are legitimate, and a developer machine can have been through
-both** — this one has: measured 2026-09-08, every running container carries
-``com.docker.compose.project=opentranscribe`` while ``basename "$(pwd)"`` yields
-``transcribe-app``.
+Both were behaving **correctly**. The containers were not a dev stack at all: inspecting one
+showed ``working_dir=/mnt/nvm/opentranscribe-test-runs/ot-reltest-upgrade-.../rollback`` — a
+**leftover release-rehearsal stack**, which by design runs under the stock ``opentranscribe``
+name on the standard ports (``scripts/CLAUDE.md``: *"they bind the standard 5173-5180 ports
+under the stock opentranscribe-* names ... by design"*). The dev stack was not running.
 
-Three call sites, three behaviours:
+Teaching the preflight to accept ``opentranscribe`` as "ours" made it wave that stack through,
+and ``compose up`` then died on the first hard-coded ``container_name``::
 
-1. ``ot_stop`` filters on ``OPENTR_STOP_PROJECT_LABEL`` **and** ``..._ALT`` — both names.
-   Correct.
-2. ``preflight_ports_or_die`` resolved a single name to decide whether a bound port is
-   "ours" (a re-up in place) or someone else's (refuse). It resolved ``transcribe-app``,
-   did not recognise the live stack, and **refused to start** — which killed the dev gate
-   at overlay bring-up, reporting the developer's own running stack as a foreign process
-   squatting on eleven ports.
-3. ``diar_native_container_present`` resolved the same single name to decide whether to
-   append the native-diarization overlay. Measured on this host: **0 matches** against
-   ``transcribe-app``, **1** against ``opentranscribe``. So it drops the overlay and hands
-   ``celery-worker`` the silent in-process PyAnnote fallback — precisely the regression
-   that probe's own header says it exists to prevent.
+    Conflict. The container name "/opentranscribe-opensearch" is already in use
 
-⚠️ **The third is worse than the second even though only the second is visible.** A refusal
-to start is loud and gets fixed in a minute. A dropped sidecar overlay produces a stack that
-runs, transcribes, and reports success while diarizing on the wrong engine.
+— the exact part-way-through startup failure (#553) the preflight exists to prevent. The
+refusal it replaced was the correct answer, arrived at for the correct reason.
 
-⚠️ **"Just default to `opentranscribe`" is NOT the fix, and was tried.** That is what the
-diar-native probe's header records: hardcoding the name made the probe a no-op on the machine
-with the bug. Symmetrically, deriving it from the directory is a no-op on a machine whose
-stack was started by the installer. A single name is wrong in one direction or the other; the
-resolver has to admit both.
+So the rule this module now pins is the narrow one: **one project, resolved as compose
+resolves it.** ``ot_stop``'s ``OPENTR_STOP_PROJECT_LABEL``/``_ALT`` pair is deliberately
+two-valued because it answers a different question — *clean up anything of ours, including a
+leftover rehearsal stack* — and that distinction is the whole point.
+
+What survives from the investigation are two genuinely independent fixes, kept below: the
+re-up exemption is decided **per port**, and a **profile-gated** service's port is not
+preflight-checked at all.
 """
 
 from __future__ import annotations
@@ -53,9 +48,6 @@ pytestmark = pytest.mark.skipif(
     reason="opentr.sh or bash is not present in this checkout",
 )
 
-# A single-name project resolution: `local project="${COMPOSE_PROJECT_NAME:-$(basename ...)}"`
-_SINGLE_NAME = re.compile(r'project="\$\{COMPOSE_PROJECT_NAME:-\$\(basename\s+"\$\(pwd\)"\)\}"')
-
 
 def _source() -> str:
     return OPENTR.read_text(encoding="utf-8")
@@ -68,123 +60,78 @@ def _function_body(name: str) -> str:
     return match.group("body")
 
 
-def test_there_is_one_shared_resolver():
-    assert "ot_project_names()" in _source(), (
-        "opentr.sh has no single ot_project_names resolver. Three call sites each deciding "
-        "for themselves which project is 'ours' is how two of them ended up wrong in "
-        "opposite directions."
-    )
-
-
-@pytest.mark.parametrize(
-    "func",
-    ["preflight_ports_or_die", "diar_native_container_present"],
-)
-def test_no_call_site_resolves_a_single_project_name(func: str):
-    body = _function_body(func)
-    assert not _SINGLE_NAME.search(body), (
-        f"{func} still derives ONE project name from the checkout directory. On a stack "
-        "started as 'opentranscribe' that name matches nothing: the preflight then reports "
-        "the developer's own stack as a foreign port squatter and refuses to start, and the "
-        "diar-native probe silently drops the sidecar overlay."
-    )
-    # preflight_ports_or_die reaches it INDIRECTLY, via ot_port_holder_is_ours (the
-    # exemption is decided per port). Either route is fine; re-deriving a name is not.
-    assert "ot_project_names" in body or "ot_port_holder_is_ours" in body, (
-        f"{func} does not go through the shared resolver, so it can drift again"
-    )
-
-
-def test_both_names_are_returned_and_are_overridable():
-    """The two documented names must both be there, and neither may be hardcoded-only."""
+def _eval(snippet: str, funcs: tuple[str, ...], cwd: str | None = None, env: str = "") -> str:
+    extract = "\n".join(f"eval \"$(sed -n '/^{f}() {{/,/^}}/p' {OPENTR})\"" for f in funcs)
     result = subprocess.run(
-        [
-            "bash",
-            "-c",
-            textwrap.dedent(f"""
-                set -uo pipefail
-                # Define away everything the prologue needs so we can source just the function.
-                eval "$(sed -n '/^ot_project_names() {{/,/^}}/p' {OPENTR})"
-                ot_project_names
-            """),
-        ],
+        ["bash", "-c", textwrap.dedent(f"set -uo pipefail\n{extract}\n{env}{snippet}\n")],
         capture_output=True,
         text=True,
         timeout=60,
         check=False,
-        cwd=str(REPO_ROOT),
+        cwd=cwd,
     )
-    names = result.stdout.split()
-    assert "opentranscribe" in names, (
-        f"the installer/one-liner project name is missing: {result.stdout!r} {result.stderr!r}"
-    )
-    assert "transcribe-app" in names, (
-        "the directory-derived project name is missing — a checkout whose stack compose "
-        f"named after the directory becomes invisible: {result.stdout!r}"
+    return result.stdout + ("\nSTDERR:" + result.stderr if result.stderr.strip() else "")
+
+
+def test_the_project_is_resolved_exactly_as_compose_resolves_it():
+    out = _eval("ot_compose_project", ("ot_compose_project",), cwd=str(REPO_ROOT))
+    assert out.split() == ["transcribe-app"], (
+        "the resolver does not return compose's own answer (an explicit "
+        f"COMPOSE_PROJECT_NAME, else the directory basename): {out!r}"
     )
 
 
-def test_the_directory_name_is_derived_not_hardcoded():
-    """A checkout in a differently-named directory must keep working.
+def test_the_installer_project_name_is_not_silently_accepted():
+    """The must-NOT-fire control, and the reason this module was rewritten.
 
-    This is the constraint the diar-native probe's header calls out explicitly, and it is
-    why the fix cannot simply be a two-element literal list.
+    ``opentranscribe`` is what a release rehearsal names its stack. Accepting it here is
+    what let a leftover rehearsal stack be mistaken for this deployment.
     """
-    result = subprocess.run(
-        [
-            "bash",
-            "-c",
-            textwrap.dedent(f"""
-                set -uo pipefail
-                eval "$(sed -n '/^ot_project_names() {{/,/^}}/p' {OPENTR})"
-                mkdir -p /tmp/ot-projname-probe/some-other-checkout
-                cd /tmp/ot-projname-probe/some-other-checkout
-                ot_project_names
-            """),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert "some-other-checkout" in result.stdout.split(), (
-        "the resolver does not derive the project name from the CURRENT directory, so a "
-        f"checkout in a differently-named directory is unmanageable: {result.stdout!r}"
+    body = _function_body("ot_compose_project")
+    assert '"opentranscribe"' not in body and "-opentranscribe}" not in body, (
+        "ot_compose_project hardcodes the installer/rehearsal project name. A leftover "
+        "rehearsal stack would then be treated as a re-up in place, the port preflight "
+        "would wave it through, and `compose up` dies on a container_name conflict."
     )
 
 
 def test_an_explicit_compose_project_name_wins():
-    """An operator who sets it means it — and a --fresh deployment sets it per-invocation."""
-    result = subprocess.run(
-        [
-            "bash",
-            "-c",
-            textwrap.dedent(f"""
-                set -uo pipefail
-                eval "$(sed -n '/^ot_project_names() {{/,/^}}/p' {OPENTR})"
-                COMPOSE_PROJECT_NAME=otfresh-probe ot_project_names
-            """),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
+    """A --fresh deployment sets it per-invocation and must be believed."""
+    out = _eval(
+        "ot_compose_project",
+        ("ot_compose_project",),
         cwd=str(REPO_ROOT),
+        env="export COMPOSE_PROJECT_NAME=otfresh-probe\n",
     )
-    names = result.stdout.split()
-    assert names and names[0] == "otfresh-probe", (
-        "an explicitly-set COMPOSE_PROJECT_NAME is not resolved FIRST. A --fresh deployment "
-        f"sets it, and must not be told its ports belong to the main stack: {result.stdout!r}"
+    assert out.split() == ["otfresh-probe"], (
+        f"an explicitly-set COMPOSE_PROJECT_NAME is not honoured: {out!r}"
     )
 
 
-def test_stop_keeps_covering_both_names():
-    """The one site that was already right must not be 'unified' into being wrong."""
+def test_the_directory_name_is_derived_not_hardcoded():
+    """A checkout in a differently-named directory must keep working."""
+    out = _eval(
+        "mkdir -p /tmp/ot-projname-probe/some-other-checkout\n"
+        "cd /tmp/ot-projname-probe/some-other-checkout\n"
+        "ot_compose_project",
+        ("ot_compose_project",),
+    )
+    assert "some-other-checkout" in out.split(), (
+        f"the project is not derived from the current directory: {out!r}"
+    )
+
+
+def test_stop_still_covers_both_names_because_it_asks_a_different_question():
+    """``stop`` must stay two-valued — that is not the same bug wearing a different hat.
+
+    Cleaning up "anything of ours, including a leftover rehearsal stack" is exactly what
+    `stop` is for, and it is why the rehearsal stack that broke a gate run was stoppable
+    at all.
+    """
     text = _source()
     assert "OPENTR_STOP_PROJECT_LABEL" in text and "OPENTR_STOP_PROJECT_LABEL_ALT" in text, (
-        "ot_stop's two-name filters are gone. They are the reason `stop` could always see "
-        "the live stack, and test_opentr_stop_container_scoping.py's real-docker guard "
-        "depends on both being overridable."
+        "ot_stop's two-name filters are gone. Unifying them onto ot_compose_project would "
+        "make `stop` unable to clean up a stack started under the other name."
     )
 
 
@@ -195,58 +142,86 @@ def test_the_reup_exemption_is_evaluated_per_port():
     """Recognising our own stack must not waive a port held by something else.
 
     The exemption was all-or-nothing: if ANY container of ours was running, EVERY bound
-    port was treated as a re-up in place. Measured on this host — the live stack holds
-    5173-5183, and an unrelated container (``heimdall``) holds 9000, which the
-    keycloak-test overlay's ``STEP_CA_PORT`` defaults to. The coarse exemption waives
-    9000 along with the rest, and ``compose up`` then aborts PART WAY THROUGH on the bind
-    error, stranding services in ``Created`` — precisely the #553 failure this preflight
-    exists to prevent, reached through the code that is supposed to prevent it.
-
-    So the rule is per port: bound by a container of ours -> re-up, fine; bound by
-    anything else -> refuse and name it.
+    port counted as a re-up in place — including one held by unrelated software. `compose
+    up` then aborts part way through on that bind error and strands services in
+    ``Created``: the #553 failure, reached through the code written to prevent it.
     """
     body = _function_body("preflight_ports_or_die")
-    assert "ot_port_holder_is_ours" in body, (
-        "the re-up exemption is not evaluated per port. A single running container of "
-        "ours waives every bound port, including ones held by unrelated software."
-    )
+    assert "ot_port_holder_is_ours" in body, "the re-up exemption is not evaluated per port"
 
 
-def test_a_foreign_holder_is_still_refused_while_our_own_ports_pass():
-    """Drive the real decision function against a fake docker, both ways.
+def test_a_foreign_holder_is_refused_while_our_own_ports_pass():
+    """Drive the real decision against a fake docker, both ways.
 
-    A static check cannot distinguish "asks per port" from "asks per port and ignores the
+    A static check cannot tell "asks per port" from "asks per port and ignores the
     answer", and that distinction is the whole fix.
     """
-    harness = textwrap.dedent(f"""
-        set -uo pipefail
-        # Our stack holds 5174; 'heimdall' (an unrelated container) holds 9000.
-        docker() {{
-          case "$1" in
-            ps)      printf 'opentranscribe-backend\t0.0.0.0:5174->5174/tcp\nheimdall\t0.0.0.0:9000->9000/tcp\n' ;;
-            inspect) case "$2" in
-                       opentranscribe-backend) echo "opentranscribe" ;;
-                       *)                      echo "some-unrelated-project" ;;
-                     esac ;;
-          esac
-        }}
-        eval "$(sed -n '/^ot_project_names() {{/,/^}}/p' {OPENTR})"
-        eval "$(sed -n '/^ot_port_holder_is_ours() {{/,/^}}/p' {OPENTR})"
-        if ot_port_holder_is_ours 5174; then echo "5174=ours"; else echo "5174=foreign"; fi
-        if ot_port_holder_is_ours 9000; then echo "9000=ours"; else echo "9000=foreign"; fi
-    """)
-    result = subprocess.run(
-        ["bash", "-c", harness], capture_output=True, text=True, timeout=60, check=False
+    out = _eval(
+        textwrap.dedent("""
+            if ot_port_holder_is_ours 5174; then echo "5174=ours"; else echo "5174=foreign"; fi
+            if ot_port_holder_is_ours 9000; then echo "9000=ours"; else echo "9000=foreign"; fi
+            if ot_port_holder_is_ours 65533; then echo "unbound=ours"; else echo "unbound=foreign"; fi
+        """),
+        ("ot_compose_project", "ot_port_holder_is_ours"),
+        cwd=str(REPO_ROOT),
+        env=textwrap.dedent("""
+            # 5174 held by a container of THIS project; 9000 by an unrelated one.
+            docker() {
+              case "$1" in
+                ps)      printf 'ours-backend\\t0.0.0.0:5174->5174/tcp\\nheimdall\\t0.0.0.0:9000->9000/tcp\\n' ;;
+                inspect) case "$2" in
+                           ours-backend) echo "transcribe-app" ;;
+                           *)            echo "some-unrelated-project" ;;
+                         esac ;;
+              esac
+            }
+        """),
     )
-    out = result.stdout
-    assert "5174=ours" in out, (
-        f"a port held by our OWN stack is reported foreign — every re-up would be "
-        f"refused: {out!r} {result.stderr!r}"
-    )
+    assert "5174=ours" in out, f"our own port reported foreign — every re-up refused: {out!r}"
     assert "9000=foreign" in out, (
         f"a port held by an unrelated container is reported as ours, so the preflight "
-        f"waves it through and `compose up` aborts part way: {out!r} {result.stderr!r}"
+        f"waves it through and `compose up` aborts part way: {out!r}"
     )
+    assert "unbound=foreign" in out, (
+        f"a port nothing published is claimed as ours; a non-Docker listener would then "
+        f"be waved through too: {out!r}"
+    )
+
+
+def test_the_holder_check_uses_no_pipes():
+    """``docker | grep -q`` would invert a match into a non-match under pipefail.
+
+    Here that inversion reports our OWN container as a foreign holder and refuses every
+    re-up. The first draft of this function did exactly that; the repo's existing scanner
+    (``test_opentr_docker_probe_sigpipe.py``) caught it.
+    """
+    body = _function_body("ot_port_holder_is_ours")
+    # Precise, not crude: a bare `|` also appears as a `case` alternation
+    # (`*":$port->"*|*".$port->"*)`), which is not a pipe. Look for a docker invocation
+    # with a reader downstream of it on the same logical line.
+    offenders = [
+        line.strip()
+        for line in body.splitlines()
+        # Comments are skipped, or this fires on the header explaining the hazard.
+        if not line.strip().startswith("#")
+        and "docker " in line
+        and re.search(r"docker\b[^|]*\|(?!\|)", line)
+    ]
+    assert not offenders, (
+        "ot_port_holder_is_ours pipes docker output into another reader; under pipefail "
+        "an early-exiting reader SIGPIPEs the daemon query and inverts the answer, "
+        f"reporting our own container as foreign: {offenders}"
+    )
+
+    # Guard the guard. Two rounds of narrowing (a `case` alternation, then this module's
+    # own explanatory comment) each risked narrowing it into matching nothing at all,
+    # which is indistinguishable from a clean function.
+    hazard = "  holder=\"$(docker ps --format '{{.Names}}' | head -1)\""
+    assert re.search(r"docker\b[^|]*\|(?!\|)", hazard) and not hazard.strip().startswith("#"), (
+        "the detector no longer matches the exact shape it exists to catch"
+    )
+    benign = '    *":${port}->"*|*".${port}->"*) holder="$name"; break ;;'
+    assert "docker " not in benign, "the case-alternation control is no longer benign"
 
 
 # ----------------------- the preflight may only check ports that WILL actually be bound
@@ -255,51 +230,41 @@ def test_a_foreign_holder_is_still_refused_while_our_own_ports_pass():
 def test_a_profile_gated_service_port_is_not_preflight_checked():
     """``step-ca`` is ``profiles: ["pki"]`` and no opentr.sh flag activates that profile.
 
-    ``--with-keycloak-test`` starts Keycloak only, yet the preflight checked
+    ``--with-keycloak-test`` starts Keycloak alone, yet the preflight checked
     ``STEP_CA_PORT`` (default **9000**) because it lives in the same
-    ``FRESH_KEYCLOAK_PORT_VARS`` array. 9000 is one of the most contended ports on a
-    developer machine — MinIO, Portainer, and on this host an unrelated ``heimdall``
-    container — so the run was refused over a port belonging to a container that was
-    never going to start. Measured 2026-09-08: this is what killed the dev gate at
-    overlay bring-up.
+    ``FRESH_KEYCLOAK_PORT_VARS`` array — so a run could be refused over a port belonging
+    to a container that was never going to start. 9000 is heavily contended (MinIO,
+    Portainer, and on this host an unrelated container).
 
-    ⚠️ **The port must stay in the array for ``--port-offset``.** Those two consumers ask
-    different questions — "which ports must be renumbered so a --fresh stack cannot
-    collide" (all of them, including profile-gated ones, or an operator who does run the
-    profile collides silently) versus "which ports will be bound by THIS invocation"
-    (only the ones a service being started publishes). Deleting the entry would fix the
-    preflight by breaking the isolation guarantee of issue #347.
+    ⚠️ **The entry must STAY in the array for ``--port-offset``.** The two consumers ask
+    different questions: "which ports must be renumbered so a --fresh stack cannot
+    collide" (all of them, including profile-gated ones, per issue #347) versus "which
+    ports will be bound by THIS invocation". Deleting it would fix the preflight by
+    breaking the isolation guarantee.
     """
     text = _source()
     assert "OT_PROFILE_GATED_PORT_VARS" in text, (
-        "there is no declaration of which port vars belong to profile-gated services, so "
-        "the preflight cannot tell a port that will be bound from one that will not"
+        "there is no declaration of which port vars belong to profile-gated services"
     )
     assert "STEP_CA_PORT" in text.split("OT_PROFILE_GATED_PORT_VARS", 1)[1][:600], (
-        "STEP_CA_PORT is not declared profile-gated, so the preflight still refuses to "
-        "start over port 9000 for a step-ca container that never starts"
+        "STEP_CA_PORT is not declared profile-gated"
     )
-    # ...and it must still be offset, or a --fresh stack running the pki profile collides.
     keycloak_arr = text.split("FRESH_KEYCLOAK_PORT_VARS=(", 1)[1].split(")", 1)[0]
     assert "STEP_CA_PORT" in keycloak_arr, (
-        "STEP_CA_PORT was removed from FRESH_KEYCLOAK_PORT_VARS. That silently drops it "
-        "from --port-offset renumbering (issue #347), so a --fresh stack that does run "
-        "the pki profile binds the main stack's port."
+        "STEP_CA_PORT was removed from FRESH_KEYCLOAK_PORT_VARS, which silently drops it "
+        "from --port-offset renumbering (issue #347)"
     )
 
 
 def test_the_preflight_filters_the_gated_vars_out():
     """Declaring the list is not using it."""
     text = _source()
-    # rsplit, not split: the FIRST occurrence is the function definition, hundreds of
-    # lines above the call site, so a forward split inspects the wrong region entirely
-    # and the guard passes without looking at anything relevant.
+    # rsplit: the FIRST occurrence is the function definition, hundreds of lines above the
+    # call site, so a forward split inspects the wrong region and passes vacuously.
     marker = "preflight_ports_or_die "
-    assert text.count(marker) >= 2, (
-        "expected a definition and at least one call site; re-point this guard"
-    )
+    assert text.count(marker) >= 2, "expected a definition and a call site"
     pf_region = text.rsplit(marker, 1)[0][-2500:]
     assert "OT_PROFILE_GATED_PORT_VARS" in pf_region, (
-        "the profile-gated list is declared but the preflight call site never subtracts "
-        "it — a list nothing consults looks identical to one that works"
+        "the profile-gated list is declared but the call site never subtracts it — a list "
+        "nothing consults looks identical to one that works"
     )

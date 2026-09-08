@@ -347,23 +347,8 @@ def test_with_diar_native_forces_the_overlay_when_the_sidecar_is_down(tmp_path: 
     assert DIAR in _chain(_up_command(docker_log))
 
 
-def _probe_projects(docker_log: list[str]) -> list[str]:
-    """EVERY compose project the probe filtered on, in order.
-
-    The probe tries each name ot_project_names yields, because a deployment legitimately
-    runs under either the checkout directory name or the installer's `opentranscribe`.
-    """
-    projects = [
-        line.split("PROBE-PROJECT: ", 1)[1]
-        for line in docker_log
-        if line.startswith("PROBE-PROJECT: ")
-    ]
-    assert projects, f"no diar-native probe was issued at all: {docker_log}"
-    return projects
-
-
 def _probe_project(docker_log: list[str]) -> str:
-    """The compose project the probe filtered on FIRST."""
+    """The compose project the probe actually filtered on."""
     projects = [
         line.split("PROBE-PROJECT: ", 1)[1]
         for line in docker_log
@@ -390,12 +375,9 @@ def test_the_probe_resolves_the_project_from_the_checkout_directory(tmp_path: Pa
     _, docker_log = _run(
         tmp_path, ["rebuild-backend"], sidecar_deployed=True, checkout_name="ot-checkout-alpha"
     )
-    assert "ot-checkout-alpha" in _probe_projects(docker_log), (
+    assert _probe_project(docker_log) == "ot-checkout-alpha", (
         "the probe must resolve the compose project from the checkout directory, the "
-        "way compose itself does with COMPOSE_PROJECT_NAME unset. (It now probes the "
-        "installer's `opentranscribe` as well — see ot_project_names — but the DERIVED "
-        "name must still be among them, or a checkout in a differently-named directory "
-        f"is unmanageable: {_probe_projects(docker_log)})"
+        "way compose itself does with COMPOSE_PROJECT_NAME unset"
     )
     assert DIAR in _chain(_up_command(docker_log))
 
@@ -434,9 +416,7 @@ def test_a_sidecar_belonging_to_another_compose_project_is_not_ours(tmp_path: Pa
         checkout_name="ot-checkout-gamma",
         sidecar_project="otfresh-demo",
     )
-    assert "otfresh-demo" not in _probe_projects(docker_log), (
-        f"the probe asked about the --fresh stack's own project: {docker_log}"
-    )
+    assert _probe_project(docker_log) == "ot-checkout-gamma", docker_log
     assert DIAR not in _chain(_up_command(docker_log)), (
         "another project's sidecar was mistaken for this deployment's"
     )
@@ -468,60 +448,199 @@ def test_the_sidecar_probe_is_label_scoped_and_state_agnostic(tmp_path: Path):
 
 
 def test_the_probe_uses_the_same_project_resolution_as_the_port_preflight():
-    """One resolution, two readers — now genuinely shared.
+    """One resolution, two readers — now genuinely shared, as this test invited.
 
-    The previous edition of this test pinned that both sites spelled the SAME single
-    expression, and explicitly deferred the refactor: *"Deliberately NOT fixed by
-    refactoring both onto a shared helper: nothing in the suite exercises
-    preflight_ports_or_die, so that edit could not be proven."*
+    The previous edition pinned that both sites spelled the SAME single expression and
+    deferred the refactor: *"Deliberately NOT fixed by refactoring both onto a shared
+    helper: nothing in the suite exercises preflight_ports_or_die, so that edit could not
+    be proven."* It has since been extracted into ``ot_compose_project``, and this is the
+    test that says so. ``test_opentr_project_name_resolution.py`` supplies the
+    preflight coverage whose absence justified the deferral.
 
-    It has since been extracted into ``ot_project_names``, and this is the test that
-    says so. What forced it: **the shared expression was itself wrong.** Both sites
-    resolved one name from the checkout directory; the live stack on the development
-    host runs as ``opentranscribe``, so the probe matched 0 containers (silently
-    dropping the sidecar overlay) and the preflight refused to start at all, reporting
-    the developer's own published ports as a foreign squatter. Agreeing on a wrong
-    answer is not the same as being right.
-
-    ``backend/tests/unit/test_opentr_project_name_resolution.py`` exercises the resolver
-    directly, which is the coverage whose absence justified the earlier deferral.
+    ⚠️ The resolution itself is UNCHANGED and must stay so. A generalisation that also
+    accepted ``opentranscribe`` was tried on 2026-09-08 and reverted: that is the name a
+    release REHEARSAL stack runs under, so accepting it made the preflight wave a leftover
+    rehearsal stack through and ``compose up`` died on a ``container_name`` conflict.
     """
     source = OPENTR.read_text(encoding="utf-8")
-    assert "ot_project_names()" in source, "the shared resolver is gone"
-    for func in ("diar_native_container_present", "preflight_ports_or_die"):
-        body = source.split(f"{func}() {{", 1)[1].split("\n}\n", 1)[0]
-        # preflight reaches it indirectly via ot_port_holder_is_ours (per-port exemption).
-        assert "ot_project_names" in body or "ot_port_holder_is_ours" in body, (
-            f"{func} no longer goes through the shared resolver, so the two can drift "
-            "apart again — which is how the probe came to ship a different one before"
-        )
-        assert 'COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")' not in body, (
-            f"{func} has re-inlined the single-name resolution the resolver replaced"
-        )
+    assert "ot_compose_project()" in source, "the shared resolver is gone"
+    body = source.split("ot_compose_project() {", 1)[1].split("\n}\n", 1)[0]
+    assert 'COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")' in body, body
+    assert "opentranscribe" not in body, (
+        "the resolver must never hardcode a project name — that fallback was the original "
+        "bug, and re-adding it as an ALTERNATIVE reintroduces it for rehearsal stacks"
+    )
+
+    probe = source.split("diar_native_container_present() {", 1)[1].split("\n}\n", 1)[0]
+    assert "ot_compose_project" in probe, (
+        "the probe no longer goes through the shared resolver, so the two can drift apart "
+        "again — which is how the probe came to ship a different one before"
+    )
+    preflight = source.split("preflight_ports_or_die() {", 1)[1].split("\n}\n", 1)[0]
+    assert "ot_port_holder_is_ours" in preflight, (
+        "the preflight no longer consults the shared per-port holder check"
+    )
 
 
-def test_a_sidecar_under_the_installer_project_is_deliberately_claimed(tmp_path: Path):
-    """The cost of admitting two names, pinned as a DECISION rather than left to chance.
-
-    From a checkout named something else entirely, a sidecar labelled with the
-    installer's project (``opentranscribe``) is still treated as ours. That is
-    intentional and matches what ``ot_stop`` has done since #693: ``opentranscribe`` is
-    this product's own installer project name, so a container wearing it belongs to this
-    product by definition — and the alternative (the probe going blind against exactly
-    the deployment shape most users have) is the bug being fixed.
-
-    It is narrower than it looks: an unrelated project such as ``otfresh-demo`` is still
-    refused, which the negative control above asserts.
-    """
+def test_rebuild_backend_still_honours_the_nas_overlay(tmp_path: Path):
+    """Regression guard on the neighbour: the diar block sits next to add_nas_overlay."""
     _, docker_log = _run(
         tmp_path,
-        ["rebuild-backend"],
-        sidecar_deployed=True,
-        checkout_name="ot-checkout-delta",
-        sidecar_project="opentranscribe",
+        ["rebuild-backend", "--nas"],
+        sidecar_deployed=False,
+        extra_env={"MINIO_NAS_PATH": str(tmp_path)},
     )
-    assert DIAR in _chain(_up_command(docker_log)), (
-        "a sidecar under the installer's own project name was not recognised. That is "
-        "the deployment shape a `curl | bash` install produces, and the silent "
-        "consequence is celery-worker falling back to in-process PyAnnote."
+    assert "docker-compose.nas.yml" in _chain(_up_command(docker_log))
+
+
+# --------------------------------------------------------------------------- #
+# start: must be byte-for-byte what it was before the helper was extracted
+# --------------------------------------------------------------------------- #
+
+#: The four lines `start` prints when it loads the overlay. Pinned verbatim, because
+#: `start` is the path everyone uses and a regression there is worse than the bug
+#: being fixed; the helper reuses this block rather than paraphrasing it.
+#: The GPU line is conditional now: the reservation moved to
+#: docker-compose.diar-native-gpu.yml so the base overlay stays loadable on a CPU-only or
+#: --lite host (#660), and it is only appended when the nvidia runtime was detected. These
+#: tests stub `docker` without an nvidia runtime, so they take the CPU branch.
+#:
+#: ⚠️ 2.2 GB, not the 4.1 GB this pinned for a year. Measured with
+#: `nvidia-smi --query-compute-apps`: diar-server 0.3.1 holds 2,248 MiB idle where the
+#: pre-0.3.1 binary held 4,762 MiB, both under SPEAKRS_LAZY_SESSIONS=1 — so the halving is
+#: the binary, not the flag. The old figure was repeated in four places and measured in none.
+#:
+#: ⚠️ The CPU line no longer says "identical output". That claim was RETRACTED upstream
+#: (#679), and its replacement — that embeddings are bit-identical across devices — did
+#: not survive measurement either. Measured 2026-09-04 against two real sidecars:
+#: CPU-vs-CUDA max delta 4.11e-04 (cosine 0.999999816), and CUDA differs from ITSELF by
+#: 2.86e-04 run to run, so byte-equality was never achievable on any device pair.
+#: Embeddings are EQUIVALENT for matching; diarization segment boundaries additionally
+#: differ by up to one segmentation frame (0.016875 s) when a posterior lands on the
+#: binarisation threshold.
+#: The wording matters enough to pin because an operator told "identical output" would be
+#: entitled to diff a CPU run against a GPU run and expect a match.
+START_BANNER = (
+    "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)",
+    "   diar-server on CPU (no nvidia runtime detected) — slower; embeddings identical, "
+    "diarization boundaries may differ by up to 0.016875s (#679).",
+    "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);",
+    "   without the sidecar that config falls back to the in-process PyAnnote fork.",
+)
+
+#: The GPU branch's line, for the test that drives the nvidia path explicitly.
+START_BANNER_GPU_LINE = "   diar-server on GPU 0 — ~2.2 GB warm ORT arena while up."
+
+AUTOLOAD_LINE = (
+    "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; "
+    "models present). Use --no-diar-native to skip."
+)
+
+
+def test_start_autodetects_the_sidecar_from_config_not_from_a_container(tmp_path: Path):
+    """`start`'s predicate is unchanged: engine default + a populated models dir.
+
+    Note `sidecar_deployed=False` — `start` must still load the overlay with no
+    container anywhere, which is precisely why it cannot share rebuild's predicate.
+    """
+    stdout, _ = _run(
+        tmp_path, ["start", "dev", "--dry-run"], sidecar_deployed=False, diar_weights=True
+    )
+    assert _dry_run_chain(stdout) == [BASE, OVERRIDE, DIAR], stdout
+    assert AUTOLOAD_LINE in stdout, stdout
+    for line in START_BANNER:
+        assert line in stdout, f"missing banner line: {line!r}\n{stdout}"
+
+
+def test_start_does_not_autoload_the_sidecar_without_a_populated_models_dir(
+    tmp_path: Path,
+):
+    """The guard that keeps `up --wait` from failing on a checkout with no export."""
+    stdout, _ = _run(
+        tmp_path, ["start", "dev", "--dry-run"], sidecar_deployed=False, diar_weights=False
+    )
+    assert _dry_run_chain(stdout) == [BASE, OVERRIDE], stdout
+    assert AUTOLOAD_LINE not in stdout, stdout
+
+
+def test_start_with_the_explicit_flag_loads_the_overlay_without_a_models_dir(
+    tmp_path: Path,
+):
+    """`--with-diar-native` bypasses the auto-detect entirely, as it always has."""
+    stdout, _ = _run(
+        tmp_path,
+        ["start", "dev", "--with-diar-native", "--dry-run"],
+        sidecar_deployed=False,
+        diar_weights=False,
+    )
+    assert _dry_run_chain(stdout) == [BASE, OVERRIDE, DIAR], stdout
+    assert AUTOLOAD_LINE not in stdout, "explicit flag must not print the auto-load banner"
+    for line in START_BANNER:
+        assert line in stdout, f"missing banner line: {line!r}\n{stdout}"
+
+
+def test_start_no_diar_native_suppresses_the_autoload(tmp_path: Path):
+    stdout, _ = _run(
+        tmp_path,
+        ["start", "dev", "--no-diar-native", "--dry-run"],
+        sidecar_deployed=False,
+        diar_weights=True,
+    )
+    assert _dry_run_chain(stdout) == [BASE, OVERRIDE], stdout
+    assert AUTOLOAD_LINE not in stdout, stdout
+
+
+# --------------------------------------------------------------------------- #
+# Static: one decision point, not three
+# --------------------------------------------------------------------------- #
+
+
+def test_only_the_shared_helper_appends_the_diar_native_overlay():
+    """The whole point of the refactor.
+
+    Before it, `start_app` and `reset_and_init` each carried a verbatim copy of the
+    block and `rebuild-backend` carried none — which is how the paths came to
+    disagree in the first place. A fourth caller must reuse the helper, not paste it.
+    """
+    source = OPENTR.read_text(encoding="utf-8")
+    appends = [
+        line
+        for line in source.splitlines()
+        if f'COMPOSE_FILES -f {DIAR}"' in line and not line.lstrip().startswith("#")
+    ]
+    assert len(appends) == 1, (
+        f"{DIAR} is appended to COMPOSE_FILES in {len(appends)} places; it must only "
+        f"happen inside add_diar_native_overlay: {appends}"
+    )
+    assert source.count("add_diar_native_overlay start") == 2, (
+        "expected exactly the start_app and reset_and_init callers"
+    )
+    assert source.count("add_diar_native_overlay rebuild") == 1
+
+
+def test_a_fresh_stack_participates_in_the_start_autodetect():
+    """`--fresh` is no longer excluded, and the exclusion must not come back.
+
+    It was excluded while a fresh stack had no route to its own model export: loading
+    the overlay there could only produce a sidecar crash-looping on an empty /models.
+    Provisioning now runs from the backend's lifespan on every stack including a fresh
+    one, so the exclusion would do the opposite of its purpose — it would make the
+    fresh-install rehearsal the one deployment shape that never rehearses the sidecar.
+
+    Static rather than executed: `start --fresh` refuses (exit 1) when the main stack
+    holds the standard dev ports, so a live-stack-dependent test here would pass or fail
+    on what else is running, which is not a measurement.
+    """
+    source = OPENTR.read_text(encoding="utf-8")
+    body = source.split("add_diar_native_overlay() {", 1)[1].split("\n}\n", 1)[0]
+    assert '[ -z "${FRESH_FLAG:-}" ]' not in body, (
+        "the start-mode predicate excludes fresh deployments again; a --fresh stack "
+        "would silently run PyAnnote, which is precisely what it exists to rehearse"
+    )
+    # The guard that replaced it: nothing can produce the weights without a token, so
+    # loading the overlay with neither weights nor token is the crash-loop the old
+    # exclusion was really protecting against.
+    assert "HUGGINGFACE_TOKEN" in body, (
+        "the autoload predicate no longer consults a token, so it can load the overlay "
+        "on a stack that has no way to produce the weights"
     )

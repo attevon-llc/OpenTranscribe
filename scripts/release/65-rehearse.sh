@@ -129,6 +129,51 @@ teardown_scenario() {
     return 0
 }
 
+# ---------------------------------------------------------------- branch under test
+#
+# Scenarios A and C install through `setup-opentranscribe.sh`, which DOWNLOADS every
+# release-manifest.txt file (docker-compose.yml, docker-compose.lite.yml,
+# opentranscribe.sh, ...) from $OPENTRANSCRIBE_BRANCH. Both scenario scripts default
+# TO_BRANCH to `master`, and this orchestrator used to leave that alone — so rehearsing an
+# unreleased version from a feature branch installed MASTER's deployment files, and every
+# compose or installer change in the release went unrehearsed. The stage that exists to
+# prove the release proved the previous one.
+#
+# Measured 2026-09-08: a /ml-models mount added for celery-cpu-worker, committed AND pushed,
+# was absent from the staged install tree (7 occurrences in the working tree, 4 on
+# origin/master, 2 staged) and `docker exec ...-celery-cpu-worker ls /ml-models` reported
+# "No such file or directory" after the fix. Worse, a standalone lite run passed 17/17 and
+# was credited to that fix; it had never been installed.
+#
+# ⚠️ This does NOT change where the INSTALLER script comes from, and must not. Root
+# CLAUDE.md's install-path section is explicit that setup-opentranscribe.sh legitimately
+# comes from the default branch while artifacts come from the resolved release ref -- a real
+# `curl | bash` user has exactly those two sources, which is why verify-install-paths.sh
+# exists. Only the manifest files were wrong.
+#
+# ⚠️ An unpushed branch REFUSES rather than falling back. The installer downloads, so a
+# branch the remote has never seen cannot be installed; quietly substituting master would
+# produce a green rehearsal for code that was never exercised -- the same defect wearing a
+# different hat.
+if [[ -z "${TO_BRANCH:-}" ]]; then
+    TO_BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+    if [[ -z "$TO_BRANCH" || "$TO_BRANCH" == "HEAD" ]]; then
+        echo -e "${RED}✗ cannot determine the branch under test (detached HEAD?).${NC}" >&2
+        echo -e "${RED}  Set TO_BRANCH=<branch> explicitly; rehearsing an unknown tree is${NC}" >&2
+        echo -e "${RED}  worse than not rehearsing.${NC}" >&2
+        exit 3
+    fi
+fi
+if ! git -C "$REPO_ROOT" ls-remote --exit-code --heads origin "$TO_BRANCH" >/dev/null 2>&1; then
+    echo -e "${RED}✗ branch '${TO_BRANCH}' is not on origin.${NC}" >&2
+    echo -e "${RED}  Scenarios A and C install by DOWNLOADING the manifest files from it, so${NC}" >&2
+    echo -e "${RED}  an unpushed branch cannot be rehearsed. Push it first:${NC}" >&2
+    echo -e "${RED}      git push -u origin ${TO_BRANCH}${NC}" >&2
+    exit 3
+fi
+export TO_BRANCH
+echo -e "${BLUE}Rehearsing the deployment files from branch: ${TO_BRANCH}${NC}" >&2
+
 if [[ -n "$PATCH_SKIP_REASON" ]]; then
     # --patch waived the rehearsal (scripts/release/patch-lib.sh decided the
     # diff touches none of PATCH_REHEARSAL_TRIGGERS). fresh_rc/upgrade_rc/

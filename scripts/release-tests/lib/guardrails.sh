@@ -342,9 +342,29 @@ gr_cleanup() {
     # Tear down ONLY labeled resources and ONLY files under TEST_ROOT.
     gr_log "beginning labelled cleanup for project '$TEST_PROJECT_NAME'"
 
-    # 1. Stop and remove containers matching our label
+    # 1. Stop and remove containers matching our label OR our compose project.
+    #
+    # ⚠️ The label alone is not sufficient, and the gap is an ORDERING one that labelling
+    # more files cannot close. cp_inject_labels_all stamps the compose files present in the
+    # staged tree at staging time; the installer then downloads further overlays
+    # (docker-compose.mock-asr.yml, docker-compose.mock-llm.yml) into that same directory
+    # AFTERWARDS, so their services are created carrying no release-test label at all.
+    #
+    # Measured 2026-09-07: lite-mode's `opentranscribe-mock-asr` and `opentranscribe-mock-llm`
+    # survived `--cleanup` and kept ports 5198/5199 bound, and the NEXT rehearsal refused at
+    # phase 00 — all three scenarios, for a reason that was nothing to do with the release.
+    #
+    # TEST_PROJECT_NAME is a safe second key precisely because gr_check_project_name has
+    # already refused to run unless it starts with `ot-reltest-`; no real deployment can
+    # occupy that namespace. This is the same "filter by compose project, never by name
+    # prefix" rule the rest of this file follows.
     local ids
-    ids=$(docker ps -aq --filter "label=$TEST_LABEL" || true)
+    ids=$(
+        {
+            docker ps -aq --filter "label=$TEST_LABEL"
+            docker ps -aq --filter "label=com.docker.compose.project=$TEST_PROJECT_NAME"
+        } 2>/dev/null | sort -u || true
+    )
     if [[ -n "$ids" ]]; then
         gr_log "stopping $(echo "$ids" | wc -l) containers"
         docker stop $ids >/dev/null 2>&1 || true

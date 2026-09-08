@@ -38,7 +38,6 @@ from __future__ import annotations
 import contextlib
 import shutil
 import socket
-import subprocess
 import time
 import uuid
 from datetime import UTC
@@ -57,6 +56,8 @@ from app.services import backup_service as bs
 from app.services import media_mirror_service as mm
 from app.tasks import backup_tasks
 from app.utils.task_lock import TaskLockManager
+from tests.docker_ops import run_container
+from tests.docker_ops import stop_container
 
 pytestmark = pytest.mark.xdist_group("backup_system_settings")
 
@@ -204,9 +205,8 @@ def real_lock_manager(monkeypatch):
     # path (docker missing entirely, e.g. some CI runners). If the docker CLI
     # IS present but this invocation fails for some other reason, that is a
     # real environment problem worth failing loudly on, not masking as a skip.
-    subprocess.run(
+    run_container(
         [
-            "docker",
             "run",
             "-d",
             "--rm",
@@ -216,10 +216,6 @@ def real_lock_manager(monkeypatch):
             f"127.0.0.1:{port}:6379",
             "redis:7-alpine",
         ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
     )
 
     client = redis.Redis(host="127.0.0.1", port=port, db=0)
@@ -242,7 +238,7 @@ def real_lock_manager(monkeypatch):
         yield mgr
     finally:
         client.close()
-        subprocess.run(["docker", "stop", name], capture_output=True, timeout=30)
+        stop_container(name)
 
 
 def test_run_backup_lock_actually_prevents_a_concurrent_run(real_lock_manager):

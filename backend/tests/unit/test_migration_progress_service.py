@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import shutil
 import socket
-import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -43,6 +42,8 @@ import pytest
 import redis
 
 from app.services.migration_progress_service import MigrationProgressService
+from tests.docker_ops import run_container
+from tests.docker_ops import stop_container
 
 # All tests in this file share ONE module-scoped throwaway Redis container
 # (see redis_container below). Without xdist_group, pytest-xdist's default
@@ -74,9 +75,8 @@ def redis_container():
     # (docker missing entirely). If the docker CLI IS present but this invocation
     # fails for some other reason, that is a real environment problem worth
     # failing loudly on, not masking as a skip.
-    subprocess.run(
+    run_container(
         [
-            "docker",
             "run",
             "-d",
             "--rm",
@@ -86,10 +86,6 @@ def redis_container():
             f"127.0.0.1:{port}:6379",
             "redis:7-alpine",
         ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
     )
 
     client = redis.Redis(host="127.0.0.1", port=port, db=0)
@@ -108,7 +104,7 @@ def redis_container():
         yield client
     finally:
         client.close()
-        subprocess.run(["docker", "stop", name], capture_output=True, timeout=30)
+        stop_container(name)
 
 
 @pytest.fixture

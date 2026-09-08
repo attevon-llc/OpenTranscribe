@@ -747,7 +747,21 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
                     # the empty-answer assertion below stand in for it.
                     as_record FAIL "chat completion" "LLM call ended in an error frame: $chat_error"
                 else
-                    as_assert "chat summary non-empty" "[[ -n \"$answer\" ]]"
+                    # ⚠️ NOT `as_assert "..." "[[ -n \"$answer\" ]]"`. as_assert runs
+                    # `eval "$*"`, and a DOUBLE-quoted expression interpolates $answer
+                    # into the command text BEFORE eval parses it — so the model's own
+                    # output becomes shell. The mock reply contains a markdown code
+                    # fence, whose backticks are command substitution: the harness
+                    # actually tried to run it (2026-09-07):
+                    #   assertions.sh: line 66: python: command not found
+                    #   syntax error near unexpected token `'hello from the mock LLM''
+                    # The assertion also proved nothing, since the eval failed rather
+                    # than testing emptiness. as_assert_ne compares VALUES and never
+                    # evals, so no model output is ever parsed as a command.
+                    # (The other as_assert callers are safe: they SINGLE-quote the
+                    # expression, so the variable is expanded inside [[ ]] at eval
+                    # time, where it is not re-parsed.)
+                    as_assert_ne "chat summary non-empty" "" "$answer"
                     as_assert_ge "chat turn has at least one citation" "${citation_count:-0}" 1
                 fi
             else

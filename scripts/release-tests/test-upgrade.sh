@@ -2293,12 +2293,22 @@ phase_15_restore_and_assert() {
     # truncated phases 16-18 of the v0.3.3 hop after R-6 passed (2026-09-07): no error,
     # no FAIL line, just a missing rest-of-phase. An unreadable probe must become an
     # EMPTY value the assertion below can report, not a dead script.
+    local restored_head_err=""
     restored_head="$(docker exec "$pg" psql -tA -U postgres opentranscribe \
-        -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')" \
+        -c "SELECT version_num FROM alembic_version;" 2>"$TEST_ROOT/.restored-head.err" | tr -d '[:space:]')" \
         || restored_head=""
+    # Keep the reason. Discarding stderr here is what made the first investigation of this
+    # failure produce `actual=''` and nothing else — an empty value that could mean the
+    # container was gone, the database was mid-recreate, or the table did not exist yet.
+    [[ -s "$TEST_ROOT/.restored-head.err" ]] && restored_head_err="$(head -c 200 "$TEST_ROOT/.restored-head.err" | tr '\n' ' ')"
     local from_worktree="$TEST_ROOT/worktree-${FROM_VERSION}"
     if derived_from_head="$(ver_alembic_head "$from_worktree/backend" 2>/dev/null)"; then
-        as_assert_eq "R-7: alembic_version restored to the FROM release's own head" "$derived_from_head" "$restored_head"
+        if [[ -z "$restored_head" ]]; then
+            as_record FAIL "R-7: alembic_version restored to the FROM release's own head" \
+                "could not read alembic_version after the restore (expected '${derived_from_head}'). psql said: ${restored_head_err:-<no stderr captured>}"
+        else
+            as_assert_eq "R-7: alembic_version restored to the FROM release's own head" "$derived_from_head" "$restored_head"
+        fi
     else
         as_record SKIP "R-7: alembic head" "FROM worktree chain is not single-headed"
     fi
@@ -2681,18 +2691,41 @@ phase_17_roll_forward_again() {
     fi
 
     # F-5: hybrid search returns hits (reindex recovered).
-    local hits=0 waited=0
+    #
+    # ⚠️ RE-AUTHENTICATE FIRST. The last login was B-6's, against the ROLLED-BACK stack;
+    # phase 17 has since restarted the whole app on the TO image, so that session is stale.
+    # Without this the probe gets a 401, the JSON parse fails, and `hits` lands on 0 — so
+    # F-5 was reporting "search returned no hits" when what it had actually measured was
+    # "my old session is no longer valid". Measured 2026-09-07 on the v0.3.3 hop:
+    # OpenSearch held transcript_chunks=50 / transcripts=1 at the moment F-5 claimed zero.
+    if ! ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"; then
+        as_record FAIL "F-5: hybrid search returns hits after recovery" \
+            "could not log in to the rolled-forward stack, so search was never exercised — this is an AUTH failure, not an empty index"
+    else
+    local hits=0 waited=0 search_raw="" search_rc=0
     while [ "$waited" -lt 300 ]; do
-        hits="$(ac_search "the" 2>/dev/null | python3 -c '
+        # Keep the raw body: "the call failed" and "the call returned zero results" are
+        # different findings and must not collapse into the same 0.
+        search_raw="$(ac_search "the" 2>&1)" || search_rc=$?
+        hits="$(printf '%s' "$search_raw" | python3 -c '
 import sys, json
-d = json.load(sys.stdin)
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("PARSE_ERROR"); raise SystemExit(0)
 print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
-' 2>/dev/null || echo 0)"
-        [ "$hits" -ge 1 ] && break
+' 2>/dev/null)" || hits=""
+        [[ "$hits" =~ ^[0-9]+$ ]] && [ "$hits" -ge 1 ] && break
         sleep 10
         waited=$((waited + 10))
     done
-    as_assert_ge "F-5: hybrid search returns hits after recovery" "$hits" 1
+    if [[ "$hits" =~ ^[0-9]+$ ]]; then
+        as_assert_ge "F-5: hybrid search returns hits after recovery" "$hits" 1
+    else
+        as_record FAIL "F-5: hybrid search returns hits after recovery" \
+            "the search call did not return parseable JSON (rc=${search_rc}, parsed='${hits}'); first 200 chars of the response: $(printf '%s' "$search_raw" | head -c 200 | tr '\n' ' ')"
+    fi
+    fi
 
     gr_log "recovery complete — stack is back at TO=${TO_VERSION}, matching the scenario's leave-behind contract"
 }

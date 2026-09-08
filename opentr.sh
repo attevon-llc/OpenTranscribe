@@ -706,11 +706,18 @@ add_nas_overlay() {
 # `rebuild-backend` and hands celery-worker back the silent PyAnnote fallback this
 # probe exists to prevent. Capture first; there is then no pipe to break.
 diar_native_container_present() {
-  local project="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
-  local ids
-  ids="$(docker ps -a --format '{{.ID}}' \
-    --filter "label=com.docker.compose.project=${project}" \
-    --filter "label=com.docker.compose.service=diar-native" 2>/dev/null)"
+  local project ids=""
+  # Every project name this deployment may be running under -- see ot_project_names.
+  # A single name here matched 0 containers against a stack running as `opentranscribe`
+  # and silently dropped the overlay.
+  while read -r project; do
+    [ -n "$project" ] || continue
+    if [ -z "$ids" ]; then
+      ids="$(docker ps -a --format '{{.ID}}' \
+        --filter "label=com.docker.compose.project=${project}" \
+        --filter "label=com.docker.compose.service=diar-native" 2>/dev/null)"
+    fi
+  done < <(ot_project_names)
   [ -n "$ids" ]
 }
 
@@ -1285,6 +1292,25 @@ FRESH_KEYCLOAK_PORT_VARS=(
 FRESH_AUTHENTIK_PORT_VARS=(
   "AUTHENTIK_PORT=9022"         # authentik-server → :9000
 )
+
+# Port variables belonging to services that are PROFILE-GATED in their compose file and
+# that no `opentr.sh` flag activates. They stay in the FRESH_*_PORT_VARS arrays above --
+# `--port-offset` must renumber them, or an operator who does run the profile on a
+# `--fresh` stack silently binds the main stack's port (issue #347) -- but the start-time
+# port preflight must SKIP them, because nothing is going to bind them.
+#
+# ⚠️ The two consumers ask different questions, and conflating them cost a dev-gate run.
+# `step-ca` is `profiles: ["pki"]` in docker-compose.keycloak.yml, so `--with-keycloak-test`
+# starts Keycloak alone; the preflight nevertheless checked STEP_CA_PORT, whose default
+# 9000 is one of the most contended ports on a developer machine (MinIO, Portainer, and on
+# this host an unrelated container). The whole run was refused over a port belonging to a
+# container that was never going to start.
+#
+# Deleting the entry from FRESH_KEYCLOAK_PORT_VARS would "fix" this by breaking isolation.
+OT_PROFILE_GATED_PORT_VARS=(
+  "STEP_CA_PORT"   # step-ca, profiles: ["pki"] in docker-compose.keycloak.yml
+)
+
 FRESH_LDAP_PORT_VARS=(
   "LDAP_TEST_PORT=3890"         # lldap LDAP   → :3890
   "LDAP_TEST_UI_PORT=17170"     # lldap web UI → :17170
@@ -1401,6 +1427,84 @@ fresh_write_aux() {
   fi
 }
 
+# Print every compose project name this deployment may be running under, most
+# authoritative first, one per line.
+#
+# ⚠️ THERE IS NO SINGLE ANSWER, AND ASSUMING ONE HAS BROKEN THIS SCRIPT TWICE IN
+# OPPOSITE DIRECTIONS.
+#   * A stack started from a checkout gets compose's default: the DIRECTORY basename
+#     (`transcribe-app` here).
+#   * A stack started by the installer / `opentranscribe.sh` runs as `opentranscribe`.
+# A developer machine can have been through both. Measured 2026-09-08 on this host:
+# every running container is labelled `opentranscribe`, while `basename "$(pwd)"` is
+# `transcribe-app`.
+#
+# What each wrong guess cost:
+#   * `preflight_ports_or_die` resolved only the directory name, did not recognise the
+#     live stack as ours, and REFUSED TO START — reporting the developer's own eleven
+#     published ports as a foreign process squatting on them. That killed a dev-gate run
+#     at overlay bring-up.
+#   * `diar_native_container_present` resolved only the directory name and matched 0
+#     containers (vs 1 under the real project), so it dropped the sidecar overlay and
+#     handed celery-worker the SILENT in-process PyAnnote fallback the probe exists to
+#     prevent. Worse than the refusal precisely because the stack still comes up green.
+#
+# `ot_stop` has always filtered on both (OPENTR_STOP_PROJECT_LABEL / _ALT); this is that
+# rule, shared, so a fourth call site cannot invent a fifth answer.
+#
+# An explicitly-set COMPOSE_PROJECT_NAME comes FIRST and alone-first for a reason: the
+# `--fresh` helpers set it per-invocation, and an isolated stack must never be told its
+# ports belong to the main one.
+ot_project_names() {
+  if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
+    echo "${COMPOSE_PROJECT_NAME}"
+  fi
+  echo "${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}"
+  echo "${OPENTR_STOP_PROJECT_LABEL_ALT:-$(basename "$(pwd)")}"
+}
+
+# Return 0 when host port $1 is published by a container belonging to THIS deployment
+# (any of ot_project_names), 1 otherwise -- including when nothing published it at all
+# (a non-Docker listener is by definition not ours).
+#
+# ⚠️ THE EXEMPTION MUST BE PER PORT. It used to be all-or-nothing: if any container of
+# ours was running, EVERY bound port counted as a re-up in place. Measured 2026-09-08 --
+# the live stack holds 5173-5183 and an UNRELATED container held 9000, which the
+# keycloak-test overlay's STEP_CA_PORT defaults to. The coarse exemption waives 9000
+# along with our own ports, and `compose up` then aborts part way through on that bind
+# error and strands services in `Created`: the #553 failure, reached through the code
+# written to prevent it.
+#
+# ⚠️ NOT `docker ps | grep -q` -- see docker_runtime_has_nvidia's header. Captured first,
+# so there is no pipe for the reader to close early and no SIGPIPE to invert the answer.
+ot_port_holder_is_ours() {
+  local port="$1" listing name ports holder="" label project
+  # ⚠️ NO PIPES anywhere in here, deliberately. Every reader that could sit downstream of
+  # `docker ps`/`docker inspect` -- grep -q, head -1, cut | head -- exits before EOF, and
+  # an external binary that queries a daemon has RPC-length gaps between its writes, so
+  # SIGPIPE turns a match into a non-match under `set -o pipefail`. Here that inversion
+  # would report OUR OWN container as a foreign holder and refuse every re-up. Measured
+  # rate for `docker info` on this host: ~1 in 250, i.e. exactly rare enough to be filed
+  # as flakiness. Capture, then match in the shell.
+  listing="$(docker ps --format '{{.Names}}\t{{.Ports}}' 2>/dev/null)"
+  while IFS=$'\t' read -r name ports; do
+    [ -n "$name" ] || continue
+    case "$ports" in
+      *":${port}->"*|*".${port}->"*) holder="$name"; break ;;
+    esac
+  done <<< "$listing"
+  # Nothing published it -- a non-Docker listener is by definition not ours.
+  [ -n "$holder" ] || return 1
+  label="$(docker inspect "$holder" \
+    --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null)"
+  [ -n "$label" ] || return 1
+  while read -r project; do
+    [ -n "$project" ] || continue
+    [ "$label" = "$project" ] && return 0
+  done < <(ot_project_names)
+  return 1
+}
+
 # Return 0 if a TCP port is already bound on localhost, 1 otherwise.
 fresh_port_in_use() {
   local port="$1"
@@ -1430,23 +1534,22 @@ fresh_port_in_use() {
 # our own compose project is allowed through, matching the fresh path's rule.
 preflight_ports_or_die() {
   local entry var base port busy="" holder
-  local project="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
-  local ours
-  ours="$(docker ps --filter "label=com.docker.compose.project=${project}" --format '{{.Names}}' 2>/dev/null | head -1)"
   for entry in "$@"; do
     var="${entry%%=*}"
     base="${entry#*=}"
     port="${!var:-$base}"
     [[ "$port" =~ ^[0-9]+$ ]] || port="$base"
     if fresh_port_in_use "$port"; then
-      busy="$busy $port"
+      # Held by one of OUR OWN containers? That is a re-up in place -- `compose up -d`
+      # recreating changed services is the normal way to apply a .env edit, and it is
+      # also how an aux overlay is added to a running stack. Held by anything else:
+      # a real conflict. Decided PER PORT -- see ot_port_holder_is_ours.
+      if ! ot_port_holder_is_ours "$port"; then
+        busy="$busy $port"
+      fi
     fi
   done
   [ -z "$busy" ] && return 0
-  if [ -n "$ours" ]; then
-    # Our own stack already holds them -- this is a re-up in place.
-    return 0
-  fi
   echo ""
   echo "❌ Cannot start: these host ports are already bound:${busy}"
   for port in $busy; do
@@ -2738,7 +2841,18 @@ start_app() {
     # instead of failing fast here. Only Keycloak is added — Authentik is out of scope
     # (scripts/run-dev-tests.sh's overlay table deliberately excludes it; see that file).
     [ -n "$WITH_KEYCLOAK_TEST_FLAG" ] && _pf_ports+=("${FRESH_KEYCLOAK_PORT_VARS[@]}")
-    preflight_ports_or_die "${_pf_ports[@]}"
+    # Drop ports whose service is profile-gated and not being started -- see
+    # OT_PROFILE_GATED_PORT_VARS. Checking them refuses the run over a port nothing in
+    # this invocation will bind.
+    _pf_checked=()
+    for _pf_entry in "${_pf_ports[@]}"; do
+      _pf_gated=""
+      for _pf_gated_var in "${OT_PROFILE_GATED_PORT_VARS[@]}"; do
+        [ "${_pf_entry%%=*}" = "$_pf_gated_var" ] && _pf_gated="yes" && break
+      done
+      [ -n "$_pf_gated" ] || _pf_checked+=("$_pf_entry")
+    done
+    preflight_ports_or_die "${_pf_checked[@]}"
   fi
 
   # Start services with appropriate compose files.

@@ -562,7 +562,10 @@ GR_PROBE_IMAGE="${GR_PROBE_IMAGE:-alpine:3.20}"
 
 gr_host_platform() {
     local p
-    p="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null)"
+    # Explicit `|| p=""` rather than relying on every caller invoking this in a condition
+    # context (which is what currently suspends `set -e` for it). Safe-by-call-site is a
+    # property the next caller can silently remove.
+    p="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null)" || p=""
     [[ -n "$p" && "$p" != "/" ]] && { printf '%s\n' "$p"; return 0; }
     return 1
 }

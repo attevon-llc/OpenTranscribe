@@ -296,7 +296,10 @@ dbs_wait_for_stable_query() {
     local deadline=$(( $(date +%s) + timeout ))
     local last="" current="" streak=0
     while (( $(date +%s) < deadline )); do
-        current="$(docker exec "$container" psql -tA -U "$user" "$db" -c "$query" 2>/dev/null | tr -d '[:space:]')"
+        # `|| current=""`: a bare assignment here aborts the whole phase the moment the
+        # container is unreachable, silently (stderr is discarded). The loop already treats
+        # an empty reading as "not settled yet", which is the correct behaviour.
+        current="$(docker exec "$container" psql -tA -U "$user" "$db" -c "$query" 2>/dev/null | tr -d '[:space:]')" || current=""
         if [[ "$current" == "$last" ]]; then
             streak=$(( streak + 1 ))
             if (( streak >= stable_polls )); then

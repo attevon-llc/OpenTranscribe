@@ -1221,7 +1221,9 @@ phase_06b_pre_upgrade_backup() {
     # and the ASSIGNMENT then aborts the whole script with no error trace — the #617/#618
     # silent-truncation family, in the phase that is supposed to prove a backup restores.
     local manager_dump
-    manager_dump="$(ls -t "$manager_stage/backups"/opentranscribe_backup_*.sql 2>/dev/null)"
+    # `ls` exits non-zero when the glob matches nothing — a bare assignment turns "the
+    # manager wrote no backup" into a silent phase abort instead of a reportable finding.
+    manager_dump="$(ls -t "$manager_stage/backups"/opentranscribe_backup_*.sql 2>/dev/null)" || manager_dump=""
     manager_dump="${manager_dump%%$'\n'*}"
     [[ -n "$manager_dump" && -s "$manager_dump" ]] \
         || gr_die "'./opentranscribe.sh backup' produced no dump file"
@@ -2271,15 +2273,29 @@ phase_15_restore_and_assert() {
             as_assert "R-6: no post-FROM-migration table survives the restore" '[[ -z "$leaked" ]]'
         fi
     fi
-    [[ -n "$leaked" ]] && gr_warn "post-FROM tables that survived the restore: $leaked"
+    # `if`, not `[[ ... ]] && cmd`. MEASURED 2026-09-07: mid-function that list does
+    # NOT trip `set -e` (bash exempts it), so this is defensive rather than a fix —
+    # it only becomes an abort if the line ever ends up last in a function. Stated
+    # explicitly because the opposite was assumed here once and was wrong.
+    if [[ -n "$leaked" ]]; then
+        gr_warn "post-FROM tables that survived the restore: $leaked"
+    fi
 
     # R-7: alembic_version restored to the FROM release's OWN head, derived
     # from that release's migration chain in the phase-03 worktree — the same
     # measured-vs-derived pair phase 10 already uses, replayed here after a
     # restore instead of after a forward migration.
     local restored_head derived_from_head
+    # ⚠️ `|| restored_head=""`, never a bare assignment. Under `set -euo pipefail` a
+    # command-substitution assignment whose pipeline fails ABORTS the script, and with
+    # `2>/dev/null` it does so printing NOTHING — the phase simply stops and the EXIT
+    # traps run. That is the ABORT half of the #617/#618 family, and it is what silently
+    # truncated phases 16-18 of the v0.3.3 hop after R-6 passed (2026-09-07): no error,
+    # no FAIL line, just a missing rest-of-phase. An unreadable probe must become an
+    # EMPTY value the assertion below can report, not a dead script.
     restored_head="$(docker exec "$pg" psql -tA -U postgres opentranscribe \
-        -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+        -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')" \
+        || restored_head=""
     local from_worktree="$TEST_ROOT/worktree-${FROM_VERSION}"
     if derived_from_head="$(ver_alembic_head "$from_worktree/backend" 2>/dev/null)"; then
         as_assert_eq "R-7: alembic_version restored to the FROM release's own head" "$derived_from_head" "$restored_head"
@@ -2292,8 +2308,11 @@ phase_15_restore_and_assert() {
     local t label total distinct_ct
     for t in media_file transcript_segment speaker '"user"'; do
         label="${t//\"/}"
-        total="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(*) FROM ${t};" 2>/dev/null | tr -d '[:space:]')"
-        distinct_ct="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(DISTINCT id) FROM ${t};" 2>/dev/null | tr -d '[:space:]')"
+        # Same guard as restored_head above: these two already expect a possibly-empty
+        # result (see `${total:-?}` below), but a bare assignment never reaches that —
+        # it kills the phase first.
+        total="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(*) FROM ${t};" 2>/dev/null | tr -d '[:space:]')" || total=""
+        distinct_ct="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(DISTINCT id) FROM ${t};" 2>/dev/null | tr -d '[:space:]')" || distinct_ct=""
         as_assert_eq "R-8: no duplicate rows in ${label}" "${total:-?}" "${distinct_ct:-?}"
     done
 
@@ -2440,7 +2459,9 @@ phase_16_rollback_and_assert() {
         # fallback this used to have would ALSO fire and get concatenated
         # onto it, producing the literal string "404000". Measured live.
         local version_status
-        version_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$API_BASE/version" 2>/dev/null)"
+        # An unreachable API is exactly what this assertion exists to catch; a bare
+    # assignment kills the phase before it can report it.
+    version_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$API_BASE/version" 2>/dev/null)" || version_status=""
         as_assert_eq "B-5: /api/version 404s on a FROM image predating the endpoint" "404" "${version_status:-000}"
     elif [[ "$from_has_buildarg" != true ]]; then
         as_record SKIP "B-5: /api/version reports FROM after rollback" \
@@ -2615,7 +2636,9 @@ phase_17_roll_forward_again() {
 
     local pg="opentranscribe-postgres"
     local post_head expected_head
-    post_head="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+    # Same guard as restored_head: an unreadable alembic_version must become an empty
+    # value this phase can report, not a silent abort.
+    post_head="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')" || post_head=""
     expected_head="$(ver_alembic_head "$REPO_ROOT/backend")"
     as_assert_eq "F-2: alembic head re-migrated to the current head" "$expected_head" "$post_head"
 

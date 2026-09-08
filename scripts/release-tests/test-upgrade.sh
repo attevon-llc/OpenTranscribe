@@ -2044,6 +2044,19 @@ phase_13_stage_rollback_tree() {
     # mismatched everything, making the fault "work" for the wrong reason
     # (a missing file) rather than by actually exercising the diff logic.
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/after/db-fingerprint"
+    # Record the POST-UPGRADE state restricted to the FROM release's columns. F-4 (phase
+    # 17) needs this as its oracle: the recovery loop ends where the FIRST upgrade ended,
+    # not where the deployment started, so comparing the recovered rows against the
+    # PRE-upgrade snapshot fails on any migration that legitimately rewrites a FROM-era
+    # column. Measured 2026-09-07 on the v0.3.3 hop: media_file.status is "COMPLETED" at
+    # v0.3.3 and "completed" at v0.5.0 — an intentional enum-case normalisation. The
+    # v0.4.1 hop passed only because that migration predates v0.4.1.
+    if [[ -s "$TEST_ROOT/snapshots/before/db-fingerprint/media_file.columns" ]]; then
+        dbs_digest_baseline_columns "$pg" postgres opentranscribe media_file \
+            "$TEST_ROOT/snapshots/before/db-fingerprint/media_file.columns" \
+            > "$TEST_ROOT/snapshots/after/media_file.from-cols.digest" 2>/dev/null \
+            || rm -f "$TEST_ROOT/snapshots/after/media_file.from-cols.digest"
+    fi
 
     # Verify the TO-side backup too — needed as phase 17's restore point and
     # it proves `backup` works on the MIGRATED schema, not just the
@@ -2678,16 +2691,31 @@ phase_17_roll_forward_again() {
     # real, expected change that is not damage either way.
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/recovered/db-fingerprint"
 
+    # ⚠️ The oracle is the POST-UPGRADE state, not the pre-upgrade one. The recovery loop is
+    # upgrade -> roll back -> roll forward, so a successful recovery lands where the FIRST
+    # upgrade landed. Comparing against `before` asserts that the TO migrations change no
+    # FROM-era value, which is simply not true: media_file.status normalises from
+    # "COMPLETED" to "completed" between v0.3.3 and v0.5.0, so the v0.3.3 hop failed F-4 for
+    # doing exactly what it is supposed to do. (`before` vs `restored` IS asserted, by R-2 in
+    # phase 15 — that is where "the rollback gave me my data back" belongs.)
     local before_cols="$TEST_ROOT/snapshots/before/db-fingerprint/media_file.columns"
-    local before_digest recovered_digest
-    before_digest="$(cat "$TEST_ROOT/snapshots/before/db-fingerprint/media_file.digest" 2>/dev/null || echo '?')"
-    if [[ -s "$before_cols" ]] && \
-       recovered_digest="$(dbs_digest_baseline_columns "$pg" postgres opentranscribe media_file "$before_cols")"; then
-        as_assert_eq "F-4: media_file content digest unchanged (FROM-schema columns)" \
-            "$before_digest" "$recovered_digest"
+    local after_digest_file="$TEST_ROOT/snapshots/after/media_file.from-cols.digest"
+    local after_digest recovered_digest
+    if [[ ! -s "$before_cols" ]]; then
+        as_record SKIP "F-4: media_file content digest matches the post-upgrade state" \
+            "the FROM-release column list was never captured, so a like-for-like digest is not reproducible"
+    elif [[ ! -s "$after_digest_file" ]]; then
+        # Refuse rather than fall back to the pre-upgrade digest: a wrong oracle produces a
+        # confident FAIL about the product for a defect in the harness.
+        as_record FAIL "F-4: media_file content digest matches the post-upgrade state" \
+            "the post-upgrade FROM-column digest was never recorded (phase 14), so there is nothing to compare against — NOT evidence about the recovery"
+    elif recovered_digest="$(dbs_digest_baseline_columns "$pg" postgres opentranscribe media_file "$before_cols")"; then
+        after_digest="$(cat "$after_digest_file")"
+        as_assert_eq "F-4: media_file content digest matches the post-upgrade state" \
+            "$after_digest" "$recovered_digest"
     else
-        as_record SKIP "F-4: media_file content digest unchanged" \
-            "a column present at ${FROM_VERSION} no longer exists at ${TO_VERSION} (DROP/RENAME), or the pre-upgrade column list was never captured -- the pre-upgrade whole-row digest is not reproducible; compare by column set, not by digest"
+        as_record SKIP "F-4: media_file content digest matches the post-upgrade state" \
+            "a column present at ${FROM_VERSION} no longer exists at ${TO_VERSION} (DROP/RENAME); compare by column set, not by digest"
     fi
 
     # F-5: hybrid search returns hits (reindex recovered).

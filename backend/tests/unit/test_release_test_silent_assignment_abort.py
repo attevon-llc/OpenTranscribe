@@ -170,3 +170,50 @@ def test_a_bare_condition_and_command_is_not_this_hazard():
         "a mid-function `cond && cmd` now aborts under set -e; the boundary this module "
         f"documents has moved and the guards should be revisited:\n{result.stdout}"
     )
+
+
+# ------------------------------------- the other end: an empty operand must be REPORTED
+
+
+def test_as_assert_ge_reports_an_empty_operand_instead_of_an_arithmetic_error():
+    """Guarding the probes moves the problem here, so this end has to hold too.
+
+    Once a failed probe yields "" instead of aborting the phase, that empty value reaches
+    the comparison. `(( "" >= 0 ))` raises a bash arithmetic error — observed in the log as
+
+        assertions.sh: line 78: ((: 0
+
+    — noise on stderr while the assertion's own verdict explains nothing. Fixing the silent
+    abort without this would merely relocate the confusion.
+    """
+    assertions = REPO_ROOT / "scripts" / "release-tests" / "lib" / "assertions.sh"
+    if not assertions.is_file():
+        pytest.skip("lib/assertions.sh is not in this checkout")
+
+    result = _run(f"""
+        source "{assertions}" 2>/dev/null || true
+        as_record() {{ echo "$1|$2|${{3:-}}"; }}
+        as_assert_ge "empty" "" 1
+        as_assert_ge "ok" 5 1
+        as_assert_ge "text" "abc" 1
+    """)
+    lines = [ln for ln in result.stdout.splitlines() if "|" in ln]
+    assert len(lines) == 3, f"expected three verdicts, got: {result.stdout!r}"
+
+    assert lines[0].startswith("FAIL|empty|"), (
+        f"an empty operand must be a reported FAILURE naming it; got {lines[0]!r}"
+    )
+    assert "left=''" in lines[0], (
+        f"the verdict does not show the empty operand, so the log still does not say what "
+        f"went wrong: {lines[0]!r}"
+    )
+    assert lines[1].startswith("PASS|ok|"), (
+        f"a valid comparison regressed — the guard must not reject real numbers: {lines[1]!r}"
+    )
+    assert lines[2].startswith("FAIL|text|"), (
+        f"a non-numeric operand must be reported, not evaluated: {lines[2]!r}"
+    )
+    assert "((" not in result.stderr, (
+        f"bash still raised an arithmetic error rather than the assertion reporting it: "
+        f"{result.stderr!r}"
+    )

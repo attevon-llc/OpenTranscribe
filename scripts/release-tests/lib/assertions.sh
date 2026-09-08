@@ -75,6 +75,20 @@ as_assert_ne() {
 
 as_assert_ge() {
     local label="$1" left="$2" right="$3"
+    # An EMPTY operand is a failed measurement, not a number. `(( >= 0 ))` on it raises
+    # a bash arithmetic error ("((: 0 ...") that lands in the log as noise while the
+    # assertion's own verdict says nothing useful. Since the probes feeding this now
+    # yield "" rather than aborting the phase (see the stderr-discarding-assignment
+    # guards), that empty value has to arrive as a REPORTED failure with the operand
+    # named — otherwise the fix for the silent abort just relocates the confusion.
+    if [[ -z "$left" || -z "$right" ]]; then
+        as_record FAIL "$label" "could not compare: left='${left}' right='${right}' — an empty operand means the probe returned nothing, not that the comparison failed"
+        return 0
+    fi
+    if [[ ! "$left" =~ ^-?[0-9]+$ || ! "$right" =~ ^-?[0-9]+$ ]]; then
+        as_record FAIL "$label" "non-numeric operand: left='${left}' right='${right}'"
+        return 0
+    fi
     if (( left >= right )); then
         as_record PASS "$label"
     else

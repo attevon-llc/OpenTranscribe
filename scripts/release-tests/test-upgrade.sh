@@ -1970,7 +1970,24 @@ phase_13_stage_rollback_tree() {
     # so removing the pins here is what a real deployment does, not a
     # workaround. This means the tail rehearses the `update-full` variant (new
     # compose + old images moving via .env alone) rather than plain `update`.
-    cp "$stage_after/docker-compose.yml" "$stage_rollback/docker-compose.yml"
+    # ⚠️ Copy EVERY overlay the after-stack had, not a hand-listed pair. The rollback
+    # stack must be able to address every service the stack it is replacing created —
+    # `get_compose_files()` can only include an overlay that is present in this
+    # directory, and `docker compose down` can only stop a service some file defines.
+    #
+    # Measured 2026-09-07: this staged docker-compose.{yml,prod.yml,gpu.yml} only, so
+    # docker-compose.diar-native.yml was absent, `down` left
+    # opentranscribe-diar-native-1 running, and `update --rollback` exited 1 with
+    # "Teardown failed and 1 container(s) remain" — failing B-1 and cascading into
+    # both B-4a assertions. Same enumeration trap as cp_inject_labels_all's.
+    local overlay
+    for overlay in "$stage_after"/docker-compose*.yml; do
+        [[ -f "$overlay" ]] || continue
+        cp "$overlay" "$stage_rollback/$(basename "$overlay")"
+    done
+    # prod.yml comes from the REPO, deliberately overriding the after-stack copy: the
+    # rollback rehearses `update-full` (new compose + old images via .env alone), so it
+    # needs the CURRENT prod file with its ${OT_IMAGE_TAG} indirection intact.
     cp "$REPO_ROOT/docker-compose.prod.yml" "$stage_rollback/docker-compose.prod.yml"
 
     # Same fix as phase 07's $stage_after (issue #909bfc17): docker-compose.prod.yml
@@ -1988,8 +2005,11 @@ phase_13_stage_rollback_tree() {
 
     cp_inject_labels_all "$stage_rollback" "$TEST_LABEL"
     cp_force_pull_policy "$stage_rollback/docker-compose.prod.yml" never
-    if [[ "$TEST_USE_GPU" == "true" && -f "$stage_after/docker-compose.gpu.yml" ]]; then
-        cp "$stage_after/docker-compose.gpu.yml" "$stage_rollback/docker-compose.gpu.yml"
+    # The copy loop above is deliberately unconditional, so the GPU overlay must be
+    # REMOVED here in CPU mode rather than merely not copied — otherwise a --cpu
+    # rehearsal would silently roll back onto a GPU stack.
+    if [[ "$TEST_USE_GPU" != "true" ]]; then
+        rm -f "$stage_rollback/docker-compose.gpu.yml"
     fi
     cp "$REPO_ROOT/opentranscribe.sh" "$stage_rollback/opentranscribe.sh"
     chmod +x "$stage_rollback/opentranscribe.sh"
@@ -2202,6 +2222,11 @@ phase_15_restore_and_assert() {
         "enforced inside scripts/common.sh's restore_database via DROP DATABASE ... WITH (FORCE) and its own client-stop sequence (#599) — not independently observable from outside that function without instrumenting it"
 
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/restored/db-fingerprint"
+    # R-6 below reads this. It was NEVER written: `snapshots/restored/tables.txt` had
+    # exactly one reference in the whole tree — the `sort` that consumed it. `sort` on a
+    # missing file prints nothing, so `comm -12` saw an empty set, `leaked` was always
+    # empty, and R-6 PASSED UNCONDITIONALLY from the day it was written.
+    dbs_table_list "$pg" postgres opentranscribe > "$TEST_ROOT/snapshots/restored/tables.txt"
     local fp_dir="$TEST_ROOT/snapshots/before/db-fingerprint"
     if [[ "${ROLLBACK_INJECT_FAULT:-}" == "stale-oracle" ]]; then
         fp_dir="$TEST_ROOT/snapshots/after/db-fingerprint"
@@ -2224,10 +2249,28 @@ phase_15_restore_and_assert() {
     # R-6: no table introduced by a post-FROM migration survives the restore —
     # derived from the table-list snapshots (after MINUS before), never a
     # hardcoded name.
-    local new_tables leaked
-    new_tables="$(comm -23 <(sort "$TEST_ROOT/snapshots/after/tables.txt") <(sort "$TEST_ROOT/snapshots/before/tables.txt"))"
-    leaked="$(comm -12 <(echo "$new_tables") <(sort "$TEST_ROOT/snapshots/restored/tables.txt"))"
-    as_assert "R-6: no post-FROM-migration table survives the restore" '[[ -z "$leaked" ]]'
+    local new_tables leaked snap missing_snaps=()
+    for snap in before after restored; do
+        [[ -s "$TEST_ROOT/snapshots/$snap/tables.txt" ]] || missing_snaps+=("$snap")
+    done
+    if (( ${#missing_snaps[@]} > 0 )); then
+        # An absent snapshot is a REFUSAL, not an empty set. Reading one with `sort` and
+        # letting the empty result flow into `comm` is precisely what made this assertion
+        # unfailable — and it fails OPEN, claiming nothing leaked while checking nothing.
+        as_record FAIL "R-6: no post-FROM-migration table survives the restore" \
+            "table-list snapshot(s) missing or empty: ${missing_snaps[*]} — R-6 verified NOTHING"
+    else
+        new_tables="$(comm -23 <(sort "$TEST_ROOT/snapshots/after/tables.txt") <(sort "$TEST_ROOT/snapshots/before/tables.txt"))"
+        if [[ -z "$new_tables" ]]; then
+            # Non-vacuity: with no new tables there is nothing for R-6 to detect, so a PASS
+            # would be free. Say so instead of banking it as evidence.
+            as_record SKIP "R-6: no post-FROM-migration table survives the restore" \
+                "the ${FROM_VERSION:-FROM} -> ${TO_VERSION:-TO} upgrade adds no tables, so this check has nothing to detect"
+        else
+            leaked="$(comm -12 <(echo "$new_tables") <(sort "$TEST_ROOT/snapshots/restored/tables.txt"))"
+            as_assert "R-6: no post-FROM-migration table survives the restore" '[[ -z "$leaked" ]]'
+        fi
+    fi
     [[ -n "$leaked" ]] && gr_warn "post-FROM tables that survived the restore: $leaked"
 
     # R-7: alembic_version restored to the FROM release's OWN head, derived

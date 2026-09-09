@@ -479,9 +479,27 @@ phase_06b_sidecar_check() {
     [[ "$sidecar_image" == *-lite* ]] || gr_die "diar-native sidecar image '$sidecar_image' does not contain '-lite' — B4's mismatched image pair (issue #660)"
     echo "diar-native sidecar image: $sidecar_image" | tee -a "$report"
 
-    local healthz
-    healthz=$(docker exec "$sidecar_name" curl -fsS http://localhost:8701/healthz 2>/dev/null || echo "")
-    [[ -n "$healthz" ]] || gr_die "diar-native /healthz did not respond"
+    # ⚠️ POLL, never a single shot. The sidecar binds its port only after it has reserved
+    # BFCArena memory and initialised every ONNX session, which is tens of seconds on a cold
+    # start — so a one-shot probe races the thing it is checking and kills the run before the
+    # service it is asking about exists.
+    #
+    # Measured 2026-09-09: this phase died with "diar-native /healthz did not respond" while
+    # the container went on to log `diar-server listening bind=0.0.0.0:8701` and report
+    # `Up (healthy)` seconds later. The check was right about the moment and wrong about the
+    # deployment — exactly the shape `backend/tests/CLAUDE.md` records for fixed budgets
+    # calibrated on a warm machine.
+    #
+    # `gr_die` on expiry is still correct: a sidecar that never answers is a real lite-mode
+    # failure, and this phase exists to prove the CPU-EP routing.
+    local healthz="" _hz_deadline
+    _hz_deadline=$(( $(date +%s) + LM_DIAR_NATIVE_HEALTHZ_TIMEOUT_S ))
+    while (( $(date +%s) < _hz_deadline )); do
+        healthz=$(docker exec "$sidecar_name" curl -fsS http://localhost:8701/healthz 2>/dev/null || echo "")
+        [[ -n "$healthz" ]] && break
+        sleep "$LM_DIAR_NATIVE_POLL_S"
+    done
+    [[ -n "$healthz" ]] || gr_die "diar-native /healthz did not respond within ${LM_DIAR_NATIVE_HEALTHZ_TIMEOUT_S}s"
     # Assert the LOADED `devices`, never `supported_devices` — the latter is a build-time
     # capability list a CUDA-only sidecar also reports, which cannot distinguish a lite
     # CPU sidecar from a full CUDA one (the exact failure this check exists to catch;
@@ -563,6 +581,17 @@ print(",".join(m for m in mods if u.find_spec(m) is None))' 2>/dev/null) || miss
 #: than as a confusing assertion failure three steps later.
 LM_MOCK_ASR_HEALTHY_TIMEOUT_S="${LM_MOCK_ASR_HEALTHY_TIMEOUT_S:-30}"
 LM_MOCK_ASR_POLL_S="${LM_MOCK_ASR_POLL_S:-1}"
+
+# How long phase 06b waits for the diar-native sidecar to answer /healthz.
+#
+# 120s because the sidecar binds its port only after reserving BFCArena memory and
+# initialising every ONNX session — tens of seconds cold, and this scenario always starts it
+# cold. A ceiling, not a delay: the loop returns on the first response.
+#
+# Consumed inside phase_06b_sidecar_check, which is dispatched at the bottom of this file,
+# long after this assignment runs — the same ordering LM_MOCK_ASR_* above relies on.
+LM_DIAR_NATIVE_HEALTHZ_TIMEOUT_S="${LM_DIAR_NATIVE_HEALTHZ_TIMEOUT_S:-120}"
+LM_DIAR_NATIVE_POLL_S="${LM_DIAR_NATIVE_POLL_S:-3}"
 
 # Wait for the mock-asr container to report healthy after a --force-recreate.
 #

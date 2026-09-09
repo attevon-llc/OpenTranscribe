@@ -293,7 +293,7 @@ def _run_cloud_asr_pipeline(
         ctx.file_id,
     )
 
-    # The engine that ACTUALLY served diarization. `merge_diarization_into_asr` records both
+    # The engine that ACTUALLY served diarization. `merge_cloud_diarization` records both
     # from the DiarizeResult itself (utils/diarization_merge.py), so this reports what really
     # ran rather than what was configured. Absent — and therefore None — in the two cases
     # where nothing diarized: the `else` branch above (ASR only) and the non-fatal diarization

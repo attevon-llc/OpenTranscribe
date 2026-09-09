@@ -120,6 +120,11 @@ SEARCH_QUALITY=false
 # running"), which pushed the integration phase to 14 skips against a ceiling of 7 and
 # made the whole stage report NOT MEASURED. The release gate could not be counted at all.
 EXPORT_CAPABILITY=false
+# Also passed straight through, and ADDITIVE — unlike --fast, which swaps --coverage FOR
+# --e2e-smoke. The release gate has always asked run-integration-tests.sh for
+# `--coverage --e2e-smoke --export-capability` together, so delegating had to be able to
+# reproduce that exact set rather than an approximation of it.
+GATE_E2E_SMOKE=false
 
 # `--no-coverage`: drop --coverage from the backend gate.
 #
@@ -148,6 +153,9 @@ Overlay flags:
   --with-gpu-scale    exercise the --gpu-scale multi-GPU worker topology; auto-skips
                       with a clear message when this project has fewer than 2 GPUs
                       configured (never auto-started under any other flag)
+  --e2e-smoke         add run-integration-tests.sh's --e2e-smoke phase to the backend gate,
+                      WITHOUT dropping --coverage the way --fast does. For the release gate,
+                      which asks for both.
   --export-capability add run-integration-tests.sh's --export-capability phase (a REAL
                       diar-native model export). Used by the release gate, which needs it
                       AND this script's overlay orchestration.
@@ -208,6 +216,7 @@ while [[ $# -gt 0 ]]; do
         --with-gpu-scale) WITH_GPU_SCALE=true ;;
         --search-quality) SEARCH_QUALITY=true ;;
         --export-capability) EXPORT_CAPABILITY=true ;;
+        --e2e-smoke) GATE_E2E_SMOKE=true ;;
         --no-coverage)   NO_COVERAGE=true ;;
         --no-overlays)   NO_OVERLAYS=true ;;
         --list-overlays) LIST_OVERLAYS=true ;;
@@ -666,6 +675,10 @@ if [[ "$RUN_BACKEND" == "true" ]]; then
     fi
     $SEARCH_QUALITY && backend_flags=(--search-quality "${backend_flags[@]}")
     $EXPORT_CAPABILITY && backend_flags=(--export-capability "${backend_flags[@]}")
+    # Additive, and guarded against duplicating --fast's own --e2e-smoke.
+    if $GATE_E2E_SMOKE && [[ "$E2E_SMOKE" != "true" ]]; then
+        backend_flags=(--e2e-smoke "${backend_flags[@]}")
+    fi
     run_phase "backend (run-integration-tests.sh ${backend_flags[*]})" \
         "$REPO_ROOT/scripts/run-integration-tests.sh" "${backend_flags[@]}"
 fi

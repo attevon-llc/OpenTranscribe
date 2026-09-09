@@ -90,6 +90,25 @@ def test_the_orchestrator_can_actually_pass_that_flag_through():
     )
 
 
+def test_every_gate_flag_the_stage_asks_for_is_actually_parsed():
+    """A flag the wrapper does not know is a hard error, not a silent drop — but only
+    because run-dev-tests.sh rejects unknown options. The first delegation attempt passed
+    ``--e2e-smoke`` (a run-integration-tests.sh flag) and the stage died with exit 2,
+    ``unknown option``. That is the good failure mode; this pins that every flag the stage
+    sends is one the wrapper forwards, so it cannot become a quiet drop later.
+    """
+    stage = _stage()
+    wrapper = DEV_TESTS.read_text(encoding="utf-8")
+    invocation = next(line for line in stage.splitlines() if "./scripts/run-dev-tests.sh" in line)
+    asked = re.findall(r"--[a-z][a-z-]+", invocation)
+    assert asked, f"no flags parsed out of the stage's invocation: {invocation!r}"
+    for flag in asked:
+        assert f"{flag})" in wrapper, (
+            f"the release stage passes {flag} but run-dev-tests.sh does not parse it; "
+            "the stage would exit 2 (misuse) rather than run the gate"
+        )
+
+
 def test_the_not_measured_code_is_translated_not_swallowed():
     """The two scripts use DIFFERENT codes for 'verified nothing', on purpose.
 

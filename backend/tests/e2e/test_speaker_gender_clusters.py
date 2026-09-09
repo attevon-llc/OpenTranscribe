@@ -26,6 +26,7 @@ import pytest
 import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import DATA_AFTER_RELOAD_MS
 
 # This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
 # A module constant is evaluated at import time, so it could not see ``--base-url`` /
@@ -621,4 +622,4 @@ class TestSpeakerRenamePropagationAcrossFiles:
 
         expect(
             authenticated_page.locator(".segment-speaker").filter(has_text=new_name).first
-        ).to_be_visible(timeout=15000)
+        ).to_be_visible(timeout=DATA_AFTER_RELOAD_MS)

@@ -48,3 +48,27 @@ LOGIN_FORM_READY_MS = 30_000
 #: app shell plus ``initAuth()``'s ``GET /auth/session``. Anything under that is not measuring
 #: the page, it is measuring how loaded the machine is.
 APP_SHELL_READY_MS = 30_000
+
+
+#: How long to wait for a value written SERVER-SIDE to be visible after a fresh page load.
+#:
+#: Distinct from ``APP_SHELL_READY_MS`` on purpose: by the time this budget starts, the page
+#: has already been gated on its own content selector (``.transcript-segment``, 25 s), so the
+#: shell is up. What remains is the *data* round trip that paints the value — for the speaker
+#: rename that is the speaker list the transcript labels resolve against.
+#:
+#: 30 s, raised from a bare ``15000`` literal, and the measurement is the reason. On
+#: 2026-09-08 ``test_rename_via_transcript_editor_propagates_to_other_file`` failed the full
+#: gate at exactly this wait, having passed every earlier wait in the same test including a
+#: 25 s one on the same page. Run standalone against the same stack and commit it passed
+#: **3/3 in 35-45 s each**. So the propagation was working; 15 s was simply the shortest
+#: budget in a test whose siblings on the same page already allow 25 s.
+#:
+#: ⚠️ Widening this does NOT weaken the assertion. If the rename genuinely fails to reach
+#: Postgres, the test still fails — 15 s later. What it stops is the gate reporting a
+#: propagation bug when what it measured was contention: the e2e phase runs 3 Playwright
+#: workers that each upload and really transcribe media, so the pipeline is saturated by the
+#: suite itself. That is the same "the gate is the load" class as
+#: ``backend/tests/CLAUDE.md``'s timeout table, and this is the third distinct test to be
+#: bitten by it in three consecutive runs.
+DATA_AFTER_RELOAD_MS = 30_000

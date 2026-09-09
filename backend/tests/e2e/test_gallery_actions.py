@@ -243,6 +243,11 @@ _ACTIVE_PIPELINE_STATUSES = frozenset({"pending", "processing", "orphaned"})
 #: churny to judge. Three: a sibling worker's upload takes far longer than one loop.
 _CANCEL_MENU_ATTEMPTS = 3
 
+#: Budget for the process dropdown to open or close. Generous because the e2e phase runs 3
+#: browser workers against one backend; short enough that a menu that never appears fails
+#: with a clear message rather than burning the 30s default on a wrong assumption.
+_MENU_STATE_MS = 10_000
+
 
 # ---------------------------------------------------------------------------
 # Normal Mode Button Tests
@@ -654,12 +659,21 @@ class TestBulkActions:
         for _ in range(_CANCEL_MENU_ATTEMPTS):
             before = self._active_pipeline_statuses(backend_url)
 
-            self.page.click(".process-btn")
-            # Kept (issue #431): `is_disabled()` below is a snapshot — no auto-wait.
-            self.page.wait_for_timeout(300)
+            # ⚠️ `.process-btn` TOGGLES. On a retry the menu may still be open from the
+            # previous iteration, so clicking again CLOSES it and `is_disabled()` then waits
+            # 30s for an item that is not there. That is not hypothetical — it is how the
+            # first version of this loop failed the 2026-09-08 gate. Drive to a known state
+            # instead of assuming one.
             menu = self.page.locator(".dropdown-menu")
+            if menu.is_visible():
+                self.page.keyboard.press("Escape")
+                menu.wait_for(state="hidden", timeout=_MENU_STATE_MS)
+            self.page.click(".process-btn")
+            menu.wait_for(state="visible", timeout=_MENU_STATE_MS)
             # Select by text, not index — positional locators break when items are added
             cancel_item = menu.locator(".dropdown-item", has_text="Cancel Processing")
+            cancel_item.wait_for(state="visible", timeout=_MENU_STATE_MS)
+            # Kept (issue #431): `is_disabled()` below is a snapshot — no auto-wait.
             disabled = cancel_item.is_disabled()
 
             after = self._active_pipeline_statuses(backend_url)
@@ -668,9 +682,10 @@ class TestBulkActions:
                 stable = (before, disabled)
                 break
 
-            # The library changed under us; close the menu and take a fresh pair.
+            # The library changed under us; close the menu deterministically (the next
+            # iteration re-opens it) and take a fresh pair.
             self.page.keyboard.press("Escape")
-            self.page.wait_for_timeout(500)
+            menu.wait_for(state="hidden", timeout=_MENU_STATE_MS)
 
         assert stable is not None, (
             "file statuses kept changing across every attempt, so this test never observed "

@@ -105,6 +105,13 @@ def _run_rehearse(
         "PATH": f"{repo.parent / 'bin'}:/usr/bin:/bin",
         "RELEASE_VERSION": "v0.5.1",
         "JSON_OUT": "true" if json_out else "false",
+        # The scratch repo is a synthetic tree, not a git checkout, so 65-rehearse.sh
+        # cannot derive the branch whose deployment files the scenarios should install
+        # (it refuses rather than silently rehearsing master — see
+        # test_rehearsal_installs_the_code_under_test.py). Supplying the documented
+        # override is giving the fake repo a fact it has no way to have; it does not
+        # weaken anything this module checks, which is waiver behaviour.
+        "TO_BRANCH": "master",
     }
     if patch_skip_reason is not None:
         env["OT_PATCH_SKIP_REASON"] = patch_skip_reason

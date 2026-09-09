@@ -491,7 +491,7 @@ run_phase() {
 #   AssertionError: the chunk index stayed unavailable across 4 attempts
 #                   (TransportError(503, 'search_phase_execution_exception'))
 #
-# Three legs, one shared budget, and NON-FATAL: a stack that will not settle is reported and
+# Four legs, one shared budget, and NON-FATAL: a stack that will not settle is reported and
 # the suite runs anyway. Turning "still busy" into a gate failure would replace a diagnosable
 # pile of timeouts with an undiagnosable red phase, and the e2e suite's own session preflight
 # (backend/tests/e2e/conftest.py::e2e_stack_preflight) still refuses a genuinely broken stack.
@@ -525,6 +525,7 @@ import importlib.util
 import io
 import os
 import pathlib
+import re
 import sys
 import time
 
@@ -592,6 +593,73 @@ if settled:
     print(f"  opensearch: settled ({last}) in {time.monotonic() - t0:.0f}s")
 else:
     print(f"  opensearch: NOT SETTLED after {time.monotonic() - t0:.0f}s — {last}")
+    failed = True
+
+# Leg 3: the FRONTEND is warm enough to serve an app shell.
+#
+# ⚠️ A 200 on `/` proves nothing here, which is why this leg is not a port check. The dev
+# frontend is Vite, which answers `/` immediately with a nearly-empty index.html and then
+# transforms the module graph ON DEMAND, per request. So the first navigation after a
+# container recreate pays for compiling the whole SPA — and that cost lands on whichever
+# test happens to go first, as a fixture timeout rather than a failure anyone can read.
+#
+# Measured 2026-09-09: a `--e2e-only` run whose overlay batch had just rebuilt and recreated
+# the containers reported `341 passed, 23 skipped, 1 error`, the error being
+# `gallery_page` timing out on `.gallery-action-buttons` at APP_SHELL_READY_MS (30 s) —
+# while the other three legs all reported settled. The backend was fine; nothing waited for
+# the frontend. That is the whole of the "e2e collapses on the FIRST run against a freshly
+# started stack" shape: every earlier leg watches a service the browser is not blocked on.
+#
+# The probe fetches `/` and then fetches the entry module the HTML actually references, so
+# Vite is made to do the transform HERE, on the quiesce's budget, instead of inside a test's
+# 30 s fixture. Requiring two consecutive FAST responses distinguishes "compiled and cached"
+# from "answered once, slowly, while still compiling".
+frontend = "http://localhost:" + os.environ.get("FRONTEND_PORT", "5173")
+t0 = time.monotonic()
+last = "no probe completed"
+warm = False
+streak = 0
+first = True
+while first or time.monotonic() < deadline:
+    first = False
+    try:
+        shell = requests.get(frontend, timeout=30)
+        # The entry is whatever the shell declares; never hardcode /src/main.ts, which is a
+        # SvelteKit layout detail that has moved before.
+        entry = re.search(r'<script[^>]+src="([^"]+)"[^>]*type="module"', shell.text) or \
+                re.search(r'<script[^>]+type="module"[^>]*src="([^"]+)"', shell.text)
+        if shell.status_code != 200:
+            last = f"shell HTTP {shell.status_code}"
+        elif entry is None:
+            # A shell with no module script is a served-but-not-a-SPA answer (an nginx error
+            # page, or the prod overlay). Report it rather than calling it warm.
+            last = "shell has no <script type=module> — not the Vite dev server?"
+        else:
+            url = entry.group(1)
+            if url.startswith("/"):
+                url = frontend + url
+            probe_started = time.monotonic()
+            mod = requests.get(url, timeout=60)
+            took = time.monotonic() - probe_started
+            last = f"entry {mod.status_code} in {took:.1f}s"
+            if mod.status_code == 200 and took < 2.0:
+                streak += 1
+                if streak >= 2:
+                    warm = True
+                    break
+            else:
+                streak = 0
+    except Exception as exc:
+        streak = 0
+        last = f"unreachable ({type(exc).__name__})"
+    time.sleep(2.0)
+if warm:
+    print(f"  frontend: warm ({last}) in {time.monotonic() - t0:.0f}s")
+else:
+    # Non-fatal, like every other leg: a cold frontend makes the suite slow and flaky, it
+    # does not make the stack broken, and the e2e suite's own preflight still refuses a
+    # genuinely dead one.
+    print(f"  frontend: NOT WARM after {time.monotonic() - t0:.0f}s — {last}")
     failed = True
 
 sys.exit(1 if failed else 0)

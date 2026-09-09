@@ -220,6 +220,30 @@ else
         echo -e "${BLUE}Scenario C — lite (CPU-only) deployment, mocked cloud ASR + mocked LLM${NC}" >&2
         ./scripts/release-tests/test-lite-mode.sh --yes || lite_rc=$?
     fi
+
+    # Scenario C must be torn down too, even though it is the last one.
+    #
+    # Each scenario script ends with "Stack left running for inspection", which is right when
+    # a human runs one by hand and wrong here: the scenarios deliberately bind the standard
+    # ports under the stock `opentranscribe-*` names, and `lib/guardrails.sh` REFUSES to start
+    # when any such container exists — running or merely stopped. So C's surviving stack does
+    # not just leak resources, it makes the NEXT `rehearse` fail its preconditions with exit 3,
+    # a "did not run" that reads like an unmet precondition of the release rather than residue
+    # from the previous run. A and B were already torn down; only the tail was missing.
+    #
+    # ⚠️ A teardown problem must NOT rewrite C's verdict. The scenario's own outcome is a fact
+    # about the release; failing to clean up afterwards is a fact about this host, and
+    # collapsing the two would report a passing lite deployment as a failed one (or vice
+    # versa). It is therefore captured separately and warned about, loudly, with the manual
+    # command — the same "cleanup reported a problem; continuing" shape `teardown_scenario`
+    # already uses for A and B.
+    lite_teardown_rc=0
+    teardown_scenario "Scenario C" ./scripts/release-tests/test-lite-mode.sh || lite_teardown_rc=$?
+    if [[ $lite_teardown_rc -ne 0 ]]; then
+        echo -e "${YELLOW}Scenario C's stack did not tear down cleanly (rc=$lite_teardown_rc).${NC}" >&2
+        echo -e "${YELLOW}The NEXT rehearsal will refuse to start until it is gone. Clean up with:${NC}" >&2
+        echo -e "${YELLOW}    ./scripts/release-tests/test-lite-mode.sh --cleanup --yes${NC}" >&2
+    fi
 fi
 
 # Record each scenario against its declared criterion.

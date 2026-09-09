@@ -322,30 +322,30 @@ security-reports/
 
 ```bash
 # View summary
-cat security-reports/backend-trivy.txt
+cat security-reports/backend-amd64-trivy.txt
 
 # Query JSON for specific severity
 jq '.Results[].Vulnerabilities[] | select(.Severity == "CRITICAL")' \
-  security-reports/backend-trivy.json
+  security-reports/backend-amd64-trivy.json
 
 # Count vulnerabilities by severity
 jq '[.Results[].Vulnerabilities[] | .Severity] | group_by(.) | map({severity: .[0], count: length})' \
-  security-reports/backend-trivy.json
+  security-reports/backend-amd64-trivy.json
 ```
 
 ### Reading Grype Reports
 
 ```bash
 # View summary
-cat security-reports/backend-grype.txt
+cat security-reports/backend-amd64-grype.txt
 
 # Query JSON for fixable vulnerabilities
 jq '.matches[] | select(.vulnerability.fix.state == "fixed")' \
-  security-reports/backend-grype.json
+  security-reports/backend-amd64-grype.json
 
 # Group by package
 jq '[.matches[] | {package: .artifact.name, cve: .vulnerability.id, severity: .vulnerability.severity}] | group_by(.package)' \
-  security-reports/backend-grype.json
+  security-reports/backend-amd64-grype.json
 ```
 
 ### Understanding Severity Levels

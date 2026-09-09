@@ -327,6 +327,27 @@ this file is for.
   against mocked cloud ASR + mocked LLM), with `lib/guardrails.sh` as the
   safety firewall and `lib/{compose-patch,api-client,assertions,versions,model-cache}.sh`.
 
+  **Where the rehearsal's wall clock actually goes, and why it is near its floor.** Measured on
+  a green run: **~30 min total — fresh ~2 min, upgrade ~24 min, lite ~3 min.** So the upgrade
+  scenario is ~80%, and it is two hops (`ver_upgrade_sources` derives `{v0.4.1, v0.3.3}` for a
+  v0.5.0 TO). The obvious saving is to drop the second hop; **don't** — `lib/versions.sh`'s own
+  header is the reason: v0.3.3 shipped only 2 Alembic revisions and bootstrapped its schema from
+  `database/init_db.sql`, so it is the **only** source that exercises the pre-Alembic bootstrap
+  path. The two rejected alternatives are recorded there too, one of which
+  (`{v0.4.1, v0.4.0}`) buys a second hop whose Alembic chain is *identical* — two hops' price for
+  one hop's coverage. A patch-level TO already collapses to one hop on its own.
+
+  For **iteration** (not for a release), `OT_UPGRADE_SOURCE_MINORS=1` halves it — verified:
+
+  ```bash
+  ./scripts/release-tests/test-upgrade.sh --list-sources                     # v0.4.1, v0.3.3
+  OT_UPGRADE_SOURCE_MINORS=1 ./scripts/release-tests/test-upgrade.sh --list-sources   # v0.4.1
+  ```
+
+  ⚠️ Never cut a release on a single-hop rehearsal: the hop you dropped is the one covering the
+  schema shape least like today's. Roughly 38% of the remaining time is **real transcription**,
+  which is the thing being rehearsed and is not overhead to remove.
+
   ⚠️ **The Docker Hub tag memo (`lib/versions.sh`'s `ver_hub_has`) lives in
   `${OT_HUB_CACHE_DIR:-$XDG_CACHE_HOME/opentranscribe}/hub-tags` and entries EXPIRE
   (`OT_HUB_CACHE_TTL_S`, default 6 h).** It used to be `${TEST_ROOT:-${TMPDIR:-/tmp}}/.hub-tags`,

@@ -1,0 +1,8 @@
+NAME           INSTALLED   TYPE  VULNERABILITY   SEVERITY  EPSS         RISK  
+tiff           4.7.1-r0    apk   CVE-2023-52356  High      2.2% (81st)  1.6   
+tiff           4.7.1-r0    apk   CVE-2023-6277   Medium    1.8% (77th)  1.0   
+tiff           4.7.1-r0    apk   CVE-2026-4775   High      0.6% (44th)  0.4   
+tiff           4.7.1-r0    apk   CVE-2023-6228   Medium    0.4% (33rd)  0.2   
+busybox        1.37.0-r30  apk   CVE-2025-60876  Medium    0.3% (21st)  0.2   
+busybox-binsh  1.37.0-r30  apk   CVE-2025-60876  Medium    0.3% (21st)  0.2   
+ssl_client     1.37.0-r30  apk   CVE-2025-60876  Medium    0.3% (21st)  0.2

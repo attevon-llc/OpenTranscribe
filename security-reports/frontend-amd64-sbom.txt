@@ -62,4 +62,4 @@ tiff                       4.7.1-r0              apk
 tzdata                     2026c-r0              apk   
 xz-libs                    5.8.3-r0              apk   
 zlib                       1.3.2-r0              apk   
-zstd-libs                  1.5.7-r2              apk
+zstd-libs                  1.5.7-r2              apk   

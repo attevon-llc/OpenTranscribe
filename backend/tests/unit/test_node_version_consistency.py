@@ -68,7 +68,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 #: is single-stage and actually runs Node at runtime.
 #:
 #: That asymmetry is precisely why this gate exists rather than a scanner. A discarded stage is
-#: invisible to Trivy/Grype — `security-reports/docs-sbom.json` contains zero node packages —
+#: invisible to Trivy/Grype — `security-reports/docs-amd64-sbom.json` contains zero node packages —
 #: so the two Dockerfiles that matter most for supply-chain drift are the two nothing was
 #: watching. All three must still agree: "invisible to a scan" is not "invisible to a developer
 #: reading three Dockerfiles that disagree about the Node version".

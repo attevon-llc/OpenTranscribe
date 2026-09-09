@@ -293,6 +293,92 @@ def _await_stable_backend(backend_url: str, *, required: int = 3, budget: float 
     return last
 
 
+#: How long to let Vite finish dependency pre-bundling before giving up on warming it.
+#: Generous because this is paid ONCE per session and the alternative is paying it inside a
+#: 30 s per-test fixture; measured cold on this host at 20-40 s after a container recreate.
+_FRONTEND_WARM_BUDGET_S = 120.0
+
+#: A transform this fast can only have come from Vite's cache, so the graph is compiled.
+_FRONTEND_WARM_FAST_S = 2.0
+
+
+def _warm_frontend_module_graph(base_url: str) -> None:
+    """Make Vite compile the SPA now, on the session's budget — not inside a test fixture.
+
+    ⚠️ **A 200 on ``/`` proves nothing here.** The dev frontend is Vite, which serves the
+    shell immediately and then transforms the module graph **on demand, per request**. The
+    dominant cold cost is esbuild's dependency pre-bundling, which blocks *every* module
+    request until it finishes. So the first navigation after a container recreate pays for
+    the whole SPA — and that cost lands on whichever test happens to run first, surfacing as
+    a fixture timeout that reads like a broken test rather than a cold server.
+
+    Measured 2026-09-09: an ``--e2e-only`` run whose overlay batch had just rebuilt and
+    recreated the containers reported ``341 passed, 23 skipped, 1 error`` — the error being
+    ``gallery_page`` timing out on ``.gallery-action-buttons`` at ``APP_SHELL_READY_MS``
+    (30 s). The backend was healthy throughout; nothing had waited for the *frontend*. Every
+    readiness check in the chain watched a service the browser was not blocked on.
+
+    ⚠️ **Deliberately NOT fatal.** A cold or unreachable frontend makes the suite slow, and
+    the checks either side of this one already refuse a genuinely broken stack — turning a
+    slow warm-up into an abort would trade a diagnosable delay for an undiagnosable exit.
+    Raising ``APP_SHELL_READY_MS`` was the other option and is worse: it hides the cost
+    rather than paying it once, and every test then waits longer for a real failure too.
+
+    The entry module is read from the shell rather than hardcoded. SvelteKit references it
+    from an **inline** script (``/@fs/.../generated/client/app.js``), not a
+    ``<script src type=module>`` — a first draft matched the latter, found nothing, and would
+    have reported NOT WARM on every single run.
+    """
+    deadline = time.monotonic() + _FRONTEND_WARM_BUDGET_S
+    started = time.monotonic()
+    last = "no probe completed"
+    streak = 0
+    first = True
+    while first or time.monotonic() < deadline:
+        first = False
+        try:
+            shell = requests.get(base_url, timeout=30)
+            if shell.status_code != 200:
+                last = f"shell HTTP {shell.status_code}"
+            else:
+                mods = re.findall(
+                    r'["\'](/(?:@fs|@vite|src|node_modules)/[^"\']+\.js)["\']', shell.text
+                )
+                if not mods:
+                    # Not the Vite dev server (prod/nginx overlay serves hashed bundles that
+                    # need no warming). Nothing to do, and not a problem.
+                    return
+                # The generated client app imports the real route modules, so it pulls the
+                # widest graph of anything referenced by the shell.
+                mods.sort(key=lambda u: (0 if "generated/client/app.js" in u else 1, len(u)))
+                probe_started = time.monotonic()
+                mod = requests.get(base_url.rstrip("/") + mods[0], timeout=90)
+                took = time.monotonic() - probe_started
+                last = f"entry {mod.status_code} in {took:.1f}s"
+                if mod.status_code == 200 and took < _FRONTEND_WARM_FAST_S:
+                    # Two consecutive fast transforms: "cached", not "answered once slowly
+                    # while still compiling".
+                    streak += 1
+                    if streak >= 2:
+                        print(
+                            f"E2E preflight: frontend warm ({last}) in "
+                            f"{time.monotonic() - started:.0f}s"
+                        )
+                        return
+                else:
+                    streak = 0
+        except Exception as exc:  # noqa: BLE001 — any failure here is "not warm yet"
+            streak = 0
+            last = f"unreachable ({type(exc).__name__})"
+        time.sleep(2.0)
+
+    print(
+        f"E2E preflight: frontend NOT WARM after {time.monotonic() - started:.0f}s — {last}. "
+        "The first tests may time out on the app shell while Vite compiles; that is a cold "
+        "server, not a test defect."
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
     """Refuse to run the suite against a stack that cannot support it.
@@ -310,6 +396,8 @@ def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
             "Start or settle the stack first:  ./opentr.sh start dev",
             returncode=3,
         )
+
+    _warm_frontend_module_graph(base_url)
 
     splits = split_store_modules(_fetch_store_importers(base_url))
     if splits:

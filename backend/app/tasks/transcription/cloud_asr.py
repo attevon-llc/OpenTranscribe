@@ -293,10 +293,25 @@ def _run_cloud_asr_pipeline(
         ctx.file_id,
     )
 
+    # The engine that ACTUALLY served diarization. `merge_diarization_into_asr` records both
+    # from the DiarizeResult itself (utils/diarization_merge.py), so this reports what really
+    # ran rather than what was configured. Absent — and therefore None — in the two cases
+    # where nothing diarized: the `else` branch above (ASR only) and the non-fatal diarization
+    # failure that returns the unmerged ASRResult.
+    #
+    # ⚠️ Do NOT substitute a default here or downstream. These were dropped on the floor until
+    # issue #28, and `finalize.py` covered for it with a hardcoded
+    # "pyannote/speaker-diarization-community-1" — correct only by luck, because the local
+    # provider happens to serve those weights. Any other diarization provider on this path was
+    # recorded under PyAnnote's name, while `diarization_provider` went to NULL beside it.
+    diar_meta = getattr(asr_result, "metadata", None) or {}
+
     return {
         "segments": raw_segments,
         "language": asr_result.language,
         "asr_provider": asr_result.provider_name,
         "asr_model": asr_result.model_name,
         "diarization_source": diarization_source,
+        "diarization_provider": diar_meta.get("diarization_provider"),
+        "diarization_model": diar_meta.get("diarization_model"),
     }

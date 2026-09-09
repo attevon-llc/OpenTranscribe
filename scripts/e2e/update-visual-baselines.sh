@@ -208,6 +208,12 @@ renamed? Refusing to run without knowing which ports are the shared stack's." "$
 BASE_FRONTEND_PORT=""
 BASE_BACKEND_PORT=""
 BASE_MOCK_LLM_PORT=""
+# The BACKING SERVICES the test process talks to directly (not through the app).
+# Without these the pytest process falls back to conftest.py's defaults, which are the
+# SHARED dev stack's ports — see the export block by the pytest call for what that cost.
+BASE_POSTGRES_PORT=""
+BASE_MINIO_PORT=""
+BASE_OPENSEARCH_PORT=""
 opentr_default_port() {
     local var="$1"
     awk -v pat="\"${var}=" '
@@ -223,8 +229,12 @@ derive_base_ports() {
     BASE_FRONTEND_PORT="$(opentr_default_port FRONTEND_PORT)"
     BASE_BACKEND_PORT="$(opentr_default_port BACKEND_PORT)"
     BASE_MOCK_LLM_PORT="$(opentr_default_port MOCK_LLM_PORT)"
+    BASE_POSTGRES_PORT="$(opentr_default_port POSTGRES_PORT)"
+    BASE_MINIO_PORT="$(opentr_default_port MINIO_PORT)"
+    BASE_OPENSEARCH_PORT="$(opentr_default_port OPENSEARCH_PORT)"
     local var
-    for var in BASE_FRONTEND_PORT BASE_BACKEND_PORT BASE_MOCK_LLM_PORT; do
+    for var in BASE_FRONTEND_PORT BASE_BACKEND_PORT BASE_MOCK_LLM_PORT \
+               BASE_POSTGRES_PORT BASE_MINIO_PORT BASE_OPENSEARCH_PORT; do
         [[ -n "${!var}" ]] || die "could not derive ${var#BASE_} from $OPENTR's \
 FRESH_*_PORT_VARS tables — refusing to fall back to a hardcoded port" "$EXIT_PRECONDITION"
     done
@@ -500,6 +510,9 @@ start_capture_stack() {
         FRONTEND_PORT=$((BASE_FRONTEND_PORT + PORT_OFFSET))
         BACKEND_PORT=$((BASE_BACKEND_PORT + PORT_OFFSET))
         MOCK_LLM_PORT=$((BASE_MOCK_LLM_PORT + PORT_OFFSET))
+        POSTGRES_PORT=$((BASE_POSTGRES_PORT + PORT_OFFSET))
+        MINIO_PORT=$((BASE_MINIO_PORT + PORT_OFFSET))
+        OPENSEARCH_PORT=$((BASE_OPENSEARCH_PORT + PORT_OFFSET))
         FRESH_PROJECT="otfresh-${FRESH_NAME}"
 
         assert_offset_is_not_the_shared_stack "$PORT_OFFSET" "$FRONTEND_PORT" "$BACKEND_PORT" \
@@ -689,10 +702,30 @@ capture() {
     log "  base-url    http://localhost:${FRONTEND_PORT}"
     log "  backend-url http://localhost:${BACKEND_PORT}"
     log "  MOCK_LLM_PORT=${MOCK_LLM_PORT}"
+    log "  POSTGRES_PORT=${POSTGRES_PORT} MINIO_PORT=${MINIO_PORT} OPENSEARCH_PORT=${OPENSEARCH_PORT}"
 
     $DRY_RUN && return 0
 
-    MOCK_LLM_PORT="$MOCK_LLM_PORT" UPDATE_SCREENSHOTS=1 \
+    # ⚠️ `--base-url`/`--backend-url` only redirect what the BROWSER talks to. Fixtures that
+    # reach a backing service DIRECTLY read `conftest.py`'s env vars, which default to the
+    # SHARED dev stack (`OPENSEARCH_PORT` -> 5180, `POSTGRES_PORT` -> 5176). Omitting them does
+    # not fail loudly — it silently points half the run at the wrong deployment.
+    #
+    # Measured 2026-09-09: `file_detail` failed with "owned file <uuid> never got transcript
+    # chunks indexed within 420.0s" while the capture stack's own worker log showed
+    # `Indexed 1 chunks for file <that uuid> (mode: neural)` and the task succeeding. The
+    # chunks existed; `_wait_for_chunks_indexed` was counting them in the shared dev stack's
+    # index, where that file has never existed and never will. No timeout can fix that, and
+    # raising one only buys a slower identical failure.
+    #
+    # This is the trap `backend/tests/CLAUDE.md` records for isolated stacks — export the
+    # service ports or you hit the shared one — applied to the one tool whose entire purpose
+    # is to run against an isolated stack.
+    MOCK_LLM_PORT="$MOCK_LLM_PORT" \
+    POSTGRES_PORT="$POSTGRES_PORT" \
+    MINIO_PORT="$MINIO_PORT" \
+    OPENSEARCH_PORT="$OPENSEARCH_PORT" \
+    UPDATE_SCREENSHOTS=1 \
         "$VENV_PY" -m pytest "$TEST_MODULE" -v -rs \
         -k "$k_expr" \
         --base-url="http://localhost:${FRONTEND_PORT}" \

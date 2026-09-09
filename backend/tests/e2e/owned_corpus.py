@@ -125,7 +125,27 @@ def _derive_search_term(segments: list[dict[str, Any]]) -> str:
     return max(sorted(candidates), key=len)
 
 
-def _wait_for_chunks_indexed(file_uuid: str, timeout: float = 120.0) -> int:
+#: How long to wait for a completed transcript's chunks to reach the OpenSearch chunk plane.
+#:
+#: ⚠️ This budget starts AFTER `wait_for_stable_completion` (600 s) has already confirmed the
+#: transcription finished, so it covers only indexing — which is why 120 s looked generous and
+#: was not. Indexing runs on the nlp/embedding workers, and on a **cold** stack the first
+#: document has to load the embedding model before it can encode anything; that load is minutes,
+#: not seconds, and it is paid exactly once per worker process.
+#:
+#: Measured 2026-09-09 on a freshly created `--fresh visual` stack: 4 of 10 visual surfaces
+#: (`file_detail` and `settings`, both themes) failed with "never got transcript chunks indexed
+#: within 120.0s" while the transcript itself was complete. The same fixture passes immediately
+#: against the warm shared dev stack, where the model is already resident — the classic shape
+#: `backend/tests/CLAUDE.md` warns about, where a budget calibrated on a warm machine becomes a
+#: bug on a cold one.
+#:
+#: This is a ceiling, not a delay: the loop polls every 2 s and returns as soon as a chunk
+#: appears, so a warm stack still costs one poll.
+CHUNKS_INDEXED_TIMEOUT_S = 420.0
+
+
+def _wait_for_chunks_indexed(file_uuid: str, timeout: float = CHUNKS_INDEXED_TIMEOUT_S) -> int:
     """Poll OpenSearch directly until *file_uuid* has transcript chunks.
 
     Deliberately NOT ``GET /api/search``: the app caches search responses for

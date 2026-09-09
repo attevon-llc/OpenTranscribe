@@ -53,6 +53,12 @@ lerna-debug.log*
 
 # Database data
 /data/
+# Runtime DATA_DIR contents. In dev, DATA_DIR resolves inside the ./backend:/app bind mount,
+# so the GDPR erasure journal lands at backend/data/gdpr/erasure-journal.jsonl in the working
+# tree. It was neither tracked nor ignored — one `git add .` from publishing erasure records
+# (subject identifiers, deletion timestamps) to a public repo. Ignoring it is the guard; the
+# journal not surviving a container recreate is the separate defect in #870.
+backend/data/
 models_ai/
 flower.db
 *.sqlite3

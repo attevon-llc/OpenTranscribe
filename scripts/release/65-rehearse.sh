@@ -84,6 +84,14 @@ fi
 record live-stack-stopped pass
 
 fresh_rc=0; upgrade_rc=0; lite_rc=0
+# Scenario C's teardown status. Separate from lite_rc on purpose — whether the lite
+# deployment works is a fact about the RELEASE; whether this host then released its ports
+# is a fact about the HOST. It still reaches the exit-code aggregation below, because
+# teardown_scenario returns 3 (precondition) when the containers will not go away, and a
+# stack that outlives the run blocks the NEXT rehearsal exactly as an unmet precondition
+# does. Initialised here, not in the branch, so a --patch waiver (which runs no scenarios
+# at all) still has it defined under `set -u`.
+lite_teardown_rc=0
 
 # Names still held by a previous scenario's stack, as a single string ("" = none).
 #
@@ -237,7 +245,6 @@ else
     # versa). It is therefore captured separately and warned about, loudly, with the manual
     # command — the same "cleanup reported a problem; continuing" shape `teardown_scenario`
     # already uses for A and B.
-    lite_teardown_rc=0
     teardown_scenario "Scenario C" ./scripts/release-tests/test-lite-mode.sh || lite_teardown_rc=$?
     if [[ $lite_teardown_rc -ne 0 ]]; then
         echo -e "${YELLOW}Scenario C's stack did not tear down cleanly (rc=$lite_teardown_rc).${NC}" >&2
@@ -289,11 +296,11 @@ criteria_assert_all_checked
 # rehearsal had run and failed, when none had run at all. `record` above reports; it
 # deliberately does not decide the exit code, so declaring criteria did not change 0/1/3/4.
 rc=0
-if [[ $fresh_rc -eq 4 || $upgrade_rc -eq 4 || $lite_rc -eq 4 ]]; then
+if [[ $fresh_rc -eq 4 || $upgrade_rc -eq 4 || $lite_rc -eq 4 || $lite_teardown_rc -eq 4 ]]; then
     rc=4
-elif [[ $fresh_rc -eq 3 || $upgrade_rc -eq 3 || $lite_rc -eq 3 ]]; then
+elif [[ $fresh_rc -eq 3 || $upgrade_rc -eq 3 || $lite_rc -eq 3 || $lite_teardown_rc -eq 3 ]]; then
     rc=3
-elif [[ $fresh_rc -ne 0 || $upgrade_rc -ne 0 || $lite_rc -ne 0 ]]; then
+elif [[ $fresh_rc -ne 0 || $upgrade_rc -ne 0 || $lite_rc -ne 0 || $lite_teardown_rc -ne 0 ]]; then
     rc=1
 fi
 [[ $rc -eq 0 ]] && echo -e "${GREEN}all three scenarios passed${NC}" >&2

@@ -111,6 +111,15 @@ WITH_PIPELINE_SMOKE=false
 # (`run-integration-tests.sh --coverage --search-quality --cleanup`) instead of the matrix
 # calling run-integration-tests.sh separately and losing this script's overlay orchestration.
 SEARCH_QUALITY=false
+# Passed straight through to run-integration-tests.sh, for the same reason as
+# --search-quality above: so scripts/release/60-test.sh can get the release gate's flags
+# AND this script's overlay orchestration from ONE command. Calling
+# run-integration-tests.sh directly loses the overlays, and that is not cosmetic —
+# measured 2026-09-08, the release `test` stage skipped all 6
+# test_lite_mode_mocked_providers tests ("mock-asr and/or mock-llm containers not
+# running"), which pushed the integration phase to 14 skips against a ceiling of 7 and
+# made the whole stage report NOT MEASURED. The release gate could not be counted at all.
+EXPORT_CAPABILITY=false
 
 # `--no-coverage`: drop --coverage from the backend gate.
 #
@@ -139,6 +148,9 @@ Overlay flags:
   --with-gpu-scale    exercise the --gpu-scale multi-GPU worker topology; auto-skips
                       with a clear message when this project has fewer than 2 GPUs
                       configured (never auto-started under any other flag)
+  --export-capability add run-integration-tests.sh's --export-capability phase (a REAL
+                      diar-native model export). Used by the release gate, which needs it
+                      AND this script's overlay orchestration.
   --search-quality    add run-integration-tests.sh's --search-quality phase to the backend
                       gate (self-seeding 6-meeting corpus; several extra minutes). This is
                       what full-test-matrix.md's Cycle 2A leg 1 asks for, so the matrix can
@@ -195,6 +207,7 @@ while [[ $# -gt 0 ]]; do
         --all-overlays)  ALL_OVERLAYS=true ;;
         --with-gpu-scale) WITH_GPU_SCALE=true ;;
         --search-quality) SEARCH_QUALITY=true ;;
+        --export-capability) EXPORT_CAPABILITY=true ;;
         --no-coverage)   NO_COVERAGE=true ;;
         --no-overlays)   NO_OVERLAYS=true ;;
         --list-overlays) LIST_OVERLAYS=true ;;
@@ -652,6 +665,7 @@ if [[ "$RUN_BACKEND" == "true" ]]; then
         backend_flags=(--coverage "${backend_flags[@]}")
     fi
     $SEARCH_QUALITY && backend_flags=(--search-quality "${backend_flags[@]}")
+    $EXPORT_CAPABILITY && backend_flags=(--export-capability "${backend_flags[@]}")
     run_phase "backend (run-integration-tests.sh ${backend_flags[*]})" \
         "$REPO_ROOT/scripts/run-integration-tests.sh" "${backend_flags[@]}"
 fi

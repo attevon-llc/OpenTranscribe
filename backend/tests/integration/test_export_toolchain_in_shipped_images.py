@@ -179,6 +179,8 @@ def test_the_running_backend_image_has_every_exporter_dependency():
 # it back in, and the release pipeline always passes that flag.
 @pytest.mark.slow
 @pytest.mark.opt_in_gate
+# Lets --export-capability ask for THIS opt-in test without re-selecting the others.
+@pytest.mark.export_capability
 def test_the_running_backend_actually_completes_a_real_export():
     """End-to-end capability: a REAL export must succeed in the image that serves the models.
 

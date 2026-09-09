@@ -298,7 +298,15 @@ fi
 #: --export-capability does; RUN_INDEX_AUDIT's audit is driven by hand
 #: (`-m "integration and opt_in_gate"`).
 if $EXPORT_CAPABILITY; then
-    OPT_IN_FILTER=""
+    # ⚠️ NOT `OPT_IN_FILTER=""`. Clearing the filter re-selects EVERY opt_in_gate test, not
+    # just the export one -- including RUN_INDEX_AUDIT's deployment audit, which then SKIPS
+    # (its env var is unset) and counts against this phase's ceiling. Measured 2026-09-08 on
+    # the release `test` stage: 14 skips against a ceiling of 7, so the stage reported
+    # NOT MEASURED and the release gate could not be counted at all. That is the exact
+    # failure the opt_in_gate marker's own docstring says it exists to prevent -- "a
+    # permanently-skipping test inflates the skip total toward the ceiling and buries the
+    # skips that mean something".
+    OPT_IN_FILTER=" and (not opt_in_gate or export_capability)"
 else
     OPT_IN_FILTER=" and not opt_in_gate"
 fi

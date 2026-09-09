@@ -363,6 +363,63 @@ A tag was either yours alone or published to the whole deployment, so giving one
 
 ### Fixed
 
+- **A fresh install could fail permanently on a race with its own database.** `run_migrations()`
+  could not distinguish "Postgres is not up yet" from "the migration failed", and `main.py`'s
+  lifespan turns either into `SystemExit(1)`. On a **new volume** the official postgres
+  entrypoint runs a temporary server with TCP listening disabled while `initdb` and the
+  bootstrap SQL run, so `pg_isready` answers over the unix socket — satisfying
+  `depends_on: service_healthy` — while TCP is still refused. Measured on a fresh stack:
+  postgres up at 10:11:43, backend at 10:13:17, backend still dead with `Connection refused`.
+  The failure is **permanent, not transient**, because the dev backend runs `uvicorn --reload`
+  whose parent holds the listening socket: the container stays `Up (unhealthy)` with its port
+  open and answering nothing, so Compose's `restart` never fires. A bounded wait
+  (`DB_STARTUP_WAIT_S`, default 120s, `0` disables for an orchestrated deploy with its own
+  readiness gate) now precedes the migration, and re-raises the original `OperationalError` so
+  a genuinely unreachable database still fails loudly and names the real cause. Aborting on a
+  real migration failure is unchanged — that behaviour is deliberate.
+- **The diarization engine recorded on a transcript could be fabricated.** `finalize.py`
+  resolved `diarization_model` with a hardcoded
+  `result.get("diarization_model", "pyannote/speaker-diarization-community-1")`. The true
+  values were not missing — `merge_cloud_diarization` reads `provider_name`/`model_name` off
+  the `DiarizeResult` the provider returned, and `_run_cloud_asr_pipeline` was dropping the
+  metadata when building its result dict. The constant was correct only by luck (the local
+  provider happens to serve those weights), so any other diarization provider on that path was
+  recorded under **PyAnnote's** name, beside a `diarization_provider` of `NULL`. Now
+  propagated; an unknown engine leaves the column NULL rather than asserting one nobody
+  verified.
+- **Neural search could never self-heal** (#36). `neural_search_bootstrap` is routed to the
+  `utility` queue, consumed only by `celery-cpu-worker` — which did not mount `/ml-models`. The
+  retry loop that `main.py` promises will recover a missed startup one-shot failed with
+  `[Errno 13] Permission denied: '/ml-models'` forever, silently leaving the deployment on
+  BM25. The mount is now on every worker that consumes that queue, derived from the task's own
+  routing so moving the queue moves the requirement with it.
+
+### Fixed — testing and release tooling
+
+- **The visual-baseline capture pointed half of every run at the wrong deployment.**
+  `update-visual-baselines.sh` passed `--base-url`/`--backend-url`, which redirect only what the
+  **browser** talks to; fixtures reaching a backing service directly read `conftest.py`'s env
+  vars, defaulting to the **shared dev stack** (`OPENSEARCH_PORT` 5180, `POSTGRES_PORT` 5176).
+  So the one tool whose entire purpose is running against an isolated stack silently queried the
+  shared one. It surfaced as `file_detail` failing with *"never got transcript chunks indexed
+  within 420.0s"* while the capture stack's own worker log showed the chunks being indexed. The
+  service ports are now exported; the same assertion passes in ~27s.
+- **Nothing in the e2e readiness chain ever waited for the frontend.** A `200` on `/` proves
+  nothing against Vite, which serves the shell immediately and transforms the module graph on
+  demand — the dominant cold cost, esbuild dependency pre-bundling, blocks every module request
+  until it finishes. So the first navigation after a container recreate paid for the whole SPA,
+  landing on whichever test ran first as a fixture timeout. A warm-up now runs in the e2e
+  session preflight (covering `run-e2e.sh` standalone too) and as a fourth quiesce leg.
+- **The release rehearsal left its last scenario's stack running**, and `lib/guardrails.sh`
+  refuses to start while any `opentranscribe-*` container exists — so the *next* rehearsal failed
+  its preconditions with exit 3, reading as an unmet precondition of the release rather than
+  residue from the previous run.
+- **The published security reports could not be regenerated.** 21 tracked files used pre-#667
+  un-suffixed names (`backend-trivy.json`) that nothing has written since the multi-arch split,
+  dated weeks earlier and describing images two releases old while presenting as the current
+  posture. Orphans removed, the real per-architecture legs published, and a guard now derives
+  valid names from the scanner's own component map. The multi-MB machine JSON is no longer
+  committed — regenerable, and Trivy embeds the scanned image's `ENV` block.
 - **GPU workers were SIGKILLed 10 seconds into a stop, with no shutdown handler** (#782).
   `opentr.sh stop` gave a CUDA-holding worker Docker's default 10-second grace period and no
   chance to release the device, so a stop during transcription could leave the GPU wedged. A

@@ -7,14 +7,18 @@ candidate set from ``status`` alone. A DMCA/litigation hold could therefore be
 destroyed by a background task, which is the one failure mode legal hold exists
 to prevent.
 
-``status`` is not a durable stand-in for the flag either:
-``tasks/transcription/storage.update_media_file_transcription_status`` writes
-``status = COMPLETED`` and ``completed_at = now()`` unconditionally, with no
-quarantine check. A file quarantined *while it was still transcribing* therefore
-ends up ``legal_hold=True, is_quarantined=True, status='completed'`` with a
-retention clock starting at the moment of that clobber —
-:func:`test_a_hold_survives_a_mid_transcription_status_clobber` reproduces it
-through the real writer.
+``status`` is not a durable stand-in for the flag either: a file quarantined *while
+it was still transcribing* used to have its display status clobbered from
+``QUARANTINED`` to ``COMPLETED`` by
+``tasks/transcription/storage.update_media_file_transcription_status``, with no
+quarantine check at all — issue #824, fixed by routing that writer (and its
+sibling in ``app/utils/task_utils.py``) through
+``takedown_service.apply_processing_status``/``stamp_completion_time``, which keep
+the display status at ``QUARANTINED`` for as long as the hold is in effect.
+:func:`test_a_hold_survives_a_mid_transcription_status_clobber` pins that the real
+writer no longer clobbers it, and that the file would still survive the sweep
+regardless (this module's actual subject: the sweep predicate keys on
+``legal_hold``/``is_quarantined``, never on ``status``).
 
 Every test drives real rows through the savepoint-rolled-back ``db_session``;
 the two purge tests use fabricated storage paths, so the object-storage and
@@ -149,12 +153,19 @@ def test_the_sweep_skips_a_quarantined_file(db_session, sample_user):
 def test_a_hold_survives_a_mid_transcription_status_clobber(db_session, sample_user):
     """Issue #664's exact scenario, reproduced through the real status writer.
 
-    A file is quarantined and held while it is still PROCESSING. The transcription
-    pipeline then finishes and calls the real
-    ``update_media_file_transcription_status``, which writes ``COMPLETED`` and a
-    fresh ``completed_at`` with no quarantine check — so the only thing that had
-    been keeping the row out of the candidate set is gone, and the retention clock
-    now starts at the clobber. The file must still survive the sweep.
+    A file is quarantined and held while transcription is still in flight (a real
+    ``quarantine_file`` call always leaves ``status == QUARANTINED``, regardless
+    of what the pipeline was doing when it fired). The transcription pipeline
+    then finishes and calls the real
+    ``update_media_file_transcription_status``. Before issue #824's fix, that write
+    clobbered ``status`` to ``COMPLETED`` with no quarantine check at all, which
+    was itself display-wrong (the file kept the appearance of being live while a
+    takedown was in effect); this test now pins that the real writer keeps the
+    file's display status at ``QUARANTINED`` and records the real transition into
+    ``pre_quarantine_status`` instead. Either way, the file must survive the
+    sweep -- that guarantee comes from the sweep predicate keying on
+    ``legal_hold``/``is_quarantined`` directly, never from ``status``, so it holds
+    regardless of which writer behavior is in effect.
     """
     from app.tasks.transcription.storage import update_media_file_transcription_status
 
@@ -163,19 +174,21 @@ def test_a_hold_survives_a_mid_transcription_status_clobber(db_session, sample_u
         sample_user,
         legal_hold=True,
         is_quarantined=True,
-        status=FileStatus.PROCESSING.value,
+        status=FileStatus.QUARANTINED.value,
     )
     file_id = int(held.id)
 
     update_media_file_transcription_status(db_session, file_id, [{"end": 12.0}], "en")
     db_session.refresh(held)
 
-    # The clobber really did happen — otherwise this test proves nothing about it.
-    assert held.status == FileStatus.COMPLETED.value
+    # The pipeline's real verdict landed, without clobbering the display status --
+    # otherwise this test proves nothing about the fix.
+    assert held.status == FileStatus.QUARANTINED.value
+    assert held.pre_quarantine_status == FileStatus.COMPLETED.value
     assert bool(held.legal_hold) is True
 
-    # Age the clobbered timestamp past the window, i.e. the sweep that runs
-    # _RETENTION_DAYS after the clobber rather than the one that runs today.
+    # Age the recorded completion timestamp past the window, i.e. the sweep that
+    # runs _RETENTION_DAYS after completion rather than the one that runs today.
     held.completed_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
         days=_LONG_EXPIRED_DAYS
     )

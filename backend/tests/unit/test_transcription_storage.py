@@ -375,12 +375,11 @@ def test_completion_flips_status_and_records_the_processing_provenance(db_sessio
 
 
 def test_completion_does_not_clobber_a_file_quarantined_mid_transcription(db_session, media_file):
-    """Issue #824 (#664 item 3): a file quarantined while still transcribing must
-    not have its status/completed_at overwritten by this unrelated pipeline
-    write. completed_at is the column the retention window is measured from --
-    clobbering it here would silently restart that clock, and clobbering status
-    would erase the QUARANTINED display state for a file under active
-    enforcement, both while is_quarantined/legal_hold stay True underneath."""
+    """Issue #824: a file quarantined while still transcribing must not have its
+    display status clobbered by this unrelated pipeline write, and must still be
+    releasable afterwards -- the pipeline's real verdict lands in
+    pre_quarantine_status, which is exactly what release_file reads back to
+    restore the file's true state on release."""
     media_file.status = FileStatus.QUARANTINED
     media_file.is_quarantined = True
     media_file.legal_hold = True
@@ -398,10 +397,16 @@ def test_completion_does_not_clobber_a_file_quarantined_mid_transcription(db_ses
     assert media_file.status == FileStatus.QUARANTINED, (
         "quarantine display status was clobbered by an unrelated pipeline write"
     )
-    assert media_file.completed_at is None, (
-        "completed_at was written despite the file being quarantined -- this is "
-        "the retention-clock column, and restarting it defeats the sweep's own "
-        "legal_hold/is_quarantined predicate (issue #664)"
+    assert media_file.pre_quarantine_status == FileStatus.COMPLETED.value, (
+        "the pipeline's real verdict must land in pre_quarantine_status so release_file "
+        "can restore it -- issue #824's original fix just discarded it, stranding the "
+        "file at PROCESSING forever once release ran (see TestPriorStatusRestore in "
+        "test_takedown_quarantine.py for the full release round-trip)"
+    )
+    assert media_file.completed_at is not None, (
+        "completed_at must still be stamped -- the retention sweep (#664) already "
+        "excludes held rows from its predicate, so withholding it here only strands "
+        "the file with no real completion time once it is eventually released"
     )
     assert media_file.is_quarantined is True
     assert media_file.legal_hold is True
@@ -414,9 +419,11 @@ def test_completion_does_not_clobber_a_file_quarantined_mid_transcription(db_ses
 def test_completion_still_completes_a_file_under_legal_hold_but_not_quarantined(
     db_session, media_file
 ):
-    """legal_hold alone (no active quarantine) also guards the write -- e.g. a
-    file already flagged for a pending legal matter before transcription even
-    reached this point."""
+    """legal_hold alone (no active quarantine) does NOT block completion. The
+    file is not display-QUARANTINED, so there is no display state to protect --
+    and unlike a quarantine, a legal-hold-only file has no release path that
+    would ever un-stick it, so withholding COMPLETED here would strand it
+    permanently."""
     media_file.legal_hold = True
     media_file.completed_at = None
     db_session.commit()
@@ -426,10 +433,107 @@ def test_completion_still_completes_a_file_under_legal_hold_but_not_quarantined(
     )
 
     db_session.refresh(media_file)
-    assert media_file.status == FileStatus.PROCESSING, (
-        "status was written despite legal_hold=True guarding the completion write"
+    assert media_file.status == FileStatus.COMPLETED, (
+        "a legal-hold-only file must still complete -- withholding it here has no "
+        "recovery mechanism, unlike a quarantine's release_file restore"
     )
-    assert media_file.completed_at is None
+    assert media_file.completed_at is not None
+    assert media_file.legal_hold is True, (
+        "completing the file must not itself clear the hold -- that stays a "
+        "separate, admin-only action"
+    )
+
+
+def test_a_held_files_existing_completion_time_is_never_moved_forward(db_session, media_file):
+    """The one real hazard in #824's original rationale: a file that ALREADY
+    completed before takedown must not have completed_at pushed forward by a
+    re-process while held -- that would extend retention past what the sweep
+    already had queued when the hold was applied."""
+    import datetime as dt
+
+    old_completed_at = dt.datetime(2020, 1, 1, tzinfo=dt.UTC)
+    media_file.status = FileStatus.COMPLETED
+    media_file.completed_at = old_completed_at
+    media_file.legal_hold = True
+    db_session.commit()
+
+    update_media_file_transcription_status(
+        db_session, media_file.id, [_segment(0.0, 5.0, "x")], language="en"
+    )
+
+    db_session.refresh(media_file)
+    assert media_file.completed_at == old_completed_at, (
+        "a held file's EXISTING completion time must never move forward -- that "
+        "restarts the retention clock the sweep already computed at takedown time"
+    )
+
+
+def test_an_unheld_files_existing_completion_time_still_moves(db_session, media_file):
+    """Control for the test above: with no hold in effect, a re-process DOES
+    refresh completed_at, proving the guard above is about the hold specifically
+    and not a blanket "never touch an existing timestamp" rule."""
+    import datetime as dt
+
+    old_completed_at = dt.datetime(2020, 1, 1, tzinfo=dt.UTC)
+    media_file.status = FileStatus.COMPLETED
+    media_file.completed_at = old_completed_at
+    db_session.commit()
+
+    update_media_file_transcription_status(
+        db_session, media_file.id, [_segment(0.0, 5.0, "x")], language="en"
+    )
+
+    db_session.refresh(media_file)
+    assert media_file.completed_at != old_completed_at, (
+        "an unheld file's completed_at must refresh on re-process -- only a held "
+        "file's existing timestamp is protected"
+    )
+
+
+def test_the_task_status_writer_also_respects_a_takedown(db_session, media_file):
+    """The SECOND status writer -- ``task_utils.update_media_file_status``,
+    reached via ``postprocess.py -> update_task_status ->
+    update_media_file_from_task_status`` -- used to write status/completed_at
+    completely unconditionally, with no quarantine/legal-hold awareness at all.
+    That made the FIRST writer's guard (storage.py, above) vacuous: it would
+    decline to write and this function would clobber QUARANTINED with COMPLETED
+    moments later, on the very same pipeline run."""
+    from app.utils.task_utils import update_media_file_status
+
+    media_file.status = FileStatus.QUARANTINED
+    media_file.is_quarantined = True
+    media_file.legal_hold = True
+    media_file.completed_at = None
+    db_session.commit()
+
+    update_media_file_status(db_session, media_file.id, FileStatus.COMPLETED)
+
+    db_session.refresh(media_file)
+    assert media_file.status == FileStatus.QUARANTINED, (
+        "the second writer clobbered the display status the first writer had just preserved"
+    )
+    assert media_file.pre_quarantine_status == FileStatus.COMPLETED.value
+    assert media_file.completed_at is not None
+    assert media_file.is_quarantined is True
+
+
+def test_the_task_status_writer_is_idempotent_under_a_takedown(db_session, media_file):
+    """Calling the second writer twice on a quarantined file must not drift --
+    ``pre_quarantine_status`` stays the single recorded verdict and ``status``
+    stays QUARANTINED after BOTH calls, not just the first."""
+    from app.utils.task_utils import update_media_file_status
+
+    media_file.status = FileStatus.QUARANTINED
+    media_file.is_quarantined = True
+    media_file.completed_at = None
+    db_session.commit()
+
+    update_media_file_status(db_session, media_file.id, FileStatus.COMPLETED)
+    update_media_file_status(db_session, media_file.id, FileStatus.COMPLETED)
+
+    db_session.refresh(media_file)
+    assert media_file.status == FileStatus.QUARANTINED
+    assert media_file.pre_quarantine_status == FileStatus.COMPLETED.value
 
 
 def test_omitted_provenance_fields_do_not_erase_what_is_already_stored(db_session, media_file):

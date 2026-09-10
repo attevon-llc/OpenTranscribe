@@ -9,7 +9,7 @@ trail). It is deliberately INDEPENDENT of the processing ``status`` so a fully
 state. Note: toxicity/PII redaction masks *text* — it is NOT a takedown; this
 service is the takedown.
 
-Four things live here so they can never drift apart:
+Five things live here so they can never drift apart:
   * :func:`exclude_quarantined` — the SQL predicate that drops quarantined rows
     from list/gallery/search queries (skipped for admin "see all").
   * :func:`is_hidden_for` — the per-request access gate used by the resource
@@ -21,6 +21,11 @@ Four things live here so they can never drift apart:
     :func:`_notify_owner_release`) — since the file stays hidden (404) from its
     owner while quarantined, a persistent in-app notification is the owner's
     only surface for learning about the takedown and how to counter-notice it.
+  * :func:`apply_processing_status` / :func:`stamp_completion_time` — the two
+    helpers every PIPELINE writer (never the admin actions above) must route a
+    ``status``/``completed_at`` write through, so a file mid-transcription when
+    it gets taken down is neither stranded at a stale status nor has a held
+    file's retention clock restarted (issue #824).
 
 Community-edition invariance: nothing quarantines automatically, the columns
 default to the not-quarantined state, and ``exclude_quarantined``/``is_hidden_for``
@@ -135,6 +140,57 @@ def is_notification_suppressed(file_id: int, recipient_user_id: int) -> bool:
             f"suppressing as a precaution: {e}"
         )
         return True
+
+
+def apply_processing_status(file: MediaFile, new_status: FileStatus) -> None:
+    """Record a PIPELINE status transition on a file that may be under takedown.
+
+    Every writer of ``MediaFile.status`` that runs as part of the transcription
+    pipeline (not an admin takedown/release action) must route the write through
+    here instead of assigning ``file.status`` directly. A file that is quarantined
+    -- or whose ``status`` is already ``QUARANTINED`` -- must keep displaying
+    ``QUARANTINED`` for as long as the takedown is in effect; the pipeline's real
+    verdict is instead recorded into ``pre_quarantine_status``, which is exactly
+    the column :func:`release_file` reads to restore the file's true state on
+    release. Skipping this and writing ``file.status`` directly was issue #824's
+    bug: a second, unguarded writer (``app/utils/task_utils.py``) clobbered
+    ``QUARANTINED`` with ``PROCESSING`` or ``COMPLETED`` seconds after the first
+    guard declined to write, and because ``release_file`` only restores from
+    ``pre_quarantine_status`` when ``status == QUARANTINED``, a file caught that
+    way was stranded -- not just display-wrong, permanently unreachable by the
+    one release path that exists.
+
+    Args:
+        file: The media file the pipeline just reached a new status for.
+        new_status: The status the pipeline would write if the file were not
+            under takedown.
+    """
+    if file.is_quarantined or file.status == FileStatus.QUARANTINED:
+        file.pre_quarantine_status = new_status.value
+        return
+    file.status = new_status
+
+
+def stamp_completion_time(file: MediaFile, when: datetime) -> None:
+    """Set ``completed_at`` without restarting a held file's retention clock.
+
+    ``completed_at`` is the column the retention sweep (``cleanup._select_expired_files``,
+    issue #664) measures its window from -- but that predicate already excludes any row
+    with ``legal_hold`` or ``is_quarantined`` set, so writing this column while a file is
+    held is inert until release, not a live hazard. The one real hazard is narrower: a
+    file that ALREADY completed before takedown (so ``completed_at`` already holds a real
+    timestamp) getting that timestamp MOVED FORWARD by a re-process while held, which
+    would extend retention after release. So the rule is: write a currently-NULL
+    ``completed_at`` unconditionally (a file must be able to finish and be released with a
+    real timestamp -- see :func:`apply_processing_status`'s docstring for what happens
+    when it can't), but never move an EXISTING timestamp forward while the file is held.
+
+    Args:
+        file: The media file to stamp.
+        when: The real completion time (``datetime.now(UTC)`` at the call site).
+    """
+    if file.completed_at is None or not (file.is_quarantined or file.legal_hold):
+        file.completed_at = when
 
 
 def quarantine_file(

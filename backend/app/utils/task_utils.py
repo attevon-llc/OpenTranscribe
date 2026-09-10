@@ -150,12 +150,23 @@ def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> M
     # Log state transition for debugging
     logger.debug(f"Media file {file_id} state change: {media_file.status} -> {status}")
 
-    # Update status and timestamps
-    media_file.status = status
+    # Issue #824: this is the SECOND writer of status/completed_at (the first is
+    # transcription/storage.py's update_media_file_transcription_status) and it
+    # used to write both fields unconditionally -- with no quarantine/legal-hold
+    # awareness at all -- reached via a separate chain
+    # (postprocess.py -> update_task_status -> update_media_file_from_task_status
+    # -> here). That made the first writer's guard vacuous: it would decline to
+    # write, and this function would clobber QUARANTINED with COMPLETED/PROCESSING
+    # moments later on the very same request. Function-local import: see
+    # storage.py's identical note on why takedown_service isn't a module-level import.
+    from app.services.takedown_service import apply_processing_status
+    from app.services.takedown_service import stamp_completion_time
+
+    apply_processing_status(media_file, status)
 
     # Set completed_at timestamp if status is COMPLETED or ERROR
-    if status in [FileStatus.COMPLETED, FileStatus.ERROR] and not media_file.completed_at:
-        media_file.completed_at = datetime.now(UTC)
+    if status in [FileStatus.COMPLETED, FileStatus.ERROR]:
+        stamp_completion_time(media_file, datetime.now(UTC))
 
     db.commit()
     db.refresh(media_file)
@@ -526,10 +537,17 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
         if media_file.status == FileStatus.ORPHANED:
             return _recover_orphaned_file(db, media_file)
 
-        # Handle files with transcript data
+        # Handle files with transcript data. Routed through the same takedown-aware
+        # helpers as the two pipeline writers above for consistency -- not reachable
+        # for a quarantined row today (this branch only runs for a PROCESSING file
+        # with no live task), but a direct `media_file.status =` here would be the
+        # same footgun issue #824 was about if that ever changes.
         if media_file.transcript_segments:
-            media_file.status = FileStatus.COMPLETED
-            media_file.completed_at = datetime.now(UTC)
+            from app.services.takedown_service import apply_processing_status
+            from app.services.takedown_service import stamp_completion_time
+
+            apply_processing_status(media_file, FileStatus.COMPLETED)
+            stamp_completion_time(media_file, datetime.now(UTC))
         else:
             # No transcript data, mark as orphaned for potential retry
             media_file.status = FileStatus.ORPHANED

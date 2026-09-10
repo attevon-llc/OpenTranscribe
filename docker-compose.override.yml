@@ -74,6 +74,16 @@ services:
       # anything else touching the same table. Same fix as `frontend`'s /app/node_modules
       # exclusion below.
       - /app/venv
+      # Issue #870: DATA_DIR (/app/data) already lives inside the `./backend:/app` bind
+      # above — the GDPR erasure journal has always landed at
+      # backend/data/gdpr/erasure-journal.jsonl in the working tree (gitignored). The
+      # base docker-compose.yml now also mounts a named volume at this exact target for
+      # prod/lite/nginx/offline durability; without this explicit override, compose would
+      # merge that named volume in here too and — because Docker mounts the more specific
+      # path last — silently SHADOW this subtree of the bind mount, moving dev's journal
+      # into an opaque Docker volume instead of the host path this repo documents. This
+      # line pins dev back to its existing, already-durable behavior.
+      - ./backend/data:/app/data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     # `--reload-dir app` is NOT a tuning knob — it is the other half of the venv exclusion
     # above. `./backend:/app` puts the ENTIRE backend tree under the watcher, and a bare
@@ -147,6 +157,9 @@ services:
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
+      # Issue #870: same override as `backend` above — pins /app/data back to the
+      # existing bind-mounted host path instead of the base file's named volume.
+      - ./backend/data:/app/data
 
   celery-redaction:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}

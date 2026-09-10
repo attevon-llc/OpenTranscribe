@@ -49,6 +49,15 @@ services:
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      # Issue #878: the base file's `app_data`/`audit_fallback_logs` named volumes
+      # (added for #870/#877) would otherwise be inherited here UNCHANGED — same
+      # target, same volume NAME — and since this overlay does not isolate
+      # COMPOSE_PROJECT_NAME either, a bench run would write into the exact same
+      # Docker volume the live/dev stack's GDPR erasure journal and audit fallback
+      # log use. Isolated here the same way postgres/minio/redis/opensearch/flower
+      # already are below.
+      - app_bench_data:/app/data
+      - audit_fallback_bench_data:/var/log/opentranscribe
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080
 
   celery-worker:
@@ -78,6 +87,11 @@ services:
     image: opentranscribe-backend:bench
     container_name: otbench-celery-cpu-worker
     pull_policy: never
+    volumes:
+      # Issue #878: same isolation as `backend` above — this worker also runs the
+      # utility/cpu queue tasks that read/write DATA_DIR and AUDIT_LOG_FALLBACK_PATH.
+      - app_bench_data:/app/data
+      - audit_fallback_bench_data:/var/log/opentranscribe
 
   celery-redaction:
     image: opentranscribe-backend:bench
@@ -172,3 +186,5 @@ volumes:
   redis_bench_data:
   opensearch_bench_data:
   flower_bench_data:
+  app_bench_data:
+  audit_fallback_bench_data:

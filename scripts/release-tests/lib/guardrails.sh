@@ -264,10 +264,28 @@ gr_check_container_names() {
     running_named=$(gr_colliding_container_names "" || true)
     running_all="$(printf '%s\n%s\n%s' "$running" "$running_alt" "$running_named" | sed '/^$/d' | sort -u)"
     if [[ -n "$running_all" ]]; then
+        # ⚠️ TWO causes, TWO remedies, and naming only the first is the #900 mistake in a
+        # different function: `./opentr.sh stop` does nothing to a leftover `ot-reltest-*`
+        # scenario stack, which is the likeliest thing here now that the name sweep can
+        # actually see it. Discriminate on WHICH sweep matched — a name-only hit carries no
+        # stock project label, so it is not the operator's dev stack.
+        local _name_only
+        _name_only="$(comm -23 <(printf '%s\n' "$running_named" | sed '/^$/d' | sort -u) \
+                               <(printf '%s\n%s' "$running" "$running_alt" | sed '/^$/d' | sort -u))"
+        local _remedy="Stop them first with: ./opentr.sh stop  (preserves all data)"
+        if [[ -n "$_name_only" ]]; then
+            _remedy="These carry stock container names but belong to NO stock compose project —
+they are a previous rehearsal's stack, not your dev stack, and './opentr.sh stop'
+will not touch them. Clear them with the scenario's own cleanup:
+
+    ./scripts/release-tests/test-fresh-install.sh --cleanup --yes
+    ./scripts/release-tests/test-upgrade.sh --cleanup --yes
+    ./scripts/release-tests/test-lite-mode.sh --cleanup --yes"
+        fi
         gr_die "live opentranscribe-*/transcribe-app-* containers still running:
 $running_all
 
-Stop them first with: ./opentr.sh stop  (preserves all data)"
+$_remedy"
     fi
     # Stopped opentranscribe-* containers (from a previous live `down`) would
     # also collide on container_name during create — flag them so the caller

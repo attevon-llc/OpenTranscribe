@@ -446,3 +446,119 @@ def test_cleanup_does_not_auto_destroy_an_unowned_stack(tmp_path: Path):
     assert not run.issued("volume", "rm"), (
         f"gr_cleanup removed a volume the leftover containers still hold: {run.invocations}"
     )
+
+
+# ───────────────────────── the wiring: a helper nothing reads looks exactly like a fixed bug
+
+
+def _run_container_check(tmp_path: Path, labelled: list[str], named: list[str]):
+    """Drive the REAL ``gr_check_container_names`` with a fake docker.
+
+    The fake models the #899 shape precisely: the **label** filters match nothing (the
+    leftover stack runs under ``ot-reltest-lite``, not a stock project), while an unfiltered
+    ``docker ps --format`` lists stock ``opentranscribe-*`` NAMES. Under the old check that
+    combination printed a ✓.
+    """
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    lab = "".join(f"printf '%s\\n' {n!r}\n" for n in labelled) or ":\n"
+    nam = "".join(f"printf '%s\\n' {n!r}\n" for n in named) or ":\n"
+    (bindir / "docker").write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "ps" && "$*" == *"--filter"* ]]; then\n'
+        f"{lab}"
+        'elif [[ "$1" == "ps" ]]; then\n'
+        f"{nam}"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    (bindir / "docker").chmod(0o755)
+
+    env = dict(os.environ)
+    env["PATH"] = f"{bindir}:{env['PATH']}"
+    env["GR_REPO_ROOT"] = str(REPO_ROOT)
+    env["TEST_SCENARIO"] = "unit"
+    env["TEST_PROJECT_NAME"] = "ot-reltest-unit"
+    env["TEST_LABEL"] = "ot.release-test=ot-reltest-unit"
+    env["TEST_PORTS"] = ""
+    env.pop("TEST_ROOT", None)
+
+    return subprocess.run(
+        ["bash", "-c", f'source "{GUARDRAILS}"\ngr_check_container_names\n'],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
+
+
+def test_the_preflight_refuses_on_a_name_collision_no_label_matches(tmp_path: Path):
+    """THE #899 integration case, and the one the helper's own tests cannot prove.
+
+    ``running_named=$(gr_colliding_container_names …)`` could be assigned and never folded
+    into the decision, and every helper test above would still pass — a variable nothing
+    reads looks identical to a fixed bug. This asserts the *verdict*.
+    """
+    proc = _run_container_check(tmp_path, labelled=[], named=["opentranscribe-backend"])
+    assert proc.returncode != 0, (
+        "the preflight reported clear with opentranscribe-backend standing. That is the "
+        "measured #899 state: a ✓ printed immediately above 'FATAL: ports already in "
+        f"use'.\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
+    )
+    assert "opentranscribe-backend" in (proc.stdout + proc.stderr), (
+        "the refusal does not name the container in the way"
+    )
+
+
+def test_the_preflight_still_passes_on_a_genuinely_clear_field(tmp_path: Path):
+    """MUST-STAY-CLEAN. Without this, a guard that always refuses satisfies the test above.
+
+    An unrelated `opentranscribe-homepage` is present on purpose: it shares the prefix, is
+    not a name this scenario creates, and must not block the run.
+    """
+    proc = _run_container_check(tmp_path, labelled=[], named=["opentranscribe-homepage"])
+    assert proc.returncode == 0, (
+        "the preflight refused a clear field — an unrelated container sharing the name "
+        f"prefix must not block a rehearsal.\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
+    )
+
+
+def test_a_stopped_collider_is_reported_too(tmp_path: Path):
+    """A stopped container holds its name and collides on create just as surely."""
+    proc = _run_container_check(tmp_path, labelled=[], named=["opentranscribe-postgres"])
+    assert "opentranscribe-postgres" in (proc.stdout + proc.stderr), (
+        f"neither the live nor the stopped sweep mentioned it: {proc.stdout} {proc.stderr}"
+    )
+
+
+def test_a_name_only_collider_gets_the_rehearsal_remedy_not_opentr_stop(tmp_path: Path):
+    """Naming the wrong remedy is the #900 mistake wearing a different function's name.
+
+    A container carrying a stock NAME but no stock compose-project label is a previous
+    rehearsal's stack, not the operator's dev stack — and `./opentr.sh stop` does nothing
+    to it. Now that the sweep can finally see this case, it is also the likeliest one, so
+    sending the operator to the dev stack would trade a blind check for a misleading one.
+    """
+    proc = _run_container_check(tmp_path, labelled=[], named=["opentranscribe-backend"])
+    combined = proc.stdout + proc.stderr
+    assert "--cleanup" in combined, (
+        "the refusal offers no way to clear a leftover rehearsal stack; the operator is "
+        f"told to stop a dev stack that is not what is in the way.\n{combined}"
+    )
+
+
+def test_a_real_dev_stack_still_gets_the_opentr_stop_remedy(tmp_path: Path):
+    """MUST-STAY-CLEAN: a labelled stock stack IS the dev stack, and that advice is right.
+
+    Without this the fix above could degrade into "always print the rehearsal remedy",
+    which is the same misdirection pointing the other way.
+    """
+    proc = _run_container_check(
+        tmp_path, labelled=["opentranscribe-backend"], named=["opentranscribe-backend"]
+    )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    assert "./opentr.sh stop" in combined, (
+        f"a running dev stack was not met with the remedy that actually clears it:\n{combined}"
+    )

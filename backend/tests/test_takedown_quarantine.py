@@ -355,6 +355,38 @@ class TestPriorStatusRestore:
         assert file.status == FileStatus.COMPLETED
 
 
+class TestCorpusVersionBump:
+    """Issue #817 item 9: a takedown/release must bump the chat retrieval cache's
+    corpus version, mirroring ``tests/integration/test_rename_propagation_chunks.py``'s
+    ``test_propagation_bumps_the_chat_corpus_version``. Otherwise a cached chat
+    retrieval or ``/search`` response can outlive the takedown for the rest of
+    the cache TTL."""
+
+    def test_quarantining_bumps_the_corpus_version(self, world, monkeypatch):
+        from app.services.chat import retrieval_cache
+
+        db, _owner, admin, file = world
+        bumps: list[int] = []
+        monkeypatch.setattr(retrieval_cache, "bump_corpus_version", lambda: bumps.append(1))
+
+        quarantine_file(db, file, admin=admin, reason="DMCA-corpus")
+
+        assert len(bumps) == 1
+
+    def test_releasing_bumps_the_corpus_version_too(self, world, monkeypatch):
+        from app.services.chat import retrieval_cache
+
+        db, _owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="DMCA-corpus")
+
+        bumps: list[int] = []
+        monkeypatch.setattr(retrieval_cache, "bump_corpus_version", lambda: bumps.append(1))
+
+        release_file(db, file, admin=admin)
+
+        assert len(bumps) == 1
+
+
 class TestOwnerNotification:
     """DMCA §512(g) owner notices — the quarantined file 404s for its owner,
     so the persistent notification is the owner's only takedown/counter-notice

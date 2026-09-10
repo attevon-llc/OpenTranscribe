@@ -138,12 +138,95 @@ def test_unset_keys_produce_no_findings(tmp_path: Path):
     assert out == ""
 
 
+# --------------------------------------------------------------------------- #
+# BACKEND_LITE_IMAGE (issue #895/#896): the OLD .env.example shipped this line SET to
+# the exact placeholder `davidamacey/opentranscribe-backend-lite:latest`, which
+# overrides docker-compose.lite.yml's `${BACKEND_LITE_IMAGE:-...${OT_IMAGE_TAG:-latest}}`
+# derivation and makes `update --version` / `--rollback` silent no-ops for every lite
+# service. Deliberately narrow: flag ONLY that exact value, never any pin whose tag
+# merely differs from OT_IMAGE_TAG — a broader rule would also flag a private registry
+# mirror, a capability-leg pin, and the release rehearsal's own deliberate local pin,
+# none of which are the #895 regression.
+# --------------------------------------------------------------------------- #
+
+
+def test_stale_backend_lite_image_from_the_old_template_is_flagged(tmp_path: Path):
+    out = _check_stale_env_values_snippet(
+        "BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest\n", tmp_path
+    )
+    assert "BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest" in out
+    assert "OT_IMAGE_TAG" in out
+    assert "895" in out
+
+
+def test_a_private_registry_backend_lite_image_is_not_flagged(tmp_path: Path):
+    """Must-stay-clean: a private-registry mirror is a legitimate, deliberate pin."""
+    out = _check_stale_env_values_snippet(
+        "BACKEND_LITE_IMAGE=myregistry.internal/opentranscribe-backend-lite:latest\n",
+        tmp_path,
+    )
+    assert out == ""
+
+
+def test_a_capability_leg_pin_is_not_flagged(tmp_path: Path):
+    """Must-stay-clean: a capability-leg pin (e.g. an arm64 host pinning its own arch
+    leg) is SUPPOSED to differ from the plain release tag — that is not the regression."""
+    out = _check_stale_env_values_snippet(
+        "BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:v0.5.0-cpu-arm64\n",
+        tmp_path,
+    )
+    assert out == ""
+
+
+def test_an_absent_backend_lite_image_is_not_flagged(tmp_path: Path):
+    """Must-stay-clean: a commented-out line (the current .env.example shape) must stay
+    invisible to this check, same as every other STALE_ENV_CHECKS entry."""
+    out = _check_stale_env_values_snippet(
+        "#BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest\n", tmp_path
+    )
+    assert out == ""
+
+
+def test_the_release_rehearsal_local_pin_is_not_flagged(tmp_path: Path):
+    """Must-stay-clean, pinning the rejected-broader-rule decision: the release
+    rehearsal (scripts/release-tests/test-lite-mode.sh) deliberately pins
+    BACKEND_LITE_IMAGE to the version under test, e.g. `:v0.5.0` — a real, deliberate
+    pin whose tag differs from `latest` and from OT_IMAGE_TAG's own resolution, and it
+    must never be flagged as stale.
+    """
+    out = _check_stale_env_values_snippet(
+        "BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:v0.5.0\n", tmp_path
+    )
+    assert out == ""
+
+
+def test_backend_lite_image_stale_check_must_fire_control(tmp_path: Path):
+    """Must-fire control, same style as this module's other stale-key checks: a naive
+    presence-only check (the shape of the pre-#709 new-key report) says this key is
+    fine merely because it exists, even though this exact value is the stale default.
+    """
+    out = _run_shell(
+        "grep -qE '^BACKEND_LITE_IMAGE=' "
+        "<(echo 'BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest') "
+        "&& echo PRESENT || echo ABSENT"
+    )
+    assert out == "PRESENT", (
+        "fixture is wrong: a presence-only check must report this stale value as fine, "
+        "which is exactly the gap check_stale_env_values() closes"
+    )
+
+
 def test_check_stale_env_values_never_writes_to_the_env_file(tmp_path: Path):
     """The instructions are explicit: WARN and name the fix, never rewrite .env. A silent
     correction here is exactly how the ENGINE_SHARED_VOLUME_PATH regression hid originally.
     """
     env_file = tmp_path / "dotenv"
-    original = "ENGINE_SHARED_VOLUME_PATH=/tmp/transcription\nGPU_SCALE_WORKERS=4\nDIAR_NATIVE_MAX_INFLIGHT=2\n"
+    original = (
+        "ENGINE_SHARED_VOLUME_PATH=/tmp/transcription\n"
+        "GPU_SCALE_WORKERS=4\n"
+        "DIAR_NATIVE_MAX_INFLIGHT=2\n"
+        "BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest\n"
+    )
     env_file.write_text(original)
     table = _extract_array(MANAGER, "STALE_ENV_CHECKS")
     fn = _extract_function(MANAGER, "check_stale_env_values")

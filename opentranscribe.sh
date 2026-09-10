@@ -259,6 +259,7 @@ check_environment() {
 STALE_ENV_CHECKS=(
     "ENGINE_SHARED_VOLUME_PATH|remove this line from .env (or set it to /scratch/opentranscribe/engine) — the path it names was removed by issue #661 E2's pipeline_scratch consolidation"
     "GPU_SCALE_WORKERS|comment this out in .env so docker-compose.gpu-scale.yml derives it from DIAR_NATIVE_MAX_INFLIGHT instead — an explicit value here can oversubscribe the diar-native sidecar's admission gate"
+    "BACKEND_LITE_IMAGE|comment this out in .env so docker-compose.lite.yml derives the image from OT_IMAGE_TAG instead — the old .env.example shipped this line SET to :latest, which overrides release pinning and makes 'update --version' / '--rollback' silently no-ops for every lite service (issue #895)"
 )
 
 # Prints one "  • KEY=value — remedy" line per stale key found in $1 (default .env) to
@@ -289,6 +290,17 @@ check_stale_env_values() {
                     ''|*[!0-9]*) continue ;;
                 esac
                 [ "$val" -gt "$max_inflight" ] || continue
+                ;;
+            BACKEND_LITE_IMAGE)
+                # Deliberately narrow: flag ONLY the exact value the old .env.example
+                # shipped, never any value whose tag merely differs from OT_IMAGE_TAG. A
+                # broader "pin doesn't track OT_IMAGE_TAG" rule would also flag a private
+                # registry mirror, a capability-leg pin (e.g. :v0.5.0-cpu-arm64, which is
+                # supposed to differ from the plain release tag), and the release
+                # rehearsal's own deliberate local pin — all legitimate, none of them the
+                # #895 regression. This checks the one string that IS the regression: the
+                # exact stale default, byte for byte.
+                [ "$val" = "davidamacey/opentranscribe-backend-lite:latest" ] || continue
                 ;;
             *)
                 continue

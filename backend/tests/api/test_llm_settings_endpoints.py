@@ -68,10 +68,23 @@ def test_providers_catalog_shape(client, user_token_headers):
     assert resp.status_code == status.HTTP_200_OK
     providers = resp.json()["providers"]
     ids = {p["provider"] for p in providers}
-    assert {"openai", "vllm", "ollama", "anthropic", "openrouter"} <= ids
+    assert {"openai", "vllm", "ollama", "anthropic", "openrouter", "custom"} <= ids
     for p in providers:
         for key in ("default_model", "requires_api_key", "supports_custom_url", "description"):
             assert key in p
+
+
+def test_custom_provider_is_selectable(client, user_token_headers):
+    """Issue #839 — ``custom`` is a fully implemented, fully translated provider
+    (llm_service.py, is_local_provider, docker-compose overlay docs telling
+    operators to select it) that the catalog this endpoint serves never listed,
+    making the admin UI's provider dropdown unable to offer it at all."""
+    resp = client.get(f"{_BASE}/providers", headers=user_token_headers)
+    providers = {p["provider"]: p for p in resp.json()["providers"]}
+    assert "custom" in providers
+    custom = providers["custom"]
+    # The whole point of "custom" is a caller-supplied endpoint.
+    assert custom["supports_custom_url"] is True
 
 
 # ---------------------------------------------------------------------------

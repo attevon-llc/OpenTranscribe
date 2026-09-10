@@ -221,6 +221,24 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
                 "your administrator (BEDROCK_REGION/AWS_REGION), not per configuration."
             ),
         ),
+        # Issue #839: this catalog is the source the admin UI's provider dropdown
+        # renders from (GET /llm-settings/providers -> LLMSettings.svelte ->
+        # LLMConfigModal's <select>). CUSTOM was a fully translated, fully
+        # implemented provider (llm_service.py, is_local_provider, docker-compose
+        # overlay docs telling operators to select it) that this catalog simply
+        # never listed, making it unreachable from the UI it was built for.
+        schemas.ProviderDefaults(
+            provider=schemas.LLMProvider.CUSTOM,
+            default_model="",
+            default_base_url=None,
+            requires_api_key=False,
+            supports_custom_url=True,
+            max_context_length=None,
+            description=(
+                "Any OpenAI-compatible endpoint not covered above — point it at a "
+                "self-hosted or third-party server by base URL and model name."
+            ),
+        ),
     ]
 
 

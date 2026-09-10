@@ -1,5 +1,6 @@
 """Search API endpoints with hybrid BM25 + vector search."""
 
+import copy
 import logging
 import math
 from typing import Any
@@ -240,7 +241,7 @@ def search_transcripts(
         # drop any taken-down files from the result page against the DB (page-sized,
         # one IN query). Admins keep visibility for review.
         if not ctx.user.is_admin:
-            _drop_quarantined_search_hits(db, response)
+            response = _drop_quarantined_search_hits(db, response)
 
         payload = _search_response_to_schema(response)
     else:
@@ -302,21 +303,33 @@ def search_match_count(
     return {"total": total}
 
 
-def _drop_quarantined_search_hits(db: Session, response: Any) -> None:
-    """Remove quarantined files from a search response in place (non-admin).
+def _drop_quarantined_search_hits(db: Session, response: Any) -> Any:
+    """Remove quarantined files from a search response (non-admin).
 
     The hidden files 404 on detail/stream anyway (the per-resource gate), so this
     just keeps them out of the result list/snippets too — the search-snippet
     redaction surface for takedowns.
+
+    Returns a shallow COPY of ``response`` with the quarantined hits dropped and
+    totals decremented — it must never mutate the object passed in. ``search()``
+    can hand back a process-local cache hit BY REFERENCE
+    (``hybrid_search_service._get_cached_response``), so mutating that object in
+    place would mutate the shared cached entry itself: every later request
+    against the same cache key — including an admin's, who must see the
+    untrimmed page — would then see whatever this pass last left behind, and a
+    file released after being cached would stay hidden until the cache entry's
+    TTL naturally expires rather than reappearing on the next request. Callers
+    must use the returned value; the input is left exactly as ``search()``
+    produced it.
     """
     hits = getattr(response, "results", None) or []
     if not hits:
-        return
+        return response
     from app.models.media import MediaFile
 
     uuids = [h.file_uuid for h in hits if getattr(h, "file_uuid", None)]
     if not uuids:
-        return
+        return response
     quarantined = {
         str(row[0])
         for row in db.query(MediaFile.uuid)
@@ -324,15 +337,17 @@ def _drop_quarantined_search_hits(db: Session, response: Any) -> None:
         .all()
     }
     if not quarantined:
-        return
+        return response
     kept = [h for h in hits if str(h.file_uuid) not in quarantined]
     removed = len(hits) - len(kept)
+    response = copy.copy(response)
     response.results = kept
     # Keep the reported totals consistent with the trimmed page.
     if hasattr(response, "total_results"):
         response.total_results = max(0, int(getattr(response, "total_results", 0)) - removed)
     if hasattr(response, "total_files"):
         response.total_files = max(0, int(getattr(response, "total_files", 0)) - removed)
+    return response
 
 
 def _summary_search_payload(

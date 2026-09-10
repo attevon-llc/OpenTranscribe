@@ -298,6 +298,49 @@ class TestQuarantinedHitsAreDropped:
         assert body["total_results"] == 1
         assert body["total_files"] == 1
 
+    def test_repeated_searches_do_not_compound_the_quarantine_decrement(
+        self, client, user_token_headers, normal_user, db_session, monkeypatch
+    ):
+        """Regression: ``HybridSearchService.search()`` hands back a process-local
+        cache hit BY REFERENCE (``hybrid_search_service._get_cached_response``).
+        If the takedown gate mutates that shared object in place instead of
+        returning a copy, a file released after the first request stays hidden
+        from every later request against the same cache entry — the object's
+        ``results``/``total_results`` were permanently trimmed on the first pass,
+        so nothing ever re-derives them from the (unmutated) original.
+
+        Unlike ``stub_search`` above — which builds a fresh ``SearchResponse``
+        per call and so cannot observe in-place mutation — this test returns the
+        SAME object instance on every call, exactly like a real cache hit.
+        """
+        visible = _make_file(db_session, normal_user, quarantined=False)
+        released = _make_file(db_session, normal_user, quarantined=True)
+
+        shared_response = _response(
+            [_hit(str(visible.uuid), visible.id), _hit(str(released.uuid), released.id)]
+        )
+        monkeypatch.setattr(HybridSearchService, "search", lambda _self, **kwargs: shared_response)
+
+        first = client.get(SEARCH_PATH, params={"q": "test"}, headers=user_token_headers).json()
+        assert first["total_results"] == 1
+        assert {row["file_uuid"] for row in first["results"]} == {str(visible.uuid)}
+
+        # The file is released between requests — a fresh search would show it
+        # again immediately (well within the cache's TTL).
+        released.is_quarantined = False
+        db_session.commit()
+
+        second = client.get(SEARCH_PATH, params={"q": "test"}, headers=user_token_headers).json()
+        assert second["total_results"] == 2, (
+            "the cached response object was mutated in place by the first "
+            "request, so the released file never reappears until the cache "
+            "entry expires"
+        )
+        assert {row["file_uuid"] for row in second["results"]} == {
+            str(visible.uuid),
+            str(released.uuid),
+        }
+
     def test_an_admin_still_sees_the_quarantined_file(
         self, client, admin_token_headers, admin_user, db_session, stub_search
     ):

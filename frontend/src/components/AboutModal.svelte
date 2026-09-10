@@ -11,6 +11,8 @@
   const buildTime = __BUILD_TIME__;
 
   let serverVersion = '';
+  /** The commit the running backend was built from, or 'unknown'. */
+  let serverCommit = '';
 
   // The backend reports the repo-root VERSION file verbatim (`v0.4.1`) while
   // package.json carries a bare semver (`0.4.1`), and it falls back to the literal
@@ -30,12 +32,46 @@
 
   async function fetchVersion() {
     try {
-      const res = await axios.get('/health');
+      // `/api/version` rather than `/health` (issue #862): a strict superset — the same
+      // `version`, plus the `git_sha` the AGPL §13 source offer below has to resolve to.
+      // An offer pointing at whatever `master` happens to be today is not an offer of
+      // THIS version's Corresponding Source.
+      const res = await axios.get('/api/version');
       serverVersion = res.data?.version || '';
+      serverCommit = res.data?.git_sha || '';
     } catch {
       serverVersion = '';
+      serverCommit = '';
     }
   }
+
+  /**
+   * AGPL §13: a modified version made available to users over a network must prominently
+   * offer those users its Corresponding Source. A link discharges that — but only if it
+   * resolves to the code that is RUNNING, so it degrades explicitly rather than silently
+   * pointing at the wrong tree:
+   *
+   *   real commit  -> /tree/<sha>              the exact Corresponding Source
+   *   real version -> /releases/tag/vX.Y.Z     the released source
+   *   neither      -> the repository root, and the modal SAYS the build could not
+   *                   identify itself instead of implying the link is exact.
+   *
+   * ⚠️ This names the UPSTREAM repository. A downstream operator who MODIFIES
+   * OpenTranscribe and serves it owes their users THEIR source, not ours. Making this
+   * configurable is real remaining work; until it lands, `about.legal.sourceOfferModified`
+   * says so in the UI rather than letting a modified deployment quietly offer code it is
+   * not running.
+   */
+  const REPOSITORY_URL = 'https://github.com/attevon-llc/OpenTranscribe';
+
+  $: sourceCommitKnown = Boolean(serverCommit) && serverCommit !== 'unknown';
+  $: sourceVersionKnown = Boolean(serverVersion) && serverVersion !== 'unknown';
+  $: sourceUrl = sourceCommitKnown
+    ? REPOSITORY_URL + '/tree/' + serverCommit
+    : sourceVersionKnown
+      ? REPOSITORY_URL + '/releases/tag/v' + normalizeVersion(serverVersion)
+      : REPOSITORY_URL;
+  $: sourceIsExact = sourceCommitKnown || sourceVersionKnown;
 
   $: if (showModal && !serverVersion) {
     fetchVersion();
@@ -317,6 +353,44 @@
               </p>
             </section>
 
+            <section class="legal-section">
+              <h3>{$t('about.legal.title')}</h3>
+
+              <p class="legal-line">
+                {$t('about.legal.licensedUnder')}
+                <a
+                  href="{REPOSITORY_URL}/blob/master/LICENSE"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-link">{$t('about.legal.licenseName')}</a
+                >{$t('about.legal.licensedUnderSuffix')}
+              </p>
+
+              <p class="legal-line">
+                {$t('about.legal.sourceOffer')}
+                <a href={sourceUrl} target="_blank" rel="noopener noreferrer" class="inline-link"
+                  >{sourceIsExact
+                    ? $t('about.legal.viewSourceExact')
+                    : $t('about.legal.viewSourceRepository')}</a
+                >
+                {#if !sourceIsExact}
+                  <span class="legal-caveat">{$t('about.legal.sourceOfferUnidentified')}</span>
+                {/if}
+              </p>
+
+              <p class="legal-line">
+                {$t('about.legal.thirdParty')}
+                <a
+                  href="{REPOSITORY_URL}/blob/master/NOTICE"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-link">{$t('about.legal.noticeName')}</a
+                >{$t('about.legal.thirdPartySuffix')}
+              </p>
+
+              <p class="legal-caveat">{$t('about.legal.sourceOfferModified')}</p>
+            </section>
+
   </div>
 </BaseModal>
 </div>
@@ -475,6 +549,29 @@
   .header-version-tagline {
     color: var(--text-secondary);
     font-size: 0.9rem;
+  }
+
+  /* Legal / license section (issue #862) */
+  .legal-section h3 {
+    color: var(--text-color);
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 2rem 0 1rem 0;
+  }
+
+  .legal-line {
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0 0 0.75rem 0;
+  }
+
+  .legal-caveat {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    opacity: 0.85;
+    margin: 0;
   }
 
   /* Credits Section Styles */

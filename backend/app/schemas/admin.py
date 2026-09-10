@@ -5,6 +5,7 @@ Pydantic schemas for admin settings
 import re
 
 from pydantic import BaseModel
+from pydantic import EmailStr
 from pydantic import Field
 from pydantic import field_validator
 
@@ -319,3 +320,30 @@ class LinkExternalIdentityResponse(BaseModel):
     success: bool
     provider: str
     identifier: str
+
+
+class UpdateExternalEmailRequest(BaseModel):
+    """Accept an IdP's new address for an already-linked account (issue #867).
+
+    The sibling of ``LinkExternalIdentityRequest``, for the *other* half of the same
+    problem. That one fixes "the identifier is missing, so the login falls through to
+    the email-match branch and is refused". This one fixes "the identifier matches
+    fine, but the source now asserts a different address than the one on file, so
+    ``assert_provider_id_link_permitted`` refuses the corroboration check" — which,
+    because that gate runs before every provider's profile refresh, is a **permanent**
+    lockout with no self-service recovery.
+
+    There is deliberately no ``provider`` field. The account is already linked; which
+    column carries the identifier does not change what this writes, and asking for it
+    would only create a way to get it wrong.
+    """
+
+    email: EmailStr = Field(..., description="The address the IdP now asserts for this account")
+
+
+class UpdateExternalEmailResponse(BaseModel):
+    """Result of accepting an IdP's new address for an account."""
+
+    success: bool
+    email: str
+    previous_email: str

@@ -33,6 +33,14 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   under `/chat` and FastAPI matches in registration order, so `/chat/projects` would otherwise
   be shadowed. The admin settings router requires `get_current_admin_user` on **both** GET and
   PUT — the UI tab is cosmetic, that dependency is the authority.
+  **`export.py` is an export surface and is gated like one** (#863): it resolves the
+  requesting user's `EffectiveRedactionConfig` and masks `citations[].snippet`, which is the
+  only field of a chat message that is NOT already masked in the database — `content` and
+  `reasoning_content` are masked at persist time by `chat/output_redactor`, a snippet is
+  masked only by the *egress* policy and a local-model deployment leaves that unmasked by
+  design. The argument, and why there is deliberately no `?redact=false` here, is in
+  `endpoints/chat/export_redaction.py`. `tests/unit/test_export_plane_resolves_a_policy.py`
+  walks the live route table so the next export route cannot be missed the way this one was.
 - `endpoints/files/` — the oversized files router split into a package (`upload`, `crud`,
   `filtering`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
   `management.py` exports a second router mounted at the same `/files` prefix.

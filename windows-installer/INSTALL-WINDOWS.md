@@ -58,7 +58,8 @@ The `windows-installer/` directory contains all source files for creating the Wi
 ### Assets and Documentation
 
 - **`ot-icon.ico`** - Application icon
-- **`license.txt`** - Software license and attributions
+- **`LICENSE.txt`** - The full GNU AGPL-3.0 text this software is licensed under
+- **`NOTICE.txt`** - Third-party component attributions
 - **`preinstall.txt`** - Pre-installation information
 - **`after-install.txt`** - Post-installation guide
 - **`README-WINDOWS.md`** - End-user documentation (included in installer)
@@ -165,7 +166,8 @@ offline-package-build/
     ├── uninstall_opentranscribe.bat
     ├── check-prerequisites.ps1  # Prerequisite checker
     ├── ot-icon.ico             # Application icon
-    ├── license.txt
+    ├── LICENSE.txt
+    ├── NOTICE.txt
     ├── preinstall.txt
     ├── after-install.txt
     ├── README-WINDOWS.md       # User documentation
@@ -811,4 +813,4 @@ Model selection affects:
 
 ## License
 
-See [license.txt](license.txt) for full license terms and third-party component licenses.
+See [LICENSE.txt](LICENSE.txt) for the full AGPL-3.0 terms and [NOTICE.txt](NOTICE.txt) for third-party component licenses. Both are installed alongside the application.

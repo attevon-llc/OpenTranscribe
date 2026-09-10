@@ -218,6 +218,29 @@ describe('linkExternalIdentity', () => {
   });
 });
 
+describe('updateExternalEmail (issue #867)', () => {
+  it('puts the new address to the external-email route, not link-identity', async () => {
+    mockInstance.put.mockResolvedValue({
+      data: {
+        success: true,
+        email: 'renamed@example.com',
+        previous_email: 'old@example.com',
+      },
+    });
+
+    const result = await AdminApi.updateExternalEmail(USER_UUID, 'renamed@example.com');
+
+    expect(mockInstance.put).toHaveBeenCalledWith(`/admin/users/${USER_UUID}/external-email`, {
+      email: 'renamed@example.com',
+    });
+    expect(result).toEqual({
+      success: true,
+      email: 'renamed@example.com',
+      previous_email: 'old@example.com',
+    });
+  });
+});
+
 describe('searchUsers', () => {
   it('forwards the filter params and returns total + users', async () => {
     const users = [

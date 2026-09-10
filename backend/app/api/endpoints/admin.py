@@ -24,6 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.auth.account_linking import emails_agree
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
@@ -84,6 +85,8 @@ from app.schemas.admin import RetentionPreviewResponse
 from app.schemas.admin import RetentionRunResponse
 from app.schemas.admin import RetryConfig
 from app.schemas.admin import RetryConfigUpdate
+from app.schemas.admin import UpdateExternalEmailRequest
+from app.schemas.admin import UpdateExternalEmailResponse
 from app.schemas.user import AdminPasswordResetRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
@@ -94,6 +97,7 @@ from app.services.account_security_service import audit_password_change
 from app.services.account_security_service import audit_role_change
 from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
+from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions
 from app.utils.stats_helpers import format_bytes
 
@@ -1850,6 +1854,8 @@ def admin_link_external_identity(
         outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         source_ip=client_ip,
         user_agent=user_agent,
         details={
@@ -1862,6 +1868,136 @@ def admin_link_external_identity(
     return LinkExternalIdentityResponse(
         success=True, provider=payload.provider, identifier=payload.identifier
     )
+
+
+#: The identifier column each external method stamps on an account. A row carrying
+#: any of these is "already linked" — which is what makes the email remedy below a
+#: REMEDY rather than a general "edit anyone's login address" power.
+_EXTERNAL_IDENTITY_COLUMNS = (
+    "oidc_subject",
+    "ldap_uid",
+    "pki_subject_dn",
+    "saml_subject",
+    "external_id",
+)
+
+
+@router.put("/users/{user_uuid}/external-email", response_model=UpdateExternalEmailResponse)
+def admin_update_external_email(
+    request: Request,
+    user_uuid: str,
+    payload: UpdateExternalEmailRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+) -> UpdateExternalEmailResponse:
+    """Accept an IdP's new address for an already-linked account (issue #867).
+
+    `auth/account_linking.assert_provider_id_link_permitted` refuses a login whose
+    asserted email no longer agrees with the stored one — the signal that a recycled
+    `sub`/`uid`/DN may now belong to a different real person. That check is right, but
+    it sits **before** every provider's profile-refresh code, so the stored address can
+    never catch up on its own: a benign IdP-side rename (a marriage, a domain
+    migration, a corrected typo) became a permanent lockout with no path back short of
+    direct SQL. This is that path.
+
+    **Why an explicit admin action rather than auto-accepting the new address.** At the
+    point of the check the two cases are indistinguishable — a legitimate rename and an
+    identifier reassigned to somebody else look identical, because in both the source
+    asserts an address the account does not hold. Auto-accepting resolves that ambiguity
+    in the attacker's favour, which is the vector `account_linking` was written to close.
+    A human comparing the two addresses can tell them apart; the refusal's audit record
+    carries both for exactly that purpose.
+
+    **Deliberately narrow.** It refuses an account that carries no external identifier
+    at all, so it is a remedy for an IdP-linked account and not a general
+    "rewrite anyone's login email" power — for a `local` account the email *is* the
+    credential identity, and moving it is a different decision that this endpoint is not.
+    Never a `super_admin`, matching `link-identity`: that account is local-only and is
+    the break-glass for exactly the IdP that might be failing.
+
+    Sessions are revoked, because the address is what the account authenticates as.
+    """
+    client_ip, user_agent = _get_client_info(request)
+
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if str(user.role) == ROLE_SUPER_ADMIN:
+        raise HTTPException(
+            status_code=400,
+            detail="super_admin accounts are local-only and cannot be linked to an external identity",
+        )
+
+    if not any(getattr(user, column, None) for column in _EXTERNAL_IDENTITY_COLUMNS):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This account is not linked to an external identity. This endpoint accepts an "
+                "identity provider's updated address for an already-linked account; it is not a "
+                "general email change."
+            ),
+        )
+
+    new_email = payload.email.strip()
+    previous_email = str(user.email)
+    if emails_agree(new_email, previous_email):
+        # Idempotent: re-applying the remedy must not churn sessions for nothing.
+        return UpdateExternalEmailResponse(
+            success=True, email=previous_email, previous_email=previous_email
+        )
+
+    # Case-INSENSITIVE, deliberately stricter than the byte-exact unique index on
+    # `user.email`: `emails_agree` treats `Alice@x` and `alice@x` as one mailbox, so
+    # letting two rows hold both would make the account a login resolves to depend on
+    # which comparison ran. Refusing is the safe direction; the admin can pick another.
+    conflict = (
+        db.query(User)
+        .filter(func.lower(User.email) == new_email.lower())
+        .filter(User.id != user.id)
+        .first()
+    )
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail="That email address is already in use by another account",
+        )
+
+    user.email = new_email
+    # Same shape as the self-service email change in `users.py`: revoke IN the
+    # transaction so a commit failure rolls the revocation back with it. An email
+    # change is an identity change on an account that authenticates by it, and
+    # `auth/CLAUDE.md` makes revocation non-optional for that class of change.
+    revoke_all_sessions(db, user, reason="external email change")
+    db.commit()
+
+    logger.info(
+        "super_admin %s accepted a new external email for user %s (was %s)",
+        current_user.email,
+        user_uuid,
+        previous_email,
+    )
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_UPDATE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        target_user_id=int(user.id),
+        target_username=new_email,
+        source_ip=client_ip,
+        user_agent=user_agent,
+        details={
+            "action": "update_external_email",
+            "target_user": user_uuid,
+            "previous_email": previous_email,
+        },
+    )
+    # Best-effort, and it may well bounce (a dead domain is one of the triggers) — but
+    # a silent address change is the first half of an account takeover, so the previous
+    # address is told, exactly as the self-service change in `users.py` does.
+    notify_email_changed(previous_email, new_email)
+
+    return UpdateExternalEmailResponse(success=True, email=new_email, previous_email=previous_email)
 
 
 # ============== MFA Management ==============

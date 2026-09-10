@@ -2450,6 +2450,7 @@
   "transcript.overlapIndicator": "{{count}} hablantes superpuestos",
   "transcript.unknownVideo": "Video desconocido",
   "transcript.unsavedChanges": "Tienes cambios de nombres de hablantes sin guardar",
+  "transcript.unsavedChangesPrompt": "Tienes cambios sin guardar en esta transcripción. ¿Salir de la página y perderlos?",
   "transcript.viewAvailableSuggestions": "Ver sugerencias disponibles para identificación de hablantes",
   "transcriptModal.clearSearch": "Limpiar búsqueda",
   "transcriptModal.closeModal": "Cerrar modal",

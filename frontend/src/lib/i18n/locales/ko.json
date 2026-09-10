@@ -1693,6 +1693,7 @@
   "transcript.downloadFailed": "다운로드에 실패했습니다",
   "transcript.editSpeakerNames": "화자 이름 편집",
   "transcript.unsavedChanges": "저장하지 않은 화자 이름 변경 사항이 있습니다",
+  "transcript.unsavedChangesPrompt": "이 전사본에 저장하지 않은 변경 사항이 있습니다. 페이지를 벗어나 변경 사항을 버리시겠습니까?",
   "transcript.colorLegend": "색상 범례",
   "transcript.saveSpeakerNames": "화자 이름 저장",
   "transcript.saveSpeakerNamesTitle": "모든 화자 이름 변경 사항을 저장하고 전사 결과를 업데이트합니다",

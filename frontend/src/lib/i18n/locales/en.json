@@ -1693,6 +1693,7 @@
   "transcript.downloadFailed": "Download failed",
   "transcript.editSpeakerNames": "Edit Speaker Names",
   "transcript.unsavedChanges": "You have unsaved speaker name changes",
+  "transcript.unsavedChangesPrompt": "You have unsaved changes to this transcript. Leave the page and lose them?",
   "transcript.colorLegend": "Color Legend",
   "transcript.saveSpeakerNames": "Save Speaker Names",
   "transcript.saveSpeakerNamesTitle": "Save all speaker name changes and update the transcript",

@@ -5,6 +5,7 @@
   import type { Comment } from '$lib/types/comment';
   import type { Tag } from '$lib/types/tag';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
+  import { guardUnsavedChanges } from '$lib/navigation/unsavedChangesGuard';
   import { get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
   import { formatDuration } from '$lib/utils/formatting';
@@ -116,6 +117,9 @@
   let savingSpeakers = false;
   let editingSegmentId: string | number | null = null;
   let editingSegmentText = '';
+  // The text the open segment editor STARTED with. Without it "is this dirty" would be
+  // "is an editor open", and merely clicking the pencil would prompt on the way out.
+  let editingSegmentOriginalText = '';
   let isEditingSpeakers = false;
   interface SpeakerItem extends SpeakerInfo {
     profile?: { uuid: string; name: string } | null;
@@ -182,6 +186,22 @@
     const currentName = (speaker.display_name || '').trim();
     return originalName !== currentName;
   });
+
+  // An open segment editor only counts as unsaved once the text actually differs — opening
+  // one and closing the tab must not prompt. Trimmed on both sides so trailing whitespace
+  // the textarea introduced is not "an edit".
+  $: segmentEditUnsaved =
+    editingSegmentId !== null &&
+    editingSegmentText.trim() !== editingSegmentOriginalText.trim();
+
+  // Issue #787: the "unsaved" dot beside the speaker panel used to be the ENTIRE
+  // protection — a nav click or a tab close discarded a speaker-naming pass silently.
+  // The predicate is re-read on every navigation, so saving clears the guard with it.
+  $: hasUnsavedEdits = speakerNamesChanged || segmentEditUnsaved;
+  guardUnsavedChanges(
+    () => hasUnsavedEdits,
+    () => $t('transcript.unsavedChangesPrompt')
+  );
 
   // Reset spinners when LLM becomes unavailable
   $: if (!llmAvailable && (summaryGenerating || generatingSummary)) {
@@ -1158,6 +1178,7 @@
     const segment = event.detail.segment;
     editingSegmentId = segment.uuid;
     editingSegmentText = segment.text;
+    editingSegmentOriginalText = segment.text ?? '';
   }
 
 
@@ -1188,6 +1209,7 @@
         // future downloads and the subtitle track, so it must not hold the UI open.
         editingSegmentId = null;
         editingSegmentText = '';
+        editingSegmentOriginalText = '';
 
         // Clear cached processed videos so downloads use the updated transcript.
         axiosInstance.delete(`/files/${file.uuid}/cache`).catch((error: unknown) => {
@@ -1223,6 +1245,7 @@
   function handleCancelEditSegment() {
     editingSegmentId = null;
     editingSegmentText = '';
+    editingSegmentOriginalText = '';
   }
 
 

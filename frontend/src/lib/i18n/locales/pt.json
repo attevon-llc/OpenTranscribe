@@ -1692,6 +1692,7 @@
   "transcript.downloadFailed": "Falha no download",
   "transcript.editSpeakerNames": "Editar Nomes de Falantes",
   "transcript.unsavedChanges": "Você tem alterações não salvas nos nomes de falantes",
+  "transcript.unsavedChangesPrompt": "Você tem alterações não salvas nesta transcrição. Sair da página e perdê-las?",
   "transcript.colorLegend": "Legenda de Cores",
   "transcript.saveSpeakerNames": "Salvar Nomes de Falantes",
   "transcript.saveSpeakerNamesTitle": "Salvar todas as alterações de nomes de falantes e atualizar a transcrição",

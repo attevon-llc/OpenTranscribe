@@ -2450,6 +2450,7 @@
   "transcript.overlapIndicator": "{{count}} locuteurs qui se chevauchent",
   "transcript.unknownVideo": "Vidéo inconnue",
   "transcript.unsavedChanges": "Vous avez des modifications de noms de locuteurs non enregistrées",
+  "transcript.unsavedChangesPrompt": "Vous avez des modifications non enregistrées dans cette transcription. Quitter la page et les perdre ?",
   "transcript.viewAvailableSuggestions": "Voir les suggestions disponibles",
   "transcriptModal.clearSearch": "Effacer la recherche",
   "transcriptModal.closeModal": "Fermer le modal",

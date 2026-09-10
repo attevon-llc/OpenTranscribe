@@ -1693,6 +1693,7 @@
   "transcript.downloadFailed": "فشل التنزيل",
   "transcript.editSpeakerNames": "تحرير أسماء المتحدثين",
   "transcript.unsavedChanges": "لديك تغييرات غير محفوظة في أسماء المتحدثين",
+  "transcript.unsavedChangesPrompt": "لديك تغييرات غير محفوظة في هذا النص. هل تريد مغادرة الصفحة وفقدانها؟",
   "transcript.colorLegend": "دليل الألوان",
   "transcript.saveSpeakerNames": "حفظ أسماء المتحدثين",
   "transcript.saveSpeakerNamesTitle": "حفظ جميع تغييرات أسماء المتحدثين وتحديث النص المفرغ",

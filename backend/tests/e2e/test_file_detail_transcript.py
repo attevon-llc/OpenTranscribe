@@ -34,6 +34,7 @@ Run (visible on XRDP):
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from typing import Any
 
@@ -618,3 +619,117 @@ class TestTranscriptSearch:
         detail_page.wait_for_timeout(3500)
         unexpected = _unexpected_console_errors(detail_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors during transcript search: {unexpected}"
+
+
+def _accept_and_record(page: Page) -> list[str]:
+    """Accept every dialog the page raises, returning the list it records them into.
+
+    A ``lambda`` here would return the tuple ``(None, None)`` — harmless at runtime and a
+    mypy ``func-returns-value`` error, since ``list.append`` returns nothing.
+    """
+    messages: list[str] = []
+
+    def _handler(dialog) -> None:  # type: ignore[no-untyped-def]
+        messages.append(dialog.message)
+        dialog.accept()
+
+    page.on("dialog", _handler)
+    return messages
+
+
+class TestUnsavedChangesGuard:
+    """Leaving the page mid-edit must ask first (issue #787).
+
+    Before this, ``SpeakerEditorPanel``'s "unsaved" dot was the entire protection: a nav
+    click or a tab close discarded the work silently. Speaker naming is the most manual,
+    least re-doable work in the product — and the one the app deliberately does NOT
+    auto-apply — so dropping it without a word is the worst place to do it.
+
+    Driven through the SEGMENT editor rather than the speaker panel because it dirties in
+    one keystroke and the cancel path restores the original, which keeps this test inside
+    the suite's "never persist changes to dev data" rule. The guard itself is one
+    predicate over both surfaces (``routes/files/[id]/+page.svelte``: ``hasUnsavedEdits``),
+    and its branch logic is unit-tested in
+    ``frontend/src/lib/navigation/unsavedChangesGuard.test.ts``.
+    """
+
+    UNSAVED_TEXT = "E2E UNSAVED EDIT THAT MUST NEVER PERSIST"
+
+    def _start_an_unsaved_edit(self, page: Page) -> None:
+        first_segment = page.locator(".transcript-segment").first
+        first_segment.hover()
+        edit_btn = first_segment.locator(".edit-button")
+        expect(edit_btn.first).to_be_visible(timeout=5000)
+        edit_btn.first.click()
+        textarea = page.locator(".segment-textarea")
+        expect(textarea.first).to_be_visible(timeout=5000)
+        textarea.first.fill(self.UNSAVED_TEXT)
+
+    def test_declining_the_prompt_keeps_the_page_and_the_edit(self, detail_page: Page) -> None:
+        """The whole point: cancelling must leave the user where they were, edits intact."""
+        messages: list[str] = []
+
+        def _decline(dialog) -> None:  # type: ignore[no-untyped-def]
+            messages.append(dialog.message)
+            dialog.dismiss()
+
+        detail_page.on("dialog", _decline)
+        before = detail_page.url
+
+        try:
+            self._start_an_unsaved_edit(detail_page)
+            detail_page.locator('[data-testid="nav-gallery"]').click()
+
+            expect(detail_page.locator(".segment-textarea").first).to_be_visible(timeout=5000)
+            assert messages, "navigating away mid-edit asked nothing"
+            assert detail_page.url == before, (
+                f"declining the prompt still navigated: {before} -> {detail_page.url}"
+            )
+            assert detail_page.locator(".segment-textarea").first.input_value() == self.UNSAVED_TEXT
+        finally:
+            # Cancel path only — this suite never persists a transcript change.
+            detail_page.locator(".segment-edit-actions .cancel-button").first.click()
+
+    def test_accepting_the_prompt_leaves_the_page(self, detail_page: Page) -> None:
+        """The must-not-fire half: the guard asks, it does not simply trap the user.
+
+        Without this, an implementation that cancelled every navigation unconditionally
+        would pass the test above.
+        """
+        _accept_and_record(detail_page)
+
+        self._start_an_unsaved_edit(detail_page)
+        detail_page.locator('[data-testid="nav-gallery"]').click()
+
+        # Discarding is what the user asked for; the edit was never saved, so nothing
+        # persisted either way.
+        expect(detail_page).not_to_have_url(re.compile(r"/files/[0-9a-f-]{36}"), timeout=10000)
+
+    def test_a_clean_page_navigates_with_no_prompt(self, detail_page: Page) -> None:
+        """The control. A guard that prompts on a clean page is a guard nobody reads."""
+        messages = _accept_and_record(detail_page)
+
+        detail_page.locator('[data-testid="nav-gallery"]').click()
+
+        expect(detail_page).not_to_have_url(re.compile(r"/files/[0-9a-f-]{36}"), timeout=10000)
+        assert not messages, f"a clean transcript page prompted on the way out: {messages}"
+
+    def test_opening_the_editor_without_typing_is_not_unsaved(self, detail_page: Page) -> None:
+        """Opening the editor is not an edit.
+
+        A dirty flag of "is an editor open" would prompt on every accidental click of the
+        pencil, which is the fastest way to train people to click through the prompt.
+        """
+        messages = _accept_and_record(detail_page)
+
+        first_segment = detail_page.locator(".transcript-segment").first
+        first_segment.hover()
+        edit_btn = first_segment.locator(".edit-button")
+        expect(edit_btn.first).to_be_visible(timeout=5000)
+        edit_btn.first.click()
+        expect(detail_page.locator(".segment-textarea").first).to_be_visible(timeout=5000)
+
+        detail_page.locator('[data-testid="nav-gallery"]').click()
+
+        expect(detail_page).not_to_have_url(re.compile(r"/files/[0-9a-f-]{36}"), timeout=10000)
+        assert not messages, f"an untouched editor counted as an unsaved edit: {messages}"

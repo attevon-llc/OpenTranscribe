@@ -1692,6 +1692,7 @@
   "transcript.downloadFailed": "下载失败",
   "transcript.editSpeakerNames": "编辑说话人姓名",
   "transcript.unsavedChanges": "您有未保存的说话人姓名更改",
+  "transcript.unsavedChangesPrompt": "此转录有未保存的更改。要离开页面并放弃这些更改吗？",
   "transcript.colorLegend": "颜色图例",
   "transcript.saveSpeakerNames": "保存说话人姓名",
   "transcript.saveSpeakerNamesTitle": "保存所有说话人姓名更改并更新转录",

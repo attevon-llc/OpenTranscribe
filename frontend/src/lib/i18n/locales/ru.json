@@ -1682,6 +1682,7 @@
   "transcript.downloadFailed": "Скачивание не удалось",
   "transcript.editSpeakerNames": "Редактировать имена спикеров",
   "transcript.unsavedChanges": "У вас есть несохраненные изменения имен спикеров",
+  "transcript.unsavedChangesPrompt": "У вас есть несохранённые изменения в этой расшифровке. Покинуть страницу и потерять их?",
   "transcript.colorLegend": "Легенда цветов",
   "transcript.saveSpeakerNames": "Сохранить имена спикеров",
   "transcript.saveSpeakerNamesTitle": "Сохранить все изменения имен спикеров и обновить транскрипцию",

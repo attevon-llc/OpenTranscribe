@@ -2450,6 +2450,7 @@
   "transcript.overlapIndicator": "{{count}} Sprecher überlappen sich",
   "transcript.unknownVideo": "Unbekanntes Video",
   "transcript.unsavedChanges": "Sie haben nicht gespeicherte Änderungen an Sprechernamen",
+  "transcript.unsavedChangesPrompt": "Sie haben nicht gespeicherte Änderungen an diesem Transkript. Die Seite verlassen und sie verwerfen?",
   "transcript.viewAvailableSuggestions": "Verfügbare Vorschläge für Sprecheridentifikation anzeigen",
   "transcriptModal.clearSearch": "Suche löschen",
   "transcriptModal.closeModal": "Modal schließen",

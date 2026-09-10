@@ -1692,6 +1692,7 @@
   "transcript.downloadFailed": "ダウンロード失敗",
   "transcript.editSpeakerNames": "話者名を編集",
   "transcript.unsavedChanges": "保存されていない話者名の変更があります",
+  "transcript.unsavedChangesPrompt": "この文字起こしに保存されていない変更があります。ページを離れて破棄しますか？",
   "transcript.colorLegend": "カラー凡例",
   "transcript.saveSpeakerNames": "話者名を保存",
   "transcript.saveSpeakerNamesTitle": "すべての話者名の変更を保存して文字起こしを更新",

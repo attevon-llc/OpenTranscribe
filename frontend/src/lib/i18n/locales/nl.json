@@ -1693,6 +1693,7 @@
   "transcript.downloadFailed": "Downloaden mislukt",
   "transcript.editSpeakerNames": "Sprekernamen bewerken",
   "transcript.unsavedChanges": "U heeft niet-opgeslagen wijzigingen in sprekernamen",
+  "transcript.unsavedChangesPrompt": "U heeft niet-opgeslagen wijzigingen in deze transcriptie. Wilt u de pagina verlaten en ze verliezen?",
   "transcript.colorLegend": "Kleurlegenda",
   "transcript.saveSpeakerNames": "Sprekernamen opslaan",
   "transcript.saveSpeakerNamesTitle": "Alle wijzigingen in sprekernamen opslaan en het transcript bijwerken",

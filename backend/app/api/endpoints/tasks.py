@@ -34,6 +34,7 @@ from app.models.user import User
 from app.schemas.media import PaginatedTaskResponse
 from app.schemas.media import Task
 from app.services import system_settings_service
+from app.services.takedown_service import exclude_quarantined
 from app.services.task_detection_service import task_detection_service
 from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_recovery_service import task_recovery_service
@@ -91,6 +92,10 @@ def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
     query = db.query(*columns)
     if not current_user.is_admin:
         query = query.filter(MediaFile.user_id == current_user.id)
+    # A quarantined file must 404 everywhere under `files/`, so it must not surface
+    # in the task list either — the two are the same "does this file exist for you"
+    # question. Admin "see all" keeps every row (review needs the quarantined ones).
+    query = exclude_quarantined(query, include_quarantined=current_user.is_admin)
     return query.all()  # type: ignore[no-any-return]
 
 
@@ -125,6 +130,9 @@ def _latest_task_by_file(
     )
     if not current_user.is_admin:
         query = query.filter(MediaFile.user_id == current_user.id)
+    # Same quarantine exclusion as `_get_user_media_files` — this query is joined
+    # through `MediaFile` independently, so it needs its own copy of the filter.
+    query = exclude_quarantined(query, include_quarantined=current_user.is_admin)
     if file_id is not None:
         query = query.filter(TaskModel.media_file_id == file_id)
 
@@ -888,7 +896,13 @@ def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> Medi
     else:
         media_file = (
             db.query(MediaFile)
-            .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+            .filter(
+                MediaFile.id == file_id,
+                MediaFile.user_id == current_user.id,
+                # A quarantined file must 404 on this surface too — see the matching
+                # exclusion on `_get_user_media_files`/`_latest_task_by_file` above.
+                MediaFile.is_quarantined.is_(False),
+            )
             .first()
         )
 

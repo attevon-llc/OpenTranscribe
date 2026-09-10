@@ -1548,6 +1548,13 @@ def get_speaker(
     """
     speaker = get_speaker_by_uuid(db, speaker_uuid)
 
+    from app.services.takedown_service import is_hidden_for
+
+    if speaker.media_file is not None and is_hidden_for(
+        speaker.media_file, is_admin=current_user.is_admin
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
+
     # Verify file-level access (own or shared via collection)
     file_perm = PermissionService.get_file_permission(
         db, int(speaker.media_file_id), current_user.id

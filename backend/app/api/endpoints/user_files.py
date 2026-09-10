@@ -17,6 +17,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy import func
+from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import defer
 
@@ -30,6 +31,7 @@ from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.services import system_settings_service
 from app.services.formatting_service import FormattingService
+from app.services.takedown_service import exclude_quarantined
 from app.services.task_recovery_service import task_recovery_service
 from app.utils.task_utils import get_task_summary_for_media_file
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
@@ -84,12 +86,16 @@ def get_user_file_status(
         user_id = current_user.id
 
         # --- Status counts via SQL GROUP BY (single aggregation query) ---
-        status_rows = (
-            db.query(MediaFile.status, func.count(MediaFile.id))
-            .filter(MediaFile.user_id == user_id)
-            .group_by(MediaFile.status)
-            .all()
+        # Quarantine exclusion applied BEFORE the GROUP BY, not by filtering the
+        # resulting dict after — a quarantined file must not inflate `total` either.
+        # Explicitly typed as the plain `Query` `exclude_quarantined` takes/returns —
+        # without it mypy infers the narrower `RowReturningQuery[tuple[...]]` from the
+        # multi-column `db.query(...)` below and rejects the reassignment.
+        status_query: Query = db.query(MediaFile.status, func.count(MediaFile.id)).filter(
+            MediaFile.user_id == user_id
         )
+        status_query = exclude_quarantined(status_query, include_quarantined=current_user.is_admin)
+        status_rows = status_query.group_by(MediaFile.status).all()
 
         status_counts: dict[str, int] = {
             "total": 0,
@@ -130,6 +136,13 @@ def get_user_file_status(
                 | (MediaFile.status == FileStatus.ERROR),
             )
             .order_by(MediaFile.upload_time.desc())
+        )
+        # Not actually reachable today — quarantine overwrites `status` to the distinct
+        # `QUARANTINED` value, which matches none of the three arms above — but applied
+        # for uniformity with the other two queries in this handler, and so it stays
+        # correct if that filter is ever loosened.
+        problem_query = exclude_quarantined(
+            problem_query, include_quarantined=current_user.is_admin
         )
 
         problem_files = []
@@ -173,8 +186,13 @@ def get_user_file_status(
                 MediaFile.upload_time >= twenty_four_hours_ago,
             )
             .order_by(MediaFile.upload_time.desc())
-            .limit(10)
         )
+        # The real leak this item fixes: a file quarantined within the last 24h of
+        # upload would otherwise still report its filename/status/duration here.
+        # Applied BEFORE `.limit()` — SQLAlchemy refuses `.filter()` after a LIMIT.
+        recent_query = exclude_quarantined(
+            recent_query, include_quarantined=current_user.is_admin
+        ).limit(10)
 
         recent_files = []
         for file in recent_query.all():

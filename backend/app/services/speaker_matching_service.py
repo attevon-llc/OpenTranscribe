@@ -19,6 +19,7 @@ from app.services.opensearch_service import add_speaker_embedding
 from app.services.opensearch_service import find_matching_speaker
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
+from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -1001,23 +1002,32 @@ class SpeakerMatchingService:
                 "status": "failed",
             }
 
-    def find_speaker_occurrences(self, profile_id: int, user_id: int) -> list[dict[str, Any]]:
+    def find_speaker_occurrences(
+        self, profile_id: int, user_id: int, *, include_quarantined: bool = False
+    ) -> list[dict[str, Any]]:
         """
         Find all media files where a speaker profile appears.
 
         Args:
             profile_id: Speaker profile ID
             user_id: User ID
+            include_quarantined: Admin "see all" — skip the takedown exclusion below.
 
         Returns:
             List of media file information
         """
-        # Get all speaker instances for this profile
-        speakers = (
+        # Get all speaker instances for this profile. `Speaker.media_file_id` is never
+        # NULL, so an inner join to `MediaFile` here drops no legitimate row — it only
+        # exists to let the quarantine exclusion filter on it. Without this a taken-down
+        # file's speaker kept appearing in a profile's occurrence list (filename, title,
+        # upload time) even though the file itself 404s everywhere under `files/`.
+        query = (
             self.db.query(Speaker)
+            .join(MediaFile, Speaker.media_file_id == MediaFile.id)
             .filter(Speaker.profile_id == profile_id, Speaker.user_id == user_id)
-            .all()
         )
+        query = exclude_quarantined(query, include_quarantined=include_quarantined)
+        speakers = query.all()
 
         occurrences = []
         for speaker in speakers:

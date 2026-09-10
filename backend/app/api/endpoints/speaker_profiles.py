@@ -744,8 +744,11 @@ def get_speaker_profile_occurrences(
         # which would waste model loads per request even where it does.
         matching_service = SpeakerMatchingService(db, None)
 
-        # Get occurrences
-        occurrences = matching_service.find_speaker_occurrences(int(profile_id), current_user.id)
+        # Get occurrences. A quarantined file's occurrence must 404-equivalent drop out
+        # of this list for a non-admin, the same as everywhere else under `files/`.
+        occurrences = matching_service.find_speaker_occurrences(
+            int(profile_id), current_user.id, include_quarantined=current_user.is_admin
+        )
 
         return occurrences
 

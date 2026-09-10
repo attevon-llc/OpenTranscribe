@@ -66,6 +66,7 @@ from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import owned_or_system
 from app.services.tag_service import tag_ownership
 from app.services.tag_service import visible_to
+from app.services.takedown_service import exclude_quarantined
 
 logger = logging.getLogger(__name__)
 
@@ -495,6 +496,7 @@ def files_for_tag(
     user_id: int,
     organization_id: OrgScope = UNSCOPED,
     limit: int = 50,
+    is_admin: bool = False,
 ) -> tuple[list[MediaFile], int]:
     """Return the accessible files carrying ``tag_id``, newest first.
 
@@ -504,7 +506,10 @@ def files_for_tag(
     recording you cannot see.
 
     Scoped to the caller's accessible files, so a tag visible via one shared
-    file never lists its owner's other media.
+    file never lists its owner's other media. Mirrors ``_visible_to``'s own
+    quarantine clause (``tags/_common.py``) — that predicate already drops a
+    quarantined file's id from tag *visibility*; this is the matching exclusion
+    for the *file-listing* half, which was missed when that fix landed.
 
     Args:
         db: Database session.
@@ -513,6 +518,7 @@ def files_for_tag(
         organization_id: Tenant scope.
         limit: Most rows to return; the caller gets the true total separately so
             it can say "and N more" rather than silently truncating.
+        is_admin: Admin "see all" — skip the takedown exclusion below.
 
     Returns:
         ``(files, total)`` — at most ``limit`` files, and how many there are.
@@ -523,6 +529,7 @@ def files_for_tag(
         .join(FileTag, FileTag.media_file_id == MediaFile.id)
         .filter(FileTag.tag_id == tag_id, MediaFile.id.in_(accessible))
     )
+    base = exclude_quarantined(base, include_quarantined=is_admin)
     total = base.count()
     files = (
         base.order_by(MediaFile.upload_time.desc().nullslast(), MediaFile.id.desc())

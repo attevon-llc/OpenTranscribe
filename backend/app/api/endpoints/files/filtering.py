@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 
+from app.core.constants import FILE_TYPE_MIME_PREFIXES
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -185,16 +186,28 @@ def apply_file_type_filter(query: Query, file_type: list[str] | None) -> Query:
 
     Returns:
         Filtered query
+
+    An unrecognized value narrows to nothing rather than being dropped (issue #871):
+    dropping it returned the caller's WHOLE accessible file set while they believed they had
+    filtered, and ``?file_type=audio&file_type=bogus`` silently narrowed to audio-only. This
+    is not an authorization bug — the base query is already scoped to the caller's own
+    accessible/non-quarantined files before this filter runs — it just returned too many of
+    the caller's OWN files. Mirrors the search plane's ``_file_type_filter_clause``
+    (``FILE_TYPE_MIME_PREFIXES``, shared with this function since #871), including its literal
+    MIME fallback: a caller passing a full ``audio/mpeg`` still gets an exact match.
     """
     if file_type:
-        type_conditions = []
+        type_conditions: list[sa.ColumnElement[bool]] = []
         for ft in file_type:
-            if ft == "audio":
-                type_conditions.append(MediaFile.content_type.like("audio/%"))
-            elif ft == "video":
-                type_conditions.append(MediaFile.content_type.like("video/%"))
-        if type_conditions:
-            query = query.filter(sa.or_(*type_conditions))
+            prefix = FILE_TYPE_MIME_PREFIXES.get(ft.lower())
+            if prefix:
+                type_conditions.append(MediaFile.content_type.like(f"{prefix}%"))
+            else:
+                type_conditions.append(MediaFile.content_type == ft)
+        # type_conditions is never empty here (every branch above appends exactly one
+        # condition per requested value) — no "if type_conditions:" guard. That guard was
+        # the bug: it let an all-unrecognized file_type list fall through unfiltered.
+        query = query.filter(sa.or_(*type_conditions))
 
     return query
 

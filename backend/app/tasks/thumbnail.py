@@ -102,18 +102,32 @@ def generate_thumbnail_task(self, file_id: int, user_id: int, storage_path: str)
             # real thumbnail mid-processing (no refresh). Matches the frontend
             # file_updated handler in routes/+page.svelte.
             try:
-                from app.services.minio_service import get_file_url
                 from app.services.notification_service import send_task_notification
+                from app.services.takedown_service import is_notification_suppressed
 
-                thumbnail_url = get_file_url(
-                    thumbnail_storage_path, expires=settings.THUMBNAIL_URL_EXPIRE_SECONDS
-                )
-                send_task_notification(
-                    user_id,
-                    "file_updated",
-                    file_id=file_id,
-                    extra={"thumbnail_url": thumbnail_url},
-                )
+                # Abuse/DMCA (issue #817): check quarantine BEFORE minting the
+                # presigned URL, not just before the notification — a quarantined
+                # object must never get a presigned URL signed for it at all, even
+                # one that's never sent anywhere. The thumbnail upload and
+                # `thumbnail_path` write above are left alone: the derived object
+                # isn't served (that route is already gated by a prior fix), and
+                # skipping the write would leave a released file with no thumbnail.
+                if is_notification_suppressed(file_id, user_id):
+                    logger.info(
+                        f"Skipping thumbnail presign + notify for quarantined file {file_id}"
+                    )
+                else:
+                    from app.services.minio_service import get_file_url
+
+                    thumbnail_url = get_file_url(
+                        thumbnail_storage_path, expires=settings.THUMBNAIL_URL_EXPIRE_SECONDS
+                    )
+                    send_task_notification(
+                        user_id,
+                        "file_updated",
+                        file_id=file_id,
+                        extra={"thumbnail_url": thumbnail_url},
+                    )
             except Exception as notify_err:
                 logger.warning(
                     f"Thumbnail notify failed for file {file_id} (non-fatal): {notify_err}"

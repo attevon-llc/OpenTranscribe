@@ -54,6 +54,19 @@ def send_task_notification(
     data: dict[str, Any] = {}
 
     if file_id is not None:
+        # Abuse/DMCA (issue #817): a quarantined file's filename must not reach
+        # a non-admin recipient through this funnel any more than it reaches
+        # them through a list/search/detail read. This is the SHARED chokepoint
+        # for 10+ task files, so the check lives here rather than at each
+        # caller. `takedown_service._notify_owner_takedown`/`_notify_owner_release`
+        # (the DMCA §512(g) owner notices) never pass `file_id` — they carry the
+        # file's identity in `extra` instead — so they are never suppressed by
+        # this branch and the owner always learns about their own takedown.
+        from app.services.takedown_service import is_notification_suppressed
+
+        if is_notification_suppressed(file_id, user_id):
+            return False
+
         metadata = _get_file_metadata_safe(file_id)
         if metadata:
             data["file_id"] = metadata.get("file_uuid")

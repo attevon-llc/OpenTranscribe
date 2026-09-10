@@ -2082,6 +2082,7 @@
   "gallery.bulk.collectionsTooltip": "Je bestandscollecties bekijken en beheren",
   "gallery.bulk.selectFilesTooltip": "Bestandsselectiemodus openen voor bulkbewerkingen",
   "fileStatus.title": "Status van mijn bestanden",
+  "fileStatus.liveUpdatesTooltip": "Live updates via WebSocket. Terugvalpolling elke 2 minuten.",
   "fileStatus.flowerTooltip": "Flower-wachtrijdashboard openen — gedetailleerde takenwachtrijstatus en workerprestaties",
   "fileStatus.tasksToggleTooltip": "Gedetailleerde takenweergave weergeven/verbergen",
   "fileStatus.hideTasks": "Taken verbergen",

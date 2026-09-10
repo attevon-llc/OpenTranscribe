@@ -593,6 +593,7 @@
   "fileStatus.taskDetailsTitle": "Détails de la Tâche:",
   "fileStatus.tasksToggleTooltip": "Afficher/masquer la vue détaillée des tâches",
   "fileStatus.title": "État de Mes Fichiers",
+  "fileStatus.liveUpdatesTooltip": "Mises à jour en direct via WebSocket. Interrogation de secours toutes les 2 minutes.",
   "fileStatus.toDate": "Jusqu'à la date",
   "fileStatus.toDateTooltip": "Filtrer jusqu'à cette date",
   "fileStatus.totalFiles": "Fichiers Totaux",

@@ -593,6 +593,7 @@
   "fileStatus.tasksLoadFailed": "Error al cargar las tareas",
   "fileStatus.tasksToggleTooltip": "Mostrar/ocultar vista detallada de tareas",
   "fileStatus.title": "Estado de Mis Archivos",
+  "fileStatus.liveUpdatesTooltip": "Actualizaciones en vivo vía WebSocket. Sondeo de respaldo cada 2 minutos.",
   "fileStatus.toDate": "Hasta fecha",
   "fileStatus.toDateTooltip": "Filtrar hasta esta fecha",
   "fileStatus.totalFiles": "Archivos Totales",

@@ -2081,6 +2081,7 @@
   "gallery.bulk.collectionsTooltip": "查看和管理您的文件合集",
   "gallery.bulk.selectFilesTooltip": "进入文件选择模式以进行批量操作",
   "fileStatus.title": "我的文件状态",
+  "fileStatus.liveUpdatesTooltip": "通过 WebSocket 实时更新。回退轮询每 2 分钟一次。",
   "fileStatus.flowerTooltip": "打开Flower监控仪表板以查看详细的任务队列状态和工作器性能",
   "fileStatus.tasksToggleTooltip": "显示/隐藏详细任务视图",
   "fileStatus.hideTasks": "隐藏任务",

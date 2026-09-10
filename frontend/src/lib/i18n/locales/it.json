@@ -2082,6 +2082,7 @@
   "gallery.bulk.collectionsTooltip": "Visualizza e gestisci le tue raccolte di file",
   "gallery.bulk.selectFilesTooltip": "Entra in modalità di selezione file per le operazioni in batch",
   "fileStatus.title": "Stato dei miei file",
+  "fileStatus.liveUpdatesTooltip": "Aggiornamenti in tempo reale tramite WebSocket. Polling di riserva ogni 2 minuti.",
   "fileStatus.flowerTooltip": "Apri la dashboard della coda Flower — stato dettagliato della coda dei task e prestazioni dei worker",
   "fileStatus.tasksToggleTooltip": "Mostra/nascondi la vista dettagliata dei task",
   "fileStatus.hideTasks": "Nascondi task",

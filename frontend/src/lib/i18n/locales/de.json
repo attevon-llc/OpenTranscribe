@@ -593,6 +593,7 @@
   "fileStatus.tasksLoadFailed": "Laden der Aufgaben fehlgeschlagen",
   "fileStatus.tasksToggleTooltip": "Detaillierte Aufgabenansicht anzeigen/ausblenden",
   "fileStatus.title": "Meine Dateistatus",
+  "fileStatus.liveUpdatesTooltip": "Live-Updates über WebSocket. Ausweich-Abfrage alle 2 Minuten.",
   "fileStatus.toDate": "Bis Datum",
   "fileStatus.toDateTooltip": "Bis zu diesem Datum filtern",
   "fileStatus.totalFiles": "Dateien Gesamt",

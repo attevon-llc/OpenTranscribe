@@ -2082,6 +2082,7 @@
   "gallery.bulk.collectionsTooltip": "عرض مجموعات ملفاتك وإدارتها",
   "gallery.bulk.selectFilesTooltip": "الدخول إلى وضع تحديد الملفات للعمليات الجماعية",
   "fileStatus.title": "حالة ملفاتي",
+  "fileStatus.liveUpdatesTooltip": "تحديثات مباشرة عبر WebSocket. استطلاع احتياطي كل دقيقتين.",
   "fileStatus.flowerTooltip": "فتح لوحة تحكم Flower — حالة مفصّلة لقائمة المهام وأداء العمال",
   "fileStatus.tasksToggleTooltip": "إظهار/إخفاء عرض المهام المفصّل",
   "fileStatus.hideTasks": "إخفاء المهام",

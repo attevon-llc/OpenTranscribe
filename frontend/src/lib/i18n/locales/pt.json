@@ -2081,6 +2081,7 @@
   "gallery.bulk.collectionsTooltip": "Ver e gerir as suas coleções de ficheiros",
   "gallery.bulk.selectFilesTooltip": "Entrar no modo de seleção para operações em massa",
   "fileStatus.title": "Status dos Meus Arquivos",
+  "fileStatus.liveUpdatesTooltip": "Atualizações em tempo real via WebSocket. Sondagem de reserva a cada 2 minutos.",
   "fileStatus.flowerTooltip": "Abrir painel de monitoramento do Flower para ver status detalhado da fila de tarefas e desempenho dos workers",
   "fileStatus.tasksToggleTooltip": "Mostrar/ocultar visualização detalhada de tarefas",
   "fileStatus.hideTasks": "Ocultar Tarefas",

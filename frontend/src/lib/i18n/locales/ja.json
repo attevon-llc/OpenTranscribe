@@ -2081,6 +2081,7 @@
   "gallery.bulk.collectionsTooltip": "ファイルコレクションの表示と管理",
   "gallery.bulk.selectFilesTooltip": "一括操作のためにファイル選択モードに入る",
   "fileStatus.title": "マイファイルステータス",
+  "fileStatus.liveUpdatesTooltip": "WebSocket 経由でのライブ更新。フォールバックとして2分ごとにポーリングします。",
   "fileStatus.flowerTooltip": "Flower監視ダッシュボードを開いて、詳細なタスクキューの状態とワーカーのパフォーマンスを表示",
   "fileStatus.tasksToggleTooltip": "詳細なタスクビューを表示/非表示",
   "fileStatus.hideTasks": "タスクを非表示",

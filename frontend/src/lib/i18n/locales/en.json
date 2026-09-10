@@ -2082,6 +2082,7 @@
   "gallery.bulk.collectionsTooltip": "View and manage your file collections",
   "gallery.bulk.selectFilesTooltip": "Enter file selection mode for bulk operations",
   "fileStatus.title": "My Files Status",
+  "fileStatus.liveUpdatesTooltip": "Live updates via WebSocket. Fallback poll every 2 minutes.",
   "fileStatus.flowerTooltip": "Open Flower queue dashboard — detailed task queue status and worker performance",
   "fileStatus.tasksToggleTooltip": "Show/hide detailed tasks view",
   "fileStatus.hideTasks": "Hide Tasks",

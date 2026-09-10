@@ -2082,6 +2082,7 @@
   "gallery.bulk.collectionsTooltip": "파일 컬렉션을 보고 관리합니다",
   "gallery.bulk.selectFilesTooltip": "일괄 작업을 위해 파일 선택 모드로 전환합니다",
   "fileStatus.title": "내 파일 상태",
+  "fileStatus.liveUpdatesTooltip": "WebSocket을 통한 실시간 업데이트. 대체 폴링은 2분마다 수행됩니다.",
   "fileStatus.flowerTooltip": "Flower 큐 대시보드 열기 — 작업 큐 상태와 워커 성능을 자세히 확인합니다",
   "fileStatus.tasksToggleTooltip": "작업 상세 보기를 표시하거나 숨깁니다",
   "fileStatus.hideTasks": "작업 숨기기",

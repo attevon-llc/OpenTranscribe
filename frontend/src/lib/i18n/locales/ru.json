@@ -2071,6 +2071,7 @@
   "gallery.bulk.collectionsTooltip": "Просмотр и управление коллекциями файлов",
   "gallery.bulk.selectFilesTooltip": "Войти в режим выбора файлов для массовых операций",
   "fileStatus.title": "Статус моих файлов",
+  "fileStatus.liveUpdatesTooltip": "Живые обновления через WebSocket. Резервный опрос каждые 2 минуты.",
   "fileStatus.flowerTooltip": "Открыть дашборд мониторинга Flower для просмотра детального статуса очередей и производительности воркеров",
   "fileStatus.tasksToggleTooltip": "Показать/скрыть детальный вид задач",
   "fileStatus.hideTasks": "Скрыть задачи",

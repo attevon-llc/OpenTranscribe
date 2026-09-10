@@ -265,11 +265,81 @@ def _try_authenticate_token(
         return None
 
 
+def _normalize_origin(origin: str) -> str:
+    """Lower-case an origin and drop a trailing slash, for exact comparison."""
+    return origin.strip().rstrip("/").lower()
+
+
+def _request_origin(websocket: WebSocket) -> str | None:
+    """The origin the handshake was addressed TO, for a same-origin comparison.
+
+    Reconstructed from ``Host`` plus the forwarded scheme, which is what nginx
+    supplies for ``/api/ws`` (``proxy_set_header Host $host`` +
+    ``X-Forwarded-Proto $scheme``). Falls back to the connection's own scheme,
+    mapping the WebSocket schemes onto the HTTP ones an ``Origin`` header uses.
+    """
+    host = websocket.headers.get("host")
+    if not host:
+        return None
+    forwarded = websocket.headers.get("x-forwarded-proto")
+    if forwarded:
+        # A chain of proxies appends, so the client-facing scheme is the first.
+        scheme = forwarded.split(",")[0].strip()
+    else:
+        scheme = {"ws": "http", "wss": "https"}.get(websocket.url.scheme, websocket.url.scheme)
+    return _normalize_origin(f"{scheme}://{host}")
+
+
+def _origin_is_allowed(websocket: WebSocket) -> bool:
+    """Whether this handshake's ``Origin`` may open a socket (issue #903).
+
+    The WebSocket handshake is **not** subject to the same-origin policy and
+    browsers attach cookies to it, while this app's CORS and CSRF middleware are
+    both ``BaseHTTPMiddleware``-based and do not run on the WebSocket path. So
+    without this check, a page on any origin could open a socket in a visiting
+    authenticated user's browser, the ``access_token`` cookie would go along, and
+    that page would receive the user's live event stream — cross-site WebSocket
+    hijacking, needing no prior access.
+
+    Three cases pass:
+
+    * **No ``Origin`` header** — a non-browser client (curl, a cron job, an
+      agent). This app's non-UI API is a deliberate feature, and such a client
+      carries no ambient cookie for another site to abuse, so refusing it would
+      cost real functionality and buy nothing.
+    * **Same origin as the request itself.** ``CORS_ORIGINS`` is set by no shipped
+      compose file — it defaults to the two Vite dev URLs — because a same-origin
+      SPA behind nginx never needs CORS. Keying only off the allowlist would
+      therefore refuse the WebSocket in every production deployment.
+    * **An origin in ``settings.CORS_ORIGINS``** — the same list ``main.py`` hands
+      ``CORSMiddleware``, deliberately reused rather than duplicated, since a
+      second allowlist would drift from the first.
+
+    Comparison is exact (after case/trailing-slash normalisation), never a prefix
+    test: ``http://localhost:5173.evil.example`` starts with an allowed origin.
+    """
+    origin = websocket.headers.get("origin")
+    if not origin:
+        return True
+
+    allowed = {_normalize_origin(o) for o in settings.CORS_ORIGINS if o}
+    if "*" in allowed:
+        # Parity with CORSMiddleware. main.py already refuses to boot with a
+        # wildcard in a hardened environment, so this only reaches a dev stack.
+        return True
+
+    normalized = _normalize_origin(origin)
+    return normalized in allowed or normalized == _request_origin(websocket)
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint with first-message authentication.
 
     Authentication flow:
+    0. Reject the handshake outright if ``Origin`` is not allowed
+       (:func:`_origin_is_allowed`) — before ``accept()``, so a foreign page never
+       holds a server-side connection object at all.
     1. Accept the raw WebSocket connection.
     2. Try cookie-based auth (``access_token`` cookie).
     3. If no cookie, wait up to 10 s for a first-message ``authenticate`` frame.
@@ -287,10 +357,27 @@ async def websocket_endpoint(websocket: WebSocket):
     rolls back — it never commits), and could block a schema migration waiting on the
     same table for as long as any client stayed connected.
     """
+    # Origin gate FIRST — before setup_redis(), before accept(). Closing a
+    # WebSocket that was never accepted rejects the handshake itself, so an
+    # unauthorized peer never reaches a message loop and never costs a connection.
+    # Note the two faces of that refusal: on the wire uvicorn turns a pre-accept
+    # close into an **HTTP 403** on the handshake (verified against a real
+    # uvicorn), because there is no WebSocket yet to carry a close code; the 4403
+    # travels in the ASGI message and is what an ASGI-level client (Starlette's
+    # TestClient) observes. Both mean the same thing: no socket was opened.
+    if not _origin_is_allowed(websocket):
+        logger.warning(
+            "Rejected WebSocket handshake from disallowed origin %r (host=%r)",
+            websocket.headers.get("origin"),
+            websocket.headers.get("host"),
+        )
+        await websocket.close(code=4403, reason="Origin not allowed")
+        return
+
     # Initialize Redis subscriber if not already running
     setup_redis()
 
-    # Accept the connection first, then authenticate
+    # Accept the connection, then authenticate
     await websocket.accept()
 
     user: User | None = None

@@ -207,9 +207,26 @@ def _handle_speaker_change(
                 f"Dispatched embedding update task for segment {segment_uuid} "
                 f"-> speaker {target_speaker_uuid}"
             )
-        except Exception as e:
-            # Don't fail the operation if task dispatch fails
-            logger.warning(f"Failed to dispatch embedding update task: {e}")
+        except Exception:
+            # The reassignment itself is already committed and is what the user
+            # asked for, so a broker outage must not turn a successful rename into
+            # an error — but it MUST be loud (issue #865). This is the only signal
+            # that this speaker's voiceprint is now stale, which degrades
+            # cross-file matching silently and indefinitely; logger.exception at
+            # ERROR gives an operator a stack trace and a greppable sentence
+            # instead of a one-line warning nobody alerts on.
+            #
+            # Note what this except can and cannot see: it catches a DISPATCH
+            # failure only. "Published fine, but nothing will ever consume it" is
+            # invisible here by construction — that was the actual #865 bug, and
+            # it is fixed by routing (gpu_preferred_queue), not by this handler.
+            logger.exception(
+                "Speaker voiceprint update was NOT queued for segment %s -> speaker %s; "
+                "cross-file speaker matching for this speaker will use a stale embedding "
+                "until it is re-extracted.",
+                segment_uuid,
+                target_speaker_uuid,
+            )
 
 
 @router.put("/segments/{segment_uuid}/speaker", response_model=TranscriptSegmentSchema)

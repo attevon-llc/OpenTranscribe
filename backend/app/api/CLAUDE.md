@@ -355,8 +355,22 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   pub/sub channel, then read it **again**. A single check-then-subscribe loses a worker
   completion published in the gap and the stream waits on `get_message` forever (#284 A1.22,
   #334). `test_handler_blocking_io.py` AST-pins the ordering for both.
-- The WS endpoint `accept()`s *before* authenticating (cookie, else a 10 s first-message
-  `authenticate` frame), then closes with 4001/4002/4003 — not HTTP status codes.
+- **The WS endpoint is `/api/ws`, not `/ws`** — `websockets.router` declares `/ws` and
+  `main.py` mounts `api_router` under `settings.API_PREFIX`. A websocket to an unmatched
+  path is closed by Starlette's router with a clean **1000**, which reads exactly like the
+  app hanging up on you; that is what a test connecting to `/ws` sees.
+- **An `Origin` gate runs BEFORE `accept()`** (issue #903): a handshake whose `Origin` is
+  neither same-origin nor in `settings.CORS_ORIGINS` is closed with **4403** without ever
+  being accepted. The handshake is not subject to the same-origin policy and browsers
+  attach cookies to it, while CORS/CSRF middleware here is `BaseHTTPMiddleware`-based and
+  does not run on this path — so this is the only thing standing between any web page and
+  a visiting user's live event stream. A **missing** `Origin` passes (non-browser clients
+  carry no ambient cookie); same-origin passes because `CORS_ORIGINS` is set by no shipped
+  compose file and a gate keyed only on it would refuse every production deployment.
+  Connection/frame/rate caps are still absent — tracked separately on #903.
+- After that gate, the endpoint `accept()`s *before* authenticating (cookie, else a 10 s
+  first-message `authenticate` frame), then closes with 4001/4002/4003 — not HTTP status
+  codes.
 - Never touch `websockets.manager` from sync code; publish with
   `app/utils/websocket_notify.py:send_ws_event` (Redis pub/sub) so all API/worker processes reach
   the connection-owning process.

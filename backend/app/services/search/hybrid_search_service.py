@@ -600,10 +600,20 @@ def _redaction_policy_fingerprint(cfg: "EffectiveRedactionConfig | None") -> str
 
 # A single OpenSearch `terms` clause is bounded by `index.max_terms_count`
 # (65536 by default); quarantine is expected to be rare, so this cap is a
-# defensive ceiling, not a normal operating limit. Exceeding it degrades to
-# excluding only the oldest-quarantined files rather than failing the whole
-# facet request.
+# defensive ceiling, not a normal operating limit. It is queried with `+ 1` so
+# hitting it is DETECTABLE — a silently truncated exclusion set is the same
+# failure as no exclusion set at all, just harder to notice (issue #876).
 _QUARANTINED_UUID_CAP = 10_000
+
+
+class QuarantineExclusionUnavailableError(RuntimeError):
+    """The set of quarantined files could not be resolved completely.
+
+    Raised instead of degrading to a partial (or empty) exclusion set. Callers
+    must treat it as "I cannot prove taken-down content is absent from this
+    response" and withhold the response, mirroring how the redaction plane
+    withholds snippet text rather than emitting text it could not mask.
+    """
 
 
 def _quarantined_file_uuids() -> list[str]:
@@ -616,10 +626,22 @@ def _quarantined_file_uuids() -> list[str]:
     caller can see (``accessible_user_ids``), so a global list only ever narrows
     that intersection, never widens what a caller could learn.
 
+    **Fails closed** (issue #876). This is the mechanism that keeps taken-down
+    content out of a read surface, not an approximate sidebar count, so neither
+    of its two failure modes may degrade quietly:
+
+    * a DB error used to return ``[]``, which means *exclude nothing* — a
+      transient outage served quarantined files' facets with an HTTP 200 and an
+      exception in a log nobody watches;
+    * exceeding ``_QUARANTINED_UUID_CAP`` used to truncate with no signal at all.
+
     Returns:
-        Quarantined file uuids as strings, capped at ``_QUARANTINED_UUID_CAP``.
-        Empty (never raises) if the DB is unreachable — an aggregation request
-        must not break because this best-effort exclusion could not run.
+        Quarantined file uuids as strings.
+
+    Raises:
+        QuarantineExclusionUnavailableError: The set could not be read, or is
+            larger than ``_QUARANTINED_UUID_CAP`` so it cannot be expressed as a
+            single ``terms`` clause without dropping members.
     """
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
@@ -630,13 +652,30 @@ def _quarantined_file_uuids() -> list[str]:
                 db.query(MediaFile.uuid)
                 .filter(MediaFile.is_quarantined.is_(True))
                 .order_by(MediaFile.quarantined_at.desc().nullslast())
-                .limit(_QUARANTINED_UUID_CAP)
+                # One more than the cap: the extra row is what makes truncation
+                # distinguishable from "there are exactly `cap` of them".
+                .limit(_QUARANTINED_UUID_CAP + 1)
                 .all()
             )
-            return [str(row[0]) for row in rows]
-    except Exception:  # noqa: BLE001 — best-effort; see docstring
+    except Exception as exc:
         logger.exception("Could not resolve quarantined file uuids for facet exclusion")
-        return []
+        raise QuarantineExclusionUnavailableError(
+            "The quarantine exclusion set could not be read; "
+            "search filters are unavailable until it can be."
+        ) from exc
+
+    if len(rows) > _QUARANTINED_UUID_CAP:
+        logger.error(
+            "More than %d quarantined files: the facet exclusion set cannot be "
+            "expressed without dropping members",
+            _QUARANTINED_UUID_CAP,
+        )
+        raise QuarantineExclusionUnavailableError(
+            f"More than {_QUARANTINED_UUID_CAP} files are quarantined; the facet "
+            "exclusion set cannot be applied completely."
+        )
+
+    return [str(row[0]) for row in rows]
 
 
 def _get_cached_response(cache_key: str) -> SearchResponse | None:
@@ -1394,6 +1433,12 @@ class HybridSearchService:
 
         Returns:
             Dict with speakers, tags, and date_range.
+
+        Raises:
+            QuarantineExclusionUnavailableError: For a non-admin, the quarantine
+                exclusion set could not be resolved completely, so these facets
+                cannot be proven free of taken-down content. Fail closed — the
+                caller turns this into a 503 rather than serving the buckets.
         """
         if not opensearch_client:
             return {"speakers": [], "tags": [], "date_range": {}}
@@ -1433,6 +1478,9 @@ class HybridSearchService:
         # the OpenSearch `terms` clause is naturally bounded, unlike the general
         # accessible-file set, so excluding by quarantined uuid (rather than trying
         # to enumerate every accessible-and-non-quarantined uuid) keeps this cheap.
+        # Deliberately OUTSIDE the try below: a QuarantineExclusionUnavailableError
+        # must reach the endpoint, not be folded into the empty-facets fallback
+        # that the OpenSearch failure path returns (issue #876).
         quarantined_uuids = [] if is_admin else _quarantined_file_uuids()
         if quarantined_uuids:
             query_must_not.append({"terms": {"file_uuid": quarantined_uuids}})

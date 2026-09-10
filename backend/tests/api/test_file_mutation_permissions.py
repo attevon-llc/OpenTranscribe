@@ -237,8 +237,12 @@ def _find_min_permission_editor_sites() -> list[tuple[str, int]]:
 # ``user_files.py``) were fixed by a prior commit (issue #588 part 1) and are
 # listed here only so the guard's count matches the codebase exactly.
 MUTATING_ENDPOINTS: list[tuple[str, int]] = [
-    ("files/__init__.py", 1139),
-    ("files/__init__.py", 1206),
+    # Re-anchored: the issue #817 takedown gate added lines to get_thumbnail,
+    # which sits above both of these. The guard is keyed by file:line, so it is
+    # SUPPOSED to be re-anchored when code moves — that is the cost of it being
+    # able to notice a NEW call site rather than just counting them.
+    ("files/__init__.py", 1156),
+    ("files/__init__.py", 1223),
     ("files/crud.py", 997),
     ("files/crud.py", 1088),
     ("files/crud.py", 1176),

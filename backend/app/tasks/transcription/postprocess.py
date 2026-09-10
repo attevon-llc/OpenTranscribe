@@ -19,6 +19,7 @@ import numpy as np
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
+from app.core.constants import gpu_preferred_queue
 from app.db.session_utils import session_scope
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
@@ -141,7 +142,12 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                         "pipeline_completion": True,
                         "pipeline_task_id": task_id,
                     },
-                    queue=CeleryQueues.GPU,
+                    # Resolved at CALL time, not pinned to 'gpu' (issue #865): this
+                    # is the cloud-ASR-plus-local-diarization branch, which is
+                    # exactly the shape a lite deployment runs — and lite has no
+                    # 'gpu' consumer, so the pin published this into a dead queue
+                    # while the pipeline reported progress and waited forever.
+                    queue=gpu_preferred_queue(),
                 )
                 # rediarize consumes the temp WAV on the GPU worker; keep
                 # the file around until that task finishes its own cleanup.

@@ -102,6 +102,27 @@ indexing → WebSocket notification.
   `gpu-diarize`. **`task_create_missing_queues=False`** — a queue-name typo raises at
   dispatch instead of creating a phantom queue. `_validate_task_routes()` warns at worker
   startup for any registered task with no `task_routes` entry.
+- ⚠️ **A valid route is not a drained route, and `--lite` is where they diverge.**
+  `docker-compose.lite.yml` scales BOTH `gpu` consumers (`celery-worker`,
+  `celery-worker-gpu-scaled`) to `replicas: 0`, so anything pinned to `gpu` there is
+  published into a queue nothing drains — no error, no retry, and the API has already
+  answered 200 (issue #865, and issue #584 for one earlier instance of the same shape).
+  The eight speaker/diarization tasks that PREFER a GPU but are correct without one are
+  listed once as `celery.py:GPU_PREFERRED_TASKS` and routed through
+  `constants.gpu_preferred_queue()`, which resolves to `cpu` when `DEPLOYMENT_MODE=lite`
+  (the lite overlay sets that on **every** service, and routing is decided by the
+  publisher). The reroute costs only speed — `requirements-lite.txt` deliberately keeps
+  `torch+cpu`/`torchaudio`/`pyannote.audio`/`onnxruntime`.
+  `transcription.process_file` stays on `gpu` on purpose: lite ships no local ASR and
+  `services/asr/factory.py` refuses it by name, so a reroute would only relocate the
+  failure. `tests/unit/test_lite_mode_queue_consumers.py` derives the lite consumer set
+  from the compose files and fails on any new route into a dead queue; an exemption
+  there requires a written reason.
+  This is deliberately NOT the live `inspect().active_queues()` probe that
+  `transcription/dispatch.py` uses — that costs a broker broadcast on interactive
+  request paths, and a full deployment whose GPU worker is momentarily down is an
+  outage where queueing is the *correct* behaviour, not a case for silent CPU
+  downgrade.
 - Priorities are **per-queue** (`GPUPriority.X` is unrelated to `CPUPriority.X`); the scheme
   is documented in the comment block above `task_routes` in `core/celery.py`.
 - ⚠️ **Not every worker runs `--pool=threads`, and assuming so cost issue #631 an entire

@@ -323,9 +323,24 @@ check_stage3_precondition() {
             # ("A fresh-install test against these is NOT a fresh install"). This is
             # the same live-marker-verified removal gr_preflight already runs on a
             # standalone invocation, never a raw `docker volume rm`.
-            OT_RELEASE_TEST_RESET_VOLUMES=1 ./scripts/release-tests/test-fresh-install.sh --cleanup --yes >/dev/null 2>&1 || true
-            OT_RELEASE_TEST_RESET_VOLUMES=1 ./scripts/release-tests/test-upgrade.sh --cleanup --yes >/dev/null 2>&1 || true
-            OT_RELEASE_TEST_RESET_VOLUMES=1 ./scripts/release-tests/test-lite-mode.sh --cleanup --yes >/dev/null 2>&1 || true
+            # ⚠️ `|| true` is deliberate — one scenario having nothing to clean must not
+            # abort the pass — but the OUTPUT must not go with it (issue #900). gr_cleanup
+            # now fails when it finishes with stock-named containers still standing, and
+            # that message names both the leftovers and the command that clears them. Sent
+            # to /dev/null, the only symptom left is the port check below, whose remedy
+            # ("./opentr.sh stop") is the wrong advice for this cause and sends the operator
+            # looking at the dev stack instead of at the previous leg's residue.
+            local _clean_log _scenario
+            _clean_log="$(mktemp)"
+            for _scenario in test-fresh-install test-upgrade test-lite-mode; do
+                if ! OT_RELEASE_TEST_RESET_VOLUMES=1 \
+                        "./scripts/release-tests/${_scenario}.sh" --cleanup --yes \
+                        >"$_clean_log" 2>&1; then
+                    info "  ${YELLOW}warn${NC}: ${_scenario} --cleanup did not complete:"
+                    sed 's/^/    /' "$_clean_log" >&2
+                fi
+            done
+            rm -f "$_clean_log"
             for _ in $(seq 1 30); do
                 service_reachable localhost 5174 || break
                 sleep 2

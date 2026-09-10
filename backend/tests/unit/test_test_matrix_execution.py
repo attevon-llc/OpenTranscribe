@@ -466,3 +466,93 @@ def test_the_two_exit_contracts_are_read_separately(
     assert written.startswith(expected_word), (
         f"contract={contract} leg_rc={leg_rc} recorded {written!r}, expected a {expected_word} row"
     )
+
+
+# ─────────────────────────────────────────── issue #900: a failed inter-leg cleanup must SPEAK
+
+
+def _interleg_cleanup_block() -> str:
+    """The stage-3 inter-leg cleanup loop, lifted verbatim from the real script."""
+    source = _matrix_source()
+    opener = '            _clean_log="$(mktemp)"'
+    closer = '            rm -f "$_clean_log"\n'
+    assert opener in source, (
+        "the stage-3 inter-leg cleanup loop is gone or was reshaped; re-point this "
+        "extractor at it rather than deleting these tests — a `--cleanup` whose output "
+        "goes to /dev/null is issue #900 one layer up"
+    )
+    start = source.index(opener)
+    assert closer in source[start:], "the extracted block has no recognisable end"
+    end = source.index(closer, start) + len(closer)
+    return source[start:end]
+
+
+def test_a_failed_interleg_cleanup_is_reported_not_discarded(tmp_path: Path):
+    """Closes #900's second half.
+
+    ``gr_cleanup`` now fails when it finishes with stock-named containers still standing,
+    and that message names both the leftovers and the command that clears them. This loop
+    sent all three invocations to ``/dev/null 2>&1 || true``, so the whole diagnostic was
+    thrown away and the only remaining symptom was the port check further down — whose
+    remedy (``./opentr.sh stop``) is the *wrong* advice for this cause and sends the
+    operator to look at the dev stack instead of the previous leg's residue.
+
+    ``|| true`` itself is correct and must stay: one scenario having nothing to clean must
+    not abort the pass. What must not be swallowed is the output.
+
+    Driven by running the real block against stub scenario scripts, not by reading it — an
+    earlier draft of this fix's sibling tests asserted on source text and was unfalsifiable.
+    """
+    scenarios = tmp_path / "scripts" / "release-tests"
+    scenarios.mkdir(parents=True)
+    for name in ("test-fresh-install", "test-upgrade", "test-lite-mode"):
+        script = scenarios / f"{name}.sh"
+        script.write_text(
+            "#!/bin/bash\n"
+            f'echo "cleanup did NOT remove these stock-named containers: {name}-marker"\n'
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+
+    snippet = (
+        "set -uo pipefail\n"
+        f'cd "{tmp_path}"\n'
+        'info() { echo -e "$*" >&2; }\n'
+        "YELLOW=''; NC=''\n"
+        "run() {\n" + _interleg_cleanup_block() + "}\n"
+        "run\n"
+    )
+    rc, out = _run_shell(snippet)
+
+    for name in ("test-fresh-install", "test-upgrade", "test-lite-mode"):
+        assert f"{name}-marker" in out, (
+            f"{name}'s cleanup failure was discarded. The next leg then fails its preflight "
+            f"with no stated cause — the #900 incident, one layer up.\n{out}"
+        )
+    assert rc == 0, (
+        "a scenario with nothing to clean now aborts the whole stage-3 precondition pass; "
+        f"the `|| true` intent was lost.\n{out}"
+    )
+
+
+def test_a_clean_interleg_cleanup_stays_quiet(tmp_path: Path):
+    """Must-stay-clean control: without it, "always warn" would satisfy the test above."""
+    scenarios = tmp_path / "scripts" / "release-tests"
+    scenarios.mkdir(parents=True)
+    for name in ("test-fresh-install", "test-upgrade", "test-lite-mode"):
+        script = scenarios / f"{name}.sh"
+        script.write_text("#!/bin/bash\necho 'cleanup complete'\nexit 0\n", encoding="utf-8")
+        script.chmod(0o755)
+
+    snippet = (
+        "set -uo pipefail\n"
+        f'cd "{tmp_path}"\n'
+        'info() { echo -e "$*" >&2; }\n'
+        "YELLOW=''; NC=''\n"
+        "run() {\n" + _interleg_cleanup_block() + "}\n"
+        "run\n"
+    )
+    rc, out = _run_shell(snippet)
+    assert rc == 0, out
+    assert "did not complete" not in out, f"a successful cleanup was reported as a problem: {out}"

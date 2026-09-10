@@ -34,6 +34,56 @@ gr_log()  { echo -e "${GR_BLUE}[guardrails]${GR_NC} $*"; }
 gr_ok()   { echo -e "${GR_GREEN}[guardrails] ✓${GR_NC} $*"; }
 gr_warn() { echo -e "${GR_YELLOW}[guardrails] ⚠${GR_NC} $*" >&2; }
 gr_die()  { echo -e "${GR_RED}${GR_BOLD}[guardrails] ✗ FATAL:${GR_NC} $*" >&2; exit 1; }
+
+# Existing containers whose NAME is one this scenario will create (issue #899).
+#
+# $1: "" for running only, "-a" to include stopped.
+#
+# Docker refuses to create a container whose name is taken, whatever compose project owns
+# it — so name collision, not project label, is the real precondition. A previous
+# scenario's stack runs under `ot-reltest-*` while using the stock `opentranscribe-*`
+# NAMES, and a label-only check is blind to exactly that.
+#
+# The set is DERIVED from docker-compose.yml's own `container_name:` declarations rather
+# than transcribed here: it is then precisely the names we will try to create, so an
+# unrelated `opentranscribe-homepage` cannot false-positive (the hazard the label filter
+# was reaching for) and a service added to compose is covered without touching this file.
+#
+# ⚠️ An interpolated entry is RESOLVED to its default, not skipped. The three
+# `${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-*` services default to the
+# stock project, so a leftover `--gpu-scale` / `--gpu-split` worker is named exactly what a
+# stock install would create and DOES collide — dropping those entries (the first version
+# of this function) left the guard blind to three of the nineteen names it must cover.
+# An entry with no resolvable default (`${FOO}`) is dropped: nothing here can know its value,
+# and guessing would be the `name=^opentranscribe-` false-positive hazard by another route.
+gr_colliding_container_names() {
+    local ps_flag="${1:-}"
+    local compose="${GR_REPO_ROOT:-$(pwd)}/docker-compose.yml"
+    [[ -f "$compose" ]] || return 0
+
+    # ⚠️ `|| true` is load-bearing, not defensive noise. `grep -v` exits 1 when it filters
+    # EVERY line out, `set -o pipefail` promotes that to the pipeline's status, and `set -e`
+    # then aborts the sourcing script — stdout and stderr both empty, rc 1, no message. So a
+    # compose file whose container_names were all project-interpolated would kill the whole
+    # scenario at a routine safety check. Same shape as #617/#618. Measured before the fix.
+    local wanted existing
+    wanted="$(sed -n 's/^[[:space:]]*container_name:[[:space:]]*//p' "$compose" \
+              | sed 's/[[:space:]]*$//' \
+              | sed 's/\${[A-Za-z_][A-Za-z0-9_]*:-\([^}]*\)}/\1/g' \
+              | grep -v '\${' | sort -u || true)"
+    [[ -n "$wanted" ]] || return 0
+
+    # Captured, never piped into a short-circuiting reader — `grep -q`/`head` under
+    # `set -o pipefail` can SIGPIPE `docker ps` and turn a match into a non-match.
+    if [[ -n "$ps_flag" ]]; then
+        existing="$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)"
+    else
+        existing="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
+    fi
+    [[ -n "$existing" ]] || return 0
+
+    comm -12 <(printf '%s\n' "$wanted") <(printf '%s\n' "$existing" | sort -u)
+}
 # An operator declining a confirmation is NOT a gate failure, and the difference is the shared
 # exit-code contract scripts/release.sh and scripts/test-matrix.sh both publish: 0 pass, 1 gate
 # failed, 2 misuse, 3 precondition unmet, 4 OPERATOR ABORT. The confirmation gate used to
@@ -190,10 +240,29 @@ gr_check_container_names() {
     # `transcribe-app`, while a curl/one-liner install runs under
     # `opentranscribe` — checking only the latter let this refuse-if-running
     # guard pass with the dev stack fully up.
-    local running running_alt running_all
+    #
+    # ⚠️ AND by NAME COLLISION, not only by project label (issue #899). The real
+    # precondition is neither of the two things this guard used to check: docker refuses
+    # to create a container whose NAME already exists, whatever compose project owns it.
+    # A previous scenario's own stack runs under project `ot-reltest-lite` (or
+    # `ot-reltest-fresh`) while using the stock `opentranscribe-*` container NAMES, so a
+    # label-only check cannot see the single likeliest thing in the way — the last run.
+    #
+    # Measured 2026-09-09: this printed `✓ no live opentranscribe-*/transcribe-app-*
+    # containers running` while 18 containers named `opentranscribe-*` (project
+    # `ot-reltest-lite`) held every port the scenario needed. The port guard caught it a
+    # moment later, so nothing shipped broken — but the ✓ had already sent the operator
+    # looking somewhere else.
+    #
+    # The name set is DERIVED from the compose file's own `container_name:` declarations,
+    # so it is exactly what this scenario will try to create — which is why an unrelated
+    # `opentranscribe-homepage` still does not false-positive, the thing the label filter
+    # was reaching for in the first place.
+    local running running_alt running_named running_all
     running=$(docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' || true)
     running_alt=$(docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' || true)
-    running_all="$(printf '%s\n%s' "$running" "$running_alt" | sed '/^$/d' | sort -u)"
+    running_named=$(gr_colliding_container_names "" || true)
+    running_all="$(printf '%s\n%s\n%s' "$running" "$running_alt" "$running_named" | sed '/^$/d' | sort -u)"
     if [[ -n "$running_all" ]]; then
         gr_die "live opentranscribe-*/transcribe-app-* containers still running:
 $running_all
@@ -203,10 +272,13 @@ Stop them first with: ./opentr.sh stop  (preserves all data)"
     # Stopped opentranscribe-* containers (from a previous live `down`) would
     # also collide on container_name during create — flag them so the caller
     # can decide whether to remove them.
-    local stopped stopped_alt stopped_all
+    local stopped stopped_alt stopped_named stopped_all
     stopped=$(docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' || true)
     stopped_alt=$(docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' || true)
-    stopped_all="$(printf '%s\n%s' "$stopped" "$stopped_alt" | sed '/^$/d' | sort -u)"
+    # Same name-collision sweep as the live check above (issue #899): a STOPPED container
+    # holding one of our names collides on create just as surely as a running one.
+    stopped_named=$(gr_colliding_container_names "-a" || true)
+    stopped_all="$(printf '%s\n%s\n%s' "$stopped" "$stopped_alt" "$stopped_named" | sed '/^$/d' | sort -u)"
     if [[ -n "$stopped_all" ]]; then
         gr_warn "stopped opentranscribe-*/transcribe-app-* containers exist (will collide on create):"
         echo "$stopped_all" >&2
@@ -456,6 +528,44 @@ gr_cleanup() {
         fi
         gr_log "removing $resolved"
         rm -rf -- "$resolved"
+    fi
+
+    # 5. VERIFY. A sweep that removed nothing it was asked to remove has not completed
+    #    (issue #900).
+    #
+    # Measured 2026-09-09, after an interrupted fresh-install run:
+    #
+    #     [guardrails] beginning labelled cleanup for project 'ot-reltest-fresh'
+    #     [guardrails] ⚠ refusing to remove opentranscribe_postgres_data — still used by: ...
+    #     [guardrails] ⚠ refusing to remove network opentranscribe_default — still has: <14>
+    #     [guardrails] ✓ cleanup complete
+    #
+    # Exit 0, a green tick, and 14 containers still running. The labelled sweep targets
+    # ${TEST_PROJECT_NAME}, but the containers the INSTALLER creates run under the stock
+    # `opentranscribe` compose project — deliberately, since the scenario exercises what a
+    # real `curl | bash` install produces. So the sweep matched nothing, the volume removals
+    # correctly refused *because* those containers still held them, and success was reported
+    # anyway. The next rehearsal then failed its preconditions for a reason that had nothing
+    # to do with the release.
+    #
+    # ⚠️ This deliberately does NOT `docker compose -p opentranscribe down`. That project name
+    # is also what a real production install uses, `--cleanup` runs no preflight asserting
+    # otherwise, and destroying containers this run never recorded owning would be a worse
+    # bug than the one being fixed — the same reasoning the volume sweep already applies
+    # ("leaving $vol alone — it existed before this run"). Report and refuse; let the
+    # operator act.
+    local _leftover
+    _leftover="$(gr_colliding_container_names "-a" || true)"
+    if [[ -n "$_leftover" ]]; then
+        gr_warn "cleanup did NOT remove these stock-named containers:"
+        echo "$_leftover" >&2
+        gr_die "cleanup incomplete — the next run's preflight will refuse to start.
+These carry names this scenario creates but belong to a compose project this run did not
+record owning, so removing them automatically is not safe. Remove them yourself with:
+
+    docker compose -p opentranscribe down --remove-orphans
+
+then re-run this cleanup to drop the volumes they were holding."
     fi
 
     gr_ok "cleanup complete"

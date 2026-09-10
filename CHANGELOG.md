@@ -396,6 +396,31 @@ A tag was either yours alone or published to the whole deployment, so giving one
 
 ### Fixed — testing and release tooling
 
+- **The rehearsal preflight reported "no containers in the way" about the very stack that was
+  in the way** (#899). `lib/guardrails.sh` filtered by **compose project label**, but docker
+  refuses to create a container whose **name** is taken, whatever project owns it — and a
+  previous scenario's stack runs under `ot-reltest-lite`/`ot-reltest-fresh` while using stock
+  `opentranscribe-*` container names. One run printed `✓ no live opentranscribe-*/transcribe-app-*
+  containers running` immediately above `✗ FATAL: required ports already in use`, both describing
+  the same 18 containers. The port guard caught it, so nothing shipped broken, but the ✓ had
+  already sent the operator looking elsewhere. The name set is now **derived from
+  `docker-compose.yml`'s own `container_name:` declarations** — precise enough not to
+  false-positive on an unrelated `opentranscribe-homepage` (the reason a `name=^opentranscribe-`
+  filter was rejected), and complete across projects. `${VAR:-default}` entries are resolved
+  rather than skipped: all three gpu-scale/gpu-split workers default to the stock project, so
+  dropping them left 3 of 19 names unguarded.
+- **`--cleanup` printed `✓ cleanup complete` and exited 0 with 14 containers still running**
+  (#900). Its labelled sweep targets `${TEST_PROJECT_NAME}` while the installer's containers run
+  under the stock `opentranscribe` project — deliberately, since the scenario exercises what a
+  real `curl | bash` install produces — so the sweep matched nothing, the volume removals
+  correctly refused *because* those containers still held the volumes, and success was reported
+  anyway. The next rehearsal then failed its preconditions for a reason unrelated to the release.
+  Cleanup now verifies before claiming success and fails naming both the leftovers and the
+  command that clears them. It deliberately does **not** auto-`docker compose -p opentranscribe
+  down`: that project name is also a real production install's, and `--cleanup` runs no preflight
+  proving otherwise. `test-matrix.sh`'s inter-leg cleanup no longer discards that diagnostic to
+  `/dev/null`, where the only surviving symptom was a port check whose remedy
+  (`./opentr.sh stop`) is the wrong advice for this cause.
 - **The visual-baseline capture pointed half of every run at the wrong deployment.**
   `update-visual-baselines.sh` passed `--base-url`/`--backend-url`, which redirect only what the
   **browser** talks to; fixtures reaching a backing service directly read `conftest.py`'s env

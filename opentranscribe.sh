@@ -1175,8 +1175,15 @@ preflight_upgrade_env() {
     # running fine, and lite's requirements-lite.txt ships pyannote.audio (CPU) so the
     # in-process engine remains a working fallback while the operator sorts out a token.
     # The hard refusal stays everywhere else — same case issue #670 was written for.
+    #
+    # effective_deployment_mode(), not a raw read_env_value: a bare .env read is invisible to
+    # arm64_deployment_preflight's in-process DEPLOYMENT_MODE=lite export, so an arm64 host
+    # upgrading BEFORE ever running `start` (the one arm that always called the preflight)
+    # would hit the hard "native, unprovisioned, no token" refusal above instead of this
+    # warn-don't-block lite path — issue #896's remaining gap, this function's half of it.
+    # Already lowercases internally, so the separate `tr` this used to need is gone too.
     local deployment_mode
-    deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
+    deployment_mode=$(effective_deployment_mode)
 
     # Same case-fold as get_compose_files' identical gate above: the backend resolves
     # this value case-insensitively (config.py:357-366) and fail-safes unknowns to
@@ -1539,8 +1546,16 @@ resolve_diar_native_downloader_image() {
     # Without this branch, `download-models diar-native` on a lite install pulled the
     # 15.2 GB full image to produce a 484 MB export — breaking this function's own header
     # contract that the export must come from the image the deployment actually runs.
+    #
+    # effective_deployment_mode(), not a raw read_env_value: a bare .env read cannot see
+    # arm64_deployment_preflight's in-process DEPLOYMENT_MODE=lite export (issue #896's
+    # remaining gap), so an arm64 host that had never run `start` first resolved this
+    # export from the FULL/CUDA repository — the exact 15.2 GB-for-484 MB mistake this
+    # branch exists to prevent, just reached from a different starting .env state.
+    # download_models_diar_native() below calls arm64_deployment_preflight itself before
+    # reaching this function, so the export is already in-process by the time this reads it.
     local deployment_mode
-    deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
+    deployment_mode=$(effective_deployment_mode)
     if [ "$deployment_mode" = "lite" ]; then
         echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend-lite:${tag:-latest}"
         return 0
@@ -1564,6 +1579,18 @@ resolve_diar_native_downloader_image() {
 # the pinned deployment image via resolve_diar_native_downloader_image() above.
 download_models_diar_native() {
     check_environment
+    # arm64_deployment_preflight, as a plain statement (never `$(...)`, same subshell hazard
+    # documented throughout this file) — issue #896's remaining gap: without this, an arm64
+    # host running `download-models diar-native` before ever running `start` resolved
+    # resolve_diar_native_downloader_image()'s effective_deployment_mode() against whatever
+    # DEPLOYMENT_MODE was already on disk (typically unset), pulling the FULL/CUDA image for
+    # a host that image cannot even run on. Only the preflight is needed here, not the full
+    # apply_deployment_pins — this function reads DIAR_NATIVE_IMAGE back via read_env_value
+    # (a PERSISTED pin, by design, for the reasons documented on
+    # pin_diar_native_image_for_blackwell below), so pin_diar_native_image_for_lite's
+    # in-process-only export would be invisible to it and would only add confusion, not
+    # fix anything.
+    arm64_deployment_preflight
     # Same Blackwell-tag pin `start`/`restart`/`status` apply, before resolving the
     # downloader image below — without this call here, a Blackwell host's `start` used
     # `:blackwell` while `download-models diar-native` used the plain release tag (#4 in

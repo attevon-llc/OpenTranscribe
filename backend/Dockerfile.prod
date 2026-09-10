@@ -425,6 +425,21 @@ RUN mkdir -p /scratch/opentranscribe && \
 RUN mkdir -p /scratch/opentranscribe/engine /scratch/opentranscribe/diar && \
     chown appuser:appuser /scratch/opentranscribe/engine /scratch/opentranscribe/diar
 
+# Reserve the two durable-state mount points added for issues #870/#877. Neither is
+# backed by a compose volume in ANY overlay today, so `docker compose up -d
+# --force-recreate` on prod/lite/nginx/offline silently destroys both the GDPR erasure
+# journal (DATA_DIR/gdpr/erasure-journal.jsonl, backend/app/services/erasure_ledger_service.py)
+# and the audit-log fallback file (AUDIT_LOG_FALLBACK_PATH,
+# backend/app/auth/audit.py:_write_fallback_log) on every recreate. Same reservation
+# pattern as /scratch/opentranscribe above, and for the same reason: a named volume
+# mounted at a path the image never created lands root-owned, and the non-root appuser
+# then fails `[Errno 13] Permission denied` the first time it tries to write there.
+# These are BRAND NEW mount points (never existed pre-fix), so unlike
+# /scratch/opentranscribe there is no pre-existing root-owned volume to repair — every
+# volume created against this image starts out correctly owned.
+RUN mkdir -p /app/data /var/log/opentranscribe && \
+    chown appuser:appuser /app/data /var/log/opentranscribe
+
 # Switch to non-root user
 USER appuser
 

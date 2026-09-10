@@ -267,6 +267,23 @@ def update_segment_speaker(
     if not media_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
+    # This route resolves its file via a raw query above, never through
+    # `get_file_by_uuid_with_permission` — the chokepoint that makes a
+    # taken-down file 404 everywhere under `files/`. Without this, a
+    # quarantined file's transcript segments could still be reassigned to a
+    # different speaker by the file's own owner (issue #817), the same class
+    # of bypass already fixed for the speaker-cluster media-preview route.
+    # Checked BEFORE the ownership check below: quarantine 404 must win over
+    # ownership 403, matching the chokepoint's own ordering (`is_hidden_for`
+    # runs before the tenant/ownership checks in
+    # `get_file_by_uuid_with_permission`).
+    from app.services.takedown_service import is_hidden_for
+
+    if is_hidden_for(media_file, is_admin=current_user.is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Transcript segment not found"
+        )
+
     # Verify the user owns this file
     require_resource_owner(
         media_file,

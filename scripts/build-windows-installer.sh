@@ -98,6 +98,17 @@ preflight_checks() {
         missing_files+=("windows-installer/installer.iss")
     fi
 
+    # Required since the license placeholder branch was removed (issue #862): the
+    # installer must convey the real AGPL text, so a missing one is a build failure
+    # rather than a synthesized stand-in.
+    if [ ! -f "LICENSE" ]; then
+        missing_files+=("LICENSE")
+    fi
+
+    if [ ! -f "NOTICE" ]; then
+        missing_files+=("NOTICE")
+    fi
+
     if [ ${#missing_files[@]} -ne 0 ]; then
         print_error "Missing required files: ${missing_files[*]}"
         exit 1
@@ -414,17 +425,18 @@ copy_windows_installer_files() {
     print_info "Copying installer assets..."
     cp windows-installer/ot-icon.ico "${PACKAGE_DIR}/"
 
-    # Copy license file (create minimal one if empty)
-    if [ -s windows-installer/license.txt ]; then
-        cp windows-installer/license.txt "${PACKAGE_DIR}/"
-    else
-        print_warning "license.txt is empty, creating placeholder..."
-        echo "OpenTranscribe - AI-Powered Transcription Application" > "${PACKAGE_DIR}/license.txt"
-        echo "" >> "${PACKAGE_DIR}/license.txt"
-        echo "Copyright (c) $(date +%Y)" >> "${PACKAGE_DIR}/license.txt"
-        echo "" >> "${PACKAGE_DIR}/license.txt"
-        echo "See LICENSE file in the main repository for full license terms." >> "${PACKAGE_DIR}/license.txt"
-    fi
+    # Legal files, verbatim from the repo root (issue #862).
+    #
+    # This used to copy windows-installer/license.txt — a 61-line SUMMARY of the AGPL with
+    # a hand-maintained third-party list and a repository URL that had been renamed away —
+    # and, when that file was empty, SYNTHESIZED an even shorter placeholder saying "see
+    # the LICENSE file in the main repository". A placeholder that points somewhere else
+    # is the opposite of the requirement: GPL-family licences must ACCOMPANY the copy you
+    # convey. There is no fallback branch now, deliberately; a missing LICENSE fails the
+    # build rather than shipping an installer that conveys no licence.
+    print_info "Copying LICENSE and NOTICE..."
+    cp LICENSE "${PACKAGE_DIR}/LICENSE.txt"
+    cp NOTICE "${PACKAGE_DIR}/NOTICE.txt"
 
     cp windows-installer/preinstall.txt "${PACKAGE_DIR}/"
     cp windows-installer/after-install.txt "${PACKAGE_DIR}/"

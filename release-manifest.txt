@@ -126,3 +126,11 @@ opentranscribe.sh	exec
 # deployment (issue #663). Not `optional` -- a NOTICE nobody receives is not
 # attribution.
 NOTICE
+# The AGPL-3.0 text itself (issue #862). The same argument as NOTICE above, with
+# more force behind it: GPL-family licenses require the license to ACCOMPANY the
+# copies you convey, and no build context here includes this repo-root file
+# (contexts are ./backend, ./frontend, ./docs-site), so this manifest entry is the
+# only mechanism that puts it in an operator's hands. NOTICE shipped and LICENSE
+# did not, which is the wrong way round -- the attribution for other people's work
+# arrived and our own terms did not. Not `optional`.
+LICENSE

@@ -184,3 +184,91 @@ def test_admin_release_on_a_never_quarantined_file_is_409(client, admin_token_he
     )
     assert response.status_code == status.HTTP_409_CONFLICT
     assert "not quarantined" in response.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# release(clear_legal_hold=False) is a real, distinct state (issue #825)
+# ---------------------------------------------------------------------------
+
+
+def test_release_with_hold_kept_produces_the_intermediate_state(
+    client, admin_token_headers, quarantined_file, db_session
+):
+    """release(clear_legal_hold=False): quarantine lifted (visible again to normal
+    users), legal-hold kept (still undeletable). This is a real, valid state --
+    not a mistake -- so the DB must show it correctly."""
+    response = client.post(
+        f"/api/admin/files/{quarantined_file.uuid}/release",
+        headers=admin_token_headers,
+        json={"clear_legal_hold": False},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["is_quarantined"] is False
+    assert body["legal_hold"] is True
+
+    db_session.expire_all()
+    reloaded = db_session.query(MediaFile).filter(MediaFile.uuid == quarantined_file.uuid).one()
+    assert reloaded.is_quarantined is False
+    assert reloaded.legal_hold is True
+
+
+def test_released_but_held_file_is_absent_from_the_default_quarantine_list(
+    client, admin_token_headers, quarantined_file
+):
+    """The default GET /files/quarantined is the takedown QUEUE (is_quarantined
+    True) -- a released-but-held file has left the queue by design, so it must NOT
+    reappear there by default. This pins the unchanged default behavior so the
+    next test's `include_legal_holds=true` is proven to be additive, not a
+    silent widening of what every existing caller already gets."""
+    client.post(
+        f"/api/admin/files/{quarantined_file.uuid}/release",
+        headers=admin_token_headers,
+        json={"clear_legal_hold": False},
+    )
+    response = client.get("/api/admin/files/quarantined", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    uuids = [f["uuid"] for f in response.json()["files"]]
+    assert str(quarantined_file.uuid) not in uuids
+
+
+def test_released_but_held_file_is_listable_with_include_legal_holds(
+    client, admin_token_headers, quarantined_file
+):
+    """Issue #825: release(clear_legal_hold=False) previously produced a state no
+    endpoint could list at all -- an admin who kept a hold on a released file had
+    no way to find it again through the API a review-queue client would use.
+    ``include_legal_holds=true`` surfaces it, and the response's own
+    ``is_quarantined`` field lets a caller tell the two states apart within one
+    list."""
+    client.post(
+        f"/api/admin/files/{quarantined_file.uuid}/release",
+        headers=admin_token_headers,
+        json={"clear_legal_hold": False},
+    )
+    response = client.get(
+        "/api/admin/files/quarantined?include_legal_holds=true",
+        headers=admin_token_headers,
+    )
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    matched = next((f for f in body["files"] if f["uuid"] == str(quarantined_file.uuid)), None)
+    assert matched is not None, (
+        "released-but-held file did not appear with include_legal_holds=true"
+    )
+    assert matched["is_quarantined"] is False
+    assert matched["legal_hold"] is True
+
+
+def test_include_legal_holds_does_not_drop_still_quarantined_files(
+    client, admin_token_headers, quarantined_file
+):
+    """A currently-quarantined file must still appear when the broader filter is
+    requested -- include_legal_holds is additive, not a replacement filter."""
+    response = client.get(
+        "/api/admin/files/quarantined?include_legal_holds=true",
+        headers=admin_token_headers,
+    )
+    assert response.status_code == status.HTTP_200_OK
+    uuids = [f["uuid"] for f in response.json()["files"]]
+    assert str(quarantined_file.uuid) in uuids

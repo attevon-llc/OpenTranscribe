@@ -2490,6 +2490,15 @@ def _request_meta(request: Request) -> tuple[str, str]:
 def list_quarantined_files(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    include_legal_holds: bool = Query(
+        False,
+        description=(
+            "Also include files that are no longer quarantined but remain under "
+            "legal hold -- the release(clear_legal_hold=False) intermediate state "
+            "(issue #825). Additive: still-quarantined files are always included "
+            "regardless of this flag."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
@@ -2497,8 +2506,19 @@ def list_quarantined_files(
 
     Quarantined files are hidden from every normal read surface, so this is the
     only place an admin can see and act on them. Newest takedown first.
+
+    By default this is the takedown QUEUE (``is_quarantined IS TRUE``) only.
+    ``release(clear_legal_hold=False)`` unquarantines a file (restoring normal
+    visibility) while keeping its legal-hold, which produced a state no endpoint
+    could list at all until ``include_legal_holds=true`` was added (issue #825) --
+    an admin who deliberately kept a hold on a released file had no way to find
+    it again through the API a review-queue client would use.
     """
-    base = db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True))
+    if include_legal_holds:
+        condition = or_(MediaFile.is_quarantined.is_(True), MediaFile.legal_hold.is_(True))
+    else:
+        condition = MediaFile.is_quarantined.is_(True)
+    base = db.query(MediaFile).filter(condition)
     total = base.with_entities(func.count(MediaFile.id)).scalar() or 0
     rows = (
         base.order_by(MediaFile.quarantined_at.desc().nullslast()).offset(offset).limit(limit).all()
@@ -2513,6 +2533,7 @@ def list_quarantined_files(
             quarantined_at=f.quarantined_at.isoformat() if f.quarantined_at else None,
             quarantined_by=f.quarantined_by,
             legal_hold=bool(f.legal_hold),
+            is_quarantined=bool(f.is_quarantined),
         )
         for f in rows
     ]

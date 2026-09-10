@@ -210,6 +210,14 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 
 ## Gotchas
 
+- **`user.email` on an existing account is writable through exactly THREE authorities**
+  (issue #867 follow-up): the account holder themselves, via `PUT /users/me` (password-proven);
+  a super_admin, via `PUT /admin/users/{uuid}/external-email`, for an already-linked account
+  accepting an IdP's updated address; and the IdP itself at JIT sync. **`PUT /users/{uuid}` is
+  not one of them** — it 403s on an email *change* for every caller, including super_admin
+  (a plain admin write with no password proof used to be a fourth, ungated writer — the same
+  account-takeover shape `auth/account_linking.py` exists to close on the other paths) and
+  no-ops on resubmitting the unchanged value. See `test_admin_user_update_privilege_boundary.py`.
 - `require_capability(key)` (`core/capabilities.py`) returns **404, not 403** — a gated router
   must look like an unknown route. Platform superusers bypass it.
 - **`endpoints/tags/` is a package** (`crud` · `discovery` · `sharing` · `operations` + `_common`),

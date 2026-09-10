@@ -1239,6 +1239,19 @@ def update_single_transcript_segment(
             file_id=db_file.id, file_uuid=str(db_file.uuid), user_id=int(db_file.user_id)
         )
 
+        # Word counts and talk time are derived from segment text, so the stored
+        # analytics row is stale the moment the text changes. The SPA's post-save GET
+        # /analytics reads that row, and _get_or_compute_analytics only computes when
+        # it is ABSENT — so without this the UI silently renders pre-edit numbers with
+        # no error (issue #890). Mirrors what the speaker-change path already does at
+        # transcript_segments.py:188. Placed after the segment commit above:
+        # refresh_analytics deletes+recomputes, so running it before that commit would
+        # recompute against the pre-edit text.
+        from app.services.analytics_service import AnalyticsService
+
+        if not AnalyticsService.refresh_analytics(db, db_file.id):
+            logger.warning("Analytics refresh failed after text edit on file %s", db_file.uuid)
+
     # Manually construct Pydantic response with all required fields
     return TranscriptSegmentSchema(
         uuid=segment.uuid,  # type: ignore[arg-type]

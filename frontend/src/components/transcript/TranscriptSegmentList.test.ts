@@ -93,6 +93,66 @@ describe('TranscriptSegmentList', () => {
     expect(document.querySelectorAll('[data-segment-id]')).toHaveLength(4);
   });
 
+  describe('speaker-match highlighting (issue #837)', () => {
+    // Edit mode renders the speaker label as a plain div (no SegmentSpeakerDropdown,
+    // so no axios/portal/locale mocking needed) — the same speakerMatchState() helper
+    // feeds both, so this exercises the wiring without the dropdown's own dependencies.
+    const editProps = {
+      ...props,
+      diarizationDisabled: false,
+      editingSegmentId: 'b',
+    };
+
+    it('adds no highlight class when there is no speaker match for the segment', () => {
+      const { container } = render(TranscriptSegmentList, {
+        props: { ...editProps, searchMatches: [], currentMatchIndex: -1 },
+      });
+      const chip = container.querySelector('[data-segment-id="b"] .segment-speaker') as HTMLElement;
+      expect(chip).toBeTruthy();
+      expect(chip.classList.contains('search-match')).toBe(false);
+      expect(chip.classList.contains('current-match')).toBe(false);
+    });
+
+    it('adds .search-match when a type: speaker match targets this segment', () => {
+      const { container } = render(TranscriptSegmentList, {
+        props: {
+          ...editProps,
+          searchMatches: [{ segmentIndex: 1, start: 0, length: 4, type: 'speaker' }],
+          currentMatchIndex: -1,
+        },
+      });
+      const chip = container.querySelector('[data-segment-id="b"] .segment-speaker') as HTMLElement;
+      expect(chip.classList.contains('search-match')).toBe(true);
+      expect(chip.classList.contains('current-match')).toBe(false);
+    });
+
+    it('adds .current-match instead of .search-match when it is the active match', () => {
+      const { container } = render(TranscriptSegmentList, {
+        props: {
+          ...editProps,
+          searchMatches: [{ segmentIndex: 1, start: 0, length: 4, type: 'speaker' }],
+          currentMatchIndex: 0,
+        },
+      });
+      const chip = container.querySelector('[data-segment-id="b"] .segment-speaker') as HTMLElement;
+      expect(chip.classList.contains('current-match')).toBe(true);
+      expect(chip.classList.contains('search-match')).toBe(false);
+    });
+
+    it('does not highlight the speaker label for a type: text match on the same segment', () => {
+      const { container } = render(TranscriptSegmentList, {
+        props: {
+          ...editProps,
+          searchMatches: [{ segmentIndex: 1, start: 0, length: 4, type: 'text' }],
+          currentMatchIndex: 0,
+        },
+      });
+      const chip = container.querySelector('[data-segment-id="b"] .segment-speaker') as HTMLElement;
+      expect(chip.classList.contains('search-match')).toBe(false);
+      expect(chip.classList.contains('current-match')).toBe(false);
+    });
+  });
+
   it('attaches no scroll listener to the scroll container', () => {
     const spy = vi.spyOn(Element.prototype, 'addEventListener');
     render(TranscriptSegmentList, { props });

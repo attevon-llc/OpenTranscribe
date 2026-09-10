@@ -186,6 +186,23 @@
     return file?.transcript_segments?.indexOf(segment) ?? -1;
   }
 
+  // Issue #837 — a `type: 'speaker'` match was counted toward the total and
+  // navigable (TranscriptSearch.svelte's computeMatches), but only `type: 'text'`
+  // matches were ever highlighted (searchHighlight.ts's highlightTextWithMatches
+  // filters on it), so the user could be told "3 of 12" and land on a speaker-name
+  // match with nothing visibly marked. This resolves which speaker match (if any)
+  // applies to a segment, so the speaker chip/label can carry the same
+  // .search-match / .current-match treatment the transcript text already gets.
+  function speakerMatchState(segment: Segment): { highlighted: boolean; isCurrent: boolean } {
+    if (!searchMatches.length) return { highlighted: false, isCurrent: false };
+    const originalIndex = getOriginalSegmentIndex(segment);
+    const matchIdx = searchMatches.findIndex(
+      (m) => m.type === 'speaker' && m.segmentIndex === originalIndex
+    );
+    if (matchIdx === -1) return { highlighted: false, isCurrent: false };
+    return { highlighted: true, isCurrent: matchIdx === currentMatchIndex };
+  }
+
   // Handle scrollbar indicator click to seek to playhead
   function handleSeekToPlayhead(event: CustomEvent) {
     const { currentTime: seekTime, targetSegment } = event.detail;
@@ -296,7 +313,12 @@
               <div class="segment-edit-container">
                 <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
                 {#if !diarizationDisabled}
-                <div class="segment-speaker">{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
+                {@const speakerMatch = speakerMatchState(segment)}
+                <div
+                  class="segment-speaker"
+                  class:search-match={speakerMatch.highlighted && !speakerMatch.isCurrent}
+                  class:current-match={speakerMatch.isCurrent}
+                >{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
                 {/if}
                 <div class="segment-edit-input">
                   <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
@@ -327,6 +349,7 @@
                 >
                   <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
                   {#if !diarizationDisabled}
+                  {@const speakerMatch = speakerMatchState(segment)}
                   <div
                     class="segment-speaker-wrapper"
                     role="button"
@@ -338,6 +361,8 @@
                       {segment}
                       speakers={speakerList}
                       mediaFileUuid={file?.uuid?.toString() || ''}
+                      highlighted={speakerMatch.highlighted}
+                      isCurrentMatch={speakerMatch.isCurrent}
                       on:change={handleSegmentSpeakerChange}
                       on:speakerCreated={handleSpeakerCreated}
                       on:speakerUpdate={handleSpeakerUpdate}
@@ -378,7 +403,12 @@
           <div class="segment-edit-container">
             <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
             {#if !diarizationDisabled}
-            <div class="segment-speaker">{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
+            {@const speakerMatch = speakerMatchState(segment)}
+            <div
+              class="segment-speaker"
+              class:search-match={speakerMatch.highlighted && !speakerMatch.isCurrent}
+              class:current-match={speakerMatch.isCurrent}
+            >{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
             {/if}
             <div class="segment-edit-input">
               <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
@@ -409,6 +439,7 @@
             >
               <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
               {#if !diarizationDisabled}
+              {@const speakerMatch = speakerMatchState(segment)}
               <div
                 class="segment-speaker-wrapper"
                 role="button"
@@ -420,6 +451,8 @@
                   {segment}
                   speakers={speakerList}
                   mediaFileUuid={file?.uuid?.toString() || ''}
+                  highlighted={speakerMatch.highlighted}
+                  isCurrentMatch={speakerMatch.isCurrent}
                   on:change={handleSegmentSpeakerChange}
                   on:speakerCreated={handleSpeakerCreated}
                   on:speakerUpdate={handleSpeakerUpdate}

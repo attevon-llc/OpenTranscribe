@@ -186,6 +186,19 @@ def get_speaker_media_preview(
     if not media_file:
         raise HTTPException(status_code=404, detail="Media file not found")
 
+    # A quarantined file is hidden from its own owner, and this route resolves the
+    # file through `speaker.media_file` rather than `get_file_by_uuid_with_permission`
+    # — the chokepoint that makes a taken-down file 404 everywhere under `files/`. So
+    # without this it handed a non-admin a presigned URL to the RAW SOURCE MEDIA of a
+    # taken-down recording, valid for MEDIA_URL_EXPIRE_SECONDS (6h), plus the filename
+    # and title. Same class as the thumbnail gate (issue #817), worse payload. Mirrors
+    # `speakers.get_speaker_cross_media_occurrences`, which already does this.
+    # 404 not 403: "it exists but you may not see it" is itself a disclosure.
+    from app.services.takedown_service import is_hidden_for
+
+    if is_hidden_for(media_file, is_admin=current_user.is_admin):
+        raise HTTPException(status_code=404, detail="Speaker not found")
+
     # Presigned URL for source media (shared media-streaming TTL)
     from app.core.config import settings
     from app.services.minio_service import get_file_url

@@ -638,3 +638,62 @@ def test_the_isolated_stack_skip_message_names_the_script() -> None:
         f"_skip_unless_isolated_stack's message no longer names {SCRIPT_REL}. It is "
         f"read precisely when someone is about to hand-assemble the incantation."
     )
+
+
+def test_the_change_report_runs_without_a_backend_venv() -> None:
+    """CI has no `backend/venv`, and the change report must still work there.
+
+    `report_changes` is pure image maths (numpy + PIL + `_visual_diff`) — none of the
+    venv-only stack. It nonetheless invoked the hardcoded `backend/venv/bin/python`, so in
+    CI it died with a bare **rc 127, "No such file or directory"**: a precondition failure
+    wearing the costume of a broken report. `test_the_change_report_measures_a_known_
+    difference` above cannot catch it, because on a developer machine the venv exists.
+
+    Asserted by resolving the interpreter with the venv path forced absent, which is the
+    only way to reach CI's condition from here.
+    """
+    proc = run_check(
+        'VENV_PY="/nonexistent/venv/bin/python"; '
+        'if [[ -x "$VENV_PY" ]]; then P="$VENV_PY"; '
+        'else P="$(command -v python3 2>/dev/null || true)"; fi; '
+        'printf "RESOLVED=%s\\n" "$P"; [[ -x "$P" ]]'
+    )
+    assert "RESOLVED=" in proc.stdout, proc.stdout + proc.stderr
+    resolved = proc.stdout.split("RESOLVED=", 1)[1].splitlines()[0]
+    assert resolved and Path(resolved).exists(), (
+        "with no venv the report has no interpreter to fall back to, so it dies with a "
+        f"bare rc 127 in CI: resolved={resolved!r}"
+    )
+
+
+def test_the_report_interpreter_is_not_the_hardcoded_venv_path() -> None:
+    """Guard the fix itself: `report_changes` must not go back to `$VENV_PY` directly.
+
+    The full-capture path (pytest/Playwright/`requests`) genuinely REQUIRES the venv and
+    `check_preconditions` still enforces that — so this is specifically about the
+    pure-maths half, and reverting it would silently restore the CI failure.
+    """
+    text = SCRIPT.read_text(encoding="utf-8")
+    start = text.index("report_changes() {")
+    body = text[start : text.index("\n}", start)]
+    assert '"$VENV_PY"' not in body, (
+        "report_changes invokes $VENV_PY again; in CI that path does not exist and the "
+        "function dies with rc 127 before measuring anything"
+    )
+    assert '"$REPORT_PY"' in body, "report_changes no longer uses the resolved interpreter"
+
+
+def test_the_full_capture_still_requires_the_real_venv() -> None:
+    """MUST-STAY-CLEAN. The fallback must not weaken the precondition it sits beside.
+
+    If `check_preconditions` ever accepted a bare `python3`, a real capture would get past
+    the gate and then fail deep inside pytest with no Playwright — much worse than the
+    named refusal it gives today.
+    """
+    text = SCRIPT.read_text(encoding="utf-8")
+    start = text.index("check_preconditions() {")
+    body = text[start : text.index("\n}", start)]
+    assert '-x "$VENV_PY"' in body, (
+        "check_preconditions no longer requires the real venv, so a capture run can start "
+        "without pytest/Playwright and fail much later for an unrelated-looking reason"
+    )

@@ -73,12 +73,91 @@ def _eval(snippet: str, funcs: tuple[str, ...], cwd: str | None = None, env: str
     return result.stdout + ("\nSTDERR:" + result.stderr if result.stderr.strip() else "")
 
 
+def _compose_normalised(name: str) -> str:
+    """compose-go's ``NormalizeProjectName``: lowercase, keep ``[a-z0-9_-]``, strip leading ``-_``.
+
+    Reimplemented rather than imported because it lives in Go. It is four lines and is
+    pinned against the shell's own answer by
+    ``test_the_normalisation_matches_this_modules_oracle``.
+    """
+    kept = "".join(c for c in name.lower() if c.isascii() and (c.isalnum() or c in "_-"))
+    return kept.lstrip("-_")
+
+
 def test_the_project_is_resolved_exactly_as_compose_resolves_it():
+    """⚠️ DERIVED from the checkout's own directory, never hardcoded.
+
+    This asserted ``== ["transcribe-app"]`` — this machine's checkout name — so it could
+    only pass in one directory on one host. CI checks out into ``OpenTranscribe`` and it
+    failed there, which is how the normalisation bug below was found.
+    """
+    expected = _compose_normalised(REPO_ROOT.name)
     out = _eval("ot_compose_project", ("ot_compose_project",), cwd=str(REPO_ROOT))
-    assert out.split() == ["transcribe-app"], (
+    assert out.split() == [expected], (
         "the resolver does not return compose's own answer (an explicit "
-        f"COMPOSE_PROJECT_NAME, else the directory basename): {out!r}"
+        f"COMPOSE_PROJECT_NAME, else the NORMALISED directory basename): {out!r}"
     )
+
+
+def test_an_uppercase_checkout_directory_is_normalised_the_way_compose_does(tmp_path: Path):
+    """THE bug CI caught, and it is the DEFAULT case, not an exotic one.
+
+    ``git clone`` of this repo produces a directory named ``OpenTranscribe``. Compose
+    normalises that to ``opentranscribe``; the resolver echoed the raw basename, so every
+    ``--filter label=com.docker.compose.project=$(ot_compose_project)`` matched **nothing**
+    — the port preflight would see no container of ours and refuse every re-up in place.
+
+    Invisible on this machine only because its checkout is ``transcribe-app``, already
+    normalised. That is precisely why the assertion above must be derived.
+    """
+    probe = tmp_path / "OpenTranscribe"
+    probe.mkdir()
+    out = _eval(
+        f'cd "{probe}"\not_compose_project',
+        ("ot_compose_project",),
+    )
+    assert out.split() == ["opentranscribe"], (
+        "a checkout directory with uppercase letters is not normalised the way compose "
+        f"normalises it, so every project-label filter silently matches nothing: {out!r}"
+    )
+
+
+def test_a_directory_name_compose_would_strip_is_stripped(tmp_path: Path):
+    """Characters outside ``[a-z0-9_-]`` are DROPPED by compose, not replaced."""
+    probe = tmp_path / "My.Repo v2"
+    probe.mkdir()
+    out = _eval(
+        f'cd "{probe}"\not_compose_project',
+        ("ot_compose_project",),
+    )
+    assert out.split() == ["myrepov2"], (
+        f"dots/spaces are not dropped the way compose drops them: {out!r}"
+    )
+
+
+def test_the_normalisation_matches_this_modules_oracle(tmp_path: Path):
+    """Guard the guard: the Python oracle above and the shell must not drift apart.
+
+    Every assertion in this module that derives an expectation leans on ``_compose_normalised``.
+    If it and the shell disagreed, they could agree on being wrong together.
+    """
+    for raw, expected in [
+        ("OpenTranscribe", "opentranscribe"),
+        ("transcribe-app", "transcribe-app"),
+        ("My.Repo v2", "myrepov2"),
+        ("_leading", "leading"),
+        ("MiXeD_123-x", "mixed_123-x"),
+    ]:
+        assert _compose_normalised(raw) == expected, f"oracle wrong for {raw!r}"
+        probe = tmp_path / raw
+        probe.mkdir()
+        out = _eval(
+            f'cd "{probe}"\not_compose_project',
+            ("ot_compose_project",),
+        )
+        assert out.split() == [expected], (
+            f"shell and oracle disagree for {raw!r}: shell={out!r} oracle={expected!r}"
+        )
 
 
 def test_the_installer_project_name_is_not_silently_accepted():
@@ -164,17 +243,22 @@ def test_a_foreign_holder_is_refused_while_our_own_ports_pass():
         """),
         ("ot_compose_project", "ot_port_holder_is_ours"),
         cwd=str(REPO_ROOT),
-        env=textwrap.dedent("""
+        # ⚠️ The "ours" label is DERIVED, not the literal `transcribe-app` this used to
+        # hardcode. With the name baked in, the test asserted "the comparison works in a
+        # checkout called transcribe-app" — and failed in CI's `OpenTranscribe` checkout
+        # for a reason that had nothing to do with per-port evaluation, which is what it
+        # is actually about.
+        env=textwrap.dedent(f"""
             # 5174 held by a container of THIS project; 9000 by an unrelated one.
-            docker() {
+            docker() {{
               case "$1" in
                 ps)      printf 'ours-backend\\t0.0.0.0:5174->5174/tcp\\nheimdall\\t0.0.0.0:9000->9000/tcp\\n' ;;
                 inspect) case "$2" in
-                           ours-backend) echo "transcribe-app" ;;
+                           ours-backend) echo "{_compose_normalised(REPO_ROOT.name)}" ;;
                            *)            echo "some-unrelated-project" ;;
                          esac ;;
               esac
-            }
+            }}
         """),
     )
     assert "5174=ours" in out, f"our own port reported foreign — every re-up refused: {out!r}"

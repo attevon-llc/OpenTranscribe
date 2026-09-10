@@ -98,6 +98,24 @@ SCREENSHOT_DIR="$REPO_ROOT/backend/tests/e2e/__screenshots__"
 PROVENANCE_DIR="$REPO_ROOT/backend/tests/e2e/screenshot-provenance"
 VENV_PY="$REPO_ROOT/backend/venv/bin/python"
 
+# ⚠️ TWO interpreters, because two callers have genuinely different needs.
+#
+# VENV_PY is REQUIRED for a real capture — pytest, Playwright and `requests` all live in
+# backend/venv — and check_preconditions dies with a clear message when it is missing.
+#
+# report_changes is not that. It is pure image maths (numpy + PIL + the repo's own
+# _visual_diff), and it is driven directly by
+# backend/tests/unit/test_visual_baseline_update_tool.py, which runs in CI where no venv is
+# ever created. Hardcoding VENV_PY there made that test die with a bare rc 127 "No such file
+# or directory" — a precondition failure wearing the costume of a broken report. Prefer the
+# venv so a developer gets the pinned versions; fall back to python3 so the pure-maths half
+# works in CI and in a checkout without a venv.
+if [[ -x "$VENV_PY" ]]; then
+    REPORT_PY="$VENV_PY"
+else
+    REPORT_PY="$(command -v python3 2>/dev/null || true)"
+fi
+
 # Defaults. NAME/OFFSET match the incantation scripts/release/30-verify.sh has
 # been printing as a hint string; keeping them identical means an operator who
 # followed that hint and an operator who runs this script land on the same stack.
@@ -739,9 +757,12 @@ capture() {
 # about whether a change is a change.
 report_changes() {
     $DRY_RUN && return 0
+    # Named refusal rather than a bare "command not found" from an empty "$REPORT_PY".
+    [[ -n "$REPORT_PY" ]] || die "no python interpreter available for the change report \
+(neither backend/venv nor python3 on PATH)" "$EXIT_PRECONDITION"
     OT_BEFORE_DIR="$BEFORE_DIR" OT_AFTER_DIR="$SCREENSHOT_DIR" OT_OUT_DIR="$WORKDIR" \
     OT_E2E_DIR="$REPO_ROOT/backend/tests/e2e" OT_SURFACES="${SELECTED_SURFACES[*]}" \
-    "$VENV_PY" - <<'PYEOF'
+    "$REPORT_PY" - <<'PYEOF'
 import os
 import sys
 from pathlib import Path

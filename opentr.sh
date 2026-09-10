@@ -1437,8 +1437,29 @@ fresh_write_aux() {
 #
 # `ot_stop`'s OPENTR_STOP_PROJECT_LABEL/_ALT pair answers a DIFFERENT question -- "clean
 # up anything of ours, including a leftover rehearsal stack" -- and must stay two-valued.
+# ⚠️ The derived name must be NORMALISED, because compose normalises it and we are trying to
+# match compose's own labels. compose-go's NormalizeProjectName lowercases, keeps only
+# [a-z0-9_-], and strips leading separators. Echoing the raw basename was wrong for the single
+# most common case there is: `git clone` of this repo makes a directory named with capitals, so
+# compose labels every container with the lowercased form while this returned the raw one, and
+# every `--filter label=com.docker.compose.project=$(ot_compose_project)` matched NOTHING. The
+# port preflight would then see no container of ours and refuse every re-up in place.
+#
+# Invisible on a checkout whose directory is already lowercase -- which this machine's is,
+# which is why it took CI (whose checkout is not) to catch it. Normalising an explicit
+# COMPOSE_PROJECT_NAME too is deliberate: compose does that as well, so echoing it raw would
+# reintroduce the same mismatch by the other route.
 ot_compose_project() {
-  echo "${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
+  local s="${COMPOSE_PROJECT_NAME:-${PWD##*/}}"
+  s="${s,,}"
+  s="${s//[^a-z0-9_-]/}"
+  while [ -n "$s" ]; do
+    case "$s" in
+      [-_]*) s="${s#?}" ;;
+      *)     break ;;
+    esac
+  done
+  echo "$s"
 }
 
 # Return 0 when host port $1 is published by a container belonging to THIS deployment

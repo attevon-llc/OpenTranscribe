@@ -1622,6 +1622,19 @@ def admin_unlock_account(
     return {"success": True, "was_locked": unlocked, "was_disabled": was_disabled}
 
 
+def _targets_a_super_admin_without_authority(user: User, current_user: User) -> bool:
+    """Whether ``current_user`` (not super_admin) is acting on a super_admin ``user``.
+
+    Shared by ``admin_lock_account`` and ``admin_terminate_user_sessions`` — both were
+    gated only at the admin tier, which let a plain admin lock, or force-logout the
+    sessions of, every super_admin account: a deployment-wide lockout reachable through
+    two endpoints that were never meant to reach that far (issue #867 finding (e), same
+    shape as ``_validate_user_deletion`` above and ``update_user``'s guard in
+    ``users.py``).
+    """
+    return str(user.role) == ROLE_SUPER_ADMIN and str(current_user.role) != ROLE_SUPER_ADMIN
+
+
 @router.post("/users/{user_uuid}/lock")
 def admin_lock_account(
     request: Request,
@@ -1630,12 +1643,29 @@ def admin_lock_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Admin lock of user account."""
+    """Admin lock of user account. Only a super_admin may lock a super_admin."""
     client_ip, user_agent = _get_client_info(request)
 
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if _targets_a_super_admin_without_authority(user, current_user):
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_ACCOUNT_DISABLED,
+            outcome=AuditOutcome.FAILURE,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            target_user_id=int(user.id),
+            target_username=str(user.email),
+            details={"target_user": user_uuid, "reason": reason, "action": "lock_denied"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super_admin can lock a super_admin account",
+        )
 
     user.is_active = False  # type: ignore[assignment]
     # Locking an account that keeps a live refresh token is not a lock: token
@@ -1685,6 +1715,23 @@ def admin_terminate_user_sessions(
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if _targets_a_super_admin_without_authority(user, current_user):
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_LOGOUT_ALL,
+            outcome=AuditOutcome.FAILURE,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            target_user_id=int(user.id),
+            target_username=str(user.email),
+            details={"target_user": user_uuid, "action": "terminate_sessions_denied"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super_admin can terminate a super_admin account's sessions",
+        )
 
     count = revoke_all_sessions(db, user, reason="admin session termination")
     db.commit()

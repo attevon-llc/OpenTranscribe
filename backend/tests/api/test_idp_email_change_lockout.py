@@ -8,8 +8,14 @@ changed, and removing it reopens the account-takeover vector the module exists t
 What was wrong is that the refusal had **no way out**. The gate runs before
 ``_update_oidc_user`` — the only code that would write the IdP's new address onto the row — so
 the stored email can never catch up, and every subsequent login re-runs the identical sequence
-to the identical 401. The self-heal path was unreachable *by construction*, and no admin
-endpoint wrote ``user.email`` either, so the only remedy was direct SQL.
+to the identical 401. The self-heal path was unreachable *by construction*. An admin endpoint
+*did* write ``user.email`` at the time — ``PUT /api/users/{uuid}`` — but ungated: any admin
+caller (not just super_admin) could repoint any account's login identity through it, with no
+password proof and no distinction between a genuine rename and an account takeover. That route
+now refuses an email change outright for every caller (issue #867 follow-up:
+`test_admin_user_update_privilege_boundary.py`), so
+``PUT /api/admin/users/{uuid}/external-email`` below is the sole administrative email-write
+path.
 
 Two changes, tested here:
 

@@ -16,6 +16,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.auth.account_linking import emails_agree
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
@@ -432,6 +433,64 @@ def get_user(
     return get_user_by_uuid(db, user_uuid)
 
 
+def _enforce_update_user_privilege_boundaries(
+    user: User,
+    current_user: User,
+    update_data: dict[str, object],
+    client_ip: str,
+    user_agent: str,
+) -> None:
+    """Enforce ``update_user``'s two privilege boundaries, in place on ``update_data``.
+
+    Split out of ``update_user`` to keep that function's branch count readable
+    (ruff C901), matching the existing ``_validate_role_and_activation_changes``
+    split just below it.
+
+    1. A caller who is not ``super_admin`` may not write to a ``super_admin``
+       account at all.
+    2. This route never changes ``user.email``, for ANY caller — see
+       ``update_user``'s docstring for the full rationale (issue #867). Resubmitting
+       the current address (case/whitespace aside) is popped as a no-op rather than
+       refused.
+
+    Raises:
+        HTTPException: 403, for either boundary.
+    """
+    if user.role == ROLE_SUPER_ADMIN and current_user.role != ROLE_SUPER_ADMIN:
+        _audit_privilege_boundary_denial(
+            "super_admin_target_denied", user, current_user, client_ip, user_agent
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super_admin can modify a super_admin account",
+        )
+
+    if "email" not in update_data:
+        return
+
+    # update_data is typed dict[str, object] (it's shared with the caller's generic
+    # setattr loop); the schema's EmailStr guarantees this value is a str at runtime.
+    new_email = str(update_data["email"])
+    if emails_agree(new_email, str(user.email)):
+        # Same address, different case/whitespace: a no-op, not a change.
+        update_data.pop("email")
+        return
+
+    _audit_privilege_boundary_denial(
+        "email_change_denied", user, current_user, client_ip, user_agent
+    )
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=(
+            "This endpoint cannot change a user's email address. Use "
+            "PUT /api/users/me for a self-service change (current password "
+            "required), or PUT /api/admin/users/{uuid}/external-email "
+            "(super_admin) to accept an identity provider's updated address "
+            "for an already-linked account."
+        ),
+    )
+
+
 @router.put("/{user_uuid}", response_model=UserSchema)
 def update_user(
     request: Request,
@@ -441,11 +500,34 @@ def update_user(
     current_user: User = Depends(get_current_admin_user),
 ):
     """
-    Update user by UUID (admin only)
+    Update user by UUID (admin only).
+
+    Two privilege boundaries this route enforces before touching anything else:
+
+    1. **A caller who is not ``super_admin`` may not write to a ``super_admin``
+       account at all** — mirrors ``delete_user``'s identical guard and
+       ``admin.py``'s ``_validate_user_deletion``.
+    2. **This route never changes ``user.email``, for ANY caller, including
+       ``super_admin``.** ``auth/account_linking.py`` is the single implementation
+       of "who may write a user's email", and it already names exactly two
+       authorities: the account holder themselves, via ``PUT /users/me``
+       (password-proven), and a super_admin accepting an identity provider's
+       updated address for an already-linked account, via
+       ``PUT /admin/users/{uuid}/external-email``. A third, unguarded writer here
+       let a plain admin's edit (or a super_admin bypassing the password proof)
+       repoint an account's login identity — the account-takeover shape #867 was
+       written to close on the other two paths. Resubmitting the *current*
+       address (case/whitespace aside) is treated as a no-op, not a refusal, so a
+       form that round-trips what it read does not 403.
     """
     client_ip, user_agent = _get_client_info(request)
     # Uses helper that validates UUID format and returns 400 for invalid UUIDs
     user = get_user_by_uuid(db, user_uuid)
+    update_data = user_update.model_dump(exclude_unset=True)
+    _enforce_update_user_privilege_boundaries(
+        user, current_user, update_data, client_ip, user_agent
+    )
+
     old_role = str(user.role)
     old_expires_at = str(user.account_expires_at) if user.account_expires_at else None
     was_active = bool(user.is_active)
@@ -453,7 +535,6 @@ def update_user(
     # Update fields — strip privilege-escalation fields unless caller is super_admin.
     # Regular admins can update names, emails, etc. but cannot promote users.
     # allow_local_fallback is also a super_admin-only field (security-critical).
-    update_data = user_update.model_dump(exclude_unset=True)
     if current_user.role != "super_admin":
         privileged_fields = {
             "is_active",
@@ -581,6 +662,31 @@ def _audit_expiration_if_changed(
     new_expires_at = str(user.account_expires_at) if user.account_expires_at else None
     if new_expires_at != old_expires_at:
         audit_expiration_change(user, actor, old_expires_at, new_expires_at, client_ip, user_agent)
+
+
+def _audit_privilege_boundary_denial(
+    action: str, user: User, current_user: User, client_ip: str, user_agent: str
+) -> None:
+    """Record a refusal at one of ``update_user``'s two privilege boundaries.
+
+    Reuses ``ADMIN_USER_UPDATE`` with ``outcome=FAILURE`` rather than a new
+    ``AuditEventType`` — this endpoint's successful writes already emit that
+    type, so a refusal is the same event with a different outcome and an
+    ``action`` naming which boundary stopped it. Actor vs. subject follows
+    issue #443: ``user_id``/``username`` are the caller, ``target_user_id``/
+    ``target_username`` are the account the write was attempted against.
+    """
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_UPDATE,
+        outcome=AuditOutcome.FAILURE,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        target_user_id=int(user.id),
+        target_username=str(user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        details={"action": action},
+    )
 
 
 def _count_other_active_super_admins(db: Session, user: User) -> int:

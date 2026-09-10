@@ -44,6 +44,7 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
 from app.models.user import User
+from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions
 
 logger = logging.getLogger(__name__)
@@ -190,9 +191,11 @@ def update_user(
         SCIMConflictError: The new address already belongs to another account.
     """
     changed: dict[str, object] = {}
+    old_email: str | None = None
 
     if email and email != str(user.email):
         _assert_not_super_admin(user, "change the userName of")
+        old_email = str(user.email)
         changed["email"] = email
         user.email = email  # type: ignore[assignment]
 
@@ -244,7 +247,13 @@ def update_user(
         # The whole point of `active: false`. Open WebUI's SCIM sets a role to
         # 'pending' instead and leaves the session alive; we have a real flag and a
         # real revocation path, so both are used.
-        revoked = revoke_all_sessions(db, user, reason="scim_deactivate")
+        revoked += revoke_all_sessions(db, user, reason="scim_deactivate")
+    if old_email is not None:
+        # The address is what a local account authenticates as — same rule the
+        # self-service change in `users.py` and the admin external-email remedy
+        # both apply. In-transaction so a commit failure rolls the revocation
+        # back with it.
+        revoked += revoke_all_sessions(db, user, reason="scim_email_change")
 
     try:
         db.commit()
@@ -268,4 +277,9 @@ def update_user(
         sessions_revoked=revoked,
     )
     logger.info("SCIM updated user %s (%s)", user.email, ", ".join(sorted(changed)))
+    if old_email is not None:
+        # Best-effort, and it may bounce (a dead domain is one of the triggers) — but
+        # a silent address change is the first half of an account takeover, so the
+        # previous address is told, matching the self-service and admin remedy paths.
+        notify_email_changed(old_email, str(user.email))
     return user

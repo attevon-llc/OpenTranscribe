@@ -328,6 +328,81 @@ class TestDeactivation:
         assert db_session.query(User).filter(User.id == existing_user.id).first() is not None
 
 
+class TestEmailChangeSecurity:
+    """A SCIM ``userName`` (email) change is a credential-class change (issue #867
+    follow-up §3.2) — the address is what a local account authenticates as, so
+    changing it must revoke existing sessions and tell the previous owner, exactly
+    like the self-service change in ``users.py`` and the admin external-email
+    remedy."""
+
+    def test_an_email_change_revokes_existing_sessions(
+        self, client, scim_headers, db_session, existing_user
+    ):
+        from app.auth.token_service import token_service
+
+        token_service.create_refresh_token(
+            db=db_session,
+            user_id=int(existing_user.id),
+            user_uuid=str(existing_user.uuid),
+            role=str(existing_user.role),
+        )
+
+        new_email = _unique_email("renamed")
+        response = client.patch(
+            f"{BASE}/Users/{existing_user.uuid}",
+            headers=scim_headers,
+            json={
+                "schemas": [],
+                "Operations": [{"op": "replace", "value": {"userName": new_email}}],
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        db_session.refresh(existing_user)
+        assert str(existing_user.email) == new_email
+
+        from app.models.refresh_token import RefreshToken
+
+        live = (
+            db_session.query(RefreshToken)
+            .filter(
+                RefreshToken.user_id == existing_user.id,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .count()
+        )
+        assert live == 0, "an email change must revoke sessions, exactly like a deactivation"
+
+    def test_an_email_change_notifies_the_previous_address(
+        self, client, scim_headers, db_session, existing_user, monkeypatch
+    ):
+        from app.services import scim_service
+
+        notified: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            scim_service,
+            "notify_email_changed",
+            lambda old_email, new_email: notified.append((old_email, new_email)),
+        )
+
+        old_email = str(existing_user.email)
+        new_email = _unique_email("renamed")
+        response = client.patch(
+            f"{BASE}/Users/{existing_user.uuid}",
+            headers=scim_headers,
+            json={
+                "schemas": [],
+                "Operations": [{"op": "replace", "value": {"userName": new_email}}],
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        assert notified == [(old_email, new_email)], (
+            "the PREVIOUS address must be told, so a silent SCIM-driven email change "
+            "cannot be the first half of a takeover"
+        )
+
+
 class TestSuperAdminIsUntouchable:
     def test_scim_cannot_deactivate_a_super_admin(self, client, scim_headers, super_admin_user):
         response = client.patch(

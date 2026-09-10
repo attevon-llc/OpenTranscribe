@@ -12,9 +12,11 @@ closely as the MPS torch API permits:
 - Emits per-run JSON files compatible with the CUDA schema so
   cross-platform analysis scripts can read both sets.
 
-Runs on the Mac Studio via SSH in the transcribe-app workflow:
+Runs on the Mac Studio via SSH in the transcribe-app workflow (substitute your own
+remote host — e.g. user@mac-studio.local — for MPS_HOST):
 
-    ssh superstudio@192.168.30.26 "\\
+    MPS_HOST=user@mac-studio.local
+    ssh "$MPS_HOST" "\\
         cd ~/repos/pyannote-audio && source venv/bin/activate && \\
         python /tmp/vram-probe-diarization-mps.py \\
             --audio-file /tmp/test_0.5h.wav \\

@@ -327,6 +327,18 @@ repos:
       - id: shellcheck
         args: [--severity=warning]
 
+  # A real internal LAN username/hostname must never land in a tracked file (issue #874).
+  # Three prior manual scrubs each caught only the `user@<RFC1918-IP>` shape and missed a
+  # bare `host:~/path` form and a `.local` hostname with no `@` at all — see
+  # scripts/check-lan-hostnames.sh's own header for why it checks BOTH the literal leaked
+  # identifier and the generic pattern, not just the latter.
+  - repo: local
+    hooks:
+      - id: check-lan-hostnames
+        name: no real internal LAN username/hostname in tracked files
+        entry: scripts/check-lan-hostnames.sh
+        language: system
+
   # A component that was never scanned must never read as a clean one (issue #681).
   #
   # Wired here rather than left as a script somebody might remember to run: the

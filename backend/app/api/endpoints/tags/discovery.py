@@ -114,7 +114,12 @@ def list_files_for_tag(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
 
     files, total = files_for_tag(
-        db, tag.id, user_id=current_user.id, organization_id=ctx.org_id, limit=limit
+        db,
+        tag.id,
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
+        limit=limit,
+        is_admin=current_user.is_admin,
     )
     return TagFileList(
         total=total,

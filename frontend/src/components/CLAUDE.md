@@ -28,7 +28,13 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   state; children are thin presentational components that receive props and `dispatch` events up.
   This is the result of the file-split refactor — don't move data logic back into children.
 - **Thin frontend**: business logic belongs on the backend; components render and forward.
-  The one approved client-side exception is `src/lib/export/` (transcript serialization).
+  ⚠️ **There is NO client-side exception for transcript serialization.** This line used to
+  name `src/lib/export/` as one; that exception was retracted in `frontend/CLAUDE.md` because
+  it was the mechanism of a live security bug (issue #673 — a client-assembled transcript
+  bypasses the server's redaction and `export_locked` policy), and since issue #821
+  `src/lib/export/` contains no serializer at all: `requestTranscriptExport.ts` asks the
+  server. Every transcript byte a user can copy or download must come from
+  `GET /api/files/{uuid}/export`.
 - i18n everywhere via `$t(...)` from `$stores/locale`. Light/dark parity required.
 - Prefer `$store` auto-subscription in markup over `get(store)`.
 

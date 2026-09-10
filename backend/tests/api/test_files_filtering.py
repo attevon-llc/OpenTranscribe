@@ -83,6 +83,61 @@ def test_filter_file_type_audio(client, user_token_headers, normal_user, db_sess
     assert str(video.uuid) not in found
 
 
+def test_unknown_file_type_returns_nothing_not_everything(
+    client, user_token_headers, normal_user, db_session
+):
+    """Issue #871 — an unrecognized ``file_type`` value used to be silently DROPPED from
+    the filter, so the caller got their whole accessible file set back while believing
+    they had filtered. It must narrow to nothing instead."""
+    seeded = [
+        _make_file(db_session, normal_user, content_type="audio/wav"),
+        _make_file(db_session, normal_user, content_type="video/mp4"),
+    ]
+    assert len(seeded) > 0  # guard against an unfalsifiable empty-fixture pass
+
+    response = client.get(
+        "/api/files", headers=user_token_headers, params={"file_type": "document"}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["items"] == []
+
+
+def test_mixed_known_and_unknown_file_type_does_not_silently_narrow_to_known_only(
+    client, user_token_headers, normal_user, db_session
+):
+    """A caller passing ``audio`` AND a typo together must not be treated as though
+    they had only passed ``audio`` — the RESULT must reflect that "bogus" matched
+    nothing, i.e. the combined OR-filter still yields zero rows for it."""
+    _make_file(db_session, normal_user, content_type="audio/wav")
+
+    both = client.get(
+        "/api/files",
+        headers=user_token_headers,
+        params={"file_type": ["audio", "bogus"]},
+    )
+    only_audio = client.get("/api/files", headers=user_token_headers, params={"file_type": "audio"})
+    assert both.status_code == status.HTTP_200_OK
+    # "bogus" contributes an OR-branch that matches nothing, so the union is
+    # unchanged from "audio" alone — it must NOT silently narrow to zero.
+    assert _uuids(both) == _uuids(only_audio)
+    assert _uuids(both) != set()
+
+
+def test_a_literal_mime_type_still_matches_exactly(
+    client, user_token_headers, normal_user, db_session
+):
+    """A caller who already has a full MIME type (not one of the two coarse buckets)
+    gets an exact match, mirroring the search plane's _file_type_filter_clause."""
+    target = _make_file(db_session, normal_user, content_type="audio/wav")
+    _make_file(db_session, normal_user, content_type="audio/mpeg")
+
+    response = client.get(
+        "/api/files", headers=user_token_headers, params={"file_type": "audio/wav"}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert _uuids(response) == {str(target.uuid)}
+
+
 # ---------------------------------------------------------------------------
 # duration filter
 # ---------------------------------------------------------------------------

@@ -176,8 +176,17 @@ def update_media_file_transcription_status(
     # decline as an uncovered gap rather than credit itself — see that function's
     # `normalize_language(media.language) is None` branch for the other, load-bearing half.
     media_file.language = normalize_language(language)
-    media_file.status = FileStatus.COMPLETED
-    media_file.completed_at = datetime.datetime.now(datetime.UTC)
+    # Issue #824 (#664's item 3, not completed by that fix): a file quarantined
+    # or placed under legal hold while still transcribing must not have its
+    # status/completed_at clobbered by this unrelated pipeline write.
+    # completed_at is the column the retention window is measured from --
+    # overwriting it here would silently restart that clock, undoing #664's own
+    # sweep-predicate fix; overwriting status would erase the QUARANTINED
+    # display state for a file under active enforcement. Nothing else in this
+    # function is skipped -- only these two fields are guarded.
+    if not (media_file.is_quarantined or media_file.legal_hold):
+        media_file.status = FileStatus.COMPLETED
+        media_file.completed_at = datetime.datetime.now(datetime.UTC)
 
     # Store processing model info
     if whisper_model:

@@ -41,7 +41,7 @@ Zero runtime cost when profiler is inactive. **Not yet committed** — awaiting 
 ### Infrastructure
 
 - `docker-compose.benchmark.yml` mount fix: `./benchmark/results` now writable; test_audio still read-only.
-- One-time Mac Studio setup: rsynced fork edits, benchmark script, and short test audio to `superstudio:~/repos/pyannote-audio/`.
+- One-time Mac Studio setup: rsynced fork edits, benchmark script, and short test audio to `mac-studio.local:~/repos/pyannote-audio/`.
 
 ## Baseline numbers
 
@@ -162,7 +162,7 @@ docker compose -f docker-compose.benchmark.yml run --rm --remove-orphans diariza
     --rttm-out benchmark/results/rttm/baseline_a6000_long
 
 # MPS baseline (Mac Studio via ssh)
-ssh superstudio@192.168.30.26 'cd ~/repos/pyannote-audio && source venv/bin/activate && \
+ssh user@mac-studio.local 'cd ~/repos/pyannote-audio && source venv/bin/activate && \
   HUGGINGFACE_TOKEN="$HUGGINGFACE_TOKEN" python scripts/benchmark-pyannote-direct.py \
     --variant optimized --device mps --files 0.5h_1899s 2.2h_7998s --runs 5 \
     --tag baseline_m2max_$(date +%Y%m%d_%H%M%S)_short \

@@ -250,7 +250,12 @@ class ReleaseRequest(BaseModel):
 
 
 class QuarantinedFile(BaseModel):
-    """A taken-down file in the admin review list."""
+    """A file in the admin review list.
+
+    ``is_quarantined`` distinguishes a currently-quarantined row from a
+    released-but-still-held one (issue #825) -- both can appear together when
+    the list endpoint is queried with ``include_legal_holds=true``.
+    """
 
     uuid: str
     filename: str | None = None
@@ -260,6 +265,7 @@ class QuarantinedFile(BaseModel):
     quarantined_at: str | None = None
     quarantined_by: int | None = None
     legal_hold: bool = False
+    is_quarantined: bool = True
 
 
 class QuarantinedFilesList(BaseModel):

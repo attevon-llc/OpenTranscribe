@@ -644,7 +644,7 @@ docker images --filter "reference=davidamacey/opentranscribe-*" --format "{{.Rep
 
 ### Getting Help
 
-- **GitHub Issues**: https://github.com/davidamacey/opentranscribe/issues
+- **GitHub Issues**: https://github.com/attevon-llc/OpenTranscribe/issues
 - **Documentation**: See README-WINDOWS.md in installation directory
 - **Logs**: Check Docker logs for detailed error messages
 
@@ -803,8 +803,8 @@ Model selection affects:
 
 ### Links
 
-- **GitHub Repository**: https://github.com/davidamacey/opentranscribe
-- **Issue Tracker**: https://github.com/davidamacey/opentranscribe/issues
+- **GitHub Repository**: https://github.com/attevon-llc/OpenTranscribe
+- **Issue Tracker**: https://github.com/attevon-llc/OpenTranscribe/issues
 - **Docker Desktop**: https://www.docker.com/products/docker-desktop
 - **Inno Setup**: https://jrsoftware.org/isdl.php
 - **HuggingFace**: https://huggingface.co/settings/tokens

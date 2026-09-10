@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import ValidationInfo
 from pydantic import field_validator
@@ -547,8 +548,13 @@ class Settings(BaseSettings):
     # OpenSearch settings
     OPENSEARCH_HOST: str = os.getenv("OPENSEARCH_HOST", "localhost")
     OPENSEARCH_PORT: str = os.getenv("OPENSEARCH_PORT", "9200")
-    OPENSEARCH_USER: str = os.getenv("OPENSEARCH_USER", "admin")
-    OPENSEARCH_PASSWORD: str = os.getenv("OPENSEARCH_PASSWORD", "admin")
+    # No "admin" fallback (issue #858): the security plugin ships disabled, so an
+    # empty credential is exactly as inert as "admin" today, and if the plugin is
+    # ever enabled with nothing configured, an empty credential fails closed --
+    # OpenSearch answers 401 -- instead of an unconfigured install silently
+    # succeeding on the plugin's own well-known bootstrap superuser password.
+    OPENSEARCH_USER: str = os.getenv("OPENSEARCH_USER", "")
+    OPENSEARCH_PASSWORD: str = os.getenv("OPENSEARCH_PASSWORD", "")
     OPENSEARCH_USE_TLS: bool = os.getenv("OPENSEARCH_USE_TLS", "false").lower() == "true"
     OPENSEARCH_VERIFY_CERTS: bool = os.getenv("OPENSEARCH_VERIFY_CERTS", "false").lower() == "true"
     # How to authenticate to OpenSearch (issue #284 A1.13). "basic" (default) sends the
@@ -715,6 +721,35 @@ class Settings(BaseSettings):
     OPENSEARCH_EMBEDDING_MODE: str = os.getenv("OPENSEARCH_EMBEDDING_MODE", "local")
     # Pre-registered ML Commons model id, used when OPENSEARCH_EMBEDDING_MODE=managed.
     OPENSEARCH_NEURAL_MODEL_ID: str = os.getenv("OPENSEARCH_NEURAL_MODEL_ID", "")
+
+    #: The only values OPENSEARCH_EMBEDDING_MODE may take. Derived from the single
+    #: comparison site (services/search/neural_bootstrap.py::_managed_embedding_mode) —
+    #: keep them together, or a new mode gets accepted here and ignored there.
+    _OPENSEARCH_EMBEDDING_MODES: ClassVar[frozenset[str]] = frozenset({"local", "managed"})
+
+    @field_validator("OPENSEARCH_EMBEDDING_MODE", mode="after")
+    @classmethod
+    def _validate_embedding_mode(cls, v: str) -> str:
+        """Reject an unrecognized mode instead of silently falling through to "local".
+
+        ``_managed_embedding_mode()`` compares this value with a single ``== "managed"``,
+        so ANY other string — including a plausible typo like "app" — resolves to the
+        "local" branch with no error. On a self-hosted cluster that still works (the local
+        bootstrap registers/deploys the model itself); on a MANAGED domain the local path's
+        cluster-settings mutation is rejected, and semantic search silently returns nothing
+        while keyword search keeps working (issue #893).
+
+        Normalizes the same way the comparison site does (strip + lower) so a
+        trailing-space or differently-cased value is accepted rather than rejected on a
+        technicality.
+        """
+        normalized = v.strip().lower()
+        if normalized not in cls._OPENSEARCH_EMBEDDING_MODES:
+            raise ValueError(
+                f"OPENSEARCH_EMBEDDING_MODE={v!r} is not a valid mode. "
+                f"Accepted values: {', '.join(sorted(cls._OPENSEARCH_EMBEDDING_MODES))}."
+            )
+        return normalized
 
     # Celery settings. Plain "" defaults (not `= REDIS_URL`, which at class-body
     # execution time would bind to REDIS_URL's own pre-validator "" placeholder,

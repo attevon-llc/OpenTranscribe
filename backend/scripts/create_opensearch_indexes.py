@@ -2,21 +2,14 @@
 Script to create required OpenSearch indexes for our transcription application.
 """
 
-import os
-
 from dotenv import load_dotenv
 from opensearchpy import OpenSearch
 from opensearchpy import RequestsHttpConnection
 
+from app.core.opensearch_auth import opensearch_connection_kwargs
+
 # Load environment variables
 load_dotenv()
-
-OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST", "localhost")
-OPENSEARCH_PORT = int(os.getenv("OPENSEARCH_PORT", "9200"))
-OPENSEARCH_USER = os.getenv("OPENSEARCH_USER", "admin")
-OPENSEARCH_PASSWORD = os.getenv("OPENSEARCH_PASSWORD", "admin")
-OPENSEARCH_USE_TLS = os.getenv("OPENSEARCH_USE_TLS", "false").lower() == "true"
-OPENSEARCH_VERIFY_CERTS = os.getenv("OPENSEARCH_VERIFY_CERTS", "false").lower() == "true"
 
 # OpenSearch indexes
 TRANSCRIPT_INDEX = "transcripts"
@@ -24,18 +17,16 @@ SPEAKER_INDEX = "speakers"
 
 
 def create_client():
-    """Create and return an OpenSearch client."""
-    client = OpenSearch(
-        hosts=[{"host": OPENSEARCH_HOST, "port": OPENSEARCH_PORT}],
-        http_auth=(OPENSEARCH_USER, OPENSEARCH_PASSWORD)
-        if OPENSEARCH_USER and OPENSEARCH_PASSWORD
-        else None,
-        use_ssl=OPENSEARCH_USE_TLS,
-        verify_certs=OPENSEARCH_VERIFY_CERTS,
-        ssl_show_warn=False,
-        connection_class=RequestsHttpConnection,
-    )
-    return client
+    """Create and return an OpenSearch client.
+
+    Uses the repo's one shared connection-kwargs builder (app.core.opensearch_auth)
+    rather than constructing settings inline -- see app/core/CLAUDE.md: "the single
+    builder for every OpenSearch(...) client ... Don't build a client inline again."
+    This script previously carried its own second hardcoded admin/admin fallback
+    (issue #858).
+    """
+    kwargs = opensearch_connection_kwargs(connection_class=RequestsHttpConnection)
+    return OpenSearch(**kwargs)
 
 
 def create_transcript_index(client):

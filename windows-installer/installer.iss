@@ -12,7 +12,7 @@
 #define MyAppName "OpenTranscribe"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "OpenTranscribe Project"
-#define MyAppURL "https://github.com/davidamacey/opentranscribe"
+#define MyAppURL "https://github.com/attevon-llc/OpenTranscribe"
 #define MyAppExeName "run_opentranscribe.bat"
 #define MyAppExeUninstallName "uninstall_opentranscribe.bat"
 ; CHANGE THIS PATH to where you extracted the build folder on Windows

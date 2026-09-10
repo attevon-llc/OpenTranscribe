@@ -1566,3 +1566,12 @@ DIAR_NATIVE_SHARED_DIR_DEFAULT = "/scratch/opentranscribe/diar"
 # ordinary per-file dir would eventually rmtree an in-flight handoff WAV out from under a
 # running job (issue #661 E2 phase 1.2).
 RESERVED_SCRATCH_NAMESPACES = frozenset({"engine", "diar"})
+
+# Coarse buckets the SPA's `file_type` filter sends, mapped to the MIME family prefix that
+# actually appears in the indexed/stored `content_type` field (`audio/mpeg`, `video/mp4`, ...).
+# The single source of truth for both the search plane (hybrid_search_service's
+# _file_type_filter_clause) and the gallery plane (files/filtering.py's
+# apply_file_type_filter) — issue #871. They used to keep separate copies, and only the
+# search plane's got the #463 fix that makes an unrecognized value narrow to nothing instead
+# of being silently dropped.
+FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}

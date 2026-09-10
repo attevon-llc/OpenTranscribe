@@ -274,14 +274,30 @@ def cancel_active_task(db: Session, file_id: int) -> bool:
         file_id: ID of the media file
 
     Returns:
-        True if task was cancelled, False otherwise
+        True if the DB row was updated to CANCELLED, False otherwise. This is
+        NOT a guarantee the underlying Celery task actually stopped running --
+        see the ``revoke()`` call below.
     """
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file or not media_file.active_task_id:
         return False
 
     try:
-        # Revoke the Celery task
+        # Best-effort only (issue #823): Celery's terminate=True sends a signal
+        # to the pool's worker to kill the running task. Every GPU queue (gpu,
+        # gpu-transcribe, gpu-diarize) and the redaction queue run
+        # --pool=threads by default, and CPython cannot deliver a signal to an
+        # arbitrary thread -- so for a task on any of those queues this call is
+        # a NO-OP and the task keeps running (and holding the GPU) in the
+        # background even though the DB is about to be marked CANCELLED below.
+        # A task on a prefork worker (cpu-processor, cloud-asr) IS genuinely
+        # terminated by this call.
+        #
+        # The real fix is a cooperative-abort checkpoint the task itself reads
+        # at safe boundaries -- see issue #809 (open, unimplemented), which
+        # builds exactly that mechanism for the worker-shutdown trigger. Do
+        # not build a second abort mechanism here; route user-cancel through
+        # #809's checkpoint once it exists.
         celery_app.control.revoke(media_file.active_task_id, terminate=True)
 
         # Update task status in database
@@ -298,7 +314,11 @@ def cancel_active_task(db: Session, file_id: int) -> bool:
         media_file.cancellation_requested = False
 
         db.commit()
-        logger.info(f"Successfully cancelled task for file {file_id}")
+        logger.info(
+            f"Cancellation requested for file {file_id}: DB marked CANCELLED. "
+            f"Underlying task termination is best-effort and not guaranteed "
+            f"for a --pool=threads worker (issue #823)."
+        )
         return True
 
     except Exception as e:

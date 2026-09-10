@@ -18,6 +18,11 @@
   export let segment: Segment;
   export let speakers: Speaker[] = [];
   export let mediaFileUuid: string = '';
+  // Issue #837 — a transcript search match on the speaker's name/label is counted
+  // and navigable but was never visually confirmed. `.search-match`/`.current-match`
+  // are the shared highlight classes from src/styles/search.css.
+  export let highlighted: boolean = false;
+  export let isCurrentMatch: boolean = false;
 
   const dispatch = createEventDispatcher();
   let triggerButton: HTMLButtonElement;
@@ -647,6 +652,8 @@
   >
     <div
       class="segment-speaker"
+      class:search-match={highlighted && !isCurrentMatch}
+      class:current-match={isCurrentMatch}
       style="background-color: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').bg}; border-color: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').border}; --speaker-light: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').textLight}; --speaker-dark: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').textDark};"
     >
       {triggerLabel}
@@ -777,6 +784,18 @@
 
   :global([data-theme='dark']) .segment-speaker {
     color: var(--speaker-dark);
+  }
+
+  /* Issue #837 — the chip's own inline background-color (speaker colour) would win
+     over .search-match/.current-match's background (src/styles/search.css), since an
+     inline style always beats a class selector. A ring is layered on top instead so
+     the highlight is visible without fighting the speaker colour. */
+  .segment-speaker.search-match {
+    box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.85);
+  }
+
+  .segment-speaker.current-match {
+    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.9);
   }
 
   .dropdown-arrow {

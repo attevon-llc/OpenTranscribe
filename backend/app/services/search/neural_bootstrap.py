@@ -62,8 +62,13 @@ class BootstrapResult:
 
 
 def _managed_embedding_mode() -> bool:
-    """Whether the embedding model is owned by the OpenSearch domain, not by us."""
-    return settings.OPENSEARCH_EMBEDDING_MODE.strip().lower() == "managed"
+    """Whether the embedding model is owned by the OpenSearch domain, not by us.
+
+    ``Settings._validate_embedding_mode`` already normalizes (strip + lower) and
+    refuses anything outside {"local", "managed"} at construction time, so the
+    value read here is always one of the two — no second normalization.
+    """
+    return settings.OPENSEARCH_EMBEDDING_MODE == "managed"
 
 
 def neural_search_ready() -> bool:

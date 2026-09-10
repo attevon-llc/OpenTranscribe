@@ -613,6 +613,7 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     # Error handling fields
     error_category: str | None = None  # Error category for user-friendly handling
     error_suggestions: list[str] | None = None  # User-friendly error suggestions
+    user_message: str | None = None  # User-friendly error description (issue #842)
     is_retryable: bool | None = None  # Whether the error is retryable
 
 

@@ -17,6 +17,7 @@ from typing import Any
 from nltk.stem import SnowballStemmer
 
 from app.core.config import settings
+from app.core.constants import FILE_TYPE_MIME_PREFIXES
 from app.core.constants import SEARCH_CACHE_MAX_SIZE
 from app.core.constants import SEARCH_CACHE_TTL_SECONDS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
@@ -740,12 +741,6 @@ def _append_range_filter(
     filters.append({"range": {field: range_clause}})
 
 
-#: Coarse buckets the SPA's ``file_type`` filter sends today, mapped to the MIME
-#: family prefix that actually appears in the indexed ``content_type`` field
-#: (``audio/mpeg``, ``video/mp4``, ...). See :func:`_file_type_filter_clause`.
-_FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
-
-
 def _file_type_filter_clause(file_type: list[str]) -> dict[str, Any]:
     """Match ``content_type`` against coarse file-type filters (issue #463 lane).
 
@@ -773,7 +768,7 @@ def _file_type_filter_clause(file_type: list[str]) -> dict[str, Any]:
     """
     should: list[dict[str, Any]] = []
     for value in file_type:
-        prefix = _FILE_TYPE_MIME_PREFIXES.get(value.lower())
+        prefix = FILE_TYPE_MIME_PREFIXES.get(value.lower())
         if prefix:
             should.append({"prefix": {"content_type": prefix}})
         else:

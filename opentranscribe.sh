@@ -1649,6 +1649,13 @@ case "${1:-help}" in
         if declare -F ensure_minio_kms_secret >/dev/null; then
             ensure_minio_kms_secret ".env"
         fi
+        # Unconditional owner-only lock (issue #857) -- not reachable via
+        # ensure_minio_kms_secret alone once a real key is already in place.
+        # Same guard rationale as above: an install whose scripts/common.sh
+        # predates this fix should still be able to `start`, just without it.
+        if declare -F ensure_env_permissions >/dev/null; then
+            ensure_env_permissions ".env"
+        fi
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
         # Plain statement, not `$(...)`: get_compose_files() calls this too, but from
         # inside a command substitution, where the DEPLOYMENT_MODE export dies with the

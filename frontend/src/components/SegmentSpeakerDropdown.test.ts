@@ -92,6 +92,33 @@ describe('trigger label', () => {
   });
 });
 
+describe('search-match highlighting (issue #837)', () => {
+  it('carries no highlight class by default', () => {
+    const { container } = render(SegmentSpeakerDropdown, { props: { segment: segment() } });
+    const chip = container.querySelector('.segment-speaker') as HTMLElement;
+    expect(chip.classList.contains('search-match')).toBe(false);
+    expect(chip.classList.contains('current-match')).toBe(false);
+  });
+
+  it('applies .search-match when highlighted but not the current match', () => {
+    const { container } = render(SegmentSpeakerDropdown, {
+      props: { segment: segment(), highlighted: true, isCurrentMatch: false },
+    });
+    const chip = container.querySelector('.segment-speaker') as HTMLElement;
+    expect(chip.classList.contains('search-match')).toBe(true);
+    expect(chip.classList.contains('current-match')).toBe(false);
+  });
+
+  it('applies .current-match (not .search-match) when it is the active match', () => {
+    const { container } = render(SegmentSpeakerDropdown, {
+      props: { segment: segment(), highlighted: true, isCurrentMatch: true },
+    });
+    const chip = container.querySelector('.segment-speaker') as HTMLElement;
+    expect(chip.classList.contains('current-match')).toBe(true);
+    expect(chip.classList.contains('search-match')).toBe(false);
+  });
+});
+
 describe('open / close', () => {
   it('opens a portal menu on trigger click and locks scroll', async () => {
     const { container } = render(SegmentSpeakerDropdown, {

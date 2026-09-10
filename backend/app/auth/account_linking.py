@@ -57,6 +57,28 @@ all. That is a decision an administrator makes, not one an external directory
 makes on its own — and it is also the fix for a source that can never assert
 ``email_verified`` in the first place (Authentik hardcodes it ``false`` for every
 account; see the endpoint's docstring).
+
+Two refusals, two remedies (issue #867)
+---------------------------------------
+The provider-ID branch below needs a *different* remedy, and for a long time it had
+none at all — which made an ordinary IdP-side email change a **permanent lockout**.
+``assert_provider_id_link_permitted`` refuses when the source's asserted email no
+longer agrees with the stored one, and it runs **before** every provider's
+profile-refresh code (``oidc/provisioning._update_oidc_user`` and its four siblings),
+so the stored address can never catch up on its own. The self-heal
+"log in successfully and your profile updates" is unreachable by construction: every
+retry re-runs the same sequence to the same 401.
+
+| Refusal | What is wrong | Remedy |
+|---|---|---|
+| email-match branch | the account carries no provider identifier | ``PUT /api/admin/users/{uuid}/link-identity`` |
+| provider-ID branch | the identifier matches, the stored email is stale | ``PUT /api/admin/users/{uuid}/external-email`` |
+
+Both are super_admin, both audited, both refuse a ``super_admin`` target, and both
+exist because the alternative — trusting whatever the source asserts — is the
+takeover this module was written to refuse. The second is deliberately narrow: it
+refuses an account carrying no external identifier at all, so it is a remedy for a
+linked identity and not a general "rewrite anyone's login email" power.
 """
 
 import logging
@@ -73,6 +95,25 @@ logger = logging.getLogger(__name__)
 
 #: Audit ``error_code`` for a refused email-match link.
 LINK_REFUSED_ERROR_CODE = "ACCOUNT_LINK_REFUSED"
+
+
+def emails_agree(asserted: str | None, stored: str | None) -> bool:
+    """Whether an externally-asserted address names the same mailbox as a stored one.
+
+    Case- and whitespace-insensitive, because neither carries identity: an IdP that
+    re-cases ``Alice@Example.com`` is not asserting a different person, and treating
+    it as one locked the account out forever (issue #867 — the refusal happens before
+    every provider's profile refresh, so the stored value can never catch up).
+
+    Deliberately the same comparison
+    ``api/endpoints/auth/dependencies._enforce_proxy_identity_consistency`` already
+    makes for the same question; this is that rule named, not a second one. Two
+    absent values do **not** agree — a caller with nothing to compare must take its
+    own fail-open decision explicitly rather than inherit one from here.
+    """
+    if not asserted or not stored:
+        return False
+    return asserted.strip().lower() == stored.strip().lower()
 
 
 def assert_email_link_permitted(
@@ -180,6 +221,25 @@ def assert_provider_id_link_permitted(
        function must otherwise leave alone — the same fail-open-on-absence shape
        already used by the header-trust groups check elsewhere in this package.
 
+    ⚠️ **The comparison is normalised** (``.strip().lower()``), matching
+    ``api/endpoints/auth/dependencies._enforce_proxy_identity_consistency``, which
+    already compares an asserted address to a stored one that way. It was an exact
+    byte compare, so an IdP re-casing an address asserted a *different person* as
+    far as this function was concerned and locked the account out permanently
+    (issue #867). Two different people never differ only by case, so this narrows
+    the false-positive surface without widening the true one.
+
+    **Refusal is not recoverable by logging in again, by design** — the gate sits
+    *before* every provider's profile-refresh code, so the stored email cannot
+    catch up on its own; making it self-heal would auto-accept whatever the source
+    asserts, which is exactly the takeover this guard exists to refuse. The remedy
+    is deliberate and administrative: ``PUT /api/admin/users/{uuid}/external-email``
+    (super_admin), the sibling of the ``link-identity`` remedy above. The audit
+    record below therefore carries **both** addresses under
+    ``provider_id_email_mismatch``, because deciding between "a legitimate rename"
+    and "a recycled identifier now held by someone else" is the whole judgement
+    being escalated to a human, and it cannot be made from one address.
+
     Args:
         user: The pre-existing ``User`` row the provider identifier matched.
         provider: Auth-type string of the external source, for the log/audit record.
@@ -197,7 +257,7 @@ def assert_provider_id_link_permitted(
     reason: str | None = None
     if str(getattr(user, "role", "")) == ROLE_SUPER_ADMIN:
         reason = "super_admin_never_linked"
-    elif asserted_email and asserted_email != getattr(user, "email", None):
+    elif asserted_email and not emails_agree(asserted_email, getattr(user, "email", None)):
         reason = "provider_id_email_mismatch"
 
     if reason is None:
@@ -210,17 +270,24 @@ def assert_provider_id_link_permitted(
         getattr(user, "email", "?"),
         reason,
     )
+    details = {
+        "auth_method": provider,
+        "reason": reason,
+        "matched_by": "provider_id",
+    }
+    if reason == "provider_id_email_mismatch":
+        # Both addresses, because the operator's decision — legitimate rename vs
+        # reassigned identifier — cannot be made from either one alone. See the
+        # docstring; the remedy is PUT /api/admin/users/{uuid}/external-email.
+        details["asserted_email"] = asserted_email or ""
+        details["stored_email"] = str(getattr(user, "email", "") or "")
     audit_logger.log(
         event_type=AuditEventType.AUTH_LOGIN_FAILURE,
         outcome=AuditOutcome.FAILURE,
         user_id=getattr(user, "id", None),
         username=source_identifier,
         error_code=LINK_REFUSED_ERROR_CODE,
-        details={
-            "auth_method": provider,
-            "reason": reason,
-            "matched_by": "provider_id",
-        },
+        details=details,
     )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

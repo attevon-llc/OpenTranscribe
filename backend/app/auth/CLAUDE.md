@@ -187,6 +187,21 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
   `email_verified=False` (`saml/assertion.py:SAML_ASSERTS_EMAIL_VERIFIED`, matching PKI/LDAP) —
   SAML has no standard "this address is verified" assertion, so an email-match link is refused
   unconditionally rather than being an admin-togglable setting someone could open by mistake.
+  **Two refusals, two remedies, and neither self-heals — by design** (issue #867). The
+  provider-ID branch refuses when the source's asserted email no longer matches the stored one,
+  and that check runs *before* every provider's profile-refresh code, so an ordinary IdP-side
+  rename is a **permanent** lockout until an administrator acts:
+  | Refusal | What is wrong | Remedy (both super_admin, both audited, both refuse a `super_admin` target) |
+  |---|---|---|
+  | email-match | the account carries no provider identifier | `PUT /api/admin/users/{uuid}/link-identity` |
+  | provider-ID | the identifier matches, the stored email is stale | `PUT /api/admin/users/{uuid}/external-email` |
+  Both are reachable from the same "Link an external identity" modal in Settings → Users.
+  The email remedy **refuses an account carrying no external identifier**, so it is a remedy for
+  a linked identity and not a general "rewrite anyone's login email" power — for a `local`
+  account the email *is* the credential identity. The comparison itself is
+  `account_linking.emails_agree` (case- and whitespace-insensitive, the same rule
+  `dependencies._enforce_proxy_identity_consistency` already applied): it was a byte-exact
+  compare, so an IdP that merely re-cased an address locked the account out.
 - `approval.py` — the `approval_status` state machine and `initial_approval_status`, the one
   function every account-creation path asks "does this start pending?".
 - `roles.py` — the authorization contract (read this first, it's 35 lines).

@@ -15,8 +15,12 @@ vi.mock('$stores/toast', () => ({
 }));
 
 const linkExternalIdentity = vi.fn();
+const updateExternalEmail = vi.fn();
 vi.mock('$lib/api/admin', () => ({
-  AdminApi: { linkExternalIdentity: (...args: unknown[]) => linkExternalIdentity(...args) },
+  AdminApi: {
+    linkExternalIdentity: (...args: unknown[]) => linkExternalIdentity(...args),
+    updateExternalEmail: (...args: unknown[]) => updateExternalEmail(...args),
+  },
 }));
 
 import LinkIdentityModal from './LinkIdentityModal.svelte';
@@ -26,6 +30,7 @@ const targetUser = { uuid: 'user-uuid', full_name: 'Jane Doe', email: 'jane@exam
 
 beforeEach(() => {
   linkExternalIdentity.mockReset();
+  updateExternalEmail.mockReset();
   (toastStore.success as ReturnType<typeof vi.fn>).mockReset();
   (toastStore.error as ReturnType<typeof vi.fn>).mockReset();
 });
@@ -113,5 +118,106 @@ describe('LinkIdentityModal (P1.3)', () => {
 
     expect(screen.getByLabelText('userManagement.linkIdentity.provider')).toHaveValue('oidc');
     expect(screen.getByLabelText('userManagement.linkIdentity.identifierOidc')).toHaveValue('');
+  });
+
+  describe('the IdP-email-change remedy (issue #867)', () => {
+    async function switchToEmailMode() {
+      await fireEvent.change(screen.getByLabelText('userManagement.linkIdentity.mode'), {
+        target: { value: 'email' },
+      });
+    }
+
+    it('offers the identifier remedy by default, not the email one', () => {
+      renderModal();
+
+      expect(screen.getByLabelText('userManagement.linkIdentity.mode')).toHaveValue('identifier');
+      expect(
+        screen.queryByLabelText('userManagement.linkIdentity.emailLabel')
+      ).not.toBeInTheDocument();
+    });
+
+    it('swaps the form to the email remedy and hides the identifier fields', async () => {
+      renderModal();
+      await switchToEmailMode();
+
+      expect(screen.getByLabelText('userManagement.linkIdentity.emailLabel')).toBeInTheDocument();
+      expect(
+        screen.queryByLabelText('userManagement.linkIdentity.identifierOidc')
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText('userManagement.linkIdentity.provider')
+      ).not.toBeInTheDocument();
+    });
+
+    it('submits the new address to the email endpoint, not the link-identity one', async () => {
+      updateExternalEmail.mockResolvedValue({
+        success: true,
+        email: 'jane.renamed@example.com',
+        previous_email: 'jane@example.com',
+      });
+      renderModal();
+      await switchToEmailMode();
+
+      await fireEvent.input(screen.getByLabelText('userManagement.linkIdentity.emailLabel'), {
+        target: { value: '  jane.renamed@example.com  ' },
+      });
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'userManagement.linkIdentity.emailButton' })
+      );
+
+      await waitFor(() => {
+        expect(updateExternalEmail).toHaveBeenCalledWith('user-uuid', 'jane.renamed@example.com');
+      });
+      expect(linkExternalIdentity).not.toHaveBeenCalled();
+      expect(toastStore.success).toHaveBeenCalled();
+    });
+
+    it('keeps the submit button disabled until an address is typed', async () => {
+      renderModal();
+      await switchToEmailMode();
+
+      const submit = screen.getByRole('button', {
+        name: 'userManagement.linkIdentity.emailButton',
+      });
+      expect(submit).toBeDisabled();
+
+      await fireEvent.input(screen.getByLabelText('userManagement.linkIdentity.emailLabel'), {
+        target: { value: 'jane.renamed@example.com' },
+      });
+      expect(submit).not.toBeDisabled();
+    });
+
+    it('surfaces the backend refusal rather than reporting success', async () => {
+      updateExternalEmail.mockRejectedValue({
+        response: { data: { detail: 'That email address is already in use by another account' } },
+      });
+      renderModal();
+      await switchToEmailMode();
+
+      await fireEvent.input(screen.getByLabelText('userManagement.linkIdentity.emailLabel'), {
+        target: { value: 'taken@example.com' },
+      });
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'userManagement.linkIdentity.emailButton' })
+      );
+
+      await waitFor(() => {
+        expect(toastStore.error).toHaveBeenCalled();
+      });
+      expect(toastStore.success).not.toHaveBeenCalled();
+    });
+
+    it('re-seeds back to the identifier remedy each time it opens', async () => {
+      const { rerender } = renderModal();
+      await switchToEmailMode();
+      await fireEvent.input(screen.getByLabelText('userManagement.linkIdentity.emailLabel'), {
+        target: { value: 'stale@example.com' },
+      });
+
+      await rerender({ isOpen: false, targetUser });
+      await rerender({ isOpen: true, targetUser });
+
+      expect(screen.getByLabelText('userManagement.linkIdentity.mode')).toHaveValue('identifier');
+    });
   });
 });

@@ -374,6 +374,64 @@ def test_completion_flips_status_and_records_the_processing_provenance(db_sessio
     assert media_file.duration == pytest.approx(42.5)
 
 
+def test_completion_does_not_clobber_a_file_quarantined_mid_transcription(db_session, media_file):
+    """Issue #824 (#664 item 3): a file quarantined while still transcribing must
+    not have its status/completed_at overwritten by this unrelated pipeline
+    write. completed_at is the column the retention window is measured from --
+    clobbering it here would silently restart that clock, and clobbering status
+    would erase the QUARANTINED display state for a file under active
+    enforcement, both while is_quarantined/legal_hold stay True underneath."""
+    media_file.status = FileStatus.QUARANTINED
+    media_file.is_quarantined = True
+    media_file.legal_hold = True
+    media_file.completed_at = None
+    db_session.commit()
+
+    update_media_file_transcription_status(
+        db_session,
+        media_file.id,
+        [_segment(0.0, 10.0, "hello")],
+        language="en",
+    )
+
+    db_session.refresh(media_file)
+    assert media_file.status == FileStatus.QUARANTINED, (
+        "quarantine display status was clobbered by an unrelated pipeline write"
+    )
+    assert media_file.completed_at is None, (
+        "completed_at was written despite the file being quarantined -- this is "
+        "the retention-clock column, and restarting it defeats the sweep's own "
+        "legal_hold/is_quarantined predicate (issue #664)"
+    )
+    assert media_file.is_quarantined is True
+    assert media_file.legal_hold is True
+    # Everything unrelated to the guard still writes normally -- this is not a
+    # blanket "skip the whole function for a held file" guard.
+    assert media_file.language == "en"
+    assert media_file.duration == pytest.approx(10.0)
+
+
+def test_completion_still_completes_a_file_under_legal_hold_but_not_quarantined(
+    db_session, media_file
+):
+    """legal_hold alone (no active quarantine) also guards the write -- e.g. a
+    file already flagged for a pending legal matter before transcription even
+    reached this point."""
+    media_file.legal_hold = True
+    media_file.completed_at = None
+    db_session.commit()
+
+    update_media_file_transcription_status(
+        db_session, media_file.id, [_segment(0.0, 5.0, "x")], language="en"
+    )
+
+    db_session.refresh(media_file)
+    assert media_file.status == FileStatus.PROCESSING, (
+        "status was written despite legal_hold=True guarding the completion write"
+    )
+    assert media_file.completed_at is None
+
+
 def test_omitted_provenance_fields_do_not_erase_what_is_already_stored(db_session, media_file):
     """``None`` means "no new information", not "clear the column".
 

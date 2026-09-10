@@ -131,6 +131,84 @@ def test_thumbnail_public_file_no_auth_passes_authz(client, normal_user, db_sess
         assert "public" in response.headers["Cache-Control"]
 
 
+# ---------------------------------------------------------------------------
+# GET /api/files/{uuid}/thumbnail — abuse/DMCA takedown gate (issue #817)
+#
+# The route resolves with ``get_file_by_uuid`` (no permission helper), so it does
+# NOT inherit ``get_file_by_uuid_with_permission``'s quarantine 404. Before the
+# fix, ``is_public`` short-circuited the whole authorization block, so a file
+# taken down for e.g. a DMCA claim kept streaming its thumbnail to anonymous
+# callers. ``detail`` is the discriminator here: "File not found" means the
+# takedown gate refused the request, while any other 404 detail (or a 200) means
+# the request reached the storage layer — i.e. a real object would have streamed.
+# ---------------------------------------------------------------------------
+
+
+def test_thumbnail_quarantined_public_file_404s_for_anonymous(client, normal_user, db_session):
+    """A quarantined PUBLIC file's thumbnail is refused for an unauthenticated caller.
+
+    Watched red before the fix: the request fell through the ``is_public`` branch
+    into ``get_thumbnail_streaming_response`` and answered "Thumbnail not found in
+    storage" (MinIO reachable) / streamed mock bytes (``SKIP_S3``) — proof that
+    authorization was passed and a present object would have been served.
+    """
+    media_file = _make_file(
+        db_session,
+        normal_user,
+        is_public=True,
+        is_quarantined=True,
+        thumbnail_path="thumbs/missing.webp",
+    )
+    response = client.get(f"/api/files/{media_file.uuid}/thumbnail")
+    assert response.status_code == status.HTTP_404_NOT_FOUND, response.text
+    assert response.json()["detail"] == "File not found", response.text
+
+
+def test_thumbnail_quarantined_private_file_404s_for_its_owner(
+    client, user_token_headers, normal_user, db_session
+):
+    """Quarantine hides the file from its OWNER too — 404, not 403.
+
+    Matches ``takedown_service.is_hidden_for``: a taken-down file must be
+    indistinguishable from a missing one for every non-admin, the owner included.
+    """
+    media_file = _make_file(
+        db_session, normal_user, is_quarantined=True, thumbnail_path="thumbs/missing.webp"
+    )
+    response = client.get(f"/api/files/{media_file.uuid}/thumbnail", headers=user_token_headers)
+    assert response.status_code == status.HTTP_404_NOT_FOUND, response.text
+    assert response.json()["detail"] == "File not found", response.text
+
+
+def test_thumbnail_quarantined_file_still_reachable_by_admin(
+    client, admin_token_headers, normal_user, db_session
+):
+    """An admin keeps review visibility — the gate must not hide it from them.
+
+    The control for the fix's own regression risk: folding quarantine exclusion in
+    without an ``is_admin`` bypass would take the takedown-review surface away from
+    the only role that can release the file. ``thumbnail_path=None`` makes the
+    assertion storage-independent — reaching the "no thumbnail" branch at all
+    proves the takedown gate let the admin through.
+    """
+    media_file = _make_file(db_session, normal_user, is_quarantined=True, thumbnail_path=None)
+    response = client.get(f"/api/files/{media_file.uuid}/thumbnail", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_404_NOT_FOUND, response.text
+    assert response.json()["detail"] == "Thumbnail not available for this file", response.text
+
+
+def test_thumbnail_non_quarantined_public_file_unaffected(client, normal_user, db_session):
+    """Community invariance: a file that was never taken down is unchanged.
+
+    Without this control the three tests above would also pass if the gate simply
+    404'd every thumbnail.
+    """
+    media_file = _make_file(db_session, normal_user, is_public=True, thumbnail_path=None)
+    response = client.get(f"/api/files/{media_file.uuid}/thumbnail")
+    assert response.status_code == status.HTTP_404_NOT_FOUND, response.text
+    assert response.json()["detail"] == "Thumbnail not available for this file", response.text
+
+
 def test_thumbnail_nonexistent_404(client, user_token_headers):
     """An unknown UUID is a 404 'File not found' (via get_file_by_uuid)."""
     response = client.get(f"/api/files/{uuid.uuid4()}/thumbnail", headers=user_token_headers)

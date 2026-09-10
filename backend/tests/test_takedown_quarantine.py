@@ -7,7 +7,16 @@ level):
 
   * A quarantined file 404s for its OWNER on the per-resource access gate
     (``get_file_by_uuid_with_permission``) — and on every surface that goes
-    through it (detail/stream/download/thumbnail).
+    through it (detail/stream/download).
+
+    ⚠️ ``GET /files/{uuid}/thumbnail`` does **not** go through that helper (it
+    resolves with plain ``get_file_by_uuid`` because it must also serve
+    anonymous callers on public files), so this module's gate tests say nothing
+    about it. That was a false coverage claim here for as long as issue #817 was
+    open, during which a taken-down public file streamed its thumbnail to
+    unauthenticated callers. It now calls ``is_hidden_for`` directly, and the
+    route-level regression tests for it live beside the other thumbnail tests in
+    ``tests/api/test_files_streaming.py`` — not here.
   * An ADMIN still resolves the quarantined file (for review).
   * Releasing restores access for the owner and clears the legal-hold.
   * ``exclude_quarantined`` drops the file from a list/gallery query for normal

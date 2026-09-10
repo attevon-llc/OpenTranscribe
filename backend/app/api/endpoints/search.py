@@ -467,15 +467,33 @@ def get_available_filters(
     non-admins, including the file's own owner — same admin bypass as the
     results page's ``_drop_quarantined_search_hits``.
 
+    That exclusion **fails closed** (issue #876): if the quarantined-file set
+    cannot be resolved completely — the DB is unreachable, or there are more
+    quarantined files than one ``terms`` clause can carry — this answers **503**
+    rather than serving buckets that may have been built from taken-down
+    content. Same posture as ``_summary_search_payload``'s masking outage above.
+
     Returns:
         Dict with speakers, tags, and date_range filter options.
+
+    Raises:
+        HTTPException: 503 when the quarantine exclusion could not be applied.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
+    from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
 
     search_service = HybridSearchService()
-    return search_service.get_available_filters(
-        user_id=ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.user.is_admin
-    )
+    try:
+        return search_service.get_available_filters(
+            user_id=ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.user.is_admin
+        )
+    except QuarantineExclusionUnavailableError as e:
+        # Literal 503 to match _summary_search_payload's masking-outage raise
+        # above; this module does not import `fastapi.status`.
+        raise HTTPException(
+            status_code=503,
+            detail="Search filters are temporarily unavailable.",
+        ) from e
 
 
 def _no_pending(message: str) -> dict[str, Any]:

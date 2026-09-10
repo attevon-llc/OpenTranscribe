@@ -718,6 +718,41 @@ pin_gpu_split_profile() {
     fi
 }
 
+# Single entry point for the FOUR calls every case arm below needs before it resolves
+# the compose chain and calls `docker compose` — the arm64 preflight, then the two
+# DIAR_NATIVE_IMAGE pins, then the GPU-split profile export. Issue #896's remaining
+# gap: `arm64_deployment_preflight` used to be called explicitly only by the `start)`
+# arm, plus once more inside `get_compose_files()` itself. That second call does not
+# count for every OTHER arm: `get_compose_files()` is always invoked as
+# `compose_files=$(get_compose_files)`, a command substitution, and the preflight's
+# `export DEPLOYMENT_MODE=lite` dies with that subshell the instant it exits — before
+# the `docker compose` invocation that needs it, and before
+# `pin_diar_native_image_for_lite` (which reads `effective_deployment_mode()`) ever
+# sees it. So `stop`/`restart`/`status`/`compose-files`/`logs`/`update`/`update-full`/
+# `clean`/`shell`/`health` all resolved DIAR_NATIVE_IMAGE against whatever
+# DEPLOYMENT_MODE happened to already be on disk — silently skipping the lite pin on
+# an arm64 host that had not already run `start` to persist it.
+#
+# Order is load-bearing: arm64_deployment_preflight MUST run FIRST, because it is the
+# one call that can change DEPLOYMENT_MODE, and pin_diar_native_image_for_lite's
+# answer depends on effective_deployment_mode() having already seen that change. The
+# Blackwell/gpu-split pins do not depend on the arm64 preflight, but keeping a single
+# fixed order here means every call site behaves identically rather than each one
+# choosing its own — which is exactly how the missing-preflight gap this closes came
+# to exist in the first place (11 of 12 call sites had it right for the two DIAR_NATIVE
+# pins and the gpu-split pin, and wrong for arm64 alone).
+#
+# MUST be called as a plain statement, never through `$(...)` — same subshell hazard
+# as every function it wraps: an export made inside a command-substitution subshell
+# dies with that subshell before the `docker compose` invocation in the SAME calling
+# shell ever runs.
+apply_deployment_pins() {
+    arm64_deployment_preflight
+    pin_diar_native_image_for_blackwell
+    pin_diar_native_image_for_lite
+    pin_gpu_split_profile
+}
+
 # Resolve where the diar-native ONNX/PLDA export lives (or will land), from .env alone.
 #
 # This is the shipped, standalone script, so — unlike opentr.sh's dev-only same-named
@@ -764,6 +799,15 @@ get_compose_files() {
     # a teardown that resolves a different overlay set than the bring-up addresses
     # a different set of services. Its banners go to stderr like every other banner
     # in this function, so `compose-files` still prints only the chain on stdout.
+    #
+    # Belt-and-braces, not the primary fix: every case arm below now calls
+    # apply_deployment_pins() (which runs this same preflight) as a plain statement
+    # BEFORE resolving `compose_files=$(get_compose_files)`, so DEPLOYMENT_MODE=lite
+    # is already exported in the calling shell by the time this function's own call
+    # runs. This call keeps get_compose_files() correct on its own even if some
+    # future caller forgets apply_deployment_pins — it just can no longer be the
+    # ONLY thing propagating the export, since a call from inside this subshell can
+    # never escape it (issue #896's remaining gap).
     arm64_deployment_preflight
 
     # Production deployment always uses prod overrides
@@ -1657,14 +1701,11 @@ case "${1:-help}" in
             ensure_env_permissions ".env"
         fi
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
-        # Plain statement, not `$(...)`: get_compose_files() calls this too, but from
-        # inside a command substitution, where the DEPLOYMENT_MODE export dies with the
-        # subshell. `docker compose up` below interpolates ${BACKEND_LITE_IMAGE}/
+        # Plain statement, not `$(...)`: get_compose_files() calls arm64_deployment_preflight
+        # too, but from inside a command substitution, where the DEPLOYMENT_MODE export dies
+        # with the subshell. `docker compose up` below interpolates ${BACKEND_LITE_IMAGE}/
         # ${DEPLOYMENT_MODE} itself, so the export has to exist in THIS shell as well.
-        arm64_deployment_preflight
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         docker compose $compose_files up -d
         echo -e "${GREEN}✅ OpenTranscribe started!${NC}"
@@ -1673,9 +1714,7 @@ case "${1:-help}" in
     stop)
         check_environment
         echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         ot_drain_gpu_workers "$compose_files"
         docker compose $compose_files down
@@ -1688,9 +1727,7 @@ case "${1:-help}" in
         # `docker compose` step runs and reports its own, more specific error.
         fix_model_cache_permissions || true
         echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         ot_drain_gpu_workers "$compose_files"
         docker compose $compose_files down
@@ -1701,9 +1738,7 @@ case "${1:-help}" in
     status)
         check_environment
         echo -e "${BLUE}📊 Container Status:${NC}"
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         docker compose $compose_files ps
         print_diar_native_status "$compose_files"
@@ -1727,9 +1762,7 @@ case "${1:-help}" in
         # is exactly the chain and stays composable:
         #   docker compose $(./opentranscribe.sh compose-files 2>/dev/null) ps
         check_environment
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         get_compose_files
         ;;
     download-models)
@@ -1759,9 +1792,7 @@ case "${1:-help}" in
     logs)
         check_environment
         service=${2:-}
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
 
         if [ -z "$service" ]; then
@@ -1857,9 +1888,7 @@ case "${1:-help}" in
             # down, postgres included, so this is the last point a plain
             # `docker compose exec postgres` can reach it.
             if [ "$do_rollback" = true ] && [ "$force_downgrade" = false ]; then
-                pin_diar_native_image_for_blackwell
-                pin_diar_native_image_for_lite
-                pin_gpu_split_profile
+                apply_deployment_pins
                 rollback_compose_files=$(get_compose_files)
                 # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
                 rollback_live_head=$(docker compose $rollback_compose_files exec -T postgres psql -tA \
@@ -1888,9 +1917,7 @@ case "${1:-help}" in
             echo -e "${YELLOW}📥 Updating to the newest images for tag '${current_tag}'...${NC}"
         fi
 
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
 
         preflight_upgrade_env || exit 1
@@ -2048,9 +2075,7 @@ case "${1:-help}" in
         # call above — a failed fix here must not abort this command before the actual
         # `docker compose` step runs and reports its own, more specific error.
         fix_model_cache_permissions || true
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         # Same gate as `update`: refuse while the old stack is still running
         # rather than after it is torn down (#410).
@@ -2110,9 +2135,7 @@ case "${1:-help}" in
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}🗑️  Removing all data...${NC}"
-            pin_diar_native_image_for_blackwell
-            pin_diar_native_image_for_lite
-            pin_gpu_split_profile
+            apply_deployment_pins
             compose_files=$(get_compose_files)
             ot_drain_gpu_workers "$compose_files"
             docker compose $compose_files down -v
@@ -2125,19 +2148,22 @@ case "${1:-help}" in
         check_environment
         service=${2:-backend}
         echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
         ;;
     backup|restore)
         check_environment
         require_db_helpers
-        # No pin_diar_native_image_for_blackwell here, deliberately: this arm never starts
-        # or pulls the diar-native sidecar — backup_database/restore_database only `docker
-        # compose exec` into containers that are already running — so DIAR_NATIVE_IMAGE is
-        # not read by anything this arm does.
+        # No apply_deployment_pins here, deliberately: this arm never starts or pulls the
+        # diar-native sidecar — backup_database/restore_database only `docker compose exec`
+        # into containers that are already running — so DIAR_NATIVE_IMAGE is not read by
+        # anything this arm does. This is the ONE case arm below `case "${1:-help}" in` that
+        # resolves `compose_files=$(get_compose_files)` without a preceding
+        # apply_deployment_pins call, and it is exempt for that reason, not an oversight —
+        # backend/tests/unit/test_opentranscribe_arm64_pin_ordering.py asserts this arm is
+        # the ONLY exemption in the structural "every get_compose_files() consumer applies
+        # the pins first" check, by name, so a second silent exemption would fail loudly.
         compose_files=$(get_compose_files)
 
         # opentr.sh gets these from its prologue `set -a; source ./.env`; this script
@@ -2186,9 +2212,7 @@ case "${1:-help}" in
 
         # Check container status
         echo "Container Status:"
-        pin_diar_native_image_for_blackwell
-        pin_diar_native_image_for_lite
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         docker compose $compose_files ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
 

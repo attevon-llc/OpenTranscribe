@@ -2457,6 +2457,7 @@
   "transcriptModal.closeModalEsc": "Modal schließen (Esc)",
   "transcriptModal.copied": "Kopiert!",
   "transcriptModal.copy": "Kopieren",
+  "transcriptModal.copying": "Wird kopiert…",
   "transcriptModal.copyFailed": "Kopieren fehlgeschlagen",
   "transcriptModal.copyTranscript": "Vollständigen Transkripttext kopieren",
   "transcriptModal.errorTitle": "Fehler beim Laden des Transkripts",

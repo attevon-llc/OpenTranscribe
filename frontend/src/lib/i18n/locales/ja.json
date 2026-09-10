@@ -2741,6 +2741,7 @@
   "videoPlayer.notAvailable": "動画は利用できません。",
   "transcriptModal.title": "完全な文字起こし - {{fileName}}",
   "transcriptModal.copy": "コピー",
+  "transcriptModal.copying": "コピー中…",
   "transcriptModal.copied": "コピーしました！",
   "transcriptModal.copyFailed": "コピーに失敗しました",
   "transcriptModal.noContent": "コンテンツがありません",

@@ -2457,6 +2457,7 @@
   "transcriptModal.closeModalEsc": "Cerrar modal (Esc)",
   "transcriptModal.copied": "Copiado al portapapeles",
   "transcriptModal.copy": "Copiar transcripción",
+  "transcriptModal.copying": "Copiando…",
   "transcriptModal.copyFailed": "Error al copiar",
   "transcriptModal.copyTranscript": "Copiar texto completo de la transcripción",
   "transcriptModal.errorTitle": "Error al Cargar la Transcripción",

@@ -10,6 +10,8 @@
   import axiosInstance from '$lib/axios';
   import { formatDuration } from '$lib/utils/formatting';
   import { loadTxtPrefs, saveTxtPrefs } from '$lib/export/txtExportPrefs';
+  import { requestTranscriptExport } from '$lib/export/requestTranscriptExport';
+  import { copyToClipboard } from '$lib/utils/clipboard';
   import { websocketStore } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
   import {
@@ -1285,6 +1287,64 @@
     showExportConfirmation = true;
   }
 
+  /** Resolved i18n strings the server renders into the export — it stays translation-free. */
+  function exportLabels() {
+    return {
+      speaker_default_label: $t('fileDetail.speakerDefault'),
+      user_comment_label: $t('fileDetail.userComment'),
+      comment_type_label: $t('fileDetail.commentType'),
+      csv_header_default: $t('fileDetail.csvHeaderDefault'),
+      csv_header_with_comments: $t('fileDetail.csvHeaderWithComments'),
+    };
+  }
+
+  // Issue #821: the transcript modal used to build the consolidated transcript in the
+  // browser and copy that. A client-side serializer has nothing to ask about policy, so
+  // the admin `export_locked` floor was bypassed on every copy — and worse when the reader
+  // had "Show original" on, because the store then holds unredacted text. It also copied
+  // only the segments paginated in so far. Same server path as every download format.
+  let copyStatus: 'idle' | 'copying' | 'copied' | 'failed' | 'empty' = 'idle';
+
+  function settleCopyStatus(next: 'copied' | 'failed' | 'empty') {
+    copyStatus = next;
+    // `scheduleTimeout`, not a bare setTimeout: this page's onDestroy cancels every
+    // deferred callback through it, and a stray one firing after teardown is the exact
+    // thing `cancels its pending timers on unmount` pins.
+    scheduleTimeout(() => (copyStatus = 'idle'), 2000);
+  }
+
+  async function handleCopyTranscript() {
+    if (!file?.uuid || copyStatus === 'copying') return;
+    copyStatus = 'copying';
+    try {
+      const { data } = await requestTranscriptExport<string>({
+        fileUuid: file.uuid,
+        format: 'txt',
+        includeComments: false,
+        includeTimestamps: true,
+        includeSpeakers: !diarizationDisabled,
+        showOriginal,
+        labels: exportLabels(),
+        responseType: 'text',
+      });
+      const text = typeof data === 'string' ? data : String(data ?? '');
+      if (!text.trim()) {
+        settleCopyStatus('empty');
+        return;
+      }
+      await copyToClipboard(
+        text,
+        () => settleCopyStatus('copied'),
+        () => settleCopyStatus('failed')
+      );
+    } catch (error: unknown) {
+      // A refusal (503 policy unavailable, 409 redaction scan unfinished) stays a refusal;
+      // falling back to a local copy here would reinstate the bypass this closes.
+      console.error('Error copying transcript:', error);
+      settleCopyStatus('failed');
+    }
+  }
+
   async function processExportWithComments(includeComments: boolean, txtOptions?: { includeTimestamps: boolean; includeSpeakers: boolean }) {
     const format = pendingExportFormat;
     if (!file) return;
@@ -1296,28 +1356,20 @@
       // floor is consulted for every format, not just subtitle downloads. The
       // resolved i18n strings still travel from here — the backend stays
       // translation-free, matching the rest of the API.
-      const response = await axiosInstance.get(`/files/${file.uuid}/export`, {
-        params: {
-          format,
-          include_comments: includeComments,
-          include_timestamps: txtOptions ? txtOptions.includeTimestamps : true,
-          include_speakers: txtOptions ? txtOptions.includeSpeakers : true,
-          speaker_default_label: $t('fileDetail.speakerDefault'),
-          user_comment_label: $t('fileDetail.userComment'),
-          comment_type_label: $t('fileDetail.commentType'),
-          csv_header_default: $t('fileDetail.csvHeaderDefault'),
-          csv_header_with_comments: $t('fileDetail.csvHeaderWithComments'),
-          // Mirrors every other read on this page (transcript/segments/subtitles):
-          // an owner who toggled "Show original" expects the export to match what
-          // they are looking at. The server still refuses this under the admin
-          // export_locked floor regardless of what is sent here.
-          ...(showOriginal ? { redact: false } : {}),
-        },
-        responseType: 'blob',
+      const { data, contentType } = await requestTranscriptExport<BlobPart>({
+        fileUuid: file.uuid,
+        format,
+        includeComments,
+        includeTimestamps: txtOptions ? txtOptions.includeTimestamps : true,
+        includeSpeakers: txtOptions ? txtOptions.includeSpeakers : true,
+        // Mirrors every other read on this page (transcript/segments/subtitles): an owner
+        // who toggled "Show original" expects the export to match what they are looking
+        // at. The server still refuses it under the admin export_locked floor.
+        showOriginal,
+        labels: exportLabels(),
       });
 
-      const contentType = String(response.headers['content-type'] || 'text/plain');
-      const blob = new Blob([response.data], { type: contentType });
+      const blob = new Blob([data], { type: contentType });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -2423,7 +2475,9 @@
     {showRedactionToggle}
     {showOriginal}
     {redactionToggleBusy}
+    {copyStatus}
     on:toggleRedaction={toggleShowOriginal}
+    on:copyTranscript={handleCopyTranscript}
     on:close={() => showTranscriptModal = false}
     on:loadMore={loadMoreSegments}
   />

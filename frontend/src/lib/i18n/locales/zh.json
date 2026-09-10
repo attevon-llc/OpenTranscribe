@@ -2741,6 +2741,7 @@
   "videoPlayer.notAvailable": "不可用",
   "transcriptModal.title": "完整转录 - {{fileName}}",
   "transcriptModal.copy": "复制",
+  "transcriptModal.copying": "正在复制…",
   "transcriptModal.copied": "已复制",
   "transcriptModal.copyFailed": "复制失败",
   "transcriptModal.noContent": "无内容",

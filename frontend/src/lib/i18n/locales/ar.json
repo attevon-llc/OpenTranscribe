@@ -2744,6 +2744,7 @@
   "videoPlayer.notAvailable": "الفيديو غير متوفر.",
   "transcriptModal.title": "النص المفرغ الكامل - {{fileName}}",
   "transcriptModal.copy": "نسخ",
+  "transcriptModal.copying": "جارٍ النسخ…",
   "transcriptModal.copied": "تم النسخ!",
   "transcriptModal.copyFailed": "فشل النسخ",
   "transcriptModal.noContent": "لا يوجد محتوى",

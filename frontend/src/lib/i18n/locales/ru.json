@@ -2731,6 +2731,7 @@
   "videoPlayer.notAvailable": "Видео недоступно.",
   "transcriptModal.title": "Полная транскрипция - {{fileName}}",
   "transcriptModal.copy": "Копировать",
+  "transcriptModal.copying": "Копирование…",
   "transcriptModal.copied": "Скопировано!",
   "transcriptModal.copyFailed": "Ошибка копирования",
   "transcriptModal.noContent": "Нет контента",

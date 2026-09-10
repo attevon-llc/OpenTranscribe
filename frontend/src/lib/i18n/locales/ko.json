@@ -2744,6 +2744,7 @@
   "videoPlayer.notAvailable": "영상을 사용할 수 없습니다.",
   "transcriptModal.title": "전체 전사 결과 - {{fileName}}",
   "transcriptModal.copy": "복사",
+  "transcriptModal.copying": "복사 중…",
   "transcriptModal.copied": "복사됨!",
   "transcriptModal.copyFailed": "복사 실패",
   "transcriptModal.noContent": "내용 없음",

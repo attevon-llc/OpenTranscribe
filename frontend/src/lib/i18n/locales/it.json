@@ -2744,6 +2744,7 @@
   "videoPlayer.notAvailable": "Video non disponibile.",
   "transcriptModal.title": "Trascrizione completa - {{fileName}}",
   "transcriptModal.copy": "Copia",
+  "transcriptModal.copying": "Copia in corso…",
   "transcriptModal.copied": "Copiato!",
   "transcriptModal.copyFailed": "Copia non riuscita",
   "transcriptModal.noContent": "Nessun contenuto",

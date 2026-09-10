@@ -46,6 +46,22 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Fallback definition: this script is the BOOTSTRAP -- it runs before scripts/ is
+# guaranteed to exist locally (a fresh `curl | bash` fetches this file alone), so it
+# cannot `source scripts/common.sh` the way opentr.sh/opentranscribe.sh do. Identical
+# body to common.sh's ensure_env_permissions(); that one wins if this script is ever
+# run from a checkout where it has already been sourced. Issue #857: `.env` holds
+# JWT_SECRET_KEY, ENCRYPTION_KEY and every DB/MinIO/OpenSearch/Redis password, and
+# `cp .env.example .env` inherits the umask (0644 on a default host).
+if ! declare -F ensure_env_permissions >/dev/null 2>&1; then
+    ensure_env_permissions() {
+        local env_file="${1:-.env}"
+        [ -f "$env_file" ] || return 0
+        chmod 600 "$env_file" 2>/dev/null \
+            || echo "⚠️  Could not chmod 600 ${env_file} — it may be world-readable."
+    }
+fi
+
 # ─── Unattended-mode helpers ─────────────────────────────────────────────────
 # When OPENTRANSCRIBE_UNATTENDED is set, interactive prompts are skipped and
 # pre-set environment variables (or safe defaults) are used instead.
@@ -967,6 +983,10 @@ resolve_install_ref() {
 # Called only on a fresh install (no existing .env).
 _create_initial_env() {
     cp .env.example .env
+    # BEFORE the sed block below writes nine secrets into it (issue #857) — a fresh
+    # `cp` inherits the umask (0644 on a default host), and .env.bak (removed further
+    # down) is created by `sed -i.bak` at the same mode for the duration of those calls.
+    ensure_env_permissions .env
 
     sed -i.bak "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|g" .env
     sed -i.bak "s|MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD|g" .env
@@ -1695,6 +1715,10 @@ configure_https_settings() {
             echo "NGINX_SERVER_NAME=$NGINX_SERVER_NAME" >> .env
         fi
         rm -f .env.bak
+        # Unconditional, not just on the fresh-install path (issue #857): a re-run
+        # against a pre-existing .env that predates this fix, or one created by a
+        # different path, is not guaranteed to already be owner-only.
+        ensure_env_permissions .env
         echo "✓ Updated .env with NGINX_SERVER_NAME=$NGINX_SERVER_NAME"
     fi
 

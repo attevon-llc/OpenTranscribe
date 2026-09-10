@@ -156,6 +156,22 @@ read_env_value() {
     || true
 }
 
+# Lock a dotenv file to owner-only. Idempotent, safe to call on every startup.
+# `.env` holds JWT_SECRET_KEY, ENCRYPTION_KEY and every DB/MinIO/OpenSearch/Redis
+# password; `cp .env.example .env` inherits the umask (0644 on a default host), and
+# GNU `sed -i` preserves whatever mode it found. Called UNCONDITIONALLY from every
+# path that creates or writes `.env` (issue #857) -- not from inside one creation
+# branch, which is how this used to live only inside ensure_minio_kms_secret's
+# *CHANGE_ME* case below: setup-opentranscribe.sh's _create_initial_env replaces
+# that placeholder BEFORE this function ever runs, so on a normal install the case
+# never matches and the chmod was provably unreachable.
+ensure_env_permissions() {
+  local env_file="${1:-.env}"
+  [ -f "$env_file" ] || return 0
+  chmod 600 "$env_file" 2>/dev/null \
+    || echo "⚠️  Could not chmod 600 ${env_file} — it may be world-readable."
+}
+
 # Only touches the SHIPPED PLACEHOLDER. An empty or already-customized value is
 # left alone -- either means an operator made a deliberate choice (e.g. leaving
 # KMS auto-encryption off), and this must never clobber a real key.
@@ -204,7 +220,7 @@ ensure_minio_kms_secret() {
       # file, and losing it makes every KMS-encrypted object permanently unreadable — so it
       # must not stay world-readable. Matches scripts/install-offline-package.sh:541, which
       # this generation was modelled on and which already does exactly this.
-      chmod 600 "$env_file" || echo "⚠️  Could not chmod 600 ${env_file} — it may be world-readable."
+      ensure_env_permissions "$env_file"
       echo "🔑 Generated MINIO_KMS_SECRET_KEY in ${env_file} (replaced the .env.example placeholder) so MinIO KMS auto-encryption can boot."
       echo "⚠️  BACK UP this value now: ${env_file}'s MINIO_KMS_SECRET_KEY. MinIO decrypts every"
       echo "   object written under KMS auto-encryption with this exact key -- if it is lost,"

@@ -280,3 +280,66 @@ def dispatch_indexing(record: InjectionRecord, user_id: int, mode: str = "celery
     if mode == "eager":
         return str(index_transcript_search_task.apply(args=args).id)
     return str(index_transcript_search_task.delay(*args).id)
+
+
+def dispatch_redaction(
+    db: Session, record: InjectionRecord, user_id: int, mode: str = "celery"
+) -> str | None:
+    """Hand the file to the production redaction-detection task, when the owner masks.
+
+    The transcription pipeline does this from
+    ``tasks/transcription/postprocess._dispatch_redaction`` once a file completes.
+    Injection is the only writer that produces a COMPLETED file with a transcript
+    *without* entering that pipeline, so nothing did it here — and the consequence is
+    not cosmetic. ``api/endpoints/files/crud._redaction_pending`` withholds a
+    transcript whose ``redaction_status`` is anything but ``done``/``failed``, so for
+    an owner with redaction enabled every injected meeting reads back as
+    ``transcript_segments: []`` with ``redaction_pending: true`` until it is opened
+    once and scanned one file at a time. The RAG eval harness never saw it because it
+    calls ``retrieve_chunks`` in process and never touches the HTTP read surface.
+
+    Gated on the owner's effective config, exactly as ``_dispatch_redaction`` is:
+    redaction is opt-out, and a deployment that never enabled it must not pay a CPU
+    scan per injected meeting. Those rows keep ``redaction_status`` NULL, which is
+    what a real transcription leaves behind too and which no read gate acts on while
+    the reader's policy is disabled.
+
+    Deliberately **not** "write ``done`` and move on". ``done`` means a scan finished,
+    and ``media_file.redaction_coverage`` records which detectors ran; a row asserting
+    ``done`` with no coverage is the "complete-looking span cache with no PII in it"
+    that ``services/redaction/llm_guard`` exists to refuse — every masking call would
+    then return the transcript verbatim while reporting success.
+
+    Args:
+        db: Session the rows were written through. Required rather than opened here
+            because the caller has already committed the rows this reads against, and
+            a second connection could not see a caller who has not.
+        record: The meeting that was just injected.
+        user_id: The owner whose policy decides whether a scan is needed.
+        mode: ``celery`` publishes to the broker (the production path), ``eager`` runs
+            the task in this process — which loads the Presidio/toxicity models here,
+            so it is for a broker-less environment, not a speed-up — and ``none``
+            skips it for a rows-only run.
+
+    Returns:
+        The task id, or ``None`` when no scan was queued.
+    """
+    if mode == "none":
+        return None
+
+    from app.services.redaction.config import resolve_effective_config
+
+    cfg = resolve_effective_config(db, user_id)
+    if not cfg.enabled:
+        logger.info(
+            "Redaction off for owner of %s; injected rows keep redaction_status NULL",
+            record.file_uuid,
+        )
+        return None
+
+    from app.tasks.redaction_task import redaction_detect_task
+
+    kwargs = {"file_id": record.media_file_id, "user_id": user_id}
+    if mode == "eager":
+        return str(redaction_detect_task.apply(kwargs=kwargs).id)
+    return str(redaction_detect_task.delay(**kwargs).id)

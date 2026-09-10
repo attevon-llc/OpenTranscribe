@@ -94,7 +94,20 @@ cc_expected_gpu_overlay() {
     forced="$(grep -E '^FORCE_CPU_MODE=' "$dir/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "' || true)"
     if [[ "$forced" == "true" ]]; then echo ""; return 0; fi
 
-    if ! docker info 2>/dev/null | grep -q "Runtimes.*nvidia"; then echo ""; return 0; fi
+    # `grep -c ... -gt 0`, never `| grep -q`. This file runs under `set -euo pipefail`, and
+    # `grep -q` exits at its FIRST match — so `docker info`, which is still writing, takes
+    # SIGPIPE (141) and `pipefail` makes 141 the PIPELINE's status. A host that DOES advertise
+    # the nvidia runtime then reads as one that does not, and this function is the ORACLE the
+    # rehearsal's "GPU overlay matches this host's hardware" assertion compares against: it
+    # would expect `<none>` while `opentranscribe.sh` correctly resolved docker-compose.gpu.yml,
+    # i.e. a rehearsal reporting a wrong verdict about GPU support on a GPU host.
+    #
+    # ⚠️ This is NOT made safe by `docker info` being small (1,609 B here, ~40x under the 64 KB
+    # pipe buffer). Output size is not the variable — ELAPSED TIME between the matching write
+    # and the producer's last write is, and `docker info` fills its template from daemon RPCs.
+    # Measured 2026-09-07: a 40-BYTE producer with 2 ms between its two writes inverted 300/300.
+    # `grep -c` consumes the whole stream, so there is no early exit to race.
+    if [ "$(docker info 2>/dev/null | grep -c "Runtimes.*nvidia")" -eq 0 ]; then echo ""; return 0; fi
 
     local cap=""
     cap="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '[:space:]' || true)"

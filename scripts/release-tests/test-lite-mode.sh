@@ -292,8 +292,7 @@ phase_03_pin_and_layer_overlays() {
     cp "$target/docker-compose.yml" "$target/docker-compose.yml.bak"
 
     cp_force_pull_policy "$target/docker-compose.prod.yml" never
-    cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
-    cp_inject_labels "$target/docker-compose.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$target" "$TEST_LABEL"
     # Frontend and the workers not overridden by docker-compose.lite.yml still
     # come from docker-compose.prod.yml, so pin those too.
     cp_pin_image_tag "$target/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
@@ -373,6 +372,12 @@ phase_03_pin_and_layer_overlays() {
 
     local shared_cache="/mnt/nvm/opentranscribe-test-runs/.shared-model-cache"
     if [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
+        # Repair the SHARED cache first — see the same call in test-fresh-install.sh. Without
+        # it, `diar-native` was absent from the shared cache and this scenario's sidecar
+        # exported ~484 MB of ONNX/PLDA weights at first boot, which is precisely the network
+        # dependency the pre-seed below exists to remove.
+        mc_topup_from_live "$(mc_live_cache_dir)" "$shared_cache" \
+            sentence-transformers diar-native
         gr_log "seeding embedding/opensearch-ml/diar-native model cache from shared cache …"
         mc_seed_cache "$shared_cache" "$model_cache_dir" sentence-transformers opensearch-ml diar-native
         gr_ok "model cache seeded from $shared_cache"
@@ -474,9 +479,27 @@ phase_06b_sidecar_check() {
     [[ "$sidecar_image" == *-lite* ]] || gr_die "diar-native sidecar image '$sidecar_image' does not contain '-lite' — B4's mismatched image pair (issue #660)"
     echo "diar-native sidecar image: $sidecar_image" | tee -a "$report"
 
-    local healthz
-    healthz=$(docker exec "$sidecar_name" curl -fsS http://localhost:8701/healthz 2>/dev/null || echo "")
-    [[ -n "$healthz" ]] || gr_die "diar-native /healthz did not respond"
+    # ⚠️ POLL, never a single shot. The sidecar binds its port only after it has reserved
+    # BFCArena memory and initialised every ONNX session, which is tens of seconds on a cold
+    # start — so a one-shot probe races the thing it is checking and kills the run before the
+    # service it is asking about exists.
+    #
+    # Measured 2026-09-09: this phase died with "diar-native /healthz did not respond" while
+    # the container went on to log `diar-server listening bind=0.0.0.0:8701` and report
+    # `Up (healthy)` seconds later. The check was right about the moment and wrong about the
+    # deployment — exactly the shape `backend/tests/CLAUDE.md` records for fixed budgets
+    # calibrated on a warm machine.
+    #
+    # `gr_die` on expiry is still correct: a sidecar that never answers is a real lite-mode
+    # failure, and this phase exists to prove the CPU-EP routing.
+    local healthz="" _hz_deadline
+    _hz_deadline=$(( $(date +%s) + LM_DIAR_NATIVE_HEALTHZ_TIMEOUT_S ))
+    while (( $(date +%s) < _hz_deadline )); do
+        healthz=$(docker exec "$sidecar_name" curl -fsS http://localhost:8701/healthz 2>/dev/null || echo "")
+        [[ -n "$healthz" ]] && break
+        sleep "$LM_DIAR_NATIVE_POLL_S"
+    done
+    [[ -n "$healthz" ]] || gr_die "diar-native /healthz did not respond within ${LM_DIAR_NATIVE_HEALTHZ_TIMEOUT_S}s"
     # Assert the LOADED `devices`, never `supported_devices` — the latter is a build-time
     # capability list a CUDA-only sidecar also reports, which cannot distinguish a lite
     # CPU sidecar from a full CUDA one (the exact failure this check exists to catch;
@@ -550,6 +573,49 @@ print(",".join(m for m in mods if u.find_spec(m) is None))' 2>/dev/null) || miss
     [[ -z "$missing_export_deps" ]] \
         || gr_die "lite image cannot self-provision the diar-native models — missing: ${missing_export_deps} (see requirements-lite.txt's RESTORED block; #660)"
     echo "lite carries the full ONNX export toolchain (can self-provision): confirmed" | tee -a "$report"
+}
+
+#: How long to wait for a recreated mock-asr to report healthy. Its healthcheck is
+#: `interval: 10s` (docker-compose.mock-asr.yml), so 30 s is three probes — generous for a
+#: stdlib HTTP server, and bounded so a genuinely broken container fails here by name rather
+#: than as a confusing assertion failure three steps later.
+LM_MOCK_ASR_HEALTHY_TIMEOUT_S="${LM_MOCK_ASR_HEALTHY_TIMEOUT_S:-30}"
+LM_MOCK_ASR_POLL_S="${LM_MOCK_ASR_POLL_S:-1}"
+
+# How long phase 06b waits for the diar-native sidecar to answer /healthz.
+#
+# 120s because the sidecar binds its port only after reserving BFCArena memory and
+# initialising every ONNX session — tens of seconds cold, and this scenario always starts it
+# cold. A ceiling, not a delay: the loop returns on the first response.
+#
+# Consumed inside phase_06b_sidecar_check, which is dispatched at the bottom of this file,
+# long after this assignment runs — the same ordering LM_MOCK_ASR_* above relies on.
+LM_DIAR_NATIVE_HEALTHZ_TIMEOUT_S="${LM_DIAR_NATIVE_HEALTHZ_TIMEOUT_S:-120}"
+LM_DIAR_NATIVE_POLL_S="${LM_DIAR_NATIVE_POLL_S:-3}"
+
+# Wait for the mock-asr container to report healthy after a --force-recreate.
+#
+# Replaces a bare `sleep 3` at the first recreate and NOTHING AT ALL at the second. Both are
+# the shape backend/tests/CLAUDE.md calls out: a fixed budget calibrated on an idle machine,
+# when the rehearsal IS the load. The container already declares a healthcheck; poll that
+# rather than guessing, and say so out loud if it never arrives.
+_lm_wait_for_mock_asr_healthy() {
+    local name="${MOCK_ASR_CONTAINER_NAME:-opentranscribe-mock-asr}"
+    local deadline=$(( $(date +%s) + LM_MOCK_ASR_HEALTHY_TIMEOUT_S ))
+    local state=""
+    while (( $(date +%s) < deadline )); do
+        state="$(docker inspect --format '{{.State.Health.Status}}' "$name" 2>/dev/null || echo "")"
+        if [[ "$state" == "healthy" ]]; then
+            return 0
+        fi
+        sleep "$LM_MOCK_ASR_POLL_S"
+    done
+    # Non-fatal on purpose, like the rest of this phase's degradations: the assertions below
+    # report their own verdict, and a hard die here would replace a specific failure with a
+    # generic one. But it must not be silent — an unhealthy mock is the likeliest cause of
+    # whatever fails next.
+    gr_warn "$name did not report healthy within ${LM_MOCK_ASR_HEALTHY_TIMEOUT_S}s (last state: '${state:-unknown}') — the assertions after this may fail for that reason"
+    return 0
 }
 
 phase_07_pipeline_assertions() {
@@ -675,19 +741,9 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
         # test-fresh-install.sh's identical fix for the full measurement and
         # why 600s (not 300s): the shared opensearch-ml cache is never
         # seeded, so this always cold-downloads from the network.
-        local ml_deployed=0 ml_wait=0
-        while [ "$ml_wait" -lt 600 ]; do
-            ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
-                'http://localhost:9200/_plugins/_ml/models/_search' \
-                -H 'Content-Type: application/json' \
-                -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
-                2>/dev/null \
-                | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
-                2>/dev/null || echo 0)
-            [ "$ml_deployed" -ge 1 ] && break
-            sleep 10
-            ml_wait=$((ml_wait + 10))
-        done
+        # Budget lives in ML_DEPLOY_TIMEOUT_S (lib/api-client.sh), not as a literal here.
+        local ml_deployed=0
+        ml_deployed=$(ac_wait_for_ml_model_deployed) || true
         as_assert_ge "OpenSearch ML model deployed (neural search active)" "$ml_deployed" 1
 
         # Chat via the mocked LLM, grounded in the mocked-ASR transcript.
@@ -720,7 +776,21 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
                     # the empty-answer assertion below stand in for it.
                     as_record FAIL "chat completion" "LLM call ended in an error frame: $chat_error"
                 else
-                    as_assert "chat summary non-empty" "[[ -n \"$answer\" ]]"
+                    # ⚠️ NOT `as_assert "..." "[[ -n \"$answer\" ]]"`. as_assert runs
+                    # `eval "$*"`, and a DOUBLE-quoted expression interpolates $answer
+                    # into the command text BEFORE eval parses it — so the model's own
+                    # output becomes shell. The mock reply contains a markdown code
+                    # fence, whose backticks are command substitution: the harness
+                    # actually tried to run it (2026-09-07):
+                    #   assertions.sh: line 66: python: command not found
+                    #   syntax error near unexpected token `'hello from the mock LLM''
+                    # The assertion also proved nothing, since the eval failed rather
+                    # than testing emptiness. as_assert_ne compares VALUES and never
+                    # evals, so no model output is ever parsed as a command.
+                    # (The other as_assert callers are safe: they SINGLE-quote the
+                    # expression, so the variable is expanded inside [[ ]] at eval
+                    # time, where it is not re-parsed.)
+                    as_assert_ne "chat summary non-empty" "" "$answer"
                     as_assert_ge "chat turn has at least one citation" "${citation_count:-0}" 1
                 fi
             else
@@ -754,7 +824,7 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
         -f docker-compose.mock-asr.yml -f docker-compose.mock-llm.yml \
         up -d --force-recreate --no-deps mock-asr
     popd >/dev/null
-    sleep 3
+    _lm_wait_for_mock_asr_healthy
 
     local error_file_uuid=""
     if error_file_uuid=$(ac_upload_file "$TEST_SAMPLE_WAV"); then
@@ -797,6 +867,9 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
         -f docker-compose.mock-asr.yml -f docker-compose.mock-llm.yml \
         up -d --force-recreate --no-deps mock-asr
     popd >/dev/null
+    # This recreate had NO wait at all, not even a sleep. Everything after it runs against a
+    # mock-asr that may still be starting.
+    _lm_wait_for_mock_asr_healthy
 
     # as_summary deliberately returns 1 when any assertion FAILed. Under
     # set -euo pipefail, a non-zero return from either stage of

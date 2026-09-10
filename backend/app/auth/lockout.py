@@ -198,7 +198,14 @@ def _get_store():
                     logger.info("Redis recovered — resuming distributed lockout storage")
                     _redis_client = recovered
 
-        return _redis_client if _redis_client else _in_memory_store
+        # `is not None`, never truthiness (issue #810). A redis-py client is always truthy,
+        # so this worked — but it made the fallback decision depend on a client's __bool__
+        # rather than on whether one exists. Any client-like object defining __len__ (a test
+        # stub recording calls, a future wrapper) would read as falsy while non-None, and
+        # this would silently return the IN-MEMORY store while `_redis_client` was set:
+        # per-replica lockout counting, i.e. N times the configured threshold before anyone
+        # is locked out, with nothing raising.
+        return _redis_client if _redis_client is not None else _in_memory_store
 
 
 def _get_memory_fallback_store() -> InMemoryLockoutStore:

@@ -217,14 +217,17 @@ def _process_transcription_result(
     # The engine that ACTUALLY served diarization (issue #706), resolved after any in-process
     # fallback — engine/stages.py sets these on JobResult/RawInferenceResult from the diarizer
     # instance's own last_provider/last_model, never from tc.diarizer_backend (the CONFIGURED
-    # value). The community-1 fallback string only applies to the cloud-ASR + local-diarization
-    # path, whose result dict predates this field and never sets it.
+    # value). The cloud-ASR path sets them too, from the DiarizeResult (cloud_asr.py).
+    #
+    # ⚠️ Both are read WITHOUT a default, on purpose (issue #28). `diarization_model` used to
+    # fall back to a hardcoded "pyannote/speaker-diarization-community-1" for the cloud-ASR
+    # path, which had been dropping the keys on the floor. That string was right only by luck
+    # — the local provider serves those exact weights — so any other diarization provider was
+    # recorded under PyAnnote's name, next to a `diarization_provider` of NULL. Unknown must
+    # stay unknown: `storage.py` skips a None, leaving the column NULL rather than asserting an
+    # engine nobody verified.
     diarization_provider = None if diarization_disabled else result.get("diarization_provider")
-    diarization_model = (
-        None
-        if diarization_disabled
-        else result.get("diarization_model", "pyannote/speaker-diarization-community-1")
-    )
+    diarization_model = None if diarization_disabled else result.get("diarization_model")
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 
@@ -351,14 +354,17 @@ def _process_and_save_critical(
     # The engine that ACTUALLY served diarization (issue #706), resolved after any in-process
     # fallback — engine/stages.py sets these on JobResult/RawInferenceResult from the diarizer
     # instance's own last_provider/last_model, never from tc.diarizer_backend (the CONFIGURED
-    # value). The community-1 fallback string only applies to the cloud-ASR + local-diarization
-    # path, whose result dict predates this field and never sets it.
+    # value). The cloud-ASR path sets them too, from the DiarizeResult (cloud_asr.py).
+    #
+    # ⚠️ Both are read WITHOUT a default, on purpose (issue #28). `diarization_model` used to
+    # fall back to a hardcoded "pyannote/speaker-diarization-community-1" for the cloud-ASR
+    # path, which had been dropping the keys on the floor. That string was right only by luck
+    # — the local provider serves those exact weights — so any other diarization provider was
+    # recorded under PyAnnote's name, next to a `diarization_provider` of NULL. Unknown must
+    # stay unknown: `storage.py` skips a None, leaving the column NULL rather than asserting an
+    # engine nobody verified.
     diarization_provider = None if diarization_disabled else result.get("diarization_provider")
-    diarization_model = (
-        None
-        if diarization_disabled
-        else result.get("diarization_model", "pyannote/speaker-diarization-community-1")
-    )
+    diarization_model = None if diarization_disabled else result.get("diarization_model")
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 

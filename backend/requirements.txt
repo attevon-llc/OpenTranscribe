@@ -9,6 +9,17 @@ fastapi==0.136.3
 # what issue #485 turns on, so the gate and production were running different
 # concurrency code.
 starlette==1.6.0
+# anyio, pinned for the SAME reason as starlette above and found the same way — by the
+# dependency-parity gate, not by review. It is transitive via httpx, httpx2, openai,
+# starlette and watchfiles, none of which pin it, so a container rebuild resolved 4.15.1
+# while the venv kept 4.15.0. Measured: `shared=262 mismatched=1 image-only=0`.
+#
+# Small today, and pinned anyway: anyio is the async runtime starlette's threadpool runs
+# on, so "the gate and production run different concurrency code" is the same exposure
+# issue #492 describes — the one that let the nltk pathsec break reach production while
+# the host suite stayed green. Pinned FORWARD to the image's version, never backward to
+# the venv's, per backend/CLAUDE.md's versions-move-forward rule.
+anyio==4.15.1
 uvicorn[standard]==0.52.3
 websockets==17.0.1
 sqlalchemy==2.0.52

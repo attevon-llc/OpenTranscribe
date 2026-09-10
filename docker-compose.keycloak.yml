@@ -15,14 +15,57 @@
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:latest
-    command: start-dev
+    # Built locally so Quarkus augmentation happens ONCE at image-build time instead of on
+    # every container start. `start-dev` re-augments each boot and the output is not on the
+    # volume, so nothing is reused: measured ~600 s to "Listening on" here, which blew the
+    # healthcheck budget, failed `up --wait`, and aborted `run-dev-tests.sh --full` before a
+    # single test ran. The pre-built image starts in ~19 s (25 s to healthy). See
+    # docker/keycloak/Dockerfile for the full measurement.
+    build:
+      context: ./docker/keycloak
+    # ⚠️ THE TAG MUST CHANGE WHENEVER docker/keycloak/ DOES, and the suffix is what makes it.
+    #
+    # `build:` + `image:` means "build ONLY if this tag is absent locally" — compose does not
+    # look at the Dockerfile. Tagged with the upstream version alone, an edit to
+    # docker/keycloak/Dockerfile was therefore NEVER rebuilt: the stale image kept starting.
+    # That is not a cosmetic staleness, because we start with `--optimized`, which REFUSES to
+    # boot when the options baked in at `kc.sh build` time disagree with the ones set at run
+    # time. So an edit to either side surfaces as a Keycloak that never becomes healthy — an
+    # opaque `up --wait` timeout against the 120 s start_period below, whose obvious reading
+    # ("the budget is too tight again") is the wrong one, and whose obvious fix (raise it)
+    # cannot work.
+    #
+    # The suffix is the sha256 of the whole build CONTEXT, truncated to 8 hex — the context,
+    # not just the Dockerfile, because anything a future `COPY` adds to ./docker/keycloak is
+    # equally baked into the image. Change the context, the tag no longer exists locally, and
+    # compose builds. backend/tests/unit/test_keycloak_image_tag_tracks_dockerfile.py
+    # recomputes it and fails the fast unit suite if the two drift, so this cannot be
+    # forgotten — it is not a convention, it is a gate.
+    #
+    # The version half (26.7.3) is still the PIN and must match the Dockerfile's `FROM`
+    # (issue #492 — the gate's auth phase must not run against whatever Keycloak shipped that
+    # morning). ⚠️ Do not "pin back" to an older tag: an earlier revision of this file pinned
+    # 26.4.7, which is a DOWNGRADE against a `keycloak_data` volume written by 26.7.3, and
+    # this repo's rule is that versions move forward only.
+    image: opentranscribe-keycloak-test:26.7.3-80b268ef
+    # `--optimized` tells Keycloak the build is already done. It REQUIRES that the build-time
+    # options baked into the image (KC_DB, KC_HEALTH_ENABLED) match at run time, or startup
+    # refuses rather than silently re-augmenting.
+    command: ["start", "--optimized", "--http-enabled=true", "--hostname-strict=false"]
     security_opt:
       - no-new-privileges:true
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KC_PROXY: edge
+      # ⚠️ `KC_BOOTSTRAP_ADMIN_*`, not `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`.
+      # Keycloak 26.0 renamed the temporary-admin bootstrap variables and deprecated the old
+      # pair. This file still set the old names, which is INERT on this host only because the
+      # `keycloak_data` volume was bootstrapped long ago and an existing admin makes the
+      # variables unread. On a `--fresh` stack (or after `fresh-destroy`, or on any new
+      # machine) the volume is empty, nothing creates the admin, and the console rejects
+      # admin/admin — presenting as "the credentials in CLAUDE.md are wrong" rather than as a
+      # compose bug. The interpolated `${KEYCLOAK_ADMIN...}` names are OURS and stay: they are
+      # what an operator would set in `.env`.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
@@ -43,8 +86,17 @@ services:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000;echo -e \"GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n\" >&3;grep -q '200 OK' <&3"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      # MEASURED. With the pre-built `--optimized` image above, Keycloak reaches
+      # "Listening on" in ~19 s and `up --wait` returns healthy in ~25 s (measured 2026-09-06,
+      # both stock `docker run` and an isolated compose project).
+      #
+      # 120 s is ~5x that headroom, for a cold image pull or a host also building images and
+      # running a 48-worker pytest. It was 900 s while the container still re-augmented on
+      # every boot (~600 s); that budget is obsolete now that the build happens once, at image
+      # build time. Do not raise it again without re-measuring — a large budget here hides a
+      # regression in the image rather than reporting one.
+      start_period: 120s
 
   # Step CA for PKI testing (dev only)
   # Start with: docker compose -f docker-compose.keycloak.yml --profile pki up -d

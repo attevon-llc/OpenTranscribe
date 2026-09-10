@@ -23,6 +23,7 @@ from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import LOGIN_FORM_READY_MS
 
 #: Every address the tests in this file register begins with one of these. The cleanup
 #: helper deletes ONLY matching addresses, so it can never reach a pre-existing dev
@@ -487,7 +488,7 @@ class TestRegistrationSuccess:
             # Drop the session cookies, then log in fresh with the new creds
             page.context.clear_cookies()
             page.goto(f"{base_url}/login")
-            page.wait_for_selector("#email", timeout=10000)
+            page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
             page.fill("#email", email)
             page.fill("#password", password)

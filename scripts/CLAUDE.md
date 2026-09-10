@@ -76,16 +76,37 @@ this file is for.
   10s-clip transcription (1 segment, 19 words), real diarization, real search hit on a word
   pulled from the actual transcript, real chat answer from the real model — 3/3 passed (99s),
   llm-test-vllm correctly stopped afterward since this run started it.
+- ⚠️ **`run-backend-tests.sh --summary` runs NO tests** — it re-reports
+  `/tmp/ot-backend-tests/last.xml`. `test-matrix.sh` leg 1.2 is that command, so on 2026-09-06
+  the matrix's "backend test summary" leg passed by reading a **986-byte, two-day-old, 5-test**
+  artifact from a different commit. `--require-fresh [<sha>]` (leg 1.2 now passes it) refuses an
+  artifact with no `last.meta`, from a different commit, or older than `OT_SUMMARY_MAX_AGE_S`
+  (default 7200) — missing metadata is a refusal, not a pass. The run path writes `last.meta`
+  (`sha=`/`epoch=`) when it publishes.
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
-  Runs the ungated suite, then all `RUN_*`-gated security suites twice (FIPS off, then `FIPS_MODE=true`),
-  then `-m integration`, then `-m gpu`, then **model-vs-schema drift**
-  (`RUN_SCHEMA_DRIFT_TESTS=true tests/unit/test_schema_drift.py`). That last phase is new: the
+  Runs the Unit/API suite, then the security suites **once** under `FIPS_MODE=true`, then
+  `-m integration`, then `-m gpu`, then **model-vs-schema drift**
+  (`RUN_SCHEMA_DRIFT_TESTS=true tests/unit/test_schema_drift.py`), then the dependency-parity,
+  session-lifetime, collection-determinism and mutation-ratchet phases. The drift phase's
   variable used to be set in exactly ONE place — the release pipeline's `schema-drift`
   criterion, at severity `warn` — so the check never ran pre-merge at all, and its warn
-  justification ("4 known pre-existing offenders") was stale. It is deliberately NOT in the
-  `GATES` array: that array's variables are exported for the `GATED_FILES` pytest run, which
-  does not include the drift file, so adding it there would have looked like coverage and
-  changed nothing.
+  justification ("4 known pre-existing offenders") was stale.
+  ⚠️ **There is no `GATES` array and no `GATED_FILES` run any more, and re-adding either is a
+  regression.** This bullet used to explain that the drift file was deliberately kept out of
+  `GATES`; that reasoning is void because the array is gone. It exported seven `RUN_*`
+  variables that **no test read** — the module-level `skipif` gates had been deleted from all
+  eight security suites and the array was left behind, so a phase named "Gated security
+  suites" set variables that changed nothing. The **FIPS-off** half went with it: with no
+  gates those files are ordinary members of the Unit/API suite, and that phase re-ran, byte
+  for byte, tests phase 1 had just run. Measured on the 2026-09-07 gate's own junit artifacts:
+  all **394** ids in `gated-fips-off.xml` also appear in `unit.xml`, **0 missing**. The
+  `FIPS_MODE=true` pass stays — `app/core/config.py` reads that at import, so it is a real
+  claim. `backend/tests/unit/test_gate_run_env_vars_are_live.py` now fails on any `RUN_*` a
+  gate script sets that no test reads through a **live** expression; its predecessor
+  `test_gated_files_all_have_gates.py` is **deleted**, because it substring-matched the
+  variable name over the whole file and every one of those files still mentions its dead
+  variable in a comment — a guard that could not fail, in the file written to prevent tests
+  that cannot fail.
 - **GPU diarization suites** — `run-diarization-gpu-tests.sh` (issue #577). The gate's `-m gpu`
   phase runs in `backend/venv`, so the three container-only diarization suites SKIP there; this
   is the only thing that executes them. It builds `opentranscribe-backend-test:latest` from
@@ -217,7 +238,16 @@ this file is for.
     now be the URL argument of a real HTTP client call. `--fail-on-uncovered` makes it gate;
     the default stays exit 0 so existing callers are unbroken.
   - `run-mutation-tests.sh` — see the mutation section in `backend/tests/CLAUDE.md`. Opt-in,
-    never in the gate or CI. **`--clean` when you are done**: it leaves ~330k lines of
+    never in the gate or CI (except `--check-baseline`, which reads results rather than
+    producing them). ⚠️ **`--check-baseline` now exits 4 on a PARTIAL measurement, not only on
+    zero.** "0 of 6 is not a pass" was half the rule: on 2026-09-06 it measured **1 of 6**,
+    printed `⊘ NOT MEASURED (5/6)` naming the other five, and exited **0**, so the gate rendered
+    the phase as `✓ Mutation ratchet passed` with five sixths of a security-critical ratchet
+    unmeasured. Since the other five are unmeasured *because their source or test list changed
+    since the last run*, expect the gate to report NOT MEASURED here until someone measures
+    them (30-90 min each) — or sets `MUTATION_RATCHET_PARTIAL_OK=1` **deliberately**, which is
+    recorded in the output rather than assumed in the exit code.
+    **`--clean` when you are done**: it leaves ~330k lines of
     deliberately corrupted source in `backend/mutants/`, which is gitignored but which
     filesystem-walking tools still see (bandit failed a commit on a finding inside a mutant, and
     needs the `*/mutants/*` exclusion because the hook runs `bandit -r backend/` from the root).
@@ -296,6 +326,40 @@ this file is for.
   FROM/TO to detect — always rehearses the CURRENT `VERSION`'s `--lite` deployment shape
   against mocked cloud ASR + mocked LLM), with `lib/guardrails.sh` as the
   safety firewall and `lib/{compose-patch,api-client,assertions,versions,model-cache}.sh`.
+
+  **Where the rehearsal's wall clock actually goes, and why it is near its floor.** Measured on
+  a green run: **~30 min total — fresh ~2 min, upgrade ~24 min, lite ~3 min.** So the upgrade
+  scenario is ~80%, and it is two hops (`ver_upgrade_sources` derives `{v0.4.1, v0.3.3}` for a
+  v0.5.0 TO). The obvious saving is to drop the second hop; **don't** — `lib/versions.sh`'s own
+  header is the reason: v0.3.3 shipped only 2 Alembic revisions and bootstrapped its schema from
+  `database/init_db.sql`, so it is the **only** source that exercises the pre-Alembic bootstrap
+  path. The two rejected alternatives are recorded there too, one of which
+  (`{v0.4.1, v0.4.0}`) buys a second hop whose Alembic chain is *identical* — two hops' price for
+  one hop's coverage. A patch-level TO already collapses to one hop on its own.
+
+  For **iteration** (not for a release), `OT_UPGRADE_SOURCE_MINORS=1` halves it — verified:
+
+  ```bash
+  ./scripts/release-tests/test-upgrade.sh --list-sources                     # v0.4.1, v0.3.3
+  OT_UPGRADE_SOURCE_MINORS=1 ./scripts/release-tests/test-upgrade.sh --list-sources   # v0.4.1
+  ```
+
+  ⚠️ Never cut a release on a single-hop rehearsal: the hop you dropped is the one covering the
+  schema shape least like today's. Roughly 38% of the remaining time is **real transcription**,
+  which is the thing being rehearsed and is not overhead to remove.
+
+  ⚠️ **The Docker Hub tag memo (`lib/versions.sh`'s `ver_hub_has`) lives in
+  `${OT_HUB_CACHE_DIR:-$XDG_CACHE_HOME/opentranscribe}/hub-tags` and entries EXPIRE
+  (`OT_HUB_CACHE_TTL_S`, default 6 h).** It used to be `${TEST_ROOT:-${TMPDIR:-/tmp}}/.hub-tags`,
+  wrong in both directions at once: `TEST_ROOT` is a per-run timestamped directory, so a
+  rehearsal re-probed every tag and the memo saved nothing in the case it exists for; and with
+  `TEST_ROOT` unset (`release.sh status`, `90-promote.sh`) it fell back to a bare `/tmp` file
+  that **never expired**, so a cached "no" for a tag published five minutes later stayed "no"
+  forever — which makes a real published release invisible to the tooling that decides what to
+  rehearse against. Entries are `<image> <yes|no> <epoch>`; a stampless (pre-TTL) entry is
+  treated as expired, not fresh. `backend/tests/unit/test_hub_tag_cache_ttl.py` sources the real
+  function against a fake `docker` and counts probes — a grep for the TTL variable would pass
+  against a version that defines it and never reads it.
 
   ⚠️ **NEVER hardlink `nltk_data` when seeding the model cache — seed through
   `lib/model-cache.sh`.** Both scenarios used `rsync -a --link-dest=<src> <src> <dst>`, which
@@ -639,13 +703,54 @@ aux-file record.
   - `40-build.sh` builds every declared leg (one invocation per leg — `--load` cannot export a
     multi-arch manifest) so `50-scan.sh` has something to scan; the baked-version `docker run`
     check applies only to the **host-arch** leg, by its leg tag.
-- ⚠️ **Never `<producer> | grep -q ...` in these suites.** They run under `set -o pipefail`;
-  `grep -q` exits on first match, the producer dies with SIGPIPE, and the pipeline reports
-  FAILURE — so a match reads as a non-match and the assertion **silently inverts**. It is
-  size-dependent (output under the 64 KB pipe buffer is unaffected), which is why the idiom
-  worked against a ~100-line stage file and inverted against the 1428-line
-  `docker-build-push.sh`, reporting a hardcoded line as removed while it sat on line 865. Use
-  `[ "$(<producer> | grep -c ...)" -gt 0 ]`.
+- ⚠️ **Never pipe a producer into a reader that stops before EOF — `grep -q`, `grep -m1`,
+  `head -N`, `sed '…q'` — anywhere under `set -o pipefail`.** The reader exits at its first
+  match, the producer dies of SIGPIPE (141), and `pipefail` makes 141 the *pipeline's* status.
+  Two distinct failures, and both have shipped here:
+  - **in a condition** (`if`/`while`/`!`/`&&`), a match reads as a **non-match** — the
+    assertion silently inverts. `set -e` does not protect you; a failing condition is not an
+    error.
+  - **in an assignment** under `set -e` (`x="$(producer | head -1)"`), the captured value is
+    correct and the script then **aborts on the assignment**, truncating every phase after it
+    with no error trace. That is the #617/#618 family, and it is how
+    `mc_assert_no_hardlinks` produced a bare unexplained `exit 141` in precisely the case it
+    exists to report (`lib/model-cache.sh`, fixed 2026-09-07).
+
+  ⚠️ **THIS IS NOT SIZE-DEPENDENT. The "output under the 64 KB pipe buffer is unaffected" rule
+  this file used to state was MEASURED AND REFUTED on 2026-09-07**, and eight sites had been
+  exempted on it. The governing variable is **whether the producer still has a write to make
+  after the reader leaves** — a question about ELAPSED TIME between the matching write and the
+  producer's final one, not about bytes. Measured on this host:
+
+  | producer | result |
+  |---|---|
+  | 40 bytes, 2 ms between its two writes | **300 / 300 inverted** |
+  | the same 40 bytes written back-to-back | 0 / 3000 |
+  | real `docker info` — **1,609 B, ~40x UNDER the buffer** | **12 / 3000 (~1 in 250)** |
+  | `find` over a nested 130-file tree into `head -5` | **40 / 40 aborted** (0/40 at 30 files) |
+
+  Same size, opposite outcomes. An external binary that queries a daemon — `docker`, `ss`,
+  `buildx` — is **never** safe merely for being terse: the gaps between its writes are RPC
+  round-trips. `find` walking directories is the same story with directory reads.
+
+  **The sound admission criterion is: the match can only land on the producer's FINAL write**
+  (nothing remains to be written, so nothing can SIGPIPE). A shell builtin emitting a small
+  in-memory string also qualifies — but that has a low ceiling, well under the buffer:
+  measured, `printf 'FIRST\n<payload>\n' | head -1` under `set -euo pipefail` aborts 0/100 at
+  7 KiB, **4/100 at 16 KiB**, 31/100 at 32 KiB and 100/100 at 60 KiB.
+
+  ⚠️ **"We ran it N times and saw nothing" is not evidence below a few thousand iterations.**
+  At the measured ~1-in-250 rate for `docker info`, a 400-iteration null result is the expected
+  outcome about 45% of the time — an earlier 400-run pass on this exact command is what
+  licensed the size rule in the first place. Size the run against the rate, or use a producer
+  with a deliberate gap (the 40-byte/2 ms fixture above) which inverts every time.
+
+  Fix: `[ "$(<producer> | grep -c ...)" -gt 0 ]` (`grep -c` reads to EOF), or capture the
+  producer into a variable / a `while read` loop and match on that. Two scanners enforce this
+  and they have **different reaches** — do not add a third:
+  `backend/tests/unit/test_pipefail_grep_q_inversion.py` scans all of `scripts/` for the
+  `| grep -q` half, and `test_opentr_docker_probe_sigpipe.py` covers the assignment/abort half
+  and the wider reader set over an owned-script list.
 - **The scannable component list has exactly one home**: the `SCAN_COMPONENT_*` tables in
   `security-scan.sh`, exposed as `./scripts/security-scan.sh list-components` (and
   `list-repos`, `component<TAB>repo`, which `scripts/release/50-scan.sh` derives its

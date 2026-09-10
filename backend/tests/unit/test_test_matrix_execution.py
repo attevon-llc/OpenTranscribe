@@ -68,9 +68,28 @@ def _legs() -> list[tuple[str, str, str, str, str]]:
     return legs
 
 
-def test_the_leg_table_parses_and_is_not_empty():
+def test_the_leg_table_parses_and_matches_the_scripts_own_doc_leg_list():
+    """Derived, not transcribed.
+
+    This asserted `len(legs) >= 16` — a number copied out of the table, which went stale the
+    moment a leg was legitimately removed (the duplicate `3-lite`, which made
+    `test-matrix.sh 3` run the lite rehearsal twice). The invariant that actually matters is
+    the one `check_doc_sync` enforces at runtime: LEGS and the script's own `doc_leg_ids`
+    describe the same set. Comparing them here catches a half-applied edit without pinning a
+    count that has to be maintained by hand.
+    """
     legs = _legs()
-    assert len(legs) >= 16, f"expected the documented 16 legs, parsed {len(legs)}"
+    assert legs, "LEGS array parsed empty"
+
+    source = _matrix_source()
+    ids_line = re.search(r"local doc_leg_ids=\(([^)]*)\)", source)
+    assert ids_line, "doc_leg_ids not found in check_doc_sync"
+    documented = set(ids_line.group(1).split())
+
+    assert {leg[0] for leg in legs} == documented, (
+        f"LEGS and doc_leg_ids disagree: only in LEGS={ {leg[0] for leg in legs} - documented }, "
+        f"only in doc_leg_ids={documented - {leg[0] for leg in legs}}"
+    )
 
 
 def test_every_leg_entry_has_all_five_fields():
@@ -374,12 +393,166 @@ def test_not_measured_legs_do_not_exit_zero(rc_in: int, skip_count: int, expecte
 
 
 def test_the_doc_and_the_script_still_agree():
-    """check_doc_sync's anchors are load-bearing; a doc edit must not silently break them."""
+    """check_doc_sync's anchors are load-bearing; a doc edit must not silently break them.
+
+    The anchor list is READ OUT OF THE SCRIPT rather than transcribed here. A hand-copied
+    list is a third place to keep in sync, and it broke the first time an anchor was
+    legitimately retired (`### Stage 3 — lite-mode full rehearsal`, when the duplicate
+    `3-lite` leg was removed) — failing this test while `check_doc_sync` itself was green.
+    """
     assert DOC.is_file(), f"{DOC} is missing — the anti-staleness check cannot run"
     doc = DOC.read_text(encoding="utf-8")
-    for anchor in ("Cycle 2A", "Cycle 2B", "Cycle 2C", "Cycle 2D", "## Stage 3", "## Stage 4"):
-        assert anchor in doc, (
+
+    source = _matrix_source()
+    anchors = re.findall(r'grep -q(?:i)? "([^"]+)" "\$DOC"', source)
+    assert len(anchors) >= 6, f"check_doc_sync's doc anchors were not parsed: {anchors}"
+    for anchor in anchors:
+        assert re.search(re.escape(anchor), doc, re.IGNORECASE), (
             f"full-test-matrix.md lost the '{anchor}' anchor check_doc_sync greps for"
         )
-    assert "### Stage 3 — lite-mode full rehearsal" in doc
-    assert re.search(r"PKI/mTLS is prod", doc, re.IGNORECASE)
+
+
+@pytest.mark.parametrize(
+    ("contract", "leg_rc", "expected_rc", "expected_word"),
+    [
+        # ⚠️ The collision this pins. Under `standard`, 4 is OPERATOR ABORT and 5 is
+        # NOT MEASURED; under `smoke`, 4 is NOT MEASURED. Reading a standard-contract 4 as
+        # "not measured" would report a declined `I UNDERSTAND` prompt as a test verdict, and
+        # reading a 5 as a failure would report an honest "I could not measure this" as a
+        # regression. run-dev-tests.sh (leg 2a, standard) returns 5.
+        ("standard", 4, 4, "ABORT"),
+        ("standard", 5, 0, "SKIP"),
+        ("standard", 3, 3, "BLOCKED"),
+        ("standard", 1, 1, "FAIL"),
+        ("smoke", 4, 0, "SKIP"),
+        ("smoke", 1, 1, "FAIL"),
+    ],
+)
+def test_the_two_exit_contracts_are_read_separately(
+    tmp_path: Path, contract: str, leg_rc: int, expected_rc: int, expected_word: str
+):
+    """Drive the REAL verdict block out of run_leg, one exit code at a time.
+
+    Extracted rather than reimplemented: a test that restates the mapping passes against a
+    script that has stopped implementing it, which is the failure mode this whole file exists
+    for.
+    """
+    source = _matrix_source()
+    start = source.index("    if [[ $leg_rc -eq 0 ]]; then")
+    end = source.index("    return $EXIT_GATE\n", start) + len("    return $EXIT_GATE\n")
+    verdict_block = source[start:end]
+
+    report = tmp_path / "report.txt"
+    log_file = tmp_path / "leg.log"
+    log_file.write_text("something happened\nNOT MEASURED: the corpus is absent\n")
+
+    snippet = (
+        "info() { :; }\n"
+        "GREEN=''; YELLOW=''; RED=''; NC=''\n"
+        "EXIT_ABORT=4; EXIT_PRECONDITION=3; EXIT_GATE=1; EXIT_NOT_MEASURED=5\n"
+        "SKIP_COUNT=0; declare -a SKIPPED_LEGS=()\n"
+        "not_measured_reason() { grep -m1 -i 'not measured' \"$1\"; }\n"
+        f'REPORT_FILE="{report}"\n'
+        f'log_file="{log_file}"\n'
+        f'contract="{contract}"; leg_rc={leg_rc}; elapsed=1; id="X"; desc="d"\n'
+        "verdict() {\n" + verdict_block + "}\n"
+        "verdict\n"
+    )
+    rc, out = _run_shell(snippet)
+    assert rc == expected_rc, (
+        f"contract={contract} leg_rc={leg_rc} returned {rc}, expected {expected_rc}: {out}"
+    )
+    written = report.read_text() if report.exists() else ""
+    assert written.startswith(expected_word), (
+        f"contract={contract} leg_rc={leg_rc} recorded {written!r}, expected a {expected_word} row"
+    )
+
+
+# ─────────────────────────────────────────── issue #900: a failed inter-leg cleanup must SPEAK
+
+
+def _interleg_cleanup_block() -> str:
+    """The stage-3 inter-leg cleanup loop, lifted verbatim from the real script."""
+    source = _matrix_source()
+    opener = '            _clean_log="$(mktemp)"'
+    closer = '            rm -f "$_clean_log"\n'
+    assert opener in source, (
+        "the stage-3 inter-leg cleanup loop is gone or was reshaped; re-point this "
+        "extractor at it rather than deleting these tests — a `--cleanup` whose output "
+        "goes to /dev/null is issue #900 one layer up"
+    )
+    start = source.index(opener)
+    assert closer in source[start:], "the extracted block has no recognisable end"
+    end = source.index(closer, start) + len(closer)
+    return source[start:end]
+
+
+def test_a_failed_interleg_cleanup_is_reported_not_discarded(tmp_path: Path):
+    """Closes #900's second half.
+
+    ``gr_cleanup`` now fails when it finishes with stock-named containers still standing,
+    and that message names both the leftovers and the command that clears them. This loop
+    sent all three invocations to ``/dev/null 2>&1 || true``, so the whole diagnostic was
+    thrown away and the only remaining symptom was the port check further down — whose
+    remedy (``./opentr.sh stop``) is the *wrong* advice for this cause and sends the
+    operator to look at the dev stack instead of the previous leg's residue.
+
+    ``|| true`` itself is correct and must stay: one scenario having nothing to clean must
+    not abort the pass. What must not be swallowed is the output.
+
+    Driven by running the real block against stub scenario scripts, not by reading it — an
+    earlier draft of this fix's sibling tests asserted on source text and was unfalsifiable.
+    """
+    scenarios = tmp_path / "scripts" / "release-tests"
+    scenarios.mkdir(parents=True)
+    for name in ("test-fresh-install", "test-upgrade", "test-lite-mode"):
+        script = scenarios / f"{name}.sh"
+        script.write_text(
+            "#!/bin/bash\n"
+            f'echo "cleanup did NOT remove these stock-named containers: {name}-marker"\n'
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+
+    snippet = (
+        "set -uo pipefail\n"
+        f'cd "{tmp_path}"\n'
+        'info() { echo -e "$*" >&2; }\n'
+        "YELLOW=''; NC=''\n"
+        "run() {\n" + _interleg_cleanup_block() + "}\n"
+        "run\n"
+    )
+    rc, out = _run_shell(snippet)
+
+    for name in ("test-fresh-install", "test-upgrade", "test-lite-mode"):
+        assert f"{name}-marker" in out, (
+            f"{name}'s cleanup failure was discarded. The next leg then fails its preflight "
+            f"with no stated cause — the #900 incident, one layer up.\n{out}"
+        )
+    assert rc == 0, (
+        "a scenario with nothing to clean now aborts the whole stage-3 precondition pass; "
+        f"the `|| true` intent was lost.\n{out}"
+    )
+
+
+def test_a_clean_interleg_cleanup_stays_quiet(tmp_path: Path):
+    """Must-stay-clean control: without it, "always warn" would satisfy the test above."""
+    scenarios = tmp_path / "scripts" / "release-tests"
+    scenarios.mkdir(parents=True)
+    for name in ("test-fresh-install", "test-upgrade", "test-lite-mode"):
+        script = scenarios / f"{name}.sh"
+        script.write_text("#!/bin/bash\necho 'cleanup complete'\nexit 0\n", encoding="utf-8")
+        script.chmod(0o755)
+
+    snippet = (
+        "set -uo pipefail\n"
+        f'cd "{tmp_path}"\n'
+        'info() { echo -e "$*" >&2; }\n'
+        "YELLOW=''; NC=''\n"
+        "run() {\n" + _interleg_cleanup_block() + "}\n"
+        "run\n"
+    )
+    rc, out = _run_shell(snippet)
+    assert rc == 0, out
+    assert "did not complete" not in out, f"a successful cleanup was reported as a problem: {out}"

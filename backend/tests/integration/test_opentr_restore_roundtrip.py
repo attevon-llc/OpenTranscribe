@@ -32,24 +32,33 @@ tests/integration/test_opentr_restore_roundtrip.py -v``
 
 from __future__ import annotations
 
-import re
 import shutil
 import subprocess
 import time
-import uuid
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+from tests.integration import throwaway_pg
 
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not available"),
 ]
 
+# This module no longer starts its own container -- `pg_container` below now takes the shared
+# one -- but `test_scheduled_backup_restore_roundtrip.py` imports these two names FROM HERE
+# (along with `_DB_USER`, `_run`, `_create_db`, `_query`, `_media_filenames`,
+# `_call_common_fn`), because it still provisions containers of its own. They are aliases of
+# the canonical implementations in `throwaway_pg`, not second copies.
+#
+# ⚠️ That cross-test-module import is a wart worth removing: the importer should depend on
+# `throwaway_pg` directly. Left as-is here only to keep this change to files in one lane.
+_postgres_image_tag = throwaway_pg.postgres_image_tag
+_wait_ready = throwaway_pg.wait_ready
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _COMMON_SH = _REPO_ROOT / "scripts" / "common.sh"
-_COMPOSE_FILE = _REPO_ROOT / "docker-compose.yml"
 _DB_USER = "postgres"
 
 _SEED_SQL = """
@@ -78,87 +87,23 @@ def _run(
     )
 
 
-def _postgres_image_tag() -> str:
-    """Parse the pinned Postgres image out of docker-compose.yml — never hardcoded."""
-    compose = _COMPOSE_FILE.read_text(encoding="utf-8")
-    match = re.search(r"image:\s*(postgres:\S+)", compose)
-    assert match, "could not find an `image: postgres:<tag>` line in docker-compose.yml"
-    return match.group(1)
-
-
-def _wait_ready(container: str, timeout: float = 30.0) -> None:
-    """Poll `pg_isready` in a loop — never a bare sleep — until the server accepts connections.
-
-    The official postgres image starts the server once to run initdb, stops it, then starts it
-    again for real — and `pg_isready` can report success in the brief window between those two
-    starts, right before the shutdown. A single "ready" reading is therefore not trustworthy;
-    require two consecutive successes with an actual query in between (not just pg_isready) to
-    clear that window, or CREATE DATABASE calls made right after this returns intermittently
-    fail with "the database system is shutting down".
-    """
-    deadline = time.monotonic() + timeout
-    last: subprocess.CompletedProcess[str] | None = None
-    consecutive = 0
-    while time.monotonic() < deadline:
-        last = _run(
-            [
-                "docker",
-                "exec",
-                container,
-                "psql",
-                "-U",
-                _DB_USER,
-                "-d",
-                "postgres",
-                "-c",
-                "SELECT 1;",
-            ]
-        )
-        if last.returncode == 0:
-            consecutive += 1
-            if consecutive >= 2:
-                return
-        else:
-            consecutive = 0
-        time.sleep(0.3)
-    raise RuntimeError(
-        f"postgres in {container} never became ready: {last.stdout if last else 'no attempt made'}"
-    )
-
-
 @pytest.fixture
-def pg_container() -> Iterator[str]:
-    """A throwaway, network-isolated Postgres container. Always removed after the test."""
-    name = f"ot-restore-test-{uuid.uuid4().hex[:12]}"
-    image = _postgres_image_tag()
-    # A fresh, random value per container — not a credential anyone relies on: the
-    # container is `--network none` (unreachable from anywhere but our own `docker exec`,
-    # which authenticates over the local Unix socket, not this password) and is removed at
-    # the end of the test. Generated rather than a literal so there is nothing here that
-    # looks like a hardcoded secret to a scanner (or a reader).
-    throwaway_password = uuid.uuid4().hex
-    started = _run(
-        [
-            "docker",
-            "run",
-            "-d",
-            "--network",
-            "none",
-            "--name",
-            name,
-            "-e",
-            f"POSTGRES_PASSWORD={throwaway_password}",
-            image,
-        ]
-    )
-    assert started.returncode == 0, (
-        f"failed to start throwaway postgres container: {started.stderr}"
-    )
-    try:
-        _wait_ready(name)
-        yield name
-    finally:
-        _run(["docker", "rm", "-f", name])
+def pg_container(isolated_pg: str) -> str:
+    """The session's throwaway, network-isolated Postgres container.
+
+    Was a private ``docker run`` per test (~124 s of setup each, 6 tests). It is now the
+    shared container from ``tests/integration/conftest.py``, which drops every database this
+    test creates once it finishes — see that file for the measurements and for why the
+    isolation guarantee is unchanged.
+
+    Nothing in this module touches cluster-level state: each test names its own database
+    (``otrestore_bug``, ``otrestore_fixed``, ``otrestore_rollback``, ``otrestore_force``,
+    ``otrestore_head_{plain,custom}``) and every operation it performs — ``CREATE``/``DROP
+    DATABASE``, ``pg_replay_dump``, corrupting ``alembic_version`` — is scoped to that
+    database. Adding a test that reuses one of those names will fail loudly on
+    ``_create_db``'s assert rather than silently sharing state.
+    """
+    return isolated_pg
 
 
 def _create_db(container: str, dbname: str) -> None:

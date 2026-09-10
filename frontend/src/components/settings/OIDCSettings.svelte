@@ -154,12 +154,53 @@
     setTimeout(() => testing = false, 2000);
   }
 
+  /**
+   * The SPA route the identity provider must send the browser back to.
+   *
+   * This value is used twice by `auth/oidc/flow.py`: as the `redirect_uri` in the
+   * authorization request (so the IdP *navigates the browser* to it) and again at
+   * token exchange, where it must match byte for byte. It therefore has to be a page
+   * the **frontend** serves. `/api/auth/oidc/callback` is not: that handler returns a
+   * `JSONResponse` and never redirects, so registering it authenticates the user
+   * successfully and then strands them on a raw JSON document with no way forward.
+   *
+   * `/login` reads `?code`/`?state` on mount and XHRs the backend callback itself.
+   */
+  const CALLBACK_PATH = '/login';
+
   function generateCallbackUrl() {
     if (typeof window !== 'undefined') {
-      formData.oidc_callback_url = `${window.location.origin}/api/auth/oidc/callback`;
+      formData.oidc_callback_url = `${window.location.origin}${CALLBACK_PATH}`;
       handleChange();
     }
   }
+
+  /** The pathname of a typed callback URL, or undefined while it isn't yet a URL. */
+  function callbackUrlPath(value: string): string | undefined {
+    const trimmed = value.trim();
+    if (trimmed === '') return undefined;
+    try {
+      return new URL(trimmed).pathname;
+    } catch {
+      // Mid-typing. Nothing useful to say about "https:/" yet.
+      return undefined;
+    }
+  }
+
+  $: callbackPath = callbackUrlPath(formData.oidc_callback_url ?? '');
+
+  /**
+   * Warnings, never a block. Auto-detect is the happy path, but an admin can still
+   * paste anything here and the mistake stays silent until a real user tries to sign
+   * in — by which time the fix needs a change at the provider too. Two levels because
+   * the confidence differs: a backend `/api/` route is *knowably* broken, whereas a
+   * reverse proxy serving the SPA from a renamed or nested route is unusual but
+   * legitimate, and the browser cannot tell that apart from a typo. Hard-blocking the
+   * second case would make a working deployment unconfigurable.
+   */
+  $: callbackUrlIsApiRoute = callbackPath !== undefined && callbackPath.split('/').includes('api');
+  $: callbackUrlUnexpectedPath =
+    callbackPath !== undefined && !callbackUrlIsApiRoute && !callbackPath.endsWith(CALLBACK_PATH);
 </script>
 
 <div class="settings-panel">
@@ -338,6 +379,11 @@
         </button>
       </div>
       <span class="help-text">{$t('settings.oidc.callbackUrlHelp')}</span>
+      {#if callbackUrlIsApiRoute}
+        <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlApiWarning')}</p>
+      {:else if callbackUrlUnexpectedPath}
+        <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlPathWarning')}</p>
+      {/if}
     </div>
   </div>
 

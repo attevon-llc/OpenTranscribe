@@ -7,6 +7,8 @@ Handles empty databases, existing untracked databases, and tracked databases.
 """
 
 import logging
+import os
+import time
 from pathlib import Path
 
 from alembic.config import Config
@@ -14,6 +16,7 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import create_engine
 from sqlalchemy import inspect
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from alembic import command  # type: ignore[attr-defined]
 from app.core.config import settings
@@ -1252,6 +1255,80 @@ def _check_column_exists(conn, table: str, column: str) -> bool:
     return bool(result.scalar())
 
 
+#: How long to wait for Postgres to accept TCP before treating it as a real failure.
+#: Overridable so an orchestrated deploy with its own readiness gate can set it to 0.
+_DB_STARTUP_WAIT_S = float(os.environ.get("DB_STARTUP_WAIT_S", "120"))
+
+#: Gap between connection attempts while waiting.
+_DB_STARTUP_POLL_S = 2.0
+
+
+def _await_database_available(budget_s: float | None = None) -> None:
+    """Block until Postgres accepts a connection, or the budget expires.
+
+    ⚠️ **"The database is not up yet" and "the migration failed" are different facts, and
+    conflating them costs a deployment.** ``main.py``'s lifespan turns any exception out of
+    ``run_migrations()`` into ``SystemExit(1)`` — correct for a broken migration, which must
+    never serve a half-applied schema, and wrong for a database that is simply still starting.
+
+    Measured 2026-09-09 on a ``--fresh`` stack: postgres started at 10:11:43, the backend at
+    10:13:17, and the backend still died with ``connection to server at "postgres" … port
+    5432 failed: Connection refused``. That is the well-known first-init race — on a **new
+    volume** the official postgres entrypoint runs a temporary server with TCP listening
+    disabled while ``initdb`` and the bootstrap SQL run, so ``pg_isready`` can answer over the
+    unix socket (satisfying ``depends_on: service_healthy``) while TCP is still refused.
+
+    The failure is permanent rather than transient because of the reloader trap documented in
+    ``backend/tests/CLAUDE.md``: the dev backend runs ``uvicorn --reload``, whose parent holds
+    the listening socket, so the container stays **Up** with its port open and answering
+    nothing. Compose's ``restart`` never fires (the main process did not exit), the healthcheck
+    fails forever, and the whole stack start fails. That is what it looks like:
+
+        otfresh-visual-backend   Up 13 minutes (unhealthy)     # healthcheck exit 7, empty body
+
+    A budget rather than infinite retries: a database that is genuinely unreachable must still
+    fail loudly, and the last exception is re-raised so the log names the real cause.
+    """
+    budget = _DB_STARTUP_WAIT_S if budget_s is None else budget_s
+    if budget <= 0:
+        return
+
+    deadline = time.monotonic() + budget
+    started = time.monotonic()
+    attempt = 0
+    while True:
+        attempt += 1
+        probe = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+        try:
+            with probe.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            waited = time.monotonic() - started
+            if attempt > 1:
+                logger.info(
+                    "Database accepted connections after %.1fs (%d attempt(s))", waited, attempt
+                )
+            return
+        except OperationalError as exc:
+            if time.monotonic() >= deadline:
+                logger.critical(
+                    "Database still not accepting connections after %.0fs (%d attempts) — "
+                    "giving up. This is a real connectivity failure, not a slow start.",
+                    time.monotonic() - started,
+                    attempt,
+                )
+                raise
+            if attempt == 1:
+                logger.info(
+                    "Database not accepting connections yet (%s) — waiting up to %.0fs. "
+                    "Normal on a fresh volume: initdb runs with TCP disabled.",
+                    type(exc).__name__,
+                    budget,
+                )
+            time.sleep(_DB_STARTUP_POLL_S)
+        finally:
+            probe.dispose()
+
+
 def run_migrations() -> None:
     """Run database migrations on startup.
 
@@ -1265,6 +1342,8 @@ def run_migrations() -> None:
     """
 
     logger.info("Checking database migrations...")
+
+    _await_database_available()
 
     engine = create_engine(settings.DATABASE_URL)
 

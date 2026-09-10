@@ -1,0 +1,78 @@
+
+davidamacey/opentranscribe-docs:v0.5.0-scanleg-amd64 (alpine 3.23.5)
+====================================================================
+Total: 18 (UNKNOWN: 0, LOW: 0, MEDIUM: 8, HIGH: 10, CRITICAL: 0)
+
+┌────────────┬────────────────┬──────────┬────────┬───────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
+│  Library   │ Vulnerability  │ Severity │ Status │ Installed Version │ Fixed Version │                            Title                             │
+├────────────┼────────────────┼──────────┼────────┼───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libcrypto3 │ CVE-2026-14456 │ HIGH     │ fixed  │ 3.5.7-r0          │ 3.5.8-r0      │ openssl: OpenSSL: Denial of Service via unbounded memory     │
+│            │                │          │        │                   │               │ growth in QUIC server...                                     │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-14456                   │
+│            ├────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-18798 │ MEDIUM   │        │                   │               │ openssl: QUIC server may trigger double free when processing │
+│            │                │          │        │                   │               │ INITIAL packet                                               │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-18798                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-63072 │          │        │                   │               │ openssl: heap buffer overflow in CMS key unwrapping          │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-63072                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-63076 │          │        │                   │               │ openssl: invalid pointer dereference in CMP server via       │
+│            │                │          │        │                   │               │ crafted protectionAlg                                        │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-63076                   │
+├────────────┼────────────────┼──────────┤        ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libexpat   │ CVE-2026-76956 │ HIGH     │        │ 2.8.3-r0          │ 2.8.4-r0      │ libexpat: libexpat: Denial of Service via hash flooding      │
+│            │                │          │        │                   │               │ attack with crafted XML...                                   │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-76956                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-76957 │          │        │                   │               │ libexpat: libexpat: Memory corruption vulnerability allows   │
+│            │                │          │        │                   │               │ arbitrary code execution or denial of...                     │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-76957                   │
+│            ├────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-66046 │ MEDIUM   │        │                   │               │ Expat through 2.8.3 contains a denial of service             │
+│            │                │          │        │                   │               │ vulnerability caused ......                                  │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-66046                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-76641 │          │        │                   │               │ CVE-2026-76641 affecting package expat for versions less     │
+│            │                │          │        │                   │               │ than 2.8.3-2                                                 │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-76641                   │
+├────────────┼────────────────┼──────────┤        ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libssl3    │ CVE-2026-14456 │ HIGH     │        │ 3.5.7-r0          │ 3.5.8-r0      │ openssl: OpenSSL: Denial of Service via unbounded memory     │
+│            │                │          │        │                   │               │ growth in QUIC server...                                     │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-14456                   │
+│            ├────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-18798 │ MEDIUM   │        │                   │               │ openssl: QUIC server may trigger double free when processing │
+│            │                │          │        │                   │               │ INITIAL packet                                               │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-18798                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-63072 │          │        │                   │               │ openssl: heap buffer overflow in CMS key unwrapping          │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-63072                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-63076 │          │        │                   │               │ openssl: invalid pointer dereference in CMP server via       │
+│            │                │          │        │                   │               │ crafted protectionAlg                                        │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-63076                   │
+├────────────┼────────────────┼──────────┤        ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libuuid    │ CVE-2026-53612 │ HIGH     │        │ 2.41.4-r0         │ 2.41.6-r0     │ util-linux: util-linux: TOCTOU in the mount program when     │
+│            │                │          │        │                   │               │ applying post-mount ownership/mode changes...                │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-53612                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-53613 │          │        │                   │               │ util-linux: util-linux: TOCTOU in the mount program via      │
+│            │                │          │        │                   │               │ ancestor directory swap on...                                │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-53613                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-53614 │          │        │                   │               │ util-linux: util-linux: SUID mount(8) allows nosuid/noexec   │
+│            │                │          │        │                   │               │ bypass via LIBMOUNT_FORCE_MOUNT2                             │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-53614                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-76642 │          │        │                   │               │ util-linux: util-linux: failed external mount helper still   │
+│            │                │          │        │                   │               │ runs privileged X-mount post-hooks                           │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-76642                   │
+│            ├────────────────┤          │        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-78408 │          │        │                   │ 2.41.6-r1     │ util-linux: util-linux: nsenter --join-cgroup leaks root     │
+│            │                │          │        │                   │               │ cgroup migration authority                                   │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-78408                   │
+│            ├────────────────┤          │        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-78410 │          │        │                   │ 2.41.6-r0     │ util-linux: util-linux: restricted bind mounts do not pin    │
+│            │                │          │        │                   │               │ the source, allowing X-mount.owner/group/mode...             │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-78410                   │
+└────────────┴────────────────┴──────────┴────────┴───────────────────┴───────────────┴──────────────────────────────────────────────────────────────┘

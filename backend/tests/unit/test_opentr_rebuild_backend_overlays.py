@@ -447,25 +447,68 @@ def test_the_sidecar_probe_is_label_scoped_and_state_agnostic(tmp_path: Path):
     assert "status=running" not in probe, probe
 
 
-def test_the_probe_uses_the_same_project_resolution_as_the_port_preflight():
-    """One resolution, two readers — pinned so they cannot drift apart.
+def test_the_probe_uses_the_same_project_resolution_as_the_port_preflight(tmp_path: Path):
+    """One resolution, two readers — now genuinely shared, as this test invited.
 
-    `preflight_ports_or_die` already had the correct expression. Nothing connected the
-    two, which is how the probe came to ship a different (wrong) one. Deliberately NOT
-    fixed by refactoring both onto a shared helper: nothing in the suite exercises
-    `preflight_ports_or_die`, so that edit could not be proven, and it guards every
-    `start`. If it is ever extracted, this test is the thing that says so.
+    The previous edition pinned that both sites spelled the SAME single expression and
+    deferred the refactor: *"Deliberately NOT fixed by refactoring both onto a shared
+    helper: nothing in the suite exercises preflight_ports_or_die, so that edit could not
+    be proven."* It has since been extracted into ``ot_compose_project``, and this is the
+    test that says so. ``test_opentr_project_name_resolution.py`` supplies the
+    preflight coverage whose absence justified the deferral.
+
+    ⚠️ The resolution must never accept ``opentranscribe`` as an alternative. That
+    generalisation was tried on 2026-09-08 and reverted: it is the name a release REHEARSAL
+    stack runs under, so accepting it made the preflight wave a leftover rehearsal stack
+    through and ``compose up`` died on a ``container_name`` conflict.
+
+    ⚠️ This used to additionally pin the resolver's LITERAL SOURCE TEXT
+    (``COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")``), which is an implementation detail, not
+    the invariant. It blocked a genuine correctness fix — compose NORMALISES the derived
+    name (lowercase, ``[a-z0-9_-]`` only) and the raw basename did not, so a checkout named
+    ``OpenTranscribe`` (what ``git clone`` of this repo produces) made every project-label
+    filter match nothing. Asserted behaviourally now; the resolution's full contract,
+    normalisation included, lives in ``test_opentr_project_name_resolution.py``.
     """
     source = OPENTR.read_text(encoding="utf-8")
-    resolutions = re.findall(r'"\$\{COMPOSE_PROJECT_NAME:-\$\(basename "\$\(pwd\)"\)\}"', source)
-    assert len(resolutions) == 2, (
-        f"expected diar_native_container_present and preflight_ports_or_die to use the "
-        f"identical project resolution; found {len(resolutions)} occurrences"
-    )
-    body = source.split("diar_native_container_present() {", 1)[1].split("\n}\n", 1)[0]
-    assert 'COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")' in body, body
+    assert "ot_compose_project()" in source, "the shared resolver is gone"
+    body = source.split("ot_compose_project() {", 1)[1].split("\n}\n", 1)[0]
     assert "opentranscribe" not in body, (
-        "the probe must never hardcode a project name — that fallback was the bug"
+        "the resolver must never hardcode a project name — that fallback was the original "
+        "bug, and re-adding it as an ALTERNATIVE reintroduces it for rehearsal stacks"
+    )
+
+    def _resolve(cwd: str, env_name: str | None) -> str:
+        extract = f"eval \"$(sed -n '/^ot_compose_project() {{/,/^}}/p' {OPENTR})\""
+        export = f"export COMPOSE_PROJECT_NAME={env_name}\n" if env_name else ""
+        return subprocess.run(
+            ["bash", "-c", f"set -uo pipefail\n{extract}\n{export}ot_compose_project\n"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=cwd,
+            check=False,
+        ).stdout.strip()
+
+    assert _resolve(str(tmp_path), "otfresh-probe") == "otfresh-probe", (
+        "an explicitly-set COMPOSE_PROJECT_NAME is not honoured, so a --fresh deployment's "
+        "own project is not believed"
+    )
+    derived = tmp_path / "some-other-checkout"
+    derived.mkdir()
+    assert _resolve(str(derived), None) == "some-other-checkout", (
+        "the project is no longer derived from the working directory, so a checkout in a "
+        "differently-named directory resolves to the wrong stack"
+    )
+
+    probe = source.split("diar_native_container_present() {", 1)[1].split("\n}\n", 1)[0]
+    assert "ot_compose_project" in probe, (
+        "the probe no longer goes through the shared resolver, so the two can drift apart "
+        "again — which is how the probe came to ship a different one before"
+    )
+    preflight = source.split("preflight_ports_or_die() {", 1)[1].split("\n}\n", 1)[0]
+    assert "ot_port_holder_is_ours" in preflight, (
+        "the preflight no longer consults the shared per-port holder check"
     )
 
 

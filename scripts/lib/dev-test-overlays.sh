@@ -343,6 +343,16 @@ trap teardown_overlays EXIT
 # Idempotent (lldap_set_password just sets), so it runs whenever the overlay is needed
 # rather than only when this run started the container. Non-fatal: a failure here should
 # leave the LDAP tests to report their own problem, not abort the whole gate.
+#
+# ⚠️ The credentials are READ from backend/tests/e2e/ldap_fixture_users.py, never spelled here.
+# They used to be, and disagreed with the tests: this function set `ldap-admin:admin_password`
+# while test_ldap_oidc.py's session-autouse fixture ldappasswd'd the same account to
+# `LdapAdmin123` and test_auth_buttons.py logged in with `admin_password`. Whichever ran last
+# won; under `--dist loadfile` that is a race between workers, and the loser's bind fails,
+# falls through to local auth, and feeds ldap-admin's PROGRESSIVE lockout bucket — the exact
+# escalation the comment above warns about, caused by the fix for it.
+LDAP_FIXTURE_USERS_PY="${REPO_ROOT:-.}/backend/tests/e2e/ldap_fixture_users.py"
+
 seed_ldap_fixture_users() {
     local container
     container="$(overlay_container_name lldap)"
@@ -350,22 +360,42 @@ seed_ldap_fixture_users() {
         echo -e "${YELLOW}==>${NC} lldap container not found — skipping LDAP fixture seeding" >&2
         return 0
     fi
-    local user pass ok=true
-    for user_pass in "ldap-admin:admin_password" "ldap-user:user_password"; do
-        user="${user_pass%%:*}"
-        pass="${user_pass##*:}"
-        if ! docker exec "$container" /app/lldap_set_password \
+
+    local records
+    if ! records="$("$VENV_PY" "$LDAP_FIXTURE_USERS_PY" 2>&1)" || [[ -z "$records" ]]; then
+        echo -e "${RED}error:${NC} could not read LDAP fixture credentials from" \
+             "$LDAP_FIXTURE_USERS_PY — the accounts will keep whatever passwords they" \
+             "already had, which is how the ldap-admin lockout cascade started." \
+             "Output: ${records:-<empty>}" >&2
+        return 0
+    fi
+
+    local admin_user="" admin_pass="" kind uid pass ok=true seeded=()
+    while IFS=$'\t' read -r kind uid pass; do
+        [[ "$kind" == "ADMIN" ]] && { admin_user="$uid"; admin_pass="$pass"; }
+    done <<< "$records"
+    if [[ -z "$admin_user" || -z "$admin_pass" ]]; then
+        echo -e "${RED}error:${NC} $LDAP_FIXTURE_USERS_PY emitted no ADMIN record" >&2
+        return 0
+    fi
+
+    while IFS=$'\t' read -r kind uid pass; do
+        [[ "$kind" == "USER" ]] || continue
+        if docker exec "$container" /app/lldap_set_password \
                 --base-url "http://localhost:17170" \
-                --admin-username admin --admin-password admin_password \
-                --username "$user" --password "$pass" >/dev/null 2>&1; then
+                --admin-username "$admin_user" --admin-password "$admin_pass" \
+                --username "$uid" --password "$pass" >/dev/null 2>&1; then
+            seeded+=("$uid")
+        else
             ok=false
         fi
-    done
+    done <<< "$records"
+
     if $ok; then
-        echo -e "${YELLOW}==>${NC} seeded LDAP fixture passwords (ldap-admin, ldap-user)"
+        echo -e "${YELLOW}==>${NC} seeded LDAP fixture passwords (${seeded[*]})"
     else
         echo -e "${YELLOW}==>${NC} could not seed LDAP fixture passwords in $container —" \
-             "test_auth_buttons.py's LDAP cases will fail on the bind; see" \
+             "the LDAP e2e cases will fail on the bind; see" \
              "backend/tests/AUTH_TEST_SETUP.md" >&2
     fi
 }

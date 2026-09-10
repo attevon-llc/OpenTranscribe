@@ -477,6 +477,19 @@ services:
       # harmless to compose, but a reader deleting "the duplicate" had a 50%
       # chance of deleting the comment that explained the other reason.
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      # THIS WORKER CONSUMES THE `utility` QUEUE, so it runs `neural_search_bootstrap` —
+      # the every-10-minutes self-heal main.py relies on when its startup one-shot misses
+      # ("self-heals on the next beat tick instead of losing neural search permanently").
+      # Without this mount that promise is FALSE: the bootstrap writes the embedding model
+      # under /ml-models, the path does not exist here, and the non-root appuser cannot
+      # create it at /, so it fails `[Errno 13] Permission denied: '/ml-models'` and retries
+      # forever while search silently falls back to BM25. Measured 2026-09-08: it failed the
+      # lite rehearsal 1/17, and hid on fresh installs because there the one-shot lands.
+      # Read-write, like `backend`'s — the bootstrap DOWNLOADS the model when absent; the
+      # `:ro` form is correct only for `opensearch`, which merely reads it back via file://.
+      # Guarded by backend/tests/unit/test_neural_bootstrap_worker_has_model_mount.py, which
+      # derives the queue from celery.py so re-routing the task moves the requirement too.
+      - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
     environment:

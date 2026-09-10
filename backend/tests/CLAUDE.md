@@ -1,9 +1,65 @@
 # backend/tests — the whole test tree (api, unit, e2e, integration, redaction, transcription, onnx)
 
+## ⚠️ A NOT MEASURED phase is not a pass, and the gate's exit code now says so
+
+`run-integration-tests.sh` prints `⊘ … NOT MEASURED` for a phase that declined to be counted
+(mass skips past the ceiling, or a check with no evidence) — and for months it then **exited
+0**, so `run-dev-tests.sh` recorded the backend phase `PASS` and `scripts/release/60-test.sh`
+recorded `integration-gate pass` for a release, on a run whose largest phase (733 s, 21 skips)
+had explicitly refused to count itself. It now **exits 4**; `run-dev-tests.sh` renders a
+`NOT MEASURED` row and exits **5**, and `60-test.sh` records `integration-gate not-measured`
+(blocking).
+
+⚠️ **The two codes differ on purpose.** In the repo-wide *standard* contract (`release.sh`,
+`test-matrix.sh`'s leg contract) **4 already means operator abort**, so a script invoked under
+it needs 5 — otherwise an honest "a phase verified nothing" prints as
+`ABORT — the leg reported an operator abort`. `run-integration-tests.sh` can use 4 because it
+has no prompt and no abort path. Pinned by `unit/test_test_matrix_execution.py`'s
+`test_the_two_exit_contracts_are_read_separately` and
+`unit/test_integration_gate_skip_ceiling.py`.
+
+Every pytest phase in the gate now runs with **`-rs`** and writes `--junitxml` into
+`$GATE_ARTIFACT_DIR` (default `/tmp/ot-integration-gate`), because the 2026-09-06 gate's
+21 + 18 + 78 + 56 skips had **no recorded reason anywhere** — diagnosing them meant re-running a
+733-second phase by hand.
+
+Two more things the gate does differently, both measured:
+
+- **Every `RUN_*` a gate script sets must be READ by a test — and there is no `GATED_FILES`
+  list any more.** ⚠️ This bullet used to describe a `GATED_FILES` array whose entries had to
+  carry a `RUN_*` gate, policed by `unit/test_gated_files_all_have_gates.py`. **Both are
+  gone**; neither name appears anywhere in `scripts/` or `backend/` today, so do not go
+  looking for them. What happened: the module-level `skipif` gates were deleted from all
+  eight security suites (each now opens `# Runs by DEFAULT. This module was gated behind
+  RUN_<X>_TESTS…`) while `run-integration-tests.sh` kept exporting seven variables —
+  `RUN_PKI_TESTS RUN_MFA_TESTS RUN_LLM_TESTS RUN_FEDRAMP_TESTS RUN_FIPS_TESTS
+  RUN_AUTH_CONFIG_TESTS RUN_ADVANCED_ADMIN_TESTS` — that **no test read**. A phase named
+  "Gated security suites" was setting variables that changed nothing.
+  The old guard could not catch it: it substring-matched the variable name over the whole
+  file, and all eight files still *mention* their dead variable in that very comment. It
+  passed while describing a mechanism that no longer existed — a test that cannot fail, in
+  the file written to prevent tests that cannot fail. `unit/test_gate_run_env_vars_are_live.py`
+  replaces it and matches **structurally** (AST: the name must be a call argument, a subscript
+  index, or an assignment value), so prose cannot satisfy it.
+- **ONE FIPS phase, not two.** `FIPS_MODE=true` *is* live (`app/core/config.py` reads it at
+  import), so `Security suites (FIPS_MODE=true)` is a real claim and stays. The **FIPS-off**
+  half was deleted: with the gates gone those eight files are ordinary members of the Unit/API
+  suite, so that phase re-ran, byte for byte, tests phase 1 had just run. Measured on the
+  2026-09-07 gate's own junit artifacts — all **394** ids in `gated-fips-off.xml` also appear
+  in `unit.xml`, **0 missing** — so removing it removed 394 duplicate *executions* and zero
+  tests. `FIPS_MODE_SUITES` in `run-integration-tests.sh` is the current list.
+- **`--e2e-smoke` goes through `scripts/e2e/run-e2e-smoke.sh`**, not a bare pytest listing the
+  same four files. The old bypass meant the gate skipped `resolve_phase`, the 3 workers and the
+  stack preflight — and it is *why* nobody noticed that `run-e2e-smoke.sh` always exited
+  non-zero (its phase 2 collects no `visual` test, exits 5, and only `resolve_phase` forgives
+  that). Same 39 passed / 1 skipped, 174.4 s -> 158.3 s.
+
 ## Purpose
 
-`./scripts/run-integration-tests.sh` is **THE pre-merge gate**: ungated suite → all `RUN_*`
-suites in **both FIPS modes** → `-m integration`. Needs the live stack
+`./scripts/run-integration-tests.sh` is **THE pre-merge gate**: Unit/API suite → the security
+suites under `FIPS_MODE=true` (**one** pass — see above; there is no FIPS-off phase and no
+`RUN_*`-gated phase any more) → `-m integration` → `-m gpu` → model-vs-schema drift. Needs the
+live stack
 (`./opentr.sh start dev`) plus `backend/venv`. GitHub Actions `backend-tests` is a safety net
 only — fresh Postgres, CPU-only `backend/requirements-ci.txt` (**never `requirements-dev` in
 CI**), `SKIP_S3`/`SKIP_OPENSEARCH` forced `True`. E2E is local-only: `./scripts/e2e/run-e2e.sh`
@@ -52,7 +108,23 @@ what it appears to. A green one from the wrong schema is worse.
 
 ## Markers and gates
 
-- Registered (pyproject): `slow`, `unit`, `pki`, `e2e`, `integration`, `gpu`, `models`. `addopts` =
+- **A test that cannot run here is DESELECTED by marker, never left to skip.** A skip inflates
+  the phase's skip total toward `run-integration-tests.sh`'s ceiling, and once the phase trips
+  that ceiling it reports NOT MEASURED — so a permanently-skipping test does not merely prove
+  nothing itself, it buries the skips that mean something. Two markers exist for this:
+  - **`multi_gpu`** — needs a multi-*worker* GPU topology (`--gpu-scale` / `--gpu-split`, i.e. a
+    running `celery-worker-gpu-scaled` or `celery-worker-gpu-diarize`), **not merely a second
+    card**. The gate DETECTS that topology and selects these back in when it is up, so this
+    hides no coverage on a host that can run them — which matters, because root `CLAUDE.md` is
+    explicit that GPU 2 is usable and that treating this host as single-GPU is a documented cost.
+    6 tests, all in `test_gpu_scale_smoke_live` / `test_diar_native_cross_card_placement_live` /
+    `test_diar_native_multigpu_provider_live`.
+  - **`opt_in_gate`** — expensive or deployment-scoped, behind its own `RUN_*` variable
+    (`RUN_EXPORT_CAPABILITY_TEST`, `RUN_INDEX_AUDIT`). The env gate inside the test is still the
+    authority on whether the work happens; the marker only stops an opt-in-by-design test from
+    being counted. `--export-capability` selects the first back in.
+- Registered (pyproject): `slow`, `unit`, `pki`, `e2e`, `integration`, `gpu`, `models`,
+  `multi_gpu`, `opt_in_gate`. `addopts` =
   `-n auto --dist loadgroup --tb=short -q --strict-markers -m 'not integration and not gpu'`;
   `norecursedirs=["tests/e2e"]`. **`--strict-markers` makes an unregistered marker a collection
   error** — register any new marker in `[tool.pytest.ini_options] markers` or collection fails.
@@ -71,18 +143,24 @@ what it appears to. A green one from the wrong schema is worse.
   the block deliberately does not use `os.environ.setdefault`. Tests: `unit/test_cuda_device_guard.py`.
 - `@pytest.mark.models` = needs Presidio/GLiNER/toxicity weights; those modules also
   `importorskip` + `preload()`-skip, so fast CI passes without weights.
-- Module-level `skipif` env gates → suite: `RUN_PKI_TESTS`→`test_pki_auth`, `RUN_MFA_TESTS`→
-  `test_mfa_security`, `RUN_LLM_TESTS`→`test_llm_settings`, `RUN_FEDRAMP_TESTS`→
-  `test_fedramp_compliance`+`_controls`, `RUN_FIPS_TESTS`→`test_fips_140_3`,
-  `RUN_AUTH_CONFIG_TESTS`→`test_auth_config_service`, `RUN_ADVANCED_ADMIN_TESTS`→
-  `test_admin_security`, `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (self-seeding — injects
+- Module-level `skipif` env gates → suite. ⚠️ **The seven security-suite gates that used to
+  head this list are GONE** (`RUN_PKI_TESTS`, `RUN_MFA_TESTS`, `RUN_LLM_TESTS`,
+  `RUN_FEDRAMP_TESTS`, `RUN_FIPS_TESTS`, `RUN_AUTH_CONFIG_TESTS`, `RUN_ADVANCED_ADMIN_TESTS`).
+  All eight files run by DEFAULT now, and each still *mentions* its dead variable in a header
+  comment — which is exactly what let a substring-matching guard pass over a mechanism that no
+  longer existed. **Grep for `gate_enabled("<VAR>")`, never for the bare name**, and see
+  `unit/test_gate_run_env_vars_are_live.py`. Verified 2026-09-07: those seven have **zero**
+  `gate_enabled` call sites in `backend/tests`. What remains live:
+  `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (self-seeding — injects
   its own 6-meeting corpus via `app/scripts/corpus_injection` through a throwaway `searchqual-`
   user, see `tests/fixtures/search_corpus.py`; still deliberately never in CI, since CI forces
   `SKIP_OPENSEARCH=True`), `RUN_SCHEMA_DRIFT_TESTS`→`unit/test_schema_drift` (needs the live
   migrated DB; now its own phase in `run-integration-tests.sh` — it was previously set only by
   the release pipeline's `warn`-severity `schema-drift` criterion, so it never ran pre-merge),
   `RUN_AUTH_E2E`→`e2e/test_ldap_oidc` + LDAP half of
-  `e2e/test_auth_buttons`, `RUN_PKI_E2E`→`e2e/test_pki`.
+  `e2e/test_auth_buttons`, `RUN_PKI_E2E`→`e2e/test_pki`, `RUN_INDEX_AUDIT`→
+  `integration/test_speaker_label_index_drift`, `RUN_EXPORT_CAPABILITY_TEST`→
+  `integration/test_export_toolchain_in_shipped_images`.
 - **MinIO/OpenSearch tests auto-enable by TCP probe.** Root conftest `_service_reachable`
   (0.3 s) `setdefault`s `SKIP_S3` from `localhost:5178` and `SKIP_OPENSEARCH` from
   `localhost:5180`, then points the clients at those host ports; an explicit shell value wins.
@@ -128,6 +206,53 @@ What matters when you are writing a test here:
   new one a must-fire *and* a must-stay-clean fixture. `unit/test_audit_tests_selftest.py` runs
   all 54 cases under pytest for the same reason: a detector that matches nothing reports zero
   findings, which is indistinguishable from a clean suite.
+
+## ⚠️ A gate test may not depend on the dev deployment's DATA, or on a fixed wall-clock budget
+
+Two failure shapes cost a full day on 2026-09-06 and produced **zero** product bugs between
+them. Both are about the test, not the code, and both keep coming back because each instance
+looks like a one-off.
+
+**1. Data. A test that reads whatever happens to be in the dev stack is unfailable for one
+developer and unpassable for the next.** Own the data or don't assert on it:
+
+- `integration/test_speaker_label_index_drift.py` swept the entire live `transcript_chunks`
+  index. It failed on residue an E2E run had left **ten days earlier** — an upload never
+  cleaned up, a speaker rename whose Celery index update never landed. Reindexing that row is
+  not a fix; the next run leaves new residue. It now creates a **throwaway chunks index**
+  (uuid4 name, the REAL mapping, deleted in teardown) plus rows in the session savepoint, and
+  carries a negative control that seeds the original defect so the sweep can still be shown to
+  fail. The whole-deployment sweep survives as an opt-in **audit** behind `RUN_INDEX_AUDIT` —
+  auditing a deployment and testing a code path are different jobs with different pass
+  conditions, and merging them makes the gate hostage to accumulated data.
+- `e2e/test_visual_regression.py`'s `settings` surface screenshotted the **viewport**, which
+  put the gallery *behind* the modal into the baseline — tag chips, speaker chips, media
+  cards. Baseline taken against a near-empty library, so it failed at 1.11% (tolerance 0.50%)
+  the moment the stack held two files, with the modal itself pixel-identical. Fixed by
+  capturing the **element** (`.settings-modal`), the same thing `chat_trace` already did.
+  Masking cannot fix that class: card COUNT changes the region's layout.
+- ⚠️ **Still outstanding**: `e2e/test_search.py`'s `KNOWN_QUERY = "PyTorch"` is a term
+  "present in the standard dev corpus", and its result tests **skip** when absent. That is the
+  silent-skip trap — a green run proving nothing. `tests/fixtures/search_corpus.py` already
+  self-seeds a corpus for `RUN_SEARCH_QUALITY_TESTS`; that is the pattern to copy.
+
+**2. Time. A fixed timeout calibrated on an idle machine is a bug, because the gate itself is
+the load.** 48 pytest workers, 3 Playwright workers and image builds all hit one docker daemon
+and one backend. Every one of these passed alone and failed in the full run:
+
+| Was | Now | Measured reality |
+|---|---|---|
+| Keycloak healthcheck `start_period 60s` + 5×30s = 210s | 900s | **~600s** — `start-dev` re-augments on every start; `JarResultBuildStep` walks the tree calling `File.setReadable` per entry |
+| throwaway Postgres `_wait_ready` 30s ×5 files | `throwaway_pg._READY_TIMEOUT` = 180s | 19 function-scoped fixtures racing a daemon that is also building images |
+| `docker run alpine` 60s | `_DOCKER_OP_TIMEOUT` = 120s + one retry | same op takes 8.3s idle |
+| `search_page` `.search-page` 15s | 30s (matches its conftest siblings) | the div is the page ROOT — its absence means the app SHELL is gone, and that is gated on a 60s auth probe |
+
+Rules that follow: give the constant a **name**, put the **measurement** beside it, and never
+copy a budget into a fifth file. Where a timeout means a real leak (a container that may exist),
+retry once and then fail loudly naming the object — don't widen and hope.
+
+⚠️ **Neither shape is a flaky test, and treating them as flake is how they survive.** Before
+"fixing" a red gate, check whether the assertion is about the code at all.
 
 ## Safety rules (non-negotiable) — enforced by `unit/test_e2e_data_hygiene.py`
 

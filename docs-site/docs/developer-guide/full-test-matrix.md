@@ -107,7 +107,7 @@ still exits 0?" and write that test first.
 | # | Command | Pass criterion |
 |---|---|---|
 | 1 | `scripts/safe-precommit.sh run --all-files` | Exit 0, no `files were modified by this hook` |
-| 2 | `./scripts/run-backend-tests.sh --summary` | Exit 0, 0 failures |
+| 2 | `./scripts/run-backend-tests.sh --require-fresh --summary` | Exit 0, 0 failures. ⚠️ `--summary` runs **no tests** — it re-reports `/tmp/ot-backend-tests/last.xml`. `--require-fresh` (added 2026-09-07) refuses an artifact from a different commit or older than `OT_SUMMARY_MAX_AGE_S` (default 7200s); without it this leg passed on a two-day-old, 5-test artifact from another commit. Run the suite first: `./scripts/run-backend-tests.sh` |
 | 3 | `python3 scripts/audit-tests.py backend/tests` + `python3 scripts/audit-tests.py --selftest`; `cd frontend && npm run test:audit && npm run test:audit:selftest` | Exit 0, no `SELF-TEST BROKEN`, DEFERRED (backlog) count not increased vs the prior run |
 | 4 | `./scripts/frontend-check.sh --no-claude --check-only` | Exit 0 |
 | 5 | `cd docs-site && npm run build` | Exit 0 |
@@ -327,7 +327,7 @@ mode with the same script and the same criteria.
 absence of a GPU worker and of resident GPU memory, and needs a real cloud ASR key to go further
 than that. It does **not** upload a file, run ASR, index it, search it, or chat over it. The actual
 upload -> ASR -> segments/speakers -> search -> chat pipeline for a lite deployment is covered
-separately, with no vendor key required, by the **"3-lite" leg** below
+with no vendor key required by **Scenario C inside Stage 3's leg `3`**
 (`scripts/release-tests/test-lite-mode.sh`) — see that section for what it asserts.
 
 ## Stage 3 — Deployment mode (prod)
@@ -354,20 +354,35 @@ scripts/release/65-rehearse.sh "$(tr -d '[:space:]' < VERSION)"
 ```
 
 That is one engine with two callers, not two implementations: `65-rehearse.sh` runs Scenario A,
-tears A's stack down so B can bind the stock ports, then runs Scenario B. It is also *pure* —
-only `release.sh` writes the `.release/<version>/` ledger — so running it from the matrix cannot
-corrupt a real release's recorded state. It replaced a leg whose description said
-"fresh-install + upgrade" while its command was `test-fresh-install.sh` alone.
+tears A's stack down so B can bind the stock ports, runs Scenario B, tears that down, then runs
+Scenario C (lite). It is also *pure* — only `release.sh` writes the `.release/<version>/` ledger
+— so running it from the matrix cannot corrupt a real release's recorded state. It replaced a
+leg whose description said "fresh-install + upgrade" while its command was
+`test-fresh-install.sh` alone.
 
-### Stage 3 — lite-mode full rehearsal
+⚠️ **Stage 2 leaves the dev stack UP and Stage 3 requires it STOPPED**, so `test-matrix.sh all`
+reports every stage-3 leg `BLOCKED` unless you stop it. Either `./opentr.sh stop` between the
+stages, or pass **`--auto-stop-stack`** — default OFF, and deliberately **not** implied by
+`--yes`, because "I accept hours of runtime" is not the same consent as "you may stop the
+deployment I am using". It prints the restart command when it stops the stack and again in the
+summary.
 
-**~30-45 min. Requires the dev stack STOPPED** (same one-liner-defaults constraint as
-`test-fresh-install.sh`/`test-upgrade.sh` — see `scripts/release-tests/README.md`).
+### Stage 3, Scenario C — lite-mode full rehearsal
+
+**~30-45 min. Part of leg `3`** (`65-rehearse.sh` runs it after Scenarios A and B), and
+separately runnable by hand. **Requires the dev stack STOPPED** (same one-liner-defaults
+constraint as `test-fresh-install.sh`/`test-upgrade.sh` — see
+`scripts/release-tests/README.md`).
 
 ```
 ./opentr.sh stop
 ./scripts/release-tests/test-lite-mode.sh --yes
 ```
+
+There is deliberately **no separate `3-lite` matrix leg**. There used to be, from before
+`65-rehearse.sh` gained Scenario C — so `test-matrix.sh 3` ran this ~30-45 minute rehearsal
+**twice**. The duplicate leg was removed rather than adding a `--skip-lite` to the stage script,
+because leg `3` must stay exactly what `./scripts/release.sh rehearse` runs.
 
 Runs the real `docker-compose.lite.yml` (no-GPU, cloud-ASR-only) topology against a **mocked**
 cloud ASR provider (`scripts/mock-asr-server.py`, a Gladia stand-in) and a **mocked** LLM

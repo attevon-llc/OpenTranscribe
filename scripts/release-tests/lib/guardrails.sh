@@ -34,6 +34,56 @@ gr_log()  { echo -e "${GR_BLUE}[guardrails]${GR_NC} $*"; }
 gr_ok()   { echo -e "${GR_GREEN}[guardrails] ✓${GR_NC} $*"; }
 gr_warn() { echo -e "${GR_YELLOW}[guardrails] ⚠${GR_NC} $*" >&2; }
 gr_die()  { echo -e "${GR_RED}${GR_BOLD}[guardrails] ✗ FATAL:${GR_NC} $*" >&2; exit 1; }
+
+# Existing containers whose NAME is one this scenario will create (issue #899).
+#
+# $1: "" for running only, "-a" to include stopped.
+#
+# Docker refuses to create a container whose name is taken, whatever compose project owns
+# it — so name collision, not project label, is the real precondition. A previous
+# scenario's stack runs under `ot-reltest-*` while using the stock `opentranscribe-*`
+# NAMES, and a label-only check is blind to exactly that.
+#
+# The set is DERIVED from docker-compose.yml's own `container_name:` declarations rather
+# than transcribed here: it is then precisely the names we will try to create, so an
+# unrelated `opentranscribe-homepage` cannot false-positive (the hazard the label filter
+# was reaching for) and a service added to compose is covered without touching this file.
+#
+# ⚠️ An interpolated entry is RESOLVED to its default, not skipped. The three
+# `${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-*` services default to the
+# stock project, so a leftover `--gpu-scale` / `--gpu-split` worker is named exactly what a
+# stock install would create and DOES collide — dropping those entries (the first version
+# of this function) left the guard blind to three of the nineteen names it must cover.
+# An entry with no resolvable default (`${FOO}`) is dropped: nothing here can know its value,
+# and guessing would be the `name=^opentranscribe-` false-positive hazard by another route.
+gr_colliding_container_names() {
+    local ps_flag="${1:-}"
+    local compose="${GR_REPO_ROOT:-$(pwd)}/docker-compose.yml"
+    [[ -f "$compose" ]] || return 0
+
+    # ⚠️ `|| true` is load-bearing, not defensive noise. `grep -v` exits 1 when it filters
+    # EVERY line out, `set -o pipefail` promotes that to the pipeline's status, and `set -e`
+    # then aborts the sourcing script — stdout and stderr both empty, rc 1, no message. So a
+    # compose file whose container_names were all project-interpolated would kill the whole
+    # scenario at a routine safety check. Same shape as #617/#618. Measured before the fix.
+    local wanted existing
+    wanted="$(sed -n 's/^[[:space:]]*container_name:[[:space:]]*//p' "$compose" \
+              | sed 's/[[:space:]]*$//' \
+              | sed 's/\${[A-Za-z_][A-Za-z0-9_]*:-\([^}]*\)}/\1/g' \
+              | grep -v '\${' | sort -u || true)"
+    [[ -n "$wanted" ]] || return 0
+
+    # Captured, never piped into a short-circuiting reader — `grep -q`/`head` under
+    # `set -o pipefail` can SIGPIPE `docker ps` and turn a match into a non-match.
+    if [[ -n "$ps_flag" ]]; then
+        existing="$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)"
+    else
+        existing="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
+    fi
+    [[ -n "$existing" ]] || return 0
+
+    comm -12 <(printf '%s\n' "$wanted") <(printf '%s\n' "$existing" | sort -u)
+}
 # An operator declining a confirmation is NOT a gate failure, and the difference is the shared
 # exit-code contract scripts/release.sh and scripts/test-matrix.sh both publish: 0 pass, 1 gate
 # failed, 2 misuse, 3 precondition unmet, 4 OPERATOR ABORT. The confirmation gate used to
@@ -190,23 +240,63 @@ gr_check_container_names() {
     # `transcribe-app`, while a curl/one-liner install runs under
     # `opentranscribe` — checking only the latter let this refuse-if-running
     # guard pass with the dev stack fully up.
-    local running running_alt running_all
+    #
+    # ⚠️ AND by NAME COLLISION, not only by project label (issue #899). The real
+    # precondition is neither of the two things this guard used to check: docker refuses
+    # to create a container whose NAME already exists, whatever compose project owns it.
+    # A previous scenario's own stack runs under project `ot-reltest-lite` (or
+    # `ot-reltest-fresh`) while using the stock `opentranscribe-*` container NAMES, so a
+    # label-only check cannot see the single likeliest thing in the way — the last run.
+    #
+    # Measured 2026-09-09: this printed `✓ no live opentranscribe-*/transcribe-app-*
+    # containers running` while 18 containers named `opentranscribe-*` (project
+    # `ot-reltest-lite`) held every port the scenario needed. The port guard caught it a
+    # moment later, so nothing shipped broken — but the ✓ had already sent the operator
+    # looking somewhere else.
+    #
+    # The name set is DERIVED from the compose file's own `container_name:` declarations,
+    # so it is exactly what this scenario will try to create — which is why an unrelated
+    # `opentranscribe-homepage` still does not false-positive, the thing the label filter
+    # was reaching for in the first place.
+    local running running_alt running_named running_all
     running=$(docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' || true)
     running_alt=$(docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' || true)
-    running_all="$(printf '%s\n%s' "$running" "$running_alt" | sed '/^$/d' | sort -u)"
+    running_named=$(gr_colliding_container_names "" || true)
+    running_all="$(printf '%s\n%s\n%s' "$running" "$running_alt" "$running_named" | sed '/^$/d' | sort -u)"
     if [[ -n "$running_all" ]]; then
+        # ⚠️ TWO causes, TWO remedies, and naming only the first is the #900 mistake in a
+        # different function: `./opentr.sh stop` does nothing to a leftover `ot-reltest-*`
+        # scenario stack, which is the likeliest thing here now that the name sweep can
+        # actually see it. Discriminate on WHICH sweep matched — a name-only hit carries no
+        # stock project label, so it is not the operator's dev stack.
+        local _name_only
+        _name_only="$(comm -23 <(printf '%s\n' "$running_named" | sed '/^$/d' | sort -u) \
+                               <(printf '%s\n%s' "$running" "$running_alt" | sed '/^$/d' | sort -u))"
+        local _remedy="Stop them first with: ./opentr.sh stop  (preserves all data)"
+        if [[ -n "$_name_only" ]]; then
+            _remedy="These carry stock container names but belong to NO stock compose project —
+they are a previous rehearsal's stack, not your dev stack, and './opentr.sh stop'
+will not touch them. Clear them with the scenario's own cleanup:
+
+    ./scripts/release-tests/test-fresh-install.sh --cleanup --yes
+    ./scripts/release-tests/test-upgrade.sh --cleanup --yes
+    ./scripts/release-tests/test-lite-mode.sh --cleanup --yes"
+        fi
         gr_die "live opentranscribe-*/transcribe-app-* containers still running:
 $running_all
 
-Stop them first with: ./opentr.sh stop  (preserves all data)"
+$_remedy"
     fi
     # Stopped opentranscribe-* containers (from a previous live `down`) would
     # also collide on container_name during create — flag them so the caller
     # can decide whether to remove them.
-    local stopped stopped_alt stopped_all
+    local stopped stopped_alt stopped_named stopped_all
     stopped=$(docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' || true)
     stopped_alt=$(docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' || true)
-    stopped_all="$(printf '%s\n%s' "$stopped" "$stopped_alt" | sed '/^$/d' | sort -u)"
+    # Same name-collision sweep as the live check above (issue #899): a STOPPED container
+    # holding one of our names collides on create just as surely as a running one.
+    stopped_named=$(gr_colliding_container_names "-a" || true)
+    stopped_all="$(printf '%s\n%s\n%s' "$stopped" "$stopped_alt" "$stopped_named" | sed '/^$/d' | sort -u)"
     if [[ -n "$stopped_all" ]]; then
         gr_warn "stopped opentranscribe-*/transcribe-app-* containers exist (will collide on create):"
         echo "$stopped_all" >&2
@@ -231,7 +321,13 @@ gr_check_ports_free() {
     # Fail fast if any required host port is already bound.
     local occupied=()
     for port in ${TEST_PORTS:-}; do
-        if ss -tlnH 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"; then
+        # `grep -cE ... -gt 0`, never `| grep -qE`. This file runs under `set -euo pipefail`;
+        # `grep -q` exits at its first match, so `awk` (117 listening sockets on this host)
+        # takes SIGPIPE and `pipefail` reports the pipeline as failed — i.e. a port that IS
+        # bound reads as free. This is a GUARDRAIL whose entire job is to fail fast before a
+        # release test binds the stock ports, so an inversion here defeats the check silently
+        # and the collision surfaces later as an unrelated-looking stack failure.
+        if [ "$(ss -tlnH 2>/dev/null | awk '{print $4}' | grep -cE "[:.]${port}$")" -gt 0 ]; then
             occupied+=("$port")
         fi
     done
@@ -336,22 +432,59 @@ gr_cleanup() {
     # Tear down ONLY labeled resources and ONLY files under TEST_ROOT.
     gr_log "beginning labelled cleanup for project '$TEST_PROJECT_NAME'"
 
-    # 1. Stop and remove containers matching our label
+    # 1. Stop and remove containers matching our label OR our compose project.
+    #
+    # ⚠️ The label alone is not sufficient, and the gap is an ORDERING one that labelling
+    # more files cannot close. cp_inject_labels_all stamps the compose files present in the
+    # staged tree at staging time; the installer then downloads further overlays
+    # (docker-compose.mock-asr.yml, docker-compose.mock-llm.yml) into that same directory
+    # AFTERWARDS, so their services are created carrying no release-test label at all.
+    #
+    # Measured 2026-09-07: lite-mode's `opentranscribe-mock-asr` and `opentranscribe-mock-llm`
+    # survived `--cleanup` and kept ports 5198/5199 bound, and the NEXT rehearsal refused at
+    # phase 00 — all three scenarios, for a reason that was nothing to do with the release.
+    #
+    # TEST_PROJECT_NAME is a safe second key precisely because gr_check_project_name has
+    # already refused to run unless it starts with `ot-reltest-`; no real deployment can
+    # occupy that namespace. This is the same "filter by compose project, never by name
+    # prefix" rule the rest of this file follows.
     local ids
-    ids=$(docker ps -aq --filter "label=$TEST_LABEL" || true)
+    ids=$(
+        {
+            docker ps -aq --filter "label=$TEST_LABEL"
+            docker ps -aq --filter "label=com.docker.compose.project=$TEST_PROJECT_NAME"
+        } 2>/dev/null | sort -u || true
+    )
     if [[ -n "$ids" ]]; then
         gr_log "stopping $(echo "$ids" | wc -l) containers"
         docker stop $ids >/dev/null 2>&1 || true
         docker rm -f $ids >/dev/null 2>&1 || true
     fi
 
-    # 2. Remove volumes matching our label
+    # 2. Remove volumes matching our label OR our compose project (same ordering
+    #    argument as the containers above: a volume declared by an overlay the installer
+    #    added after the labelling step carries no release-test label).
     local vols
-    vols=$(docker volume ls -q --filter "label=$TEST_LABEL" || true)
+    vols=$(
+        {
+            docker volume ls -q --filter "label=$TEST_LABEL"
+            docker volume ls -q --filter "label=com.docker.compose.project=$TEST_PROJECT_NAME"
+        } 2>/dev/null | sort -u || true
+    )
     if [[ -n "$vols" ]]; then
         for vol in $vols; do
+            # ⚠️ BOTH the hyphenated and underscored prefixes. compose prefixes a volume
+            # with the project name VERBATIM — hyphens are legal in a project name — so a
+            # `ot-reltest-lite` project produces `ot-reltest-lite_postgres_data`. This case
+            # matched only the underscored form, so the guard meant to stop the WRONG volume
+            # being deleted refused every RIGHT one:
+            #   ⚠ refusing to remove volume 'ot-reltest-lite_postgres_data' — name does not
+            #     match test prefix
+            # The stale Postgres then survived into the next lite run, whose backend died with
+            # `password authentication failed for user "postgres"` — exactly the failure
+            # gr_check_stale_stock_volumes warns about, one scenario over (2026-09-07).
             case "$vol" in
-                "${TEST_PROJECT_NAME//-/_}"*|ot_reltest_*)
+                "${TEST_PROJECT_NAME}"*|"${TEST_PROJECT_NAME//-/_}"*|ot_reltest_*|ot-reltest-*)
                     gr_log "removing volume $vol"
                     docker volume rm "$vol" >/dev/null 2>&1 || true
                     ;;
@@ -415,6 +548,44 @@ gr_cleanup() {
         rm -rf -- "$resolved"
     fi
 
+    # 5. VERIFY. A sweep that removed nothing it was asked to remove has not completed
+    #    (issue #900).
+    #
+    # Measured 2026-09-09, after an interrupted fresh-install run:
+    #
+    #     [guardrails] beginning labelled cleanup for project 'ot-reltest-fresh'
+    #     [guardrails] ⚠ refusing to remove opentranscribe_postgres_data — still used by: ...
+    #     [guardrails] ⚠ refusing to remove network opentranscribe_default — still has: <14>
+    #     [guardrails] ✓ cleanup complete
+    #
+    # Exit 0, a green tick, and 14 containers still running. The labelled sweep targets
+    # ${TEST_PROJECT_NAME}, but the containers the INSTALLER creates run under the stock
+    # `opentranscribe` compose project — deliberately, since the scenario exercises what a
+    # real `curl | bash` install produces. So the sweep matched nothing, the volume removals
+    # correctly refused *because* those containers still held them, and success was reported
+    # anyway. The next rehearsal then failed its preconditions for a reason that had nothing
+    # to do with the release.
+    #
+    # ⚠️ This deliberately does NOT `docker compose -p opentranscribe down`. That project name
+    # is also what a real production install uses, `--cleanup` runs no preflight asserting
+    # otherwise, and destroying containers this run never recorded owning would be a worse
+    # bug than the one being fixed — the same reasoning the volume sweep already applies
+    # ("leaving $vol alone — it existed before this run"). Report and refuse; let the
+    # operator act.
+    local _leftover
+    _leftover="$(gr_colliding_container_names "-a" || true)"
+    if [[ -n "$_leftover" ]]; then
+        gr_warn "cleanup did NOT remove these stock-named containers:"
+        echo "$_leftover" >&2
+        gr_die "cleanup incomplete — the next run's preflight will refuse to start.
+These carry names this scenario creates but belong to a compose project this run did not
+record owning, so removing them automatically is not safe. Remove them yourself with:
+
+    docker compose -p opentranscribe down --remove-orphans
+
+then re-run this cleanup to drop the volumes they were holding."
+    fi
+
     gr_ok "cleanup complete"
 }
 
@@ -459,9 +630,12 @@ gr_check_stale_stock_volumes() {
     for vol in "${found[@]}"; do
         # Probed from inside a container: the Mountpoint is root-owned, so a
         # host-side test silently reports "no marker" for every volume.
-        if gr_volume_has_live_marker "$vol"; then
-            gr_die "$vol carries the .opentranscribe-live-data marker — REFUSING to remove it.
-           This is a live deployment's storage, not release-test residue."
+        local marker_rc
+        if gr_volume_has_live_marker "$vol"; then marker_rc=0; else marker_rc=$?; fi
+        if [[ $marker_rc -ne 1 ]]; then
+            gr_die "REFUSING to remove $vol — $(gr_live_marker_reason "$marker_rc").
+           If the probe could not run, fix the probe rather than the volume: a
+           broken probe refuses every volume and is not evidence about any of them."
         fi
     done
     for vol in "${found[@]}"; do
@@ -498,21 +672,164 @@ GR_OWNED_STAMP="${GR_OWNED_STAMP:-/mnt/nvm/opentranscribe-test-runs/.owned-stock
 # returns false — indistinguishable from "no marker". The self-test caught this
 # doing precisely the wrong thing: it deleted a volume that WAS marked live.
 #
-# Returns 0 = marker present (or undetermined). FAILS CLOSED: if docker cannot
-# tell us, we claim the marker is there, because the cost of a false positive
-# is a volume left behind and the cost of a false negative is data loss.
+# Returns 0 = marker present, 1 = ran cleanly and there is no marker,
+# 2 = COULD NOT CHECK. Both 0 and 2 must be treated as "do not delete" — the
+# tri-state exists so the caller can say WHICH it was, not so it can relax.
+# FAILS CLOSED: the cost of a false positive is a volume left behind; the cost
+# of a false negative is data loss.
+#
+# ⚠️ The image is pinned AND `--platform` is passed, and both halves are
+# load-bearing (2026-09-07). This host's multi-arch build work had left an
+# `alpine:latest` in the local store that was linux/arm64; on this amd64 host
+# `docker run alpine` selected it, `test` died with `exec format error`, and
+# docker returned 255. Every volume then read as undetermined, so the rehearsal
+# refused all three scenarios at phase 00 and could never proceed. `--platform`
+# is what makes it immune to whatever a previous build left behind; the pin
+# keeps `:latest` from reintroducing it.
+GR_PROBE_IMAGE="${GR_PROBE_IMAGE:-alpine:3.20}"
+
+gr_host_platform() {
+    local p
+    # Explicit `|| p=""` rather than relying on every caller invoking this in a condition
+    # context (which is what currently suspends `set -e` for it). Safe-by-call-site is a
+    # property the next caller can silently remove.
+    p="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null)" || p=""
+    [[ -n "$p" && "$p" != "/" ]] && { printf '%s\n' "$p"; return 0; }
+    return 1
+}
+
+# Run a throwaway command in the pinned probe image with one volume mounted.
+#   gr_run_in_probe_image <volume-spec> <cmd> [args...]
+# Every caller in this repo goes through here so no second site can reintroduce
+# a bare, unpinned, un-platformed `docker run alpine`.
+gr_run_in_probe_image() {
+    local mount="$1"; shift
+    local platform platform_args=()
+    if platform="$(gr_host_platform)"; then
+        platform_args=(--platform "$platform")
+    fi
+    docker run --rm "${platform_args[@]}" -v "$mount" "$GR_PROBE_IMAGE" "$@"
+}
+
+# ⚠️ `if ...; then rc=0; else rc=$?; fi`, never `cmd; rc=$?`. This file runs under
+# `set -e`, where a bare failing simple command ABORTS the script before the next
+# line can read `$?` — the "ABORT" half of the pipefail/SIGPIPE class fixed
+# elsewhere on this branch. A condition context is what suspends `set -e`, and it
+# is the only reason this function can observe a non-zero status at all.
 gr_volume_has_live_marker() {
     local vol="$1" rc
-    docker run --rm -v "$vol:/probe:ro" alpine \
-        test -e /probe/.opentranscribe-live-data >/dev/null 2>&1
-    rc=$?
+    if gr_run_in_probe_image "$vol:/probe:ro" \
+           test -e /probe/.opentranscribe-live-data >/dev/null 2>&1; then
+        rc=0
+    else
+        rc=$?
+    fi
     case "$rc" in
         0) return 0 ;;   # marker present
         1) return 1 ;;   # ran cleanly, no marker
         *)               # could not run the probe at all
-           gr_warn "could not probe $vol for the live-data marker (docker rc=$rc) — assuming it IS live"
-           return 0 ;;
+           gr_warn "could not probe $vol for the live-data marker (docker rc=$rc, image $GR_PROBE_IMAGE)"
+           return 2 ;;
     esac
+}
+
+# The shared refusal message, so no call site can describe an undetermined
+# probe as a positive marker find — which is exactly what the four call sites
+# used to do, printing "carries the .opentranscribe-live-data marker" for a
+# volume whose marker had never been read.
+gr_live_marker_reason() {
+    case "$1" in
+        0) printf 'it carries the .opentranscribe-live-data marker' ;;
+        *) printf 'its live-data marker COULD NOT BE CHECKED (failing closed)' ;;
+    esac
+}
+
+# ─── The image under test must BE the code under test (2026-09-07) ──────────
+#
+# In local-image mode a scenario runs whatever is tagged :vX.Y.Z on this host. It does
+# not build that image — the release pipeline's `build` stage does, earlier in the same
+# run. Run `rehearse` on its own (or with `--from`, which the ledger explicitly allows)
+# and there is nothing to stop it rehearsing a stale build.
+#
+# Measured, not hypothetical: the 2026-09-07 rehearsal ran against a
+# davidamacey/opentranscribe-backend:v0.5.0 built seven days and **315 commits**
+# earlier. Both scenarios failed their diarization-provenance assertion — correctly,
+# because that image contains ZERO occurrences of `diarization_provider`; the plumbing
+# postdates it. The failure was read as a product bug in the release. It was a
+# statement about an artifact nobody intended to test.
+#
+# This is the same shape as run-backend-tests.sh --summary passing off a two-day-old
+# junit artifact from a different commit (scripts/CLAUDE.md), and it gets the same
+# answer: missing provenance is a REFUSAL, not a pass.
+GR_IMAGE_REVISION_LABEL="org.opencontainers.image.revision"
+
+# gr_assert_image_is_the_code_under_test IMAGE EXPECTED_SHA
+#   Refuses unless IMAGE's revision label equals EXPECTED_SHA.
+gr_assert_image_is_the_code_under_test() {
+    local image="$1" expected="$2"
+    local actual
+
+    if [[ -z "$expected" ]]; then
+        gr_die "gr_assert_image_is_the_code_under_test: no expected commit supplied —
+           cannot verify '$image' is the code under test, and an unverifiable image
+           is exactly what this check exists to refuse"
+    fi
+
+    # Captured into a variable, never piped into a short-circuiting reader: this file
+    # runs under `set -euo pipefail` (see the SIGPIPE rule in scripts/CLAUDE.md).
+    if ! actual="$(docker image inspect "$image" \
+                    --format "{{index .Config.Labels \"$GR_IMAGE_REVISION_LABEL\"}}" 2>/dev/null)"
+    then
+        gr_die "cannot inspect '$image' to confirm it is the code under test.
+           Build it first (./scripts/release.sh build <version>) rather than
+           rehearsing whatever image happens to carry that tag."
+    fi
+
+    if [[ -z "$actual" || "$actual" == "<no value>" ]]; then
+        gr_die "'$image' carries no $GR_IMAGE_REVISION_LABEL label, so it CANNOT be shown
+           to be the code under test. Refusing — an unattributable image is not
+           evidence about this release."
+    fi
+
+    # An EXACT match is too strict, and being too strict here is its own failure mode: it
+    # would demand a multi-GB rebuild after a commit that only touched scripts/, which is
+    # how a gate gets routinely bypassed. The accurate question is not "was this built at
+    # HEAD" but "is it built from the current state of the code that goes INTO it".
+    #
+    # So: the image's commit must be an ancestor of HEAD (not a divergent branch), and
+    # nothing under the image's own build inputs may have changed since. A `scripts/` edit
+    # is then free; a `backend/` edit correctly forces a rebuild.
+    if [[ "$actual" != "$expected" ]]; then
+        local repo="${REPO_ROOT:-.}"
+        # backend/tests is excluded because it is NOT in the image: backend/.dockerignore
+        # lists `tests/`, and `ls /app` in the built image confirms it (verified, not
+        # assumed — the Dockerfile's `COPY . .` reads as if it ships everything).
+        # A test-only commit must not demand a multi-GB rebuild.
+        if git -C "$repo" merge-base --is-ancestor "$actual" "$expected" 2>/dev/null &&
+           git -C "$repo" diff --quiet "$actual" "$expected" -- \
+               backend frontend docs-site ':(exclude)backend/tests' 2>/dev/null; then
+            gr_ok "$image predates HEAD but no image input changed since ${actual:0:12}"
+            return 0
+        fi
+        local behind=""
+        if behind="$(git -C "$repo" rev-list --count "$actual..$expected" 2>/dev/null)"; then
+            behind=" (${behind} commits behind, with changes under backend/frontend/docs-site)"
+        else
+            behind=" (not an ancestor of HEAD)"
+        fi
+        if [[ "${OT_RELEASE_TEST_ALLOW_STALE_IMAGE:-}" == "1" ]]; then
+            gr_warn "OT_RELEASE_TEST_ALLOW_STALE_IMAGE=1 — rehearsing '$image' built from
+           ${actual}${behind}, NOT ${expected}. Every result below describes that
+           older artifact, not this release."
+            return 0
+        fi
+        gr_die "'$image' was built from ${actual}${behind}, not ${expected}.
+           Rehearsing it measures an artifact nobody is releasing — on 2026-09-07 this
+           produced two 'product bug' failures that were purely image staleness.
+           Rebuild (./scripts/release.sh build <version>), or set
+           OT_RELEASE_TEST_ALLOW_STALE_IMAGE=1 to say so deliberately."
+    fi
+    gr_ok "$image is built from the code under test (${expected:0:12})"
 }
 
 gr_stamp_owned_resources() {
@@ -609,7 +926,7 @@ gr_cleanup_owned_stock_resources() {
         return 0
     fi
 
-    local vol net users proj="" line
+    local vol net users proj="" line marker_rc
     local preexisting=()
     while IFS= read -r line; do
         case "$line" in
@@ -635,8 +952,9 @@ gr_cleanup_owned_stock_resources() {
         done < <(docker volume ls -q 2>/dev/null | grep "^${proj}_" || true)
 
         for vol in ${candidates[@]+"${candidates[@]}"}; do
-            if gr_volume_has_live_marker "$vol"; then
-                gr_warn "refusing to remove $vol — carries the live-data marker"
+            if gr_volume_has_live_marker "$vol"; then marker_rc=0; else marker_rc=$?; fi
+            if [[ $marker_rc -ne 1 ]]; then
+                gr_warn "refusing to remove $vol — $(gr_live_marker_reason "$marker_rc")"
                 continue
             fi
             users=$(docker ps -a --filter "volume=$vol" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')
@@ -656,8 +974,9 @@ gr_cleanup_owned_stock_resources() {
                 vol="${line#volume=}"
                 docker volume inspect "$vol" >/dev/null 2>&1 || continue
 
-                if gr_volume_has_live_marker "$vol"; then
-                    gr_warn "refusing to remove $vol — carries the live-data marker"
+                if gr_volume_has_live_marker "$vol"; then marker_rc=0; else marker_rc=$?; fi
+                if [[ $marker_rc -ne 1 ]]; then
+                    gr_warn "refusing to remove $vol — $(gr_live_marker_reason "$marker_rc")"
                     continue
                 fi
 
@@ -754,9 +1073,11 @@ gr_assert_target_is_test_database() {
     # gr_volume_has_live_marker's own doc comment (a host-side stat on the
     # root-owned mountpoint would silently report "no marker" for every
     # volume, which is the exact mistake that once deleted a live one).
-    if gr_volume_has_live_marker "$vol"; then
-        gr_die "gr_assert_target_is_test_database: volume '$vol' carries the
-           .opentranscribe-live-data marker — REFUSING a destructive operation"
+    local marker_rc
+    if gr_volume_has_live_marker "$vol"; then marker_rc=0; else marker_rc=$?; fi
+    if [[ $marker_rc -ne 1 ]]; then
+        gr_die "gr_assert_target_is_test_database: REFUSING a destructive operation on
+           volume '$vol' — $(gr_live_marker_reason "$marker_rc")"
     fi
 
     # (d) the resolved POSTGRES_DB must match the staged .env this run wrote

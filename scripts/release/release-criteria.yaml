@@ -338,6 +338,20 @@ stages:
         # without changing the stage's contract on such a host.
         severity: warn
 
+      - id: bare-tag-is-host-arch
+        description: >-
+          Every component's bare repo:vX.Y.Z tag resolves to the HOST-architecture
+          leg. `--load` cannot export a multi-arch manifest, so this stage builds one
+          leg per declared platform and each of them writes the bare tag — last leg
+          wins, and the table lists amd64 before arm64. Everything downstream that
+          reuses the bare tag (test-fresh-install.sh, test-lite-mode.sh, and
+          security-scan.sh's local resolution for frontend/docs) would then examine or
+          run a foreign-architecture image, under QEMU or not at all. The stage
+          re-points the bare tag at the host leg and reads the architecture back out
+          of the image rather than trusting `docker tag`'s exit status. Zero
+          components with a host leg is COULD NOT CHECK, never a pass.
+        severity: blocking
+
   # ─── Tag. Reaches outside the repo. ─────────────────────────────────────
   tag:
     description: Annotate and push the release tag
@@ -511,8 +525,23 @@ stages:
         description: CHANGELOG.md has a section for this version to use as the release notes
         severity: blocking
 
+      - id: github-latest-policy
+        description: >-
+          Whether this release is marked GitHub "Latest" is DERIVED, never assumed.
+          `--latest` used to be passed unconditionally, so a hotfix cut from an old
+          release/<minor> branch would move the GitHub "Latest" pointer backwards —
+          the pointer setup-opentranscribe.sh resolves — even though 90-promote.sh
+          already refuses to move Docker :latest backwards for the same release
+          (issue #784). Decided by the same patch-lib.sh predicate promote uses (git
+          tags x Docker Hub), and `--latest=false` is passed EXPLICITLY on a backport
+          rather than omitting the flag, which would hand the decision to GitHub's
+          date/version heuristic. An unresolvable "newest published release" is
+          not-measured — "I don't know whether this is a downgrade" is not a licence
+          to move the pointer.
+        severity: blocking
+
       - id: github-release-created
-        description: gh release create --latest succeeded
+        description: gh release create succeeded (with the derived --latest / --latest=false)
         severity: blocking
 
       # ─── Release assets (issue #781) ───────────────────────────────────

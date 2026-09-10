@@ -29,6 +29,7 @@ import pytest
 import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import LOGIN_FORM_READY_MS
 
 pytestmark = pytest.mark.settings
 
@@ -83,7 +84,7 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
             if page.locator(".user-button").count():
                 page.wait_for_selector(".user-button", timeout=10000)
                 return
-            page.wait_for_selector("#email", timeout=15000)
+            page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
             page.fill("#email", TEST_ADMIN_EMAIL)
             page.fill("#password", TEST_ADMIN_PASSWORD)
             page.click("button[type=submit]")

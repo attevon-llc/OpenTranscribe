@@ -62,7 +62,13 @@ VENV_PY="$REPO_ROOT/backend/venv/bin/python"
 # `--cleanup` only removes resources carrying the com.opentranscribe.release-test label and
 # re-checks lib/guardrails.sh's path allowlist before removing anything, so it cannot reach the
 # production volumes.
-if docker ps -a --format '{{.Names}}' | grep -q '^opentranscribe-'; then
+# `grep -c ... -gt 0`, never `| grep -q`. This script runs under `set -uo pipefail`, so a
+# `grep -q` that exits at its first match can leave `docker ps` with SIGPIPE (141) and
+# `pipefail` reports that as the pipeline's status — a MATCH read as a non-match. All three
+# checks in this block would then answer wrong in the same direction: the cleanup is skipped,
+# the wait loop breaks early, and the "containers remain" guard passes, so the PKI prod stack
+# is started into ports that are still bound. `grep -c` consumes the whole stream.
+if [ "$(docker ps -a --format '{{.Names}}' | grep -c '^opentranscribe-')" -gt 0 ]; then
     if [[ "$ASSUME_YES" != "true" ]]; then
         err "opentranscribe-* containers exist and --yes was not given; refusing to tear them down"
         info "  Inspect them, then re-run with --yes, or clear them yourself:"
@@ -75,10 +81,10 @@ if docker ps -a --format '{{.Names}}' | grep -q '^opentranscribe-'; then
     ./scripts/release-tests/test-upgrade.sh --cleanup --yes >/dev/null 2>&1 || true
     ./scripts/release-tests/test-lite-mode.sh --cleanup --yes >/dev/null 2>&1 || true
     for _ in $(seq 1 30); do
-        docker ps -a --format '{{.Names}}' | grep -q '^opentranscribe-' || break
+        [ "$(docker ps -a --format '{{.Names}}' | grep -c '^opentranscribe-')" -gt 0 ] || break
         sleep 2
     done
-    if docker ps -a --format '{{.Names}}' | grep -q '^opentranscribe-'; then
+    if [ "$(docker ps -a --format '{{.Names}}' | grep -c '^opentranscribe-')" -gt 0 ]; then
         err "opentranscribe-* containers remain after cleanup; the PKI stack cannot start"
         docker ps -a --format '  {{.Names}}\t{{.Status}}' | grep '^  opentranscribe-' >&2
         exit $EXIT_PRECONDITION

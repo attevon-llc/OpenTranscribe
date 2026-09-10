@@ -208,7 +208,13 @@ fi
 UPLOAD_HELPER="$REPO_ROOT/backend/tests/fixtures/search_corpus_stack.py"
 [[ -f "$UPLOAD_HELPER" ]] || fail "no upload fixture found to drive concurrent uploads" 4
 
-GPU_CONTAINER="$(docker ps --filter "name=celery-worker-gpu-scaled" --format '{{.Names}}' | head -1)"
+# Captured whole, then trimmed to the first line — NOT `docker ps ... | head -1`. This script
+# runs under `set -euo pipefail`, and the filter is an unanchored SUBSTRING match against a
+# scaled worker topology, so more than one name is the expected case: `head -1` exits after
+# the first, `docker ps` takes SIGPIPE (141), `pipefail` makes that the pipeline's status, and
+# the ASSIGNMENT aborts the smoke test with no message at all.
+GPU_CONTAINER="$(docker ps --filter "name=celery-worker-gpu-scaled" --format '{{.Names}}')"
+GPU_CONTAINER="${GPU_CONTAINER%%$'\n'*}"
 [[ -n "$GPU_CONTAINER" ]] || fail "no running celery-worker-gpu-scaled container" 4
 
 N_UPLOADS=$((GPU_SCALE_WORKERS >= 3 ? GPU_SCALE_WORKERS : 3))

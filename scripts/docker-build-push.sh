@@ -97,6 +97,11 @@ BUILD_MODE="${BUILD_MODE:-push}"
 # rather than two independent builds that happen to share a source tree.
 PUSH_LATEST="${PUSH_LATEST:-true}"
 
+# Share a BuildKit layer cache through the registry (`<repo>:buildcache-<scope>`).
+# OPT-IN and default OFF — see build_cache_args() for the full reasoning, including why
+# `--cache-to` is push-mode only and why nothing here forces the remote builder.
+BUILD_CACHE_REGISTRY="${BUILD_CACHE_REGISTRY:-false}"
+
 # Print the buildx invocations and exit without building.
 DRY_RUN="${DRY_RUN:-false}"
 
@@ -444,6 +449,47 @@ build_platform_list() {
     build_platforms "${component}" | tr ',' '\n'
 }
 
+# BuildKit registry cache arguments — OPT-IN, default off.
+#
+# THE PROBLEM THIS ADDRESSES (and its exact limits)
+#
+# `40-build.sh` builds every declared leg on the LOCAL builder (`--load`); `80-publish.sh`
+# then rebuilds the same amd64 legs from the same tree on `opentranscribe-multiarch`. Two
+# distinct docker-container builders means two distinct BuildKit caches, and no
+# `--cache-from`/`--cache-to` appeared anywhere in this script — `CACHE_FLAG` only ever
+# takes the values "" and `--no-cache`. So the publish stage repeats the build stage's work
+# from scratch every release, and a recreated builder starts cold.
+#
+# ⚠️ DEFAULT OFF, AND `--cache-to` IS PUSH-MODE ONLY. `type=registry` cache WRITES a
+# `<repo>:buildcache-<scope>` tag to Docker Hub. `BUILD_MODE=local` exists precisely so a
+# stage can build "publishing nothing" (40-build.sh's first line says so, and the whole
+# scan-before-publish ordering rests on it), so local mode gets `--cache-from` only — a
+# read. Nothing here forces the remote builder either: `50-scan.sh` needs the image in the
+# LOCAL daemon (`docker image inspect`), which a remote-builder `--load` would not provide.
+#
+# Turning it ON is deliberate and measurable: `BUILD_CACHE_REGISTRY=true`. Left off until
+# someone measures a second build of an unchanged tree on a recreated builder — a cache
+# that is never hit costs a registry round-trip per build and buys nothing.
+#
+# Scope is the platform set, not "the component": a cache manifest describes the platforms
+# it was written for, and one build per leg must not overwrite the sibling leg's cache.
+#
+# Args: $1 repo · $2 platform string ("linux/amd64" or "linux/amd64,linux/arm64")
+build_cache_args() {
+    local repo="$1" platforms="$2"
+    [ "${BUILD_CACHE_REGISTRY}" = "true" ] || return 0
+    [ -n "${platforms}" ] || return 0
+
+    local scope="${platforms//linux\//}"
+    scope="${scope//,/-}"
+    local ref="${repo}:buildcache-${scope}"
+
+    printf '%s\n' "--cache-from" "type=registry,ref=${ref}"
+    if [ "${BUILD_MODE}" != "local" ]; then
+        printf '%s\n' "--cache-to" "type=registry,ref=${ref},mode=max"
+    fi
+}
+
 # --load (keep it here) vs --push (send it to Docker Hub).
 build_output_flag() {
     if [ "${BUILD_MODE}" = "local" ]; then
@@ -457,11 +503,47 @@ build_output_flag() {
 # always :vX.Y.Z, plus :latest unless the caller is going to move :latest by
 # digest afterwards. This is the historical single multi-platform-build/single-tag
 # shape, unchanged by the #680 capability-tag grammar.
+#
+# ⚠️ IN LOCAL MODE THE BARE TAG IS AMBIGUOUS, so a per-arch alias is added beside it.
+#
+# `--load` cannot export a multi-arch manifest, so `40-build.sh` builds one leg per
+# declared platform — one `docker-build-push.sh` invocation each, with an explicit
+# `PLATFORMS=<one arch>`. For frontend/docs that meant every leg wrote the SAME
+# `repo:vX.Y.Z` tag, so the tag ended up on whichever leg was built LAST. The platform
+# table lists amd64 before arm64, therefore `opentranscribe-frontend:vX.Y.Z`,
+# `opentranscribe-docs:vX.Y.Z` (and, via build_one_leg's own bare-tag alias,
+# `opentranscribe-backend-lite:vX.Y.Z`) all ended up ARM64 on this amd64 host. That is not a
+# speed problem, it is a correctness one: `security-scan.sh`'s local resolution had no leg
+# tag to fall back to for frontend/docs and dropped through to a Hub pull of a tag that is
+# not published yet (COULD NOT SCAN), and `test-fresh-install.sh` / `test-lite-mode.sh`
+# reuse exactly this bare tag, so both rehearsals would run a foreign-architecture image
+# under QEMU or die with `exec format error`.
+#
+# `build_one_leg` already solved this for capability-bearing components: it writes an
+# unambiguous `repo:vX.Y.Z-<cap>-<arch>` leg tag as well. This gives frontend/docs the same
+# thing (`-multiarch-<arch>`, since that IS their declared capability), which is what
+# `resolve_platform_image`'s existing `repo:${tag}-*` leg search then finds. `40-build.sh`
+# re-points the bare tag at the HOST leg as its last step and asserts the architecture.
+#
+# Local mode only. In push mode a single multi-platform build produces one index under the
+# bare tag and there is no per-arch artefact for such an alias to name.
+#
+# Args: $1 repo · $2 component (optional; needed only to derive the local leg alias)
 build_tag_args() {
-    local repo="$1"
+    local repo="$1" component="${2:-}"
     local args=("--tag" "${repo}:${VERSION_FULL}")
     if [ "${PUSH_LATEST}" = "true" ]; then
         args+=("--tag" "${repo}:latest")
+    fi
+    if [ "${BUILD_MODE}" = "local" ] && [ -n "${component}" ]; then
+        # assert_local_mode_is_single_platform() guarantees one platform here; the `%%,*`
+        # is belt-and-braces so a future caller cannot produce a leg tag naming two arches.
+        local arch
+        arch="$(build_platforms "${component}")"
+        arch="${arch%%,*}"
+        if [ -n "${arch}" ]; then
+            args+=("--tag" "$(build_leg_tag "${repo}" "${COMPONENT_CAPABILITY[${component}]}" "${arch#linux/}")")
+        fi
     fi
     printf '%s\n' "${args[@]}"
 }
@@ -572,8 +654,9 @@ build_one_leg() {
         extra_tags=("--tag" "${repo}:${VERSION_FULL}")
     fi
 
-    local identity_args
+    local identity_args cache_args
     mapfile -t identity_args < <(build_identity_labels)
+    mapfile -t cache_args < <(build_cache_args "${repo}" "${arch}")
 
     (
         cd "${dockerfile_dir}"
@@ -584,6 +667,7 @@ build_one_leg() {
             "${extra_build_args[@]}" \
             --tag "${leg_tag}" \
             "${extra_tags[@]}" \
+            "${cache_args[@]}" \
             ${CACHE_FLAG} \
             "$(build_output_flag)" \
             .
@@ -680,9 +764,10 @@ build_frontend() {
     local component="frontend"
     build_announce "Building frontend image" "${component}" || return 0
 
-    local tag_args identity_args
-    mapfile -t tag_args < <(build_tag_args "${REPO_FRONTEND}")
+    local tag_args identity_args cache_args
+    mapfile -t tag_args < <(build_tag_args "${REPO_FRONTEND}" "${component}")
     mapfile -t identity_args < <(build_identity_labels)
+    mapfile -t cache_args < <(build_cache_args "${REPO_FRONTEND}" "$(build_platforms "${component}")")
 
     cd frontend
 
@@ -691,6 +776,7 @@ build_frontend() {
         --file Dockerfile.prod \
         "${identity_args[@]}" \
         "${tag_args[@]}" \
+        "${cache_args[@]}" \
         ${CACHE_FLAG} \
         "$(build_output_flag)" \
         .
@@ -706,9 +792,10 @@ build_docs() {
     local component="docs"
     build_announce "Building docs image" "${component}" || return 0
 
-    local tag_args identity_args
-    mapfile -t tag_args < <(build_tag_args "${REPO_DOCS}")
+    local tag_args identity_args cache_args
+    mapfile -t tag_args < <(build_tag_args "${REPO_DOCS}" "${component}")
     mapfile -t identity_args < <(build_identity_labels)
+    mapfile -t cache_args < <(build_cache_args "${REPO_DOCS}" "$(build_platforms "${component}")")
 
     cd docs-site
 
@@ -725,6 +812,7 @@ build_docs() {
         --build-arg OT_VERSION="${VERSION_FULL}" \
         "${identity_args[@]}" \
         "${tag_args[@]}" \
+        "${cache_args[@]}" \
         ${CACHE_FLAG} \
         "$(build_output_flag)" \
         .
@@ -998,7 +1086,12 @@ cleanup_old_tags() {
         fi
     }
 
-    # List of partial version tags to delete
+    # List of partial version tags to delete.
+    #
+    # ⚠️ `buildcache-*` (BUILD_CACHE_REGISTRY, see build_cache_args) must never be deleted
+    # here: those tags ARE the shared layer cache, not release artifacts. Neither the
+    # literal list below nor the `^[a-f0-9]{7,8}$` SHA pattern can match one today —
+    # verified, not assumed — but any future broadening of either must keep them out.
     local partial_tags=("v0" "v0.1" "v0.2")
 
     # Also find and delete commit SHA tags (7-8 character hex strings)
@@ -1065,6 +1158,12 @@ Environment Variables:
     USE_REMOTE_BUILDER        Use remote ARM64 builder for faster builds (default: false)
     REMOTE_BUILDER_NAME       Remote builder name (default: opentranscribe-multiarch)
     NO_CACHE                  Build without cache (default: false)
+    BUILD_CACHE_REGISTRY      Share a BuildKit layer cache through the registry as
+                               <repo>:buildcache-<arch-scope> (default: false). Opt-in:
+                               the build and publish stages run on DIFFERENT builders, so
+                               each has its own cache and publish repeats build's work.
+                               --cache-to is push-mode only; BUILD_MODE=local publishes
+                               nothing and only READS the cache.
     SKIP_SECURITY_SCAN        Skip security scanning (default: false)
     FAIL_ON_SECURITY_ISSUES   Fail build if security issues found (default: false)
     FAIL_ON_CRITICAL          Fail scan if CRITICAL vulnerabilities found (default: false)

@@ -32,6 +32,7 @@ import uuid
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 
 pytestmark = [pytest.mark.e2e, pytest.mark.collections]
 
@@ -84,7 +85,7 @@ def collections_page(browser, shared_auth_state, base_url):
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     _open_manager(page)
     yield page
     page.close()
@@ -99,7 +100,7 @@ def _reload_manager(page: Page) -> None:
     reason the filter test below reloads before opening the sidebar.
     """
     page.reload()
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     _open_manager(page)
 
 
@@ -137,7 +138,7 @@ class TestCollectionManagerRoute:
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
 
         page.goto(base_url)
-        page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+        page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         _open_manager(page)
         expect(page.locator(".loading")).to_have_count(0, timeout=10000)
 
@@ -213,7 +214,7 @@ class TestCollectionMembership:
 
         page = collections_page
         page.reload()  # drop the in-memory apiCache collections entry, see _reload_manager
-        page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+        page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         # `galleryStore`'s `showFilters` defaults to True, so the sidebar is usually
         # already open on a fresh load — only toggle it when it truly is not.
         # GalleryFilterPanel's own wrapper carries `.filter-sidebar` unconditionally

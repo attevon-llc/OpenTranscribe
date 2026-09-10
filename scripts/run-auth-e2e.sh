@@ -267,7 +267,11 @@ cleanup_on_exit() {
     log_phase "Cleanup"
 
     # 1. Remove PKI frontend container if still running
-    if docker ps -q --filter "name=${PKI_CONTAINER_NAME}" 2>/dev/null | grep -q .; then
+    # `-n "$(...)"`, never `| grep -q .`. This script runs under `set -euo pipefail`;
+    # `grep -q` exits at its first match, `docker ps` can take SIGPIPE (141), and `pipefail`
+    # turns that MATCH into a non-match — so a still-running PKI frontend reads as absent and
+    # this cleanup arm is skipped, leaking a container that holds the port the next run needs.
+    if [ -n "$(docker ps -q --filter "name=${PKI_CONTAINER_NAME}" 2>/dev/null)" ]; then
         log_step "Stopping PKI frontend container..."
         docker stop "${PKI_CONTAINER_NAME}" 2>/dev/null
         docker rm "${PKI_CONTAINER_NAME}" 2>/dev/null

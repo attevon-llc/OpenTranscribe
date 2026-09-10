@@ -16,13 +16,25 @@ PNG under ``__screenshots__/`` using a small numpy pixel diff (numpy + Pillow ar
 already project deps — no new dependency). A change fails only when the fraction
 of differing pixels exceeds a small tolerance (anti-aliasing slack).
 
-First run (or after an intentional UI change), write/refresh the baselines::
+**To refresh the baselines, use the wrapper — not the env var**::
 
-    UPDATE_SCREENSHOTS=1 pytest backend/tests/e2e/test_visual_regression.py -v
+    ./scripts/e2e/update-visual-baselines.sh --reason "<what changed in the UI>"
+    ./scripts/e2e/update-visual-baselines.sh --reason "..." --surface chat_trace
 
-Then re-run WITHOUT the env var to compare against the committed baselines::
+``UPDATE_SCREENSHOTS=1`` below is the raw mechanism and is deliberately NOT the
+documented path. It writes whatever the stack in front of it renders, so run
+against the shared dev stack it bakes the developer's own library content into
+the reference image — which is not hypothetical: ``chat_trace`` reproduced
+*itself* to 0.0253% on the shared stack while differing 3.06% from the committed
+baseline, entirely because masked chips carrying real corpus counts changed the
+flex-wrap point of their row. The wrapper refuses the shared stack, stands up the
+isolated seeded one, shows the per-surface diff before anything is accepted, and
+records the reason and the commit each image came from.
 
-    pytest backend/tests/e2e/test_visual_regression.py -v
+Then re-run WITHOUT update mode to compare against the committed baselines::
+
+    pytest backend/tests/e2e/test_visual_regression.py -v \
+        --base-url=... --backend-url=...   # the isolated stack's ports
 
 Requirements:
 - An ISOLATED, seeded stack — never the shared live dev stack (issue #451):
@@ -76,6 +88,8 @@ from _visual_diff import diff_fraction as _diff_fraction
 from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
+from timeouts import LOGIN_FORM_READY_MS
 
 pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet stack)
 
@@ -126,9 +140,11 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
         # success, so the first run was green too.
         pytest.fail(
             f"No baseline for '{name}' at {baseline_path}. A screenshot is only "
-            f"a baseline once a human has looked at it. Generate it deliberately "
-            f"with UPDATE_SCREENSHOTS=1 and review the image in the diff before "
-            f"committing it."
+            f"a baseline once a human has looked at it. Generate it with:\n"
+            f"    ./scripts/e2e/update-visual-baselines.sh "
+            f"--reason '<why>' --surface {name.rsplit('-', 1)[0]}\n"
+            f"which captures against an isolated seeded stack and shows you the "
+            f"image before it is accepted."
         )
 
     current = _png_to_array(png_bytes)
@@ -144,8 +160,12 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
         pytest.fail(
             f"Visual regression on '{name}': {fraction:.2%} of pixels changed "
             f"(tolerance {DIFF_TOLERANCE:.2%}). Wrote {actual_path.name} for "
-            f"inspection. If intentional, refresh with "
-            f"UPDATE_SCREENSHOTS=1 pytest backend/tests/e2e/test_visual_regression.py"
+            f"inspection. If the UI legitimately changed, refresh with:\n"
+            f"    ./scripts/e2e/update-visual-baselines.sh "
+            f"--reason '<why>' --surface {name.rsplit('-', 1)[0]}\n"
+            f"NOT with a bare UPDATE_SCREENSHOTS=1 against this stack — if this "
+            f"is the shared dev stack, that records its library content as the "
+            f"reference image and the next upload invalidates it again."
         )
 
 
@@ -186,27 +206,37 @@ def api_token(backend_url: str) -> str:
 
 
 @pytest.fixture(scope="module")
-def transcribed_file_uuid(api_token: str, backend_url: str) -> str:
-    """Discover a completed file that has transcript segments (or skip)."""
-    listing = requests.get(
-        f"{backend_url}/api/files",
-        headers={"Authorization": f"Bearer {api_token}"},
-        params={"page": "1", "page_size": "100", "sort_by": "upload_time", "sort_order": "desc"},
-        timeout=30,
-    )
-    items: list[dict[str, Any]] = listing.json().get("items", listing.json().get("files", []))
-    for f in items:
-        if f.get("status") != "completed":
-            continue
-        detail = requests.get(
-            f"{backend_url}/api/files/{f['uuid']}",
-            headers={"Authorization": f"Bearer {api_token}"},
-            timeout=30,
-        ).json()
-        if detail.get("transcript_segments"):
-            return str(f["uuid"])
-    pytest.skip("No completed transcribed file in dev dataset — required for file-detail capture")
-    return ""  # unreachable, satisfies typing
+def transcribed_file_uuid(owned_transcribed_file: dict[str, Any]) -> str:
+    """The file the ``file_detail`` capture is taken of — owned, not discovered.
+
+    This used to list ``/api/files``, take the NEWEST completed entry with segments,
+    and ``pytest.skip`` when there was none. Two problems:
+
+    * It was a **parameter of the parametrized test**, so it was constructed for all
+      eight surface x theme combinations. On a library with no transcript it therefore
+      skipped ``settings`` and ``chat_trace`` as well — two surfaces that have nothing
+      to do with a transcript and are the only ones that run on a shared stack at all.
+      The test body now resolves it lazily, inside the ``file_detail`` branch.
+    * "Newest completed file" is by construction not reproducible. The module docstring
+      answers that with "run against a ``--fresh --seed-benchmark`` stack, where nothing
+      else can upload" — true, but it makes the baseline a property of the seeding
+      script rather than of the UI. ``owned_transcribed_file`` is the committed 10 s
+      clip through the real pipeline: the same audio, the same transcript, on any stack.
+
+    ⚠️ **The committed ``file_detail-{light,dark}`` baselines predate this change** and
+    were captured from a seeded recording. Refresh them deliberately, with a human
+    looking at the images::
+
+        ./scripts/e2e/update-visual-baselines.sh \
+            --reason "file_detail now uses the owned 10s clip" --surface file_detail
+
+    which stands up the isolated stack this module requires, shows the diff, and
+    records the commit the image came from. Nothing goes red in the meantime:
+    ``_skip_unless_isolated_stack`` deselects ``file_detail`` on the shared dev stack
+    that ``scripts/e2e/run-e2e.sh`` drives, so no comparison against the stale baseline
+    happens there.
+    """
+    return str(owned_transcribed_file["uuid"])
 
 
 #: HOST-side probe port — see the same constant in `test_chat_trace_panel.py`.
@@ -401,7 +431,7 @@ def _login(page: Page, base_url: str) -> None:
     if page.locator(".user-button").count():
         page.wait_for_selector(".user-button", timeout=10000)
         return
-    page.wait_for_selector("#email", timeout=15000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
@@ -595,6 +625,84 @@ def _assert_masks(page: Page, surface: str) -> list[Any]:
     return regions
 
 
+#: Width every masked `chat_trace` chip is forced to before capture, in CSS px.
+#:
+#: Arbitrary by design — the region is painted over by the mask, so the number
+#: is never compared. What matters is that it is a CONSTANT.
+_TRACE_CHIP_PINNED_WIDTH_PX = 64
+
+
+def _pin_masked_geometry(page: Page, surface: str) -> None:
+    """Freeze the *size* of `chat_trace`'s masked chips, not just their pixels.
+
+    ⚠️ **Masking hides a value; it does not stop that value changing the
+    LAYOUT.** This is the `settings` failure of 2026-09-06 in its second form,
+    and it took the same shape: a baseline that was really measuring how much
+    content the deployment holds. `settings` was fixed by capturing the element
+    instead of the viewport — `chat_trace` was already doing that, which is why
+    it was left out of `_NEEDS_ISOLATED_STACK` with the claim that "masking
+    makes them fully reproducible on the shared stack too". Measured
+    2026-09-07, that claim is false.
+
+    Mechanism: `ChatTraceNode.svelte` lays its row out in a `flex-wrap: wrap`
+    box, and `.trace-chip` / `.trace-ms` render real numbers — retrieval counts
+    ("12 found"), the kept/dropped pair, the character budget, the per-stage
+    milliseconds. Those numbers have different DIGIT COUNTS on different
+    corpora, so the chips have different widths, so the row wraps at a
+    different point. On the `Budgeted` row it wrapped to two lines against the
+    seeded stack the baseline was captured on and to one line against the
+    shared dev stack, which shifts every row below it.
+
+    The measurement that settles it, both against the committed baseline:
+
+    ==========================================  =========
+    comparison                                  differs
+    ==========================================  =========
+    shared-stack run 1 vs shared-stack run 2      0.0253%
+    shared-stack run vs committed baseline        3.06%
+    ==========================================  =========
+
+    A surface that reproduces itself to 0.03% is not flaky. The 3.06% is
+    entirely the corpus: three one-pixel-wide columns at the right edge of
+    three masks (a digit's width) plus rows 423-492, the reflowed `Budgeted`
+    and `Answered` rows. Nothing above row 203 differs at all.
+
+    Pinning the chips to a constant width removes the last input the library
+    has into this image, and that was measured rather than assumed: with the
+    pin applied, two captures whose chip text was forced to ``"9"`` and to
+    ``"1234567 kept · 987654321 dropped"`` are **identical to 0.0000%**. Without
+    it, a single digit's width moves a row.
+
+    The cost is that a chip's own width is no longer compared — which costs
+    nothing that was being compared anyway, since the mask already paints over
+    it — while row order, marker shapes, labels, outcome badges, reasons, and
+    the skipped-row de-emphasis all still are.
+
+    ⚠️ **The committed baselines predate this and must be refreshed once**, by a
+    human looking at the images, on the isolated seeded stack the module
+    docstring specifies. Do not refresh them from the shared dev stack: the
+    other four surfaces' baselines came from the isolated one, and mixing
+    provenance is how this suite's baselines rotted the last time.
+    """
+    if surface != "chat_trace":
+        return
+    selectors = ",".join(
+        f"{TRACE_PANEL} {selector}" for selector in _VOLATILE_SELECTORS["chat_trace"]
+    )
+    page.add_style_tag(
+        content=(
+            f"{selectors}{{box-sizing:border-box!important;"
+            f"width:{_TRACE_CHIP_PINNED_WIDTH_PX}px!important;"
+            f"min-width:{_TRACE_CHIP_PINNED_WIDTH_PX}px!important;"
+            f"max-width:{_TRACE_CHIP_PINNED_WIDTH_PX}px!important;"
+            "overflow:hidden!important;white-space:nowrap!important}"
+        )
+    )
+    # The style tag reflows the panel; the comparison is a pixel diff, so there is
+    # no locator to auto-wait on (same reasoning as `_stabilize`'s settle).
+    page.wait_for_timeout(300)
+
+
 #: Host:port pairs that mean "the shared dev stack", not an isolated `--fresh`
 #: deployment. Matches conftest's own `FRONTEND_URL`/`BACKEND_URL` defaults
 #: (``localhost:5173``/``localhost:5174``) — the same signal the module
@@ -605,8 +713,17 @@ _SHARED_STACK_HOSTS = ("localhost:5173", "localhost:5174", "127.0.0.1:5173", "12
 #: Surfaces where masking cannot fully remove non-determinism — row/page-height
 #: drift from a changing card/cluster count, or (`file_detail`) two runs simply
 #: picking a different newest file. These need an isolated, seeded stack to be
-#: meaningfully green; `chat_trace` and `settings` are NOT in this set because
-#: masking makes them fully reproducible on the shared stack too.
+#: meaningfully green.
+#:
+#: ⚠️ `settings` and `chat_trace` stay OUT of this set, but the reason is not the
+#: one this comment used to give ("masking makes them fully reproducible"). Each
+#: needed a second, specific repair before that was true, because masking alone
+#: is not enough for either: `settings` is captured as an ELEMENT so the gallery
+#: behind the modal is not in frame, and `chat_trace` additionally has its masked
+#: chips pinned to a constant width by `_pin_masked_geometry`, because their
+#: digit count was reflowing the panel. Do not move a surface out of this set on
+#: the strength of adding a mask — measure two runs against two different
+#: corpora first.
 _NEEDS_ISOLATED_STACK = frozenset({"gallery", "speakers", "file_detail"})
 
 
@@ -626,11 +743,14 @@ def _skip_unless_isolated_stack(surface: str, base_url: str, backend_url: str) -
         pytest.skip(
             f"'{surface}' visual capture needs an isolated, seeded stack — the shared dev "
             f"stack's file/cluster counts change between runs and cannot be fully masked "
-            f"(row/page-height drift). Run: ./opentr.sh start dev --fresh visual "
-            f"--port-offset 100 --seed-benchmark --with-mock-llm, then pytest "
-            f"backend/tests/e2e/test_visual_regression.py -v "
-            f"--base-url=http://localhost:5273 --backend-url=http://localhost:5274 "
-            f"(ports shift with --port-offset; wait for seeded files to leave 'processing' first)."
+            f"(row/page-height drift). To capture or refresh it, run:\n"
+            f"    ./scripts/e2e/update-visual-baselines.sh "
+            f"--reason '<why>' --surface {surface}\n"
+            f"which brings that stack up (--fresh visual --port-offset 100 "
+            f"--seed-benchmark --with-mock-llm), waits for the seeded media to leave "
+            f"'processing', and tears it down again. To COMPARE against it without "
+            f"updating, add --keep and re-run this module with --base-url/--backend-url "
+            f"pointed at the offset ports it prints."
         )
 
 
@@ -692,7 +812,6 @@ def test_visual_regression(
     browser: Any,
     theme: str,
     surface: str,
-    transcribed_file_uuid: str,
     base_url: str,
     request: pytest.FixtureRequest,
 ) -> None:
@@ -709,14 +828,17 @@ def test_visual_regression(
 
         if surface == "gallery":
             page.goto(base_url)
-            page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+            page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
             page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
             _stabilize(page)
             # A masked surface must actually mask something — see the speakers
             # branch below for why this is asserted rather than assumed.
             _assert_masks(page, "gallery")
         elif surface == "file_detail":
-            page.goto(f"{base_url}/files/{transcribed_file_uuid}")
+            # Resolved HERE, not as a test parameter: as a parameter it was built for
+            # every surface, so a stack with no transcript skipped `settings` and
+            # `chat_trace` too. See the fixture's docstring.
+            page.goto(f"{base_url}/files/{request.getfixturevalue('transcribed_file_uuid')}")
             page.wait_for_selector(".transcript-segment", timeout=30000)
             _stabilize(page)
             # A masked surface must actually mask something — see the speakers
@@ -776,6 +898,10 @@ def test_visual_regression(
                 f"populate the retrieval cache (saw {cached.count()}), so this baseline "
                 "records a cache MISS and will not reproduce once the cache is warm."
             )
+            # Ordered AFTER `_assert_masks`: the pin is applied to the same
+            # selectors that assertion just proved are still matching, so a
+            # renamed class fails there rather than silently pinning nothing.
+            _pin_masked_geometry(page, "chat_trace")
         else:  # pragma: no cover - defensive
             pytest.fail(f"Unknown surface: {surface}")
 
@@ -789,12 +915,30 @@ def test_visual_regression(
                 mask=_volatile_regions(page, surface),
                 mask_color="#ff00ff",
             )
+        elif surface == "settings":
+            # Capture the MODAL, not the page — the same reasoning as chat_trace above, and
+            # for a failure measured on 2026-09-06.
+            #
+            # This used to capture the viewport, which meant the image included the GALLERY
+            # BEHIND the overlay: its tag chips, speaker chips, date-range control and media
+            # cards. Every one of those is dev-database content. The baseline was recorded
+            # against a near-empty library, and both themes failed at 1.11% / tolerance 0.50%
+            # as soon as the stack held two files — with the Settings modal itself
+            # pixel-identical in baseline and actual. The suite was measuring how much data is
+            # in the database, not the UI, so refreshing the baseline would only have deferred
+            # the same failure to the next upload.
+            #
+            # Cropping to the modal is what makes the surface's name true. Masking cannot fix
+            # this one: the background's card COUNT changes the layout of the region, and a
+            # mask is a fixed rectangle over an element that may not even be present.
+            png_bytes = page.locator(".settings-modal").screenshot(
+                animations="disabled",
+                mask=_volatile_regions(page, surface),
+                mask_color="#ff00ff",
+            )
         else:
-            # The settings modal is an overlay; capture the viewport (not full page)
-            # so a long scrolled background doesn't add nondeterministic height.
-            full_page = surface != "settings"
             png_bytes = page.screenshot(
-                full_page=full_page,
+                full_page=True,
                 animations="disabled",
                 mask=_volatile_regions(page, surface),
                 mask_color="#ff00ff",

@@ -136,6 +136,28 @@ def _expand(value: str, scope: str | None = None) -> str:
     return value
 
 
+#: `docker ps ... | grep [flags] <pattern>` — the pattern is what addresses a stack.
+#: `(?:-\S+\s+)*` skips grep's flags, so the capture is the pattern whether the call is
+#: `grep <p>`, `grep -q <p>`, `grep -c <p>` or `grep -c -- <p>`. It must stay flag-agnostic:
+#: commit 58871c8b rewrote every `grep -q` in opentr.sh to capture-then-`grep -c` (a `grep -q`
+#: under `pipefail` can SIGPIPE its producer and read a MATCH as a non-match), and a regex that
+#: only knew `-q` would have silently stopped extracting anything.
+_DOCKER_PS_GREP = re.compile(r"docker ps\b[^\n|]*\|\s*grep\s+(?:-\S+\s+)*(\S+)")
+
+
+def _docker_ps_grep_patterns(block: str) -> list[str]:
+    return _DOCKER_PS_GREP.findall(block)
+
+
+def _docker_ps_probes(block: str) -> list[str]:
+    """Non-comment lines that ask docker which containers are running."""
+    return [
+        line.strip()
+        for line in block.splitlines()
+        if "docker ps" in line and not line.lstrip().startswith("#")
+    ]
+
+
 def _bench_arms() -> set[str]:
     """Subcommands the bench `case` block actually implements.
 
@@ -192,9 +214,26 @@ def test_bench_flow_never_names_a_dev_stack_container():
 def test_engine_gate_checks_the_bench_worker():
     """The dangerous one: a safety gate that validated the stack to stay off.
 
-    Asserts both halves — that WORKER resolves to a container the bench overlay
-    actually creates, and that the `docker ps` gate is still keyed on WORKER
-    rather than an inlined name.
+    Asserts two independent halves:
+
+    1. ``WORKER`` resolves to a container the bench overlay actually creates;
+    2. the ``docker ps`` presence gate is **derived from the ``WORKER`` variable**
+       rather than from a container name written out at the probe.
+
+    (2) is the property, not any particular spelling of it. This assertion used to be
+    ``'grep -q "^${WORKER}$"' in block`` — a literal — and commit 58871c8b broke it by
+    making a **correct** change: every ``grep -q`` in opentr.sh became capture-then-test
+    (``[ "$(... | grep -c ...)" -eq 0 ]``), because a ``grep -q`` under ``pipefail``
+    SIGPIPEs its producer and can read a MATCH as a non-match. A guard that fails on the
+    fix for a real bug teaches people to delete guards.
+
+    What #399 actually was: the gate said ``opentranscribe-celery-worker`` while the bench
+    overlay names every container ``otbench-*``, so the safety check validated **the one
+    stack the benchmark must not touch** — it aborted when only the bench stack was up and
+    passed when the dev stack was. That is an *inlined name* defect, and it is invisible to
+    (1) alone: ``WORKER`` can be perfectly correct while the probe ignores it. So the check
+    is "the probe references ``${WORKER}``, and names no container itself", which survives
+    ``grep -q`` -> ``grep -c`` -> ``docker ps --filter name=`` alike.
     """
     block = _bench_case_block()
 
@@ -210,10 +249,24 @@ def test_engine_gate_checks_the_bench_worker():
         f"{resolved!r} is not among the bench overlay's container_name values"
     )
 
-    assert 'grep -q "^${WORKER}$"' in block, (
-        "the engine arm's worker-presence gate no longer matches on ${WORKER} — "
-        "an inlined container name is how #399 happened"
+    probes = _docker_ps_probes(block)
+    gate_lines = [line for line in probes if re.search(r"\$\{?WORKER\}?", line)]
+    assert gate_lines, (
+        "no `docker ps` probe in the bench engine arm is keyed on ${WORKER}. Either the "
+        "worker-presence gate is gone, or it now spells a container name out at the "
+        "probe — which is exactly issue #399: the gate said "
+        "`opentranscribe-celery-worker` while WORKER said otherwise, so it validated the "
+        "dev stack. The `docker ps` lines found were:\n" + "\n".join(f"  {p}" for p in probes)
     )
+
+    for line in gate_lines:
+        named = re.findall(r"\b(?:otbench|opentranscribe|otfresh)-[A-Za-z0-9_.-]+", line)
+        assert not named, (
+            f"the worker-presence gate writes a container name out: {named}. It must "
+            "address the worker through ${WORKER} (checked above against "
+            "docker-compose.bench.yml), so the name and the gate cannot drift apart:\n"
+            f"  {line}"
+        )
 
 
 def test_bench_status_and_start_list_bench_containers():
@@ -224,8 +277,7 @@ def test_bench_status_and_start_list_bench_containers():
     ones it had just started.
     """
     block = _bench_case_block()
-    # (?:-\S+\s+)* skips grep flags, so `grep -q <pattern>` yields the pattern.
-    patterns = re.findall(r"docker ps [^\n|]*\|\s*grep\s+(?:-\S+\s+)*(\S+)", block)
+    patterns = _docker_ps_grep_patterns(block)
     assert patterns, "no `docker ps | grep` found in the bench case block"
     # The single-container gate has its own test; these are the listings.
     listings = {_expand(p, scope=block).strip("\"'") for p in patterns if "WORKER" not in p}
@@ -289,6 +341,32 @@ def test_bench_usage_text_documents_every_bench_subcommand():
         arm for arm in _bench_arms() - NON_DOCUMENTED_ARMS if f"bench {arm}" not in usage
     )
     assert not missing, f"`./opentr.sh bench help` omits: {missing}"
+
+
+def test_the_grep_pattern_extractor_survives_a_change_of_grep_flags():
+    """Guard the guard: an extractor that matched nothing would pass every listing test.
+
+    The flag set is not stable. `grep -q` was correct until 58871c8b proved it inverts under
+    `pipefail`, and became `grep -c`; a `grep -m1` or a `grep -c --` is the same shape again.
+    The extractor must key on the PATTERN's position, never on which flags precede it, or a
+    routine change makes `_docker_ps_grep_patterns` return `[]` — and an empty list of
+    patterns is indistinguishable from a bench flow that greps nothing wrong.
+    """
+    cases = {
+        # (the spelling, the pattern it must yield)
+        "docker ps --format '{{.Names}}' | grep \"^${W}$\"": '"^${W}$"',
+        "docker ps --format '{{.Names}}' | grep -q \"^${W}$\"": '"^${W}$"',
+        'if [ "$(docker ps --format \'{{.Names}}\' | grep -c "^${W}$")" -eq 0 ]; then': '"^${W}$")"',
+        'docker ps -a | grep -c -- "^${W}$"': '"^${W}$"',
+        "docker ps --format 'table {{.Names}}' | grep \"$PREFIX\"": '"$PREFIX"',
+    }
+    for source, expected in cases.items():
+        got = _docker_ps_grep_patterns(source)
+        assert got, f"extractor found no pattern in: {source}"
+        assert expected in got[0], f"extractor returned {got!r} for: {source}"
+
+    # ...and it must not invent one where there is no `docker ps` at all.
+    assert _docker_ps_grep_patterns('docker inspect x | grep -q "^${W}$"') == []
 
 
 def test_the_arm_list_is_derived_and_non_trivial():

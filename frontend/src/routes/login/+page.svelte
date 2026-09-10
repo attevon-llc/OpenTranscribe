@@ -113,6 +113,15 @@
     login_banner_classification: "UNCLASSIFIED",
   };
 
+  // False until `getAuthMethods()` has answered — success OR failure. The sign-in UI is gated
+  // on it so the card is painted once, in its final shape, rather than corrected afterwards.
+  //
+  // It must also become true on FAILURE, and the `catch` below sets it: the defaults describe a
+  // working local-only login, so a backend that cannot answer should still show the form. Gating
+  // a login page on a request that can fail, with no fallback, is how a transient blip turns
+  // into "nobody can sign in".
+  let authMethodsLoaded = false;
+
   // The username/password form serves BOTH local accounts and LDAP — LDAP
   // credentials are posted to the same /auth/login endpoint — so it must not be
   // gated on `local_enabled` alone, or an LDAP-only deployment loses its only
@@ -149,44 +158,85 @@
       const state = urlParams.get('state');
 
       if (code && state) {
-        // Clear URL parameters immediately to prevent double-processing on refresh
-        window.history.replaceState({}, document.title, window.location.pathname);
+        // NOTHING in this block may escape.
+        //
+        // The auth-methods fetch below — and with it the `finally` that opens the
+        // `authMethodsLoaded` gate — is unreachable if an exception gets out here, so a throw
+        // pins the card to its spinner permanently: a user returning from the IdP is then left
+        // with no way in AT ALL, not even the local credential form. Before the gate existed
+        // the same throw was survivable, because the form had already been painted against the
+        // placeholder defaults; gating the render is what turned it into a lockout.
+        //
+        // `sessionStorage` is the concrete hazard, not a hypothetical one: in a browser
+        // configured to block site storage, merely *touching* it throws `SecurityError`, and
+        // `setItem` throws on quota. Neither is under our control. Falling through to the
+        // ordinary credential form is the recoverable outcome.
+        try {
+          // Clear URL parameters immediately to prevent double-processing on refresh
+          window.history.replaceState({}, document.title, window.location.pathname);
 
-        // Check if we already processed this callback (prevents double toast)
-        const processedKey = `oidc_callback_${state}`;
-        if (sessionStorage.getItem(processedKey)) {
-          // Already processed this callback, skip
-          window.location.href = "/";
-          return;
-        }
-        sessionStorage.setItem(processedKey, 'true');
-
-        // Handle the OIDC callback
-        oidcLoading = true;
-        const result = await handleOIDCCallback(code, state);
-        oidcLoading = false;
-
-        if (result.success) {
-          loginSuccess = true;
-          setTimeout(() => goto('/', { replaceState: true }), 600);
-          return;
-        } else {
-          // Only show error if it's not a state-related issue (likely double-request)
-          if (!result.message?.includes('state')) {
-            toastStore.error(result.message || $t('auth.loginFailed'));
-          } else {
-            // State error but user might already be logged in, check and redirect
-            if ($isAuthenticated) {
-              window.location.href = "/";
-              return;
-            }
-            toastStore.error(result.message || $t('auth.loginFailed'));
+          // Check if we already processed this callback (prevents double toast)
+          const processedKey = `oidc_callback_${state}`;
+          if (sessionStorage.getItem(processedKey)) {
+            // Already processed this callback, skip
+            window.location.href = "/";
+            return;
           }
+          sessionStorage.setItem(processedKey, 'true');
+
+          // Handle the OIDC callback
+          oidcLoading = true;
+          const result = await handleOIDCCallback(code, state);
+          oidcLoading = false;
+
+          if (result.success) {
+            loginSuccess = true;
+            setTimeout(() => goto('/', { replaceState: true }), 600);
+            return;
+          } else {
+            // Only show error if it's not a state-related issue (likely double-request)
+            if (!result.message?.includes('state')) {
+              toastStore.error(result.message || $t('auth.loginFailed'));
+            } else {
+              // State error but user might already be logged in, check and redirect
+              if ($isAuthenticated) {
+                window.location.href = "/";
+                return;
+              }
+              toastStore.error(result.message || $t('auth.loginFailed'));
+            }
+          }
+        } catch (err) {
+          console.error('OIDC callback handling failed; falling back to the sign-in form', err);
+          oidcLoading = false;
+          toastStore.error($t('auth.loginFailed'));
         }
       }
 
-      // Fetch available auth methods
-      authMethods = await getAuthMethods();
+      // Fetch available auth methods.
+      //
+      // Nothing that depends on the ANSWER is rendered until this resolves — see
+      // `authMethodsLoaded` below. The defaults above describe a local-only deployment, so
+      // rendering against them and then correcting inserts the SSO buttons, the PKI button,
+      // the forgot-password row and the register link into an already-painted card. That is a
+      // layout shift for a real user, and it made the whole auth E2E suite non-deterministic:
+      // `wait_for_selector('#email')` returned on the pre-fetch paint, the fills succeeded, and
+      // the click then raced the reflow. 58 auth tests failed that way on 2026-09-06 while the
+      // same file passed 29/29 against an idle stack — the fetch is only slow enough to lose
+      // when the machine is busy, which is precisely when the full gate runs.
+      //
+      // The `finally` is load-bearing, not defensive dressing: this onMount body has no
+      // try/catch of its own, so before this the call could only reject as an unhandled
+      // promise. With the UI gated on the flag, that would leave the card stuck on its
+      // placeholder and make a transient backend blip indistinguishable from "sign-in is
+      // down". Failing open to the local-only defaults is the safe direction for a login page.
+      try {
+        authMethods = await getAuthMethods();
+      } catch (err) {
+        console.error('Could not load auth methods; falling back to local sign-in', err);
+      } finally {
+        authMethodsLoaded = true;
+      }
 
       // Check for banner settings. The notice is shown on every visit: there is
       // no client-side "already acknowledged" shortcut any more, because the only
@@ -1026,6 +1076,14 @@
           </button>
         </div>
       </div>
+    {:else if !authMethodsLoaded}
+      <!-- Painted until /auth/methods answers. Everything below depends on which methods the
+           deployment accepts, so rendering it against the defaults and correcting afterwards
+           moves the submit button under the user's cursor (and under Playwright's click). -->
+      <div class="auth-methods-loading" aria-live="polite" aria-busy="true">
+        <Spinner size="small" />
+        <p>{$t('auth.loadingSignInOptions')}</p>
+      </div>
     {:else}
       <!-- Normal Login Form. Hidden entirely when neither local nor LDAP
            credentials are accepted — otherwise the user fills it in and the
@@ -1208,7 +1266,8 @@
     justify-content: center;
   }
 
-  .external-auth-loading {
+  .external-auth-loading,
+  .auth-methods-loading {
     display: flex;
     flex-direction: column;
     align-items: center;

@@ -8,6 +8,7 @@ word_timestamps off in its batched pipeline.
 
 import logging
 import time
+from typing import Any
 
 import numpy as np
 
@@ -164,8 +165,15 @@ class Transcriber:
 
     def __init__(self, config: TranscriptionConfig):
         self.config = config
-        self._model = None
-        self._pipeline = None
+        # Typed Optional[Any] rather than left to inference. faster_whisper is imported
+        # lazily inside load_model() (it drags in torch), so the concrete types are not
+        # available at module scope — but WITHOUT an annotation mypy infers `None` from
+        # this assignment alone and then rejects every later assignment of a real
+        # pipeline, including in tests that build a stub. `is_loaded` reads `_pipeline`,
+        # so Optional is also the honest description: an unloaded Transcriber is a real,
+        # reachable state.
+        self._model: Any | None = None
+        self._pipeline: Any | None = None
 
     @property
     def is_loaded(self) -> bool:
@@ -258,7 +266,17 @@ class Transcriber:
         audio_duration = len(audio) / 16000  # 16kHz sample rate
         segments = []
         total_words = 0
+        # Cooperative-abort checkpoint (issue #809), resolved ONCE rather than per
+        # iteration — this is the decode hot loop. Imported here rather than at module
+        # scope because transcriber.py is imported by CPU-only workers too, and this
+        # keeps the shutdown machinery off their import path.
+        from app.core.worker_shutdown import raise_if_shutting_down
+
         for seg in segments_gen:
+            # The only unbounded loop in the hot path, so checking here bounds abort
+            # latency to a single decode batch rather than to the whole file.
+            raise_if_shutting_down("transcriber.transcribe segment loop")
+
             seg_start = max(float(seg.start), 0.0)
             seg_end = min(float(seg.end), audio_duration)
             if seg_end <= seg_start:

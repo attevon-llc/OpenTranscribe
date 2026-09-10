@@ -1,0 +1,11 @@
+{
+  "image": "davidamacey/opentranscribe-docs:v0.5.0-scanleg-arm64",
+  "summary": {
+    "fatal": 0,
+    "warn": 0,
+    "info": 0,
+    "skip": 0,
+    "pass": 16
+  },
+  "details": []
+}

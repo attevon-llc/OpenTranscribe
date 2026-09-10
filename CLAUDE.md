@@ -114,6 +114,7 @@ Configure auth via Admin UI (Settings → Authentication); DB config takes prece
 ```bash
 ./opentr.sh start dev --with-ldap-test       # LDAP at localhost:3890, UI :17170 (admin/admin_password)
 ./opentr.sh start dev --with-keycloak-test   # a Keycloak IdP to test OIDC against, localhost:8180 (admin/admin)
+                                             # ⚠️ FIRST START TAKES ~10 MINUTES — see below
 ./opentr.sh start dev --with-authentik-test  # an Authentik IdP to test OIDC against, localhost:9022 (bootstrap: admin@example.com/admin_password)
 ./opentr.sh start prod --build --with-pki    # PKI/mTLS at https://localhost:5182 (prod-only — Vite can't do mTLS)
 ```
@@ -140,6 +141,19 @@ full table: `backend/tests/CLAUDE.md`.
 `--with-mock-asr` is the sibling overlay — a mocked cloud ASR (Gladia stand-in) provider at
 `http://mock-asr:5198`, so `--lite`-mode ASR can be exercised with no vendor account either;
 same fixture/table location.
+⚠️ **Keycloak is slow to start and that is normal, not a hang.** `start-dev` re-runs Quarkus
+augmentation on **every** start (the output lands in `/opt/keycloak/lib/quarkus`, which is not on
+the volume, so nothing is reused), and its `JarResultBuildStep` walks the built tree calling
+`File.setReadable` per entry. Measured 2026-09-06 on this host: **~600 s** before it listens, then
+Quarkus starts in ~16 s. The healthcheck therefore allows `start_period: 900s` — it was 60s + 5×30s
+= 210s, which marked a perfectly healthy Keycloak unhealthy at 3.5 minutes, failed `up --wait`, and
+aborted `run-dev-tests.sh --full` **before a single test ran**. A container sitting at 0.2% CPU
+here is doing I/O-bound work, not deadlocked; check the thread dump before concluding otherwise.
+The real fix is to pre-run `kc.sh build` in a small custom image and start `--optimized` (~16 s);
+that is worth doing and is not yet done. The image is **pinned** (`26.4.7`) like every other
+dependency — it was `:latest`, which meant the gate's auth phase ran against whatever Keycloak
+shipped that morning. `smallstep/step-ca` is still `:latest` and wants the same treatment.
+
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
 
@@ -270,6 +284,20 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 > files you are not touching — and restore it when the run ends. What you staged is irrelevant:
 > the stash happens *before any hook runs* and covers the whole tree.
 >
+> **The hazard is CONCURRENCY, not who is committing.** Read this as a rule about how many
+> writers share the checkout, and do not over-apply it into "a subagent may never commit" —
+> that costs a pointless round trip on solo work and gets ignored as obviously too strict:
+>
+> | Shape | Commit? | Why |
+> |---|---|---|
+> | A **lone** writer — one agent, sole occupant of the checkout | ✅ yes | Nothing else in flight to stash |
+> | An agent in **its own worktree** | ✅ yes | Separate index and stash; no cross-lane exposure |
+> | The orchestrator, after **every** dispatched writer has reported | ✅ yes | Tree is quiet |
+> | **Two or more writers on one branch**, each committing | ⛔ **never** | Each run stashes the other N−1 mid-edit |
+>
+> Only the last row is forbidden — but it is the one that keeps happening, because each writer
+> individually looks safe to itself.
+>
 > This paragraph used to recommend `--files` or "just commit" as the safe alternative. **That
 > advice was wrong and caused the incident below.** There is no safe alternative for a tree with
 > unrelated unstaged work in progress; there is only waiting for a quiet tree. The wrapper above
@@ -284,6 +312,15 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 > in-flight agents' work the moment it ran. There is no "but these are my own subagents and I'm
 > scoping the commit" exception. Wait for every dispatched writer to report done, review, THEN
 > run one clean commit/precommit pass.
+>
+> ⚠️ **A test run is a writer's victim too, and the damage is silent.** Never start a gate, a
+> suite, or a timing measurement while any writer is active. An e2e phase run against a mutating
+> tree produced 20 meaningless failures — 17 of them fixture `ERROR`s, the signature of a
+> `conftest.py` changing mid-suite — and they were nearly filed as real defects. Contention also
+> invalidates *timings*: two agents running `pytest --collect-only` at once on this 48-core host
+> makes both numbers unusable, and comparing a loaded "before" against a quiet "after"
+> manufactures an improvement out of nothing. Confirm zero writers **and** a clean `git status`
+> before any run whose output you intend to treat as evidence.
 >
 > Three failure modes, all observed here:
 >
@@ -650,4 +687,10 @@ subsystem, and put new subsystem detail **there**, not in this file.
   file: `git add` it first, then commit with the pathspec.
 - **Every `.py` edit under `backend/app/` restarts the hot-reloading dev backend, and startup
   dispatches `search_index_maintenance`.** That corrupted three reindexes in one day. Batch app-file
-  edits, and announce a measurement or reindex window before starting one.
+  edits, and announce a measurement or reindex window before starting one. ⚠️ Until 2026-09-07 this
+  was worse than the sentence says: `./backend:/app` is bind-mounted and the command was a bare
+  `uvicorn --reload`, so **any `.py` anywhere under `backend/` restarted the API** — including
+  `backend/tests/e2e/*`, i.e. editing a *test* file took the backend down for ~15 s mid-run (the
+  reloader parent holds the listening socket, so the port stays open and answers nothing, which is
+  the blank-SPA shape behind most `wait_for_selector` e2e timeouts). Fixed by `--reload-dir app` in
+  `docker-compose.override.yml`; the sentence above is now literally true.

@@ -208,7 +208,12 @@ for k in sorted(interesting):
     local c
     for c in opentranscribe-celery-worker opentranscribe-celery-cpu-worker \
              opentranscribe-celery-nlp-worker opentranscribe-backend; do
-        if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$c"; then
+        # `grep -cx ... -gt 0`, never `| grep -qx`. This file runs under `set -euo pipefail`;
+        # `grep -q` exits at its first match, `docker ps` can then take SIGPIPE (141), and
+        # `pipefail` turns that MATCH into a non-match — silently dropping a running worker's
+        # log tail from the ONE dump that exists because diagnostics were previously lost to
+        # teardown (see scripts/CLAUDE.md's ac_dump_failure_diagnostics note).
+        if [ "$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx "$c")" -gt 0 ]; then
             ac_warn "  ── last 40 log lines: $c"
             docker logs --tail 40 "$c" 2>&1 | sed 's/^/    /' || true
         fi
@@ -356,7 +361,11 @@ print(v if v else "")
     # old FROM-release schema/API predating #706. Fall back to the
     # unscoped log grep so a genuinely old-schema stack is measured as
     # best-effort rather than reported as a hard failure.
-    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$worker_container"; then
+    # `grep -cx ... -eq 0`, never `! ... | grep -qx` — same SIGPIPE + pipefail inversion as
+    # above. Here it costs a MEASUREMENT: a running worker read as absent returns
+    # "absent:none", so the diarization-engine verdict is recorded as undeterminable for a
+    # stack that could have been measured.
+    if [ "$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx "$worker_container")" -eq 0 ]; then
         echo "absent:none"
         return 0
     fi
@@ -647,4 +656,65 @@ except json.JSONDecodeError:
 value = data.get(key, "") if isinstance(data, dict) else ""
 print(value if value is not None else "")
 ' "$json" "$key"
+}
+
+# ── OpenSearch ML (neural search) readiness ──────────────────────────────────────────────
+#
+# ML_DEPLOY_TIMEOUT_S: how long to wait for the neural-search model to reach DEPLOYED.
+#
+# ⚠️ 600, and the three scenarios used to disagree: 600 / 600 / **180**.
+#
+# The 180 was defended in a comment in a DIFFERENT file — test-fresh-install.sh's own budget
+# note read "Unlike test-upgrade.sh (180s poll, warmer stack)". MEASURED 2026-09-07: that
+# premise is false. The shared rehearsal cache's `opensearch-ml` directory is EMPTY (4 KB),
+# and test-upgrade.sh's own `mc_seed_cache` call explicitly skips `opensearch-ml` as
+# "container-specific" — so the upgrade stack registers the model over the network from cold,
+# exactly like the other two. There is no warmer stack; there was a number nobody re-derived.
+#
+# The number that IS derived: `ml_model_service._REGISTRATION_MAX_WAIT` is 300 s, and
+# test-fresh-install.sh recorded that even 300 was not always enough on this host under
+# concurrent build/scan load. 600 gives headroom for that variance and costs nothing on a
+# healthy run — the poll exits on the first successful probe.
+#
+# Registration + deployment runs as an ASYNC background task after backend startup, which is
+# why this polls at all rather than checking once.
+ML_DEPLOY_TIMEOUT_S="${ML_DEPLOY_TIMEOUT_S:-600}"
+ML_DEPLOY_POLL_S="${ML_DEPLOY_POLL_S:-10}"
+
+# ac_wait_for_ml_model_deployed [TIMEOUT_S] [OPENSEARCH_CONTAINER]
+#
+# Poll OpenSearch for at least one model in state DEPLOYED. Echoes the count found (0 on
+# timeout) so the caller can hand it straight to `as_assert_ge ... 1` — the shape all three
+# scenarios already used, kept deliberately: this helper reports, the CALLER asserts, so a
+# scenario's REPORT.md still names the assertion in its own words.
+#
+# Returns 0 when deployed, 1 on timeout. Never fatal: neural search failing to come up is a
+# finding the scenario must RECORD, not a reason to truncate the phases after it (issues
+# #617/#618 — a bare non-zero under `set -e` kills every remaining phase silently).
+ac_wait_for_ml_model_deployed() {
+    local timeout="${1:-$ML_DEPLOY_TIMEOUT_S}"
+    local container="${2:-${TEST_OPENSEARCH_CONTAINER:-opentranscribe-opensearch}}"
+    local deadline=$(( $(date +%s) + timeout ))
+    local deployed=0
+
+    ac_log "waiting up to ${timeout}s for an OpenSearch ML model to reach DEPLOYED"
+    while (( $(date +%s) < deadline )); do
+        deployed=$(docker exec "$container" curl -s \
+            'http://localhost:9200/_plugins/_ml/models/_search' \
+            -H 'Content-Type: application/json' \
+            -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
+            2>/dev/null \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
+            2>/dev/null || echo 0)
+        if [[ "$deployed" =~ ^[0-9]+$ ]] && (( deployed >= 1 )); then
+            ac_log "OpenSearch ML model DEPLOYED (neural search active)"
+            printf '%s' "$deployed"
+            return 0
+        fi
+        sleep "$ML_DEPLOY_POLL_S"
+    done
+
+    ac_warn "no OpenSearch ML model reached DEPLOYED within ${timeout}s — hybrid search would fall back to BM25"
+    printf '0'
+    return 1
 }

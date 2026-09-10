@@ -29,7 +29,10 @@ FROM denoland/deno:bin AS deno-bin
 # declaring `--platform linux/arm64` for this Dockerfile fails LOUDLY at the pull step
 # instead of silently shipping a broken binary — remove this stage and replace it with a
 # real digest only once diar-native publishes a CUDA arm64 artifact.
-ARG TARGETARCH
+# ⚠️ Do NOT add `ARG TARGETARCH` here — see Dockerfile.lite's copy of this note.
+# BuildKit supplies TARGETARCH to the global scope automatically for FROM; declaring
+# it explicitly with no default shadows the built-in with an empty string and the
+# selecting FROM below resolves to the literal `diar-native-bin-`.
 FROM davidamacey/diar-native@sha256:83a709be94d0ca06441fa10aea0680f53b03cc10eb3ce11c4eeb84478400567d AS diar-native-bin-amd64
 FROM davidamacey/diar-native:UNAVAILABLE-NO-CUDA-ARM64-BUILD-SEE-ISSUE-680 AS diar-native-bin-arm64
 # This FROM selects one of the two stages immediately above (amd64 is digest-

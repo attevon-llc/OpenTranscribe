@@ -53,6 +53,12 @@ lerna-debug.log*
 
 # Database data
 /data/
+# Runtime DATA_DIR contents. In dev, DATA_DIR resolves inside the ./backend:/app bind mount,
+# so the GDPR erasure journal lands at backend/data/gdpr/erasure-journal.jsonl in the working
+# tree. It was neither tracked nor ignored — one `git add .` from publishing erasure records
+# (subject identifiers, deletion timestamps) to a public repo. Ignoring it is the guard; the
+# journal not surviving a container recreate is the separate defect in #870.
+backend/data/
 models_ai/
 flower.db
 *.sqlite3
@@ -355,3 +361,27 @@ backend/.mutmut-cache
 # Scratch working directory for the #403 RAG epic: cached issues/gists, injection
 # manifests, probe scripts and file backups. Never part of the product.
 .rag-403/
+
+# Implementation-plan working copies (.claude/skills plan-gist convention). The
+# PUBLISHED artifact is the public gist linked from each issue comment; this is the
+# local mirror agents write before publishing. Not in /tmp because /tmp is cleared on
+# reboot, and not committed because planning markdown does not belong in a public repo.
+.plans/
+
+# Machine-readable security scan output. The human-readable `*-<tool>.txt` reports and the
+# small `*-dockle.json` audits ARE tracked — that is what `security-reports/README.md`'s
+# "security transparency" promise serves, and what a person actually reads.
+#
+# These three are deliberately NOT, for two independent reasons:
+#   * SIZE — 30.8 MB per scan vs 2.1 MB for the readable set, and git keeps every release's
+#     copy forever in a public repo. They are regenerable in minutes from a published tag
+#     (`./scripts/security-scan.sh <component>`), so committing them buys nothing a rebuild
+#     cannot.
+#   * FALSE POSITIVES — Trivy records the image's ENV block, so every `python:*`-derived
+#     report embeds `GPG_KEY=7169605F...`, the PUBLIC CPython release-signing fingerprint.
+#     gitleaks scores that as a generic-api-key and blocks the commit. It is not a
+#     credential, but the honest fix is not to teach the secret scanner to ignore a
+#     directory — it is not to commit machine blobs we do not need.
+security-reports/*-trivy.json
+security-reports/*-grype.json
+security-reports/*-sbom.json

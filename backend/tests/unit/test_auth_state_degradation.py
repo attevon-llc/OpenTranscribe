@@ -28,6 +28,83 @@ from app.auth import lockout as lockout_module
 from app.auth import rate_limit as rate_limit_module
 from app.auth import session as session_module
 
+#: Module-level names in `session` and `lockout` that hold per-process CACHED STATE — a
+#: Redis handle, the in-memory fallback, whether the store was initialised, when it was
+#: last probed. Every one is a value a test can dirty for whichever test runs next in the
+#: same worker.
+#:
+#: Deliberately NOT `_store_lock`: a Lock is machinery, not state, and replacing one
+#: mid-suite would be a new bug rather than isolation.
+_STATEFUL_GLOBALS = (
+    "_redis_client",
+    "_in_memory_store",
+    "_store_initialized",
+    "_last_redis_probe",
+    "_cas_script",
+    "_cas_script_client",
+)
+
+_STATE_MODULES = (session_module, lockout_module)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_degradation_globals():
+    """Snapshot and restore the cached-state globals around every test in this file.
+
+    Issue #810. These tests reach into module globals and set them directly, and the
+    per-class `_reset()` helpers only put them into a KNOWN state at the start of a test
+    that remembers to call one — they do not protect a test from what a neighbour left,
+    and a test that dies part-way restores nothing at all. `monkeypatch` gets this right
+    by construction (it unwinds even on an exception); a hand-rolled `teardown_method`
+    does not.
+
+    That asymmetry is the most promising lead on #810's flaky
+    `test_it_re_probes_exactly_at_the_interval_boundary`, which asserts on state it does
+    not own. Note it cannot be a CROSS-WORKER effect: pytest-xdist workers are separate
+    processes and module globals are per-process, so any interference is same-process and
+    sequential — which is what makes a leaked global, rather than a race, the candidate.
+
+    This is worth having whether or not it turns out to cure that flake: it removes a
+    whole class of order-dependence from five files that share these globals
+    (`test_lockout_atomicity`, `test_lockout_cleanup_sweep`, `test_lockout_survivor_mutants`,
+    `test_auth_config_behaviour`, and this one).
+    """
+    saved = [
+        (module, name, getattr(module, name))
+        for module in _STATE_MODULES
+        for name in _STATEFUL_GLOBALS
+        if hasattr(module, name)
+    ]
+    yield
+    for module, name, value in saved:
+        setattr(module, name, value)
+
+
+def test_the_stateful_globals_list_covers_every_cached_value():
+    """Guard the guard: a new cached global must join `_STATEFUL_GLOBALS` or isolation lies.
+
+    Without this, adding a `_something_cached = None` to either module silently falls
+    outside the fixture, and the isolation above would keep reporting success while no
+    longer being complete — the exact "a check that cannot fail" shape this repo's test
+    auditor exists to catch.
+
+    Scoped to values that look like a CACHE (None / bool / int / float). Locks, modules,
+    classes and functions are machinery and are excluded by construction.
+    """
+    missed: list[str] = []
+    for module in _STATE_MODULES:
+        for name, value in vars(module).items():
+            if not name.startswith("_") or name.startswith("__"):
+                continue
+            if not isinstance(value, (bool, int, float, type(None))):
+                continue
+            if name not in _STATEFUL_GLOBALS:
+                missed.append(f"{module.__name__}.{name}")
+    assert not missed, (
+        f"cached module globals not covered by _STATEFUL_GLOBALS: {missed}. Add them, or "
+        "the autouse isolation fixture silently stops covering them."
+    )
+
 
 class _FakeRequest:
     """The two attributes ``resolve_client_ip`` reads."""

@@ -36,12 +36,11 @@ import re
 import shutil
 import subprocess
 import threading
-import time
-import uuid
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+from tests.integration import throwaway_pg
 
 pytestmark = [
     pytest.mark.integration,
@@ -51,7 +50,6 @@ pytestmark = [
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DB_SNAPSHOT_SH = _REPO_ROOT / "scripts" / "release-tests" / "lib" / "db-snapshot.sh"
 _TEST_UPGRADE_SH = _REPO_ROOT / "scripts" / "release-tests" / "test-upgrade.sh"
-_COMPOSE_FILE = _REPO_ROOT / "docker-compose.yml"
 _DB_USER = "postgres"
 _DB_NAME = "opentranscribe_test"
 
@@ -76,104 +74,32 @@ def _run(cmd: list[str], *, stdin_text: str | None = None) -> subprocess.Complet
     )
 
 
-def _postgres_image_tag() -> str:
-    compose = _COMPOSE_FILE.read_text(encoding="utf-8")
-    match = re.search(r"image:\s*(postgres:\S+)", compose)
-    assert match, "could not find an `image: postgres:<tag>` line in docker-compose.yml"
-    return match.group(1)
-
-
-def _wait_ready(container: str, timeout: float = 30.0) -> None:
-    deadline = time.monotonic() + timeout
-    last: subprocess.CompletedProcess[str] | None = None
-    consecutive = 0
-    while time.monotonic() < deadline:
-        last = _run(
-            [
-                "docker",
-                "exec",
-                container,
-                "psql",
-                "-U",
-                _DB_USER,
-                "-d",
-                "postgres",
-                "-c",
-                "SELECT 1;",
-            ]
-        )
-        if last.returncode == 0:
-            consecutive += 1
-            if consecutive >= 2:
-                return
-        else:
-            consecutive = 0
-        time.sleep(0.3)
-    raise RuntimeError(
-        f"postgres in {container} never became ready: {last.stdout if last else 'no attempt made'}"
-    )
-
-
 @pytest.fixture
-def pg_container() -> Iterator[str]:
-    name = f"ot-dbs-settle-test-{uuid.uuid4().hex[:12]}"
-    image = _postgres_image_tag()
-    throwaway_password = uuid.uuid4().hex
-    started = _run(
-        [
-            "docker",
-            "run",
-            "-d",
-            "--network",
-            "none",
-            "--name",
-            name,
-            "-e",
-            f"POSTGRES_PASSWORD={throwaway_password}",
-            image,
-        ]
+def pg_container(isolated_pg: str) -> str:
+    """The session's throwaway, network-isolated Postgres container, with this module's
+    schema created in a fresh ``_DB_NAME`` database.
+
+    Was a private ``docker run`` per test (~124 s of setup each, 2 tests). It is now the
+    shared container from ``tests/integration/conftest.py``: ``isolated_pg`` drops every
+    database created during the test, so each test still gets a virgin ``_DB_NAME``. That
+    is load-bearing for this module in particular -- ``test_never_settles_while_a_writer...``
+    leaves ``redaction_status`` mutated, and ``dbs_wait_for_media_file_settled``'s whole
+    predicate is "has this table's content digest stopped changing", so residue from the
+    previous test would be residue in the exact column under test.
+
+    Nothing here touches cluster-level state; the wait function is handed the database name.
+    """
+    create = throwaway_pg.psql(
+        isolated_pg,
+        "postgres",
+        # One `docker exec` rather than two: CREATE DATABASE cannot run inside the target
+        # database, so psql's \connect switches to it before the schema DDL.
+        f'CREATE DATABASE "{_DB_NAME}" OWNER {throwaway_pg.DB_USER};\n'
+        f"\\connect {_DB_NAME}\n"
+        f"{_SCHEMA_SQL}",
     )
-    assert started.returncode == 0, (
-        f"failed to start throwaway postgres container: {started.stderr}"
-    )
-    try:
-        _wait_ready(name)
-        create = _run(
-            [
-                "docker",
-                "exec",
-                name,
-                "psql",
-                "-v",
-                "ON_ERROR_STOP=1",
-                "-U",
-                _DB_USER,
-                "-d",
-                "postgres",
-                "-c",
-                f'CREATE DATABASE "{_DB_NAME}" OWNER {_DB_USER};',
-            ]
-        )
-        assert create.returncode == 0, f"CREATE DATABASE failed: {create.stderr}"
-        schema = _run(
-            [
-                "docker",
-                "exec",
-                "-i",
-                name,
-                "psql",
-                "-v",
-                "ON_ERROR_STOP=1",
-                "-U",
-                _DB_USER,
-                _DB_NAME,
-            ],
-            stdin_text=_SCHEMA_SQL,
-        )
-        assert schema.returncode == 0, f"schema creation failed: {schema.stderr}"
-        yield name
-    finally:
-        _run(["docker", "rm", "-f", name])
+    assert create.returncode == 0, f"database/schema creation failed: {create.stderr}"
+    return isolated_pg
 
 
 def _exec_sql(container: str, sql: str) -> subprocess.CompletedProcess[str]:

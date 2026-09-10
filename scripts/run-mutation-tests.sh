@@ -900,6 +900,31 @@ if [[ "$MODE" == baseline ]]; then
         exit 4
     fi
     echo -e "${BLUE}ratchet checked $local_measured/$total module(s)${NC}"
+
+    # ⚠️ PARTIAL IS NOT A PASS EITHER (P0-6).
+    #
+    # "0 of 6 is not a pass" was only half the rule. On 2026-09-06 the gate measured 1 of 6,
+    # printed the ⊘ NOT MEASURED line above naming the other five — and exited 0, so
+    # run-integration-tests.sh rendered the phase as `✓ Mutation ratchet passed`. Five sixths
+    # of a security-critical ratchet was unmeasured under a green tick, which is the same
+    # defect as the 0/6 case with a smaller numerator.
+    #
+    # It stays OVERRIDABLE, because skipping an unmeasured module is deliberate (a measurement
+    # is 30-90 minutes and opt-in) — but the override is explicit and named, so choosing it is
+    # visible in the caller rather than assumed in the exit code.
+    if (( ${#unmeasured[@]} > 0 )) && (( rc == 0 )); then
+        if [[ "${MUTATION_RATCHET_PARTIAL_OK:-}" == "1" ]]; then
+            echo -e "${YELLOW}⊘ partial ($local_measured/$total) — accepted because" \
+                    "MUTATION_RATCHET_PARTIAL_OK=1${NC}" >&2
+            exit 0
+        fi
+        echo -e "${YELLOW}⊘ partial ($local_measured/$total): exiting 4 (NOT MEASURED).${NC}" >&2
+        echo -e "${YELLOW}  Nothing regressed in what WAS checked, but ${#unmeasured[@]} module(s)" \
+                "ratcheted nothing.${NC}" >&2
+        echo -e "${YELLOW}  Measure them, or set MUTATION_RATCHET_PARTIAL_OK=1 to accept it${NC}" >&2
+        echo -e "${YELLOW}  deliberately — but do not let a partial run read as a full one.${NC}" >&2
+        exit 4
+    fi
     exit $rc
 fi
 

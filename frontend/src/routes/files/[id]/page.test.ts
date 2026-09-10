@@ -25,8 +25,9 @@
  *   independently, per the same rationale `SettingsModal.test.ts` documents
  *   for its own child settings panels).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 const mockAxios = vi.hoisted(() => ({
   get: vi.fn(),
@@ -182,6 +183,68 @@ describe('files/[id]/+page — fetch/loading/error state machine', () => {
     // No filename, transcript, or any file-derived content ever reached the DOM.
     expect(container.textContent).not.toContain('someone-elses-file');
     expect(document.title).not.toBe('meeting-notes.mp4');
+  });
+});
+
+describe('files/[id]/+page — deferred DOM work is cancelled on destroy', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    // Un-wrap the `document` spies below so later tests see the real methods.
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * The page defers several DOM callbacks behind `setTimeout` (player init at
+   * 200ms, transcript scroll at 300ms, highlight-flash removal at 2000ms). Each
+   * one dereferences `document`. If a pending timer survives the component's
+   * destroy it runs against a page the user has navigated away from — and in the
+   * vitest suite, against a torn-down jsdom, where it surfaced as an intermittent
+   * `ReferenceError: document is not defined` unhandled error that failed the run
+   * with every test still reporting green.
+   *
+   * Fake timers are used to hold the clock still, NOT to suppress the callback:
+   * the assertion is that after `unmount()` the callbacks are *gone*, proven by
+   * advancing well past every delay the page schedules and observing that nothing
+   * touched `document`. Without the `onDestroy` cancellation this fails on
+   * `document.querySelector('#player')` inside `initializePlayer`.
+   */
+  it('cancels its pending timers on unmount, so no callback touches document afterwards', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/files/file-1') return Promise.resolve(completeFileResponse());
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: {} });
+    });
+
+    vi.useFakeTimers();
+
+    const { unmount } = render(Page, { props: { data: { id: 'file-1' } } });
+
+    // Drive the load with microtask flushes only — every mocked response is an
+    // already-resolved promise, so no timer advance is needed, which is what
+    // leaves the page's own timers pending at unmount.
+    for (let i = 0; i < 25; i++) {
+      await Promise.resolve();
+      await tick();
+    }
+    expect(document.title).toBe('meeting-notes.mp4');
+
+    // Non-vacuity: the page must actually have scheduled something. No other
+    // timer source is active here (no `waitFor`, no real clock), so this count
+    // is the page's own.
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    unmount();
+
+    expect(vi.getTimerCount()).toBe(0);
+
+    const querySelector = vi.spyOn(document, 'querySelector');
+    const querySelectorAll = vi.spyOn(document, 'querySelectorAll');
+    const getElementById = vi.spyOn(document, 'getElementById');
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(querySelector).not.toHaveBeenCalled();
+    expect(querySelectorAll).not.toHaveBeenCalled();
+    expect(getElementById).not.toHaveBeenCalled();
   });
 });
 

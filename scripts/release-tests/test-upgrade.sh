@@ -665,10 +665,14 @@ phase_01b_build_docs_image() {
 
 phase_02_verify_from_version() {
     gr_log "verifying davidamacey/opentranscribe-*:${FROM_VERSION} exists on Docker Hub"
-    if ! docker manifest inspect "davidamacey/opentranscribe-backend:${FROM_VERSION}" >/dev/null 2>&1; then
+    # Through ver_hub_has_release, not two more bare `docker manifest inspect` calls: those
+    # asked Docker Hub the same question `ver_hub_has` had already asked and memoized while
+    # detecting FROM_VERSION, against a 100-pulls-per-6h anonymous budget. Same two images
+    # (backend + frontend), same failure, one fewer copy of the question.
+    if ! ver_hub_has backend "$FROM_VERSION"; then
         gr_die "Docker Hub does not have davidamacey/opentranscribe-backend:${FROM_VERSION}; cannot run upgrade test from a non-existent release"
     fi
-    if ! docker manifest inspect "davidamacey/opentranscribe-frontend:${FROM_VERSION}" >/dev/null 2>&1; then
+    if ! ver_hub_has frontend "$FROM_VERSION"; then
         gr_die "Docker Hub does not have davidamacey/opentranscribe-frontend:${FROM_VERSION}"
     fi
     gr_ok "${FROM_VERSION} images present on Docker Hub"
@@ -701,11 +705,10 @@ phase_03_prepare_v033_compose() {
     # No container/volume rename — we use the stock 'opentranscribe-*' names
     # that the live deployment also uses. The live deployment is stopped
     # before tests run, so there is no collision.
-    cp_inject_labels "$stage/docker-compose.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$stage" "$TEST_LABEL"
 
     # Prod file: pin image tag to FROM_VERSION + pull always (exercises the
     # real Docker Hub pull path) + label injection.
-    cp_inject_labels "$stage/docker-compose.prod.yml" "$TEST_LABEL"
     cp_force_pull_policy "$stage/docker-compose.prod.yml" always
     cp_pin_image_tag "$stage/docker-compose.prod.yml" backend "$FROM_VERSION"
     cp_pin_image_tag "$stage/docker-compose.prod.yml" frontend "$FROM_VERSION"
@@ -803,21 +806,14 @@ phase_03_prepare_v033_compose() {
         # re-assert the invariant on every reuse rather than trusting it.
         mc_break_hardlinks "$model_cache/nltk_data"
 
-        # diar-native did not exist as a seeded subdir before issue #670's fix,
-        # so a shared cache whose sentinel predates this change never gets it
-        # from the branch above (the sentinel means "seeded", not "seeded
-        # completely" either). Top it up incrementally rather than requiring
-        # an operator to blow away the whole multi-GB cache to pick up one
-        # new subdir.
-        if [[ -z "$(ls -A "$model_cache/diar-native" 2>/dev/null)" ]]; then
-            if [[ -d "$live_cache/diar-native" ]] && [[ -n "$(ls -A "$live_cache/diar-native" 2>/dev/null)" ]]; then
-                gr_log "shared cache predates diar-native seeding — topping it up from the live cache"
-                mc_seed_cache "$live_cache" "$model_cache" diar-native
-                gr_ok "diar-native seeded into the existing shared model cache"
-            else
-                gr_warn "no diar-native export in the live cache either — the backend will export its own on startup"
-            fi
-        fi
+        # The sentinel means "seeded", not "seeded COMPLETELY": a cache written by an older
+        # revision of this harness is missing every subdir added since. Top up incrementally
+        # rather than requiring an operator to blow away a multi-GB cache to pick up one new
+        # subdirectory. Generalised over the whole list — this used to be a hand-rolled `if`
+        # for `diar-native` alone, so the next subdir added would have repeated the story.
+        # See mc_topup_from_live in lib/model-cache.sh.
+        mc_topup_from_live "$live_cache" "$model_cache" \
+            huggingface torch nltk_data sentence-transformers pyannote diar-native
     fi
 
     # Gate: whichever branch ran above, the pathsec invariant must hold before
@@ -1086,6 +1082,17 @@ _stage_manager_at() {
     cp "$script_src/opentranscribe.sh" "$dst/opentranscribe.sh"
     chmod +x "$dst/opentranscribe.sh"
     cp "$script_src/scripts/common.sh" "$dst/scripts/common.sh"
+    # common.sh resolves its helpers relative to ITS OWN directory
+    # (voiceprint_helper_path), so staging common.sh alone gives a manager that fails at
+    # run time. Observed 2026-09-07: `./opentranscribe.sh backup` aborted the upgrade hop
+    # at phase 06b because scripts/voiceprint-backup.py was not staged beside it — and the
+    # reason was invisible, since that error went to stdout inside the artifact redirect.
+    # Copied conditionally: an older tag legitimately predates the helper.
+    # backend/tests/unit/test_upgrade_manager_stage_helpers.py fails if common.sh ever
+    # gains a sibling dependency that is not staged here.
+    if [[ -f "$script_src/scripts/voiceprint-backup.py" ]]; then
+        cp "$script_src/scripts/voiceprint-backup.py" "$dst/scripts/voiceprint-backup.py"
+    fi
     cp "$src_stage/docker-compose.yml" "$dst/docker-compose.yml"
     [[ -f "$src_stage/docker-compose.prod.yml" ]] \
         || gr_die "$src_stage missing docker-compose.prod.yml — opentranscribe.sh's " \
@@ -1208,8 +1215,16 @@ phase_06b_pre_upgrade_backup() {
     pushd "$manager_stage" >/dev/null
     ./opentranscribe.sh backup || { popd >/dev/null; gr_die "'./opentranscribe.sh backup' failed"; }
     popd >/dev/null
+    # Captured whole, then trimmed to the first line — NOT `ls -t ... | head -1`. This script
+    # runs under `set -euo pipefail`: `head -1` exits after the first line, so with more than
+    # one dump present `ls` takes SIGPIPE (141), `pipefail` makes 141 the pipeline's status,
+    # and the ASSIGNMENT then aborts the whole script with no error trace — the #617/#618
+    # silent-truncation family, in the phase that is supposed to prove a backup restores.
     local manager_dump
-    manager_dump="$(ls -t "$manager_stage/backups"/opentranscribe_backup_*.sql 2>/dev/null | head -1)"
+    # `ls` exits non-zero when the glob matches nothing — a bare assignment turns "the
+    # manager wrote no backup" into a silent phase abort instead of a reportable finding.
+    manager_dump="$(ls -t "$manager_stage/backups"/opentranscribe_backup_*.sql 2>/dev/null)" || manager_dump=""
+    manager_dump="${manager_dump%%$'\n'*}"
     [[ -n "$manager_dump" && -s "$manager_dump" ]] \
         || gr_die "'./opentranscribe.sh backup' produced no dump file"
     gr_ok "opentranscribe.sh-wrapper backup: $manager_dump"
@@ -1316,13 +1331,12 @@ phase_07_swap_to_new() {
     # checkout, but this staged "after" tree didn't, so the docs container's
     # own upgrade was silently skipped ("unable to prepare context") instead
     # of actually being exercised.
-    if [[ -d "$REPO_ROOT/docs-site" ]]; then
-        rm -rf "$stage_after/docs-site"
-        cp -r "$REPO_ROOT/docs-site" "$stage_after/docs-site"
-    fi
+    # Build artifacts excluded — see cp_stage_docs_context in lib/compose-patch.sh. The bare
+    # `cp -r` this replaces copied 1.1 GB / 40,164 files (918 MB of it node_modules) per
+    # staging, twice a hop, two hops a rehearsal.
+    cp_stage_docs_context "$REPO_ROOT/docs-site" "$stage_after/docs-site"
 
-    cp_inject_labels "$stage_after/docker-compose.yml" "$TEST_LABEL"
-    cp_inject_labels "$stage_after/docker-compose.prod.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$stage_after" "$TEST_LABEL"
     cp_force_pull_policy "$stage_after/docker-compose.prod.yml" never
 
     # NO per-service cp_pin_image_tag here, deliberately.
@@ -1654,8 +1668,23 @@ PY
     local before_routes="$TEST_ROOT/snapshots/before/routes.txt"
     local after_routes="$TEST_ROOT/snapshots/after/routes.txt"
     if [[ -s "$before_routes" && -s "$after_routes" ]]; then
-        local removed added
-        removed=$(comm -23 "$before_routes" "$after_routes" | head -20)
+        # Captured whole, then capped in-shell — NOT `comm ... | head -20`. Under
+        # `set -euo pipefail` a release that removed more than 20 routes would make `head`
+        # exit at line 20, `comm` take SIGPIPE (141), `pipefail` make 141 the pipeline's
+        # status, and this ASSIGNMENT abort the script — truncating every phase after it
+        # exactly as #617 did, and doing so precisely when the finding is most severe.
+        # The capture is deliberately NOT `|| true`-guarded: a genuine `comm` failure must
+        # still abort rather than yield an empty `removed`, which would pass the assertion
+        # below vacuously. `mapfile` reads a here-string (temp-file backed, measured safe at
+        # 3 MB), so the cap itself introduces no new pipeline.
+        local removed added all_removed
+        local -a removed_lines=()
+        all_removed="$(comm -23 "$before_routes" "$after_routes")"
+        removed=""
+        if [[ -n "$all_removed" ]]; then
+            mapfile -t -n 20 removed_lines <<<"$all_removed"
+            removed="$(printf '%s\n' "${removed_lines[@]}")"
+        fi
         added=$(comm -13 "$before_routes" "$after_routes" | wc -l)
 
         as_assert "no API route removed by the upgrade" '[[ -z "$removed" ]]'
@@ -1675,24 +1704,13 @@ PY
     # BM25. The v0.3.x heap-too-small regression we fixed must not be able
     # to ship undetected via the upgrade path.
     #
-    # Neural search registration + deployment runs as an ASYNC background
-    # task after backend startup, so we poll for up to 3 minutes rather than
-    # checking once immediately. This matches realistic user expectations:
-    # "backend is up, wait a moment, then neural search is live".
+    # Registration + deployment is an ASYNC background task after backend startup, so this
+    # polls. The budget (ML_DEPLOY_TIMEOUT_S, lib/api-client.sh) used to be 180 here against
+    # 600 in both sibling scenarios, justified by a "warmer stack" claim that MEASUREMENT
+    # refutes — the shared cache's opensearch-ml tree is empty and mc_seed_cache skips it, so
+    # this stack registers from cold like the others. See the constant's own header.
     local ml_deployed=0
-    local ml_wait=0
-    while [ "$ml_wait" -lt 180 ]; do
-        ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
-            'http://localhost:9200/_plugins/_ml/models/_search' \
-            -H 'Content-Type: application/json' \
-            -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
-            2>/dev/null \
-            | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
-            2>/dev/null || echo 0)
-        [ "$ml_deployed" -ge 1 ] && break
-        sleep 10
-        ml_wait=$((ml_wait + 10))
-    done
+    ml_deployed=$(ac_wait_for_ml_model_deployed) || true
     as_assert_ge "OpenSearch ML model deployed post-upgrade (neural search active)" "$ml_deployed" 1
 
     # Hybrid search smoke — confirm the seeded transcript is still queryable
@@ -1908,7 +1926,16 @@ phase_12_assert_rollback_precondition() {
     # dotenv key -- python-dotenv (and read_env_value) would never see it, so this
     # one deliberately keeps its own grep rather than gaining a second helper
     # parameter for a single caller.
-    prev_tag="$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)"
+    # Two separate aborts removed here, both of the #617/#618 silent-truncation family and
+    # both reached through the SAME `set -euo pipefail` assignment:
+    #   1. `| head -1` exits after the first line, so a .env carrying more than one commented
+    #      marker leaves `tr` with SIGPIPE (141) -> pipefail -> the assignment kills the script.
+    #   2. With NO marker at all, `grep` exits 1, pipefail makes the pipeline 1, and the
+    #      assignment kills the script BEFORE the very next line's `${prev_tag:-<absent>}` --
+    #      i.e. the assertion is written to report absence and could never actually do it.
+    # `cut`/`tr` read to EOF, so trimming in-shell leaves no early-exiting reader.
+    prev_tag="$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d ' "' || true)"
+    prev_tag="${prev_tag%%$'\n'*}"
     # python-dotenv, not grep/cut (issue #590).
     current_tag="$(python3 "$SCRIPT_DIR/../lib/env_reader.py" "$env_file" OT_IMAGE_TAG)"
     as_assert_eq "rollback precondition: # OT_PREVIOUS_IMAGE_TAG recorded as FROM" "$FROM_VERSION" "${prev_tag:-<absent>}"
@@ -1945,7 +1972,24 @@ phase_13_stage_rollback_tree() {
     # so removing the pins here is what a real deployment does, not a
     # workaround. This means the tail rehearses the `update-full` variant (new
     # compose + old images moving via .env alone) rather than plain `update`.
-    cp "$stage_after/docker-compose.yml" "$stage_rollback/docker-compose.yml"
+    # ⚠️ Copy EVERY overlay the after-stack had, not a hand-listed pair. The rollback
+    # stack must be able to address every service the stack it is replacing created —
+    # `get_compose_files()` can only include an overlay that is present in this
+    # directory, and `docker compose down` can only stop a service some file defines.
+    #
+    # Measured 2026-09-07: this staged docker-compose.{yml,prod.yml,gpu.yml} only, so
+    # docker-compose.diar-native.yml was absent, `down` left
+    # opentranscribe-diar-native-1 running, and `update --rollback` exited 1 with
+    # "Teardown failed and 1 container(s) remain" — failing B-1 and cascading into
+    # both B-4a assertions. Same enumeration trap as cp_inject_labels_all's.
+    local overlay
+    for overlay in "$stage_after"/docker-compose*.yml; do
+        [[ -f "$overlay" ]] || continue
+        cp "$overlay" "$stage_rollback/$(basename "$overlay")"
+    done
+    # prod.yml comes from the REPO, deliberately overriding the after-stack copy: the
+    # rollback rehearses `update-full` (new compose + old images via .env alone), so it
+    # needs the CURRENT prod file with its ${OT_IMAGE_TAG} indirection intact.
     cp "$REPO_ROOT/docker-compose.prod.yml" "$stage_rollback/docker-compose.prod.yml"
 
     # Same fix as phase 07's $stage_after (issue #909bfc17): docker-compose.prod.yml
@@ -1959,15 +2003,15 @@ phase_13_stage_rollback_tree() {
     # aborts entirely on the docs build failure and NONE of them start (issue #618) —
     # not just docs. A real user always has docs-site/ in their checkout; only this
     # staged rehearsal tree needs it copied in explicitly.
-    if [[ -d "$REPO_ROOT/docs-site" ]]; then
-        rm -rf "$stage_rollback/docs-site"
-        cp -r "$REPO_ROOT/docs-site" "$stage_rollback/docs-site"
-    fi
+    cp_stage_docs_context "$REPO_ROOT/docs-site" "$stage_rollback/docs-site"
 
-    cp_inject_labels "$stage_rollback/docker-compose.prod.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$stage_rollback" "$TEST_LABEL"
     cp_force_pull_policy "$stage_rollback/docker-compose.prod.yml" never
-    if [[ "$TEST_USE_GPU" == "true" && -f "$stage_after/docker-compose.gpu.yml" ]]; then
-        cp "$stage_after/docker-compose.gpu.yml" "$stage_rollback/docker-compose.gpu.yml"
+    # The copy loop above is deliberately unconditional, so the GPU overlay must be
+    # REMOVED here in CPU mode rather than merely not copied — otherwise a --cpu
+    # rehearsal would silently roll back onto a GPU stack.
+    if [[ "$TEST_USE_GPU" != "true" ]]; then
+        rm -f "$stage_rollback/docker-compose.gpu.yml"
     fi
     cp "$REPO_ROOT/opentranscribe.sh" "$stage_rollback/opentranscribe.sh"
     chmod +x "$stage_rollback/opentranscribe.sh"
@@ -2000,6 +2044,19 @@ phase_13_stage_rollback_tree() {
     # mismatched everything, making the fault "work" for the wrong reason
     # (a missing file) rather than by actually exercising the diff logic.
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/after/db-fingerprint"
+    # Record the POST-UPGRADE state restricted to the FROM release's columns. F-4 (phase
+    # 17) needs this as its oracle: the recovery loop ends where the FIRST upgrade ended,
+    # not where the deployment started, so comparing the recovered rows against the
+    # PRE-upgrade snapshot fails on any migration that legitimately rewrites a FROM-era
+    # column. Measured 2026-09-07 on the v0.3.3 hop: media_file.status is "COMPLETED" at
+    # v0.3.3 and "completed" at v0.5.0 — an intentional enum-case normalisation. The
+    # v0.4.1 hop passed only because that migration predates v0.4.1.
+    if [[ -s "$TEST_ROOT/snapshots/before/db-fingerprint/media_file.columns" ]]; then
+        dbs_digest_baseline_columns "$pg" postgres opentranscribe media_file \
+            "$TEST_ROOT/snapshots/before/db-fingerprint/media_file.columns" \
+            > "$TEST_ROOT/snapshots/after/media_file.from-cols.digest" 2>/dev/null \
+            || rm -f "$TEST_ROOT/snapshots/after/media_file.from-cols.digest"
+    fi
 
     # Verify the TO-side backup too — needed as phase 17's restore point and
     # it proves `backup` works on the MIGRATED schema, not just the
@@ -2126,7 +2183,12 @@ phase_15_restore_and_assert() {
     if [[ "${ROLLBACK_INJECT_FAULT:-}" == "truncate" ]]; then
         restore_source="$TEST_ROOT/backups/pre-upgrade-${FROM_VERSION}.truncated.sql"
         local copy_line
-        copy_line="$(grep -n '^COPY public\.media_file ' "$shipped_dump" | head -1 | cut -d: -f1)"
+        # `|| true` + in-shell trim, not `| head -1`: on NO match `grep` exits 1, pipefail
+        # makes the pipeline 1, and this assignment aborts the script one line before the
+        # `gr_die` written to explain exactly that case — replacing a named cause with a
+        # bare exit. (`head -1` is also an early-exiting reader; both go at once.)
+        copy_line="$(grep -n '^COPY public\.media_file ' "$shipped_dump" | cut -d: -f1 || true)"
+        copy_line="${copy_line%%$'\n'*}"
         [[ -n "$copy_line" ]] || gr_die "ROLLBACK_INJECT_FAULT=truncate: could not find media_file's COPY line in $shipped_dump"
         head -n "$(( copy_line + 1 ))" "$shipped_dump" > "$restore_source"
         gr_warn "ROLLBACK_INJECT_FAULT=truncate — restoring a dump cut mid-way through media_file's COPY block; R-1 is expected to still report success (0), R-2/R-8 below are EXPECTED to FAIL"
@@ -2163,14 +2225,35 @@ phase_15_restore_and_assert() {
     # schema-head mismatch (the FROM backup vs. the still-running TO image, exactly
     # this scenario) now leaves services stopped by design — see
     # scripts/common.sh's pg_restore_restart_decision.
+    # Captured whole, then trimmed to the first line. The filter is anchored, so `head -1`
+    # was already a no-op — but under `set -euo pipefail` it is a no-op that can abort the
+    # script on SIGPIPE, and R-13 is the direct regression assertion for #610.
     local backend_running
-    backend_running="$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-backend$' | head -1)"
+    backend_running="$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-backend$')"
+    backend_running="${backend_running%%$'\n'*}"
     as_assert_eq "R-13: restore left the application stopped (no auto-migration window)" "" "${backend_running:-}"
 
     as_record SKIP "R-12: no live writer at the moment of the drop" \
         "enforced inside scripts/common.sh's restore_database via DROP DATABASE ... WITH (FORCE) and its own client-stop sequence (#599) — not independently observable from outside that function without instrumenting it"
 
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/restored/db-fingerprint"
+    # F-4 (phase 17) compares the recovered row set against THIS one.
+    # ⚠️ NOT snapshot_state: that also queries the API (files.json, routes.txt,
+    # version.json), and R-13 above has just asserted the restore leaves the application
+    # STOPPED on purpose — so those calls would all fail here. Only the DB half is
+    # meaningful at this point, written with the same query snapshot_state uses.
+    # ⚠️ And it must be WRITTEN: without it F-4 would compare against a file that does not
+    # exist and pass over an empty set — the exact way R-6 passed for its entire life.
+    mkdir -p "$TEST_ROOT/snapshots/restored"
+    docker exec "$pg" psql -U postgres -d opentranscribe -tAc \
+        "SELECT id, filename, status FROM media_file ORDER BY id" \
+        > "$TEST_ROOT/snapshots/restored/media_files.txt" 2>/dev/null \
+        || : > "$TEST_ROOT/snapshots/restored/media_files.txt"
+    # R-6 below reads this. It was NEVER written: `snapshots/restored/tables.txt` had
+    # exactly one reference in the whole tree — the `sort` that consumed it. `sort` on a
+    # missing file prints nothing, so `comm -12` saw an empty set, `leaked` was always
+    # empty, and R-6 PASSED UNCONDITIONALLY from the day it was written.
+    dbs_table_list "$pg" postgres opentranscribe > "$TEST_ROOT/snapshots/restored/tables.txt"
     local fp_dir="$TEST_ROOT/snapshots/before/db-fingerprint"
     if [[ "${ROLLBACK_INJECT_FAULT:-}" == "stale-oracle" ]]; then
         fp_dir="$TEST_ROOT/snapshots/after/db-fingerprint"
@@ -2193,22 +2276,74 @@ phase_15_restore_and_assert() {
     # R-6: no table introduced by a post-FROM migration survives the restore —
     # derived from the table-list snapshots (after MINUS before), never a
     # hardcoded name.
-    local new_tables leaked
-    new_tables="$(comm -23 <(sort "$TEST_ROOT/snapshots/after/tables.txt") <(sort "$TEST_ROOT/snapshots/before/tables.txt"))"
-    leaked="$(comm -12 <(echo "$new_tables") <(sort "$TEST_ROOT/snapshots/restored/tables.txt"))"
-    as_assert "R-6: no post-FROM-migration table survives the restore" '[[ -z "$leaked" ]]'
-    [[ -n "$leaked" ]] && gr_warn "post-FROM tables that survived the restore: $leaked"
+    local new_tables leaked snap missing_snaps=()
+    for snap in before after restored; do
+        [[ -s "$TEST_ROOT/snapshots/$snap/tables.txt" ]] || missing_snaps+=("$snap")
+    done
+    if (( ${#missing_snaps[@]} > 0 )); then
+        # An absent snapshot is a REFUSAL, not an empty set. Reading one with `sort` and
+        # letting the empty result flow into `comm` is precisely what made this assertion
+        # unfailable — and it fails OPEN, claiming nothing leaked while checking nothing.
+        as_record FAIL "R-6: no post-FROM-migration table survives the restore" \
+            "table-list snapshot(s) missing or empty: ${missing_snaps[*]} — R-6 verified NOTHING"
+    else
+        new_tables="$(comm -23 <(sort "$TEST_ROOT/snapshots/after/tables.txt") <(sort "$TEST_ROOT/snapshots/before/tables.txt"))"
+        if [[ -z "$new_tables" ]]; then
+            # Non-vacuity: with no new tables there is nothing for R-6 to detect, so a PASS
+            # would be free. Say so instead of banking it as evidence.
+            as_record SKIP "R-6: no post-FROM-migration table survives the restore" \
+                "the ${FROM_VERSION:-FROM} -> ${TO_VERSION:-TO} upgrade adds no tables, so this check has nothing to detect"
+        else
+            leaked="$(comm -12 <(echo "$new_tables") <(sort "$TEST_ROOT/snapshots/restored/tables.txt"))"
+            as_assert "R-6: no post-FROM-migration table survives the restore" '[[ -z "$leaked" ]]'
+        fi
+    fi
+    # `if`, not `[[ ... ]] && cmd`. MEASURED 2026-09-07: mid-function that list does
+    # NOT trip `set -e` (bash exempts it), so this is defensive rather than a fix —
+    # it only becomes an abort if the line ever ends up last in a function. Stated
+    # explicitly because the opposite was assumed here once and was wrong.
+    if [[ -n "$leaked" ]]; then
+        gr_warn "post-FROM tables that survived the restore: $leaked"
+    fi
 
     # R-7: alembic_version restored to the FROM release's OWN head, derived
     # from that release's migration chain in the phase-03 worktree — the same
     # measured-vs-derived pair phase 10 already uses, replayed here after a
     # restore instead of after a forward migration.
     local restored_head derived_from_head
+    # ⚠️ `|| restored_head=""`, never a bare assignment. Under `set -euo pipefail` a
+    # command-substitution assignment whose pipeline fails ABORTS the script, and with
+    # `2>/dev/null` it does so printing NOTHING — the phase simply stops and the EXIT
+    # traps run. That is the ABORT half of the #617/#618 family, and it is what silently
+    # truncated phases 16-18 of the v0.3.3 hop after R-6 passed (2026-09-07): no error,
+    # no FAIL line, just a missing rest-of-phase. An unreadable probe must become an
+    # EMPTY value the assertion below can report, not a dead script.
+    local restored_head_err=""
     restored_head="$(docker exec "$pg" psql -tA -U postgres opentranscribe \
-        -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+        -c "SELECT version_num FROM alembic_version;" 2>"$TEST_ROOT/.restored-head.err" | tr -d '[:space:]')" \
+        || restored_head=""
+    # Keep the reason. Discarding stderr here is what made the first investigation of this
+    # failure produce `actual=''` and nothing else — an empty value that could mean the
+    # container was gone, the database was mid-recreate, or the table did not exist yet.
+    [[ -s "$TEST_ROOT/.restored-head.err" ]] && restored_head_err="$(head -c 200 "$TEST_ROOT/.restored-head.err" | tr '\n' ' ')"
     local from_worktree="$TEST_ROOT/worktree-${FROM_VERSION}"
     if derived_from_head="$(ver_alembic_head "$from_worktree/backend" 2>/dev/null)"; then
-        as_assert_eq "R-7: alembic_version restored to the FROM release's own head" "$derived_from_head" "$restored_head"
+        if grep -q "pre-Alembic schema" "$TEST_ROOT/snapshots/before/alembic_head.txt" 2>/dev/null; then
+            # ⚠️ Check whether the premise APPLIES before asserting it. FROM releases below
+            # the Alembic cutover never created alembic_version at all — phase 06b already
+            # recorded that as "(alembic_version table absent — pre-Alembic schema)". R-7
+            # derived an expected head from the FROM worktree's migration chain and demanded
+            # the DB match it, so on the v0.3.3 hop it reported a restore failure for a table
+            # that release never wrote. The backup and the restore were both correct.
+            # The same guard already exists at the phase-10 equivalent of this check.
+            as_record SKIP "R-7: alembic_version restored to the FROM release's own head" \
+                "${FROM_VERSION} predates Alembic in this project (no alembic_version table exists to restore); the derived head '${derived_from_head}' describes the migration chain, not anything that release ever wrote to the DB"
+        elif [[ -z "$restored_head" ]]; then
+            as_record FAIL "R-7: alembic_version restored to the FROM release's own head" \
+                "could not read alembic_version after the restore (expected '${derived_from_head}'). psql said: ${restored_head_err:-<no stderr captured>}"
+        else
+            as_assert_eq "R-7: alembic_version restored to the FROM release's own head" "$derived_from_head" "$restored_head"
+        fi
     else
         as_record SKIP "R-7: alembic head" "FROM worktree chain is not single-headed"
     fi
@@ -2218,8 +2353,11 @@ phase_15_restore_and_assert() {
     local t label total distinct_ct
     for t in media_file transcript_segment speaker '"user"'; do
         label="${t//\"/}"
-        total="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(*) FROM ${t};" 2>/dev/null | tr -d '[:space:]')"
-        distinct_ct="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(DISTINCT id) FROM ${t};" 2>/dev/null | tr -d '[:space:]')"
+        # Same guard as restored_head above: these two already expect a possibly-empty
+        # result (see `${total:-?}` below), but a bare assignment never reaches that —
+        # it kills the phase first.
+        total="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(*) FROM ${t};" 2>/dev/null | tr -d '[:space:]')" || total=""
+        distinct_ct="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(DISTINCT id) FROM ${t};" 2>/dev/null | tr -d '[:space:]')" || distinct_ct=""
         as_assert_eq "R-8: no duplicate rows in ${label}" "${total:-?}" "${distinct_ct:-?}"
     done
 
@@ -2366,7 +2504,9 @@ phase_16_rollback_and_assert() {
         # fallback this used to have would ALSO fire and get concatenated
         # onto it, producing the literal string "404000". Measured live.
         local version_status
-        version_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$API_BASE/version" 2>/dev/null)"
+        # An unreachable API is exactly what this assertion exists to catch; a bare
+    # assignment kills the phase before it can report it.
+    version_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$API_BASE/version" 2>/dev/null)" || version_status=""
         as_assert_eq "B-5: /api/version 404s on a FROM image predating the endpoint" "404" "${version_status:-000}"
     elif [[ "$from_has_buildarg" != true ]]; then
         as_record SKIP "B-5: /api/version reports FROM after rollback" \
@@ -2541,7 +2681,9 @@ phase_17_roll_forward_again() {
 
     local pg="opentranscribe-postgres"
     local post_head expected_head
-    post_head="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+    # Same guard as restored_head: an unreadable alembic_version must become an empty
+    # value this phase can report, not a silent abort.
+    post_head="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')" || post_head=""
     expected_head="$(ver_alembic_head "$REPO_ROOT/backend")"
     as_assert_eq "F-2: alembic head re-migrated to the current head" "$expected_head" "$post_head"
 
@@ -2571,31 +2713,76 @@ phase_17_roll_forward_again() {
     # real, expected change that is not damage either way.
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/recovered/db-fingerprint"
 
-    local before_cols="$TEST_ROOT/snapshots/before/db-fingerprint/media_file.columns"
-    local before_digest recovered_digest
-    before_digest="$(cat "$TEST_ROOT/snapshots/before/db-fingerprint/media_file.digest" 2>/dev/null || echo '?')"
-    if [[ -s "$before_cols" ]] && \
-       recovered_digest="$(dbs_digest_baseline_columns "$pg" postgres opentranscribe media_file "$before_cols")"; then
-        as_assert_eq "F-4: media_file content digest unchanged (FROM-schema columns)" \
-            "$before_digest" "$recovered_digest"
+    # F-4: the recovery preserved exactly the rows the ROLLBACK restored.
+    #
+    # ⚠️ Neither whole-table digest oracle works here, and both were tried on 2026-09-07:
+    #   * vs the PRE-upgrade snapshot — fails on any migration that legitimately rewrites a
+    #     FROM-era value. media_file.status normalises "COMPLETED" -> "completed" between
+    #     v0.3.3 and v0.5.0, so this reported recovery damage for a migration doing its job.
+    #   * vs the POST-upgrade snapshot — fails because the rollback is SUPPOSED to lose data.
+    #     File 3 (uploaded after the backup) is present post-upgrade and correctly absent
+    #     after recovery; R-5 asserts that absence deliberately.
+    # A digest cannot separate "a migration rewrote a value" from "a row went missing", which
+    # is the only thing this check actually cares about. So compare IDENTITY instead: the set
+    # of (id, filename) the recovery ended with must equal the set the restore produced.
+    # Migrations may rewrite values freely; losing or inventing a row is the real failure.
+    local restored_ids="$TEST_ROOT/snapshots/restored/media_files.txt"
+    if [[ ! -s "$restored_ids" ]]; then
+        as_record FAIL "F-4: recovery preserved exactly the rows the rollback restored" \
+            "the restored row list was never captured, so there is nothing to compare against — NOT evidence about the recovery"
     else
-        as_record SKIP "F-4: media_file content digest unchanged" \
-            "a column present at ${FROM_VERSION} no longer exists at ${TO_VERSION} (DROP/RENAME), or the pre-upgrade column list was never captured -- the pre-upgrade whole-row digest is not reproducible; compare by column set, not by digest"
+        local recovered_ids="$TEST_ROOT/snapshots/recovered/media_files.txt"
+        mkdir -p "$TEST_ROOT/snapshots/recovered"
+        docker exec "$pg" psql -tA -F'|' -U postgres opentranscribe \
+            -c "SELECT id, filename FROM media_file ORDER BY id;" > "$recovered_ids" 2>/dev/null \
+            || : > "$recovered_ids"
+        # Compare ids+filenames only. `status` deliberately excluded: the restored snapshot
+        # records it in the FROM release's casing and the roll-forward normalises it.
+        if diff -q <(cut -d'|' -f1,2 "$restored_ids" | sort) \
+                   <(cut -d'|' -f1,2 "$recovered_ids" | sort) >/dev/null 2>&1; then
+            as_record PASS "F-4: recovery preserved exactly the rows the rollback restored"
+        else
+            as_record FAIL "F-4: recovery preserved exactly the rows the rollback restored" \
+                "row set differs. restored-only/recovered-only: $(diff <(cut -d'|' -f1,2 "$restored_ids" | sort) <(cut -d'|' -f1,2 "$recovered_ids" | sort) | tr '\n' ' ' | head -c 200)"
+        fi
     fi
 
     # F-5: hybrid search returns hits (reindex recovered).
-    local hits=0 waited=0
+    #
+    # ⚠️ RE-AUTHENTICATE FIRST. The last login was B-6's, against the ROLLED-BACK stack;
+    # phase 17 has since restarted the whole app on the TO image, so that session is stale.
+    # Without this the probe gets a 401, the JSON parse fails, and `hits` lands on 0 — so
+    # F-5 was reporting "search returned no hits" when what it had actually measured was
+    # "my old session is no longer valid". Measured 2026-09-07 on the v0.3.3 hop:
+    # OpenSearch held transcript_chunks=50 / transcripts=1 at the moment F-5 claimed zero.
+    if ! ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"; then
+        as_record FAIL "F-5: hybrid search returns hits after recovery" \
+            "could not log in to the rolled-forward stack, so search was never exercised — this is an AUTH failure, not an empty index"
+    else
+    local hits=0 waited=0 search_raw="" search_rc=0
     while [ "$waited" -lt 300 ]; do
-        hits="$(ac_search "the" 2>/dev/null | python3 -c '
+        # Keep the raw body: "the call failed" and "the call returned zero results" are
+        # different findings and must not collapse into the same 0.
+        search_raw="$(ac_search "the" 2>&1)" || search_rc=$?
+        hits="$(printf '%s' "$search_raw" | python3 -c '
 import sys, json
-d = json.load(sys.stdin)
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("PARSE_ERROR"); raise SystemExit(0)
 print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
-' 2>/dev/null || echo 0)"
-        [ "$hits" -ge 1 ] && break
+' 2>/dev/null)" || hits=""
+        [[ "$hits" =~ ^[0-9]+$ ]] && [ "$hits" -ge 1 ] && break
         sleep 10
         waited=$((waited + 10))
     done
-    as_assert_ge "F-5: hybrid search returns hits after recovery" "$hits" 1
+    if [[ "$hits" =~ ^[0-9]+$ ]]; then
+        as_assert_ge "F-5: hybrid search returns hits after recovery" "$hits" 1
+    else
+        as_record FAIL "F-5: hybrid search returns hits after recovery" \
+            "the search call did not return parseable JSON (rc=${search_rc}, parsed='${hits}'); first 200 chars of the response: $(printf '%s' "$search_raw" | head -c 200 | tr '\n' ' ')"
+    fi
+    fi
 
     gr_log "recovery complete — stack is back at TO=${TO_VERSION}, matching the scenario's leave-behind contract"
 }

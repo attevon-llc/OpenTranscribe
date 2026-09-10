@@ -341,6 +341,66 @@ build_prod_images() {
   echo "✅ Local production images built successfully"
 }
 
+# Does the Docker daemon expose the NVIDIA container runtime?
+#
+#   0 = yes · 1 = checked, and no · 2 = COULD NOT CHECK (daemon gave nothing usable)
+#
+# The 1-vs-2 split is this repo's standing convention for "checked and negative"
+# versus "no evidence either way" (security-scan.sh's 1-vs-2,
+# scripts/lib/manifest_platform_check.py's 1-vs-3), and it earns its keep here: the
+# caller degrades the ENTIRE stack to CPU on a negative, so "the daemon did not
+# answer" must not be reported as "this host has no GPU support".
+#
+# ⚠️ NEVER WRITE THIS AS `docker info | grep -q nvidia`. That is exactly what it was,
+# and under this script's `set -o pipefail` it SILENTLY INVERTS: `grep -q` exits at
+# its first match while `docker info` is still writing, `docker info` then dies with
+# SIGPIPE (141), and pipefail makes the pipeline's status 141 — so a MATCH is read as
+# a NON-match. It is a race, so it is intermittent and looks like anything but a bug
+# in this line. Measured on this host, idle: `rc=141` once per 200-600 invocations;
+# the gate starts a stack right after a teardown, when the daemon is busiest.
+#
+# What it cost on 2026-09-07 (`/tmp/ot-run-dev-tests.ahnET0/overlay-bringup.log`):
+# `./opentr.sh start dev` printed "NVIDIA GPU detected but Container Toolkit not
+# available", dropped BOTH docker-compose.gpu.yml and docker-compose.diar-native-gpu.yml
+# from the chain, and the whole dev stack — celery-worker included — came up with
+# `HostConfig.DeviceRequests: null`. The sidecar served ~68 real /diarize requests with
+# `device="cpu"` and nothing surfaced it, which is precisely the silent degradation
+# docker-compose.diar-native-gpu.yml's own header warns about.
+#
+# Capturing into a variable first means there is no pipe left to break; the retry
+# covers a genuinely busy daemon. `case` rather than `[[ == * ]]` so the test stays
+# readable next to the `return` codes.
+#
+# ⚠️ THERE IS A SECOND COPY OF THIS FUNCTION, IN setup-opentranscribe.sh, AND THE TWO
+# MUST MOVE TOGETHER. That script is fetched and run standalone (`curl -fsSL … | bash`),
+# so it can have no sourcing dependency on this repo and the duplication is deliberate.
+# Its copy is the more severe of the two: it PERSISTS its verdict into the user's .env
+# and never re-detects, so one inverted probe pins a real GPU host to CPU permanently.
+#
+# Guarded by backend/tests/unit/test_opentr_docker_probe_sigpipe.py.
+docker_runtime_has_nvidia() {
+  local info="" rc=0 attempt=0
+  for attempt in 1 2 3; do
+    info="$(docker info 2>/dev/null)"
+    rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "$info" ]; then
+      break
+    fi
+    if [ "$attempt" -lt 3 ]; then
+      sleep 1
+    fi
+  done
+
+  if [ "$rc" -ne 0 ] || [ -z "$info" ]; then
+    return 2
+  fi
+
+  case "$info" in
+    *nvidia*) return 0 ;;
+    *)        return 1 ;;
+  esac
+}
+
 # Function to detect and configure hardware
 detect_and_configure_hardware() {
   echo "🔍 Detecting hardware configuration..."
@@ -389,8 +449,12 @@ detect_and_configure_hardware() {
     export COMPUTE_TYPE="float16"
     export USE_GPU="true"
 
-    # Check for NVIDIA Container Toolkit (efficient method)
-    if docker info 2>/dev/null | grep -q nvidia; then
+    # Check for NVIDIA Container Toolkit. See docker_runtime_has_nvidia's header for
+    # why this is a function call and not `docker info | grep -q nvidia`.
+    local toolkit_rc=0
+    docker_runtime_has_nvidia
+    toolkit_rc=$?
+    if [ "$toolkit_rc" -eq 0 ]; then
       echo "✅ NVIDIA Container Toolkit available"
 
       # Detect Blackwell architecture (compute capability 12.x)
@@ -404,8 +468,18 @@ detect_and_configure_hardware() {
         export IS_BLACKWELL_GPU=""
       fi
     else
-      echo "⚠️  NVIDIA GPU detected but Container Toolkit not available"
-      echo "   Falling back to CPU mode"
+      # "could not check" and "checked, no toolkit" are DIFFERENT outcomes and must
+      # read differently — collapsing them is what made a transient daemon hiccup
+      # indistinguishable from a CPU-only host for as long as it took to notice.
+      if [ "$toolkit_rc" -eq 2 ]; then
+        echo "⚠️  COULD NOT DETERMINE whether the NVIDIA Container Toolkit is available"
+        echo "   (\`docker info\` returned nothing usable after 3 attempts — busy daemon?)"
+      else
+        echo "⚠️  NVIDIA GPU detected but Container Toolkit not available"
+      fi
+      echo "   Falling back to CPU mode: NO GPU overlay will be loaded, so celery-worker"
+      echo "   and the diar-native sidecar will run on CPU (slower, and silently so)."
+      echo "   On a GPU host, re-run this command once \`docker info\` reports the nvidia runtime."
       export DOCKER_RUNTIME=""
       export TORCH_DEVICE="cpu"
       export COMPUTE_TYPE="int8"
@@ -624,11 +698,20 @@ add_nas_overlay() {
 # `basename "$(pwd)"` is the same resolution preflight_ports_or_die already uses; a
 # checkout in a differently-named directory must keep working, so this is derived and
 # never hardcoded. (test_the_probe_resolves_the_project_from_the_checkout_directory)
+#
+# ⚠️ NOT `docker ps ... | grep -q .` — see docker_runtime_has_nvidia's header. Under
+# this script's `set -o pipefail`, `grep -q` exiting on the first line can kill
+# `docker ps` with SIGPIPE and turn a MATCH into a non-match. Here that inversion
+# reads as "this deployment has no sidecar", which drops the overlay from
+# `rebuild-backend` and hands celery-worker back the silent PyAnnote fallback this
+# probe exists to prevent. Capture first; there is then no pipe to break.
 diar_native_container_present() {
-  local project="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
-  docker ps -a --format '{{.ID}}' \
+  local project ids
+  project="$(ot_compose_project)"
+  ids="$(docker ps -a --format '{{.ID}}' \
     --filter "label=com.docker.compose.project=${project}" \
-    --filter "label=com.docker.compose.service=diar-native" 2>/dev/null | grep -q .
+    --filter "label=com.docker.compose.service=diar-native" 2>/dev/null)"
+  [ -n "$ids" ]
 }
 
 # Append the native diarization sidecar overlay to $COMPOSE_FILES. Mirrors
@@ -1202,6 +1285,25 @@ FRESH_KEYCLOAK_PORT_VARS=(
 FRESH_AUTHENTIK_PORT_VARS=(
   "AUTHENTIK_PORT=9022"         # authentik-server → :9000
 )
+
+# Port variables belonging to services that are PROFILE-GATED in their compose file and
+# that no `opentr.sh` flag activates. They stay in the FRESH_*_PORT_VARS arrays above --
+# `--port-offset` must renumber them, or an operator who does run the profile on a
+# `--fresh` stack silently binds the main stack's port (issue #347) -- but the start-time
+# port preflight must SKIP them, because nothing is going to bind them.
+#
+# ⚠️ The two consumers ask different questions, and conflating them cost a dev-gate run.
+# `step-ca` is `profiles: ["pki"]` in docker-compose.keycloak.yml, so `--with-keycloak-test`
+# starts Keycloak alone; the preflight nevertheless checked STEP_CA_PORT, whose default
+# 9000 is one of the most contended ports on a developer machine (MinIO, Portainer, and on
+# this host an unrelated container). The whole run was refused over a port belonging to a
+# container that was never going to start.
+#
+# Deleting the entry from FRESH_KEYCLOAK_PORT_VARS would "fix" this by breaking isolation.
+OT_PROFILE_GATED_PORT_VARS=(
+  "STEP_CA_PORT"   # step-ca, profiles: ["pki"] in docker-compose.keycloak.yml
+)
+
 FRESH_LDAP_PORT_VARS=(
   "LDAP_TEST_PORT=3890"         # lldap LDAP   → :3890
   "LDAP_TEST_UI_PORT=17170"     # lldap web UI → :17170
@@ -1318,6 +1420,86 @@ fresh_write_aux() {
   fi
 }
 
+# The compose project THIS invocation will use -- exactly what compose itself resolves:
+# an explicit COMPOSE_PROJECT_NAME, else the directory basename.
+#
+# ⚠️ THERE IS EXACTLY ONE RIGHT ANSWER HERE, AND IT IS NOT "any project we might be".
+# A tempting generalisation -- also accept `opentranscribe`, since that is what the
+# installer names its stack -- was tried on 2026-09-08 and is WRONG, because the release
+# REHEARSAL stacks deliberately run under that same stock name on the standard ports
+# (scripts/CLAUDE.md: "they bind the standard 5173-5180 ports under the stock
+# opentranscribe-* names ... by design"). Treating a leftover rehearsal stack as "ours,
+# a re-up in place" waves the port preflight through, and `compose up` then dies on the
+# first hard-coded container_name:
+#     Conflict. The container name "/opentranscribe-opensearch" is already in use
+# -- precisely the part-way-through startup failure the preflight exists to prevent.
+# A leftover rehearsal stack is NOT this deployment, however similar its containers look.
+#
+# `ot_stop`'s OPENTR_STOP_PROJECT_LABEL/_ALT pair answers a DIFFERENT question -- "clean
+# up anything of ours, including a leftover rehearsal stack" -- and must stay two-valued.
+# ⚠️ The derived name must be NORMALISED, because compose normalises it and we are trying to
+# match compose's own labels. compose-go's NormalizeProjectName lowercases, keeps only
+# [a-z0-9_-], and strips leading separators. Echoing the raw basename was wrong for the single
+# most common case there is: `git clone` of this repo makes a directory named with capitals, so
+# compose labels every container with the lowercased form while this returned the raw one, and
+# every `--filter label=com.docker.compose.project=$(ot_compose_project)` matched NOTHING. The
+# port preflight would then see no container of ours and refuse every re-up in place.
+#
+# Invisible on a checkout whose directory is already lowercase -- which this machine's is,
+# which is why it took CI (whose checkout is not) to catch it. Normalising an explicit
+# COMPOSE_PROJECT_NAME too is deliberate: compose does that as well, so echoing it raw would
+# reintroduce the same mismatch by the other route.
+ot_compose_project() {
+  local s="${COMPOSE_PROJECT_NAME:-${PWD##*/}}"
+  s="${s,,}"
+  s="${s//[^a-z0-9_-]/}"
+  while [ -n "$s" ]; do
+    case "$s" in
+      [-_]*) s="${s#?}" ;;
+      *)     break ;;
+    esac
+  done
+  echo "$s"
+}
+
+# Return 0 when host port $1 is published by a container belonging to THIS deployment
+# (ot_compose_project), 1 otherwise -- including when nothing published it at all
+# (a non-Docker listener is by definition not ours).
+#
+# ⚠️ THE EXEMPTION MUST BE PER PORT. It used to be all-or-nothing: if any container of
+# ours was running, EVERY bound port counted as a re-up in place. Measured 2026-09-08 --
+# the live stack holds 5173-5183 and an UNRELATED container held 9000, which the
+# keycloak-test overlay's STEP_CA_PORT defaults to. The coarse exemption waives 9000
+# along with our own ports, and `compose up` then aborts part way through on that bind
+# error and strands services in `Created`: the #553 failure, reached through the code
+# written to prevent it.
+#
+# ⚠️ NOT `docker ps | grep -q` -- see docker_runtime_has_nvidia's header. Captured first,
+# so there is no pipe for the reader to close early and no SIGPIPE to invert the answer.
+ot_port_holder_is_ours() {
+  local port="$1" listing name ports holder="" label
+  # ⚠️ NO PIPES anywhere in here, deliberately. Every reader that could sit downstream of
+  # `docker ps`/`docker inspect` -- grep -q, head -1, cut | head -- exits before EOF, and
+  # an external binary that queries a daemon has RPC-length gaps between its writes, so
+  # SIGPIPE turns a match into a non-match under `set -o pipefail`. Here that inversion
+  # would report OUR OWN container as a foreign holder and refuse every re-up. Measured
+  # rate for `docker info` on this host: ~1 in 250, i.e. exactly rare enough to be filed
+  # as flakiness. Capture, then match in the shell.
+  listing="$(docker ps --format '{{.Names}}\t{{.Ports}}' 2>/dev/null)"
+  while IFS=$'\t' read -r name ports; do
+    [ -n "$name" ] || continue
+    case "$ports" in
+      *":${port}->"*|*".${port}->"*) holder="$name"; break ;;
+    esac
+  done <<< "$listing"
+  # Nothing published it -- a non-Docker listener is by definition not ours.
+  [ -n "$holder" ] || return 1
+  label="$(docker inspect "$holder" \
+    --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null)"
+  [ -n "$label" ] || return 1
+  [ "$label" = "$(ot_compose_project)" ]
+}
+
 # Return 0 if a TCP port is already bound on localhost, 1 otherwise.
 fresh_port_in_use() {
   local port="$1"
@@ -1347,23 +1529,22 @@ fresh_port_in_use() {
 # our own compose project is allowed through, matching the fresh path's rule.
 preflight_ports_or_die() {
   local entry var base port busy="" holder
-  local project="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
-  local ours
-  ours="$(docker ps --filter "label=com.docker.compose.project=${project}" --format '{{.Names}}' 2>/dev/null | head -1)"
   for entry in "$@"; do
     var="${entry%%=*}"
     base="${entry#*=}"
     port="${!var:-$base}"
     [[ "$port" =~ ^[0-9]+$ ]] || port="$base"
     if fresh_port_in_use "$port"; then
-      busy="$busy $port"
+      # Held by one of OUR OWN containers? That is a re-up in place -- `compose up -d`
+      # recreating changed services is the normal way to apply a .env edit, and it is
+      # also how an aux overlay is added to a running stack. Held by anything else:
+      # a real conflict. Decided PER PORT -- see ot_port_holder_is_ours.
+      if ! ot_port_holder_is_ours "$port"; then
+        busy="$busy $port"
+      fi
     fi
   done
   [ -z "$busy" ] && return 0
-  if [ -n "$ours" ]; then
-    # Our own stack already holds them -- this is a re-up in place.
-    return 0
-  fi
   echo ""
   echo "❌ Cannot start: these host ports are already bound:${busy}"
   for port in $busy; do
@@ -2655,7 +2836,18 @@ start_app() {
     # instead of failing fast here. Only Keycloak is added — Authentik is out of scope
     # (scripts/run-dev-tests.sh's overlay table deliberately excludes it; see that file).
     [ -n "$WITH_KEYCLOAK_TEST_FLAG" ] && _pf_ports+=("${FRESH_KEYCLOAK_PORT_VARS[@]}")
-    preflight_ports_or_die "${_pf_ports[@]}"
+    # Drop ports whose service is profile-gated and not being started -- see
+    # OT_PROFILE_GATED_PORT_VARS. Checking them refuses the run over a port nothing in
+    # this invocation will bind.
+    _pf_checked=()
+    for _pf_entry in "${_pf_ports[@]}"; do
+      _pf_gated=""
+      for _pf_gated_var in "${OT_PROFILE_GATED_PORT_VARS[@]}"; do
+        [ "${_pf_entry%%=*}" = "$_pf_gated_var" ] && _pf_gated="yes" && break
+      done
+      [ -n "$_pf_gated" ] || _pf_checked+=("$_pf_entry")
+    done
+    preflight_ports_or_die "${_pf_checked[@]}"
   fi
 
   # Start services with appropriate compose files.
@@ -3709,7 +3901,9 @@ check_health() {
   if docker compose exec -T flower curl -s "http://localhost:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck" > /dev/null 2>&1; then
     echo "OK (http://localhost:${FLOWER_PORT:-5175}/${FLOWER_URL_PREFIX:-flower}/)"
   else
-    if docker compose ps flower 2>/dev/null | grep -q "Up"; then
+    # `grep -c` + a count test, never `grep -q` — see docker_runtime_has_nvidia's header
+    # for why a `-q` reader silently inverts these pipelines under `set -o pipefail`.
+    if [ "$(docker compose ps flower 2>/dev/null | grep -c "Up")" -gt 0 ]; then
       echo "⚠️ Flower container running but not responding"
     else
       echo "⚠️ Flower not running"
@@ -3724,7 +3918,7 @@ check_health() {
       echo "OK (https://$NGINX_SERVER_NAME)"
     else
       # Check if container is running but not responding
-      if docker compose ps nginx 2>/dev/null | grep -q "Up"; then
+      if [ "$(docker compose ps nginx 2>/dev/null | grep -c "Up")" -gt 0 ]; then
         echo "⚠️ NGINX running but not responding"
       else
         echo "⚠️ NGINX not running"
@@ -3938,7 +4132,9 @@ case "$1" in
       gpu_service="${gpu_entry%%:*}"
       gpu_profile="${gpu_entry##*:}"
       container="${COMPOSE_PROJECT_NAME:-opentranscribe}-${gpu_service}"
-      if docker ps --filter "name=^${container}$" --filter "status=running" -q | grep -q .; then
+      # `-q` already emits ids only, so a non-empty capture IS the test — no grep, and
+      # therefore no `grep -q`/pipefail inversion (docker_runtime_has_nvidia's header).
+      if [ -n "$(docker ps --filter "name=^${container}$" --filter "status=running" -q)" ]; then
         echo "🎯 ${gpu_service} is active — rebuilding it too"
         # shellcheck disable=SC2086
         COMPOSE_PROFILES="$gpu_profile" docker compose $COMPOSE_FILES up -d --build --no-deps "$gpu_service"
@@ -4257,7 +4453,7 @@ case "$1" in
         docker ps --format 'table {{.Names}}\t{{.Status}}' | grep "$BENCH_CONTAINER_PREFIX"
 
         # Verify the worker is up
-        if ! docker ps --format '{{.Names}}' | grep -q "^${WORKER}$"; then
+        if [ "$(docker ps --format '{{.Names}}' | grep -c "^${WORKER}$")" -eq 0 ]; then
           echo "❌ Worker container '${WORKER}' not running — check logs."
           # shellcheck disable=SC2086
           docker compose $BENCH_COMPOSE logs --tail=30 celery-worker
@@ -4374,7 +4570,7 @@ case "$1" in
         # container names (otfresh-<name>-*), before exporting anything.
         if [[ -n "$RAG_FRESH_NAME" ]]; then
           RAG_OS_CONTAINER="otfresh-${RAG_FRESH_NAME}-opensearch"
-          if ! docker ps --format '{{.Names}}' | grep -q "^${RAG_OS_CONTAINER}$"; then
+          if [ "$(docker ps --format '{{.Names}}' | grep -c "^${RAG_OS_CONTAINER}$")" -eq 0 ]; then
             echo "❌ '${RAG_OS_CONTAINER}' is not running — the corpus is indexed there."
             echo "   Start it:  ./opentr.sh start dev --fresh ${RAG_FRESH_NAME} --port-offset ${RAG_PORT_OFFSET}"
             exit 1

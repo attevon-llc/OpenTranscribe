@@ -13,13 +13,17 @@ Quick reference for setting up and running authentication tests across all auth 
 
 ### LDAP (LLDAP Container)
 
+⚠️ **The fixture accounts' passwords live in `backend/tests/e2e/ldap_fixture_users.py` and are
+transcribed here only as documentation.** They were previously spelled in three places that
+disagreed, and the loser of that race fed `ldap-admin`'s progressive lockout bucket. Read the
+module (or `python backend/tests/e2e/ldap_fixture_users.py`) if this table and the code differ.
+
 | Username | Password | Role | Email |
 |----------|----------|------|-------|
-| `ldap-admin` | `admin_password` | admin | ldap-admin@example.com |
-| `ldap-user` | `user_password` | user | ldap-user@example.com |
-| `testadmin` | `admin_password` | admin | testadmin@example.com |
-| `testuser` | `user_password` | user | testuser@example.com |
-| `admin` | `admin_password` | LLDAP admin | (built-in) |
+| `ldap-admin` | `LdapAdmin123` | admin | ldap-admin@example.com |
+| `ldap-user` | `LdapUser123` | user | ldap-user@example.com |
+| `ldap-negative` | (never binds successfully — reserved for the wrong-password test) | — | ldap-negative@example.com |
+| `admin` | `admin_password` | LLDAP admin (built-in bootstrap) | (built-in) |
 
 **LLDAP Admin UI:** http://localhost:17170 (admin / admin_password)
 
@@ -68,18 +72,21 @@ docker run -d --name lldap-test \
   lldap/lldap:stable
 ```
 
-Create test users after LLDAP starts:
-```bash
-# Reset passwords for test users
-docker exec lldap-test /app/lldap_set_password \
-  --base-url "http://localhost:17170" \
-  --admin-username admin --admin-password admin_password \
-  --username ldap-admin --password admin_password
+Create test users after LLDAP starts. `./opentr.sh start dev --with-ldap-test` (via
+`scripts/lib/dev-test-overlays.sh`'s `seed_ldap_fixture_users`) already does this, reading the
+passwords from `backend/tests/e2e/ldap_fixture_users.py` — prefer that over the loop below, which
+is here to show the mechanism:
 
-docker exec lldap-test /app/lldap_set_password \
-  --base-url "http://localhost:17170" \
-  --admin-username admin --admin-password admin_password \
-  --username ldap-user --password user_password
+```bash
+# Reset passwords for test users, from the single source of truth
+backend/venv/bin/python backend/tests/e2e/ldap_fixture_users.py \
+  | awk -F'\t' '$1=="USER"{print $2, $3}' \
+  | while read -r uid pass; do
+      docker exec lldap-test /app/lldap_set_password \
+        --base-url "http://localhost:17170" \
+        --admin-username admin --admin-password admin_password \
+        --username "$uid" --password "$pass"
+    done
 ```
 
 ### Start Keycloak

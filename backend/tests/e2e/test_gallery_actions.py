@@ -37,6 +37,8 @@ from conftest import delete_media_file
 from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
+from timeouts import LOGIN_FORM_READY_MS
 
 # The `gallery` marker is REGISTERED in e2e/pytest.ini and root CLAUDE.md documents
 # `./scripts/e2e/run-e2e.sh -m gallery` as a supported selector — but nothing in the tree
@@ -126,7 +128,7 @@ def auth_storage_state(browser, base_url: str, api_token: str):  # type: ignore[
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector("#email", timeout=15000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
@@ -136,7 +138,7 @@ def auth_storage_state(browser, base_url: str, api_token: str):  # type: ignore[
     # library being non-empty, which is exactly the ambient-data assumption this
     # module's other fixtures (`api_owned_file_uuid`) exist to avoid. An empty
     # `--fresh` instance has zero file cards until a test uploads its own.
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
 
     # Save storage state to a temp file
     fd, state_file = tempfile.mkstemp(suffix=".json")
@@ -164,7 +166,7 @@ def gallery_page(browser, auth_storage_state: str, base_url: str):  # type: igno
     page.goto(base_url)
     # Already authenticated via stored cookies, just wait for gallery. See
     # `auth_storage_state` above for why this no longer waits on a file card.
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     yield page
     page.close()
     context.close()
@@ -230,6 +232,21 @@ def api_owned_file_uuid(api_token: str, backend_url: str):
         yield file_uuid
     finally:
         delete_media_file(backend_url, api_token, file_uuid)
+
+
+#: Statuses the backend considers "work in flight", i.e. the states Cancel Processing
+#: exists to act on. Named rather than inlined so the test and any future sibling agree,
+#: and so a new pipeline state is a one-line change instead of a silent miss.
+_ACTIVE_PIPELINE_STATUSES = frozenset({"pending", "processing", "orphaned"})
+
+#: How many stable (before == after) readings to attempt before declaring the library too
+#: churny to judge. Three: a sibling worker's upload takes far longer than one loop.
+_CANCEL_MENU_ATTEMPTS = 3
+
+#: Budget for the process dropdown to open or close. Generous because the e2e phase runs 3
+#: browser workers against one backend; short enough that a menu that never appears fails
+#: with a clear message rather than burning the 30s default on a wrong assumption.
+_MENU_STATE_MS = 10_000
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +315,20 @@ class TestNormalModeButtons:
         expect(gallery_page.locator(".collections-btn")).not_to_be_visible(timeout=3000)
 
     def test_sort_and_view_controls_visible(self, gallery_page: Page) -> None:
-        """Sort dropdown, view toggle, and count chip should be on the right."""
-        expect(gallery_page.locator(".gallery-header-right")).to_be_visible(timeout=5000)
+        """Sort dropdown, view toggle, and count chip should be on the right.
+
+        Budget is the shared app-shell one even though `gallery_page` has already waited on
+        `.gallery-action-buttons`, so the shell is provably up by the time this runs and 5 s
+        "ought to be enough". That is exactly the reasoning that produced 5000/10000/15000/
+        30000 for these three selectors across 23 sites: each local shortening is individually
+        plausible and collectively is the drift. The only thing a shorter budget buys is a
+        faster *failure*, and under the full gate (48 pytest workers, 3 Playwright workers,
+        one backend) a sub-30 s wait on a shell landmark measures machine load rather than
+        the page. See tests/e2e/timeouts.py.
+        """
+        expect(gallery_page.locator(".gallery-header-right")).to_be_visible(
+            timeout=APP_SHELL_READY_MS
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -563,18 +592,118 @@ class TestBulkActions:
             "Summarize should be enabled when completed files are selected"
         )
 
-    def test_process_cancel_processing_disabled_for_completed(self) -> None:
-        """Cancel Processing should be disabled for completed files."""
-        self._select_all_files()
-        self.page.click(".process-btn")
-        # Kept (issue #431): `is_disabled()` below is a snapshot — no auto-wait.
-        self.page.wait_for_timeout(300)
-        menu = self.page.locator(".dropdown-menu")
-        # Select by text, not index — positional locators break when items are added
-        cancel_item = menu.locator(".dropdown-item", has_text="Cancel Processing")
-        assert cancel_item.is_disabled(), (
-            "Cancel Processing should be disabled when no processing files selected"
+    def _active_pipeline_statuses(self, backend_url: str) -> list[str]:
+        """Which active-pipeline states the user's library currently holds, per the API.
+
+        ``page_size`` is capped at 100 by the endpoint (measured: 200 is a 422), and the
+        payload is ``{"items": [...], "total": N, ...}`` — NOT a bare list and not
+        ``files``. Both were got wrong on the first attempt at this, and either mistake
+        yields an empty list, i.e. a confident wrong expectation.
+        """
+        resp = requests.get(
+            f"{backend_url}/api/files",
+            params={"page": 1, "page_size": 100},
+            headers={"Authorization": f"Bearer {self.token}"},
+            timeout=30,
         )
+        assert resp.status_code == 200, (
+            f"could not read file statuses: {resp.status_code} {resp.text[:200]}"
+        )
+        payload = resp.json()
+        items = payload["items"]
+        assert items, (
+            "the gallery reports no files, so 'select all' selected nothing and this "
+            "assertion would hold vacuously"
+        )
+        return sorted(
+            {
+                str(f.get("status"))
+                for f in items
+                if str(f.get("status")) in _ACTIVE_PIPELINE_STATUSES
+            }
+        )
+
+    def test_process_cancel_processing_tracks_whether_anything_is_processing(
+        self, backend_url: str
+    ) -> None:
+        """Cancel Processing is enabled exactly when the selection contains active work.
+
+        ⚠️ This used to assert ``is_disabled()`` unconditionally after
+        ``_select_all_files()``, reasoning that the dev library holds completed files.
+        That is the data-dependence trap ``backend/tests/CLAUDE.md`` documents: the
+        selection is *every file in the gallery*, so the stated precondition ("no
+        processing files selected") was hoped for, never established.
+
+        And the thing that breaks it is not the developer's data — it is **this suite**.
+        The e2e phase runs 3 xdist workers and several of them upload fixtures, so a
+        sibling worker's file is routinely mid-pipeline while this test selects all.
+        Measured 2026-09-08: the item was correctly ENABLED and the gate reported a
+        product failure for correct behaviour.
+
+        Deriving the expectation from the API is strictly stronger than the original — it
+        asserts BOTH branches of the enable rule instead of only the one that happened to
+        hold — and the oracle is the API's status field, never the UI under test.
+
+        ⚠️ Bounded retry, not a single read: a sibling upload can COMPLETE between the
+        API read and the menu snapshot, which would make a strict assertion flaky in the
+        opposite direction. The loop requires the library to be in the same state either
+        side of the snapshot; it fails loudly if it never settles, rather than skipping.
+        """
+        self._select_all_files()
+
+        # Obtain ONE reading the library did not change underneath, then judge it below.
+        # The loop only gathers evidence; every assertion is unconditional and outside it,
+        # so an exhausted loop cannot exit green.
+        stable: tuple[list[str], bool] | None = None
+        seen: list[str] = []
+        for _ in range(_CANCEL_MENU_ATTEMPTS):
+            before = self._active_pipeline_statuses(backend_url)
+
+            # ⚠️ `.process-btn` TOGGLES. On a retry the menu may still be open from the
+            # previous iteration, so clicking again CLOSES it and `is_disabled()` then waits
+            # 30s for an item that is not there. That is not hypothetical — it is how the
+            # first version of this loop failed the 2026-09-08 gate. Drive to a known state
+            # instead of assuming one.
+            menu = self.page.locator(".dropdown-menu")
+            if menu.is_visible():
+                self.page.keyboard.press("Escape")
+                menu.wait_for(state="hidden", timeout=_MENU_STATE_MS)
+            self.page.click(".process-btn")
+            menu.wait_for(state="visible", timeout=_MENU_STATE_MS)
+            # Select by text, not index — positional locators break when items are added
+            cancel_item = menu.locator(".dropdown-item", has_text="Cancel Processing")
+            cancel_item.wait_for(state="visible", timeout=_MENU_STATE_MS)
+            # Kept (issue #431): `is_disabled()` below is a snapshot — no auto-wait.
+            disabled = cancel_item.is_disabled()
+
+            after = self._active_pipeline_statuses(backend_url)
+            seen.append(f"before={before} menu_disabled={disabled} after={after}")
+            if before == after:
+                stable = (before, disabled)
+                break
+
+            # The library changed under us; close the menu deterministically (the next
+            # iteration re-opens it) and take a fresh pair.
+            self.page.keyboard.press("Escape")
+            menu.wait_for(state="hidden", timeout=_MENU_STATE_MS)
+
+        assert stable is not None, (
+            "file statuses kept changing across every attempt, so this test never observed "
+            "a stable library to judge the menu against. That is a harness/environment "
+            "finding, not a verdict about the product:\n  " + "\n  ".join(seen)
+        )
+
+        active, disabled = stable
+        if active:
+            assert not disabled, (
+                "Cancel Processing must be ENABLED — the selection includes files in "
+                f"{active}, which is exactly the work that command cancels"
+            )
+        else:
+            assert disabled, (
+                "Cancel Processing must be DISABLED — no selected file is in an active "
+                "pipeline state, so there is nothing to cancel"
+            )
 
     def test_process_speaker_id_enabled_with_selection(self) -> None:
         """Speaker ID should be enabled when completed files are selected."""
@@ -748,7 +877,7 @@ class TestBulkActions:
         name2 = file2["filename"]
 
         self.page.reload()
-        self.page.wait_for_selector(".gallery-action-buttons", timeout=15000)
+        self.page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         self.page.click(".select-btn")
         self.page.wait_for_selector(".select-all-btn", timeout=5000)
 
@@ -1134,7 +1263,7 @@ class TestFileSelectionUI:
             for _ in range(3 - existing):
                 owned_media_factory(api_token)
             self.page.reload()
-            self.page.wait_for_selector(".gallery-action-buttons", timeout=15000)
+            self.page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
             self.page.wait_for_selector(".file-card", timeout=15000)
         assert cards.count() >= 3, "Need at least 3 files for range selection test"
 

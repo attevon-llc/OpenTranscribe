@@ -249,25 +249,37 @@ jobs:
       - name: Audit backend test quality
         run: python3 scripts/audit-tests.py backend/tests
 
-      - name: Run security-gated suites (FIPS 140-3 mode)
+      # The CI twin of run-integration-tests.sh's `Security suites (FIPS_MODE=true)` phase,
+      # and it must stay a twin: same eight files, same one live variable.
+      #
+      # ⚠️ There is deliberately NO `RUN_*_TESTS` env block here, and re-adding one is a
+      # regression. This step used to export seven — RUN_PKI_TESTS, RUN_MFA_TESTS,
+      # RUN_LLM_TESTS, RUN_FEDRAMP_TESTS, RUN_FIPS_TESTS, RUN_AUTH_CONFIG_TESTS,
+      # RUN_ADVANCED_ADMIN_TESTS — that **no test reads**. The module-level `skipif` gates
+      # were deleted from all eight suites (each now opens `# Runs by DEFAULT. This module
+      # was gated behind RUN_<X>_TESTS...`) and only the exports were left behind, so a step
+      # called "security-gated suites" gated nothing. Commit b75ecc5b removed the local half;
+      # this is its CI twin, which the same commit missed.
+      # backend/tests/unit/test_gate_run_env_vars_are_live.py now scans these workflows too
+      # and fails on any RUN_* here that no test reads.
+      #
+      # FIPS_MODE is the one real claim: app/core/config.py reads it at import, so running
+      # these files a second time under it genuinely exercises different code.
+      #
+      # `tests/test_admin_endpoints.py` is NOT in the list. It is not in the gate script's
+      # FIPS_MODE_SUITES either, and `pytest tests/` above has already run it — re-running it
+      # here bought a duplicate EXECUTION and zero tests.
+      # RUN_SEARCH_QUALITY_TESTS is deliberately absent as well: it IS live, but it drives a
+      # corpus-dependent relevance harness that needs OpenSearch, which this job forces off.
+      - name: Re-run the security suites under FIPS_MODE=true
         working-directory: backend
         env:
-          RUN_PKI_TESTS: 'true'
-          RUN_MFA_TESTS: 'true'
-          RUN_LLM_TESTS: 'true'
-          RUN_FEDRAMP_TESTS: 'true'
-          RUN_FIPS_TESTS: 'true'
           FIPS_MODE: 'true'
-          RUN_AUTH_CONFIG_TESTS: 'true'
-          RUN_ADVANCED_ADMIN_TESTS: 'true'
-          # RUN_SEARCH_QUALITY_TESTS deliberately omitted — corpus-dependent
-          # relevance harness, local-only via run-integration-tests.sh
         run: >-
           pytest tests/test_pki_auth.py tests/test_mfa_security.py
           tests/test_llm_settings.py tests/test_fedramp_compliance.py
           tests/test_fedramp_controls.py tests/test_fips_140_3.py
           tests/test_auth_config_service.py tests/test_admin_security.py
-          tests/test_admin_endpoints.py
           -o addopts="" -n auto --dist loadgroup -q --tb=short
 
   frontend-tests:

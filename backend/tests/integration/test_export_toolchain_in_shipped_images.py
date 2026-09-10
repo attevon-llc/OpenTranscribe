@@ -172,7 +172,15 @@ def test_the_running_backend_image_has_every_exporter_dependency():
     )
 
 
+# `opt_in_gate` so run-integration-tests.sh DESELECTS this by default instead of counting it
+# as a skip. The env gate inside the body is still the authority on whether the work happens;
+# the marker only stops a test that is opt-in BY DESIGN from inflating the phase's skip total
+# toward the ceiling and burying the skips that mean something. `--export-capability` selects
+# it back in, and the release pipeline always passes that flag.
 @pytest.mark.slow
+@pytest.mark.opt_in_gate
+# Lets --export-capability ask for THIS opt-in test without re-selecting the others.
+@pytest.mark.export_capability
 def test_the_running_backend_actually_completes_a_real_export():
     """End-to-end capability: a REAL export must succeed in the image that serves the models.
 

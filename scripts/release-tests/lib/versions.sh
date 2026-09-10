@@ -83,24 +83,45 @@ ver_to_version() {
 
 # ------------------------------------------------------------------ docker hub
 
+# Where the Docker Hub tag memo lives.
+#
+# ⚠️ It used to be `${TEST_ROOT:-${TMPDIR:-/tmp}}/.hub-tags`, which is wrong in BOTH directions.
+# `TEST_ROOT` is a per-run timestamped directory, so a rehearsal re-probed every tag from
+# scratch and burned the anonymous 100-pulls-per-6h budget the memo exists to protect. And with
+# `TEST_ROOT` unset — `release.sh status`, `90-promote.sh` — it fell back to a bare `/tmp` file
+# that NEVER expired, so a cached "no" for a tag published five minutes later stayed "no"
+# forever. A stable directory plus a TTL fixes both; neither alone does.
 _ver_hub_cache() {
-    echo "${OT_HUB_CACHE_DIR:-${TEST_ROOT:-${TMPDIR:-/tmp}}}/.hub-tags"
+    echo "${OT_HUB_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/opentranscribe}/hub-tags"
 }
+
+#: How long a memoized answer is trusted. A "no" that outlives the publish it was recorded
+#: before is the failure mode; 6 h matches the anonymous pull window the memo protects.
+OT_HUB_CACHE_TTL_S="${OT_HUB_CACHE_TTL_S:-21600}"
 
 # ver_hub_has <repo-suffix> <tag> — is davidamacey/opentranscribe-<suffix>:<tag>
 # published? Memoized: `docker manifest inspect` counts against the anonymous
 # 100-pulls-per-6h limit, and previous-version detection probes several tags.
+#
+# Entries are `<image> <yes|no> <epoch>`; an entry older than OT_HUB_CACHE_TTL_S is ignored and
+# re-probed. Appends rather than rewrites (concurrent rehearsals), so the newest matching line
+# wins — which is also how a re-probe supersedes an expired one.
 ver_hub_has() {
     local suffix="$1" tag="$2"
     local image="${DOCKERHUB_USERNAME}/opentranscribe-${suffix}:${tag}"
-    local cache key
+    local cache key now
     cache="$(_ver_hub_cache)"
     key="${image}"
+    now="$(date +%s)"
 
     if [[ -f "$cache" ]]; then
-        local cached
-        cached="$(grep -F "$key " "$cache" 2>/dev/null | tail -1 | awk '{print $2}')" || true
-        if [[ -n "$cached" ]]; then
+        local line cached stamp
+        line="$(grep -F "$key " "$cache" 2>/dev/null | tail -1)" || true
+        cached="$(awk '{print $2}' <<<"$line")"
+        stamp="$(awk '{print $3}' <<<"$line")"
+        # A pre-TTL entry has no third field. Treat it as expired rather than as fresh: those
+        # are exactly the never-expiring /tmp entries this change exists to retire.
+        if [[ -n "$cached" && -n "$stamp" ]] && (( now - stamp < OT_HUB_CACHE_TTL_S )); then
             [[ "$cached" == "yes" ]]
             return
         fi
@@ -111,7 +132,7 @@ ver_hub_has() {
         result="yes"
     fi
     mkdir -p "$(dirname "$cache")" 2>/dev/null || true
-    printf '%s %s\n' "$key" "$result" >> "$cache" 2>/dev/null || true
+    printf '%s %s %s\n' "$key" "$result" "$now" >> "$cache" 2>/dev/null || true
     [[ "$result" == "yes" ]]
 }
 

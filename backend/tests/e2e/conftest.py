@@ -68,6 +68,9 @@ if _backend_dir not in sys.path:
 # same env vars this dev stack exposes) — imported here for its **module-level side effects
 # only** (setting `os.environ` before any `app.*` import happens), not registered as a plugin,
 # so its own fixtures / its own `pytest_plugins` entries don't leak into this rootdir.
+from timeouts import APP_SHELL_READY_MS
+from timeouts import LOGIN_FORM_READY_MS
+
 import tests.conftest  # noqa: F401,E402 — side effects only, see above
 
 # ``tests/conftest.py`` registers ``search_corpus``/``search_corpus_token``/``neural_available``
@@ -78,7 +81,13 @@ import tests.conftest  # noqa: F401,E402 — side effects only, see above
 # (vs. root conftest's bare ``fixtures.search_corpus_stack``) is required because root conftest's
 # own sys.path entry point is ``backend/tests``, while this file put ``backend/`` on sys.path
 # instead (see above), so the module lives at ``tests.fixtures.search_corpus_stack`` from here.
-pytest_plugins = ["tests.fixtures.search_corpus_stack"]
+#
+# ``owned_corpus`` is registered by its bare module name because it lives beside this
+# file, in the rootdir ``e2e/pytest.ini`` establishes — the same reason sibling modules
+# say ``from conftest import ...`` rather than ``from tests.e2e.conftest import ...``.
+# It owns every artifact the suite asserts on, so that no test reads the dev library
+# (see its module docstring and ``backend/tests/CLAUDE.md``).
+pytest_plugins = ["tests.fixtures.search_corpus_stack", "owned_corpus"]
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -284,6 +293,92 @@ def _await_stable_backend(backend_url: str, *, required: int = 3, budget: float 
     return last
 
 
+#: How long to let Vite finish dependency pre-bundling before giving up on warming it.
+#: Generous because this is paid ONCE per session and the alternative is paying it inside a
+#: 30 s per-test fixture; measured cold on this host at 20-40 s after a container recreate.
+_FRONTEND_WARM_BUDGET_S = 120.0
+
+#: A transform this fast can only have come from Vite's cache, so the graph is compiled.
+_FRONTEND_WARM_FAST_S = 2.0
+
+
+def _warm_frontend_module_graph(base_url: str) -> None:
+    """Make Vite compile the SPA now, on the session's budget — not inside a test fixture.
+
+    ⚠️ **A 200 on ``/`` proves nothing here.** The dev frontend is Vite, which serves the
+    shell immediately and then transforms the module graph **on demand, per request**. The
+    dominant cold cost is esbuild's dependency pre-bundling, which blocks *every* module
+    request until it finishes. So the first navigation after a container recreate pays for
+    the whole SPA — and that cost lands on whichever test happens to run first, surfacing as
+    a fixture timeout that reads like a broken test rather than a cold server.
+
+    Measured 2026-09-09: an ``--e2e-only`` run whose overlay batch had just rebuilt and
+    recreated the containers reported ``341 passed, 23 skipped, 1 error`` — the error being
+    ``gallery_page`` timing out on ``.gallery-action-buttons`` at ``APP_SHELL_READY_MS``
+    (30 s). The backend was healthy throughout; nothing had waited for the *frontend*. Every
+    readiness check in the chain watched a service the browser was not blocked on.
+
+    ⚠️ **Deliberately NOT fatal.** A cold or unreachable frontend makes the suite slow, and
+    the checks either side of this one already refuse a genuinely broken stack — turning a
+    slow warm-up into an abort would trade a diagnosable delay for an undiagnosable exit.
+    Raising ``APP_SHELL_READY_MS`` was the other option and is worse: it hides the cost
+    rather than paying it once, and every test then waits longer for a real failure too.
+
+    The entry module is read from the shell rather than hardcoded. SvelteKit references it
+    from an **inline** script (``/@fs/.../generated/client/app.js``), not a
+    ``<script src type=module>`` — a first draft matched the latter, found nothing, and would
+    have reported NOT WARM on every single run.
+    """
+    deadline = time.monotonic() + _FRONTEND_WARM_BUDGET_S
+    started = time.monotonic()
+    last = "no probe completed"
+    streak = 0
+    first = True
+    while first or time.monotonic() < deadline:
+        first = False
+        try:
+            shell = requests.get(base_url, timeout=30)
+            if shell.status_code != 200:
+                last = f"shell HTTP {shell.status_code}"
+            else:
+                mods = re.findall(
+                    r'["\'](/(?:@fs|@vite|src|node_modules)/[^"\']+\.js)["\']', shell.text
+                )
+                if not mods:
+                    # Not the Vite dev server (prod/nginx overlay serves hashed bundles that
+                    # need no warming). Nothing to do, and not a problem.
+                    return
+                # The generated client app imports the real route modules, so it pulls the
+                # widest graph of anything referenced by the shell.
+                mods.sort(key=lambda u: (0 if "generated/client/app.js" in u else 1, len(u)))
+                probe_started = time.monotonic()
+                mod = requests.get(base_url.rstrip("/") + mods[0], timeout=90)
+                took = time.monotonic() - probe_started
+                last = f"entry {mod.status_code} in {took:.1f}s"
+                if mod.status_code == 200 and took < _FRONTEND_WARM_FAST_S:
+                    # Two consecutive fast transforms: "cached", not "answered once slowly
+                    # while still compiling".
+                    streak += 1
+                    if streak >= 2:
+                        print(
+                            f"E2E preflight: frontend warm ({last}) in "
+                            f"{time.monotonic() - started:.0f}s"
+                        )
+                        return
+                else:
+                    streak = 0
+        except Exception as exc:  # noqa: BLE001 — any failure here is "not warm yet"
+            streak = 0
+            last = f"unreachable ({type(exc).__name__})"
+        time.sleep(2.0)
+
+    print(
+        f"E2E preflight: frontend NOT WARM after {time.monotonic() - started:.0f}s — {last}. "
+        "The first tests may time out on the app shell while Vite compiles; that is a cold "
+        "server, not a test defect."
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
     """Refuse to run the suite against a stack that cannot support it.
@@ -301,6 +396,8 @@ def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
             "Start or settle the stack first:  ./opentr.sh start dev",
             returncode=3,
         )
+
+    _warm_frontend_module_graph(base_url)
 
     splits = split_store_modules(_fetch_store_importers(base_url))
     if splits:
@@ -336,7 +433,7 @@ def login_page(page: Page, base_url: str):
     """
     with page.expect_response(lambda r: "/api/auth/methods" in r.url, timeout=20000):
         page.goto(base_url)
-    page.wait_for_selector("#email", timeout=10000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     return page
 
 
@@ -354,7 +451,7 @@ def authenticated_page(page: Page, base_url: str):
     is a separate, larger change and out of scope here.
     """
     page.goto(base_url)
-    page.wait_for_selector("#email", timeout=10000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
 
     # Login as admin
     page.fill("#email", TEST_ADMIN_EMAIL)
@@ -394,11 +491,11 @@ def shared_auth_state(browser, base_url: str):
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector("#email", timeout=15000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
 
     fd, state_file = tempfile.mkstemp(suffix=".json")
     os.close(fd)
@@ -435,7 +532,7 @@ def gallery_page(browser, shared_auth_state, base_url: str):
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     # `.gallery-action-buttons` renders unconditionally, independent of the `GET
     # /api/files` fetch — so a test could act (select-all, read header geometry)
     # before the file list has actually landed. `.gallery-header-right`
@@ -446,7 +543,7 @@ def gallery_page(browser, shared_auth_state, base_url: str):
     # main file-grid fetch, so it is not a substitute here.) On a genuinely empty
     # library this will time out; the tests using this fixture already assume ambient
     # content, same as before this fixture existed.
-    page.wait_for_selector(".gallery-header-right", timeout=30000)
+    page.wait_for_selector(".gallery-header-right", timeout=APP_SHELL_READY_MS)
     yield page
     page.close()
     context.close()
@@ -862,12 +959,12 @@ def second_user_auth_state(browser, base_url: str, second_user: dict[str, str]):
     )
     page = context.new_page()
     page.goto(base_url)
-    page.wait_for_selector("#email", timeout=15000)
+    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
     page.fill("#email", second_user["email"])
     page.fill("#password", second_user["password"])
     page.click("button[type=submit]")
     try:
-        page.wait_for_selector(".gallery-action-buttons", timeout=10000)
+        page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     except Exception:
         page.wait_for_url(lambda url: "/login" not in url, timeout=30000)
 
@@ -1022,7 +1119,7 @@ class AuthHelper:
     def login(self, email: str, password: str) -> bool:
         """Login with credentials. Returns True if successful."""
         self.page.goto(self.base_url)
-        self.page.wait_for_selector("#email", timeout=10000)
+        self.page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
         self.page.fill("#email", email)
         self.page.fill("#password", password)
         self.page.click("button[type=submit]")

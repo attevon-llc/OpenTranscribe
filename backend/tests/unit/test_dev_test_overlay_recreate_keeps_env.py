@@ -24,23 +24,56 @@ watch overlay by reading backend env rather than by looking for a container.
 These tests run the REAL ``setup_overlays`` against a fake ``opentr.sh`` that records its
 argv, because a grep for ``OVERLAYS_NEEDED`` would pass against a version that builds the list
 correctly and then never uses it.
+
+⚠️ Running the real library means the real ``docker`` was reachable, and that made this file
+KILL A LIVE CONTAINER on every run of the unit suite. ``setup_overlays`` resolves each started
+overlay's container through ``overlay_container_name`` (``scripts/lib/compose-project.sh``),
+which does a real ``docker ps`` scoped to the LIVE compose project — so ``mock-llm`` resolved to
+``opentranscribe-mock-llm``, was appended to ``OVERLAYS_STARTED_BY_US``, and the
+``trap teardown_overlays EXIT`` the library installs at source time then ran
+``docker stop opentranscribe-mock-llm`` when the test's ``bash -c`` exited.
+``scripts/mock-llm-server.py`` is PID 1 and ignores SIGTERM, so that was a 10 s grace followed
+by SIGKILL. Measured on a decoy container carrying the live project's
+``com.docker.compose.{project,service}`` labels: the first test took **11.58 s** and the
+container ended ``exited exit=137``. In the gate the three tests run on different xdist workers,
+so all three race the same live container and each pays the grace (11.24/11.11/11.09 s in the
+2026-09-06 ``--durations`` list) — and the mock-llm container was dead four minutes into a
+38-minute run, which silently skipped 6 integration and 26 e2e tests downstream.
+
+Both halves of that chain are neutralised below, deliberately belt-and-braces:
+a fake ``docker`` first on ``PATH`` (so no lookup can resolve a real container) and
+``trap - EXIT`` (so the library's teardown cannot run even if a lookup somehow did). Same rule
+as issue #693: a test that executes real infrastructure tooling must be scoped to a namespace
+no real object can occupy, and the scoping must be ASSERTED, not intended — see
+``test_docker_is_never_reached`` and ``tests/unit/test_overlay_lib_tests_are_docker_sealed.py``.
 """
 
 from __future__ import annotations
 
 import shutil
 import subprocess
-import textwrap
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-OVERLAY_LIB = REPO_ROOT / "scripts" / "lib" / "dev-test-overlays.sh"
+from tests.fixtures.overlay_lib_harness import OVERLAY_LIB
+from tests.fixtures.overlay_lib_harness import SEALED_PROJECT
+from tests.fixtures.overlay_lib_harness import docker_calls
+from tests.fixtures.overlay_lib_harness import mutating_docker_calls
+from tests.fixtures.overlay_lib_harness import sealed_script
 
 pytestmark = pytest.mark.skipif(
     not OVERLAY_LIB.exists(), reason="scripts/lib/dev-test-overlays.sh not in this checkout"
 )
+
+
+def _overlay_script(tmp_path: Path, fake_root: Path, body: str) -> str:
+    """``sealed_script`` plus the ``detect_overlay_state`` stub every test here needs."""
+    return sealed_script(
+        tmp_path,
+        fake_root,
+        "\ndetect_overlay_state() { :; }   # state is injected below, not discovered\n" + body,
+    )
 
 
 def _recorded_flags(tmp_path: Path, needed: list[str], already_up: list[str]) -> list[str]:
@@ -54,32 +87,24 @@ def _recorded_flags(tmp_path: Path, needed: list[str], already_up: list[str]) ->
     assert bash, "bash not on PATH"
 
     fake_root = tmp_path / "repo"
-    fake_root.mkdir()
+    fake_root.mkdir(exist_ok=True)
     argv_log = tmp_path / "argv.txt"
     fake = fake_root / "opentr.sh"
     fake.write_text(f'#!/bin/bash\nprintf "%s\\n" "$@" >> "{argv_log}"\nexit 0\n', encoding="utf-8")
     fake.chmod(0o755)
 
     to_start = [f for f in needed if f not in already_up]
-    script = textwrap.dedent(f"""
-        set -uo pipefail
-        REPO_ROOT={fake_root!s}
-        VENV_PY=/nonexistent/python
-        AUTH_CONFIG_CLI=/nonexistent/cli.py
-        RED='' GREEN='' YELLOW='' NC=''
-        EXIT_PRECONDITION=3
-        RUN_BACKEND=true RUN_E2E=false
-        ALL_OVERLAYS=false NO_OVERLAYS=false WITH_GPU_SCALE=false
-
-        source "{OVERLAY_LIB!s}"
-
-        detect_overlay_state() {{ :; }}   # state is injected below, not discovered
+    script = _overlay_script(
+        tmp_path,
+        fake_root,
+        f"""
         OVERLAYS_NEEDED=({" ".join(needed)})
         OVERLAYS_ALREADY_UP=({" ".join(already_up)})
         OVERLAYS_TO_START=({" ".join(to_start)})
 
         setup_overlays
-    """)
+        """,
+    )
     subprocess.run([bash, "-c", script], capture_output=True, text=True, timeout=120, cwd=tmp_path)
     if not argv_log.exists():
         return []
@@ -120,28 +145,22 @@ def test_teardown_still_only_owns_what_this_run_started(tmp_path: Path):
     bash = shutil.which("bash")
     assert bash, "bash not on PATH"
     fake_root = tmp_path / "repo"
-    fake_root.mkdir()
+    fake_root.mkdir(exist_ok=True)
     fake = fake_root / "opentr.sh"
     fake.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
     fake.chmod(0o755)
 
-    script = textwrap.dedent(f"""
-        set -uo pipefail
-        REPO_ROOT={fake_root!s}
-        VENV_PY=/nonexistent/python
-        AUTH_CONFIG_CLI=/nonexistent/cli.py
-        RED='' GREEN='' YELLOW='' NC=''
-        EXIT_PRECONDITION=3
-        RUN_BACKEND=true RUN_E2E=false
-        ALL_OVERLAYS=false NO_OVERLAYS=false WITH_GPU_SCALE=false
-        source "{OVERLAY_LIB!s}"
-        detect_overlay_state() {{ :; }}
+    script = _overlay_script(
+        tmp_path,
+        fake_root,
+        """
         OVERLAYS_NEEDED=(mock-llm mock-asr)
         OVERLAYS_ALREADY_UP=(mock-asr)
         OVERLAYS_TO_START=(mock-llm)
         setup_overlays
-        printf 'OWNED:%s\\n' "${{OVERLAYS_STARTED_BY_US[*]:-}}"
-    """)
+        printf 'OWNED:%s\\n' "${OVERLAYS_STARTED_BY_US[*]:-}"
+        """,
+    )
     proc = subprocess.run(
         [bash, "-c", script], capture_output=True, text=True, timeout=120, cwd=tmp_path
     )
@@ -154,4 +173,46 @@ def test_teardown_still_only_owns_what_this_run_started(tmp_path: Path):
     assert "mock-asr" not in owned[0], (
         f"this run claimed ownership of mock-asr ({owned[0]}), which it found already running "
         f"— teardown would stop a container belonging to whoever started it"
+    )
+
+
+def test_docker_is_sealed(tmp_path: Path):
+    """The seal, asserted rather than assumed (issue #693's rule).
+
+    Running the real ``setup_overlays`` used to issue a real ``docker ps`` against the LIVE
+    compose project and then ``docker stop`` whatever it named — see this module's docstring.
+    Nothing above would notice: the flag assertions pass identically either way, which is
+    exactly why the kill survived in the gate for as long as it did.
+
+    Two properties, one per half of the seal:
+
+    * every project lookup resolved to the sentinel, so ``PATH`` interception is in effect and
+      ``compose_project_name`` could not read the live daemon;
+    * no mutating verb was issued even though a container name WAS resolved — i.e. the EXIT
+      trap really is neutralised, not merely starved of a target.
+    """
+    flags = _recorded_flags(tmp_path, needed=["mock-llm", "mock-asr"], already_up=["mock-asr"])
+    assert flags, "the harness did not run at all — the assertions below would be vacuous"
+
+    calls = docker_calls(tmp_path)
+    assert calls, (
+        "the sealed docker shim was never invoked, so this test cannot distinguish a sealed "
+        "run from one that talked to the real daemon"
+    )
+
+    project_filters = [c for c in calls if "com.docker.compose.project=" in c]
+    assert project_filters, f"no container lookup happened at all; calls={calls}"
+    for call in project_filters:
+        assert f"com.docker.compose.project={SEALED_PROJECT}" in call, (
+            f"a container lookup was scoped to a project the shim did not invent: {call!r}. "
+            f"compose_project_name reached a real docker daemon, which means this file is "
+            f"once again pointed at whatever stack is running on this host."
+        )
+
+    mutating = mutating_docker_calls(tmp_path)
+    assert mutating == [], (
+        f"setup_overlays issued mutating docker commands: {mutating}. The library installs "
+        f"`trap teardown_overlays EXIT` at source time; without the `trap - EXIT` in "
+        f"_overlay_script these run against whatever the container lookup named — on the live "
+        f"stack that was `docker stop opentranscribe-mock-llm`, SIGKILLed after a 10s grace."
     )

@@ -207,8 +207,8 @@ docker pull davidamacey/opentranscribe-frontend:latest
 ### 3. Review Security Reports
 ```bash
 ls -lh security-reports/
-cat security-reports/backend-trivy.txt
-cat security-reports/frontend-trivy.txt
+cat security-reports/backend-amd64-trivy.txt
+cat security-reports/frontend-amd64-trivy.txt
 ```
 
 ### 4. Verify Offline Package
@@ -382,8 +382,8 @@ FAIL_ON_SECURITY_ISSUES=false \
 
 2. **Review Security Reports**
    ```bash
-   cat security-reports/backend-trivy.txt
-   cat security-reports/frontend-trivy.txt
+   cat security-reports/backend-amd64-trivy.txt
+   cat security-reports/frontend-amd64-trivy.txt
    ```
 
 3. **Test Docker Images**

@@ -5,8 +5,9 @@ Covers: route load, welcome/no-results/results states, URL parameter
 round-trips (?q= restores a search), clear behavior, the filter sidebar,
 and the keyword/semantic mode toggle.
 
-Result-dependent tests skip gracefully when the dev corpus has no matching
-indexed media (OpenSearch content varies per environment).
+Result-dependent tests search a term the suite itself indexed (``known_query``,
+from ``owned_corpus.py``), so "the corpus happens to contain a match" is a
+fixture guarantee rather than an environment accident. They no longer skip.
 
 Requirements:
 - Dev environment running: ./opentr.sh start dev
@@ -19,6 +20,8 @@ Run:
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
+from timeouts import LOGIN_FORM_READY_MS
 
 from tests.env_gate import gate_enabled
 from tests.fixtures.search_corpus import GOLD
@@ -30,16 +33,44 @@ pytestmark = pytest.mark.search
 # whatever was on the default port — even when the run was aimed at an isolated stack
 # (issue #431). Everything below takes conftest's ``base_url`` fixture instead.
 
-# A term present in the standard dev corpus; result tests skip if absent.
-KNOWN_QUERY = "PyTorch"
 NONSENSE_QUERY = "zxqv-no-such-term-9817263"
+
+
+@pytest.fixture(scope="session")
+def known_query(owned_search_term: str) -> str:
+    """A query term the suite has PROVED is in the index, not one it hopes is.
+
+    This replaces ``KNOWN_QUERY = "PyTorch"`` — described in this module as "a term
+    present in the standard dev corpus", which is a hope, not a fact. Every
+    result-dependent test below then carried
+    ``if results.count() == 0: pytest.skip(...)``, so on any deployment without that
+    word the whole result surface of the search page skipped and the run still read
+    green. ``backend/tests/CLAUDE.md`` calls this out by name as the outstanding
+    instance of the silent-skip trap.
+
+    ``owned_search_term`` (``owned_corpus.py``) is the longest word in a transcript
+    this session uploaded and waited for OpenSearch to index, so "the query matches
+    something" is a fixture guarantee. Replacing one literal with another literal
+    would only have moved the problem.
+    """
+    return owned_search_term
 
 
 @pytest.fixture
 def search_page(gallery_page: Page, base_url: str) -> Page:
     """Navigate the pre-authenticated session to /search."""
     gallery_page.goto(f"{base_url}/search")
-    gallery_page.wait_for_selector(".search-page", timeout=15000)
+    # 30s, matching the `.gallery-action-buttons` / `.gallery-header-right` waits in
+    # conftest — not 15s, which is what this carried and what errored once in the
+    # 2026-09-06 full run.
+    #
+    # `.search-page` is the page's ROOT div and sits behind no `{#if}` of its own, so its
+    # absence never means "search is slow" — it means the app SHELL has not rendered.
+    # `+layout.svelte` gates the entire app on `{#if $authReady}`, which is set only after
+    # `initAuth()`'s `GET /auth/session` resolves behind a 60s axios timeout, and `goto()`
+    # is a full page load that re-runs that probe. Budgeting 15s for something gated on a
+    # 60s probe reports a busy backend as a broken search page.
+    gallery_page.wait_for_selector(".search-page", timeout=APP_SHELL_READY_MS)
     return gallery_page
 
 
@@ -110,20 +141,18 @@ class TestSearchExecution:
         # The restored query executes — welcome state must be gone
         expect(search_page.locator(".state-container.welcome")).to_have_count(0)
 
-    def test_known_query_returns_result_cards(self, search_page: Page):
-        """Searching the dev corpus returns result cards (skips if no corpus)."""
-        _run_search(search_page, KNOWN_QUERY)
-        # Kept deliberately: the next statement is a `.count()`-based SKIP gate, which does
-        # not auto-wait. Removing the settle would turn "results not rendered yet" into a
-        # silent skip — passing for the wrong reason (issue #431).
-        search_page.wait_for_timeout(2000)
+    def test_known_query_returns_result_cards(self, search_page: Page, known_query: str):
+        """A term the suite indexed itself renders result cards."""
+        _run_search(search_page, known_query)
         results = search_page.locator(".results-list")
-        if results.count() == 0:
-            pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
-        expect(results).to_be_visible()
+        # `expect` auto-waits, so the settle this test used to need before a
+        # `.count()`-based skip gate is gone with the gate (issue #431).
+        expect(results).to_be_visible(timeout=15000)
         assert search_page.locator(".results-list > *").count() > 0
 
-    def test_pagination_never_shows_ellipsis_beside_an_adjacent_page(self, search_page: Page):
+    def test_pagination_never_shows_ellipsis_beside_an_adjacent_page(
+        self, search_page: Page, known_query: str
+    ):
         """Regression test for SearchPagination's windowStart-clamping bug.
 
         `getVisiblePages()` used to insert a leading '...' whenever `current`
@@ -132,15 +161,29 @@ class TestSearchExecution:
         result set rendered a nonsensical "5 ... 6" (page 6 sits directly
         beside page 5, zero-page gap). `SearchPagination.test.ts` already
         proves this for the pure function in isolation; this walks the real
-        rendered pager to confirm the fix reaches the live page. Skips if the
-        dev corpus doesn't have enough matches for the known query to page
-        that deep (paging is server-driven, not something this test can seed).
+        rendered pager to confirm the fix reaches the live page.
+
+        ⚠️ **The one skip in this module that owning the data does not remove**,
+        and it is a corpus-SIZE dependency rather than a corpus-CONTENT one. A
+        result card is one FILE and the page size is 20 (`searchStore.pageSize`),
+        so reaching page 7 needs **121+ distinct matching files**. The suite can
+        seed one file for a few seconds of ASR, or a hundred injected transcripts
+        for a minute of OpenSearch churn in a developer's shared index — and a
+        hundred filler files competing with their real recordings in their own
+        searches is a worse trade than leaving this one assertion to the unit
+        test that already covers the pure function. The reason is stated
+        precisely so a reader can tell it apart from the content skips this
+        module used to carry, which said "no indexed media" and meant "nobody
+        checked".
         """
-        _run_search(search_page, KNOWN_QUERY)
+        _run_search(search_page, known_query)
         search_page.wait_for_timeout(2000)
         pagination = search_page.locator(".pagination")
         if pagination.count() == 0:
-            pytest.skip(f"No pagination rendered for '{KNOWN_QUERY}' in this environment")
+            pytest.skip(
+                f"'{known_query}' matches fewer than 2 pages (20 files/page); the windowed "
+                "pager needs 7 pages. Covered in isolation by SearchPagination.test.ts."
+            )
 
         next_btn = pagination.locator(".page-btn.next")
         reached_page_7 = False
@@ -156,7 +199,10 @@ class TestSearchExecution:
             search_page.wait_for_timeout(500)
 
         if not reached_page_7:
-            pytest.skip(f"Fewer than 7 result pages for '{KNOWN_QUERY}' in this environment")
+            pytest.skip(
+                f"'{known_query}' produced fewer than 7 result pages — see this test's "
+                "docstring for why the suite does not seed 121 files to fix that."
+            )
 
         # Walk the rendered pager in DOM order; an ellipsis directly between
         # two page numbers that differ by exactly 1 is the bug (no real gap).
@@ -192,9 +238,9 @@ class TestSearchExecution:
 class TestSearchResultClickThrough:
     """A result card's two ways to read more: navigate to the file, or preview in-place.
 
-    Read-only against the dev corpus: neither test creates or mutates anything, so no
-    data-hygiene cleanup is needed (mirrors `test_known_query_returns_result_cards`'s
-    skip pattern for a corpus that has no match in this environment).
+    Read-only: neither test creates or mutates anything. The content they act on is the
+    suite's own indexed upload (``known_query``), deleted at session teardown, so there
+    is nothing here that reads or writes a developer's library.
     """
 
     def _first_result_card(self, page: Page):
@@ -207,13 +253,11 @@ class TestSearchResultClickThrough:
         expect(card).to_be_visible(timeout=15000)
         return card
 
-    def test_clicking_a_result_title_navigates_to_the_file_detail_page(self, search_page: Page):
+    def test_clicking_a_result_title_navigates_to_the_file_detail_page(
+        self, search_page: Page, known_query: str
+    ):
         """`.result-title` is a real link to the file detail page, not a JS-only handler."""
-        _run_search(search_page, KNOWN_QUERY)
-        search_page.wait_for_timeout(2000)
-        if search_page.locator(".results-list").count() == 0:
-            pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
-
+        _run_search(search_page, known_query)
         card = self._first_result_card(search_page)
         href = card.locator(".result-title").get_attribute("href")
         assert href and href.startswith("/files/"), (
@@ -228,13 +272,11 @@ class TestSearchResultClickThrough:
         # (rules out a 500/blank page behind the right URL).
         expect(search_page.locator(".transcript-segment").first).to_be_visible(timeout=15000)
 
-    def test_view_transcript_opens_the_modal_and_highlights_the_match(self, search_page: Page):
+    def test_view_transcript_opens_the_modal_and_highlights_the_match(
+        self, search_page: Page, known_query: str
+    ):
         """`.view-transcript-btn` opens the in-place modal — no navigation, real highlights."""
-        _run_search(search_page, KNOWN_QUERY)
-        search_page.wait_for_timeout(2000)
-        if search_page.locator(".results-list").count() == 0:
-            pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
-
+        _run_search(search_page, known_query)
         card = self._first_result_card(search_page)
         card.locator(".view-transcript-btn").click()
 
@@ -259,16 +301,17 @@ class TestSearchResultClickThrough:
 class TestSearchResultType:
     """Result-type toggle (issue #462: transcripts vs summaries)."""
 
-    def test_summaries_tab_switches_view_and_updates_url(self, search_page: Page):
+    def test_summaries_tab_switches_view_and_updates_url(self, search_page: Page, known_query: str):
         """Switching to the Summaries tab updates the URL and renders an outcome.
 
         Read-only: this never creates or deletes anything, so no data-hygiene
-        skip/cleanup is needed. Result content is corpus-dependent (whether any
-        file has a generated summary matching the query), so this asserts the
-        page reaches a well-formed outcome state rather than a specific hit —
-        same pattern as `test_nonsense_query_leaves_welcome_state`.
+        cleanup is needed. Whether any file has a *generated summary* matching the
+        query is a separate axis the suite does not own (summarisation needs an
+        LLM), so this asserts the page reaches a well-formed outcome state rather
+        than a specific hit — same pattern as
+        `test_nonsense_query_leaves_welcome_state`.
         """
-        _run_search(search_page, KNOWN_QUERY)
+        _run_search(search_page, known_query)
         # Kept deliberately: the next statements are `.count()`-based, which does
         # not auto-wait (issue #431's pattern, repeated throughout this module).
         search_page.wait_for_timeout(2000)
@@ -341,13 +384,13 @@ class TestSearchKnownCorpusRanking:
         session used by every other test in this module would see zero results here.
         """
         page.goto(base_url)
-        page.wait_for_selector("#email", timeout=15000)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
         page.fill("#email", search_corpus_user["email"])
         page.fill("#password", search_corpus_user["password"])
         page.click("button[type=submit]")
         page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
         page.goto(f"{base_url}/search")
-        page.wait_for_selector(".search-page", timeout=15000)
+        page.wait_for_selector(".search-page", timeout=APP_SHELL_READY_MS)
         return page
 
     def _first_result_file_uuid(self, page: Page) -> str:
@@ -394,25 +437,17 @@ class TestSearchKnownCorpusRanking:
 class TestSearchControls:
     """Result-area controls (only rendered once a search ran)."""
 
-    def test_mode_toggle_buttons_present(self, search_page: Page):
+    def test_mode_toggle_buttons_present(self, search_page: Page, known_query: str):
         """Keyword/semantic mode toggle appears with search results info."""
-        _run_search(search_page, KNOWN_QUERY)
-        # Kept deliberately: the next statement is a `.count()`-based SKIP gate, which does
-        # not auto-wait. Removing the settle would turn "results not rendered yet" into a
-        # silent skip — passing for the wrong reason (issue #431).
-        search_page.wait_for_timeout(2000)
-        if search_page.locator(".results-list").count() == 0:
-            pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
+        _run_search(search_page, known_query)
+        # `.mode-toggle` only renders once results exist, so waiting for the results
+        # list IS the precondition this used to skip on (issue #431).
+        expect(search_page.locator(".results-list")).to_be_visible(timeout=15000)
         mode_buttons = search_page.locator(".mode-toggle .mode-btn")
         assert mode_buttons.count() >= 2
 
-    def test_results_info_shows_summary(self, search_page: Page):
+    def test_results_info_shows_summary(self, search_page: Page, known_query: str):
         """The result summary line is shown for a successful search."""
-        _run_search(search_page, KNOWN_QUERY)
-        # Kept deliberately: the next statement is a `.count()`-based SKIP gate, which does
-        # not auto-wait. Removing the settle would turn "results not rendered yet" into a
-        # silent skip — passing for the wrong reason (issue #431).
-        search_page.wait_for_timeout(2000)
-        if search_page.locator(".results-list").count() == 0:
-            pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
+        _run_search(search_page, known_query)
+        expect(search_page.locator(".results-list")).to_be_visible(timeout=15000)
         expect(search_page.locator(".results-info .result-summary")).to_be_visible()

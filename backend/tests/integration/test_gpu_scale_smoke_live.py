@@ -42,6 +42,18 @@ from dotenv import dotenv_values
 
 from tests.compose_project import compose_service_containers
 
+# ⚠️ `multi_gpu` goes on the TESTS THAT NEED THE TOPOLOGY, not on the module.
+#
+# Two of the three tests here need a running celery-worker-gpu-scaled (`--gpu-scale`), and
+# without it they SKIP — a skip being the one outcome that looks like a pass, and 2 of the
+# integration phase's 15. The gate deselects the marker when that topology is absent and
+# selects it back in when it is present, so nothing is hidden.
+#
+# But `test_default_worker_is_registered_in_dual_gpu_mode` asserts the DEFAULT worker
+# (`gpu-transcription@%h`, plain docker-compose.yml) is registered — it runs and PASSES on an
+# ordinary single-GPU deployment. A module-level mark deselected it too, which measured as a
+# 165s -> 14s "speedup" that was really one passing test being dropped. Marking per-test keeps
+# it, and the marker means what it says.
 pytestmark = [pytest.mark.integration, pytest.mark.gpu, pytest.mark.slow]
 
 _REPO_ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
@@ -172,6 +184,7 @@ def flower_workers() -> dict:
     return data
 
 
+@pytest.mark.multi_gpu  # needs a running celery-worker-gpu-scaled
 def test_gpu_scaled_worker_is_registered_with_expected_concurrency(flower_workers: dict) -> None:
     if not _gpu_scaled_container_running():
         pytest.skip(
@@ -232,6 +245,7 @@ def admin_token() -> str:
     return token
 
 
+@pytest.mark.multi_gpu  # needs a running celery-worker-gpu-scaled
 def test_concurrent_uploads_reach_completed_with_no_gpu_oom(admin_token: str) -> None:
     """Drives real concurrency: N uploads dispatched together must all reach
     `completed`, and the GPU worker's logs must show no CUDA OOM during the run.

@@ -24,7 +24,6 @@ id-vs-name equivalence check ready for when someone proposes it.
 
 from __future__ import annotations
 
-import time
 import uuid as uuid_pkg
 from typing import Any
 from typing import cast
@@ -32,7 +31,6 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
-from opensearchpy.exceptions import TransportError
 
 import app.services.search.indexing_service as svc
 from app.core.config import settings
@@ -521,137 +519,131 @@ def test_a_legacy_chunk_fails_an_exists_check_on_speaker_id():
 
 
 # --------------------------------------------------------------------------- #
-# 8. Live equivalence check, ready for when someone proposes the flip.
+# 8. The id/name equivalence instrument, against data this file OWNS.
 # --------------------------------------------------------------------------- #
+#
+# This section used to sample the LIVE dev chunk index. It was wrong twice over:
+#
+#   * It could not fail honestly. `speaker_id` coverage is ~0% before backfill (issue #W2.7c),
+#     so the sample came back empty and it SKIPPED — a green run proving nothing, on every
+#     machine, most of the time.
+#   * When it did run it raced the reindexer. Its own docstring documented the window: every
+#     `backend/app/**` save hot-reloads the backend, startup dispatches
+#     `search_index_maintenance`, and a search landing mid-rebuild returns a 503 with empty
+#     `root_cause`. On 2026-09-07 that 503 persisted past all 4 retries and failed the gate's
+#     Unit/API phase — the single real failure in a 14,380-test run, and nothing to do with the
+#     code under test.
+#
+# The invariants are worth keeping, so they are now asserted against a throwaway index this
+# file creates and deletes, seeded to include the awkward real-world shape the comments below
+# describe (one person, two speaker_ids, same file). Deterministic at any backfill coverage,
+# and a negative control proves the check can still fail.
 
 _OPENSEARCH_ABSENT = __import__("os").environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
-
-@pytest.mark.skipif(
+_needs_opensearch = pytest.mark.skipif(
     _OPENSEARCH_ABSENT,
-    reason="No OpenSearch reachable (SKIP_OPENSEARCH) — this check reads the live chunk plane.",
+    reason="No OpenSearch reachable (SKIP_OPENSEARCH) — these drive a real cluster.",
 )
-def test_speaker_id_and_speaker_name_filters_agree_on_the_live_index():
-    """Not part of the flip decision itself — the instrument it would need.
 
-    Restricted to documents that already carry `speaker_id` (coverage is expected
-    near 0% before backfill runs, per the gate report), so it is meaningful at ANY
-    coverage level rather than only after a full backfill: for the subset that has
-    both a name and an id, do the two filters select the same chunks?
 
-    SKIPS (not fails) when nothing has been backfilled yet — that is the honestly
-    expected state today, and asserting equivalence over an empty sample would be
-    the vacuous-loop shape `scripts/audit-tests.py` flags, not a real check.
+def _seed_chunk(client, index: str, *, doc_id: str, file_uuid: str, speaker: str, speaker_id: int):
+    client.index(
+        index=index,
+        id=doc_id,
+        body={
+            "file_uuid": file_uuid,
+            "chunk_index": 0,
+            "content": "seeded chunk for the speaker-id/name equivalence invariant",
+            "title": "speaker-id fixture",
+            "speaker": speaker,
+            "speaker_id": speaker_id,
+            "speakers": [speaker],
+            "tags": [],
+            "content_type": "audio/wav",
+            "accessible_user_ids": [1],
+            "upload_time": "2026-09-07T00:00:00+00:00",
+            "language": "en",
+            "start_time": 0.0,
+            "end_time": 9.0,
+            "indexed_at": "2026-09-07T00:00:00+00:00",
+            "doc_type": "chunk",
+        },
+    )
+
+
+@pytest.fixture
+def seeded_chunk_index():
+    """A throwaway chunks index with the REAL mapping, deleted in teardown.
+
+    The real mapping matters: `speaker` must be a `keyword` for the exact `term` filters and
+    the terms aggregation below to mean anything.
     """
     from app.services.opensearch_service import get_opensearch_client
 
-    maybe_client = get_opensearch_client()
-    if not maybe_client or not maybe_client.indices.exists(index=_INDEX):
-        pytest.skip("chunks index not present on this cluster")
-    # `pytest.skip` is NoReturn, but the pre-commit mypy hook runs in an isolated
-    # env with no pytest stubs, so it cannot narrow through the guard above — and a
-    # narrowed name would not stay narrowed inside `_ids`' closure below anyway.
-    # The assert states the invariant the guard already established, and binds it to
-    # a name that is never reassigned.
-    assert maybe_client is not None
-    client = maybe_client
+    client = get_opensearch_client()
+    # An assert, not a skip — the module gate above already established a reachable cluster,
+    # so a None client means the factory is broken and must not be laundered into a green run.
+    assert client is not None, (
+        "SKIP_OPENSEARCH reported a reachable cluster but get_opensearch_client() returned None"
+    )
+
+    name = f"test_speaker_id_fields_{uuid_pkg.uuid4().hex[:12]}"
+    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+    try:
+        yield client, name
+    finally:
+        client.indices.delete(index=name, ignore=[404])
+
+
+@_needs_opensearch
+def test_a_speaker_id_filter_never_selects_another_persons_chunks(seeded_chunk_index):
+    """SOUNDNESS — the property a filter flip actually depends on.
+
+    ⚠️ THE INVARIANT IS ONE-WAY, and that is a property of the data model. A `speaker_id` is a
+    `Speaker` ROW, and diarization legitimately produces several rows for the same person in one
+    recording — measured on the dev index, "Joe Rogan" was speaker_id 2811 (347 chunks) AND 2812
+    (72 chunks). So `terms(speaker_id)` is SOUND but not COMPLETE with respect to
+    `terms(speaker)`: it never selects someone else's chunks, but it does not select all of that
+    person's. An earlier version asserted set EQUALITY and was asserting something the
+    architecture never claimed.
+
+    The seed reproduces exactly that shape, so the one-way-ness is exercised rather than assumed.
+    """
+    client, index = seeded_chunk_index
+    file_uuid = str(uuid_pkg.uuid4())
+
+    # One person, TWO speaker_ids, same file — the documented real case.
+    _seed_chunk(client, index, doc_id="a1", file_uuid=file_uuid, speaker="Dana", speaker_id=1)
+    _seed_chunk(client, index, doc_id="a2", file_uuid=file_uuid, speaker="Dana", speaker_id=1)
+    _seed_chunk(client, index, doc_id="b1", file_uuid=file_uuid, speaker="Dana", speaker_id=2)
+    # A different person in the same file, who must never be selected by Dana's ids.
+    _seed_chunk(client, index, doc_id="c1", file_uuid=file_uuid, speaker="Evan", speaker_id=3)
+    client.indices.refresh(index=index)
 
     chunk_clause = digest_mapping.chunk_plane_clause()
-
-    def _search(body: dict[str, Any]) -> dict[str, Any]:
-        """Search the LIVE index, tolerating a rebuild in progress.
-
-        This test reads the real dev index, which other processes rewrite: every
-        ``backend/app/**`` save hot-reloads the backend, and startup dispatches
-        ``search_index_maintenance``, which reindexes. A search landing in that
-        window returns ``503 search_phase_execution_exception`` / "all shards
-        failed" with an EMPTY ``root_cause`` and EMPTY ``failed_shards`` — the
-        signature of a shard being momentarily unavailable rather than of a bad
-        query. Measured: 3 consecutive failures during an edit burst, then 30
-        consecutive successes once edits stopped, with the cluster reporting
-        green throughout.
-
-        So retry a bounded number of times — and then **FAIL**, never skip. A
-        persistent 503 is a real defect (a malformed body, or a field the mapping
-        does not carry) and must not be laundered into a green run by a broad
-        except. The retry only absorbs the transient rebuild window.
-        """
-        last: Exception | None = None
-        for attempt in range(4):
-            try:
-                return cast(dict[str, Any], client.search(index=_INDEX, body=body))
-            except TransportError as exc:  # noqa: PERF203 - retry is the point
-                if getattr(exc, "status_code", None) != 503:
-                    raise
-                last = exc
-                time.sleep(1.5 * (attempt + 1))
-        raise AssertionError(
-            f"the chunk index stayed unavailable across 4 attempts ({last}). "
-            "That is no longer a rebuild window — investigate the query or the mapping."
-        )
-
-    sample = _search(
-        {
-            "size": 1,
-            "query": {"bool": {"filter": [chunk_clause, {"exists": {"field": "speaker_id"}}]}},
-            "_source": ["speaker_id", "speaker", "file_uuid"],
-        }
-    )
-    hits = sample["hits"]["hits"]
-    if not hits:
-        pytest.skip(
-            "No chunk carries speaker_id yet — coverage is 0% before backfill runs "
-            "(issue #W2.7c). This test becomes meaningful once some coverage exists."
-        )
-
-    source = hits[0]["_source"]
-    speaker_id, speaker_name = source["speaker_id"], source["speaker"]
-    file_uuid = source["file_uuid"]
-
-    result_cap = 2000
+    same_file = {"term": {"file_uuid": file_uuid}}
 
     def _ids(extra_clause: dict[str, Any]) -> set[str]:
-        resp = _search(
-            {
-                "size": result_cap,
-                "query": {"bool": {"filter": [chunk_clause, extra_clause]}},
-                "_source": False,
-            }
+        resp = cast(
+            dict[str, Any],
+            client.search(
+                index=index,
+                body={
+                    "size": 100,
+                    "query": {"bool": {"filter": [chunk_clause, extra_clause]}},
+                    "_source": False,
+                },
+            ),
         )
-        got = {hit["_id"] for hit in resp["hits"]["hits"]}
-        # A set truncated at the cap cannot be compared to a complete one — the
-        # original version of this test compared 72 ids against a set pinned at
-        # its own `size: 500`, which is not an equivalence, it is an artefact.
-        assert len(got) < result_cap, (
-            f"result hit the {result_cap} cap, so this set is truncated and any set "
-            "comparison below would be meaningless. Raise the cap or narrow the query."
-        )
-        return got
+        return {hit["_id"] for hit in resp["hits"]["hits"]}
 
-    # ⚠️ THE INVARIANT IS ONE-WAY, and that is a property of the data model.
-    #
-    # A `speaker_id` is a `Speaker` ROW, and diarization legitimately produces several
-    # rows for the same person in one recording — measured on the dev index, inside a
-    # single file "Joe Rogan" is speaker_id 2811 (347 chunks) AND 2812 (72 chunks),
-    # because two diarized clusters were both identified as him. Across files it is
-    # worse: 16 distinct speaker_ids over 12 recordings.
-    #
-    # So `terms(speaker_id)` is SOUND but not COMPLETE with respect to `terms(speaker)`:
-    # it never selects a chunk belonging to someone else, but it does not select every
-    # chunk belonging to this person. An earlier version of this test asserted set
-    # EQUALITY in both directions and was therefore asserting something the architecture
-    # never claimed — first globally, then per-file. Both were wrong.
-    #
-    # This is exactly why W2.7d specifies the flip as a UNION,
-    # `should: [terms(speaker_id), terms(speaker)]`, rather than a substitution — and
-    # why the cross-recording identity is `profile_id`, not `speaker_id`.
-    same_file = {"term": {"file_uuid": file_uuid}}
-    by_id = _ids({"bool": {"filter": [{"term": {"speaker_id": speaker_id}}, same_file]}})
-    by_name_same_file = _ids(
+    by_id = _ids({"bool": {"filter": [{"term": {"speaker_id": 1}}, same_file]}})
+    by_name = _ids(
         {
             "bool": {
                 "filter": [
-                    {"term": {"speaker": speaker_name}},
+                    {"term": {"speaker": "Dana"}},
                     {"exists": {"field": "speaker_id"}},
                     same_file,
                 ]
@@ -659,28 +651,73 @@ def test_speaker_id_and_speaker_name_filters_agree_on_the_live_index():
         }
     )
 
-    assert by_id, "the sampled speaker_id itself did not round-trip through its own filter"
+    assert by_id == {"a1", "a2"}, (
+        f"the seeded id did not round-trip through its own filter: {by_id}"
+    )
+    assert by_id <= by_name, (
+        f"{len(by_id - by_name)} chunk(s) matched speaker_id=1 but NOT the name 'Dana' in the "
+        "same file. The id and the label are out of step, which means the write path attached "
+        "an id to the wrong speaker's chunk."
+    )
+    # And the one-way-ness itself, asserted rather than described: the name selects MORE.
+    assert by_id < by_name, (
+        "the seed deliberately gives Dana a second speaker_id, so the name must select a "
+        "strict superset — if these are equal the fixture stopped exercising the real shape "
+        "and the soundness assertion above became trivially true"
+    )
+    assert "c1" not in by_name, "another speaker's chunk was selected by Dana's name filter"
 
-    # SOUNDNESS: every chunk the id selects is also selected by that speaker's name.
-    # This is the property a filter flip actually depends on — it is what guarantees an
-    # id-keyed filter can never surface another person's words.
-    assert by_id <= by_name_same_file, (
-        f"{len(by_id - by_name_same_file)} chunk(s) matched speaker_id={speaker_id} but "
-        f"NOT the name {speaker_name!r} in the same file. The id and the label are out of "
-        "step, which means the write path attached an id to the wrong speaker's chunk."
+
+@_needs_opensearch
+def test_one_speaker_id_resolves_to_exactly_one_display_name(seeded_chunk_index):
+    """A single `Speaker` row must carry exactly one display name."""
+    client, index = seeded_chunk_index
+    file_uuid = str(uuid_pkg.uuid4())
+
+    _seed_chunk(client, index, doc_id="a1", file_uuid=file_uuid, speaker="Dana", speaker_id=1)
+    _seed_chunk(client, index, doc_id="a2", file_uuid=file_uuid, speaker="Dana", speaker_id=1)
+    client.indices.refresh(index=index)
+
+    assert _names_for_speaker_id(client, index, 1) == ["Dana"]
+
+
+@_needs_opensearch
+def test_two_names_under_one_speaker_id_is_detected(seeded_chunk_index):
+    """NEGATIVE CONTROL — the defect the test above exists to catch, seeded on purpose.
+
+    Without this, `test_one_speaker_id_resolves_to_exactly_one_display_name` would pass just as
+    happily against an aggregation that could never return two buckets.
+    """
+    client, index = seeded_chunk_index
+    file_uuid = str(uuid_pkg.uuid4())
+
+    _seed_chunk(client, index, doc_id="a1", file_uuid=file_uuid, speaker="Dana", speaker_id=1)
+    _seed_chunk(client, index, doc_id="a2", file_uuid=file_uuid, speaker="Evan", speaker_id=1)
+    client.indices.refresh(index=index)
+
+    assert sorted(_names_for_speaker_id(client, index, 1)) == ["Dana", "Evan"], (
+        "two display names under one speaker_id must be visible to this query — if it reports "
+        "one, the check above cannot fail and proves nothing"
     )
 
-    # And the direct form of the same guarantee, read from the documents themselves:
-    # a speaker_id addresses exactly ONE display name.
-    resp = _search(
-        {
-            "size": 0,
-            "query": {"bool": {"filter": [chunk_clause, {"term": {"speaker_id": speaker_id}}]}},
-            "aggs": {"names": {"terms": {"field": "speaker", "size": 10}}},
-        }
+
+def _names_for_speaker_id(client, index: str, speaker_id: int) -> list[str]:
+    resp = cast(
+        dict[str, Any],
+        client.search(
+            index=index,
+            body={
+                "size": 0,
+                "query": {
+                    "bool": {
+                        "filter": [
+                            digest_mapping.chunk_plane_clause(),
+                            {"term": {"speaker_id": speaker_id}},
+                        ]
+                    }
+                },
+                "aggs": {"names": {"terms": {"field": "speaker", "size": 10}}},
+            },
+        ),
     )
-    names = [b["key"] for b in resp["aggregations"]["names"]["buckets"]]
-    assert names == [speaker_name], (
-        f"speaker_id={speaker_id} resolves to {names} — a single Speaker row must carry "
-        "exactly one display name, so more than one means two speakers share an id."
-    )
+    return [b["key"] for b in resp["aggregations"]["names"]["buckets"]]

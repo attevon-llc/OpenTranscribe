@@ -56,6 +56,9 @@ MODE_LIST=false
 MODE_DRY_RUN=false
 JSON_OUT=false
 ASSUME_YES=false
+# ⚠️ DEFAULT OFF, AND DELIBERATELY NOT IMPLIED BY --yes. See check_stage3_precondition.
+AUTO_STOP_STACK=false
+STACK_WAS_STOPPED_BY_US=false
 ONLY=""
 STAGE_ARG=""
 
@@ -82,8 +85,17 @@ STAGE_ARG=""
 #
 # exit-contract selects how the leg's exit code is READ, because this repo has
 # two conventions and conflating them would misreport results:
-#   standard  0 pass · non-zero fail            (release.sh / this script's own)
+#   standard  0 pass · non-zero fail · 3 blocked · 4 operator abort · 5 NOT MEASURED
+#                                                 (release.sh / this script's own)
 #   smoke     0 pass · 1 fail · 4 NOT MEASURED  (gpu-scale/diar-native/lite-smoke)
+#
+# ⚠️ NOT MEASURED is **5** under `standard` and **4** under `smoke`, deliberately. 4 is
+# already "operator abort" in the standard contract, so a standard leg that verified nothing
+# needed a code of its own rather than a reinterpretation of one in use — otherwise
+# run-dev-tests.sh's honest "a phase declined to be counted" would print as
+# `ABORT — the leg reported an operator abort`, which is the exact class of false verdict
+# this contract exists to prevent.
+#
 # Note 4 means "operator abort" in the standard contract and "not measured" in
 # the smoke one. That divergence is real and pre-existing; declaring it per leg
 # is how this script reads each verdict correctly instead of calling a smoke
@@ -94,9 +106,18 @@ STAGE_ARG=""
 # EXIT_NOT_MEASURED (5). See the note beside that constant.
 LEGS=(
     "1.1|1|safe-precommit full run|scripts/safe-precommit.sh run --all-files|standard"
-    "1.2|1|backend test summary|scripts/run-backend-tests.sh --summary|standard"
-    "1.3|1|backend + frontend test-quality audits|python3 scripts/audit-tests.py backend/tests|standard"
-    "1.4|1|frontend check (no rebuild)|scripts/frontend-check.sh --no-claude --check-only|standard"
+    "1.2|1|backend test summary|scripts/run-backend-tests.sh --require-fresh --summary|standard"
+    # ⚠️ Named "backend + frontend test-quality audits" until 2026-09-07, with a command that
+    # had no frontend half — and this leg name was the ONLY place the matrix claimed to run the
+    # frontend auditor, so the rehearsal read as covering it while running nothing. Renamed
+    # rather than extended: `npm run test:audit` and `test:audit:selftest` are now steps inside
+    # frontend-check.sh, so leg 1.4 below executes both. Adding them here as well would be a
+    # second execution of a check already covered — the same duplication removed from
+    # run-integration-tests.sh's FIPS-off phase in the same change.
+    "1.3|1|backend test-quality audit|python3 scripts/audit-tests.py backend/tests|standard"
+    # Runs eslint, check:i18n, svelte-check, **vitest**, the frontend test auditor and its
+    # self-test. --check-only skips only the vite build.
+    "1.4|1|frontend check + vitest (no rebuild)|scripts/frontend-check.sh --no-claude --check-only|standard"
     "1.5|1|docs-site build|cd docs-site && npm run build|standard"
     "1.6|1|deployment matrix validation|scripts/validate-deployments.sh --json|standard"
     "1.7|1|version consistency|python3 scripts/release/check-version-consistency.py|standard"
@@ -105,8 +126,15 @@ LEGS=(
     "2b|2|Cycle 2B — GPU scaling|scripts/gpu-scale-smoke.sh|smoke"
     "2c|2|Cycle 2C — diarization providers|scripts/diar-native-smoke.sh|smoke"
     "2d|2|Cycle 2D — lite/cpu-only topology|scripts/lite-smoke.sh|smoke"
-    "3|3|deployment mode rehearsal (fresh-install + upgrade)|scripts/release/65-rehearse.sh \"\$(tr -d '[:space:]' < VERSION)\"|standard"
-    "3-lite|3|lite-mode full pipeline rehearsal (mocked cloud ASR + mocked LLM)|scripts/release-tests/test-lite-mode.sh --yes|standard"
+    # Leg 3 runs Scenario A (fresh install), B (upgrade) AND C (lite) — 65-rehearse.sh:141-163.
+    # There used to be a separate "3-lite" leg invoking test-lite-mode.sh --yes as well, so
+    # `test-matrix.sh 3` ran the ~30-45 minute lite rehearsal TWICE. It was not always
+    # redundant: 65-rehearse.sh gained Scenario C after the leg was written, and the doc still
+    # described the stage script as "A then B". Removed rather than skipped inside
+    # 65-rehearse.sh, because this file's contract is that leg 3 IS what
+    # `scripts/release.sh rehearse` runs — one engine, two callers. To run lite alone:
+    #   ./scripts/release-tests/test-lite-mode.sh --yes
+    "3|3|deployment mode rehearsal (fresh-install + upgrade + lite)|scripts/release/65-rehearse.sh \"\$(tr -d '[:space:]' < VERSION)\"|standard"
     "3-pki|3|PKI/mTLS (prod+nginx only)|scripts/pki/run-pki-e2e-leg.sh --yes|standard"
     "4|4|image/release gates confirmation|scripts/release/50-scan.sh \"\$(tr -d '[:space:]' < VERSION)\"|standard"
 )
@@ -122,6 +150,14 @@ Usage: scripts/test-matrix.sh <1|2|3|4|all> [options]
   --json        Machine-readable {stage, leg, status, criteria[], next[]} lines
   --dry-run     Print every command that would run, execute nothing
   --yes         Bypass confirmation prompts (required for stage 3)
+  --auto-stop-stack
+                Let stage 3 run `./opentr.sh stop` when the dev stack is up.
+                DEFAULT OFF, and NOT implied by --yes. Stage 2 requires the dev
+                stack UP and stage 3 requires it STOPPED, so without this flag
+                `test-matrix.sh all` reports every stage-3 leg BLOCKED — by
+                design, because stopping an operator's running deployment is not
+                a decision this script gets to make silently. The restart command
+                is printed when it stops the stack and again in the summary.
 
 Exit codes: 0 pass, 1 gate failed, 2 misuse, 3 precondition unmet, 4 operator abort.
 EOF
@@ -135,6 +171,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run) MODE_DRY_RUN=true; shift ;;
         --json) JSON_OUT=true; shift ;;
         --yes) ASSUME_YES=true; shift ;;
+        --auto-stop-stack) AUTO_STOP_STACK=true; shift ;;
         --only) ONLY="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*) err "unknown option: $1"; usage; exit $EXIT_MISUSE ;;
@@ -170,12 +207,11 @@ check_doc_sync() {
     grep -q "Cycle 2C" "$DOC" || missing_in_doc+=("2c")
     grep -q "Cycle 2D" "$DOC" || missing_in_doc+=("2d")
     grep -q "## Stage 3" "$DOC" || missing_in_doc+=("3")
-    grep -q "### Stage 3 — lite-mode full rehearsal" "$DOC" || missing_in_doc+=("3-lite")
     grep -qi "PKI/mTLS is prod" "$DOC" || missing_in_doc+=("3-pki")
     grep -q "## Stage 4" "$DOC" || missing_in_doc+=("4")
 
     # Reverse direction: every doc leg id has a LEGS entry.
-    local doc_leg_ids=(1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 2a 2b 2c 2d 3 3-lite 3-pki 4)
+    local doc_leg_ids=(1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 2a 2b 2c 2d 3 3-pki 4)
     for id in "${doc_leg_ids[@]}"; do
         local found=false
         for entry in "${LEGS[@]}"; do
@@ -226,6 +262,37 @@ check_stage2_precondition() {
 
 check_stage3_precondition() {
     local id="${1:-}"
+
+    # ── The UP/STOPPED deadlock, and why the escape hatch is EXPLICIT ────────────────────
+    #
+    # Stage 2 requires the dev stack reachable on 5174 (check_stage2_precondition) and leaves
+    # it running — `run-dev-tests.sh` does not stop what it did not start. Stage 3 requires it
+    # STOPPED, because the release-test scenarios bind the stock 5173-5180 ports under the
+    # stock `opentranscribe-*` names, deliberately, so the run exercises what a real user's
+    # install produces.
+    #
+    # So `test-matrix.sh all` could never finish: leg `3` hit the refusal below and legs
+    # `3-lite`/`3-pki` then found 5174 still reachable (the release-test cleanup they run
+    # first correctly refuses to touch a LIVE stack) and reported BLOCKED too. Three legs,
+    # every run, structurally.
+    #
+    # ⚠️ It is `--auto-stop-stack`, default OFF, and NOT implied by `--yes`. `--yes` says "I
+    # accept the hours and the image rebuilds"; it does not say "you may stop the deployment
+    # I am using". Those are different consents and one must not be spent on the other. The
+    # restart command is printed at the moment of stopping, not only at the end, because the
+    # thing that follows takes hours.
+    if [[ "$AUTO_STOP_STACK" == "true" ]] && service_reachable localhost 5174; then
+        info ""
+        info "${YELLOW}--auto-stop-stack: stopping the dev stack so stage 3 can bind the stock ports${NC}"
+        info "${YELLOW}  restart it afterwards with: ./opentr.sh start dev${NC}"
+        ./opentr.sh stop >/dev/null 2>&1 || info "  ${YELLOW}warn${NC}: ./opentr.sh stop reported a problem; continuing to the port check"
+        for _ in $(seq 1 30); do
+            service_reachable localhost 5174 || break
+            sleep 2
+        done
+        STACK_WAS_STOPPED_BY_US=true
+    fi
+
     if service_reachable localhost 5174; then
         # Leg "3" (scripts/release/65-rehearse.sh, Scenario B = test-upgrade.sh) deliberately
         # leaves its stack running afterward "for inspection" — the right default when a human
@@ -256,9 +323,24 @@ check_stage3_precondition() {
             # ("A fresh-install test against these is NOT a fresh install"). This is
             # the same live-marker-verified removal gr_preflight already runs on a
             # standalone invocation, never a raw `docker volume rm`.
-            OT_RELEASE_TEST_RESET_VOLUMES=1 ./scripts/release-tests/test-fresh-install.sh --cleanup --yes >/dev/null 2>&1 || true
-            OT_RELEASE_TEST_RESET_VOLUMES=1 ./scripts/release-tests/test-upgrade.sh --cleanup --yes >/dev/null 2>&1 || true
-            OT_RELEASE_TEST_RESET_VOLUMES=1 ./scripts/release-tests/test-lite-mode.sh --cleanup --yes >/dev/null 2>&1 || true
+            # ⚠️ `|| true` is deliberate — one scenario having nothing to clean must not
+            # abort the pass — but the OUTPUT must not go with it (issue #900). gr_cleanup
+            # now fails when it finishes with stock-named containers still standing, and
+            # that message names both the leftovers and the command that clears them. Sent
+            # to /dev/null, the only symptom left is the port check below, whose remedy
+            # ("./opentr.sh stop") is the wrong advice for this cause and sends the operator
+            # looking at the dev stack instead of at the previous leg's residue.
+            local _clean_log _scenario
+            _clean_log="$(mktemp)"
+            for _scenario in test-fresh-install test-upgrade test-lite-mode; do
+                if ! OT_RELEASE_TEST_RESET_VOLUMES=1 \
+                        "./scripts/release-tests/${_scenario}.sh" --cleanup --yes \
+                        >"$_clean_log" 2>&1; then
+                    info "  ${YELLOW}warn${NC}: ${_scenario} --cleanup did not complete:"
+                    sed 's/^/    /' "$_clean_log" >&2
+                fi
+            done
+            rm -f "$_clean_log"
             for _ in $(seq 1 30); do
                 service_reachable localhost 5174 || break
                 sleep 2
@@ -266,6 +348,7 @@ check_stage3_precondition() {
         fi
         if service_reachable localhost 5174; then
             err "Stage 3 requires the dev stack STOPPED (it rebuilds and rehearses against prod images). Run: ./opentr.sh stop"
+            err "  (or pass --auto-stop-stack to let this script do it; it is deliberately not implied by --yes)"
             return $EXIT_PRECONDITION
         fi
     fi
@@ -375,6 +458,19 @@ run_leg() {
         info "  ${YELLOW}BLOCKED${NC} — precondition unmet inside the leg; see $log_file"
         return $EXIT_PRECONDITION
     fi
+    # Standard contract, exit 5 = NOT MEASURED. Distinct from the smoke contract's 4 for the
+    # reason the LEGS header gives: under `standard`, 4 is already "operator abort", so a leg
+    # that verified nothing needed a code of its own rather than a reinterpretation of one that
+    # is in use. run-dev-tests.sh (leg 2a) returns it when a phase declined to be counted.
+    if [[ "$contract" == "standard" && $leg_rc -eq $EXIT_NOT_MEASURED ]]; then
+        local std_reason
+        std_reason="$(not_measured_reason "$log_file")"
+        echo "SKIP  $id  $desc  — NOT MEASURED: $std_reason  (see $log_file)" >> "$REPORT_FILE"
+        info "  ${YELLOW}SKIP${NC} — NOT MEASURED: $std_reason"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        SKIPPED_LEGS+=("$id: $std_reason")
+        return 0
+    fi
     if [[ "$contract" == "smoke" && $leg_rc -eq 4 ]]; then
         local reason
         reason="$(not_measured_reason "$log_file")"
@@ -453,6 +549,14 @@ if [[ "$MODE_DRY_RUN" != "true" ]]; then
             info "${YELLOW}Exiting ${EXIT_NOT_MEASURED} (NOT MEASURED), not 0.${NC}"
             RC=$EXIT_NOT_MEASURED
         fi
+    fi
+    # Say it again at the end: --auto-stop-stack's banner scrolled past hours ago, and a
+    # stopped dev stack is the kind of side effect that gets discovered by something else
+    # failing rather than by being remembered.
+    if [[ "$STACK_WAS_STOPPED_BY_US" == "true" ]]; then
+        info ""
+        info "${YELLOW}--auto-stop-stack stopped your dev stack. Restart it with:${NC}"
+        info "${YELLOW}  ./opentr.sh start dev${NC}"
     fi
     info "Report: $REPORT_FILE"
 fi

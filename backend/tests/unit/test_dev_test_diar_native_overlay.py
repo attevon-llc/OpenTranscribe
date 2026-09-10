@@ -29,13 +29,15 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-import textwrap
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-OVERLAY_LIB = REPO_ROOT / "scripts" / "lib" / "dev-test-overlays.sh"
+from tests.fixtures.overlay_lib_harness import OVERLAY_LIB
+from tests.fixtures.overlay_lib_harness import REPO_ROOT
+from tests.fixtures.overlay_lib_harness import mutating_docker_calls
+from tests.fixtures.overlay_lib_harness import sealed_script
+
 PREDICATE_LIB = REPO_ROOT / "scripts" / "lib" / "diar-native-expected.sh"
 INTEGRATION_SCRIPT = REPO_ROOT / "scripts" / "run-integration-tests.sh"
 
@@ -44,34 +46,30 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _resolve_overlays(predicate_returns: int) -> list[str]:
+def _resolve_overlays(tmp_path: Path, predicate_returns: int) -> list[str]:
     """Run the REAL resolve_needed_overlays() with the diar-native predicate stubbed.
 
     Sourcing the library is the whole point: a test that greps the table for a key proves the
     key is spelled right, not that anything reads it. ``resolve_needed_overlays`` is where a
     conditional-need entry is honoured or silently ignored.
+
+    It goes through ``sealed_script`` because sourcing the library arms a real ``docker`` and an
+    EXIT trap that stops live containers — see ``tests/fixtures/overlay_lib_harness.py``.
     """
     bash = shutil.which("bash")
     assert bash, "bash not on PATH"
-    script = textwrap.dedent(f"""
-        set -uo pipefail
-        REPO_ROOT={REPO_ROOT!s}
-        VENV_PY=/nonexistent/python          # teardown must not need it: nothing was started
-        AUTH_CONFIG_CLI=/nonexistent/cli.py
-        RED='' GREEN='' YELLOW='' NC=''
-        EXIT_PRECONDITION=3
-        RUN_BACKEND=true RUN_E2E=false
-        ALL_OVERLAYS=false NO_OVERLAYS=false WITH_GPU_SCALE=false
-
-        source "{OVERLAY_LIB!s}"
-
+    script = sealed_script(
+        tmp_path,
+        REPO_ROOT,
+        f"""
         # Override AFTER sourcing so this wins (bash keeps the last definition). The real
         # predicate reads .env and the models dir, neither of which a unit test may depend on.
         diar_native_sidecar_expected() {{ return {predicate_returns}; }}
 
         resolve_needed_overlays
         printf 'RESOLVED:%s\\n' "${{OVERLAYS_NEEDED[*]:-}}"
-    """)
+        """,
+    )
     proc = subprocess.run(
         [bash, "-c", script], capture_output=True, text=True, timeout=120, cwd=REPO_ROOT
     )
@@ -79,12 +77,15 @@ def _resolve_overlays(predicate_returns: int) -> list[str]:
     assert line, (
         f"resolver produced no RESOLVED line.\nstdout={proc.stdout!r}\nstderr={proc.stderr!r}"
     )
+    assert mutating_docker_calls(tmp_path) == [], (
+        f"sourcing the overlay library mutated containers: {mutating_docker_calls(tmp_path)}"
+    )
     return line[0].removeprefix("RESOLVED:").split()
 
 
-def test_diar_native_is_resolved_when_the_deployment_is_configured_native():
+def test_diar_native_is_resolved_when_the_deployment_is_configured_native(tmp_path: Path):
     """Predicate says yes -> the overlay is in the set run-dev-tests.sh will bring up."""
-    resolved = _resolve_overlays(predicate_returns=0)
+    resolved = _resolve_overlays(tmp_path, predicate_returns=0)
     assert "diar-native" in resolved, (
         f"diar-native missing from the resolved overlay set {resolved} on a deployment "
         f"configured for native diarization. run-integration-tests.sh's diar-native phase "
@@ -93,9 +94,9 @@ def test_diar_native_is_resolved_when_the_deployment_is_configured_native():
     )
 
 
-def test_diar_native_is_dropped_when_the_deployment_is_not_configured_native():
+def test_diar_native_is_dropped_when_the_deployment_is_not_configured_native(tmp_path: Path):
     """Predicate says no -> not started. Proves the entry is CONSULTED, not just present."""
-    resolved = _resolve_overlays(predicate_returns=1)
+    resolved = _resolve_overlays(tmp_path, predicate_returns=1)
     assert "diar-native" not in resolved, (
         f"diar-native was resolved as needed ({resolved}) on a deployment NOT configured for "
         f"native diarization — OVERLAY_NEED_PREDICATE is being ignored, so the sidecar would "
@@ -103,14 +104,14 @@ def test_diar_native_is_dropped_when_the_deployment_is_not_configured_native():
     )
 
 
-def test_an_overlay_without_a_predicate_is_still_unconditionally_needed():
+def test_an_overlay_without_a_predicate_is_still_unconditionally_needed(tmp_path: Path):
     """Control: the predicate machinery must not have made every overlay conditional.
 
     Without this, both tests above would still pass if `resolve_needed_overlays` had been
     broken into dropping everything, or into dropping nothing but diar-native by name.
     """
     for returns in (0, 1):
-        resolved = _resolve_overlays(predicate_returns=returns)
+        resolved = _resolve_overlays(tmp_path, predicate_returns=returns)
         assert "mock-llm" in resolved, (
             f"mock-llm (no OVERLAY_NEED_PREDICATE entry, phase=either, tier=auto) vanished "
             f"from {resolved} — the conditional-need change altered unconditional overlays"

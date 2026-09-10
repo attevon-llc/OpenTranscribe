@@ -12,19 +12,58 @@ We believe in **security transparency**. All security scan results are published
 
 ## Scan Reports
 
-### Backend Container
+Every report is named **`<component>-<arch>-<tool>.<ext>`**. The architecture segment is not
+decoration: since the multi-arch split (issue #667) each image is built and scanned as a
+separate per-architecture leg, and the two legs of one release can carry different findings
+because they ship different base-image packages. A report without an arch segment cannot say
+which binary it describes.
 
-- `backend-trivy.json` / `backend-trivy.txt` - Trivy vulnerability scan
-- `backend-grype.json` / `backend-grype.txt` - Grype vulnerability scan with EPSS risk scoring
-- `backend-dockle.json` - Dockle Docker security best practices audit
-- `backend-sbom.json` / `backend-sbom.txt` - Software Bill of Materials (SBOM)
+| Component | Image | Architectures scanned |
+|---|---|---|
+| `backend` | CUDA backend | `amd64` only — `cuda-arm64` is reserved but not built |
+| `lite` | CPU-only backend | `amd64`, `arm64` |
+| `frontend` | SPA | `amd64`, `arm64` |
+| `docs` | documentation site | `amd64`, `arm64` |
 
-### Frontend Container
+`blackwell` is deliberately **never** published here: it is not part of
+`docker-build-push.sh all`, so no release builds it and a scan of it would describe nothing.
 
-- `frontend-trivy.json` - Trivy vulnerability scan
-- `frontend-grype.json` / `frontend-grype.txt` - Grype vulnerability scan
-- `frontend-dockle.json` - Dockle Docker security audit
-- `frontend-sbom.json` / `frontend-sbom.txt` - Software Bill of Materials (SBOM)
+Per leg, five tools write eight files. **Five of the eight are published here**:
+
+| Published | Tool |
+|---|---|
+| `*-trivy.txt` | Trivy vulnerability scan |
+| `*-grype.txt` | Grype vulnerability scan with EPSS risk scoring |
+| `*-sbom.txt` | Software Bill of Materials |
+| `*-hadolint.txt` | Dockerfile lint |
+| `*-dockle.json` | Dockle security best-practices audit (small, and has no text form) |
+
+So `backend-amd64-trivy.txt` is the human-readable Trivy result for the CUDA backend on x86-64.
+
+`*-trivy.json`, `*-grype.json` and `*-sbom.json` are **gitignored**, for two independent
+reasons. **Size**: 30.8 MB per scan against 2.1 MB for the set above, and git keeps every
+release's copy forever in a public repo — while they regenerate in minutes from a published
+tag. **False positives**: Trivy records the scanned image's `ENV` block, so every
+`python:*`-derived report embeds `GPG_KEY=7169605F…`, the *public* CPython release-signing
+fingerprint; gitleaks scores that as a `generic-api-key` and blocks the commit. It is not a
+credential — but the right response is not to teach the secret scanner to ignore a directory,
+it is to not commit machine blobs nobody needs committed.
+
+Need the JSON? Regenerate it:
+
+```bash
+./scripts/security-scan.sh backend        # writes all eight files per leg, locally
+```
+
+> ⚠️ **Do not commit a report under a name no scanner writes.** The pre-#667 un-suffixed names
+> (`backend-trivy.json`) sat here for a month after nothing could refresh them, silently
+> presenting scans of two-releases-old images as the current posture. Transparency depends on
+> the published file being regenerable, so
+> `backend/tests/unit/test_security_reports_are_regenerable.py` now fails on any tracked report
+> whose filename the current scanner could not produce.
+
+Regenerate with `./scripts/security-scan.sh <component>` and publish with
+`scripts/push-security-reports.sh`.
 
 ## Understanding the Reports
 

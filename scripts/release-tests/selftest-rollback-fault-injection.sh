@@ -47,20 +47,53 @@ echo "Rollback-tail fault-injection self-test (container: $CONTAINER, isolated -
 echo
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-docker run -d --rm --name "$CONTAINER" --network none \
+# --platform, not just a pinned tag: a wrong-architecture image already in the local
+# store is selected silently and dies with `exec format error`, which presents as the
+# container simply never becoming ready rather than as an image problem.
+SELFTEST_PLATFORM="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || true)"
+platform_args=()
+[[ -n "$SELFTEST_PLATFORM" && "$SELFTEST_PLATFORM" != "/" ]] && \
+    platform_args=(--platform "$SELFTEST_PLATFORM")
+docker run -d --rm --name "$CONTAINER" --network none "${platform_args[@]}" \
     -e POSTGRES_PASSWORD=selftest -e POSTGRES_USER=postgres -e POSTGRES_DB=opentranscribe \
     postgres:17.5-alpine >/dev/null
 
-# Wait for readiness — no host network, so pg_isready must run INSIDE the
-# container. The official postgres image runs a temporary server for initdb,
-# stops it, then starts the real one; pg_isready can report ready during that
-# temporary instance and then fail with "the database system is shutting
-# down" moments later. A real query, not pg_isready, is what actually proves
-# the FINAL server is up — retried across the whole window, not probed once.
-deadline=$(( $(date +%s) + 60 ))
-until docker exec "$CONTAINER" psql -U postgres -d opentranscribe -c 'SELECT 1;' >/dev/null 2>&1; do
+# Wait for readiness — no host network, so every probe must run INSIDE the container.
+#
+# ⚠️ A successful query is NOT sufficient, and believing it was cost a debugging cycle
+# (2026-09-07). The official postgres image runs a TEMPORARY server for initdb, stops
+# it, then starts the real one — and that temporary server answers `SELECT 1` perfectly
+# well. So the query loop can be satisfied by the instance that is about to shut down,
+# after which the very next statement fails with "the database system is shutting down"
+# and `set -e` kills the script before case 1 prints. It is timing-dependent, which is
+# why it stayed hidden: it only surfaced when an unrelated change shifted startup by a
+# few hundred milliseconds.
+#
+# The init marker is what actually separates the two instances, so wait for it FIRST.
+# `grep -c` (reads to EOF) rather than `grep -q` — see the SIGPIPE/pipefail rule in
+# scripts/CLAUDE.md; `docker logs` is exactly the daemon-RPC producer that inverts.
+deadline=$(( $(date +%s) + 90 ))
+until [ "$(docker logs "$CONTAINER" 2>&1 | grep -c 'PostgreSQL init process complete')" -gt 0 ]; do
+    if (( $(date +%s) > deadline )); then
+        echo "postgres never finished initdb (no 'init process complete' marker)" >&2
+        docker logs "$CONTAINER" 2>&1 | tail -20 >&2
+        exit 1
+    fi
+    sleep 1
+done
+
+# Only now is a successful query evidence about the FINAL server. Require three
+# consecutive successes so a half-open socket during the handover cannot satisfy it.
+consecutive=0
+until [ "$consecutive" -ge 3 ]; do
+    if docker exec "$CONTAINER" psql -U postgres -d opentranscribe -c 'SELECT 1;' >/dev/null 2>&1; then
+        consecutive=$(( consecutive + 1 ))
+    else
+        consecutive=0
+    fi
     if (( $(date +%s) > deadline )); then
         echo "postgres never became ready" >&2
+        docker logs "$CONTAINER" 2>&1 | tail -20 >&2
         exit 1
     fi
     sleep 1

@@ -358,17 +358,23 @@ phase_03_pin_local_image() {
             "davidamacey/opentranscribe-frontend:latest" \
             "davidamacey/opentranscribe-docs:latest" 2>/dev/null || true
         cp_force_pull_policy "$target/docker-compose.prod.yml" always
-        cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
         gr_ok "pull_policy=always, OT_IMAGE_TAG pinned to Hub :${LOCAL_IMAGE_TAG}"
     else
         cp_force_pull_policy "$target/docker-compose.prod.yml" never
-        cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
         gr_ok "OT_IMAGE_TAG pinned to :${LOCAL_IMAGE_TAG}, pull_policy=never, label injected"
+        # pull_policy=never means "run whatever carries this tag on this host" — which is
+        # only a rehearsal of THIS release if that image was built from THIS commit. It
+        # was not, on 2026-09-07: a 315-commit-old v0.5.0 was rehearsed and its missing
+        # features were reported as product bugs. Hub mode is exempt by design — there the
+        # published artifact IS the subject.
+        gr_assert_image_is_the_code_under_test \
+            "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" \
+            "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
     fi
 
     # Also label the base file's services for cleanup symmetry
     cp "$target/docker-compose.yml" "$target/docker-compose.yml.bak"
-    cp_inject_labels "$target/docker-compose.yml" "$TEST_LABEL"
+    cp_inject_labels_all "$target" "$TEST_LABEL"
 
     # Pre-create the model cache directory. Ownership is DELIBERATELY left alone here —
     # repairing it is `opentranscribe.sh start`'s job (fix_model_cache_permissions),
@@ -396,6 +402,14 @@ phase_03_pin_local_image() {
         fi
         gr_log "hub mode: model cache is empty — models will download from HuggingFace on first start (fresh-user path)"
     elif [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
+        # Repair the SHARED cache first (issue: it had no `diar-native` for four weeks while
+        # this scenario asked for one and reported "model cache seeded"). Only test-upgrade.sh
+        # could top it up before, so whichever scenario ran first here paid a full ONNX export
+        # at first backend boot — over the network, on the exact path this pre-seeding exists
+        # to remove. Deliberately inside this branch, not above it: hub mode leaves the cache
+        # empty ON PURPOSE, to rehearse the fresh-user download path.
+        mc_topup_from_live "$(mc_live_cache_dir)" "$shared_cache" \
+            huggingface torch nltk_data sentence-transformers pyannote diar-native
         gr_log "seeding model cache from shared cache …"
         # Hardlinks for the big trees; a real copy for nltk_data (nltk >=3.10
         # pathsec refuses multiply-linked files) and for diar-native (its
@@ -736,37 +750,15 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
             # silently fell back to BM25 keyword matching). Without this
             # check the heap-too-small bug from v0.3.x can ship undetected.
             #
-            # Polled, not checked once: a fresh install is strictly colder than
-            # an upgrade (no registered model in the OpenSearch volume, empty
-            # /ml-models/ mount), and registering+deploying a ~92MB model can
-            # take 30s+ on its own. A one-shot check here measured a real
-            # v0.5.0 run failing at ~35s elapsed while the model was still
-            # mid-registration -- hybrid search itself passed via BM25
-            # fallback the whole time. Unlike test-upgrade.sh (180s poll,
-            # warmer stack), a fresh install can never seed the shared
-            # opensearch-ml cache -- mc_seed_cache's live-cache source
-            # deliberately skips it as "container-specific" (see the
-            # comment beside its call in test-upgrade.sh's own seeding),
-            # so /ml-models/ is always empty and registration always goes
-            # the cold remote-download route, whose duration depends on
-            # network conditions rather than local disk. Measured: even
-            # 300s (ml_model_service._REGISTRATION_MAX_WAIT) was not
-            # always enough on this host under concurrent build/scan
-            # load. 600s gives real headroom for that variance; costs
-            # nothing on a healthy run -- exits on the first successful poll.
-            local ml_deployed=0 ml_wait=0
-            while [ "$ml_wait" -lt 600 ]; do
-                ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
-                    'http://localhost:9200/_plugins/_ml/models/_search' \
-                    -H 'Content-Type: application/json' \
-                    -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
-                    2>/dev/null \
-                    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
-                    2>/dev/null || echo 0)
-                [ "$ml_deployed" -ge 1 ] && break
-                sleep 10
-                ml_wait=$((ml_wait + 10))
-            done
+            # Polled, not checked once: registration+deployment of a ~92MB model is an async
+            # background task, and a one-shot check here measured a real v0.5.0 run failing
+            # at ~35s elapsed while the model was still mid-registration -- hybrid search
+            # itself passed via BM25 fallback the whole time. The budget lives in
+            # ML_DEPLOY_TIMEOUT_S (lib/api-client.sh) with its own derivation; it is no
+            # longer a per-scenario literal, which is how test-upgrade.sh came to sit at 180
+            # against this file's 600.
+            local ml_deployed=0
+            ml_deployed=$(ac_wait_for_ml_model_deployed) || true
             as_assert_ge "OpenSearch ML model deployed (neural search active)" "$ml_deployed" 1
         fi
     fi

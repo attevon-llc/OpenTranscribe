@@ -26,6 +26,7 @@ import pytest
 import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import DATA_AFTER_RELOAD_MS
 
 # This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
 # A module constant is evaluated at import time, so it could not see ``--base-url`` /
@@ -579,9 +580,12 @@ class TestSpeakerRenamePropagationAcrossFiles:
         authenticated_page.wait_for_load_state("networkidle")
         authenticated_page.wait_for_selector(".transcript-segment", timeout=25000)
 
+        # `_first_speaker(media_a["uuid"])` above already asserted diarization produced
+        # speakers for this test's OWN upload, so a missing Edit Speakers affordance is
+        # a UI failure, not an absent precondition. `.count()` did not auto-wait either,
+        # so this could skip merely because the page had not finished painting.
         edit_btn = authenticated_page.locator(".edit-speakers-button")
-        if edit_btn.count() == 0:
-            pytest.skip("File has no diarization (no Edit Speakers affordance)")
+        expect(edit_btn).to_be_visible(timeout=10000)
         edit_btn.click()
         expect(authenticated_page.locator(".speaker-editor-container")).to_be_visible(timeout=10000)
 
@@ -618,4 +622,4 @@ class TestSpeakerRenamePropagationAcrossFiles:
 
         expect(
             authenticated_page.locator(".segment-speaker").filter(has_text=new_name).first
-        ).to_be_visible(timeout=15000)
+        ).to_be_visible(timeout=DATA_AFTER_RELOAD_MS)

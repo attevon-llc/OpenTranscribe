@@ -215,11 +215,22 @@ detect_hardware_acceleration() {
             BATCH_SIZE="16"
             USE_GPU_RUNTIME="true"
 
-            # Get count of available GPUs
-            GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits | wc -l)
+            # Get count of available GPUs. Captured once and reused below, so the
+            # device list is queried a single time rather than through two pipelines.
+            GPU_INDEXES=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits)
+            GPU_COUNT=$(printf '%s\n' "$GPU_INDEXES" | wc -l)
 
-            # Get default GPU (first available)
-            DEFAULT_GPU=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits | head -n1)
+            # Get default GPU (first available).
+            #
+            # `head -n1` on the SECOND line of a `set -euo pipefail` script is the other
+            # half of the SIGPIPE hazard documented on docker_runtime_has_nvidia(): head
+            # exits after one line, nvidia-smi can take SIGPIPE (141), pipefail promotes
+            # that to the pipeline's status, and under `set -e` an unguarded assignment
+            # aborts the INSTALLER mid-run — measured:
+            #   bash -c 'set -euo pipefail; v="$(cat 2MB | head -1)"; echo REACHED'
+            # exits 141 and never prints. `wc -l` above reads to EOF and is unaffected.
+            # Reuse its already-captured output instead of a second pipeline.
+            DEFAULT_GPU="${GPU_INDEXES%%$'\n'*}"
             GPU_DEVICE_ID=${DEFAULT_GPU:-0}
 
             return
@@ -271,6 +282,60 @@ detect_hardware_acceleration() {
 # DOCKER CONFIGURATION
 #######################
 
+# Does the Docker daemon expose the NVIDIA container runtime?
+#
+#   0 = yes · 1 = checked, and no · 2 = COULD NOT CHECK (daemon gave nothing usable)
+#
+# ⚠️ DUPLICATED, DELIBERATELY, FROM opentr.sh's docker_runtime_has_nvidia().
+# This script is fetched and run standalone (`curl -fsSL … | bash`), so it can have
+# no sourcing dependency on anything in the repo — a shared library would break the
+# documented one-liner install. The two copies MUST MOVE TOGETHER; opentr.sh's copy
+# carries the same warning pointing back here.
+#
+# ⚠️ NEVER WRITE THIS AS `docker info | grep -q nvidia`. That is exactly what it was.
+# This script runs under `set -uo pipefail` (see the top of the file), and `grep -q`
+# exits at its first match while `docker info` is still writing; `docker info` then
+# dies with SIGPIPE (141) and `pipefail` makes that the PIPELINE's status — so a
+# MATCH is read as a NON-match. It is a race, so it is intermittent: measured on a
+# developer host, idle, at roughly one inversion per 200-600 invocations (`rc=141`).
+#
+# `set -e` does NOT also abort here, and that is worse rather than better: a pipeline
+# used as an `if` condition is exempt from errexit, so the only symptom is the wrong
+# answer, silently.
+#
+# WHY THIS MATTERS MORE HERE THAN ANYWHERE ELSE IN THE REPO. In the dev stack the
+# same inversion is transient — the next `./opentr.sh start dev` re-probes and gets
+# it right. Here the verdict is PERSISTED: configure_environment() writes
+# DETECTED_DEVICE, USE_NVIDIA_RUNTIME and COMPUTE_TYPE into the user's .env, and
+# nothing ever re-detects. One unlucky probe therefore pins a real GPU host to CPU
+# permanently, with no symptom other than "this is slow" and no way back short of
+# hand-editing .env. Capturing into a variable first means there is no pipe to break.
+docker_runtime_has_nvidia() {
+    local info="" rc=0 attempt=0
+    for attempt in 1 2 3; do
+        info="$(docker info 2>/dev/null)"
+        rc=$?
+        if [ "$rc" -eq 0 ] && [ -n "$info" ]; then
+            break
+        fi
+        if [ "$attempt" -lt 3 ]; then
+            sleep 1
+        fi
+    done
+
+    if [ "$rc" -ne 0 ] || [ -z "$info" ]; then
+        return 2
+    fi
+
+    case "$info" in
+        *nvidia*) return 0 ;;
+        *)        return 1 ;;
+    esac
+}
+
+# 0 = GPU + container runtime usable · 1 = definitively not · 2 = could not determine.
+# The 2 is propagated rather than collapsed into 1 because the caller PERSISTS the
+# answer — see configure_docker_runtime().
 check_gpu_support() {
     # Check for NVIDIA GPUs
     if command -v nvidia-smi &> /dev/null; then
@@ -282,13 +347,24 @@ check_gpu_support() {
     fi
 
     # Check for NVIDIA container runtime
-    if docker info 2>/dev/null | grep -q "nvidia"; then
-        echo "✅ NVIDIA Container Runtime is properly configured"
-        return 0
-    else
-        echo "❌ NVIDIA Container Runtime is not properly configured"
-        return 1
-    fi
+    local runtime_rc=0
+    docker_runtime_has_nvidia
+    runtime_rc=$?
+    case "$runtime_rc" in
+        0)
+            echo "✅ NVIDIA Container Runtime is properly configured"
+            return 0
+            ;;
+        2)
+            echo "⚠️  Could not determine whether the NVIDIA Container Runtime is configured"
+            echo "   (\`docker info\` returned nothing usable after 3 attempts)"
+            return 2
+            ;;
+        *)
+            echo "❌ NVIDIA Container Runtime is not properly configured"
+            return 1
+            ;;
+    esac
 }
 
 configure_docker_runtime() {
@@ -297,9 +373,56 @@ configure_docker_runtime() {
     if [[ "$USE_GPU_RUNTIME" == "true" && "$DETECTED_DEVICE" == "cuda" ]]; then
         echo "🧪 Testing NVIDIA Container Toolkit..."
 
-        if check_gpu_support; then
+        # `if check_gpu_support; then` collapses 1 and 2 into one branch, which is
+        # precisely what must not happen here — capture the code instead.
+        local gpu_rc=0
+        check_gpu_support || gpu_rc=$?
+        if [ "$gpu_rc" -eq 0 ]; then
             echo -e "${GREEN}✅ NVIDIA Container Toolkit fully functional${NC}"
             DOCKER_RUNTIME="nvidia"
+        elif [ "$gpu_rc" -eq 2 ]; then
+            # ⚠️ COULD NOT DETERMINE. This branch must NEVER reach fallback_to_cpu().
+            #
+            # Every other decision this installer makes can be re-run; this one is
+            # written to the user's .env by configure_environment() (DETECTED_DEVICE,
+            # USE_NVIDIA_RUNTIME, COMPUTE_TYPE) and is never re-detected. Persisting a
+            # *guess* is the actual harm: it silently converts "docker was busy for a
+            # moment" into "this deployment is CPU-only forever", on a host the user
+            # bought a GPU for. Refusing costs one re-run; guessing costs a permanently
+            # degraded install that presents only as slowness.
+            #
+            # We know the user wants GPU: this whole block is gated on USE_GPU_RUNTIME
+            # and DETECTED_DEVICE=cuda, and nvidia-smi already succeeded inside
+            # check_gpu_support. So there is a real, deliberate CPU path available
+            # (--cpu / OPENTRANSCRIBE_FORCE_CPU=1) that this user did not take, and
+            # naming it is a better answer than choosing it for them.
+            echo ""
+            echo -e "${YELLOW}⚠️  COULD NOT DETERMINE whether the NVIDIA Container Toolkit is configured.${NC}"
+            echo "   This host HAS an NVIDIA GPU (nvidia-smi answered), but \`docker info\`"
+            echo "   did not respond usably after 3 attempts — usually a busy or restarting"
+            echo "   Docker daemon."
+            echo ""
+            echo "   Refusing to guess: the GPU/CPU decision is written to .env here and is"
+            echo "   never re-detected, so a wrong guess would pin this install to CPU"
+            echo "   permanently with no symptom other than slowness."
+            echo ""
+            echo "   What to do:"
+            echo "   1. Wait for Docker to settle and re-run this installer, or"
+            echo "   2. Check the daemon:  docker info"
+            echo "   3. Install CPU-only ON PURPOSE:  --cpu   (or OPENTRANSCRIBE_FORCE_CPU=1)"
+            echo ""
+            if is_unattended; then
+                ot_log_unattended "Aborting: GPU runtime undetermined, and unattended mode must not persist a guess. Re-run, or pass --cpu / OPENTRANSCRIBE_FORCE_CPU=1 to choose CPU deliberately."
+                exit 1
+            fi
+            read -p "Continue and install in CPU mode anyway? (y/N) " -n 1 -r </dev/tty
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                print_error "Setup cancelled — GPU support could not be verified."
+                exit 1
+            fi
+            echo -e "${YELLOW}⚠️  Continuing in CPU mode at your request.${NC}"
+            fallback_to_cpu
         else
             echo -e "${RED}❌ NVIDIA Container Toolkit tests failed${NC}"
             echo ""

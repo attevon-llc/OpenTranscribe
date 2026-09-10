@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from datetime import UTC
 from datetime import datetime
@@ -595,6 +596,79 @@ _DEADLOCK_RETRY_ATTEMPTS = 3
 _DEADLOCK_RETRY_DELAY_S = 0.5
 
 
+def media_object_is_resolvable(media_file: MediaFile) -> bool:
+    """Whether this row's media actually resolves to an object in storage.
+
+    Fails **closed**: only a positive "the object is there" answers True. The
+    caller uses this to decide whether deleting a transcript is recoverable, and
+    the two error directions are not symmetric — reading a storage outage as
+    "present" destroys the transcript, reading it as "absent" merely refuses a
+    reprocess the user can repeat once storage is back.
+
+    Args:
+        media_file: The file whose ``storage_path`` should be resolved.
+
+    Returns:
+        True only when the object was confirmed present.
+    """
+    storage_path = media_file.storage_path
+    if not storage_path:
+        # The repo's own "this row has no media" convention (four writers, eight
+        # readers) — there is nothing to look up.
+        return False
+
+    if os.environ.get("SKIP_S3", "False").lower() == "true":
+        # No object storage is in play in this deployment mode, so there is no
+        # absence to confirm and nothing this check could learn. Same switch the
+        # upload/streaming/thumbnail paths already read.
+        return True
+
+    from app.services.minio_service import object_exists_and_size
+
+    try:
+        return object_exists_and_size(str(storage_path)) is not None
+    except Exception as e:
+        # object_exists_and_size only returns None for a genuine "no such key";
+        # everything else (outage, credentials, network) raises, and none of
+        # those is evidence the object is gone.
+        logger.warning(
+            f"Could not confirm media object {storage_path!r} for file {media_file.id}: "
+            f"{type(e).__name__}: {e}. Treating it as unresolvable."
+        )
+        return False
+
+
+def transcript_is_regenerable(db: Session, media_file: MediaFile) -> bool:
+    """Whether re-running the pipeline could reproduce this file's transcript.
+
+    False only when the file **has** transcript segments and its media object
+    cannot be found — the state in which clearing the transcript destroys the
+    only copy (issue #872). A file with no segments has nothing to lose, so it
+    stays retryable: rows created by the upload, URL-ingestion, media-download
+    and watch-source paths legitimately carry no storage object yet, and
+    retrying one is how the download re-runs.
+
+    Args:
+        db: Database session.
+        media_file: The file about to have its transcript cleared.
+
+    Returns:
+        True when clearing the transcript is safe.
+    """
+    from app.models.media import TranscriptSegment
+
+    has_segments = (
+        db.query(TranscriptSegment.id)
+        .filter(TranscriptSegment.media_file_id == media_file.id)
+        .first()
+        is not None
+    )
+    if not has_segments:
+        return True
+
+    return media_object_is_resolvable(media_file)
+
+
 def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = False) -> bool:
     """Reset a file for retry processing.
 
@@ -609,6 +683,19 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
     for attempt in range(1, _DEADLOCK_RETRY_ATTEMPTS + 1):
         media_file = get_refreshed_object(db, MediaFile, file_id)
         if not media_file:
+            return False
+
+        # Issue #872: the deletes below are unconditional and COMMIT, so a file
+        # whose media cannot be found loses its only copy of the transcript with
+        # nothing left to regenerate it from. The refusal lives here rather than
+        # at the callers because every reprocess/retry/recovery entry point
+        # reaches this one function.
+        if not transcript_is_regenerable(db, media_file):
+            logger.error(
+                f"Refusing to reset file {file_id} for retry: it has transcript segments "
+                f"and its media object ({media_file.storage_path!r}) could not be resolved "
+                "in storage, so re-running the pipeline could not reproduce them."
+            )
             return False
 
         try:

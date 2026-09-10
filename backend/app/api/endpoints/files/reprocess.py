@@ -15,6 +15,15 @@ from app.services import system_settings_service
 
 logger = logging.getLogger(__name__)
 
+#: Stages whose rework needs the ORIGINAL MEDIA, and which delete what they are
+#: about to regenerate: ``transcription`` re-runs ASR (clearing segments,
+#: speakers and analytics) and ``rediarize`` re-runs diarization (clearing
+#: speakers). Every other stage — analytics, summarization, topic extraction,
+#: search indexing, LLM speaker ID — is derived from the transcript alone and is
+#: reproducible with no media at all, so a missing object is no reason to refuse
+#: one. A full reprocess (no stages) always includes transcription.
+MEDIA_REQUIRING_STAGES = frozenset({"transcription", "rediarize"})
+
 
 def _fire_gpu_rework_access_gate(media_file: MediaFile) -> None:
     """Cloud-edition access gate for user-triggered GPU rework (issue #262i).
@@ -422,6 +431,7 @@ def process_file_reprocess(
     """
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import reset_file_for_retry
+    from app.utils.task_utils import transcript_is_regenerable
     from app.utils.uuid_helpers import get_file_by_uuid
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -455,6 +465,25 @@ def process_file_reprocess(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="File storage path not found. Cannot reprocess.",
+            )
+
+        # ...and that the path actually resolves. The truthiness check above is
+        # correct for the repo's empty-string "no media" convention but cannot
+        # see a path that is set and points at nothing — a restored pg_dump whose
+        # objects were never restored, or an imported transcript. Reprocessing
+        # such a file deletes a transcript nothing can regenerate (issue #872),
+        # so refuse here, before any destructive write. `reset_file_for_retry`
+        # refuses too; this exists so the user gets an actionable reason instead
+        # of the generic 500 a False return produces.
+        needs_media = not stages or bool(MEDIA_REQUIRING_STAGES.intersection(stages))
+        if needs_media and not transcript_is_regenerable(db, media_file):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This file's media could not be found in storage, so reprocessing "
+                    "would delete its existing transcript with nothing to regenerate it "
+                    "from. Restore the media file and try again."
+                ),
             )
 
         # Check retry limits based on system settings (unless admin)

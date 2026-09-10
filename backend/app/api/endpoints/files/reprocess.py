@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import ASRConfigurationError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import FileStatus
@@ -579,6 +580,12 @@ def process_file_reprocess(
 
     except HTTPException:
         # Re-raise HTTP exceptions
+        raise
+    except ASRConfigurationError:
+        # A deliberate refusal (e.g. a lite deployment with no cloud ASR
+        # configured, issue #865) — let it reach the global OpenTranscribeError
+        # handler in main.py, which surfaces the real message and a 503
+        # instead of the generic 500 below.
         raise
     except Exception as e:
         logger.exception(f"Error processing reprocess request for file {file_uuid}: {e}")

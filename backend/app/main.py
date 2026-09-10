@@ -19,6 +19,7 @@ from app.core.constants import NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS
 from app.core.constants import NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS
 from app.core.entropy import assert_csprng_available
 from app.core.entropy import validate_secret_entropy
+from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import AuthenticationError
 from app.core.exceptions import EmailDeliveryError
 from app.core.exceptions import LLMServiceError
@@ -1014,6 +1015,7 @@ async def handle_app_error(request, exc: OpenTranscribeError):
         SearchIndexError: 503,
         LLMServiceError: 502,
         EmailDeliveryError: 503,
+        ASRConfigurationError: 503,
     }
     status = status_map.get(type(exc), 500)
     return JSONResponse(

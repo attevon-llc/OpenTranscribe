@@ -18,6 +18,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import delete_media_file
 from app.api.endpoints.files.crud import get_media_file_by_uuid
+from app.core.exceptions import ASRConfigurationError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
@@ -335,6 +336,12 @@ def retry_file_processing(
             }
 
     except HTTPException:
+        raise
+    except ASRConfigurationError:
+        # A deliberate refusal (e.g. a lite deployment with no cloud ASR
+        # configured, issue #865) — let it reach the global OpenTranscribeError
+        # handler in main.py, which surfaces the real message and a 503
+        # instead of the generic 500 below.
         raise
     except Exception as e:
         logger.exception(f"Error retrying file {file_uuid}: {e}")

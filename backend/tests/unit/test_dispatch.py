@@ -37,8 +37,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.config import settings
 from app.core.constants import CeleryQueues
+from app.core.exceptions import ASRConfigurationError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
@@ -231,6 +234,89 @@ class TestResolveGpuQueue:
         db_session.commit()
 
         assert self._resolve(normal_user.id, db_session) == CeleryQueues.CLOUD_ASR
+
+    def test_lite_deployment_with_no_cloud_provider_refuses_instead_of_routing_to_a_dead_queue(
+        self, db_session, normal_user, monkeypatch
+    ):
+        """THE REGRESSION TEST for issue #865's follow-up. A lite deployment
+        (DEPLOYMENT_MODE=lite) ships no local WhisperX — ``docker-compose.lite.yml``
+        scales the 'gpu' consumers to zero replicas. Before this fix, the old bare
+        ``except Exception: logger.debug(...)`` swallowed the factory's
+        ``ASRConfigurationError`` (raised by ``services/asr/factory.py`` for exactly
+        this deployment shape) and fell through to the ordinary 'gpu' routing below —
+        publishing into a queue nothing drains, with the API already having answered
+        200. It must instead propagate so the caller can mark the file ERROR."""
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+
+        with pytest.raises(ASRConfigurationError, match="[Ll]ite"):
+            self._resolve(normal_user.id, db_session)
+
+    def test_lite_deployment_with_a_working_cloud_provider_still_routes_to_cloud_asr(
+        self, db_session, normal_user, monkeypatch
+    ):
+        """Control #1: lite is only a problem when there is nothing else to route
+        to. A configured cloud provider must resolve exactly as it would under a
+        full deployment — same fixture shape as test_cloud_provider_wins_over_split."""
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+        cfg = UserASRSettings(
+            user_id=normal_user.id,
+            name="cloud-test-lite",
+            provider="deepgram",
+            model_name="nova-2",
+            is_active=True,
+        )
+        db_session.add(cfg)
+        db_session.commit()
+        db_session.refresh(cfg)
+        db_session.add(
+            UserSetting(
+                user_id=normal_user.id,
+                setting_key="active_asr_config_id",
+                setting_value=str(cfg.id),
+            )
+        )
+        db_session.commit()
+
+        assert self._resolve(normal_user.id, db_session) == CeleryQueues.CLOUD_ASR
+
+    def test_full_deployment_with_no_config_still_routes_to_gpu(
+        self, db_session, normal_user, monkeypatch
+    ):
+        """Control #2: a full deployment with no ASR config must keep resolving to
+        the always-staffed 'gpu' queue — the refusal is lite-specific, not a general
+        tightening of the no-config fallback."""
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+        monkeypatch.delenv("ENGINE_GPU_SPLIT", raising=False)
+
+        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
+
+    def test_transient_provider_error_still_falls_back_to_gpu_with_a_warning(
+        self, db_session, normal_user, monkeypatch, caplog
+    ):
+        """Control #3: the taxonomy split itself. A transient failure (e.g. a DB
+        hiccup while loading the user's ASR config) is NOT a deliberate refusal —
+        it must still fall back to 'gpu' exactly as before, but now log at WARNING
+        instead of the previous DEBUG so an operator can see resolution is failing.
+        A bare ``except Exception: raise`` would wrongly pass the regression test
+        above alone; asserting the WARNING here is what proves the split is by
+        exception type, not just "ASRConfigurationError happens to be raised"."""
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
+
+        def _boom(user_id, db):
+            raise SQLAlchemyError("connection reset")
+
+        monkeypatch.setattr("app.services.asr.factory.ASRProviderFactory.create_for_user", _boom)
+
+        with caplog.at_level("WARNING"):
+            result = self._resolve(normal_user.id, db_session)
+
+        assert result == CeleryQueues.GPU
+        assert any(
+            record.levelname == "WARNING" and "ASR provider resolution failed" in record.message
+            for record in caplog.records
+        )
 
 
 class TestGpuTranscribeConsumerPresent:
@@ -595,3 +681,31 @@ class TestDispatchBatchTranscription:
         db_session.refresh(media_file)
         assert media_file.status == FileStatus.PROCESSING
         assert db_session.query(Task).filter(Task.id == result["task_ids"][0]).one() is not None
+
+
+class TestDispatchTranscriptionPipelineAsrRefusal:
+    """``dispatch_transcription_pipeline()`` — the single-file caller of
+    ``_resolve_gpu_queue()`` — must surface a deliberate ASR refusal as a real file
+    state, not merely propagate an exception with the file left dangling at
+    PROCESSING and no explanation (issue #865's follow-up)."""
+
+    @staticmethod
+    def _dispatch(file_uuid: str) -> str:
+        from app.tasks.transcription.dispatch import dispatch_transcription_pipeline
+
+        return dispatch_transcription_pipeline(file_uuid=file_uuid)
+
+    def test_lite_with_no_cloud_provider_raises_marks_error_and_creates_no_task(
+        self, db_session, dispatch_seams, make_media_file, normal_user, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+        media_file = make_media_file(FileStatus.PENDING)
+
+        with pytest.raises(ASRConfigurationError):
+            self._dispatch(str(media_file.uuid))
+
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.ERROR
+        assert "lite" in (media_file.last_error_message or "").lower()
+        assert db_session.query(Task).filter(Task.media_file_id == media_file.id).first() is None

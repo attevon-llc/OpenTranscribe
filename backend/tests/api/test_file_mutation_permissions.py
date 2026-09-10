@@ -243,9 +243,19 @@ MUTATING_ENDPOINTS: list[tuple[str, int]] = [
     # able to notice a NEW call site rather than just counting them.
     ("files/__init__.py", 1156),
     ("files/__init__.py", 1223),
-    ("files/crud.py", 997),
-    ("files/crud.py", 1088),
-    ("files/crud.py", 1176),
+    # Re-anchored again, +1: the release/v0.5.0-blockers merge added a line to
+    # files/crud.py above all three. ⚠️ The previous re-anchoring was done against
+    # the lane's own pre-merge tree, so the merge shifted them straight back out
+    # and this guard sat RED on the integration branch — a file:line table has to
+    # be re-derived AFTER the merge, not before it. Re-derive, don't hand-edit:
+    #   python3 -c "import ast,pathlib;[print(p.name,n.lineno) for p in
+    #   [pathlib.Path('backend/app/api/endpoints/files/crud.py')]
+    #   for n in ast.walk(ast.parse(p.read_text())) if isinstance(n,ast.Call)
+    #   and any(k.arg=='min_permission' and getattr(k.value,'value',None)=='editor'
+    #   for k in n.keywords)]"
+    ("files/crud.py", 998),
+    ("files/crud.py", 1089),
+    ("files/crud.py", 1177),
     ("files/management.py", 207),
     ("files/management.py", 259),
     ("files/management.py", 357),

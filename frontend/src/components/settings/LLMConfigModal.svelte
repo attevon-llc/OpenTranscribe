@@ -15,6 +15,15 @@
 
   const dispatch = createEventDispatcher();
 
+  // Issue #873: a new configuration's context window must never be a bare
+  // literal. This mirrors the backend schema's own default
+  // (`UserLLMSettingsBase.max_tokens = 8192`) so an unrecognized/uncatalogued
+  // provider still gets a sane starting point instead of a value below what
+  // the server itself defaults to. The real fix is below — the provider-select
+  // handler overwrites this with `ProviderDefaults.max_context_length` from
+  // the server's catalog as soon as a provider with a known window is picked.
+  const SCHEMA_DEFAULT_MAX_TOKENS = 8192;
+
   // Form data
   let formData = {
     name: '',
@@ -22,7 +31,7 @@
     model_name: '',
     api_key: '',
     base_url: '',
-    max_tokens: 4096,
+    max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
     temperature: '0.3',
     is_active: true,
     is_shared: false
@@ -39,7 +48,7 @@
     model_name: '',
     api_key: '',
     base_url: '',
-    max_tokens: 4096,
+    max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
     temperature: '0.3',
     is_active: true,
     is_shared: false
@@ -191,7 +200,7 @@
       model_name: '',
       api_key: '',
       base_url: '',
-      max_tokens: 4096,
+      max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
       temperature: '0.3',
       is_active: true,
       is_shared: false
@@ -203,6 +212,12 @@
     showOpenAIModelSelector = false;
     anthropicModels = [];
     showAnthropicModelSelector = false;
+    // Allow the provider-select handler (below) to re-apply the catalog
+    // context window the next time this provider is picked in a fresh form —
+    // otherwise the guard there would see the same provider value as last
+    // time and skip re-populating `max_tokens` after the reset above.
+    previousProvider = '';
+    lastContextWindowProvider = '';
   }
 
 
@@ -417,6 +432,19 @@
   // Track provider changes to reset defaults
   let previousProvider: string = '';
 
+  // Issue #873: tracks which provider's catalog context window has already
+  // been applied to `formData.max_tokens`, separately from `previousProvider`
+  // above. Svelte's two-way `bind:value={formData.max_tokens}` invalidates
+  // the whole `formData` object on every keystroke, which re-runs this
+  // reactive block even though `formData.provider` hasn't changed — an
+  // unconditional assignment below would silently overwrite the token the
+  // user just typed. Guarding on "have we already applied this provider's
+  // catalog value" (rather than "did the provider just change") makes the
+  // default apply exactly once per provider selection, on both the very
+  // first pick and a later switch, and never again until the provider
+  // changes again.
+  let lastContextWindowProvider: string = '';
+
   // Apply provider defaults when provider changes
   $: if (formData.provider) {
     const defaults = getProviderDefaults(formData.provider);
@@ -440,6 +468,16 @@
         if (!formData.model_name && defaults.default_model) {
           formData.model_name = defaults.default_model;
         }
+      }
+
+      // Populate the context window from the server's provider catalog —
+      // never leave it at a hardcoded literal. Falls back to the schema
+      // default when the catalog has no entry for this provider (e.g.
+      // Bedrock/custom, whose real maximum varies by model and is never
+      // guessed). Still fully admin-editable afterward.
+      if (lastContextWindowProvider !== formData.provider) {
+        formData.max_tokens = defaults.max_context_length ?? SCHEMA_DEFAULT_MAX_TOKENS;
+        lastContextWindowProvider = formData.provider;
       }
 
       // Track current provider for next change detection
@@ -796,7 +834,7 @@
                   bind:value={formData.max_tokens}
                   disabled={saving}
                   class="form-control"
-                  min="100"
+                  min="512"
                   max="2000000"
                 />
                 <p class="field-desc">{$t('llm.maxTokensHelp')}</p>

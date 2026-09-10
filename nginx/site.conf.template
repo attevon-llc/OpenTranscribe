@@ -93,6 +93,23 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
+        # proxy_set_header is an ARRAY directive: declaring Upgrade/Connection above
+        # discards EVERY server-level proxy_set_header for this location. Without the
+        # five restated below, the backend saw nginx's $proxy_host default
+        # (Host: backend:8080), no forwarded scheme, and the CLIENT's own forged
+        # X-Real-IP / X-Forwarded-For passed straight through. The first two make
+        # api/websockets._request_origin() reconstruct backend:8080 instead of the
+        # address the browser used, so the #903 same-origin gate refused every
+        # legitimate handshake in this deployment mode.
+        #
+        # $http_host, not $host: $host drops the :port, and the same-origin
+        # comparison is against a browser Origin that carries one.
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $http_host;
+
         # WebSocket-specific timeouts
         proxy_read_timeout 86400s;
         proxy_send_timeout 86400s;

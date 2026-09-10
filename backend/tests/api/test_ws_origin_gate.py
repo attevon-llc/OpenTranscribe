@@ -111,6 +111,57 @@ def test_a_same_origin_handshake_still_connects(client):
     assert (frame["code"], frame["reason"]) == _PAST_THE_GATE, frame
 
 
+def test_the_same_origin_branch_works_behind_a_tls_proxy_on_a_nonstandard_port(client):
+    """The shape a REAL deployment produces — which the ``testserver`` control above
+    does not, and that gap is why the gate shipped refusing production traffic.
+
+    ``testserver`` has no port and no ``X-Forwarded-Proto``, so the control passes
+    without ever exercising either half of ``_request_origin``. Every shipped mode
+    puts the browser on a port (``FRONTEND_PORT=5173``, ``PKI_HTTPS_PORT=5182``) and
+    terminates TLS at nginx, so the pair below — and not the control — is what has to
+    work. It only does when nginx forwards ``Host $http_host`` (port intact) and
+    ``X-Forwarded-Proto $scheme``; see ``unit/test_nginx_websocket_origin_headers.py``,
+    which pins that on the nginx side.
+    """
+    frame = _connect_and_read_first_frame(
+        client,
+        headers={
+            "Host": "box.example:5182",
+            "X-Forwarded-Proto": "https",
+            "Origin": "https://box.example:5182",
+        },
+    )
+
+    assert (frame["code"], frame["reason"]) == _PAST_THE_GATE, frame
+
+
+def test_a_port_stripped_host_no_longer_matches_the_browsers_origin(client):
+    """Characterisation, and deliberately asserting the REFUSAL.
+
+    This is the exact traffic ``proxy_set_header Host $host`` produced: nginx drops
+    the ``:port``, so the backend reconstructs ``https://box.example`` and compares it
+    to a browser ``Origin`` of ``https://box.example:5182``. The gate is right to
+    refuse — a different port IS a different origin — so the defect was in the proxy
+    config, not here.
+
+    Kept as a test so the tempting "fix" is blocked: loosening the comparison to
+    ignore ports would make this pass, and would admit any other service sharing the
+    host, which is precisely the cross-origin socket #903 exists to refuse.
+    """
+    with pytest.raises(WebSocketDisconnect) as excinfo:
+        with client.websocket_connect(
+            "/api/ws",
+            headers={
+                "Host": "box.example",
+                "X-Forwarded-Proto": "https",
+                "Origin": "https://box.example:5182",
+            },
+        ):
+            pytest.fail("a port-stripped Host was treated as same-origin")
+
+    assert excinfo.value.code == 4403, excinfo.value.reason
+
+
 def test_a_handshake_with_no_origin_header_still_connects(client):
     """Control: non-browser clients are unaffected.
 

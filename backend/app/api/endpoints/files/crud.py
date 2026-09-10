@@ -365,6 +365,7 @@ def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -
     error_info = ErrorCategorizationService.get_error_info(error_message)
     response.error_category = error_info["category"]
     response.error_suggestions = error_info["suggestions"]
+    response.user_message = error_info["user_message"]
     response.is_retryable = error_info["is_retryable"]
 
 

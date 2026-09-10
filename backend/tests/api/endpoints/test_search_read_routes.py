@@ -90,17 +90,25 @@ def test_count_returns_the_engines_total(client, user_token_headers):
 
 
 def test_count_is_scoped_to_the_caller_and_optionally_one_file(
-    client, user_token_headers, normal_user
+    client, db_session, user_token_headers, normal_user
 ):
     """Every count carries the caller's own id, and ``file_uuid`` narrows to one file.
 
     This is the isolation invariant: without the ``accessible_user_ids`` filter the
     find bar would report matches from other accounts' transcripts. Not observable
     from the response, hence the substituted engine.
+
+    ``file_uuid`` must name a REAL file the caller can see (issue #817): the
+    endpoint now resolves it through the permission chokepoint before ever
+    reaching OpenSearch, so a made-up uuid 404s rather than reaching the engine
+    at all — see ``test_search_count_quarantine.py`` for that behaviour.
     """
+    from tests.user_owned_rows import make_media_file
+
     engine = _StandInEngine(total=1)
     index_patch, infra_patch = _standin_count_engine(engine)
-    file_uuid = "22222222-2222-4222-8222-222222222222"
+    owned = make_media_file(db_session, int(normal_user.id))
+    file_uuid = str(owned.uuid)
 
     with index_patch, infra_patch:
         client.get(COUNT, headers=user_token_headers, params={"q": "pricing"})
@@ -160,62 +168,13 @@ def test_suggestions_rejects_a_zero_limit(client, user_token_headers):
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_suggestions_drops_a_quarantined_files_title_for_a_plain_user(
-    client, db_session, user_token_headers, normal_user
-):
-    """A taken-down file must not surface in autocomplete.
-
-    The chunks index carries no quarantine field, so the handler re-checks against
-    Postgres — the DMCA/abuse path's only defence on this surface. The engine is
-    substituted so the two candidate titles are known; the quarantine decision under
-    test is made in the handler against a real row.
-    """
-    from tests.user_owned_rows import make_media_file
-
-    hidden = make_media_file(db_session, int(normal_user.id))
-    visible = make_media_file(db_session, int(normal_user.id))
-    hidden.is_quarantined = True
-    db_session.commit()
-
-    suggestions = [
-        {"type": "title", "text": "hidden recording", "file_uuid": str(hidden.uuid)},
-        {"type": "title", "text": "visible recording", "file_uuid": str(visible.uuid)},
-        {"type": "speaker", "text": "Dana"},
-    ]
-    with patch(
-        "app.services.search.hybrid_search_service.HybridSearchService.get_suggestions",
-        return_value=suggestions,
-    ):
-        response = client.get(SUGGESTIONS, headers=user_token_headers, params={"q": "rec"})
-
-    assert response.status_code == status.HTTP_200_OK
-    texts = [s["text"] for s in response.json()]
-    assert texts == ["visible recording", "Dana"]
-
-
-def test_suggestions_keeps_a_quarantined_title_for_an_admin(
-    client, db_session, admin_token_headers, admin_user
-):
-    """The control for the filter above: admins keep visibility for review.
-
-    Without this, a handler that dropped every ``file_uuid``-bearing suggestion
-    would pass the test above and quietly break the moderation view.
-    """
-    from tests.user_owned_rows import make_media_file
-
-    hidden = make_media_file(db_session, int(admin_user.id))
-    hidden.is_quarantined = True
-    db_session.commit()
-
-    suggestions = [{"type": "title", "text": "hidden recording", "file_uuid": str(hidden.uuid)}]
-    with patch(
-        "app.services.search.hybrid_search_service.HybridSearchService.get_suggestions",
-        return_value=suggestions,
-    ):
-        response = client.get(SUGGESTIONS, headers=admin_token_headers, params={"q": "rec"})
-
-    assert response.status_code == status.HTTP_200_OK
-    assert [s["text"] for s in response.json()] == ["hidden recording"]
+# The quarantine exclusion for suggestions used to be a DB post-filter here,
+# covering titles only (and unable to reach the speaker leg at all, since a
+# speaker suggestion carries no file linkage to post-filter against). It has
+# moved INTO ``HybridSearchService.get_suggestions`` itself (issue #817), so
+# mocking that method — as the two tests this comment replaced did — would
+# bypass the very logic under test. See ``test_search_suggestions_quarantine.py``
+# for the exclusion's coverage, at the OpenSearch-body level.
 
 
 def test_suggestions_requires_authentication(client):
@@ -234,13 +193,14 @@ def test_suggestions_engine_is_asked_for_the_callers_own_scope(
     """
     calls: list[dict] = []
 
-    def _record(_self, *, prefix, user_id, limit, organization_id):
+    def _record(_self, *, prefix, user_id, limit, organization_id, is_admin):
         calls.append(
             {
                 "prefix": prefix,
                 "user_id": user_id,
                 "limit": limit,
                 "organization_id": organization_id,
+                "is_admin": is_admin,
             }
         )
         return []
@@ -254,5 +214,11 @@ def test_suggestions_engine_is_asked_for_the_callers_own_scope(
 
     assert response.status_code == status.HTTP_200_OK
     assert calls == [
-        {"prefix": "pric", "user_id": normal_user.id, "limit": 5, "organization_id": None}
+        {
+            "prefix": "pric",
+            "user_id": normal_user.id,
+            "limit": 5,
+            "organization_id": None,
+            "is_admin": False,
+        }
     ]

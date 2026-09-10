@@ -282,6 +282,7 @@ def search_transcripts(
 def search_match_count(
     q: str = Query(..., min_length=1, description="Search query"),
     file_uuid: str | None = Query(None, description="Scope the count to a single file (its UUID)."),
+    db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ) -> dict[str, int]:
@@ -292,13 +293,53 @@ def search_match_count(
     hybrid ``/search`` (no query embedding, RRF pipeline, snippets, or highlighting),
     so it stays fast under concurrent use: the find bar polls it as the user types to
     learn whether matches exist beyond the segments currently loaded in the browser.
+
+    A ``file_uuid`` scope is resolved through the permission chokepoint BEFORE
+    OpenSearch is ever touched (issue #817): without this, the endpoint answered
+    a real chunk count for a file the caller could not otherwise see at all — a
+    quarantined file, or one outside the caller's tenant — making the count a
+    content oracle for exactly the recordings a takedown or the tenant gate
+    exists to hide. The whole-corpus (no ``file_uuid``) case has no single
+    resource to check permission against, so ``count_matches`` excludes
+    quarantined files from the count itself instead.
+
+    Raises:
+        HTTPException: 404/403 from the permission chokepoint when ``file_uuid``
+            names a file the caller cannot see; 503 when the quarantine
+            exclusion — or the count query itself — could not be resolved.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
+    from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
+    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
+    if file_uuid:
+        # Raises 404/403 on its own — the same chokepoint every other
+        # single-file read surface uses, and it must run before any
+        # OpenSearch call this endpoint makes.
+        get_file_by_uuid_with_permission(
+            db,
+            file_uuid,
+            ctx.user.id,
+            is_admin=ctx.user.is_admin,
+            organization_id=ctx.org_id,
+        )
 
     service = HybridSearchService()
-    total = service.count_matches(
-        q, user_id=ctx.user.id, file_uuid=file_uuid, organization_id=ctx.org_id
-    )
+    try:
+        total = service.count_matches(
+            q,
+            user_id=ctx.user.id,
+            file_uuid=file_uuid,
+            organization_id=ctx.org_id,
+            is_admin=ctx.user.is_admin,
+        )
+    except QuarantineExclusionUnavailableError as e:
+        # Literal 503 to match get_available_filters' raise below; this module
+        # does not import `fastapi.status`.
+        raise HTTPException(
+            status_code=503,
+            detail="Search is temporarily unavailable.",
+        ) from e
     return {"total": total}
 
 
@@ -409,7 +450,6 @@ def search_suggestions(
     limit: int = Query(8, ge=1, le=20, description="Max suggestions"),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
-    db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """
     Auto-complete suggestions as user types.
@@ -417,42 +457,42 @@ def search_suggestions(
     Returns ranked suggestions from title prefix matches,
     speaker name matches, and frequent content terms.
 
+    Quarantined (DMCA/abuse takedown) files are excluded on BOTH the title and
+    speaker legs inside ``HybridSearchService.get_suggestions`` itself (issue
+    #817). This replaces a DB post-filter that used to live here and covered
+    titles only — the speaker-name leg carries no file linkage to post-filter
+    against, so a quarantined file's speaker names leaked into autocomplete
+    with no way for this endpoint to catch it after the fact. See that
+    method's docstring for the exclusion; this endpoint only shapes a
+    resolution failure into a 503.
+
     Args:
         q: Search prefix text.
         limit: Maximum number of suggestions.
 
     Returns:
         List of suggestion items with type and text.
+
+    Raises:
+        HTTPException: 503 when the quarantine exclusion could not be applied.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
+    from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
 
     search_service = HybridSearchService()
-    suggestions = search_service.get_suggestions(
-        prefix=q,
-        user_id=ctx.user.id,
-        limit=limit,
-        organization_id=ctx.org_id,
-    )
-
-    # Abuse/DMCA: like the results page, the chunks index carries no quarantine
-    # field — drop taken-down files' titles from autocomplete against the DB
-    # (admins keep visibility for review). Speaker-name suggestions carry no
-    # file linkage and stay as-is.
-    if suggestions and not ctx.user.is_admin:
-        from app.models.media import MediaFile
-
-        uuids = [s["file_uuid"] for s in suggestions if s.get("file_uuid")]
-        if uuids:
-            quarantined = {
-                str(row[0])
-                for row in db.query(MediaFile.uuid)
-                .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
-                .all()
-            }
-            if quarantined:
-                suggestions = [s for s in suggestions if str(s.get("file_uuid")) not in quarantined]
-
-    return suggestions
+    try:
+        return search_service.get_suggestions(
+            prefix=q,
+            user_id=ctx.user.id,
+            limit=limit,
+            organization_id=ctx.org_id,
+            is_admin=ctx.user.is_admin,
+        )
+    except QuarantineExclusionUnavailableError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Search suggestions are temporarily unavailable.",
+        ) from e
 
 
 @router.get("/filters")

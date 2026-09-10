@@ -250,6 +250,22 @@ def export_conversation(
     ]
     cfg = resolve_export_policy(db, ctx.user.id)
 
+    # A citation is persisted at answer time and never re-checked against the
+    # file's CURRENT quarantine state, so a file taken down after this
+    # conversation cited it would otherwise export fully readable — the same
+    # gap #817 closed for the media-preview and transcript-segment routes.
+    # Must run BEFORE `db.close()` below: it needs the session to check
+    # `MediaFile.is_quarantined`.
+    from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
+
+    filtered_citation_lists = drop_quarantined_citations_bulk(
+        db, [m.citations for m in raw_messages], is_admin=ctx.user.is_admin
+    )
+    raw_messages = [
+        dataclasses.replace(m, citations=citations)
+        for m, citations in zip(raw_messages, filtered_citation_lists, strict=True)
+    ]
+
     # Phase 2: end the read transaction before any detector runs. Everything above is
     # now plain data, so nothing can lazily re-open it.
     db.close()

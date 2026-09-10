@@ -617,6 +617,19 @@ class QuarantineExclusionUnavailableError(RuntimeError):
     """
 
 
+class SearchCountUnavailableError(QuarantineExclusionUnavailableError):
+    """``count_matches`` could not produce a trustworthy count.
+
+    A subclass of :class:`QuarantineExclusionUnavailableError`, not a sibling —
+    ``search.py``'s single ``except QuarantineExclusionUnavailableError`` must
+    catch both "the quarantine exclusion set could not be resolved" and "the
+    OpenSearch query itself failed", because both mean the same thing to the
+    caller: this number cannot be trusted, and reporting it as ``0`` is a
+    content oracle (issue #817) — a caller polling this endpoint while
+    searching for a term learns whether it exists somewhere they cannot see.
+    """
+
+
 def _quarantined_file_uuids() -> list[str]:
     """Every currently-quarantined file's uuid, for excluding facets built from it.
 
@@ -1309,6 +1322,7 @@ class HybridSearchService:
         user_id: int,
         limit: int = 8,
         organization_id: int | None = None,
+        is_admin: bool = False,
     ) -> list[dict[str, Any]]:
         """Get auto-complete suggestions.
 
@@ -1317,9 +1331,19 @@ class HybridSearchService:
             user_id: Current user ID.
             limit: Maximum number of suggestions.
             organization_id: Active org id (None = personal) — tenant gate.
+            is_admin: When True, skip the quarantine exclusion on both legs —
+                matches the admin review bypass ``get_available_filters`` and
+                the results page already apply.
 
         Returns:
             List of suggestion dicts with type, text, and optional metadata.
+
+        Raises:
+            QuarantineExclusionUnavailableError: For a non-admin, the quarantine
+                exclusion set could not be resolved completely, so neither the
+                title leg nor the speaker leg can be proven free of taken-down
+                content. Fail closed — the caller turns this into a 503 rather
+                than serving suggestions built from an unproven exclusion.
         """
         if not opensearch_client:
             return []
@@ -1349,6 +1373,20 @@ class HybridSearchService:
             chunk_plane_clause(),
         ]
 
+        # Quarantine is Postgres-only (`takedown_service.quarantine_file` never
+        # touches OpenSearch), so — same reasoning as `get_available_filters` —
+        # BOTH legs below need an explicit exclusion, not a field to filter on:
+        # the title leg used to be covered only by a DB post-filter in search.py
+        # (which this replaces), and the speaker leg carries no file linkage at
+        # all, so nothing could ever post-filter it — a quarantined file's
+        # speaker names leaked into autocomplete for everyone who had access
+        # before the takedown, forever (issue #817). Deliberately OUTSIDE the
+        # try below: a QuarantineExclusionUnavailableError must reach the
+        # endpoint, not be folded into the empty-suggestions fallback the
+        # `except Exception` below returns — same posture as #876.
+        quarantined_uuids = [] if is_admin else _quarantined_file_uuids()
+        scope_must_not = [{"terms": {"file_uuid": quarantined_uuids}}] if quarantined_uuids else []
+
         try:
             # Multi-search for title and speaker suggestions
             msearch_body = [
@@ -1360,6 +1398,7 @@ class HybridSearchService:
                         "bool": {
                             "must": [{"match_phrase_prefix": {"title": prefix}}],
                             "filter": scope_filter,
+                            **({"must_not": scope_must_not} if scope_must_not else {}),
                         }
                     },
                     "_source": ["title", "file_uuid"],
@@ -1373,6 +1412,7 @@ class HybridSearchService:
                         "bool": {
                             "must": [{"prefix": {"speaker": {"value": prefix.lower()}}}],
                             "filter": scope_filter,
+                            **({"must_not": scope_must_not} if scope_must_not else {}),
                         }
                     },
                     "aggs": {"speakers": {"terms": {"field": "speaker", "size": 4}}},
@@ -1604,6 +1644,7 @@ class HybridSearchService:
         user_id: int,
         file_uuid: str | None = None,
         organization_id: int | None = None,
+        is_admin: bool = False,
     ) -> int:
         """Count transcript chunks matching ``query`` (optionally within one file).
 
@@ -1614,6 +1655,34 @@ class HybridSearchService:
         serves the searches concurrently). Returns the exact matching-chunk count
         (``track_total_hits``), used purely as a "matches exist beyond the loaded
         window" signal for progressive loading.
+
+        ``client is None`` and an empty/whitespace ``query`` both still return ``0``
+        rather than raising — the first is "lite mode" (no OpenSearch client at all),
+        the second is "nothing to search for". Neither is a quarantine-exclusion
+        failure and neither has content to withhold, so ``0`` is the honest answer.
+
+        Args:
+            query: The search text.
+            user_id: Current user id — scopes to ``accessible_user_ids``.
+            file_uuid: Optional single-file scope. Callers (``search.py``) resolve
+                this through ``get_file_by_uuid_with_permission`` BEFORE calling
+                here, which already 404s a quarantined file — so this method does
+                not additionally apply the quarantine exclusion when scoped to one
+                file; there is nothing left for it to hide.
+            organization_id: Active org id (None = personal) — tenant gate.
+            is_admin: When True, skip the quarantine exclusion — the admin review
+                bypass every other quarantine-aware read surface applies.
+
+        Returns:
+            The exact matching-chunk count.
+
+        Raises:
+            SearchCountUnavailableError: The quarantine exclusion set could not be
+                resolved, or the OpenSearch query itself failed. Either way this
+                count cannot be trusted (issue #817) — reporting it as ``0`` would
+                make this endpoint a content oracle for a file the caller cannot
+                see, since "0 matches" and "the search itself failed" would be
+                indistinguishable to the find bar.
         """
         clean = (query or "").strip()
         if not clean:
@@ -1632,17 +1701,33 @@ class HybridSearchService:
             file_uuid=file_uuid,
             organization_id=organization_id,
         )
+        # Same posture as `get_available_filters`: quarantine is Postgres-only,
+        # so an unscoped (whole-corpus) count has to exclude taken-down files
+        # itself. A file-scoped count needs no exclusion of its own — the
+        # caller's permission check already refused the request if that one
+        # file is quarantined.
+        quarantined_uuids = [] if (is_admin or file_uuid) else _quarantined_file_uuids()
+        query_must_not = [{"terms": {"file_uuid": quarantined_uuids}}] if quarantined_uuids else []
+
         text_query = self._build_text_query(clean, ["content", "content.exact"])
         body = {
             "size": 0,
             "track_total_hits": True,
-            "query": {"bool": {"filter": filters, "must": [text_query]}},
+            "query": {
+                "bool": {
+                    "filter": filters,
+                    "must": [text_query],
+                    **({"must_not": query_must_not} if query_must_not else {}),
+                }
+            },
         }
         try:
             resp = client.search(index=settings.OPENSEARCH_CHUNKS_INDEX, body=body)
-        except Exception as exc:  # noqa: BLE001 — degrade to "unknown" on any OS error
+        except Exception as exc:
             logger.warning(f"count_matches failed: {exc}")
-            return 0
+            raise SearchCountUnavailableError(
+                "The transcript match count could not be computed."
+            ) from exc
 
         total = resp.get("hits", {}).get("total", {})
         if isinstance(total, dict):

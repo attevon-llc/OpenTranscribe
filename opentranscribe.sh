@@ -441,10 +441,8 @@ effective_deployment_mode() {
     echo "$mode" | tr '[:upper:]' '[:lower:]'
 }
 
-# arm64 hosts: the FULL (CUDA) image has no arm64 leg, so default to lite (#680).
-#
-# This is not a preference, it is what is publishable. Three independent reasons,
-# each one sufficient on its own:
+# arm64 hosts: the FULL (CUDA) image has no working arm64 CAPABILITY, so default
+# to lite (#680). Three independent reasons, each one sufficient on its own:
 #
 #   1. No CUDA/torch parity. The cu128 index has no aarch64 torch wheel for the
 #      pinned version, and the 14 nvidia-*-cu12 dependencies are gated
@@ -457,17 +455,25 @@ effective_deployment_mode() {
 #      *-provision-arm64), so the sidecar binary the full image COPYs in does
 #      not exist for this architecture.
 #
-# Consequently `davidamacey/opentranscribe-backend:<version>` publishes an
-# amd64-only manifest index. Pulling it on arm64 fails with "no matching
-# manifest for linux/arm64" — which is the CORRECT, loud outcome, and much
-# better than the pre-#680 state where a degraded arm64 image was published
-# under that same tag and started successfully before failing at model-load
-# time inside a worker.
+# ⚠️ "No arm64 manifest at all, so the pull fails loudly" is NOT the current
+# state and must not be assumed to be — `docker manifest inspect
+# davidamacey/opentranscribe-backend:latest` (checked 2026-09-09) still lists
+# BOTH linux/amd64 AND linux/arm64 platforms. That arm64 leg is exactly the
+# pre-#680 DEGRADED build described above: it pulls fine, starts, and only then
+# fails (or silently runs CPU-only) at model-load time inside a worker — not the
+# clean "no matching manifest for linux/arm64" refusal this comment used to
+# promise. `scripts/CLAUDE.md`'s `cuda-arm64` capability is "RESERVED and NOT
+# BUILT" going forward, but nothing here retracts what an OLDER tag already
+# published, and there is no cleanup step that removes it. This is why routing
+# arm64 (and lite generally) to the LITE image matters MORE, not less: an arm64
+# host that pulled the full/CUDA tag would not fail loudly, it would silently
+# get the degraded build back.
 #
 # So on arm64 this switches the run to DEPLOYMENT_MODE=lite (the CPU-only image,
-# which DOES publish an arm64 leg) and says why. Override with
-# OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true if you have built a full arm64 image
-# yourself — nothing here can produce one for you.
+# which publishes a REAL, capability-matched arm64 leg) and says why. Override
+# with OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true if you have built a full arm64
+# image yourself — nothing here can produce one for you, and nothing here
+# protects you from the degraded published leg above if you go looking for one.
 #
 # MUST be called as a plain statement, never through `$(...)` — same subshell
 # hazard documented on pin_diar_native_image_for_blackwell: the `export` below
@@ -484,13 +490,16 @@ arm64_deployment_preflight() {
 
     if [ "${OPENTRANSCRIBE_FORCE_FULL_ON_ARM64:-}" = "true" ]; then
         echo -e "${YELLOW}⚠️  arm64 host with OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true — NOT switching to lite${NC}" >&2
-        echo -e "${YELLOW}   The published full/CUDA image has no arm64 manifest. Unless you built one${NC}" >&2
-        echo -e "${YELLOW}   yourself, the pull will fail with 'no matching manifest for linux/arm64'.${NC}" >&2
+        echo -e "${YELLOW}   Warning: some published full/CUDA tags (including :latest) still carry an${NC}" >&2
+        echo -e "${YELLOW}   arm64 manifest left over from before issue #680 — it is a DEGRADED CPU-only${NC}" >&2
+        echo -e "${YELLOW}   build, not a working GPU image. The pull may SUCCEED and the stack may${NC}" >&2
+        echo -e "${YELLOW}   START, then fail (or silently run CPU-only) at model-load time. Unless you${NC}" >&2
+        echo -e "${YELLOW}   built a real full arm64 image yourself, use lite instead.${NC}" >&2
         return 0
     fi
 
     echo -e "${YELLOW}🖥️  arm64 host detected — defaulting to the lite (CPU-only) image${NC}" >&2
-    echo -e "${YELLOW}   The full/CUDA image is published for linux/amd64 ONLY. On arm64:${NC}" >&2
+    echo -e "${YELLOW}   The full/CUDA image has no WORKING arm64 build. On arm64:${NC}" >&2
     echo -e "${YELLOW}     • no aarch64 CUDA torch wheel exists at the pinned version, and the${NC}" >&2
     echo -e "${YELLOW}       nvidia-*-cu12 dependencies are gated platform_machine == \"x86_64\"${NC}" >&2
     echo -e "${YELLOW}     • onnxruntime-gpu publishes no aarch64 wheels at all${NC}" >&2
@@ -610,6 +619,61 @@ pin_diar_native_image_for_blackwell() {
     if [ -f .env ] && ! grep -qE '^[[:space:]]*(export[[:space:]]+)?DIAR_NATIVE_IMAGE=' .env 2>/dev/null; then
         printf '\nDIAR_NATIVE_IMAGE=%s\n' "$pinned" >> .env
     fi
+}
+
+# Pin DIAR_NATIVE_IMAGE to the lite backend image for a lite deployment, so
+# docker-compose.diar-native.yml's own `${DIAR_NATIVE_IMAGE:-...}` interpolation
+# resolves to the CPU-only lite image instead of falling through to the FULL/CUDA
+# image's `${OT_IMAGE_TAG:-latest}` default (issue #896). Without this, a lite
+# deployment — including every arm64 host, which arm64_deployment_preflight
+# defaults to lite — pulled the full CUDA image for the diarization sidecar: a
+# large, pointless download on amd64, and an outright failure on arm64 (the
+# published CUDA repository has no arm64 leg for diar-native's binary; see
+# scripts/CLAUDE.md's `cuda-arm64` reservation note).
+#
+# Mirrors opentr.sh's (dev-only) one-liner:
+#   [ -n "${LITE_FLAG:-}" ] && export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}}"
+# and follows the SAME calling contract as pin_diar_native_image_for_blackwell:
+# MUST be called as a plain statement, before `compose_files=$(get_compose_files)`,
+# never through `$(...)` — an export made inside a command-substitution subshell
+# dies with that subshell before the `docker compose` command that needs it runs.
+#
+# ⚠️ Deliberately NEVER persisted to .env, unlike pin_diar_native_image_for_blackwell
+# above. Blackwell's pin is safe to persist because `:blackwell` is a fixed,
+# non-versioned tag that `update --version`/`--rollback` never rewrite. A
+# `OT_IMAGE_TAG`-derived value is not safe the same way: the `update)` case arm
+# only ever rewrites `OT_IMAGE_TAG` itself, so a resolved `...-lite:vX.Y.Z` string
+# written here once would silently stop tracking every later `update --version` —
+# defeating issue #895's whole point for exactly the one service that needed the
+# same fix. Re-deriving it on every call (below) instead of persisting means the
+# in-script call sites (start/stop/restart/status/update/rollback) always resolve
+# the CURRENT `OT_IMAGE_TAG`; only the documented piped `compose-files` one-liner
+# usage (a separate `docker compose` process that cannot see an in-process export)
+# does not carry this pin — the same limitation `resolve_diar_native_downloader_image()`
+# already has no way around either.
+pin_diar_native_image_for_lite() {
+    [ "$(effective_deployment_mode)" = "lite" ] || return 0
+
+    # An operator's own DIAR_NATIVE_IMAGE pin always wins.
+    local existing
+    existing=$(read_env_value DIAR_NATIVE_IMAGE)
+    if [ -n "$existing" ]; then
+        export DIAR_NATIVE_IMAGE="$existing"
+        return 0
+    fi
+
+    # BACKEND_LITE_IMAGE (the operator's own lite tag) next, ahead of the
+    # hardcoded davidamacey default — same precedence opentr.sh's dev script uses.
+    local lite_image
+    lite_image=$(read_env_value BACKEND_LITE_IMAGE)
+    if [ -n "$lite_image" ]; then
+        export DIAR_NATIVE_IMAGE="$lite_image"
+        return 0
+    fi
+
+    local tag
+    tag=$(read_env_value OT_IMAGE_TAG)
+    export DIAR_NATIVE_IMAGE="davidamacey/opentranscribe-backend-lite:${tag:-latest}"
 }
 
 # Whether this deployment should run GPU split — celery-worker-gpu-transcribe /
@@ -1592,6 +1656,7 @@ case "${1:-help}" in
         # ${DEPLOYMENT_MODE} itself, so the export has to exist in THIS shell as well.
         arm64_deployment_preflight
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files up -d
@@ -1602,6 +1667,7 @@ case "${1:-help}" in
         check_environment
         echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
         ot_drain_gpu_workers "$compose_files"
@@ -1616,6 +1682,7 @@ case "${1:-help}" in
         fix_model_cache_permissions || true
         echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
         ot_drain_gpu_workers "$compose_files"
@@ -1628,6 +1695,7 @@ case "${1:-help}" in
         check_environment
         echo -e "${BLUE}📊 Container Status:${NC}"
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files ps
@@ -1653,6 +1721,7 @@ case "${1:-help}" in
         #   docker compose $(./opentranscribe.sh compose-files 2>/dev/null) ps
         check_environment
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         get_compose_files
         ;;
@@ -1684,6 +1753,7 @@ case "${1:-help}" in
         check_environment
         service=${2:-}
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
 
@@ -1781,6 +1851,7 @@ case "${1:-help}" in
             # `docker compose exec postgres` can reach it.
             if [ "$do_rollback" = true ] && [ "$force_downgrade" = false ]; then
                 pin_diar_native_image_for_blackwell
+                pin_diar_native_image_for_lite
                 pin_gpu_split_profile
                 rollback_compose_files=$(get_compose_files)
                 # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
@@ -1811,6 +1882,7 @@ case "${1:-help}" in
         fi
 
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
 
@@ -1970,6 +2042,7 @@ case "${1:-help}" in
         # `docker compose` step runs and reports its own, more specific error.
         fix_model_cache_permissions || true
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
         # Same gate as `update`: refuse while the old stack is still running
@@ -2031,6 +2104,7 @@ case "${1:-help}" in
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}🗑️  Removing all data...${NC}"
             pin_diar_native_image_for_blackwell
+            pin_diar_native_image_for_lite
             pin_gpu_split_profile
             compose_files=$(get_compose_files)
             ot_drain_gpu_workers "$compose_files"
@@ -2045,6 +2119,7 @@ case "${1:-help}" in
         service=${2:-backend}
         echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
@@ -2105,6 +2180,7 @@ case "${1:-help}" in
         # Check container status
         echo "Container Status:"
         pin_diar_native_image_for_blackwell
+        pin_diar_native_image_for_lite
         pin_gpu_split_profile
         compose_files=$(get_compose_files)
         docker compose $compose_files ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"

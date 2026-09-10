@@ -23,44 +23,44 @@ services:
   # the base service's `env_file: .env` + environment block; we only override
   # the image and the deployment mode marker here.
   celery-cloud-asr-worker:
-    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
     pull_policy: ${PULL_POLICY:-always}
     environment:
       - DEPLOYMENT_MODE=lite
 
   # Override all backend workers to use the lite image
   backend:
-    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
     environment:
       - DEPLOYMENT_MODE=lite
 
   celery-cpu-worker:
-    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
     environment:
       - DEPLOYMENT_MODE=lite
 
   celery-nlp-worker:
-    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
     environment:
       - DEPLOYMENT_MODE=lite
 
   celery-download-worker:
-    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
     environment:
       - DEPLOYMENT_MODE=lite
 
   celery-beat:
-    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
     environment:
       - DEPLOYMENT_MODE=lite
 
   celery-embedding-worker:
-    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
     environment:
       - DEPLOYMENT_MODE=lite
 
   celery-redaction:
-    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
     environment:
       - DEPLOYMENT_MODE=lite
 
@@ -73,6 +73,6 @@ services:
   # manifest for linux/arm64". Every other backend-image service here is either
   # overridden above, scaled to 0, or behind the gpu-scale/gpu-split profiles.
   flower:
-    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
     environment:
       - DEPLOYMENT_MODE=lite

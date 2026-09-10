@@ -548,8 +548,13 @@ class Settings(BaseSettings):
     # OpenSearch settings
     OPENSEARCH_HOST: str = os.getenv("OPENSEARCH_HOST", "localhost")
     OPENSEARCH_PORT: str = os.getenv("OPENSEARCH_PORT", "9200")
-    OPENSEARCH_USER: str = os.getenv("OPENSEARCH_USER", "admin")
-    OPENSEARCH_PASSWORD: str = os.getenv("OPENSEARCH_PASSWORD", "admin")
+    # No "admin" fallback (issue #858): the security plugin ships disabled, so an
+    # empty credential is exactly as inert as "admin" today, and if the plugin is
+    # ever enabled with nothing configured, an empty credential fails closed --
+    # OpenSearch answers 401 -- instead of an unconfigured install silently
+    # succeeding on the plugin's own well-known bootstrap superuser password.
+    OPENSEARCH_USER: str = os.getenv("OPENSEARCH_USER", "")
+    OPENSEARCH_PASSWORD: str = os.getenv("OPENSEARCH_PASSWORD", "")
     OPENSEARCH_USE_TLS: bool = os.getenv("OPENSEARCH_USE_TLS", "false").lower() == "true"
     OPENSEARCH_VERIFY_CERTS: bool = os.getenv("OPENSEARCH_VERIFY_CERTS", "false").lower() == "true"
     # How to authenticate to OpenSearch (issue #284 A1.13). "basic" (default) sends the

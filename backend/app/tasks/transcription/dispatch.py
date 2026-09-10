@@ -27,6 +27,7 @@ from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import gpu_split_enabled
+from app.core.exceptions import ASRConfigurationError
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -128,8 +129,15 @@ def _resolve_gpu_queue(user_id: int, db) -> str:
                 f"(provider: {provider.provider_name})"
             )
             return CeleryQueues.CLOUD_ASR
+    except ASRConfigurationError:
+        # A deliberate refusal (e.g. a lite deployment with no cloud ASR
+        # configured) — never silently fall back to 'gpu', which lite scales
+        # to zero replicas (issue #865). Let it propagate to the caller.
+        raise
     except Exception as e:
-        logger.debug(f"ASR provider resolution failed, defaulting to 'gpu': {e}")
+        logger.warning(
+            f"ASR provider resolution failed for user {user_id}, defaulting to 'gpu': {e}"
+        )
 
     if gpu_split_enabled():
         if _gpu_transcribe_consumer_present():
@@ -248,7 +256,15 @@ def dispatch_transcription_pipeline(
 
         # Auto-resolve queue from user's ASR provider if not specified
         if not use_cpu and gpu_queue is None:
-            gpu_queue = _resolve_gpu_queue(user_id, db)
+            try:
+                gpu_queue = _resolve_gpu_queue(user_id, db)
+            except ASRConfigurationError as e:
+                # A deliberate refusal to route into a queue nothing drains
+                # (issue #865) — mark the file ERROR instead of leaving it
+                # PROCESSING forever, and never create a task record for it.
+                media_file.last_error_message = e.message
+                update_media_file_status(db, file_id, FileStatus.ERROR)
+                raise
 
         create_task_record(db, task_id, user_id, file_id, "transcription")
         update_media_file_status(db, file_id, FileStatus.PROCESSING)
@@ -345,7 +361,17 @@ def dispatch_batch_transcription(
 
                 resolved_queue = gpu_queue
                 if not use_cpu and resolved_queue is None:
-                    resolved_queue = _resolve_gpu_queue(owner_id, db)
+                    try:
+                        resolved_queue = _resolve_gpu_queue(owner_id, db)
+                    except ASRConfigurationError as e:
+                        # Same refusal as the single-file path (issue #865):
+                        # mark this file ERROR and skip it, but let the rest
+                        # of the batch continue — the outer `except Exception`
+                        # below only logs, so this must fully handle the file
+                        # (status + no task record) before re-raising out of it.
+                        media_file.last_error_message = e.message
+                        update_media_file_status(db, file_id, FileStatus.ERROR)
+                        raise
 
                 create_task_record(db, task_id, owner_id, file_id, "transcription")
                 update_media_file_status(db, file_id, FileStatus.PROCESSING)

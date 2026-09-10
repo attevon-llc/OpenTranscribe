@@ -44,7 +44,18 @@ _EXEMPT_FROM_LITE_CONSUMER_CHECK = {
         "services/asr/factory.py raises a named error for DEPLOYMENT_MODE=lite "
         "before anything is dispatched, so this route is unreachable there. "
         "Rerouting it to 'cpu' would replace that clear refusal with a different "
-        "failure on a worker that also cannot run it."
+        "failure on a worker that also cannot run it. This task name is itself a "
+        "dead route today (superseded by the 3-stage chain, legacy_task.py's own "
+        "docstring), so the refusal that actually matters is the live one in the "
+        "3-stage chain: transcription/dispatch.py's _resolve_gpu_queue() calls the "
+        "same factory guard synchronously, in the API/dispatch layer, before ANY "
+        "queue publish. That refusal reaching the caller correctly depends on "
+        "_resolve_gpu_queue() re-raising ASRConfigurationError rather than "
+        "swallowing it in its generic fallback except — before issue #865's "
+        "follow-up fix it did not, so a lite deployment with no cloud ASR "
+        "configured silently published into 'gpu' anyway, which lite scales to "
+        "zero replicas. See tests/unit/test_dispatch.py::TestResolveGpuQueue's "
+        "lite-deployment tests for the coverage of that guard."
     ),
 }
 

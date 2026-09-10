@@ -27,6 +27,7 @@ from app.models.media import SpeakerClusterMember
 from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
+from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -1661,6 +1662,8 @@ class SpeakerClusteringService:
         user_id: int,
         page: int = 1,
         per_page: int = 20,
+        *,
+        include_quarantined: bool = False,
     ) -> dict[str, Any]:
         """Get paginated list of unverified speakers across all files.
 
@@ -1670,6 +1673,7 @@ class SpeakerClusteringService:
             user_id: Owner user ID.
             page: Page number (1-based).
             per_page: Items per page.
+            include_quarantined: Admin "see all" — skip the takedown exclusion below.
 
         Returns:
             Dict with items, total, page, per_page, pages.
@@ -1692,6 +1696,12 @@ class SpeakerClusteringService:
                 Speaker.created_at.desc(),
             )
         )
+        # `Speaker.media_file_id` is never NULL, so this inner join drops no
+        # legitimate row. Applied BEFORE `.count()` — filtering `items` alone after
+        # pagination would leak the true total and silently shorten pages, rather
+        # than actually excluding the quarantined speaker from the inbox.
+        query = query.join(MediaFile, Speaker.media_file_id == MediaFile.id)
+        query = exclude_quarantined(query, include_quarantined=include_quarantined)
 
         total = query.count()
         pages = max(1, math.ceil(total / per_page))

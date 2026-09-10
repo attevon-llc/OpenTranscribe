@@ -142,6 +142,39 @@ and **never blocks the takedown or the release**.
 Audit event types: `admin.file.quarantine`, `admin.file.release` (in the FedRAMP
 AU-2/AU-3 audit log).
 
+## Known limitation: presigned URL revocation
+
+A takedown revokes **access going forward** — the file 404s on every list/detail/stream/
+download/search-snippet surface, immediately. It does **not** revoke a presigned MinIO URL
+that was already handed out before the takedown.
+
+- **Every presigned media URL is valid for `MEDIA_URL_EXPIRE_SECONDS` (6 hours, default) from
+  the moment it was minted** (`backend/app/core/config.py`). A URL a legitimate viewer opened
+  minutes before an admin quarantines the file keeps working until it expires on its own,
+  regardless of the takedown.
+- **Routes that mint one**: `GET /files/{uuid}/media-url` (`backend/app/api/endpoints/
+  files/__init__.py`) is the general-purpose one — it resolves and signs a URL for video,
+  audio, or thumbnail. `speaker_clusters.py`'s media-preview endpoint mints one too, and is
+  already gated against quarantined files by a prior fix (it will not mint a NEW URL for a
+  quarantined file — the limitation here is only about a URL minted *before* the takedown).
+- **The legal hold does not help here.** `minio_service.py`'s `set_object_legal_hold`
+  (`backend/app/services/takedown_service.py:187-215`) blocks **delete and overwrite** of the
+  object — it is a retention control, not an access control, and it is best-effort (it degrades
+  gracefully when the bucket has no object-lock, e.g. the dev MinIO). It has no effect on reads
+  through an already-signed URL, which authenticates via the URL's own signature, not a
+  server-side ACL check.
+
+**Four mitigations were evaluated and rejected for this release** — see the follow-up issue
+(filed via `gh issue create`, linked from the project's GitHub issue tracker) for the reasoning
+against each: shortening the TTL (breaks long-recording playback for legitimate viewers),
+a bucket-policy deny rule (does not work — URLs are signed with the root credential, which
+bypasses bucket policies entirely), rotating the signing credential (invalidates every other
+user's unrelated in-flight URLs, not just the taken-down file's), and renaming/moving the
+object key (conflicts with `legal_hold` blocking deletes, and needs a correct reversal on
+release that a partial rename could leave inconsistent). The real fix is a dedicated
+non-root MinIO presigning service account so quarantine can revoke outstanding presigned URLs
+without the collateral damage of any of the above — tracked, not built, as of this writing.
+
 ## Configuration reference
 
 | Setting | Default | Purpose |

@@ -86,6 +86,57 @@ def is_hidden_for(file: MediaFile, *, is_admin: bool) -> bool:
     return bool(getattr(file, "is_quarantined", False)) and not is_admin
 
 
+def is_notification_suppressed(file_id: int, recipient_user_id: int) -> bool:
+    """Whether a file-scoped task notification to ``recipient_user_id`` must be dropped.
+
+    Consulted by ``notification_service.send_task_notification`` before it
+    auto-attaches file metadata (filename/content_type/file_size) to a
+    WebSocket event: a quarantined file's identity must not reach a non-admin
+    recipient through the Celery/WebSocket notification funnel any more than
+    through the read surfaces ``exclude_quarantined``/``is_hidden_for`` already
+    gate — a "file_updated" toast naming a taken-down file would otherwise leak
+    exactly what the quarantine hides. Admins are exempt, matching every other
+    review-visibility rule in this module.
+
+    Deliberately does NOT cover ``_notify_owner_takedown``/``_notify_owner_release``
+    (the DMCA §512(g) notices): those pass the file's identity in ``extra``, never
+    as this function's ``file_id`` kwarg, so this predicate is never consulted for
+    them — the owner must always learn about their own takedown/release.
+
+    Opens its OWN short session — this runs deep inside a Celery task's
+    notification call, never with a session already open — and **fails CLOSED**:
+    a DB error suppresses the notification rather than risking a leak. The
+    tradeoff is asymmetric and deliberate: the missed event is one live-update
+    frame the SPA reconciles on its next poll/reload, while a leaked
+    notification for a taken-down file is a filename disclosure that cannot be
+    undone. Logged at WARNING so a persistent DB problem stays visible instead
+    of silently dropping every notification forever.
+
+    Args:
+        file_id: The MediaFile's database id (not uuid).
+        recipient_user_id: The user the notification would be sent to.
+
+    Returns:
+        True if the notification must be suppressed.
+    """
+    try:
+        from app.db.session_utils import session_scope
+
+        with session_scope() as db:
+            file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            if file is None or not bool(getattr(file, "is_quarantined", False)):
+                return False
+            recipient = db.query(User).filter(User.id == recipient_user_id).first()
+            recipient_is_admin = bool(recipient and recipient.is_admin)
+            return not recipient_is_admin
+    except Exception as e:  # noqa: BLE001 — fail CLOSED, see docstring
+        logger.warning(
+            f"Notification suppression check failed for file {file_id}; "
+            f"suppressing as a precaution: {e}"
+        )
+        return True
+
+
 def quarantine_file(
     db: Session,
     file: MediaFile,
@@ -103,6 +154,16 @@ def quarantine_file(
     ``QUARANTINED`` for display, but the authoritative ``is_quarantined`` flag is
     what gates access; ``release_file`` restores the file to a servable state.
     The owner gets a best-effort §512(g) notice (:func:`_notify_owner_takedown`).
+
+    ⚠️ **Known limitation, same one the legal-hold below is best-effort about:**
+    this revokes read *access* going forward, but any presigned MinIO URL
+    already handed out for this file (``GET /files/{uuid}/media-url``,
+    ``MEDIA_URL_EXPIRE_SECONDS`` = 6h) stays valid for the remainder of its
+    window — a legal hold blocks delete/overwrite, not reads, and nothing here
+    can revoke a URL already signed with the root credential. See
+    ``docs/abuse-and-takedown.md``'s "Known limitation: presigned URL
+    revocation" section for the full writeup and why a code fix was rejected
+    for this release.
 
     Args:
         db: Database session.
@@ -131,6 +192,16 @@ def quarantine_file(
 
     db.commit()
     db.refresh(file)
+
+    # A takedown changes what the searchable/chat-retrievable corpus may serve —
+    # exactly the event `bump_corpus_version` exists for (its own docstring names
+    # this scenario). The per-request post-filters (`exclude_quarantined`,
+    # `_drop_quarantined_search_hits`, chat's quarantine visibility rule) are the
+    # actual enforcement; this only stops a cached page/retrieval from outliving
+    # them for the rest of its TTL. Never raises by construction — no try/except.
+    from app.services.chat.retrieval_cache import bump_corpus_version
+
+    bump_corpus_version()
 
     # Best-effort storage legal-hold (DB flag is the source of truth).
     if legal_hold and file.storage_path:
@@ -202,6 +273,12 @@ def release_file(
 
     db.commit()
     db.refresh(file)
+
+    # Release also changes what the corpus may serve (the file is servable
+    # again) — same reasoning as the bump in `quarantine_file`. Never raises.
+    from app.services.chat.retrieval_cache import bump_corpus_version
+
+    bump_corpus_version()
 
     if clear_legal_hold and file.storage_path:
         try:

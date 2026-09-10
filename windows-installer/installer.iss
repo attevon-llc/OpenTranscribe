@@ -12,7 +12,7 @@
 #define MyAppName "OpenTranscribe"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "OpenTranscribe Project"
-#define MyAppURL "https://github.com/davidamacey/opentranscribe"
+#define MyAppURL "https://github.com/attevon-llc/OpenTranscribe"
 #define MyAppExeName "run_opentranscribe.bat"
 #define MyAppExeUninstallName "uninstall_opentranscribe.bat"
 ; CHANGE THIS PATH to where you extracted the build folder on Windows
@@ -41,7 +41,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 
 ; User interaction
-LicenseFile={#BuildDir}\license.txt
+LicenseFile={#BuildDir}\LICENSE.txt
 InfoBeforeFile={#BuildDir}\preinstall.txt
 InfoAfterFile={#BuildDir}\after-install.txt
 
@@ -99,6 +99,10 @@ Source: "{#BuildDir}\database\*"; DestDir: "{app}\database"; Flags: ignoreversio
 Source: "{#BuildDir}\README-WINDOWS.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "{#BuildDir}\package-info.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\checksums.sha256"; DestDir: "{app}"; Flags: ignoreversion
+; Third-party notices / data-privacy summary (#887) -- the licence pane shows LICENSE.txt
+; (the real AGPL-3.0 text) only during setup; NOTICE.txt must survive INTO the install
+; directory so the user can find it again afterward.
+Source: "{#BuildDir}\NOTICE.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 ; PowerShell scripts (if they exist)
 Source: "{#BuildDir}\check-prerequisites.ps1"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist

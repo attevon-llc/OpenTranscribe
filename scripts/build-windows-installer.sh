@@ -414,17 +414,15 @@ copy_windows_installer_files() {
     print_info "Copying installer assets..."
     cp windows-installer/ot-icon.ico "${PACKAGE_DIR}/"
 
-    # Copy license file (create minimal one if empty)
-    if [ -s windows-installer/license.txt ]; then
-        cp windows-installer/license.txt "${PACKAGE_DIR}/"
-    else
-        print_warning "license.txt is empty, creating placeholder..."
-        echo "OpenTranscribe - AI-Powered Transcription Application" > "${PACKAGE_DIR}/license.txt"
-        echo "" >> "${PACKAGE_DIR}/license.txt"
-        echo "Copyright (c) $(date +%Y)" >> "${PACKAGE_DIR}/license.txt"
-        echo "" >> "${PACKAGE_DIR}/license.txt"
-        echo "See LICENSE file in the main repository for full license terms." >> "${PACKAGE_DIR}/license.txt"
-    fi
+    # The installer's LicenseFile= must be the REAL AGPL-3.0 text, not a summary (#887).
+    # windows-installer/license.txt is a third-party-notices/data-privacy SUMMARY, not
+    # the license — it is shipped separately as NOTICE.txt. Both copies are unconditional:
+    # a missing root LICENSE or an empty windows-installer/license.txt is a build error,
+    # not something to paper over with a synthesized placeholder (the previous fallback
+    # here could present a 5-line stand-in as the terms the user must accept).
+    print_info "Copying license (AGPL-3.0) and third-party notices..."
+    cp LICENSE "${PACKAGE_DIR}/LICENSE.txt"
+    cp windows-installer/license.txt "${PACKAGE_DIR}/NOTICE.txt"
 
     cp windows-installer/preinstall.txt "${PACKAGE_DIR}/"
     cp windows-installer/after-install.txt "${PACKAGE_DIR}/"

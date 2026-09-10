@@ -1,26 +1,12 @@
-OpenTranscribe - AI-Powered Transcription Application
+OpenTranscribe — Third-Party Notices and Data-Privacy Summary
 
 Copyright (c) 2025 OpenTranscribe Project
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published
-by the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-IMPORTANT AGPL-3.0 NOTICE:
-
-The GNU Affero General Public License ensures that all users, including those
-accessing the software over a network, have access to the source code. If you
-modify this software and make it available as a network service, you must make
-your modified source code available to users of that service.
+This is NOT the software license. OpenTranscribe is licensed under the GNU Affero
+General Public License, version 3 (AGPL-3.0) — see the LICENSE file installed alongside
+this document, or https://github.com/attevon-llc/OpenTranscribe/blob/master/LICENSE for
+the full, current text. This file exists to summarize third-party components, AI model
+terms, and data-privacy behavior that the AGPL-3.0 text itself does not cover.
 
 THIRD-PARTY COMPONENTS:
 
@@ -57,5 +43,6 @@ DATA PRIVACY:
 - No data is sent to external servers (offline operation)
 - You maintain full control of your audio files and transcriptions
 
-For full license terms and component details, see the LICENSE file in the
-source repository: https://github.com/davidamacey/opentranscribe
+For the full AGPL-3.0 license text and component details, see LICENSE.txt installed
+alongside this file, or the source repository:
+https://github.com/attevon-llc/OpenTranscribe

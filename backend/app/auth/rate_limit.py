@@ -9,6 +9,8 @@ Configuration is managed via settings:
 - RATE_LIMIT_API_PER_MINUTE: Rate limit for general API endpoints (default: 100)
 - RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE: Rate limit for handlers that fetch a caller-supplied
   LLM base_url (default: 10)
+- RATE_LIMIT_DIRECTORY_PER_MINUTE: Rate limit for GET /users/search (default: 60)
+- RATE_LIMIT_SEARCH_PER_MINUTE: Rate limit for GET /search (default: 30)
 - RATE_LIMIT_ENABLED: Enable/disable rate limiting (default: True)
 - RATE_LIMIT_TRUSTED_PROXIES: Comma-separated list of trusted proxy IPs/CIDRs
 """
@@ -223,6 +225,21 @@ def get_llm_outbound_rate_limit() -> str:
         Rate limit string in slowapi format (e.g., "10/minute").
     """
     return f"{settings.RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE}/minute"
+
+
+def get_directory_rate_limit() -> str:
+    """Rate limit string for ``GET /users/search`` (the sharing / group-member-add
+    autocomplete, issue #904).
+
+    See the ``RATE_LIMIT_DIRECTORY_PER_MINUTE`` docstring in ``core/config.py`` for the
+    derivation. This is a volume/noise bound, not an enumeration proof — the query
+    minimum length and tenant gate already applied to this route are what limit what a
+    single request can see.
+
+    Returns:
+        Rate limit string in slowapi format (e.g., "60/minute").
+    """
+    return f"{settings.RATE_LIMIT_DIRECTORY_PER_MINUTE}/minute"
 
 
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:

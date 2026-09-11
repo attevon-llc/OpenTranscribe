@@ -65,3 +65,19 @@ class EmailDeliveryError(OpenTranscribeError):
     (password reset, verification resend) must absorb it — see that module.
     The message is scrubbed of email addresses so it is safe to surface.
     """
+
+
+class ExternalIdentityLinkRefusedError(OpenTranscribeError):
+    """A registry-based external identity may not be linked/synced to a user.
+
+    Raised by ``auth/external_sync.py`` for a deliberate refusal (unverified
+    email match, a provider-id corroboration mismatch, or a super_admin
+    target) — never a caught library exception. Exists as its own type
+    because the module used to raise the BUILTIN ``PermissionError``, which
+    is also raised by real OS-level permission failures (it is a subclass of
+    ``OSError``) anywhere in the same call chain. A genuine ``EACCES``
+    surfacing through that overloaded type would have been caught by the
+    same ``except PermissionError`` this module wrote its refusal for, and
+    rendered as this refusal's generic 401 — putting a host filesystem path
+    in an authentication response instead of the actual security event.
+    """

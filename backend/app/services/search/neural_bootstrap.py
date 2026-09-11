@@ -234,8 +234,11 @@ def ensure_neural_search_bootstrap(*, force: bool = False) -> BootstrapResult:
         return _bootstrap_local_mode(ml_service)
 
     except Exception as e:
-        detail = f"Error initializing neural search: {e}"
-        logger.error(detail)
+        # detail flows through Redis (_LAST_ERROR_KEY) into bootstrap_status()
+        # and GET /search/models/neural/status -- never interpolate the raw
+        # exception text, only its class name (#914).
+        logger.exception("Error initializing neural search")
+        detail = f"Error initializing neural search ({type(e).__name__})"
         return BootstrapResult(state="degraded", stage=None, detail=detail, model_id=None)
 
 

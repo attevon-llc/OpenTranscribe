@@ -321,9 +321,17 @@ def _reconcile(
             dry_run=dry_run,
         )
     except Exception as exc:  # noqa: BLE001 - one bad account must not stop the sweep
+        # This entry flows into DirectorySyncResultModel (extra="allow" lets the
+        # dict pass through untouched) and is rendered on the directory-sync
+        # admin settings surface -- never interpolate the raw exception text,
+        # only its class name (#914).
         db.rollback()
-        logger.error("Directory sync could not reconcile %s: %s", user.email, exc)
-        return {"user_uuid": str(user.uuid), "email": str(user.email), "error": str(exc)}
+        logger.exception("Directory sync could not reconcile %s", user.email)
+        return {
+            "user_uuid": str(user.uuid),
+            "email": str(user.email),
+            "error": f"Reconciliation failed ({type(exc).__name__})",
+        }
 
     if not result.changed:
         return None

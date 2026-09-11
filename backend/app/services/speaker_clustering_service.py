@@ -1851,7 +1851,11 @@ class SpeakerClusteringService:
                     failed += 1
 
             except Exception as e:
-                errors.append(f"Error processing speaker {suuid}: {e}")
+                # `errors` is the response body of this endpoint's batch-verify
+                # route (api/endpoints/speaker_clusters.py) -- never interpolate
+                # the raw exception text, only its class name (#914).
+                logger.exception("batch_verify_speakers: error processing speaker %s", suuid)
+                errors.append(f"Error processing speaker {suuid} ({type(e).__name__})")
                 failed += 1
 
         try:
@@ -1861,7 +1865,12 @@ class SpeakerClusteringService:
             # The renames never landed — dropping them keeps a later flush on the
             # same service instance from propagating a rolled-back name.
             self._rename_tracker.discard()
-            return {"updated_count": 0, "failed_count": len(speaker_uuids), "errors": [str(e)]}
+            logger.exception("batch_verify_speakers: commit failed")
+            return {
+                "updated_count": 0,
+                "failed_count": len(speaker_uuids),
+                "errors": [f"Commit failed ({type(e).__name__})"],
+            }
 
         self._rename_tracker.flush(self.db)
         return {"updated_count": updated, "failed_count": failed, "errors": errors}

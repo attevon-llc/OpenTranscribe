@@ -328,6 +328,84 @@ def test_the_real_return_scan_never_touches_services() -> None:
     )
 
 
+# --- Case 16a: MUST STAY CLEAN — type(e).__name__ alone carries no message text ---
+#
+# The 4a prune: this is the repo's own approved remedy for this class of finding
+# (precedented at llm_context_window.py:249 / fs_events/detection.py:200), and a
+# scanner that fires on its own prescribed fix teaches people to route around it.
+
+_TYPE_NAME_ONLY = """
+    def handler():
+        try:
+            do_thing()
+        except Exception as e:
+            return {"detail": f"failed ({type(e).__name__})"}
+"""
+
+
+def test_type_name_only_must_stay_clean() -> None:
+    assert _walk(_TYPE_NAME_ONLY).return_findings == []
+
+
+# --- Case 16b: MUST FIRE — type(e).__name__ ALONGSIDE the raw exception ---
+#
+# The case that stops the 4a prune becoming a bypass: a bare `{e}` sitting beside
+# the class-name shape in the same f-string must still taint, because only the
+# `type(...).__name__` subtree is structurally message-text-free.
+
+_TYPE_NAME_PLUS_RAW = """
+    def handler():
+        try:
+            do_thing()
+        except Exception as e:
+            return {"detail": f"failed ({type(e).__name__}): {e}"}
+"""
+
+
+def test_type_name_plus_raw_exception_must_still_fire() -> None:
+    findings = _walk(_TYPE_NAME_PLUS_RAW).return_findings
+    assert findings == [("handler", 6)]
+
+
+# --- Case 17a: MUST FIRE — assigned in the handler, returned outside it ---
+#
+# The 4b fix: `_taint_stack` alone goes empty the instant the except suite closes,
+# so a `return r` several lines below a handler that built `r` from `str(e)` was a
+# scanner-invisible false negative. This is exactly the shape found live at
+# services/directory_sync_service.py:407, services/backup_service.py:822/884/983,
+# and services/media_mirror_engine.py:317 (among others).
+
+_ASSIGN_IN_HANDLER_RETURN_OUTSIDE = """
+    def handler():
+        try:
+            r = ok()
+        except Exception as e:
+            r = {"error": str(e)}
+        return r
+"""
+
+
+def test_assign_in_handler_return_outside_must_fire() -> None:
+    findings = _walk(_ASSIGN_IN_HANDLER_RETURN_OUTSIDE).return_findings
+    assert findings == [("handler", 7)]
+
+
+# --- Case 17b: MUST STAY CLEAN — same shape, no `as` binding ---
+
+_ASSIGN_IN_HANDLER_RETURN_OUTSIDE_NO_BINDING = """
+    def handler():
+        try:
+            r = ok()
+        except Exception:
+            r = {"error": "failed"}
+        return r
+"""
+
+
+def test_assign_in_handler_return_outside_no_binding_must_stay_clean() -> None:
+    assert _walk(_ASSIGN_IN_HANDLER_RETURN_OUTSIDE_NO_BINDING).return_findings == []
+
+
 def test_the_open_transcribe_error_set_is_transitive() -> None:
     """The dynamically-derived subclass set over the REAL app/ tree.
 

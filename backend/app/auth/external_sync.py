@@ -19,6 +19,7 @@ from app.auth.provider_registry import ExternalIdentity
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import role_implies_superuser
+from app.core.exceptions import ExternalIdentityLinkRefusedError
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -69,9 +70,12 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     on an ordinary first login.
 
     Raises:
-        PermissionError: when an email-matched or provider-id-matched link is
-            refused (unverified email, a corroboration mismatch, or a
-            super_admin target). Callers treat this as 401.
+        ExternalIdentityLinkRefusedError: when an email-matched or provider-id-matched
+            link is refused (unverified email, a corroboration mismatch, or a
+            super_admin target). Callers treat this as 401. Deliberately NOT the
+            builtin ``PermissionError`` (also raised by a real ``EACCES``
+            anywhere in this call chain, since it is an ``OSError`` subclass) —
+            see ``core/exceptions.ExternalIdentityLinkRefusedError``.
     """
     from sqlalchemy.exc import IntegrityError
 
@@ -100,9 +104,10 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
                 failure_detail="External identity could not be verified",
             )
         except HTTPException as exc:
-            # This module's callers expect PermissionError, not HTTPException —
-            # translate so both refusal paths raise the same exception type.
-            raise PermissionError(str(exc.detail)) from exc
+            # This module's callers expect ExternalIdentityLinkRefusedError, not
+            # HTTPException -- translate so both refusal paths raise the same
+            # exception type.
+            raise ExternalIdentityLinkRefusedError(str(exc.detail)) from exc
 
     matched_by_email = False
     if not user and identity.email:
@@ -118,14 +123,14 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
                 f"{identity.external_id} to existing account {user.email}: "
                 "IdP did not assert the email address as verified."
             )
-            raise PermissionError("External identity email is not verified")
+            raise ExternalIdentityLinkRefusedError("External identity email is not verified")
         if user.role == "super_admin":
             logger.warning(
                 f"SECURITY: Refusing to link {identity.provider} identity "
                 f"{identity.external_id} to super_admin account {user.email} "
                 "via email match. Platform-owner accounts are never JIT-linked."
             )
-            raise PermissionError("Account cannot be linked via external identity")
+            raise ExternalIdentityLinkRefusedError("Account cannot be linked via external identity")
 
     if user:
         if user.auth_type == "local":

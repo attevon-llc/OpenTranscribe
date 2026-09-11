@@ -356,9 +356,11 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
         except Exception as count_err:
             _drop_rebuild_index(rebuild_index)
             logger.error(f"Rebuild: could not verify {rebuild_index}: {count_err}")
+            # "message" is dead: search.py and this module's own caller read only
+            # status/speakers_indexed (#914 STEP 7). Deleted rather than
+            # sanitized -- nothing reads it, so there is nothing to sanitize for.
             return {
                 "status": "error",
-                "message": f"Rebuild index could not be verified: {count_err}",
                 "speakers_indexed": 0,
             }
 
@@ -483,9 +485,9 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
         except Exception as cleanup_err:
             logger.debug("Failed to clean up rebuild index: %s", cleanup_err)
         logger.error(f"Speaker index rebuild failed: {e}")
+        # "message" is dead here too -- see the other return above.
         return {
             "status": "error",
-            "message": str(e),
             "speakers_indexed": 0,
         }
 

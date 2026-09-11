@@ -1050,11 +1050,14 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
 
     except Exception as e:
         db.rollback()
-        logger.error(f"purge_media_file: failed to delete file {file_uuid}: {e}")
+        # "error" is rendered verbatim into an HTTPException detail by
+        # files/crud.py's caller -- never interpolate the raw exception text,
+        # only its class name. The real cause is still diagnosable via the log.
+        logger.exception(f"purge_media_file: failed to delete file {file_uuid}")
         return {
             "deleted": False,
             "file_uuid": file_uuid,
-            "error": str(e),
+            "error": f"Delete failed ({type(e).__name__})",
             "residual_errors": residual,
         }
 

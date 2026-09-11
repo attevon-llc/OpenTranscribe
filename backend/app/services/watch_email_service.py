@@ -70,7 +70,11 @@ def test_connection(config: EmailNotificationConfig) -> tuple[bool, str]:
             return _test_m365(config)
         return False, f"Unknown email provider: {config.provider}"
     except Exception as e:  # noqa: BLE001
-        return False, str(e)
+        # Returned as EmailTestResponse.message AND persisted to
+        # cfg.test_message (watch_sources.py) -- an smtplib/msal exception can
+        # quote the server/credential, so only the class of failure survives.
+        logger.exception("Email connection test failed (%s)", config.provider)
+        return False, f"Connection failed ({type(e).__name__})"
 
 
 # --------------------------------------------------------------------------- #

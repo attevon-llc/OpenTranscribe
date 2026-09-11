@@ -932,11 +932,14 @@ def ldap_directory_session(cfg: LdapConfig) -> Iterator[Connection]:
     try:
         conn = _bind_service_account(cfg, _get_ldap_server(cfg))
     except LDAPException as e:
-        raise LdapDirectoryUnavailableError(f"LDAP bind failed: {type(e).__name__}: {e}") from e
+        # Scrubbed at the raiser (the repo's "one owner" preference) rather than
+        # at each of this error's consumers -- an ldap3 LDAPException can quote
+        # the directory URL and the service-account bind DN (#914).
+        logger.exception("LDAP service-account bind failed")
+        raise LdapDirectoryUnavailableError(f"LDAP bind failed ({type(e).__name__})") from e
     except Exception as e:  # noqa: BLE001 - any failure here means "could not ask"
-        raise LdapDirectoryUnavailableError(
-            f"LDAP connection failed: {type(e).__name__}: {e}"
-        ) from e
+        logger.exception("LDAP connection failed")
+        raise LdapDirectoryUnavailableError(f"LDAP connection failed ({type(e).__name__})") from e
 
     if conn is None:
         raise LdapDirectoryUnavailableError("LDAP service account bind returned no connection")
@@ -992,7 +995,8 @@ def probe_ldap_user(
             cfg, bind_conn, email or ldap_uid, ldap_username, extra_attributes=[_UAC_ATTR]
         )
     except LDAPException as e:
-        raise LdapDirectoryUnavailableError(f"LDAP search failed: {type(e).__name__}: {e}") from e
+        logger.exception("LDAP search failed")
+        raise LdapDirectoryUnavailableError(f"LDAP search failed ({type(e).__name__})") from e
 
     if not user_entry:
         return LdapProbe(DIRECTORY_ABSENT)
@@ -1007,9 +1011,8 @@ def probe_ldap_user(
     try:
         entitled = _check_group_access(cfg, bind_conn, user_entry.entry_dn, user_groups, ldap_uid)
     except LDAPException as e:
-        raise LdapDirectoryUnavailableError(
-            f"LDAP group check failed: {type(e).__name__}: {e}"
-        ) from e
+        logger.exception("LDAP group check failed")
+        raise LdapDirectoryUnavailableError(f"LDAP group check failed ({type(e).__name__})") from e
 
     if not entitled:
         return LdapProbe(DIRECTORY_NOT_ENTITLED)

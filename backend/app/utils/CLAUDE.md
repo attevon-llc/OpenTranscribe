@@ -43,8 +43,10 @@ so keep heavy imports lazy.
   skipped the check; and `require_verified_user` gated on `is_active` while both its name and its
   403 detail said "verification". Authorization is a FastAPI `Depends`
   (`api/endpoints/auth/dependencies.py` for privilege, `uuid_helpers` for resource access).
-- `error_handlers.py` — `handle_database_errors` (rolls back the session in `kwargs["db"]`) and
-  `ErrorHandler` builders for opaque 5xx. `pagination.py` — `paginate()` replaces the
+- `error_handlers.py` — `handle_not_found` and `ErrorHandler` builders for opaque 5xx.
+  `handle_database_errors` was deleted (#914 STEP 6): zero call sites under `app/`, and
+  it caught a plain `except Exception` that reclassified any `HTTPException` the wrapped
+  function raised into an opaque 500. `pagination.py` — `paginate()` replaces the
   count+offset+limit boilerplate (counts with `order_by(None)`).
 - `encryption.py` — AES-256-GCM (v3) with legacy Fernet auto-detect. Every stored secret (ASR/LLM
   keys, S3/SMB creds, OIDC refresh/ID tokens) goes through it.

@@ -4,44 +4,8 @@ from functools import wraps
 
 from fastapi import HTTPException
 from fastapi import status
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
-
-
-def handle_database_errors(func: Callable) -> Callable:
-    """
-    Decorator to handle common database errors.
-
-    Args:
-        func: Function to wrap
-
-    Returns:
-        Wrapped function with error handling
-    """
-
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except SQLAlchemyError as e:
-            logger.error(f"Database error in {func.__name__}: {e}")
-            # Rollback session if available in kwargs
-            if "db" in kwargs and isinstance(kwargs["db"], Session):
-                kwargs["db"].rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database operation failed",
-            ) from e
-        except Exception as e:
-            logger.error(f"Unexpected error in {func.__name__}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An unexpected error occurred",
-            ) from e
-
-    return wrapper
 
 
 def handle_not_found(resource_name: str = "Resource") -> Callable:

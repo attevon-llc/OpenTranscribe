@@ -66,6 +66,15 @@ class PyAnnoteCloudDiarizationProvider(DiarizationProvider):
 
         Returns:
             Tuple of (success, message, response_time_ms).
+
+        Note (#914 STEP 7): this method has ZERO call sites -- no endpoint
+        dials a diarization provider the way asr_settings.py dials an ASR
+        one. It exists only because DiarizationProvider (base.py) declares it
+        ``@abstractmethod``, which every concrete provider must implement to
+        be instantiable. Reported rather than redesigned: whether the ABC
+        should drop this requirement, or whether a "test diarization
+        connection" admin action should exist, is a design question for the
+        owner, not something to decide inside a response-sanitization sweep.
         """
         start = time.time()
 

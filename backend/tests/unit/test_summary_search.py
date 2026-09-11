@@ -372,3 +372,68 @@ class TestMasking:
             search_summaries(
                 db_session, "roadmap", normal_user.id, organization_id=None, redaction_cfg=cfg
             )
+
+
+# --------------------------------------------------------------------------- #
+# Quarantine (#818) — a pre-filter, so total/offset stay consistent            #
+# --------------------------------------------------------------------------- #
+
+
+class TestQuarantine:
+    def test_a_quarantined_summary_is_not_counted_or_returned(self, db_session, normal_user):
+        clean = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        quarantined = _make_file(db_session, normal_user, summary={"bluf": "roadmap review too"})
+        quarantined.is_quarantined = True
+        db_session.commit()
+
+        result = search_summaries(db_session, "roadmap", normal_user.id, organization_id=None)
+
+        assert result.total == 1
+        assert [h.file_uuid for h in result.results] == [str(clean.uuid)]
+
+    def test_the_count_does_not_disclose_an_off_page_quarantined_hit(self, db_session, normal_user):
+        """THE oracle test. Before the pre-filter, page 1's count included the
+        quarantined hit even though it sorted onto page 2 — a taken-down file
+        disclosed through `total` alone.
+        """
+        # Created FIRST -> lower id -> sorts onto page 2 under `MediaFile.id.desc()`.
+        quarantined = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        clean = _make_file(db_session, normal_user, summary={"bluf": "roadmap review too"})
+        quarantined.is_quarantined = True
+        db_session.commit()
+
+        page1 = search_summaries(
+            db_session, "roadmap", normal_user.id, organization_id=None, page=1, page_size=1
+        )
+        assert page1.total == 1, "the count disclosed a taken-down file's off-page hit"
+        assert len(page1.results) == 1
+        assert page1.results[0].file_uuid == str(clean.uuid)
+
+        page2 = search_summaries(
+            db_session, "roadmap", normal_user.id, organization_id=None, page=2, page_size=1
+        )
+        assert page2.results == []
+        assert page2.total == 1, "the count must stay consistent across pages"
+
+    def test_an_admin_still_sees_and_counts_it(self, db_session, normal_user):
+        clean = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        quarantined = _make_file(db_session, normal_user, summary={"bluf": "roadmap review too"})
+        quarantined.is_quarantined = True
+        db_session.commit()
+
+        result = search_summaries(
+            db_session,
+            "roadmap",
+            normal_user.id,
+            organization_id=None,
+            include_quarantined=True,
+        )
+
+        assert result.total == 2
+
+    def test_a_visible_summary_is_still_found(self, db_session, normal_user):
+        """CONTROL: an ordinary file must still be found and counted."""
+        media_file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        result = search_summaries(db_session, "roadmap", normal_user.id, organization_id=None)
+        assert result.total == 1
+        assert result.results[0].file_uuid == str(media_file.uuid)

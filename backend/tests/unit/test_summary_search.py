@@ -21,7 +21,6 @@ from app.models.sharing import CollectionShare
 from app.services.redaction.config import resolve_effective_config
 from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
 from app.services.search import summary_search
-from app.services.search.summary_search import _get_by_path
 from app.services.search.summary_search import _walk_leaves
 from app.services.search.summary_search import search_summaries
 
@@ -127,26 +126,6 @@ class TestWalkLeaves:
         node = {"major_topics": [{"metadata": "not actually special here"}]}
         leaves = _walk_leaves(node, "")
         assert leaves == [("major_topics[0].metadata", "not actually special here")]
-
-
-class TestGetByPath:
-    def test_round_trips_every_path_walk_leaves_produces(self):
-        node = {"major_topics": [{"topic": "Budget", "key_points": ["alpha", "beta"]}]}
-        leaves = _walk_leaves(node, "")
-        assert len(leaves) == 3, "fixture precondition: three leaves expected"
-        for path, value in leaves:
-            assert _get_by_path(node, path) == value
-
-    def test_survives_masking_shape_preservation(self):
-        """mask_summary preserves the container shape exactly, so a path
-        collected from the RAW tree must resolve on the MASKED tree too."""
-        from app.services.redaction.config import EffectiveRedactionConfig
-        from app.services.redaction.summary_redaction import mask_summary
-
-        node = {"major_topics": [{"key_points": ["Damn, that slipped."]}]}
-        cfg = EffectiveRedactionConfig(enabled=True, enabled_categories={"profanity"})
-        masked = mask_summary(node, cfg)
-        assert _get_by_path(masked, "major_topics[0].key_points[0]") != "Damn, that slipped."
 
 
 # --------------------------------------------------------------------------- #
@@ -330,22 +309,25 @@ class TestMasking:
         )
         assert "Damn" not in result.results[0].matches[0].snippet
 
-    def test_masking_is_applied_per_leaf_not_batched(self, db_session, normal_user, monkeypatch):
+    def test_masking_is_applied_per_returned_leaf_not_batched(
+        self, db_session, normal_user, monkeypatch
+    ):
         """The measured failure mode this brief calls out: a batched detector
         pass loses text across leaves. `search_summaries` must call the
-        already-per-leaf `mask_summary` exactly once per DOCUMENT (not once per
-        the whole page), delegating the per-leaf discipline to it rather than
-        reimplementing — never coalescing multiple documents' text into one
-        detection call.
+        per-leaf `mask_summary_leaf` exactly once per RETURNED MATCH (not once
+        per document, and never coalescing multiple leaves' text into one
+        detection call) — see ``test_summary_search_masks_only_returned_leaves.py``
+        for the fuller proof (issue #822) that non-matching leaves are never
+        even examined.
         """
-        calls: list[dict] = []
-        real_mask_summary = summary_search.mask_summary
+        calls: list[str] = []
+        real_mask_summary_leaf = summary_search.mask_summary_leaf
 
-        def _spy(summary_data, cfg):
-            calls.append(summary_data)
-            return real_mask_summary(summary_data, cfg)
+        def _spy(text, cfg):
+            calls.append(text)
+            return real_mask_summary_leaf(text, cfg)
 
-        monkeypatch.setattr(summary_search, "mask_summary", _spy)
+        monkeypatch.setattr(summary_search, "mask_summary_leaf", _spy)
 
         _make_file(db_session, normal_user, summary={"bluf": "roadmap one"})
         _make_file(db_session, normal_user, summary={"bluf": "roadmap two"})
@@ -356,9 +338,11 @@ class TestMasking:
             db_session, "roadmap", normal_user.id, organization_id=None, redaction_cfg=cfg
         )
 
-        assert len(calls) == 2, "mask_summary must be called once per matched document"
+        assert len(calls) == 2, "mask_summary_leaf must be called once per matched leaf"
 
-    def test_a_detector_outage_fails_closed(self, db_session, normal_user, monkeypatch):
+    def test_a_detector_outage_on_a_returned_leaf_fails_closed(
+        self, db_session, normal_user, monkeypatch
+    ):
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
         _enable_redaction(db_session, normal_user)
         cfg = resolve_effective_config(db_session, normal_user.id)
@@ -366,7 +350,7 @@ class TestMasking:
         def _raise(*_args, **_kwargs):
             raise SummaryMaskingUnavailableError("pii detector unavailable")
 
-        monkeypatch.setattr(summary_search, "mask_summary", _raise)
+        monkeypatch.setattr(summary_search, "mask_summary_leaf", _raise)
 
         with pytest.raises(SummaryMaskingUnavailableError):
             search_summaries(

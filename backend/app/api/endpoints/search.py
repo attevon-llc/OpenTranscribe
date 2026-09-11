@@ -396,6 +396,19 @@ def _summary_search_payload(
 ) -> dict[str, Any]:
     """Build the ``summary_results``/``summary_total`` pair for issue #462.
 
+    ⚠️ Deliberately UNCACHED — do not "finish the job" by adding a response
+    cache here the way the transcript leg has one (issue #822's plan named this
+    as a possible follow-up and it was rejected). A cached page is a cached
+    verdict: this payload's shape already depends on the caller's redaction
+    policy AND on quarantine state, and re-serving a page for
+    `SEARCH_CACHE_TTL_SECONDS` after a file is quarantined would reopen #818 —
+    a taken-down summary still readable, from cache, for the whole TTL. The
+    transcript-search cache can afford this because that leg re-checks
+    quarantine per request too (`_drop_quarantined_search_hits`); a summary
+    cache would need the identical re-check on every read, which is exactly the
+    round trip a cache exists to avoid. Not worth it for a corpus this small
+    (one JSONB blob per file, per `search_summaries`' own docstring).
+
     Access control is ``PermissionService.get_accessible_file_ids_subquery`` —
     the same authority every owner-scoped listing uses — applied inside
     ``search_summaries`` itself; this function does not re-derive visibility.
@@ -404,9 +417,10 @@ def _summary_search_payload(
     the same subject the summary-detail endpoint already resolves) and fails
     CLOSED: a detector outage feeding one of the caller's enabled categories
     withholds these results with a 503 rather than serving an unmasked
-    summary. Masking runs per-leaf, before any snippet is extracted — see
-    ``services/search/summary_search.py`` and ``redaction/summary_redaction.py``
-    for why batching leaks repeated names.
+    summary. Masking runs per-leaf, on each leaf actually RETURNED, before any
+    snippet is extracted — see ``services/search/summary_search.py`` and
+    ``redaction/summary_redaction.py`` for why batching leaks repeated names,
+    and for why only the returned leaves are examined (issue #822).
 
     Quarantine is applied INSIDE ``search_summaries`` via
     ``exclude_quarantined`` — a pre-filter, so ``summary_total`` and the page

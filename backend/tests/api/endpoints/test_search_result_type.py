@@ -221,7 +221,7 @@ class TestSummariesResultType:
 
 
 class TestSummaryMaskingFailsClosed:
-    def test_a_detector_outage_is_503(
+    def test_a_detector_outage_on_a_returned_leaf_is_503(
         self,
         client,
         user_token_headers,
@@ -230,6 +230,10 @@ class TestSummaryMaskingFailsClosed:
         monkeypatch,
         stub_transcript_search,
     ):
+        """A detector outage on a leaf that IS about to be disclosed must still
+        withhold the result — the narrowing (issue #822) only removes the false
+        positive for leaves that were never going to be shown, see the sibling
+        test below."""
         from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
         from app.services.search import summary_search
 
@@ -243,7 +247,7 @@ class TestSummaryMaskingFailsClosed:
         def _raise(*_args, **_kwargs):
             raise SummaryMaskingUnavailableError("pii detector unavailable")
 
-        monkeypatch.setattr(summary_search, "mask_summary", _raise)
+        monkeypatch.setattr(summary_search, "mask_summary_leaf", _raise)
 
         response = client.get(
             SEARCH_PATH,
@@ -251,6 +255,60 @@ class TestSummaryMaskingFailsClosed:
             headers=user_token_headers,
         )
         assert response.status_code == 503, response.text
+
+    def test_a_detector_outage_is_scoped_to_the_leaves_actually_returned(
+        self,
+        client,
+        user_token_headers,
+        normal_user,
+        db_session,
+        monkeypatch,
+        stub_transcript_search,
+    ):
+        """The real #822 fix, proven rather than assumed: a summary with a
+        matching leaf AND a non-matching leaf, where the masker raises only for
+        the non-matching (never-returned) text, must still answer 200. Before
+        the fix the whole tree was masked up front, so this same setup 503'd —
+        the outage was never actually about the leaf being shown."""
+        from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
+        from app.services.search import summary_search
+
+        _make_file(
+            db_session,
+            normal_user,
+            summary={
+                "bluf": "roadmap review",
+                "other_field": "an unrelated section about something else entirely",
+            },
+        )
+        for key, value in (("redaction_enabled", "true"), ("redaction_categories", '["pii"]')):
+            db_session.add(
+                UserSetting(user_id=normal_user.id, setting_key=key, setting_value=value)
+            )
+        db_session.commit()
+
+        real_mask_summary_leaf = summary_search.mask_summary_leaf
+
+        def _raise_only_for_the_non_matching_leaf(text, cfg):
+            if "roadmap" in text:
+                return real_mask_summary_leaf(text, cfg)
+            raise SummaryMaskingUnavailableError("pii detector unavailable")
+
+        monkeypatch.setattr(
+            summary_search, "mask_summary_leaf", _raise_only_for_the_non_matching_leaf
+        )
+
+        response = client.get(
+            SEARCH_PATH,
+            params={"q": "roadmap", "result_type": "summaries"},
+            headers=user_token_headers,
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["summary_total"] == 1
+        assert body["summary_results"][0]["matches"] == [
+            {"key_path": "bluf", "snippet": "roadmap review"}
+        ]
 
 
 class TestPermissionMatrixT5:

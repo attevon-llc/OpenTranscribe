@@ -14,8 +14,11 @@ precedent ``search/hybrid_search_service.py`` already sets for transcript
 chunks, whose module docstring is explicit that "transcript_chunks stores
 transcript text UNREDACTED by design" and masking happens only at snippet
 time. A user's own masked-content search must still be able to find the
-section their policy would mask; only the returned snippet is masked. See
-``mask_summary`` below.
+section their policy would mask; only the returned snippets are masked, and
+only the leaves that are actually returned — see ``mask_summary_leaf`` below
+(issue #822: this used to mask the WHOLE tree per matching file and then
+discard everything but the returned leaves, so a detector outage anywhere in
+a file withheld results a user was never going to see).
 
 Access control: this reuses ``PermissionService.get_accessible_file_ids_subquery``
 verbatim — the single authority the whole codebase already routes owner-scoped
@@ -31,7 +34,6 @@ a taken-down file is a content oracle (issue #818, same class as #876's
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
@@ -51,7 +53,7 @@ from app.models.media import MediaFile
 from app.services.permission_service import PermissionService
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.summary_redaction import _UNMASKED_TOP_LEVEL_KEYS
-from app.services.redaction.summary_redaction import mask_summary
+from app.services.redaction.summary_redaction import mask_summary_leaf
 from app.services.takedown_service import exclude_quarantined
 
 logger = logging.getLogger(__name__)
@@ -120,27 +122,19 @@ def _walk_leaves(node: Any, path: str) -> list[tuple[str, str]]:
     return []
 
 
-def _get_by_path(node: Any, path: str) -> Any:
-    """Look up the value at a ``key_path`` produced by :func:`_walk_leaves`.
-
-    ``mask_summary`` preserves the container shape exactly (same keys, same
-    list order, only string leaves rewritten), so a path collected from the
-    RAW tree always resolves on the MASKED tree too.
-    """
-    current = node
-    for part in re.findall(r"[^.\[\]]+|\[\d+\]", path):
-        current = current[int(part[1:-1])] if part.startswith("[") else current[part]
-    return current
-
-
 def _matching_leaf_indices(db: Session, texts: list[str], query: str) -> set[int]:
     """Return the positions in ``texts`` whose tokens satisfy ``query``.
 
-    One batched query per document (not one per leaf) using
-    ``unnest(...) WITH ORDINALITY`` so leaf-level identification uses the same
-    ``simple``-config ``websearch_to_tsquery`` semantics as the document-level
-    predicate, instead of a second, looser matching rule (a plain substring
-    check) that could disagree with what actually matched.
+    Issues one query for the given ``texts`` — currently one document's leaves,
+    not one query per leaf — using ``unnest(...) WITH ORDINALITY`` so leaf-level
+    identification uses the same ``simple``-config ``websearch_to_tsquery``
+    semantics as the document-level predicate, instead of a second, looser
+    matching rule (a plain substring check) that could disagree with what
+    actually matched. ⚠️ This scope is per-document today, not a completeness
+    claim about the whole page — issue #822 named it "one batched query per
+    document" in a way that read as "the batching problem is solved", which is
+    how the real remaining cost (this function still runs once per file on the
+    result page) came to be filed as if it were the per-leaf lookup itself.
     """
     if not texts:
         return set()
@@ -188,13 +182,17 @@ def search_summaries(
             copy of the sharing rule.
         page: 1-indexed page number.
         page_size: Results per page (files, not leaves).
-        redaction_cfg: The requesting user's effective redaction config. Every
-            matching summary is masked under it before its snippets are
-            returned, per-leaf, via ``mask_summary`` — never batched (see that
-            module's docstring for why: a batched detector pass drops repeated
-            names after their first mention). ``None`` (the default) means
-            "resolve nothing, return unmasked" and must only be passed by a
-            caller that has independently decided masking does not apply.
+        redaction_cfg: The requesting user's effective redaction config. Each
+            leaf actually RETURNED is masked under it, individually, via
+            ``mask_summary_leaf`` — never batched (see
+            ``redaction/summary_redaction.py``'s module docstring for why: a
+            batched detector pass drops repeated names after their first
+            mention). Only the leaves that make it into the response are
+            masked — a leaf that matched the document-level predicate but was
+            not selected as one of this file's matches is never examined
+            (issue #822). ``None`` (the default) means "resolve nothing,
+            return unmasked" and must only be passed by a caller that has
+            independently decided masking does not apply.
         include_quarantined: Admin review bypass, matching the
             ``exclude_quarantined`` convention used elsewhere (e.g.
             ``files/__init__.py``'s ``include_quarantined=is_admin``). Default
@@ -206,10 +204,12 @@ def search_summaries(
         key-path and (masked) snippet text.
 
     Raises:
-        SummaryMaskingUnavailableError: propagated from ``mask_summary`` when
-            a detector feeding one of the caller's enabled categories could
-            not run. The caller must fail closed (503), not fall back to the
-            unmasked summary.
+        SummaryMaskingUnavailableError: propagated from ``mask_summary_leaf``
+            when a detector feeding one of the caller's enabled categories
+            could not run on a leaf about to be returned. The caller must
+            fail closed (503), not fall back to the unmasked summary. A
+            detector outage on a leaf that was never going to be returned no
+            longer raises this — see the note on the narrowing above.
     """
     accessible = PermissionService.get_accessible_file_ids_subquery(
         db, user_id, organization_id=organization_id
@@ -254,10 +254,6 @@ def search_summaries(
         leaf_texts = [t for _, t in raw_leaves]
         matched_positions = _matching_leaf_indices(db, leaf_texts, query) if leaf_texts else set()
 
-        masked = (
-            mask_summary(summary_data, redaction_cfg) if redaction_cfg is not None else summary_data
-        )
-
         # The document-level predicate runs over the whole serialized JSON, so
         # a query whose terms are split across two different leaves (or that
         # only match once every leaf's JSON punctuation is glued together) can
@@ -265,9 +261,25 @@ def search_summaries(
         # Keep the file in the page (`total` already counted it) with an empty
         # `matches` list rather than dropping it and desynchronizing the count
         # from what the caller actually gets back.
+        #
+        # Mask only the leaves actually returned (issue #822) — not the whole
+        # tree. `mask_summary_leaf` shares `resolve_summary_leaf_policy` with
+        # the whole-tree `mask_summary`, so this is the same detector pass per
+        # leaf either way; it narrows WHICH leaves are examined, not how many
+        # detector calls one leaf costs. Fail-closed narrows to match: a
+        # detector outage on a leaf about to be DISCLOSED still 503s, but an
+        # outage on a leaf that matched the document-level predicate and was
+        # never going to be shown no longer withholds results the caller was
+        # never going to see. A real detector outage is process-wide anyway,
+        # so this does not weaken the guarantee — it removes a false positive.
         matches = [
             SummarySectionMatch(
-                key_path=paths[i], snippet=_snippet(str(_get_by_path(masked, paths[i])))
+                key_path=paths[i],
+                snippet=_snippet(
+                    mask_summary_leaf(leaf_texts[i], redaction_cfg)
+                    if redaction_cfg is not None
+                    else leaf_texts[i]
+                ),
             )
             for i in sorted(matched_positions)
         ]

@@ -7,7 +7,7 @@ embedded credentials, SQL fragments — to any caller who triggers the error. #8
 originally flagged the API/endpoint layer; #891 is the identical defect one layer
 down in the SERVICE layer, which #859's own remediation explicitly excluded.
 
-Two independent, AST-based scanners live here, both allowlist-gated with a mandatory
+Three independent, AST-based scanners live here, all allowlist-gated with a mandatory
 written reason, matching this repo's ``test_ws_event_quarantine_discipline.py`` /
 ``test_ddl_marker_discipline.py`` pattern.
 
@@ -26,11 +26,24 @@ anyone ever "simplifies" the scan root back down to ``app/api/``.
 service function isn't necessarily response-bound — many service functions return
 status tuples/dicts used for internal logic, not just API responses — so only the
 endpoint layer, which IS necessarily response-bound (a FastAPI handler's return value
-IS the response body), is scanned for this construct. ``app/services/``'s ~60
-similar-looking return-path patterns are a documented, deliberate residual — see the
-follow-up issue filed alongside this gate; they are not covered here.
+IS the response body), is scanned for this construct.
 
-Taint tracking (shared by both scanners): the exception variable bound in
+**Scanner 3 (service return-path) extends the SAME construct to ``app/services/``**
+(#914 STEP 8) — the residual scanner 2's docstring used to describe as "not covered
+here," measured then at 52 findings / 44 function keys / 34 files (#914's own "~60"
+was an overcount). Nearly all of those were real, fixable exception-echo sites and
+were fixed at the source (narrowed to ``type(exc).__name__``, upgraded the
+accompanying log call to ``logger.exception``) rather than allowlisted — see the
+#914 fix commits. What is allowlisted below is deliberately narrow: a genuine dial
+result an admin/user explicitly requested (§2b), or a value proven by hand-tracing
+every consumer to never reach an HTTP response body (§2c). Measured post-fix: 25
+findings / 22 function keys, every one accounted for in ``_SERVICE_RETURN_ALLOWLIST``.
+A service function's return value is not *automatically* response-bound the way an
+endpoint's is, so this scanner is necessarily narrower in what it can assert about a
+finding — hence the allowlist reasons here lean on traced consumers rather than the
+"this IS the response" shortcut scanner 2's dial-result entries use.
+
+Taint tracking (shared by all three scanners): the exception variable bound in
 ``except ... as e``, plus every local variable assigned from it — **including
 through a function call** (``safe = clean(str(e))`` must still taint ``safe``).
 There is deliberately NO trusted-sanitizer-name escape hatch: the investigation
@@ -64,6 +77,7 @@ from pathlib import Path
 _TESTS_ROOT = Path(__file__).resolve().parents[1]
 _APP_ROOT = _TESTS_ROOT.parent / "app"
 _API_ROOT = _APP_ROOT / "api"
+_SERVICES_ROOT = _APP_ROOT / "services"
 
 #: The names ErrorHandler exposes. Any of these called as ``ErrorHandler.<name>(...)``
 #: is in scope; the scanner does not hardcode this list for matching (it matches any
@@ -354,6 +368,34 @@ def _scan() -> tuple[dict[str, list[int]], dict[str, list[int]]]:
     return raise_by_key, return_by_key
 
 
+@functools.cache
+def _scan_service_returns() -> dict[str, list[int]]:
+    """Scanner 3 (#914): the return-path scan, extended to ``app/services/``.
+
+    A separate cached function rather than a third element of ``_scan()``'s
+    tuple, so every existing ``raise_by_key, return_by_key = _scan()`` call
+    site (including in the selftest) keeps working unchanged.
+    """
+    error_subclasses = _open_transcribe_error_subclasses_under(_APP_ROOT)
+
+    service_return_by_key: dict[str, list[int]] = {}
+    for path in _iter_py_files(_SERVICES_ROOT):
+        rel = _rel_to_app(path)
+        source = path.read_text()
+        if "except" not in source or "return" not in source:
+            continue
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:  # pragma: no cover
+            continue
+        walker = _TaintWalker(error_subclasses)
+        walker.visit(tree)
+        for fn, lineno in walker.return_findings:
+            service_return_by_key.setdefault(f"{rel}::{fn}", []).append(lineno)
+
+    return service_return_by_key
+
+
 #: (expected_count, written reason) per ``"<path relative to app/>::<function>"`` key.
 #: Every entry here raises/echoes OUR OWN authored message, never a caught library
 #: exception's raw text — verified against the real source, not copied blind.
@@ -374,8 +416,11 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
     ),
     "api/endpoints/auth/dependencies.py::_authenticate_external_token": (
         1,
-        "our own translated PermissionError message from sync_external_user_to_db "
-        "(a refused link, e.g. unverified email match), not a raw library exception",
+        "our own ExternalIdentityLinkRefusedError message from sync_external_user_to_db "
+        "(a refused link, e.g. unverified email match), not a raw library exception. "
+        "Renamed from PermissionError in #914 STEP 6 -- the builtin is also an OSError "
+        "subclass a real EACCES anywhere in this call chain could raise, which this "
+        "narrowing keeps out of the except clause that echoes str(e) into the response",
     ),
     "api/endpoints/auth_config.py::update_config_category": (
         1,
@@ -451,6 +496,14 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
         "verified: folder_browser.list_directories raises only three fixed-literal "
         "ValueErrors, never a host path",
     ),
+    "auth/external_sync.py::sync_external_user_to_db": (
+        1,
+        "our own ExternalIdentityLinkRefusedError re-wrap of an HTTPException raised by "
+        "assert_provider_id_link_permitted with a fixed failure_detail= literal "
+        "('External identity could not be verified') -- new in #914 STEP 6, "
+        "surfaced because ExternalIdentityLinkRefusedError is itself an "
+        "OpenTranscribeError subclass the raise-scanner now tracks",
+    ),
     "services/email_service.py::_send_via_env_smtp": (
         1,
         "already scrubs every embedded email address via _scrub(str(e)) before "
@@ -505,6 +558,148 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
     ),
 }
 
+#: (expected_count, written reason) per ``"<path>::<function>"`` key, SERVICE
+#: return-path (#914 STEP 8 / scanner 3). Two families:
+#:
+#: §2b — dial results. All nine ASR ``validate_connection`` implementations plus
+#: the two ``test_s3_connection`` helpers report the outcome of a connection
+#: attempt the caller (an admin testing THEIR OWN configured provider, via
+#: asr_settings.py / backup_settings.py / media_mirror_settings.py) explicitly
+#: asked for — the dial result IS the product these endpoints exist to report,
+#: the same precedent already set for the LLM/ASR test-connection routes in
+#: ``_RETURN_ALLOWLIST`` above. Every ASR provider routes its message through
+#: ``self._sanitize_error`` -> ``services/asr/base.py::sanitize_provider_error``,
+#: which strips API keys and bearer/token-shaped credentials — but that is its
+#: honest limit: it scrubs CREDENTIALS ONLY, never hostnames/endpoints, so a
+#: provider message naming its own API host is not something this allowlist
+#: pretends is impossible, only that the credential half is actually handled.
+#:
+#: §2c — internal-only. The tainted value never reaches an HTTP response body;
+#: every entry names the real consumer(s) traced by hand so a reason can go
+#: stale visibly rather than silently ("internal" alone is not a reason).
+_SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "services/asr/assemblyai_provider.py::validate_connection": (
+        1,
+        "dial result: self._sanitize_error(str(e), api_key) -> sanitize_provider_error "
+        "(credentials scrubbed, not hosts) -- the caller's own connection test",
+    ),
+    "services/asr/aws_provider.py::validate_connection": (
+        1,
+        "dial result, same self._sanitize_error path as assemblyai_provider.py",
+    ),
+    "services/asr/azure_provider.py::validate_connection": (
+        1,
+        "dial result, same self._sanitize_error path as assemblyai_provider.py",
+    ),
+    "services/asr/deepgram_provider.py::validate_connection": (
+        1,
+        "dial result, same self._sanitize_error path as assemblyai_provider.py",
+    ),
+    "services/asr/gladia_provider.py::validate_connection": (
+        1,
+        "dial result, same self._sanitize_error path as assemblyai_provider.py",
+    ),
+    "services/asr/google_provider.py::validate_connection": (
+        1,
+        "dial result, same self._sanitize_error path as assemblyai_provider.py",
+    ),
+    "services/asr/openai_provider.py::validate_connection": (
+        1,
+        "dial result, same self._sanitize_error path as assemblyai_provider.py",
+    ),
+    "services/asr/pyannote_provider.py::validate_connection": (
+        1,
+        "dial result, same self._sanitize_error path as assemblyai_provider.py "
+        "(this is the ASR provider, services/asr/ -- not the diarization-only "
+        "services/diarization/pyannote_provider.py entry below, a different class "
+        "with zero call sites)",
+    ),
+    "services/asr/speechmatics_provider.py::validate_connection": (
+        1,
+        "dial result, same self._sanitize_error path as assemblyai_provider.py",
+    ),
+    "services/backup_service.py::test_s3_connection": (
+        1,
+        "dial result: the admin's own S3 destination test, via "
+        "POST /admin/backup/test-s3 -- the connection outcome IS the product",
+    ),
+    "services/media_mirror_service.py::test_s3_connection": (
+        1,
+        "dial result: the admin's own S3 destination test, via the media-mirror "
+        "settings test action -- the connection outcome IS the product",
+    ),
+    "services/chat/legs.py::_run_leg": (
+        1,
+        "internal-only: LegOutcome.error is read only by LegOutcome.ok (:141) and "
+        "a logger.warning; FanOutResult.as_metadata (:159-176) emits leg NAMES and "
+        "timings, never a leg's error text",
+    ),
+    "services/opensearch_service/client.py::probe_knn_health": (
+        4,
+        "internal-only: KnnHealthProbe.detail is read only by logger calls in "
+        "repair.py:565,571 and index_health.py:245,249; repair.py:44 reads only "
+        "probe.is_serviceable, never probe.detail",
+    ),
+    "services/redaction/service.py::detect_and_store": (
+        1,
+        "internal-only: the returned dict's error is read by redaction_task.py:134, "
+        "whose _notify (:205-221) forwards only status/segments/pii_entities_found/"
+        "language/skipped_detectors to the WS event -- error is dropped, never sent",
+    ),
+    "services/search/ml_model_service.py::verify_model_can_embed": (
+        1,
+        "internal-only: the one call site (:657) reads the result into a logger "
+        "call only, never a response",
+    ),
+    "services/watch_email_service.py::send_email": (
+        1,
+        "internal-only: both callers discard or pre-scrub the message before any "
+        "HTTP surface sees it -- email_service.py:416 runs it through _scrub() "
+        "before logging, watch_source_tasks.py:634 unpacks it as `_msg` and never "
+        "reads it at all",
+    ),
+    "services/diarization/pyannote_provider.py::validate_connection": (
+        1,
+        "internal-only in the strongest sense: ZERO call sites. Required only "
+        "because DiarizationProvider (base.py:41) declares it @abstractmethod -- "
+        "see the comment on the method itself for why this is reported, not fixed",
+    ),
+    "services/backup_recovery.py::write_companion": (
+        1,
+        "exc.returncode is a small int (the gpg process exit code) interpolated "
+        "into our own authored 'gpg failed (exit N)' message, never message text -- "
+        "the same authored-safe-fact shape as the type(e).__name__ prune (4a), for "
+        "a different attribute the scanner has no structural exemption for",
+    ),
+    "services/backup_service.py::_perform_backup_local": (
+        1,
+        "same exc.cmd[0]/exc.returncode safe-attribute shape as "
+        "backup_recovery.py::write_companion -- 'result' is tainted only because "
+        "one except branch builds it from exc.cmd[0] (a fixed argv[0] like "
+        "'pg_dump') and exc.returncode, both ints/literals, never message text; "
+        "the shared `return result` also serves the (untainted) success path",
+    ),
+    "services/backup_service.py::_perform_backup_s3": (
+        1,
+        "same as _perform_backup_local -- the S3 backend's twin CalledProcessError branch",
+    ),
+    "services/directory_sync_service.py::sweep_ldap": (
+        1,
+        "already-sanitized upstream: error = str(e) where e is "
+        "LdapDirectoryUnavailableError, scrubbed at the auth/ldap_auth.py raiser "
+        "(#914 STEP 5) to type(exc).__name__ only -- same 'narrow re-wrap of our "
+        "OWN already-sanitized exception' shape as the raise-allowlist's "
+        "model_switch.py::apply_embedding_model_switch entry above",
+    ),
+    "services/tag_bulk.py::_require_editor": (
+        1,
+        "our own HTTPException.detail from PermissionService.check_file_access, "
+        "which raises only two fixed literals ('Not authorized to access this "
+        "file' / 'Requires {min_permission} permission on this file') -- a "
+        "validator message, not a caught library exception",
+    ),
+}
+
 
 def test_the_scanner_actually_finds_call_sites() -> None:
     """A scanner that matches nothing is indistinguishable from a clean tree."""
@@ -517,6 +712,16 @@ def test_the_scanner_actually_finds_call_sites() -> None:
     assert len(return_by_key) >= 5, (
         f"expected at least 5 distinct return-path findings under app/api/, "
         f"found {len(return_by_key)}"
+    )
+    # Measured post-fix (#914 STEP 8): 22 distinct service-return keys. Set ONE
+    # below deliberately, so a genuine future reduction doesn't need a same-day
+    # floor bump, while a scanner regression to near-zero still trips this.
+    service_return_by_key = _scan_service_returns()
+    assert len(service_return_by_key) >= 21, (
+        f"expected at least 21 distinct service-return-path findings under "
+        f"app/services/, found {len(service_return_by_key)} — either the "
+        "scanner regressed or the codebase genuinely eliminated most of them "
+        "(update this floor deliberately if so)"
     )
 
 
@@ -593,6 +798,51 @@ def test_the_return_allowlist_is_honest() -> None:
     unexplained: list[str] = []
     for key, (expected_count, reason) in sorted(_RETURN_ALLOWLIST.items()):
         actual = len(return_by_key.get(key, []))
+        if actual == 0:
+            stale.append(key)
+        elif actual < expected_count:
+            inflated.append(f"{key} (allowlisted {expected_count}, found {actual})")
+        if not reason.strip():
+            unexplained.append(key)
+    assert not stale, f"allowlist entries point at functions with no finding at all: {stale}"
+    assert not inflated, f"allowlist entries claim more findings than exist: {inflated}"
+    assert not unexplained, f"allowlist entries need a written reason: {unexplained}"
+
+
+def test_no_unallowlisted_service_return_path_exception_echo() -> None:
+    """Scanner 3 (#914 STEP 8): the return-path scan, extended to app/services/."""
+    service_return_by_key = _scan_service_returns()
+    unallowlisted = sorted(set(service_return_by_key) - set(_SERVICE_RETURN_ALLOWLIST))
+    assert not unallowlisted, (
+        "These return-path sites (under app/services/) echo caught exception text "
+        "into a returned value with no allowlist entry. Rewrite with the "
+        "type(exc).__name__ pattern (see the #914 fix commits), or add a reasoned "
+        "_SERVICE_RETURN_ALLOWLIST entry naming the traced consumer if the value "
+        "genuinely never reaches an HTTP response body:\n  " + "\n  ".join(unallowlisted)
+    )
+
+
+def test_a_service_return_site_may_not_exceed_its_allowlisted_count() -> None:
+    service_return_by_key = _scan_service_returns()
+    over: list[str] = []
+    for key, findings in service_return_by_key.items():
+        expected = _SERVICE_RETURN_ALLOWLIST.get(key)
+        if expected is not None and len(findings) > expected[0]:
+            over.append(f"{key} (found {len(findings)}, allowlisted {expected[0]})")
+    assert not over, (
+        "These functions have MORE tainted return sites than their allowlist entry "
+        "accounts for -- a new leak was added beside an already-allowlisted one:\n  "
+        + "\n  ".join(over)
+    )
+
+
+def test_the_service_return_allowlist_is_honest() -> None:
+    service_return_by_key = _scan_service_returns()
+    stale: list[str] = []
+    inflated: list[str] = []
+    unexplained: list[str] = []
+    for key, (expected_count, reason) in sorted(_SERVICE_RETURN_ALLOWLIST.items()):
+        actual = len(service_return_by_key.get(key, []))
         if actual == 0:
             stale.append(key)
         elif actual < expected_count:

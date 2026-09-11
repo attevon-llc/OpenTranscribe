@@ -170,6 +170,121 @@ def test_ollama_models_without_base_url_is_422(client, user_token_headers):
 
 
 # ===========================================================================
+# Write-time SSRF validation on create/update (issue #820)
+#
+# `_assert_safe_llm_endpoint` used to run ONLY inside `POST /test` (the "Test
+# connection" button's handler) — `POST ""` (create) and `PUT /config/{uuid}`
+# (update) persisted an unsafe `base_url` straight to the database with no check
+# at all, so a config could carry a loopback/private endpoint simply by never
+# pressing "Test connection" first, including via a direct API call.
+# ===========================================================================
+
+
+def test_creating_a_config_with_an_unsafe_endpoint_is_refused(
+    client, user_token_headers, block_private_endpoints
+):
+    resp = client.post(
+        _BASE,
+        json=_config_payload("UnsafeCreate", base_url=_LOOPBACK),
+        headers=user_token_headers,
+    )
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+    assert resp.json()["detail"] == _BLOCKED_DETAIL
+
+    # Nothing was persisted — the name is free for a later, safe attempt.
+    listing = client.get(_BASE, headers=user_token_headers)
+    assert listing.status_code == status.HTTP_200_OK
+    assert listing.json()["configurations"] == []
+
+
+def test_creating_a_config_with_a_safe_endpoint_still_succeeds(
+    client, user_token_headers, block_private_endpoints
+):
+    """Control for the two refusal tests above/below: a normal public `base_url`
+    must still create/update cleanly, or "reject everything" would pass those too.
+    """
+    created = _create_config(client, user_token_headers, "SafeCreate")
+    assert created["base_url"] == "https://api.openai.com/v1"
+
+    resp = client.put(
+        f"{_BASE}/config/{created['uuid']}",
+        json={"base_url": "https://api.anthropic.com/v1"},
+        headers=user_token_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["base_url"] == "https://api.anthropic.com/v1"
+
+
+def test_updating_a_config_to_an_unsafe_endpoint_is_refused(
+    client, user_token_headers, block_private_endpoints
+):
+    created = _create_config(client, user_token_headers, "SafeThenUnsafe")
+
+    resp = client.put(
+        f"{_BASE}/config/{created['uuid']}",
+        json={"base_url": _LOOPBACK},
+        headers=user_token_headers,
+    )
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+    assert resp.json()["detail"] == _BLOCKED_DETAIL
+
+    # The row was not overwritten by the rejected update.
+    reread = client.get(f"{_BASE}/config/{created['uuid']}", headers=user_token_headers)
+    assert reread.status_code == status.HTTP_200_OK
+    assert reread.json()["base_url"] == "https://api.openai.com/v1"
+
+
+def test_updating_a_config_without_changing_the_base_url_does_not_re_trigger_a_false_refusal(
+    client, user_token_headers, allow_private_endpoints, monkeypatch
+):
+    """A config saved while the escape hatch was on keeps a loopback `base_url`.
+    Renaming the model afterwards, with the hatch now off, must not re-validate
+    that UNCHANGED value — only a request that actually sets `base_url` should.
+    """
+    created = _create_config(client, user_token_headers, "LoopbackWhileAllowed", base_url=_LOOPBACK)
+    assert created["base_url"] == _LOOPBACK
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "LLM_ALLOW_PRIVATE_ENDPOINTS", False)
+
+    resp = client.put(
+        f"{_BASE}/config/{created['uuid']}",
+        json={"model_name": "gpt-4o"},
+        headers=user_token_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["model_name"] == "gpt-4o"
+    assert resp.json()["base_url"] == _LOOPBACK
+
+
+def test_the_escape_hatch_is_honored_consistently_across_create_test_and_update(
+    client, user_token_headers, allow_private_endpoints
+):
+    """Same input (a loopback `base_url`), same verdict (allowed), at all three
+    call sites `_assert_safe_llm_endpoint` guards.
+    """
+    created = _create_config(client, user_token_headers, "AllowedEverywhere", base_url=_LOOPBACK)
+    assert created["base_url"] == _LOOPBACK
+
+    with patch(f"{_MOD}.LLMService.validate_connection", return_value=(True, "reachable")):
+        tested = client.post(
+            f"{_BASE}/test",
+            json=_config_payload("Ignored", base_url=_LOOPBACK),
+            headers=user_token_headers,
+        )
+    assert tested.status_code == status.HTTP_200_OK
+
+    updated = client.put(
+        f"{_BASE}/config/{created['uuid']}",
+        json={"base_url": _LOOPBACK},
+        headers=user_token_headers,
+    )
+    assert updated.status_code == status.HTTP_200_OK
+    assert updated.json()["base_url"] == _LOOPBACK
+
+
+# ===========================================================================
 # Model discovery against a stubbed transport
 # ===========================================================================
 

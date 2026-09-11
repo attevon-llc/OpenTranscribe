@@ -768,8 +768,10 @@ def _prune_local_safe(destination: str, cfg: dict[str, Any]) -> tuple[list[str],
     try:
         return prune_backups(destination, cfg), None
     except Exception as exc:  # noqa: BLE001 - the dump already succeeded; record + continue
-        logger.warning("Backup retention pruning failed (dump itself succeeded): %s", exc)
-        return [], str(exc)
+        # prune_error is rendered on GET /admin/backup and /admin/backup/status --
+        # never interpolate the raw exception text, only its class name (#914).
+        logger.exception("Backup retention pruning failed (dump itself succeeded)")
+        return [], f"Pruning failed ({type(exc).__name__})"
 
 
 def _prune_s3_safe(cfg: dict[str, Any], client: Any) -> tuple[list[str], str | None]:
@@ -777,8 +779,8 @@ def _prune_s3_safe(cfg: dict[str, Any], client: Any) -> tuple[list[str], str | N
     try:
         return prune_backups_s3(cfg, client=client), None
     except Exception as exc:  # noqa: BLE001 - the upload already succeeded; record + continue
-        logger.warning("S3 backup retention pruning failed (dump itself succeeded): %s", exc)
-        return [], str(exc)
+        logger.exception("S3 backup retention pruning failed (dump itself succeeded)")
+        return [], f"Pruning failed ({type(exc).__name__})"
 
 
 def _build_recovery_artifact(cfg: dict[str, Any], dest_dir: Path) -> dict[str, Any]:
@@ -795,7 +797,14 @@ def _build_recovery_artifact(cfg: dict[str, Any], dest_dir: Path) -> dict[str, A
         try:
             passphrase = _read_passphrase(cfg["passphrase_file"])
         except (OSError, ValueError) as exc:
-            return {"status": backup_recovery.STATUS_ERROR, "error": str(exc)}
+            # _read_passphrase's own message names the configured passphrase
+            # FILE PATH -- an admin-set value, but still a host filesystem
+            # detail this response should not echo (#914).
+            logger.exception("Could not read backup passphrase file")
+            return {
+                "status": backup_recovery.STATUS_ERROR,
+                "error": f"Could not read backup passphrase file ({type(exc).__name__})",
+            }
         return backup_recovery.write_companion(dest_dir, passphrase)
     return backup_recovery.write_readme(dest_dir)
 
@@ -814,8 +823,14 @@ def _write_recovery_s3(
         client.upload_file(str(local), bucket, key)
         result["path"] = f"s3://{bucket}/{key}"
     except Exception as exc:  # noqa: BLE001 - companion upload never fails the backup
-        logger.warning("Could not upload recovery companion to s3://%s/%s: %s", bucket, key, exc)
-        result = {"status": "error", "error": str(exc)}
+        # This overwrites `result` entirely and is assigned OUTSIDE the handler's
+        # own scope, then returned below (scanner-invisible under the raise/return
+        # walker) -- rendered on GET /admin/backup and /admin/backup/status.
+        logger.exception("Could not upload recovery companion to s3://%s/%s", bucket, key)
+        result = {
+            "status": "error",
+            "error": f"Recovery companion upload failed ({type(exc).__name__})",
+        }
     finally:
         with contextlib.suppress(OSError):
             local.unlink(missing_ok=True)
@@ -876,28 +891,34 @@ def _perform_backup_local(cfg: dict[str, Any], db: Session | None) -> dict[str, 
             len(pruned),
         )
     except subprocess.CalledProcessError as exc:
+        # pg_dump's stderr can carry PGHOST/PGUSER/the database name -- and the
+        # exception's str() a passphrase-file path -- both rendered on
+        # GET /admin/backup and /admin/backup/status. Only the command name and
+        # exit code survive; the real cause is still diagnosable via the log.
         stderr = (exc.stderr or b"").decode("utf-8", "replace")[-2000:] if exc.stderr else ""
         _cleanup_partial(dest_path)
         duration = round(time.monotonic() - started, 2)
         result = {
             "ok": False,
             "status": "error",
-            "error": f"{exc.cmd[0]} failed (exit {exc.returncode}): {stderr}",
+            "error": f"{exc.cmd[0]} failed (exit {exc.returncode})",
             "duration_s": duration,
             "started_at": now_iso,
         }
-        logger.error("Backup failed: %s", result["error"])
+        logger.exception(
+            "Backup failed: %s failed (exit %s): %s", exc.cmd[0], exc.returncode, stderr
+        )
     except (OSError, ValueError, FileNotFoundError) as exc:
         _cleanup_partial(dest_path)
         duration = round(time.monotonic() - started, 2)
         result = {
             "ok": False,
             "status": "error",
-            "error": str(exc),
+            "error": f"Backup failed ({type(exc).__name__})",
             "duration_s": duration,
             "started_at": now_iso,
         }
-        logger.error("Backup failed: %s", exc)
+        logger.exception("Backup failed")
 
     _record_result(db, now_iso, result)
     return result
@@ -978,26 +999,32 @@ def _perform_backup_s3(cfg: dict[str, Any], db: Session | None) -> dict[str, Any
             len(pruned),
         )
     except subprocess.CalledProcessError as exc:
+        # Same pg_dump stderr / secret-path concern as the local backend --
+        # never echo it into the admin-facing result (#914).
         stderr = (exc.stderr or b"").decode("utf-8", "replace")[-2000:] if exc.stderr else ""
         duration = round(time.monotonic() - started, 2)
         result = {
             "ok": False,
             "status": "error",
-            "error": f"{exc.cmd[0]} failed (exit {exc.returncode}): {stderr}",
+            "error": f"{exc.cmd[0]} failed (exit {exc.returncode})",
             "duration_s": duration,
             "started_at": now_iso,
         }
-        logger.error("S3 backup failed: %s", result["error"])
+        logger.exception(
+            "S3 backup failed: %s failed (exit %s): %s", exc.cmd[0], exc.returncode, stderr
+        )
     except Exception as exc:  # noqa: BLE001 - boto3/network/value errors → recorded, never raised
+        # A boto3 ClientError can quote the endpoint_url/bucket/region -- only
+        # the class of failure is returned.
         duration = round(time.monotonic() - started, 2)
         result = {
             "ok": False,
             "status": "error",
-            "error": str(exc),
+            "error": f"S3 backup failed ({type(exc).__name__})",
             "duration_s": duration,
             "started_at": now_iso,
         }
-        logger.error("S3 backup failed: %s", exc)
+        logger.exception("S3 backup failed")
     finally:
         # Always remove the local temp artifact (dump and/or gpg envelope).
         _cleanup_partial(tmp_dump)

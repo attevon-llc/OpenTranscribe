@@ -282,8 +282,16 @@ def perform_mirror(db: Session | None = None, max_objects: int | None = None) ->
     try:
         destination = _build_destination(cfg, db)
     except ValueError as exc:
-        logger.warning("Media mirror skipped: %s", exc)
-        result = {"ok": False, "status": "no_destination", "error": str(exc), "started_at": now_iso}
+        # "error" is rendered on the media-mirror admin settings surface
+        # (media_mirror_settings.py) via MirrorResultModel.error -- never
+        # interpolate the raw exception text, only its class name (#914).
+        logger.exception("Media mirror skipped")
+        result = {
+            "ok": False,
+            "status": "no_destination",
+            "error": f"Media mirror skipped ({type(exc).__name__})",
+            "started_at": now_iso,
+        }
         mm.record_result(db, now_iso, result)
         return result
 
@@ -312,14 +320,16 @@ def perform_mirror(db: Session | None = None, max_objects: int | None = None) ->
             result["duration_s"],
         )
     except Exception as exc:  # noqa: BLE001 - listing/network errors → recorded, never raised
+        # A boto3 ClientError can quote the endpoint_url/bucket/region -- same
+        # rendering path as above, only the class of failure is returned.
         result = {
             "ok": False,
             "status": "error",
-            "error": str(exc),
+            "error": f"Media mirror failed ({type(exc).__name__})",
             "duration_s": round(time.monotonic() - started, 2),
             "started_at": now_iso,
         }
-        logger.error("Media mirror failed: %s", exc)
+        logger.exception("Media mirror failed")
 
     mm.record_result(db, now_iso, result)
     return result

@@ -590,11 +590,12 @@ def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None
         user_id: User ID to notify.
     """
     try:
-        from app.utils.websocket_notify import send_ws_event
+        from app.utils.websocket_notify import send_ws_event_for_file
 
-        send_ws_event(
+        send_ws_event_for_file(
             user_id=user_id,
             notification_type="file_created",
+            file_uuid=media_file.uuid,
             data={
                 "file_id": str(media_file.uuid),
                 "file": {

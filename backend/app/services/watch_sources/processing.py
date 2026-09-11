@@ -439,7 +439,7 @@ def _notify_file_created(user_id: int, media_file: MediaFile) -> None:
     """Send the live gallery ``file_created`` WS event (best-effort)."""
     try:
         from app.services.formatting_service import FormattingService
-        from app.utils.websocket_notify import send_ws_event
+        from app.utils.websocket_notify import send_ws_event_for_file
 
         file_data = {
             "id": str(media_file.uuid),
@@ -453,7 +453,12 @@ def _notify_file_created(user_id: int, media_file: MediaFile) -> None:
             "title": str(media_file.title) if media_file.title else None,
             "upload_time": media_file.upload_time.isoformat() if media_file.upload_time else None,
         }
-        send_ws_event(user_id, "file_created", {"file_id": str(media_file.uuid), "file": file_data})
+        send_ws_event_for_file(
+            user_id,
+            "file_created",
+            {"file_id": str(media_file.uuid), "file": file_data},
+            file_uuid=media_file.uuid,
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning("file_created WS notify failed for %s: %s", media_file.id, e)
 

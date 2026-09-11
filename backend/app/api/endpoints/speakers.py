@@ -1331,7 +1331,17 @@ def verify_speaker_identification(
     - 'create_profile': Create new profile and assign speaker
     """
     try:
+        from app.services.takedown_service import is_hidden_for
+
         speaker = get_speaker_by_uuid(db, speaker_uuid)
+        # A quarantined file 404s everywhere else in the product (issue #908, finding
+        # C) — without this, a non-admin who already knows/saved the speaker's UUID
+        # could still mutate a speaker on a file their own file-list no longer shows.
+        if speaker.media_file is not None and is_hidden_for(
+            speaker.media_file, is_admin=current_user.is_admin
+        ):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
+
         file_perm = (
             "owner"
             if current_user.is_admin
@@ -1354,16 +1364,22 @@ def verify_speaker_identification(
         )
 
         from app.utils.websocket_notify import send_ws_event
+        from app.utils.websocket_notify import send_ws_event_for_file
 
-        send_ws_event(
-            current_user.id,
-            "speaker_updated",
-            {
-                "media_file_id": media_file_uuid,
-                "speaker_uuid": speaker_uuid_str,
-                "reason": f"speaker_verification_{action}",
-            },
-        )
+        _verify_notification_data = {
+            "media_file_id": media_file_uuid,
+            "speaker_uuid": speaker_uuid_str,
+            "reason": f"speaker_verification_{action}",
+        }
+        if media_file_uuid is not None:
+            send_ws_event_for_file(
+                current_user.id,
+                "speaker_updated",
+                _verify_notification_data,
+                file_uuid=media_file_uuid,
+            )
+        else:
+            send_ws_event(current_user.id, "speaker_updated", _verify_notification_data)
 
         return result
 
@@ -1390,6 +1406,17 @@ def confirm_speaker_gender(
         )
 
     speaker = get_speaker_by_uuid(db, speaker_uuid)
+
+    from app.services.takedown_service import is_hidden_for
+
+    # A quarantined file 404s everywhere else in the product (issue #908, finding
+    # C) — without this, a non-admin who already knows/saved the speaker's UUID
+    # could still mutate a speaker on a file their own file-list no longer shows.
+    if speaker.media_file is not None and is_hidden_for(
+        speaker.media_file, is_admin=current_user.is_admin
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
+
     if not current_user.is_admin and speaker.user_id != current_user.id:
         perm = PermissionService.get_file_permission(
             db, int(speaker.media_file_id), current_user.id
@@ -1411,16 +1438,22 @@ def confirm_speaker_gender(
     db.commit()
 
     from app.utils.websocket_notify import send_ws_event
+    from app.utils.websocket_notify import send_ws_event_for_file
 
-    send_ws_event(
-        current_user.id,
-        "speaker_updated",
-        {
-            "media_file_id": media_file_uuid,
-            "speaker_uuid": speaker_uuid_str,
-            "reason": "gender_confirmed",
-        },
-    )
+    _gender_notification_data = {
+        "media_file_id": media_file_uuid,
+        "speaker_uuid": speaker_uuid_str,
+        "reason": "gender_confirmed",
+    }
+    if media_file_uuid is not None:
+        send_ws_event_for_file(
+            current_user.id,
+            "speaker_updated",
+            _gender_notification_data,
+            file_uuid=media_file_uuid,
+        )
+    else:
+        send_ws_event(current_user.id, "speaker_updated", _gender_notification_data)
 
     return {
         "speaker_uuid": speaker_uuid_str,

@@ -7,7 +7,7 @@ from unittest.mock import patch
 # Patch paths — these are imported at the top of postprocess.py
 _POSTPROCESS = "app.tasks.transcription.postprocess"
 _INDEX_TRANSCRIPT = f"{_POSTPROCESS}._index_transcript"
-_SEND_WS = f"{_POSTPROCESS}.send_ws_event"
+_SEND_WS = f"{_POSTPROCESS}.send_ws_event_for_file"
 _DISPATCH_ATTRS = f"{_POSTPROCESS}._dispatch_speaker_attributes"
 _DISPATCH_CLUSTERING = f"{_POSTPROCESS}._dispatch_speaker_clustering"
 
@@ -162,6 +162,7 @@ class TestEnrichAndDispatch:
             7,
             "enrichment_task_complete",
             {"file_id": "uuid-1", "task": "search_indexing"},
+            file_id=1,
         )
 
     @patch(_DISPATCH_CLUSTERING)
@@ -366,7 +367,7 @@ class TestSpeakerEmbeddingQueueRouting:
         return base
 
     @patch(f"{_POSTPROCESS}.enrich_and_dispatch")
-    @patch(f"{_POSTPROCESS}.send_ws_event")
+    @patch(f"{_POSTPROCESS}.send_ws_event_for_file")
     @patch(f"{_POSTPROCESS}.send_completion_notification")
     @patch(f"{_POSTPROCESS}.send_progress_notification")
     @patch(f"{_POSTPROCESS}.update_task_status")
@@ -407,7 +408,7 @@ class TestSpeakerEmbeddingQueueRouting:
         assert mock_apply_async.call_args.kwargs["queue"] == CeleryQueues.CPU
 
     @patch(f"{_POSTPROCESS}.enrich_and_dispatch")
-    @patch(f"{_POSTPROCESS}.send_ws_event")
+    @patch(f"{_POSTPROCESS}.send_ws_event_for_file")
     @patch(f"{_POSTPROCESS}.send_completion_notification")
     @patch(f"{_POSTPROCESS}.send_progress_notification")
     @patch(f"{_POSTPROCESS}.update_task_status")

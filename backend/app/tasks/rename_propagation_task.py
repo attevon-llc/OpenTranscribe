@@ -555,7 +555,7 @@ def regenerate_rename_digests(
     from app.services.search.indexing_service import TranscriptIndexingService
     from app.services.search.indexing_service import is_neural_pipeline_available
     from app.tasks.search_indexing_task import extract_file_index_metadata
-    from app.utils.websocket_notify import send_ws_event
+    from app.utils.websocket_notify import send_ws_event_for_file
 
     uuids = sorted({str(u) for u in (file_uuids or []) if u})
     if not uuids:
@@ -621,20 +621,34 @@ def regenerate_rename_digests(
     # touches many files at once and the speakers page needs one "propagation
     # finished" signal to invalidate its cache and clear a progress indicator,
     # not one toast per file.
+    from app.services.takedown_service import filter_suppressed_file_uuids
+
     for user_id, files_for_user in owners.items():
         try:
-            send_ws_event(
+            # A bulk rename/profile merge can span files this recipient no longer
+            # sees (one of them may have been quarantined between the rename commit
+            # and this background regeneration). The payload's `file_uuids` list AND
+            # the `regenerated` count it feeds into the "N files updated" toast must
+            # both reflect only what this recipient may see (issue #908) — the
+            # `regenerated` count is recomputed from the filtered list, never the
+            # original, so the number itself cannot disclose that a hidden file was
+            # touched. An all-quarantined batch sends nothing at all.
+            visible = filter_suppressed_file_uuids(files_for_user, user_id)
+            if not visible:
+                continue
+            send_ws_event_for_file(
                 user_id=user_id,
                 notification_type="speaker_rename_propagation",
                 data={
                     "status": "completed",
                     "new_name": new_name,
                     "speaker_id": speaker_id,
-                    "file_uuids": files_for_user,
-                    "regenerated": len(files_for_user),
+                    "file_uuids": visible,
+                    "regenerated": len(visible),
                     "errors": errors,
                     "total": len(uuids),
                 },
+                file_uuids=visible,
             )
         except Exception as exc:  # noqa: BLE001 — best-effort, matches every sibling dispatch here
             logger.warning(

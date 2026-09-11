@@ -224,6 +224,15 @@ def update_task_env(db_session, monkeypatch):
         recorded["cache_file_id"] = media_file_id
 
     monkeypatch.setattr(spk, "_clear_video_cache_for_speaker", _cache)
+    # send_ws_event_for_file (issue #908) resolves quarantine via its OWN
+    # session_scope() on a real connection, which cannot see this test's
+    # savepoint-isolated MediaFile — stub the check itself, rather than bridge
+    # a second session, so this session-lifetime suite stays focused on what
+    # it actually measures (scope depth), not quarantine visibility.
+    monkeypatch.setattr(
+        "app.services.takedown_service.is_notification_suppressed_for_uuid",
+        lambda *a, **kw: False,
+    )
     monkeypatch.setattr(
         "app.utils.websocket_notify.send_ws_event",
         lambda user_id, event, data: recorded.setdefault("ws", []).append((event, data)),
@@ -383,6 +392,15 @@ def merge_task_env(db_session, monkeypatch):
         spk,
         "_refresh_analytics_after_merge",
         lambda db, *a: tracker.observe("analytics"),
+    )
+    # send_ws_event_for_file (issue #908) resolves quarantine via its OWN
+    # session_scope() on a real connection, which cannot see this test's
+    # savepoint-isolated MediaFile — stub the check itself, rather than bridge
+    # a second session, so this session-lifetime suite stays focused on what
+    # it actually measures (scope depth), not quarantine visibility.
+    monkeypatch.setattr(
+        "app.services.takedown_service.is_notification_suppressed_for_uuid",
+        lambda *a, **kw: False,
     )
     monkeypatch.setattr(
         "app.utils.websocket_notify.send_ws_event",

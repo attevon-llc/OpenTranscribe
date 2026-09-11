@@ -102,6 +102,7 @@ def process_speaker_merge_background(
     from app.api.endpoints.speakers import _update_opensearch_speaker_merge
     from app.api.endpoints.speakers import _update_profile_embeddings_after_merge
     from app.utils.websocket_notify import send_ws_event
+    from app.utils.websocket_notify import send_ws_event_for_file
 
     affected_media_files = set(media_file_ids or [])
 
@@ -145,19 +146,25 @@ def process_speaker_merge_background(
         # so segments still holding that dead uuid client-side can never be patched by
         # `applySpeakerRename` (which only knows the surviving uuid) — the handler must
         # instead refetch segments outright. The rename event carries no such field.
-        send_ws_event(
-            user_id,
-            "speaker_processing_complete",
-            {
-                "speaker_uuid": target_speaker_uuid,
-                "display_name": target["display_name"] or "",
-                "processing_status": "complete",
-                "auto_applied_count": 0,
-                "suggested_count": 0,
-                "media_file_id": target["media_file_uuid"],
-                "reason": "speaker_merged",
-            },
-        )
+        _merge_notification_data = {
+            "speaker_uuid": target_speaker_uuid,
+            "display_name": target["display_name"] or "",
+            "processing_status": "complete",
+            "auto_applied_count": 0,
+            "suggested_count": 0,
+            "media_file_id": target["media_file_uuid"],
+            "reason": "speaker_merged",
+        }
+        if target["media_file_uuid"] is not None:
+            send_ws_event_for_file(
+                user_id,
+                "speaker_processing_complete",
+                _merge_notification_data,
+                file_uuid=target["media_file_uuid"],
+            )
+        else:
+            # A speaker with no media file has nothing a quarantine could hide.
+            send_ws_event(user_id, "speaker_processing_complete", _merge_notification_data)
 
         logger.info(
             f"Background merge processing complete {source_speaker_uuid} -> {target_speaker_uuid}"

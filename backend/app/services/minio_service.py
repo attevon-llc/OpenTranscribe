@@ -9,7 +9,9 @@ import urllib3
 from minio.error import S3Error
 
 from app.core.config import settings
+from app.core.constants import STORAGE_QUARANTINE_TAG_KEY
 from app.services import storage_backend
+from app.services import storage_presign_identity
 from app.services.storage_backend import clamp_presigned_expiry
 from app.services.storage_backend import rewrite_public_host
 
@@ -66,6 +68,10 @@ def upload_file(file_content: BinaryIO, file_size: int, object_name: str, conten
 def download_file(object_name: str) -> tuple[io.BytesIO, int, str]:
     """
     Download a file from MinIO
+
+    Stays on the ROOT ``minio_client`` (issue #907): this is a server-side read (admin
+    review, thumbnail proxy, pipeline consumers), not a browser-facing presign, so the
+    quarantine Deny on the restricted identity must not apply here.
 
     Args:
         object_name: Object name in MinIO
@@ -132,11 +138,17 @@ def get_file_url(object_name: str, expires: int = 0) -> str:
         logger = logging.getLogger(__name__)
         logger.info(f"Getting presigned URL for {object_name} with expires={expires} seconds")
 
+        # Browser-facing presign: signed by the restricted presign identity (issue #907)
+        # so a takedown's quarantine tag can revoke this URL after it's already been
+        # handed to a browser. Falls back to the root client if the identity is
+        # unavailable — see storage_presign_identity.presign_client.
+        client = storage_presign_identity.presign_client()
+
         # Create a direct URL using the get_presigned_url method
         try:
             # Try using the presigned_get_object method with a timedelta
             delta = datetime.timedelta(seconds=expires)
-            url = minio_client.presigned_get_object(
+            url = client.presigned_get_object(
                 bucket_name=settings.MEDIA_BUCKET_NAME,
                 object_name=object_name,
                 expires=delta,
@@ -144,7 +156,7 @@ def get_file_url(object_name: str, expires: int = 0) -> str:
         except Exception as inner_e:
             logger.info(f"First attempt failed: {inner_e}, trying alternative method")
             # If that fails, try using the raw method with timedelta
-            url = minio_client.get_presigned_url(
+            url = client.get_presigned_url(
                 "GET",
                 settings.MEDIA_BUCKET_NAME,
                 object_name,
@@ -217,6 +229,58 @@ def set_object_legal_hold(object_name: str, hold: bool) -> bool:
             f"Object legal-hold {'enable' if hold else 'disable'} unavailable for "
             f"{object_name} (bucket object-lock may be disabled): {e}"
         )
+        return False
+
+
+def set_object_quarantine_tag(
+    object_name: str, quarantined: bool, *, bucket_name: str | None = None
+) -> bool:
+    """Set (or clear) the object tag the presign identity's policy Denies GET on — best-effort.
+
+    This is the storage-plane mechanism behind presigned-URL revocation on takedown (issue
+    #907): the restricted presign identity's policy (``storage_presign_identity.
+    build_presign_policy``) Denies ``s3:GetObject`` on any object carrying
+    ``STORAGE_QUARANTINE_TAG_KEY=true``, so tagging an object here revokes an
+    already-minted presigned URL for it immediately — same URL, same signature, no new mint.
+
+    Object tags are REPLACED WHOLESALE by ``set_object_tags`` (not merged), so this is a
+    read-modify-write: fetch the existing tag set, mutate only the quarantine key, write the
+    whole set back. Uses the ROOT client deliberately, never the restricted presign
+    identity — the identity a Deny is keyed on must not be able to clear its own key
+    (least-privilege containment, measured).
+
+    Args:
+        object_name: Object key in the media bucket.
+        quarantined: True to set the tag (revoke), False to remove it (restore).
+        bucket_name: Bucket holding the object (defaults to the media bucket).
+
+    Returns:
+        True if the storage backend accepted the change, False if the object is missing or
+        any other S3 error occurred. Never raises — the caller treats this as best-effort,
+        matching ``set_object_legal_hold`` above.
+    """
+    from minio.commonconfig import Tags
+
+    bucket = bucket_name or settings.MEDIA_BUCKET_NAME
+    action = "set" if quarantined else "clear"
+    try:
+        existing = minio_client.get_object_tags(bucket, object_name)
+        new_tags = Tags.new_object_tags()
+        if existing:
+            for key, value in existing.items():
+                if key != STORAGE_QUARANTINE_TAG_KEY:
+                    new_tags[key] = value
+        if quarantined:
+            new_tags[STORAGE_QUARANTINE_TAG_KEY] = storage_presign_identity.QUARANTINE_TAG_VALUE
+        minio_client.set_object_tags(bucket, object_name, new_tags)
+        return True
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            return False
+        logger.warning(f"Quarantine tag {action} failed for {object_name}: {e}")
+        return False
+    except Exception as e:  # noqa: BLE001 — advisory; never break takedown/release
+        logger.warning(f"Quarantine tag {action} failed for {object_name}: {e}")
         return False
 
 
@@ -352,7 +416,8 @@ def get_presigned_download_url(
     if content_type:
         response_headers["response-content-type"] = content_type
 
-    url = minio_client.presigned_get_object(
+    # Browser-facing presign (issue #907) — see get_file_url's comment.
+    url = storage_presign_identity.presign_client().presigned_get_object(
         bucket_name=bucket,
         object_name=object_name,
         expires=datetime.timedelta(seconds=clamp_presigned_expiry(expires)),
@@ -362,7 +427,12 @@ def get_presigned_download_url(
 
 
 def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:
-    """Get a presigned URL for server-to-server access (no hostname rewriting)."""
+    """Get a presigned URL for server-to-server access (no hostname rewriting).
+
+    Deliberately stays on the ROOT client, never the restricted presign identity: this is
+    for server-to-server pipeline fetches that never reach a browser, and must not wedge
+    on a takedown mid-job (issue #907).
+    """
     delta = datetime.timedelta(seconds=clamp_presigned_expiry(expires))
     return str(
         minio_client.presigned_get_object(
@@ -415,6 +485,10 @@ def presigned_put_url(
         The caller is responsible for checking ``storage_backend.supports_single_put``
         first: AWS S3 rejects a single PUT over 5 GiB, so an oversized object must
         take the API-mediated (multipart) upload path instead.
+
+    Stays on the ROOT client (issue #907): this signs a PUT, and the presign identity's
+    Deny condition only applies to GetObject — writes don't need, and must not have, the
+    restricted identity.
     """
     ensure_bucket_exists()
     delta = datetime.timedelta(seconds=clamp_presigned_expiry(expires))
@@ -565,9 +639,13 @@ class MinIOService:
         It previously hardcoded ``http://minio:9000`` → ``localhost:5178`` (or an
         undocumented ``EXTERNAL_MINIO_URL``), which only worked for one deployment
         shape and pinned the URL to MinIO (issue #284 A1.12).
+
+        Browser-facing presign (issue #907): signed by the restricted presign identity
+        (not ``self.client``, which is the root client) so a takedown's quarantine tag
+        can revoke this URL after it's already been handed out.
         """
         try:
-            url = self.client.presigned_get_object(
+            url = storage_presign_identity.presign_client().presigned_get_object(
                 bucket_name=bucket_name,
                 object_name=object_name,
                 expires=datetime.timedelta(seconds=clamp_presigned_expiry(expires)),
@@ -598,7 +676,13 @@ class MinIOService:
             raise Exception(f"Error getting object stats: {e}") from e
 
     def get_object(self, bucket_name: str, object_name: str):
-        """Get object from MinIO."""
+        """Get object from MinIO.
+
+        Stays on the ROOT ``self.client`` (issue #907): a server-side read, not a
+        browser-facing presign, so the quarantine Deny must not apply here — admin
+        review and the thumbnail proxy route depend on this staying unaffected by
+        takedown.
+        """
         try:
             return self.client.get_object(bucket_name, object_name)
         except Exception as e:

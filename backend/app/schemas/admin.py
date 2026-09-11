@@ -282,6 +282,14 @@ class QuarantineActionResponse(BaseModel):
     is_quarantined: bool
     legal_hold: bool
     status: str
+    # Presigned-URL revocation (issue #907), best-effort and MinIO-only. On quarantine,
+    # `presign_revoked` reports whether the object was successfully tagged so an
+    # already-minted presigned URL now 403s; `presign_tag_cleared` is None (not
+    # applicable). On release, `presign_tag_cleared` reports whether the tag was
+    # successfully removed (retried 3x — a persistent failure leaves the file released
+    # in the DB but its media URL still 403ing); `presign_revoked` is None.
+    presign_revoked: bool | None = None
+    presign_tag_cleared: bool | None = None
 
 
 class LinkExternalIdentityRequest(BaseModel):

@@ -238,6 +238,19 @@ every difference between the two backends (issue #284 A1.11/A1.12):
 - Don't reintroduce a second host-rewrite. `MinIOService.get_presigned_url` used to
   hardcode `http://minio:9000` → `localhost:5178`/`EXTERNAL_MINIO_URL`; it now shares
   `rewrite_public_host` like everything else.
+- **Two presigning clients, not one (issue #907).** `minio_client` (root) signs everything
+  except browser-facing GETs; `storage_presign_identity.presign_client()` — a dedicated,
+  least-privilege MinIO service-account identity — signs the three that reach a browser:
+  `get_file_url`, `get_presigned_download_url`, `MinIOService.get_presigned_url`. Its policy
+  Denies `s3:GetObject` on any object carrying `STORAGE_QUARANTINE_TAG_KEY=true`
+  (`core/constants.py`), so `takedown_service.quarantine_file` tagging an object revokes an
+  already-minted presigned URL immediately — no new mint required. **Never grant this
+  identity tagging rights** (`s3:PutObjectTagging`/`s3:DeleteObjectTagging`) or
+  `s3:ListBucket` — the identity a Deny is keyed on must not be able to clear its own key,
+  and measured least-privilege containment depends on it staying that way. MinIO-only (no
+  admin API on native S3) and fails open to the root client if the identity can't be
+  provisioned — see `storage_presign_identity.py`'s module docstring and
+  `docs/abuse-and-takedown.md`.
 
 ## LLM features (optional)
 

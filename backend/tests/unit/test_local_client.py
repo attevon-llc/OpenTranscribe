@@ -73,13 +73,23 @@ class TestTestConnection:
         assert ok is False
         assert message == "Local watch folder is not configured on the server"
 
-    def test_escaping_local_path_reports_the_value_error(self, watch_root):
-        # ".." resolves outside WATCH_FOLDER_PATH -> WatchSource.resolved_local_path
-        # raises ValueError, which test_connection surfaces as its message.
+    def test_escaping_local_path_reports_the_failure_class_not_the_path(self, watch_root, caplog):
+        """A ``..`` outside WATCH_FOLDER_PATH fails closed without echoing the path.
+
+        ``resolved_local_path``'s ValueError names both the escaping path and the real
+        watch root, and this message is the response body of
+        POST /watch-sources/{uuid}/test — so only the class of failure is returned
+        (#914). The full message stays in the log for diagnosis.
+        """
         client = _make_client(watch_root, local_path="../escape")
-        ok, message = client.test_connection()
+        with caplog.at_level("WARNING", logger="app.services.watch_sources.local_client"):
+            ok, message = client.test_connection()
         assert ok is False
-        assert "escapes watch root" in message
+        assert message == "Path resolution failed (ValueError)"
+        assert "escapes watch root" not in message
+        assert str(watch_root) not in message
+        # ...and the operator can still see exactly which path escaped.
+        assert "escapes watch root" in caplog.text
 
     def test_path_does_not_exist(self, watch_root):
         client = _make_client(watch_root, local_path="nosuchdir")

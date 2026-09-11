@@ -291,18 +291,31 @@ def test_perform_backup_success_mocked(db_session, tmp_path):
     assert (tmp_path / result["filename"]).is_file()
 
 
-def test_perform_backup_records_error_on_pgdump_failure(db_session, tmp_path):
+def test_perform_backup_records_error_on_pgdump_failure(db_session, tmp_path, caplog):
+    """pg_dump's stderr is diagnosable in the LOG, never in the admin-facing result.
+
+    ``result["error"]`` is rendered on GET /admin/backup and /admin/backup/status, and
+    pg_dump's stderr can carry PGHOST/PGUSER/the database name (#914). Only the command
+    name and exit code survive into the response; the raw stderr must still reach the log
+    or the now-opaque failure would be undiagnosable.
+    """
     bs.update_settings(db_session, destination=str(tmp_path))
 
     def boom(cmd, **kwargs):
         raise subprocess.CalledProcessError(1, cmd, stderr=b"connection refused")
 
-    with mock.patch("app.services.backup_service.subprocess.run", side_effect=boom):
+    with (
+        mock.patch("app.services.backup_service.subprocess.run", side_effect=boom),
+        caplog.at_level("ERROR", logger="app.services.backup_service"),
+    ):
         result = bs.perform_backup(db_session)
 
     assert result["ok"] is False
     assert result["status"] == "error"
-    assert "connection refused" in result["error"]
+    assert result["error"] == "pg_dump failed (exit 1)"
+    assert "connection refused" not in result["error"]
+    # ...but the operator can still diagnose it from the log.
+    assert "connection refused" in caplog.text
     # No partial dump left behind.
     assert list(Path(tmp_path).glob("*.dump")) == []
 
@@ -478,7 +491,12 @@ def test_s3_backup_no_bucket_is_graceful(db_session):
     assert result["status"] == "no_destination"
 
 
-def test_s3_backup_upload_failure_recorded_not_raised(db_session, tmp_path):
+def test_s3_backup_upload_failure_recorded_not_raised(db_session, tmp_path, caplog):
+    """An upload failure is recorded as the CLASS of failure, with the cause in the log.
+
+    A boto3 ClientError can quote the endpoint_url/bucket/region, and ``result["error"]``
+    is admin-facing (#914) — so only the exception class survives into the response.
+    """
     bs.update_settings(
         db_session,
         destination_type="s3",
@@ -493,12 +511,16 @@ def test_s3_backup_upload_failure_recorded_not_raised(db_session, tmp_path):
     with (
         mock.patch("app.services.backup_service.subprocess.run", side_effect=_pgdump_writes()),
         mock.patch("app.services.backup_service._build_s3_client", return_value=_Boom()),
+        caplog.at_level("ERROR", logger="app.services.backup_service"),
     ):
         result = bs.perform_backup(db_session)
 
     assert result["ok"] is False
     assert result["status"] == "error"
-    assert "network unreachable" in result["error"]
+    assert result["error"] == "S3 backup failed (RuntimeError)"
+    assert "network unreachable" not in result["error"]
+    # The traceback logged alongside it still names the real cause.
+    assert "network unreachable" in caplog.text
     # Temp dump cleaned up despite the failure.
     assert list(Path(tmp_path).glob("*.dump")) == []
 
@@ -550,24 +572,33 @@ def test_list_backups_s3_parses_and_sorts(db_session):
 # =============================================================================
 # Prune-failure isolation (#244): a failed prune warns but never fails the run
 # =============================================================================
-def test_prune_failure_does_not_fail_local_backup(db_session, tmp_path):
+def test_prune_failure_does_not_fail_local_backup(db_session, tmp_path, caplog):
+    """The dump still succeeds; the prune warning names the failure class, not its text.
+
+    ``prune_error`` is rendered on GET /admin/backup and /admin/backup/status, so an
+    OSError's strerror (which carries a filesystem path) never reaches it (#914).
+    """
     bs.update_settings(db_session, destination=str(tmp_path), encrypt=False)
 
     with (
         mock.patch("app.services.backup_service.subprocess.run", side_effect=_pgdump_writes()),
         mock.patch("app.services.backup_service.prune_backups", side_effect=OSError("disk gone")),
+        caplog.at_level("ERROR", logger="app.services.backup_service"),
     ):
         result = bs.perform_backup(db_session)
 
     assert result["ok"] is True
     assert result["status"] == "success"
     assert result["pruned"] == []
-    assert "disk gone" in result["prune_error"]
+    assert result["prune_error"] == "Pruning failed (OSError)"
+    assert "disk gone" not in result["prune_error"]
+    assert "disk gone" in caplog.text
     # The warning is persisted for the admin UI.
     assert bs.get_settings(db_session)["last_result"]["prune_error"] == result["prune_error"]
 
 
-def test_prune_failure_does_not_fail_s3_backup(db_session, tmp_path):
+def test_prune_failure_does_not_fail_s3_backup(db_session, tmp_path, caplog):
+    """S3 twin of the local prune-isolation test, with the same opacity contract."""
     bs.update_settings(
         db_session, destination_type="s3", destination=str(tmp_path), s3_bucket="backups"
     )
@@ -579,11 +610,14 @@ def test_prune_failure_does_not_fail_s3_backup(db_session, tmp_path):
             "app.services.backup_service.prune_backups_s3",
             side_effect=RuntimeError("list denied"),
         ),
+        caplog.at_level("ERROR", logger="app.services.backup_service"),
     ):
         result = bs.perform_backup(db_session)
 
     assert result["ok"] is True
-    assert "list denied" in result["prune_error"]
+    assert result["prune_error"] == "Pruning failed (RuntimeError)"
+    assert "list denied" not in result["prune_error"]
+    assert "list denied" in caplog.text
 
 
 # =============================================================================

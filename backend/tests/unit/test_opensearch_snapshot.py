@@ -122,30 +122,50 @@ def test_perform_snapshot_skipped_when_unreachable():
     client.snapshot.create.assert_not_called()
 
 
-def test_perform_snapshot_unsupported_when_repo_register_fails():
+def test_perform_snapshot_unsupported_when_repo_register_fails(caplog):
     # path.repo not allow-listed → create_repository raises repository_exception.
+    # Since #914 the returned error is fixed advice text plus the exception CLASS; the
+    # raw message (which quotes the repository location) is diagnosable only from the
+    # log. "path.repo" appears in the advice regardless, so it is not asserted here --
+    # it would pass for any exception and prove nothing.
     client = _fake_client(repo_exists=False)
     client.snapshot.create_repository.side_effect = Exception(
         "repository_exception: [opentranscribe_backup] location [...] doesn't match path.repo"
     )
-    with mock.patch.object(oss, "_client", return_value=client):
+    with (
+        mock.patch.object(oss, "_client", return_value=client),
+        caplog.at_level("ERROR", logger="app.services.opensearch_snapshot"),
+    ):
         res = oss.perform_snapshot(
             {"retention_daily": 7, "retention_weekly": 4, "retention_monthly": 12}
         )
     assert res["status"] == "unsupported"
-    assert "path.repo" in res["error"]
+    assert "could not be registered (Exception)" in res["error"]
+    assert "repository_exception" not in res["error"]
+    assert "repository_exception" in caplog.text
     client.snapshot.create.assert_not_called()
 
 
-def test_perform_snapshot_error_when_create_fails():
+def test_perform_snapshot_error_when_create_fails(caplog):
+    """The recorded error names the failure CLASS; the raw text stays in the log.
+
+    ``res["error"]`` is folded into ``last_result`` and rendered on GET /admin/backup
+    and /admin/backup/status, so an OpenSearch exception's text — which can quote the
+    cluster node, repository location and index names — never reaches it (#914).
+    """
     client = _fake_client(repo_exists=True)
     client.snapshot.create.side_effect = Exception("snapshot create boom")
-    with mock.patch.object(oss, "_client", return_value=client):
+    with (
+        mock.patch.object(oss, "_client", return_value=client),
+        caplog.at_level("ERROR", logger="app.services.opensearch_snapshot"),
+    ):
         res = oss.perform_snapshot(
             {"retention_daily": 7, "retention_weekly": 4, "retention_monthly": 12}
         )
     assert res["status"] == "error"
-    assert "boom" in res["error"]
+    assert res["error"].startswith("OpenSearch snapshot failed (Exception)")
+    assert "snapshot create boom" not in res["error"]
+    assert "snapshot create boom" in caplog.text
 
 
 def test_snapshot_status_reachable_with_repo_and_last():

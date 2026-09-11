@@ -31,6 +31,7 @@ step itself, never letting the real pipeline touch the live dev broker/DB.
 from __future__ import annotations
 
 import io
+import json
 import uuid
 from unittest import mock
 
@@ -317,6 +318,12 @@ def test_dispatch_failure_pushes_a_live_ws_update_and_invalidates_cache(
     """A dispatch failure must push BOTH a cache invalidation AND a live
     ``file_updated`` WebSocket event carrying the ERROR status and message —
     the cache invalidation alone (#905) is not a live update (#911).
+
+    The event's ``file`` object is spread wholesale into the gallery's file object
+    client-side, so since #786/#841 it carries the CATEGORIZED error fields
+    (``error_reason`` / ``user_message`` / ``error_suggestions`` / ``is_retryable``)
+    and deliberately no longer carries ``last_error_message`` — that field was the
+    only path by which raw error text ever reached the gallery.
     """
     from app.api.endpoints.files import upload as upload_mod
 
@@ -343,10 +350,17 @@ def test_dispatch_failure_pushes_a_live_ws_update_and_invalidates_cache(
     assert ASR_REFUSAL_MESSAGE in ws_data["message"]
     assert ws_data["file"]["status"] == FileStatus.ERROR.value
     assert ws_data["file"]["filename"] == filename
-    assert (
-        ws_data["file"]["last_error_message"]
-        and ASR_REFUSAL_MESSAGE in ws_data["file"]["last_error_message"]
-    )
+
+    # The gallery gets the categorized, user-facing fields...
+    assert ws_data["file"]["error_reason"] == "processing_error"
+    assert ws_data["file"]["user_message"] == "Processing failed for this file."
+    assert ws_data["file"]["error_suggestions"]
+    assert ws_data["file"]["is_retryable"] is True
+    # ...and NOT the raw error text, under any key (#786). The row itself still
+    # records it — asserted by test_legacy_upload_dispatch_failure_* above — this is
+    # about what crosses the wire to the browser.
+    assert "last_error_message" not in ws_data["file"]
+    assert ASR_REFUSAL_MESSAGE not in json.dumps(ws_data["file"])
 
 
 def test_dispatch_failure_still_invalidates_cache_when_the_ws_push_fails(

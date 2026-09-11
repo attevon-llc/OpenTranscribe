@@ -1349,7 +1349,10 @@ class LLMService:
                 {"sections_processed": total_sections, "processing_method": "multi-section"},
             )
         except Exception as e:
-            logger.error(f"Failed to combine sections: {e}")
+            # metadata.error lands in media_file.summary_data and is rendered
+            # back to the requesting user (api/endpoints/summarization.py) --
+            # never interpolate the raw exception text, only its class name.
+            logger.exception("Failed to combine sections")
             return {
                 "bluf": "Multi-section summary generation completed with partial results.",
                 "brief_summary": f"Summary generated from {len(sections)} sections.",
@@ -1361,7 +1364,7 @@ class LLMService:
                     "provider": self.config.provider.value,
                     "model": self.config.model,
                     "sections_processed": len(sections),
-                    "error": f"Section combining failed: {str(e)}",
+                    "error": f"Section combining failed ({type(e).__name__})",
                 },
             }
 
@@ -1466,17 +1469,25 @@ class LLMService:
                 lib_repaired["metadata"] = _repaired_metadata()
                 return lib_repaired
 
-            logger.error(f"JSON repair also failed. Response content: {response.content[:500]}...")
+            logger.exception(
+                f"JSON repair also failed. Response content: {response.content[:500]}..."
+            )
 
-            # Return minimal error structure
+            # Return minimal error structure. error_detail/metadata.error are
+            # rendered back to the requesting user via media_file.summary_data
+            # (api/endpoints/summarization.py) -- never interpolate the raw
+            # exception text, only its class name. Low-value fix (a
+            # json.JSONDecodeError message is already just "column N" style
+            # position info, never a secret), kept for consistency with the
+            # other #914 sites in this module.
             return {
                 "error": "JSON parsing failed",
-                "error_detail": str(e),
+                "error_detail": f"JSON parsing failed ({type(e).__name__})",
                 "raw_response_preview": response.content[:500],
                 "metadata": {
                     "provider": self.config.provider.value,
                     "model": self.config.model,
-                    "error": f"JSON parsing failed: {str(e)}",
+                    "error": f"JSON parsing failed ({type(e).__name__})",
                     "user_context_window": self.user_context_window,
                 },
             }
@@ -1665,7 +1676,15 @@ class LLMService:
                     )
 
         except Exception as e:
-            return False, f"Connection failed: {str(e)}"
+            # validate_connection's other caller (llm_settings.py) dials a
+            # caller-supplied endpoint, where the dial result IS the product.
+            # But the config here also resolves via create_from_settings, which
+            # falls back to the deployment's SYSTEM settings -- so a plain user
+            # testing their own config can end up dialing (and seeing the
+            # message for) the deployment's own LLM host:port. Only the class
+            # of failure is returned; the real cause is still in the log.
+            logger.exception("LLM connection test failed")
+            return False, f"Connection failed ({type(e).__name__})"
 
     def close(self):
         """
@@ -1762,9 +1781,17 @@ class LLMService:
         try:
             result = json.loads(content)
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM identification response as JSON: {e}")
+            # "error" here has no reader today (only speaker_predictions is
+            # consumed, by tasks/speaker_identification_task.py) -- sanitized
+            # anyway, on the same "never echo raw exception text" rule as every
+            # other #914 site, since a dead field is one caller-change away from
+            # becoming a leak the moment something starts reading it.
+            logger.exception("Failed to parse LLM identification response as JSON")
             logger.error(f"Raw response content: {response.content[:500]}...")
-            return {"speaker_predictions": [], "error": f"Invalid JSON response: {str(e)}"}
+            return {
+                "speaker_predictions": [],
+                "error": f"Invalid JSON response ({type(e).__name__})",
+            }
 
         if not isinstance(result, dict):
             logger.error("LLM response is not a valid JSON object")
@@ -1968,8 +1995,13 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             return self._parse_speaker_identification_response(response)
 
         except Exception as e:
-            logger.error(f"Speaker identification failed with error: {e}", exc_info=True)
-            return {"speaker_predictions": [], "error": f"Identification process failed: {str(e)}"}
+            # Same dead-field rationale as _parse_speaker_identification_response
+            # above -- sanitized rather than trusted to stay unread.
+            logger.exception("Speaker identification failed")
+            return {
+                "speaker_predictions": [],
+                "error": f"Identification process failed ({type(e).__name__})",
+            }
 
     def __enter__(self):
         """Context manager entry."""

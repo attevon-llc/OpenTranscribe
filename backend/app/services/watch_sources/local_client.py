@@ -45,7 +45,14 @@ class LocalWatchClient(BaseWatchSourceClient):
         try:
             root = self.root
         except ValueError as e:
-            return False, str(e)
+            # This message is returned directly to the caller as the response
+            # body of POST /watch-sources/{uuid}/test -- the OUTER handler in
+            # api/endpoints/watch_sources.py only sanitizes an exception that
+            # escapes test_connection(), not this already-caught one (#859's
+            # residual half, #914). resolved_local_path's ValueError can name a
+            # real filesystem path, so only the class of failure is returned.
+            logger.warning("Local watch source path resolution failed: %s", e)
+            return False, f"Path resolution failed ({type(e).__name__})"
         if not root.exists():
             return False, f"Path does not exist: {root}"
         if not root.is_dir():

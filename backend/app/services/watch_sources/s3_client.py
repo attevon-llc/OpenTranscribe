@@ -71,7 +71,14 @@ class S3WatchClient(BaseWatchSourceClient):
             self._client().head_bucket(Bucket=self._bucket)
             return True, f"OK — bucket '{self._bucket}' reachable"
         except Exception as e:  # noqa: BLE001
-            return False, f"S3 connection failed: {e}"
+            # Returned directly as the response body of
+            # POST /watch-sources/{uuid}/test -- the OUTER handler in
+            # api/endpoints/watch_sources.py only sanitizes an exception that
+            # escapes this method, not this already-caught one (#859's
+            # residual half, #914). A boto3 ClientError can quote the
+            # endpoint_url/region; only the class of failure is returned.
+            logger.warning("S3 watch source connection test failed: %s", e)
+            return False, f"S3 connection failed ({type(e).__name__})"
 
     def list_files(
         self,

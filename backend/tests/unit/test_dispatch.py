@@ -37,6 +37,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from kombu.exceptions import OperationalError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -709,3 +710,86 @@ class TestDispatchTranscriptionPipelineAsrRefusal:
         assert media_file.status == FileStatus.ERROR
         assert "lite" in (media_file.last_error_message or "").lower()
         assert db_session.query(Task).filter(Task.media_file_id == media_file.id).first() is None
+
+
+class TestDispatchTranscriptionPipelinePublishFailure:
+    """``dispatch_transcription_pipeline()``'s ``pipeline.apply_async(...)`` call happens
+    AFTER ``create_task_record``/``update_media_file_status`` have already committed the file
+    to PROCESSING, in a session that has already closed. Issue #865 covers the
+    ``ASRConfigurationError`` raised BEFORE that commit; this covers the far more common
+    failure of the Celery **publish itself** (broker down, unroutable queue) — which, before
+    this fix, left an ``in_progress`` task and a PROCESSING file nothing would ever advance,
+    because ``link_error`` only fires for a chain that was actually published (issue #906)."""
+
+    _CHAIN = f"{_DISPATCH}.chain"
+
+    @staticmethod
+    def _dispatch(file_uuid: str) -> str:
+        from app.tasks.transcription.dispatch import dispatch_transcription_pipeline
+
+        # gpu_queue="gpu" bypasses ASR-provider resolution entirely — that seam is
+        # #865's, not this one's.
+        return dispatch_transcription_pipeline(file_uuid=file_uuid, gpu_queue="gpu")
+
+    def test_a_failed_publish_marks_the_file_error_with_the_real_reason(
+        self, db_session, dispatch_seams, make_media_file
+    ):
+        media_file = make_media_file(FileStatus.PENDING)
+        chain_stub = SimpleNamespace(
+            apply_async=lambda **kwargs: (_ for _ in ()).throw(OperationalError("broker down"))
+        )
+
+        with patch(self._CHAIN, return_value=chain_stub), pytest.raises(OperationalError):
+            self._dispatch(str(media_file.uuid))
+
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.ERROR
+        assert "broker down" in (media_file.last_error_message or "")
+        task = db_session.query(Task).filter(Task.media_file_id == media_file.id).one()
+        assert task.status == "failed"
+        assert "broker down" in (task.error_message or "")
+
+    def test_a_successful_publish_leaves_the_file_processing(
+        self, db_session, dispatch_seams, make_media_file
+    ):
+        """CONTROL: the same fixture shape, but the publish succeeds."""
+        media_file = make_media_file(FileStatus.PENDING)
+        chain_stub = SimpleNamespace(apply_async=lambda **kwargs: SimpleNamespace(id="ok"))
+
+        with patch(self._CHAIN, return_value=chain_stub):
+            self._dispatch(str(media_file.uuid))
+
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.PROCESSING
+        task = db_session.query(Task).filter(Task.media_file_id == media_file.id).one()
+        assert task.status == "in_progress"
+
+    def test_a_failure_to_record_the_failure_does_not_mask_the_original_exception(
+        self, db_session, dispatch_seams, make_media_file
+    ):
+        """``_mark_dispatch_failed`` is best-effort: if IT also fails, the real (broker)
+        exception must still be what the caller sees — never the secondary DB error.
+
+        ``update_task_status`` is patched to fail only on the SECOND call (the
+        ``"failed"`` write inside ``_mark_dispatch_failed``) — the real function must
+        still run for the initial ``"in_progress"`` write, or the chain is never even
+        reached.
+        """
+        from app.tasks.transcription.dispatch import update_task_status as real_update_task_status
+
+        media_file = make_media_file(FileStatus.PENDING)
+        chain_stub = SimpleNamespace(
+            apply_async=lambda **kwargs: (_ for _ in ()).throw(OperationalError("broker down"))
+        )
+
+        def _fail_on_the_failed_write(db, task_id, task_status, **kwargs):
+            if task_status == "failed":
+                raise RuntimeError("db also down")
+            return real_update_task_status(db, task_id, task_status, **kwargs)
+
+        with (
+            patch(self._CHAIN, return_value=chain_stub),
+            patch(f"{_DISPATCH}.update_task_status", side_effect=_fail_on_the_failed_write),
+            pytest.raises(OperationalError, match="broker down"),
+        ):
+            self._dispatch(str(media_file.uuid))

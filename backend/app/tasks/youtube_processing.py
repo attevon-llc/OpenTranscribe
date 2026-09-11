@@ -394,8 +394,18 @@ def process_youtube_url_task(
                         f"Dispatched pipeline chain for MediaFile {file_id} (task_id={task_id})"
                     )
                 except Exception as e:
-                    logger.error(f"Failed to start tasks for {file_id}: {e}")
-                    # Don't fail the whole process if task scheduling fails
+                    # Download DID succeed, but nothing will ever transcribe this file
+                    # (dispatch marks it ERROR — #865/#906) — reporting "success" here
+                    # contradicts the row this task just wrote.
+                    logger.error(
+                        f"Downloaded {file_id} but could not start transcription: {e}",
+                        exc_info=True,
+                    )
+                    return {
+                        "status": "error",
+                        "message": f"Download complete, but transcription could not be started: {e}",
+                        "file_id": file_id if file_id is not None else 0,
+                    }
 
                 return {
                     "status": "success",

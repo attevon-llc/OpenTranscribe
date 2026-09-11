@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import time
@@ -559,7 +560,17 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
         return True
 
     except Exception as e:
-        logger.error(f"Failed to recover stuck file {file_id}: {e}")
+        logger.error(f"Failed to recover stuck file {file_id}: {e}", exc_info=True)
+        # Recovery branches above COMMIT before dispatching, so landing here means
+        # the file was already changed and the restart never happened. Record the
+        # ATTEMPT so a repeatedly-failing file shows up in recovery_attempts instead
+        # of looking untried. Status/last_error_message are written by
+        # dispatch_transcription_pipeline itself when dispatch was the failure (#906).
+        with contextlib.suppress(Exception):
+            db.rollback()
+            failed_file = get_refreshed_object(db, MediaFile, file_id)
+            if failed_file is not None:
+                _update_recovery_tracking(db, failed_file)
         return False
 
 

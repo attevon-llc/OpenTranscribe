@@ -321,7 +321,16 @@ def _finalize_media_ingest(
     # 8. Post-commit: notify gallery + dispatch pipeline.
     _notify_file_created(owner_id, db_file)
     if source.auto_transcribe:
-        _dispatch_pipeline(db_file, owner_id, source)
+        dispatch_error = _dispatch_pipeline(db_file, owner_id, source)
+        if dispatch_error:
+            # Row stays "imported" DELIBERATELY — the bytes really were imported.
+            # Flipping to "error" would make the scan re-import it next pass (imohash
+            # dedup) and mislabel it "skipped_duplicate", still never transcribing.
+            # Record WHY on the field the watch-source file listing already renders.
+            # The MediaFile's own ERROR status is written by dispatch_transcription_pipeline.
+            message = f"Imported, but transcription dispatch failed: {dispatch_error}"
+            row.error_message = message[:2000]
+            db.commit()
 
     return row
 
@@ -458,8 +467,10 @@ def _notify_file_created(user_id: int, media_file: MediaFile) -> None:
         logger.warning("file_created WS notify failed for %s: %s", media_file.id, e)
 
 
-def _dispatch_pipeline(media_file: MediaFile, user_id: int, source: WatchSource) -> None:
-    """Fire the shared upload tail (thumbnail + transcription pipeline)."""
+def _dispatch_pipeline(media_file: MediaFile, user_id: int, source: WatchSource) -> str | None:
+    """Fire the shared upload tail. Returns None on success, or failure text to persist —
+    the import is already committed by the time this runs, so a swallowed failure here
+    is invisible (issue #906)."""
     try:
         from app.api.endpoints.files.upload import dispatch_upload_pipeline
 
@@ -472,8 +483,12 @@ def _dispatch_pipeline(media_file: MediaFile, user_id: int, source: WatchSource)
             num_speakers=None,
             task_id=None,
         )
-    except Exception as e:  # noqa: BLE001
-        logger.error("Pipeline dispatch failed for watch import %s: %s", media_file.id, e)
+        return None
+    except Exception as e:  # noqa: BLE001 - one file's failure must not abort the scan
+        logger.error(
+            "Pipeline dispatch failed for watch import %s: %s", media_file.id, e, exc_info=True
+        )
+        return str(e)
 
 
 def _record_error(source_id: int, remote_path: str, message: str) -> None:

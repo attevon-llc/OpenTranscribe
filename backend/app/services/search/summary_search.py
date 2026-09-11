@@ -39,6 +39,7 @@ from dataclasses import field
 from typing import Any
 
 from sqlalchemy import ARRAY
+from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import bindparam
 from sqlalchemy import cast
@@ -122,34 +123,45 @@ def _walk_leaves(node: Any, path: str) -> list[tuple[str, str]]:
     return []
 
 
-def _matching_leaf_indices(db: Session, texts: list[str], query: str) -> set[int]:
-    """Return the positions in ``texts`` whose tokens satisfy ``query``.
+def _matching_leaf_indices(
+    db: Session, row_idx: list[int], leaf_idx: list[int], texts: list[str], query: str
+) -> set[tuple[int, int]]:
+    """Return the ``(row_idx, leaf_idx)`` pairs whose leaf text satisfies ``query``.
 
-    Issues one query for the given ``texts`` — currently one document's leaves,
-    not one query per leaf — using ``unnest(...) WITH ORDINALITY`` so leaf-level
-    identification uses the same ``simple``-config ``websearch_to_tsquery``
-    semantics as the document-level predicate, instead of a second, looser
-    matching rule (a plain substring check) that could disagree with what
-    actually matched. ⚠️ This scope is per-document today, not a completeness
-    claim about the whole page — issue #822 named it "one batched query per
-    document" in a way that read as "the batching problem is solved", which is
-    how the real remaining cost (this function still runs once per file on the
-    result page) came to be filed as if it were the per-leaf lookup itself.
+    ONE query for the WHOLE PAGE (issue #822's remaining cost, after Unit 3
+    stopped masking every leaf and this narrowed the leaf-matching lookup
+    itself) — not one query per file. ``row_idx`` / ``leaf_idx`` / ``texts`` are
+    three parallel arrays: position ``i`` in each names one leaf, and
+    ``unnest`` on all three together is what keeps them aligned through
+    Postgres rather than relying on a second, implicit ordinality column.
+    **Array-parallelism invariant**: callers must build all three with the
+    same per-leaf iteration order and never reorder one without the others,
+    or a hit gets attributed to the wrong file's leaf entirely.
+
+    Uses the same ``simple``-config ``websearch_to_tsquery`` semantics as the
+    document-level predicate, instead of a second, looser matching rule (a
+    plain substring check) that could disagree with what actually matched —
+    this must not drift from that document-level predicate.
     """
     if not texts:
         return set()
     stmt = text(
         """
-            SELECT ord - 1 AS idx
-            FROM unnest(CAST(:texts AS text[])) WITH ORDINALITY AS u(leaf_text, ord)
+            SELECT u.row_idx, u.leaf_idx
+            FROM unnest(CAST(:row_idx AS int[]), CAST(:leaf_idx AS int[]), CAST(:texts AS text[]))
+                 AS u(row_idx, leaf_idx, leaf_text)
             WHERE to_tsvector('simple', leaf_text) @@ websearch_to_tsquery('simple', :q)
             """
     ).bindparams(
+        bindparam("row_idx", type_=ARRAY(Integer)),
+        bindparam("leaf_idx", type_=ARRAY(Integer)),
         bindparam("texts", type_=ARRAY(String)),
         bindparam("q", type_=String),
     )
-    rows = db.execute(stmt, {"texts": texts, "q": query}).fetchall()
-    return {int(row[0]) for row in rows}
+    rows = db.execute(
+        stmt, {"row_idx": row_idx, "leaf_idx": leaf_idx, "texts": texts, "q": query}
+    ).fetchall()
+    return {(int(row[0]), int(row[1])) for row in rows}
 
 
 def _snippet(text_value: str) -> str:
@@ -247,12 +259,35 @@ def search_summaries(
         .all()
     )
 
+    # Walk every row's leaves BEFORE matching, so leaf-level identification can
+    # be issued as ONE query for the whole page instead of one per file. The
+    # three arrays below are built in the same per-leaf order for every row —
+    # the array-parallelism invariant `_matching_leaf_indices` requires.
+    per_row_leaves: list[list[tuple[str, str]]] = [_walk_leaves(row[4], "") for row in rows]
+    batch_row_idx: list[int] = []
+    batch_leaf_idx: list[int] = []
+    batch_texts: list[str] = []
+    for r, leaves in enumerate(per_row_leaves):
+        for leaf_i, (_path, leaf_text) in enumerate(leaves):
+            batch_row_idx.append(r)
+            batch_leaf_idx.append(leaf_i)
+            batch_texts.append(leaf_text)
+
+    matched_pairs = (
+        _matching_leaf_indices(db, batch_row_idx, batch_leaf_idx, batch_texts, query)
+        if batch_texts
+        else set()
+    )
+    matched_by_row: dict[int, set[int]] = {}
+    for row_i, leaf_i in matched_pairs:
+        matched_by_row.setdefault(row_i, set()).add(leaf_i)
+
     results: list[SummaryHit] = []
-    for file_id, file_uuid, title, filename, summary_data in rows:
-        raw_leaves = _walk_leaves(summary_data, "")
+    for r, (file_id, file_uuid, title, filename, _summary_data) in enumerate(rows):
+        raw_leaves = per_row_leaves[r]
         paths = [p for p, _ in raw_leaves]
         leaf_texts = [t for _, t in raw_leaves]
-        matched_positions = _matching_leaf_indices(db, leaf_texts, query) if leaf_texts else set()
+        matched_positions = matched_by_row.get(r, set())
 
         # The document-level predicate runs over the whole serialized JSON, so
         # a query whose terms are split across two different leaves (or that

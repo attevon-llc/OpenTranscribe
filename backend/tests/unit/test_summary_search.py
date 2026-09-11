@@ -136,20 +136,43 @@ class TestWalkLeaves:
 class TestMatchingLeafIndices:
     def test_matches_the_expected_positions(self, db_session):
         positions = summary_search._matching_leaf_indices(
-            db_session, ["hello world", "goodbye moon", "summary generation done"], "summary"
+            db_session,
+            [0, 0, 0],
+            [0, 1, 2],
+            ["hello world", "goodbye moon", "summary generation done"],
+            "summary",
         )
-        assert positions == {2}
+        assert positions == {(0, 2)}
 
     def test_no_texts_short_circuits_without_a_query(self, db_session):
-        assert summary_search._matching_leaf_indices(db_session, [], "anything") == set()
+        assert summary_search._matching_leaf_indices(db_session, [], [], [], "anything") == set()
 
     def test_websearch_operators_are_honoured(self, db_session):
         """Confirms this really is websearch_to_tsquery, not a substring check —
         quoted-phrase and OR both take the real operator meaning."""
         positions = summary_search._matching_leaf_indices(
-            db_session, ["the budget review", "an unrelated note"], '"budget review"'
+            db_session,
+            [0, 0],
+            [0, 1],
+            ["the budget review", "an unrelated note"],
+            '"budget review"',
         )
-        assert positions == {0}
+        assert positions == {(0, 0)}
+
+    def test_row_and_leaf_indices_are_preserved_not_just_positional_order(self, db_session):
+        """The array-parallelism invariant: a match must be attributed to the
+        ROW/LEAF pair it was submitted under, not to its position in the
+        combined arrays — proven here by using non-contiguous, out-of-order
+        row/leaf indices rather than the ``[0, 0, 0]`` / ``[0, 1, 2]`` shape
+        every other test in this class uses."""
+        positions = summary_search._matching_leaf_indices(
+            db_session,
+            [3, 1],
+            [5, 0],
+            ["an unrelated note", "the budget review"],
+            "budget",
+        )
+        assert positions == {(1, 0)}
 
 
 # --------------------------------------------------------------------------- #

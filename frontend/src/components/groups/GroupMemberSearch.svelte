@@ -4,7 +4,7 @@
   import { GroupsApi } from '$lib/api/groups';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
-  import { getErrorMessage } from '$lib/utils/apiError';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { getInitials } from '$lib/utils/formatting';
   import { createDebouncedHandler } from '$lib/utils/debounce';
   import Spinner from '../ui/Spinner.svelte';
@@ -21,6 +21,8 @@
   let isSearching = false;
   let addingUserUuid: string | null = null;
   let selectedRole: 'admin' | 'member' = 'member';
+  // Distinct from "no results": a 429 must not read as "no such user" (issue #904).
+  let rateLimited = false;
   const debouncedSearch = createDebouncedHandler(() => performSearch(), 300);
 
   onDestroy(() => {
@@ -36,6 +38,7 @@
 
     if (searchQuery.trim().length < 2) {
       searchResults = [];
+      rateLimited = false;
       return;
     }
 
@@ -45,11 +48,16 @@
   async function performSearch() {
     if (searchQuery.trim().length < 2) return;
     isSearching = true;
+    rateLimited = false;
 
     try {
       searchResults = await GroupsApi.searchUsers(searchQuery.trim());
     } catch (err: unknown) {
-      console.error('User search failed:', err);
+      if (getErrorStatus(err) === 429) {
+        rateLimited = true;
+      } else {
+        console.error('User search failed:', err);
+      }
       searchResults = [];
     } finally {
       isSearching = false;
@@ -139,6 +147,8 @@
         </li>
       {/each}
     </ul>
+  {:else if rateLimited}
+    <div class="no-results">{$t('common.rateLimited')}</div>
   {:else if searchQuery.trim().length >= 2 && !isSearching}
     <div class="no-results">{$t('groups.noUsersFound')}</div>
   {/if}

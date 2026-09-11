@@ -4615,6 +4615,7 @@
   "upload.youtubeVideo": "YouTube 视频",
   "upload.videoUrl": "视频链接",
   "common.somethingWentWrong": "出错了",
+  "common.rateLimited": "请求过多，请稍候再试。",
   "search.searchFailed": "搜索失败",
   "search.switchModelFailed": "切换模型失败",
   "search.reindexStartFailed": "启动重新索引失败",

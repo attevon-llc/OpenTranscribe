@@ -4615,6 +4615,7 @@
   "upload.youtubeVideo": "YouTube Video",
   "upload.videoUrl": "Video URL",
   "common.somethingWentWrong": "Something went wrong",
+  "common.rateLimited": "Too many requests — please wait a moment.",
   "search.searchFailed": "Search failed",
   "search.switchModelFailed": "Failed to switch model",
   "search.reindexStartFailed": "Failed to start re-indexing",

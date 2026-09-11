@@ -4,7 +4,7 @@
   import { goto, beforeNavigate } from '$app/navigation';
   import axiosInstance, { isRequestCancelled } from '$lib/axios';
   import { t } from '$stores/locale';
-  import { getErrorMessage } from '$lib/utils/apiError';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { searchStore, type SearchResponse, type SearchOccurrence, type SearchResultType } from '$stores/search';
   import SearchResultCard from '$components/search/SearchResultCard.svelte';
   import SearchTranscriptModal from '$components/search/SearchTranscriptModal.svelte';
@@ -293,8 +293,14 @@
       // A superseded search is not a failure: a newer request owns the results
       // and the loading flag, so leave both alone.
       if (isRequestCancelled(e)) return;
-      console.error('Search failed:', e);
-      searchStore.setError(getErrorMessage(e, $t('search.searchFailed')));
+      if (getErrorStatus(e) === 429) {
+        // Localized throttle copy, not the English string
+        // rate_limit_exceeded_handler puts in the response detail (issue #904).
+        searchStore.setError($t('common.rateLimited'));
+      } else {
+        console.error('Search failed:', e);
+        searchStore.setError(getErrorMessage(e, $t('search.searchFailed')));
+      }
       searchStore.setLoading(false);
     } finally {
       if (searchController === controller) searchController = null;

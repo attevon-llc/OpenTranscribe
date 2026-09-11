@@ -4615,6 +4615,7 @@
   "upload.youtubeVideo": "YouTube 動画",
   "upload.videoUrl": "動画 URL",
   "common.somethingWentWrong": "問題が発生しました",
+  "common.rateLimited": "リクエストが多すぎます。少し待ってから再度お試しください。",
   "search.searchFailed": "検索に失敗しました",
   "search.switchModelFailed": "モデルの切り替えに失敗しました",
   "search.reindexStartFailed": "再インデックスの開始に失敗しました",

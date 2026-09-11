@@ -4615,6 +4615,7 @@
   "upload.youtubeVideo": "Vidéo YouTube",
   "upload.videoUrl": "URL de la vidéo",
   "common.somethingWentWrong": "Une erreur s'est produite",
+  "common.rateLimited": "Trop de requêtes — veuillez patienter un instant.",
   "search.searchFailed": "Échec de la recherche",
   "search.switchModelFailed": "Échec du changement de modèle",
   "search.reindexStartFailed": "Échec du lancement de la ré-indexation",

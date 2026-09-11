@@ -75,6 +75,20 @@ def get_audio_file_extension(content_type: str, filename: str) -> str:
     return file_ext
 
 
+def _looks_drm_protected(stderr_output: str) -> bool:
+    """Heuristically detect a DRM-protected or encrypted input from ffmpeg stderr.
+
+    ffmpeg has no single, stable phrase for this — it's a family of complaints
+    (encrypted streams, DRM sample groups, or a CENC/AES box paired with an
+    otherwise-nonsensical "Invalid argument"). This is a best-effort classifier,
+    not an authoritative one.
+    """
+    lower = stderr_output.lower()
+    if "encrypted" in lower or "drm" in lower:
+        return True
+    return "invalid argument" in lower and "cenc" in lower
+
+
 def extract_audio_from_video(  # noqa: C901
     video_path: str,
     output_path: str,
@@ -117,9 +131,11 @@ def extract_audio_from_video(  # noqa: C901
             progress_callback(1.0, "Audio extraction complete")
 
     except ffmpeg.Error as e:
-        logger.error(f"FFmpeg video extraction failed for {video_path}: {e}")
         # Get stderr output for better error messages
         stderr_output = e.stderr.decode("utf-8") if e.stderr else ""
+        logger.exception(
+            "FFmpeg video extraction failed for %s. stderr: %s", video_path, stderr_output
+        )
 
         # Check for common video-specific error patterns
         if (
@@ -137,14 +153,20 @@ def extract_audio_from_video(  # noqa: C901
             raise ValueError(
                 "This video format is not supported. Please convert to a common format like MP4, AVI, or MOV and try again."
             ) from e
+        elif _looks_drm_protected(stderr_output):
+            raise ValueError(
+                "This file appears to be DRM-protected or encrypted and cannot be processed."
+            ) from e
         else:
             # Generic fallback for other video processing errors
             raise ValueError(
                 "Unable to extract audio from this video file. The file may be corrupted, password-protected, or in an unsupported format."
             ) from e
     except Exception as e:
-        logger.error(f"Unexpected error during video audio extraction: {e}")
-        raise ValueError(f"Video audio extraction failed: {str(e)}") from e
+        logger.exception("Unexpected error during video audio extraction for %s", video_path)
+        raise ValueError(
+            "Unable to extract audio from this video file. The file may be corrupted, password-protected, or in an unsupported format."
+        ) from e
 
 
 def convert_audio_format(  # noqa: C901
@@ -186,9 +208,9 @@ def convert_audio_format(  # noqa: C901
             progress_callback(1.0, "Audio conversion complete")
 
     except ffmpeg.Error as e:
-        logger.error(f"FFmpeg conversion failed for {input_path}: {e}")
         # Get stderr output for better error messages
         stderr_output = e.stderr.decode("utf-8") if e.stderr else ""
+        logger.exception("FFmpeg conversion failed for %s. stderr: %s", input_path, stderr_output)
 
         # Check for common error patterns and provide user-friendly messages
         if (
@@ -209,14 +231,20 @@ def convert_audio_format(  # noqa: C901
             raise ValueError(
                 "Unable to access the uploaded file. Please try uploading again."
             ) from e
+        elif _looks_drm_protected(stderr_output):
+            raise ValueError(
+                "This file appears to be DRM-protected or encrypted and cannot be processed."
+            ) from e
         else:
             # Generic fallback for other ffmpeg errors
             raise ValueError(
                 "Unable to process this file as audio/video content. The file may be corrupted, password-protected, or in an unsupported format."
             ) from e
     except Exception as e:
-        logger.error(f"Unexpected error during audio conversion: {e}")
-        raise ValueError(f"Audio processing failed: {str(e)}") from e
+        logger.exception("Unexpected error during audio conversion for %s", input_path)
+        raise ValueError(
+            "Unable to process this file as audio/video content. The file may be corrupted, password-protected, or in an unsupported format."
+        ) from e
 
 
 def prepare_audio_for_transcription(

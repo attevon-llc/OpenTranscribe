@@ -1154,7 +1154,7 @@
   "userManagement.linkIdentity.identifierOidc": "OIDC subject (sub)",
   "userManagement.linkIdentity.identifierLdap": "LDAP uid",
   "userManagement.linkIdentity.identifierPki": "Subject DN сертификата",
-  "userManagement.linkIdentity.note": "Это не меняет роль или тип аутентификации учётной записи — это по-прежнему решается при следующем входе, как при любом первом входе.",
+  "userManagement.linkIdentity.note": "Роль учётной записи по-прежнему определяется при следующем входе, как и при любом первом входе — но если эта учётная запись сейчас входит по локальному паролю, привязка преобразует её в указанного здесь провайдера и завершает все сессии.",
   "userManagement.linkIdentity.linkButton": "Привязать личность",
   "userManagement.linkIdentity.linking": "Привязка…",
   "userManagement.linkIdentity.success": "Внешняя личность привязана к {{name}}",

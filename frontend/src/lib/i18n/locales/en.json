@@ -1164,7 +1164,7 @@
   "userManagement.linkIdentity.identifierOidc": "OIDC subject (sub)",
   "userManagement.linkIdentity.identifierLdap": "LDAP uid",
   "userManagement.linkIdentity.identifierPki": "Certificate subject DN",
-  "userManagement.linkIdentity.note": "This does not change the account's role or auth type — those are still decided at the next login, the same as any first sign-in.",
+  "userManagement.linkIdentity.note": "The account's role is still decided at the next login, the same as any first sign-in — but if this account currently signs in with a local password, linking converts it to the provider you're setting here and signs it out everywhere.",
   "userManagement.linkIdentity.linkButton": "Link identity",
   "userManagement.linkIdentity.linking": "Linking…",
   "userManagement.linkIdentity.success": "Linked an external identity to {{name}}",

@@ -1163,7 +1163,7 @@
   "userManagement.linkIdentity.identifierOidc": "OIDC subject（sub）",
   "userManagement.linkIdentity.identifierLdap": "LDAP uid",
   "userManagement.linkIdentity.identifierPki": "証明書のサブジェクトDN",
-  "userManagement.linkIdentity.note": "これによりアカウントのロールや認証タイプは変更されません — それらは通常の初回サインインと同様、次回ログイン時に決定されます。",
+  "userManagement.linkIdentity.note": "アカウントのロールは、初回サインインと同様に引き続き次回ログイン時に決定されます — ただし、このアカウントが現在ローカルパスワードでサインインしている場合、リンクするとここで設定したプロバイダーに変換され、すべてのセッションからサインアウトされます。",
   "userManagement.linkIdentity.linkButton": "IDをリンク",
   "userManagement.linkIdentity.linking": "リンク中…",
   "userManagement.linkIdentity.success": "{{name}} に外部IDをリンクしました",

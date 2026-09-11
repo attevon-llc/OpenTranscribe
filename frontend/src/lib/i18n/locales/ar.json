@@ -1164,7 +1164,7 @@
   "userManagement.linkIdentity.identifierOidc": "موضوع OIDC (sub)",
   "userManagement.linkIdentity.identifierLdap": "معرّف LDAP (uid)",
   "userManagement.linkIdentity.identifierPki": "الاسم المميز لموضوع الشهادة",
-  "userManagement.linkIdentity.note": "لا يغيّر هذا دور الحساب أو نوع المصادقة — إذ يُحدَّدان عند تسجيل الدخول التالي، تمامًا كما في أول تسجيل دخول.",
+  "userManagement.linkIdentity.note": "لا يزال دور الحساب يُحدَّد عند تسجيل الدخول التالي، تمامًا كما في أول تسجيل دخول — لكن إذا كان هذا الحساب يسجّل الدخول حاليًا بكلمة مرور محلية، فإن الربط يحوّله إلى المزوّد الذي تحدده هنا ويسجّل خروجه من كل مكان.",
   "userManagement.linkIdentity.linkButton": "ربط الهوية",
   "userManagement.linkIdentity.linking": "جارٍ الربط…",
   "userManagement.linkIdentity.success": "تم ربط هوية خارجية بـ {{name}}",

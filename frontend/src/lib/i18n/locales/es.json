@@ -2782,7 +2782,7 @@
   "userManagement.linkIdentity.identifierOidc": "Sujeto OIDC (sub)",
   "userManagement.linkIdentity.identifierLdap": "uid de LDAP",
   "userManagement.linkIdentity.identifierPki": "DN del sujeto del certificado",
-  "userManagement.linkIdentity.note": "Esto no cambia el rol ni el tipo de autenticación de la cuenta — eso se sigue decidiendo en el próximo inicio de sesión, igual que cualquier primer inicio de sesión.",
+  "userManagement.linkIdentity.note": "El rol de la cuenta sigue decidiéndose en el próximo inicio de sesión, igual que cualquier primer inicio de sesión — pero si esta cuenta actualmente inicia sesión con una contraseña local, la vinculación la convierte al proveedor que estás configurando aquí y cierra su sesión en todas partes.",
   "userManagement.linkIdentity.linkButton": "Vincular identidad",
   "userManagement.linkIdentity.linking": "Vinculando…",
   "userManagement.linkIdentity.success": "Identidad externa vinculada a {{name}}",

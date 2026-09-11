@@ -209,6 +209,21 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
   `account_linking.emails_agree` (case- and whitespace-insensitive, the same rule
   `dependencies._enforce_proxy_identity_consistency` already applied): it was a byte-exact
   compare, so an IdP that merely re-cased an address locked the account out.
+  ⚠️ **Both remedies now also refuse an `auth_type == local` target (issue #912).**
+  `link-identity` used to set the provider column without touching `auth_type`, so a `local`
+  account could end up carrying an `ldap_uid`/`oidc_subject`/`pki_subject_dn` while every other
+  reader of `auth_type` still believed it authenticated with a local password — the account
+  resolved through the provider-ID login branch above while its own row said otherwise.
+  `link-identity` now **converts** `auth_type` to the provider being linked (and revokes
+  sessions) whenever the account's `auth_type` is exactly `local` at call time; an
+  already-external `auth_type` (a `pki` account with `allow_local_fallback`, or a downstream
+  registry provider) is left untouched, so this is a one-way door out of `local`, never a
+  demotion between two external methods. `external-email` symmetrically **refuses** an
+  `auth_type == local` target outright — even one carrying an identifier column, which is a
+  legitimate SCIM-provisioned state (`scim_service.create_user` deliberately stamps
+  `external_id` onto a `local` row without guessing an `auth_type`) that neither endpoint
+  touches. The check is a plain equality against `AUTH_TYPE_LOCAL`, never a membership test
+  against the valid-auth-type set — issue #866's allow-list problem gets no second instance here.
 - `approval.py` — the `approval_status` state machine and `initial_approval_status`, the one
   function every account-creation path asks "does this start pending?".
 - `roles.py` — the authorization contract (read this first, it's 35 lines).

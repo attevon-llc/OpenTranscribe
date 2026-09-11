@@ -1163,7 +1163,7 @@
   "userManagement.linkIdentity.identifierOidc": "OIDC subject（sub）",
   "userManagement.linkIdentity.identifierLdap": "LDAP uid",
   "userManagement.linkIdentity.identifierPki": "证书 subject DN",
-  "userManagement.linkIdentity.note": "这不会更改账户的角色或认证类型——这些仍将在下次登录时决定，与任何首次登录相同。",
+  "userManagement.linkIdentity.note": "账户的角色仍将在下次登录时决定，与任何首次登录相同——但如果该账户当前使用本地密码登录，链接会将其转换为此处设置的提供方，并使其在所有位置退出登录。",
   "userManagement.linkIdentity.linkButton": "关联身份",
   "userManagement.linkIdentity.linking": "正在关联…",
   "userManagement.linkIdentity.success": "已为 {{name}} 关联外部身份",

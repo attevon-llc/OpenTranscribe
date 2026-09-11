@@ -207,14 +207,21 @@ describe('resetUserMFA', () => {
 describe('linkExternalIdentity', () => {
   it('puts the provider and identifier and returns the server response', async () => {
     mockInstance.put.mockResolvedValue({
-      data: { success: true, provider: 'oidc', identifier: 'sub-123' },
+      data: { success: true, provider: 'oidc', identifier: 'sub-123', auth_type: 'oidc' },
     });
     const result = await AdminApi.linkExternalIdentity(USER_UUID, 'oidc', 'sub-123');
     expect(mockInstance.put).toHaveBeenCalledWith(`/admin/users/${USER_UUID}/link-identity`, {
       provider: 'oidc',
       identifier: 'sub-123',
     });
-    expect(result).toEqual({ success: true, provider: 'oidc', identifier: 'sub-123' });
+    // auth_type is asserted because it is the endpoint's second effect (issue #912):
+    // converting a local account's auth_type when it is linked for the first time.
+    expect(result).toEqual({
+      success: true,
+      provider: 'oidc',
+      identifier: 'sub-123',
+      auth_type: 'oidc',
+    });
   });
 });
 

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import io
 import uuid
+from unittest import mock
 
 import pytest
 from fastapi import status
@@ -302,6 +303,89 @@ def test_presigned_complete_still_drops_the_row_when_the_object_is_oversized(
     db_session.expire_all()
     row = db_session.query(MediaFile).filter(MediaFile.uuid == seeded.uuid).first()
     assert row is None, "an oversized object must still drop the row"
+
+
+# ---------------------------------------------------------------------------
+# 8 + 9: a dispatch failure must ALSO push a live WebSocket update, not just
+# invalidate the cache (issue #911) — and that push is best-effort.
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_failure_pushes_a_live_ws_update_and_invalidates_cache(
+    client, user_token_headers, normal_user, sample_wav_bytes, db_session, monkeypatch
+):
+    """A dispatch failure must push BOTH a cache invalidation AND a live
+    ``file_updated`` WebSocket event carrying the ERROR status and message —
+    the cache invalidation alone (#905) is not a live update (#911).
+    """
+    from app.api.endpoints.files import upload as upload_mod
+
+    ws_mock = mock.Mock(return_value=True)
+    cache_mock = mock.Mock()
+
+    monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
+    monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
+    monkeypatch.setattr(upload_mod, "send_ws_event", ws_mock)
+    monkeypatch.setattr("app.services.redis_cache_service.redis_cache", cache_mock)
+
+    filename = f"ws-push-{uuid.uuid4().hex[:8]}.wav"
+    response = _post_legacy_upload(client, user_token_headers, sample_wav_bytes, filename)
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+    cache_mock.invalidate_user_files.assert_called_once_with(normal_user.id)
+
+    ws_mock.assert_called_once()
+    ws_user_id, ws_type, ws_data = ws_mock.call_args[0]
+    assert ws_user_id == normal_user.id
+    assert ws_type == "file_updated"
+    assert ws_data["status"] == FileStatus.ERROR.value
+    assert ASR_REFUSAL_MESSAGE in ws_data["message"]
+    assert ws_data["file"]["status"] == FileStatus.ERROR.value
+    assert ws_data["file"]["filename"] == filename
+    assert (
+        ws_data["file"]["last_error_message"]
+        and ASR_REFUSAL_MESSAGE in ws_data["file"]["last_error_message"]
+    )
+
+
+def test_dispatch_failure_still_invalidates_cache_when_the_ws_push_fails(
+    client, user_token_headers, normal_user, sample_wav_bytes, db_session, monkeypatch
+):
+    """The WS push is best-effort: a failure in it must not block the cache
+    invalidation or mask the real dispatch failure being re-raised (#911).
+    """
+    from app.api.endpoints.files import upload as upload_mod
+
+    cache_mock = mock.Mock()
+
+    def _raise_ws_failure(*_args, **_kwargs):
+        raise RuntimeError("redis publish exploded")
+
+    monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
+    monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
+    monkeypatch.setattr(upload_mod, "send_ws_event", _raise_ws_failure)
+    monkeypatch.setattr("app.services.redis_cache_service.redis_cache", cache_mock)
+
+    filename = f"ws-push-failure-{uuid.uuid4().hex[:8]}.wav"
+    response = _post_legacy_upload(client, user_token_headers, sample_wav_bytes, filename)
+
+    # The real dispatch failure must still surface — a WS-push exception must
+    # never mask it.
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert ASR_REFUSAL_MESSAGE in response.json()["detail"]
+
+    cache_mock.invalidate_user_files.assert_called_once_with(normal_user.id)
+
+    db_session.expire_all()
+    row = (
+        db_session.query(MediaFile)
+        .filter(MediaFile.filename == filename, MediaFile.user_id == normal_user.id)
+        .first()
+    )
+    assert row is not None, "a WS-push failure must not prevent the ERROR row from persisting"
+    assert row.status == FileStatus.ERROR
+    assert row.last_error_message and ASR_REFUSAL_MESSAGE in row.last_error_message
 
 
 # ---------------------------------------------------------------------------

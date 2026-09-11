@@ -449,3 +449,95 @@ def test_the_remedy_404s_for_an_unknown_user(client, super_admin_token_headers):
     )
     assert response.status_code == status.HTTP_404_NOT_FOUND, response.text
     assert response.json()["detail"] == "User not found"
+
+
+# --------------------------------------------------------------------------- #
+# Issue #909 — the external-email remedy must reset email_verified too.
+# --------------------------------------------------------------------------- #
+
+
+def _mark_verified(db_session, user) -> None:
+    user.email_verified = True
+    user.email_verified_at = datetime.now(UTC)
+    db_session.commit()
+    db_session.refresh(user)
+
+
+def test_the_admin_external_email_remedy_clears_the_verified_flag(
+    client, super_admin_token_headers, db_session, linked_user
+):
+    _mark_verified(db_session, linked_user)
+    new_email = f"alice.renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
+
+    response = client.put(
+        _REMEDY.format(uuid=linked_user.uuid),
+        json={"email": new_email},
+        headers=super_admin_token_headers,
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    db_session.refresh(linked_user)
+    assert str(linked_user.email) == new_email
+    assert linked_user.email_verified is False
+    assert linked_user.email_verified_at is None
+
+
+def test_the_idempotent_resubmission_leaves_the_flag_alone(
+    client, super_admin_token_headers, db_session, linked_user
+):
+    """Pins the existing early-return: resubmitting the CURRENT address must not
+    touch a flag that was never actually invalidated."""
+    _mark_verified(db_session, linked_user)
+
+    response = client.put(
+        _REMEDY.format(uuid=linked_user.uuid),
+        json={"email": str(linked_user.email)},
+        headers=super_admin_token_headers,
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    db_session.refresh(linked_user)
+    assert linked_user.email_verified is True
+
+
+def test_a_link_identity_local_account_is_not_left_verified_for_an_address_it_never_held(
+    client, super_admin_token_headers, db_session, normal_user, monkeypatch
+):
+    """The live-gap regression: ``link-identity`` sets an external identifier
+    WITHOUT changing ``auth_type`` away from ``local``, so an ``auth_type='local'``
+    account can reach the external-email remedy — and for that account the
+    verification gate really does apply to login.
+    """
+    from app.auth.email_verification import assert_email_verified_for_local_login
+
+    _mark_verified(db_session, normal_user)
+    assert str(normal_user.auth_type) == "local"
+
+    ldap_uid = f"ldap-uid-{uuid_pkg.uuid4().hex[:8]}"
+    link_response = client.put(
+        f"/api/admin/users/{normal_user.uuid}/link-identity",
+        json={"provider": "ldap", "identifier": ldap_uid},
+        headers=super_admin_token_headers,
+    )
+    assert link_response.status_code == status.HTTP_200_OK, link_response.text
+    db_session.refresh(normal_user)
+    assert str(normal_user.auth_type) == "local", (
+        "link-identity must not change auth_type — that is the whole gap this pins"
+    )
+
+    new_email = f"renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
+    remedy_response = client.put(
+        _REMEDY.format(uuid=normal_user.uuid),
+        json={"email": new_email},
+        headers=super_admin_token_headers,
+    )
+    assert remedy_response.status_code == status.HTTP_200_OK, remedy_response.text
+    db_session.refresh(normal_user)
+    assert normal_user.email_verified is False
+
+    from app.auth import email_verification as ev
+
+    monkeypatch.setattr(ev, "email_verification_required", lambda _db: True)
+    with pytest.raises(HTTPException) as exc:
+        assert_email_verified_for_local_login(db_session, str(normal_user.uuid))
+    assert exc.value.status_code == status.HTTP_403_FORBIDDEN

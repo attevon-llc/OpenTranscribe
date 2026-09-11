@@ -2011,6 +2011,19 @@ def admin_update_external_email(
         )
 
     user.email = new_email
+    # email_verified is proof THIS deployment mailed the address on the row — a
+    # property of the ADDRESS, so it cannot survive the address changing (#909).
+    # NOT inert just because this is an IdP remedy: link-identity sets an external
+    # identifier WITHOUT changing auth_type, so an auth_type='local' account can
+    # reach this handler, and for that account the verification gate really does
+    # apply to login. Deliberately no re-verification token is issued here (unlike
+    # the self-service path in users.py): this endpoint is an administrator
+    # accepting an IdP's assertion for an already-linked account, and mailing an
+    # IdP-owned address unprompted isn't its job — issue_verification_token would
+    # also no-op for a genuinely external account. Clearing the flag is the honest
+    # record.
+    user.email_verified = False
+    user.email_verified_at = None
     # Same shape as the self-service email change in `users.py`: revoke IN the
     # transaction so a commit failure rolls the revocation back with it. An email
     # change is an identity change on an account that authenticates by it, and

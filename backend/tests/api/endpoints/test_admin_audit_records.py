@@ -80,20 +80,25 @@ def test_gdpr_erasure_names_the_acting_super_admin(
     erasures = _of_action(events, AuditEventType.ADMIN_USER_DELETE, "gdpr_erasure")
     assert len(erasures) == 1, f"expected exactly one erasure record, got {events}"
 
-    details = erasures[0]["details"]
-    # Who did it.
-    assert details["actor_user_id"] == actor_id
-    assert details["actor_email"] == actor_email
-    assert details["actor_email"] != "data-subject-webhook"
-    # Who it was done to.
-    assert details["target_user_id"] == target_id
-    assert details["target_email"] == target_email
-    assert erasures[0]["user_id"] == target_id
+    # Who did it — top-level and typed, per the #443/#828 convention: `user_id`/
+    # `username` are ALWAYS the actor.
+    assert erasures[0]["user_id"] == actor_id
+    assert erasures[0]["username"] == actor_email
+    # Who it was done to — also top-level, never only in `details`.
+    assert erasures[0]["target_user_id"] == target_id
+    assert erasures[0]["target_username"] == target_email
+    # The webhook marker is a NARRATIVE detail distinguishing self-service from
+    # staff, not the attribution — that lives in the top-level fields above.
+    assert erasures[0]["details"]["actor_email"] != "data-subject-webhook"
 
     # The ledger's own two records bracket this one and share its event type, so
-    # `user_id` must mean the same thing in all three or the audit stream cannot be
-    # queried by subject at all (issue #443). A first version of the ledger put the
-    # ACTOR there, giving one event type two opposite conventions in one sequence.
+    # `user_id`/`target_user_id` must mean the same thing in all three or the audit
+    # stream cannot be queried by actor OR by subject (issue #443/#828). A first
+    # version of the ledger put the SUBJECT in `user_id` (matching the erasure
+    # record here, which used to put the target there too) — but that agreement
+    # was an accident of this one sequence: `erase_org_member_data`'s own record
+    # has always put the ACTOR in `user_id`, so the ledger's old convention
+    # disagreed with THAT sequence instead. Both queries now work everywhere.
     ledger = [
         e
         for e in _of_type(events, AuditEventType.ADMIN_USER_DELETE)
@@ -101,13 +106,13 @@ def test_gdpr_erasure_names_the_acting_super_admin(
     ]
     assert len(ledger) == 2, f"expected the ledger to bracket the erasure, got {events}"
     for record in ledger:
-        assert record["user_id"] == target_id, (
-            "A ledger record attributes `user_id` to someone other than the data "
-            "subject, while the erasure record beside it uses the subject."
+        assert record["user_id"] == actor_id, (
+            "A ledger record does not attribute `user_id` to the acting admin, so "
+            "'which erasures did admin Y run' would miss this record."
         )
-        assert record["details"]["actor_user_id"] == actor_id, (
-            "The ledger record does not name the acting super admin, so moving the "
-            "subject into `user_id` lost the actor entirely."
+        assert record["target_user_id"] == target_id, (
+            "A ledger record does not name the data subject in `target_user_id`, "
+            "so 'everything done TO user X' would miss this record."
         )
 
 
@@ -131,7 +136,55 @@ def test_gdpr_erasure_still_reports_the_webhook_when_there_is_no_actor(db_sessio
     erasures = _of_action(events, AuditEventType.ADMIN_USER_DELETE, "gdpr_erasure")
     assert len(erasures) == 1
     assert erasures[0]["details"]["actor_email"] == "data-subject-webhook"
-    assert erasures[0]["details"]["actor_user_id"] is None
+    # No human actor: `user_id` is None, never backfilled with the subject or a
+    # placeholder (issue #443/#828).
+    assert erasures[0]["user_id"] is None
+
+
+def test_the_full_erasure_sequence_agrees_on_actor_and_subject_everywhere(
+    client, super_admin_token_headers, super_admin_user, normal_user, monkeypatch
+):
+    """The defect was CROSS-RECORD inconsistency, so a per-record test cannot catch
+    a regression here — only a test that queries the WHOLE three-record sequence
+    by each field, and checks it gets the same three records back either way, can.
+
+    Before the #828 decision, ``erase_user``'s own record happened to key
+    ``user_id`` on the subject (matching the ledger's two records, by an accident
+    of THIS sequence's history) — so a query by SUBJECT returned all three, but a
+    query by ACTOR returned only the two ledger records with the actor buried in
+    ``details``, never the erasure record itself, which carried no actor at the
+    top level at all. Query by actor and by subject must return the identical
+    three-record set now.
+    """
+    from app.services import gdpr_erasure_service
+
+    events = _collect(monkeypatch, gdpr_erasure_service)
+
+    target_id = int(normal_user.id)
+    actor_id = int(super_admin_user.id)
+
+    response = client.post(
+        f"/api/admin/gdpr/erase-user/{normal_user.uuid}", headers=super_admin_token_headers
+    )
+    assert response.status_code == status.HTTP_200_OK, response.text
+
+    sequence = _of_type(events, AuditEventType.ADMIN_USER_DELETE)
+    # Non-vacuity check: a query that matched nothing would satisfy the equality
+    # assertions below by both being empty.
+    assert len(sequence) == 3, f"expected the full erasure+ledger sequence, got {events}"
+
+    by_subject = [e for e in sequence if e.get("target_user_id") == target_id]
+    by_actor = [e for e in sequence if e.get("user_id") == actor_id]
+
+    assert len(by_subject) == 3, (
+        f"querying by subject returned a PARTIAL set ({len(by_subject)} of 3) — "
+        f"at least one record in the sequence does not name the subject: {sequence}"
+    )
+    assert len(by_actor) == 3, (
+        f"querying by actor returned a PARTIAL set ({len(by_actor)} of 3) — at "
+        f"least one record in the sequence does not name the actor: {sequence}"
+    )
+    assert by_subject == by_actor == sequence
 
 
 # ---------------------------------------------------------------------------

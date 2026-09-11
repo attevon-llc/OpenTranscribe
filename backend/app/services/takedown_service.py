@@ -148,7 +148,7 @@ def is_notification_suppressed(file_id: int, recipient_user_id: int) -> bool:
             file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
             if file is None or not bool(getattr(file, "is_quarantined", False)):
                 return False
-            return not _recipient_is_admin(db, recipient_user_id)
+            return not is_review_admin(db, recipient_user_id)
     except Exception as e:  # noqa: BLE001 — fail CLOSED, see docstring
         logger.warning(
             f"Notification suppression check failed for file {file_id}; "
@@ -200,7 +200,7 @@ def is_notification_suppressed_for_uuid(
                 return True
             if not bool(getattr(file, "is_quarantined", False)):
                 return False
-            return not _recipient_is_admin(db, recipient_user_id)
+            return not is_review_admin(db, recipient_user_id)
     except Exception as e:  # noqa: BLE001 — fail CLOSED, see docstring
         logger.warning(
             f"Notification suppression check failed for file {file_uuid}; "
@@ -261,7 +261,7 @@ def filter_suppressed_file_uuids(
                 .all()
             )
             quarantined_by_key = {str(row[0]): bool(row[1]) for row in rows}
-            recipient_is_admin = _recipient_is_admin(db, recipient_user_id)
+            recipient_is_admin = is_review_admin(db, recipient_user_id)
 
         visible: list[str] = []
         for raw in candidates:
@@ -293,9 +293,16 @@ def _coerce_uuid(value: str | uuid_pkg.UUID) -> uuid_pkg.UUID | None:
         return None
 
 
-def _recipient_is_admin(db: Session, recipient_user_id: int) -> bool:
-    """Shared admin lookup for the notification-suppression predicates."""
-    recipient = db.query(User).filter(User.id == recipient_user_id).first()
+def is_review_admin(db: Session, user_id: int | None) -> bool:
+    """Whether user_id holds the admin review visibility every predicate here is relative to.
+
+    Public because the ASYNC plane needs it: a Celery task holds a user id, never a
+    User, and must re-resolve the role at RUN time rather than trust a flag captured
+    at dispatch. None is never an admin.
+    """
+    if user_id is None:
+        return False
+    recipient = db.query(User).filter(User.id == int(user_id)).first()
     return bool(recipient and recipient.is_admin)
 
 

@@ -23,7 +23,12 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
 
 - `npm run dev` — Vite dev server (:5173, HMR). Prefer the whole stack via `./opentr.sh start dev`.
 - `npm run build` — production build (catches Vite-only issues svelte-check misses).
-- `npm run check` — `svelte-check` (type + a11y). `npm run lint` / `lint:fix` — ESLint.
+- `npm run check` — `svelte-check --tsconfig ./tsconfig.json`. This **enforces type-checking
+  only**: svelte-check exits non-zero on type errors, and its default `--threshold warning`
+  only controls what gets _printed_, not the exit code — a11y issues surface as warnings in the
+  output but never fail the command, because the script doesn't pass `--fail-on-warnings`
+  (default `false`). Don't rely on this as an a11y gate; #785 tracks making a11y enforcement
+  real. `npm run lint` / `lint:fix` — ESLint.
 - `npm run test` / `test:watch` — Vitest unit/component tests (jsdom).
   ⚠️ **Those scripts set `NODE_OPTIONS=--no-experimental-webstorage`, and it is load-bearing on
   Node >=26.** Node 26 defines a `localStorage` accessor on `globalThis` that evaluates to

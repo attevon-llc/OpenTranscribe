@@ -2,6 +2,8 @@
  * Utility functions for highlighting search matches in transcript text
  */
 
+import { escapeHtml } from './sanitizeHtml';
+
 export interface SearchMatch {
   segmentIndex: number;
   start: number;
@@ -52,19 +54,6 @@ export function highlightText(
   result += escapeHtml(text.substring(lastIndex));
 
   return result;
-}
-
-/**
- * Escapes HTML special characters to prevent XSS
- * @param text - The text to escape
- * @returns HTML-safe text
- */
-function escapeHtml(text: string): string {
-  if (!text) return '';
-  if (typeof window === 'undefined') return text; // SSR safety
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 /**

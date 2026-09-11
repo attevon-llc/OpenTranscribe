@@ -49,3 +49,21 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
 - **A supplied tag name may not be the applied one** — tags resolve by normalized-exact match, so
   `Interview` applies the existing `interview` across the whole selection. Any surface that
   submits a typed name must name the tag that was actually applied.
+- **E2E-guarded selectors owned here** (`backend/tests/e2e/test_gallery_actions.py`,
+  `test_tag_management.py`, `test_collection_management.py`, `test_chat.py`,
+  `test_auth_buttons.py`, `test_visual_regression.py`): `.file-card` / `.file-list-row`
+  (`.file-card.selected` when checked) come from `VirtualGrid.svelte` / `VirtualList.svelte`
+  inside `GalleryGrid.svelte`. `.select-btn` / `.select-all-btn` (enter/exit selection mode) and
+  the rest of the toolbar — `.organize-btn`, `.collections-btn`, `.process-btn`, `.delete-btn`,
+  `.cancel-btn`, `.upload-btn` — plus the Organize dropdown's `.dropdown-menu` / `.dropdown-item`
+  and `[data-testid="gallery-chat-with-selected"]` are all `GalleryActionButtons.svelte`. Its
+  `.dropdown-menu`/`.dropdown-item` are a **different** DOM subtree than the identically-named
+  classes in `navbar/UserDropdown.svelte` — don't assume a rename there is safe here, or vice
+  versa. `.gallery-header-left` / `.gallery-header-right` (the latter gated on
+  `files.length > 0`) are `GalleryHeader.svelte`.
+  ⚠️ **`.gallery-action-buttons` is the single most load-bearing selector in the whole e2e
+  suite**, not just gallery's own tests: `conftest.py`'s `authenticated_page`/`gallery_page`
+  fixtures `wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)` as the
+  "authenticated app shell finished painting" signal, and `test_login.py` asserts on its
+  visibility/absence to confirm login succeeded or failed. Renaming it breaks essentially every
+  other e2e file, not just this folder's.

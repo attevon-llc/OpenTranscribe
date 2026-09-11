@@ -1052,7 +1052,7 @@ pytest --cov=app tests/          # With coverage (report-only, no threshold yet)
 cd frontend/
 npm run test                     # Vitest unit + component tests (jsdom)
 npm run test:coverage            # …with coverage
-npm run check                    # svelte-check (types + a11y)
+npm run check                    # svelte-check (type-checking; a11y issues print as warnings but don't fail it — #785)
 npm run lint                     # ESLint (flat config)
 npm run check:i18n               # locale key-parity across all 8 languages
 

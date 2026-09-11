@@ -294,6 +294,18 @@ class TestLLMSettingsAPI:
         skipped even with `--with-mock-llm` up and healthy). Registering a SECOND config
         and then explicitly calling `/set-active` (the fixture's #607-era fix) must make
         it the real active configuration.
+
+        The real fixture this reproduces runs against a live dev backend started with
+        `--with-mock-llm`, where `mock-llm` resolves over the compose network and
+        `docker-compose.mock-llm.yml` sets `LLM_ALLOW_PRIVATE_ENDPOINTS=true`. This
+        test runs the app in-process against the bare host instead, which has no DNS
+        entry for `mock-llm` at all — so `POST /api/llm-settings`'s create-time SSRF
+        check (issue #820) would 400 on a genuine "cannot resolve hostname", the same
+        way it correctly would for any other dot-free hostname with no host-side
+        resolver entry. Patch the resolver, not the flag: `LLM_ALLOW_PRIVATE_ENDPOINTS`
+        governs what a RESOLVED address is allowed to be, not whether resolution
+        itself can be skipped, so setting it wouldn't change the DNS failure this
+        host produces.
         """
         stale = client.post(
             "/api/llm-settings",
@@ -302,17 +314,21 @@ class TestLLMSettingsAPI:
         ).json()
         assert stale["is_active"] is True  # stands in for a pre-existing "vllm" config
 
-        mock = client.post(
-            "/api/llm-settings",
-            headers=user_token_headers,
-            json=_create_config_payload(
-                name="Mock LLM (e2e)",
-                provider="custom",
-                model_name="mock-gpt",
-                base_url="http://mock-llm:5199/v1",
-                api_key="mock-key-not-secret",
-            ),
-        ).json()
+        with patch(
+            "app.utils.url_validation.resolve_public_addresses",
+            return_value=(["127.0.0.1"], ""),
+        ):
+            mock = client.post(
+                "/api/llm-settings",
+                headers=user_token_headers,
+                json=_create_config_payload(
+                    name="Mock LLM (e2e)",
+                    provider="custom",
+                    model_name="mock-gpt",
+                    base_url="http://mock-llm:5199/v1",
+                    api_key="mock-key-not-secret",
+                ),
+            ).json()
         assert mock["is_active"] is False, "must not silently inherit is_active from creation"
 
         activate = client.post(

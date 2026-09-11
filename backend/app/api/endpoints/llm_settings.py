@@ -257,6 +257,15 @@ def _assert_safe_llm_endpoint(base_url: str | None, purpose: str) -> None:
     Celery task — so there is no single call frame in which one resolution could serve both
     steps. Where the handler *does* fetch, use :func:`_pin_llm_endpoint` instead; it keeps
     the resolved address and hands it to the client.
+
+    **Called from three places, and all three must agree** (issue #820): ``POST
+    /test-connection`` (below), ``POST ""`` (create), and ``PUT /config/{uuid}`` (update,
+    only when the request actually sets ``base_url``). Before #820 only the test-connection
+    handler called this — a config could be created or updated with an unsafe ``base_url``
+    simply by never pressing "Test connection" first, including via the API directly. All
+    three read the same ``settings.LLM_ALLOW_PRIVATE_ENDPOINTS`` escape hatch, so a LAN
+    self-hoster who has opted in is not treated differently at create/update time than at
+    test time.
     """
     if not base_url:
         return
@@ -507,6 +516,12 @@ def create_user_llm_configuration(
     """
     Create a new LLM configuration for the current user
     """
+    # Refuse an unsafe base_url at the point of persistence, not only on the
+    # "Test connection" button (issue #820) — otherwise a config saved without
+    # ever being tested, or one written directly against this API, bypasses the
+    # SSRF guard entirely.
+    _assert_safe_llm_endpoint(settings_in.base_url, "LLM configuration create")
+
     # Check if user already has a configuration with this name
     existing_config = (
         db.query(models.UserLLMSettings)
@@ -588,6 +603,14 @@ def update_user_llm_configuration(
     )
 
     config_id = user_config.id
+
+    # Refuse an unsafe base_url at the point of persistence, not only on the
+    # "Test connection" button (issue #820). Only when this request actually
+    # SETS base_url — `UserLLMSettingsUpdate` is all-Optional and a PUT that
+    # doesn't touch base_url (e.g. renaming the config) must not re-validate an
+    # already-accepted, unchanged value.
+    if "base_url" in settings_in.model_fields_set:
+        _assert_safe_llm_endpoint(settings_in.base_url, "LLM configuration update")
 
     # Check for name conflicts if name is being updated
     if settings_in.name and settings_in.name != user_config.name:

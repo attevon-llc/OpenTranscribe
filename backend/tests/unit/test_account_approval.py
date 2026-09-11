@@ -1,4 +1,4 @@
-"""Administrator approval of newly provisioned accounts (``v379``).
+"""Administrator approval of newly provisioned accounts (``v381``).
 
 Three things are pinned here:
 

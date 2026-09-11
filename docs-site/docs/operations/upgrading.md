@@ -363,7 +363,7 @@ Config keys are now `oidc_*`, the admin tab is **OIDC**, and the routes are
 `/api/auth/oidc/login` and `/api/auth/oidc/callback`. No identity provider needs
 reconfiguring (the registered redirect URI still points at the SPA's `/login` page), and every
 `KEYCLOAK_*` environment variable keeps working permanently — the legacy spelling even wins
-when both are set. Stored database configuration is renamed automatically by migration `v377`.
+when both are set. Stored database configuration is renamed automatically by migration `v379`.
 
 What does break: a script that writes `PUT /api/admin/auth-config/keycloak`, reads a
 `keycloak_*` key out of `GET /api/admin/auth-config`, or calls

@@ -148,7 +148,7 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )  # Login banner ack
 
-    # Administrator admission of a newly provisioned account (v379). Distinct from
+    # Administrator admission of a newly provisioned account (v381). Distinct from
     # is_active on purpose: deactivation revokes an account that was once usable,
     # approval gates one that never has been. 'approved' is the column default, so
     # every pre-existing row and every path that does not opt in is unaffected.
@@ -167,7 +167,7 @@ class User(Base):
     # Proof that THIS deployment sent mail to `email` and someone holding it came
     # back. Gates local login when the `require_email_verification` auth-config
     # key is on (app/auth/email_verification.py) — that key had no reader at all
-    # before v375. Not to be confused with ExternalIdentity.email_verified, which
+    # before v377. Not to be confused with ExternalIdentity.email_verified, which
     # records an IdP's assertion about an address (app/auth/external_sync.py).
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     email_verified_at: Mapped[datetime | None] = mapped_column(

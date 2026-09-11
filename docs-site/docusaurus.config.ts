@@ -51,7 +51,7 @@ function compareVersions(a: string, b: string): number {
 // This only works when a git checkout with tag history is reachable (the ../VERSION
 // fs-read path above — e.g. the GitHub Pages deploy in .github/workflows/deploy-docs.yml,
 // which fetches full history + tags for exactly this reason). The Docker build
-// (docs-site/Dockerfile.prod) has no .git in its build context at all — only OT_VERSION
+// (docs-site/Dockerfile) has no .git in its build context at all — only OT_VERSION
 // is passed in — so git is unreachable there and this fails closed to "not dev": by the
 // time that image is actually published, the release pipeline's tag stage has already
 // run (build -> tag -> publish), so OT_VERSION corresponds to a real release. Also fails

@@ -378,13 +378,18 @@ what changed.
 
 **Goal:** run natively on the hardware people own, transcribe live, and stand behind a stable API.
 
-:::note Why Apple Silicon waits for the desktop app
-Native Mac transcription is **blocked on the standalone application**, not on the engine work in
-v0.8.0. Docker on Apple Silicon cannot reach the GPU: there is no Metal passthrough to a Linux
-container, so a containerised deployment is CPU-only on a Mac no matter which engine it runs.
-Reaching the Neural Engine and the GPU at all requires a process running natively on macOS, which
-is what the desktop app provides. That is why the two ship together here rather than with the
-other local-engine work.
+:::note Why Apple Silicon transcription needs a published host binary
+Native Mac transcription is **blocked on publishing the macOS host binary** — a native process
+(`diar-server --features coreml` exists today and is 99%+ correct against CUDA) plus a
+body-upload transport for Whisper — **not on the standalone desktop application**. Docker on
+Apple Silicon cannot reach the GPU: there is no Metal passthrough to a Linux container, so a
+containerised deployment is CPU-only on a Mac no matter which engine it runs. Reaching the Neural
+Engine and the GPU at all requires a process running natively on macOS, and that process does
+not require a desktop app to exist — publishing it as a release asset and pointing
+`DIAR_NATIVE_URL` at the host already gives every Docker-on-Mac stack GPU diarization with no
+app at all. The desktop app depends on that same host binary, but is a separate track, not the
+gate on native Mac transcription. That is why the two ship together in this milestone rather
+than because one blocks the other.
 :::
 
 **Exit criteria**

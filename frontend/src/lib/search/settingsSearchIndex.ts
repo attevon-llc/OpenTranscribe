@@ -3,7 +3,7 @@
  *
  * The settings panels are 100% translated via flat dot-notation i18n keys, so the
  * localized text is the natural search corpus: sourcing from the key tree means
- * search works in all 8 locales for free and automatically covers enumerated
+ * search works in all 12 locales for free and automatically covers enumerated
  * option labels built with template-literal keys (which a component grep misses).
  *
  * This module is pure/testable. The caller supplies:

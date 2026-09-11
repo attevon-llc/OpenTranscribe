@@ -62,5 +62,5 @@ addRecording` → `$lib/services/uploadService`; the progress UI is `UploadManag
 - Every string in these steps is keyed (#284 A3.1 fixed the last hardcoded English in
   `UploadStepExtraction`, `UploadStepModel`, `UploadStepReview`, `UploadStepTags`,
   `UploadStepCollections` and `UploadStepSpeakers`). Keep it that way — only the active locale is
-  loaded at runtime, so a bare English literal here is a live regression for 7 of 8 languages.
-  New copy needs a key in all 8 locale files (`npm run check:i18n` gates it).
+  loaded at runtime, so a bare English literal here is a live regression for 11 of 12 languages.
+  New copy needs a key in all 12 locale files (`npm run check:i18n` gates it).

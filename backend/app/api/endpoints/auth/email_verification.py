@@ -1,4 +1,4 @@
-"""Email-verification endpoints (v375).
+"""Email-verification endpoints (v377).
 
 Both routes are public — a user who cannot log in until their address is
 verified obviously cannot authenticate to verify it — and both are rate-limited

@@ -171,7 +171,7 @@ Each tab has **Save**, and LDAP and OIDC have **Test Connection** to verify befo
 :::note[Renamed in v0.5.0]
 The **Keycloak** tab is now **OIDC** and works with any conforming provider. Existing `KEYCLOAK_*`
 environment variables keep working permanently; stored database keys were renamed automatically
-by migration `v377`.
+by migration `v379`.
 :::
 
 Two behaviours worth knowing:

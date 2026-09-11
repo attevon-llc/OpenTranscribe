@@ -1,4 +1,4 @@
-"""Admin API for the account-approval queue (``v379``) — **admin** tier.
+"""Admin API for the account-approval queue (``v381``) — **admin** tier.
 
 Tier rationale, per the rule ``tests/unit/test_route_privilege_tiers.py`` enforces:
 deciding who gets an account is managing users, which is ``admin``. Only

@@ -2,8 +2,8 @@ import i18next from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE, isValidLanguageCode } from './languages';
 
-// Per-locale loaders — deliberately NON-eager. Statically importing all eight
-// locale JSONs put ~2.3 MB of translations (every language, for every visitor)
+// Per-locale loaders — deliberately NON-eager. Statically importing all locale
+// JSONs put ~2.3 MB of translations (every language, for every visitor)
 // into a single entry chunk, of which one language is ever read. Without
 // `eager`, `import.meta.glob` compiles to one `import()` per file, so Rollup
 // emits one chunk per locale and the browser fetches exactly the one in use.

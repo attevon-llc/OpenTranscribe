@@ -69,7 +69,7 @@ def create_user(user_data: UserCreate, db: Session) -> User:
     preferred path because it never has an admin choose someone else's password.
 
     Three gaps this used to have, all of which made "disable self-registration"
-    unusable in practice (v375):
+    unusable in practice (v377):
 
     * ``auth_type`` could not be set, so every admin-created account was
       ``local`` — unable to log in at all where local passwords are off.

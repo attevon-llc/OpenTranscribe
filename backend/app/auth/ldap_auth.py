@@ -774,7 +774,7 @@ def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
     Handles creating new users, updating existing LDAP users, converting local
     users to LDAP, and race conditions — and then reconciles the account's group
     memberships and privilege against the configured ``group_mapping`` rows
-    (``v376``). Before that, ``ldap_data["groups"]`` was collected on every login
+    (``v378``). Before that, ``ldap_data["groups"]`` was collected on every login
     and thrown away: ``is_admin`` was the only bit that survived, so a directory
     group could never become an OpenTranscribe sharing group.
 

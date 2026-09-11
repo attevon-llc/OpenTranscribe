@@ -76,7 +76,7 @@ class _FakeSession:
     def add(self, obj: object) -> None:  # pragma: no cover - conversions never add
         raise AssertionError("conversion helpers must not create rows")
 
-    # Since v376 the LDAP/OIDC conversions delegate privilege to
+    # Since v378 the LDAP/OIDC conversions delegate privilege to
     # ``idp_group_mapping_service.reconcile_user``, which reads the account's group
     # memberships. There are none here — no ``group_mapping`` rows either — so the
     # legacy admin signal alone must still produce the same end state.
@@ -161,7 +161,7 @@ def _pki_data(is_admin: bool) -> dict:
 def _convert_ldap(db, user, is_admin: bool):
     """Conversion + reconciliation, in the order ``sync_ldap_user_to_db`` runs them.
 
-    Privilege used to be decided inside the conversion helper; since v376 it is
+    Privilege used to be decided inside the conversion helper; since v378 it is
     decided once, in ``idp_group_mapping_service.reconcile_user``, for both the
     conversion and the update paths. The adapter follows the move so the tests keep
     pinning the end state of a real login rather than of one internal helper.
@@ -214,7 +214,7 @@ class TestLocalUserConversionKeepsInvariant:
 
         assert user.role == ROLE_ADMIN
         assert user.is_superuser is False
-        # >= 1: a role change is a second commit since v376 (reconcile_user commits
+        # >= 1: a role change is a second commit since v378 (reconcile_user commits
         # after revoking sessions), and the fake re-checks the invariant on each.
         assert db.commits >= 1
 
@@ -227,7 +227,7 @@ class TestLocalUserConversionKeepsInvariant:
 
         assert user.role == ROLE_SUPER_ADMIN
         assert user.is_superuser is True
-        # >= 1: a role change is a second commit since v376 (reconcile_user commits
+        # >= 1: a role change is a second commit since v378 (reconcile_user commits
         # after revoking sessions), and the fake re-checks the invariant on each.
         assert db.commits >= 1
 

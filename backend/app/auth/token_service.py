@@ -640,7 +640,7 @@ class TokenService:
         """Whether *refresh_token*'s session is still inside its idle and absolute caps.
 
         Both columns are nullable and a NULL is treated as "no cap recorded", not
-        as an expiry. Sessions that predate ``v375`` carry NULL in both, and
+        as an expiry. Sessions that predate ``v377`` carry NULL in both, and
         invalidating them on upgrade would sign every user out for a second time
         in the same release (the token-type change already does it once). The next
         rotation stamps real values on the successor row.
@@ -1103,7 +1103,7 @@ class TokenService:
                 "jti": token.jti,
                 "created_at": token.created_at.isoformat(),
                 "expires_at": token.expires_at.isoformat(),
-                # Null on a session established before v375 — "no cap recorded",
+                # Null on a session established before v377 — "no cap recorded",
                 # not "never expires"; the next rotation stamps both.
                 "last_activity_at": (
                     token.last_activity_at.isoformat() if token.last_activity_at else None
@@ -1157,7 +1157,7 @@ class TokenService:
             Tuple of (new_token_string, new_RefreshToken model instance)
         """
         # Create new refresh token FIRST (atomic safety: if this fails, user keeps old token)
-        # A legacy row (pre-v375) carries NULL here; passing it through means the
+        # A legacy row (pre-v377) carries NULL here; passing it through means the
         # successor gets a freshly-stamped ceiling rather than the session being
         # refused, which is how NULL is grandfathered.
         #

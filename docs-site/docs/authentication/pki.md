@@ -62,7 +62,7 @@ in the admin UI, so no value could match and **every save of the PKI tab was rej
 backend code branched on it either way. It is now `header` | `mutual_tls`, and `pki_auth.py`
 reads it.
 
-`pki_support_cac` and `pki_support_piv` were **removed** (migration `v375` deletes their stored
+`pki_support_cac` and `pki_support_piv` were **removed** (migration `v377` deletes their stored
 rows). They gated nothing: both the DoD CAC and the PIV CN formats are parsed for every
 certificate, unconditionally, and always have been.
 :::

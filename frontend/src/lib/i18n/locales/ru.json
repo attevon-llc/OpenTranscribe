@@ -1707,6 +1707,8 @@
   "summary.copyFailed": "Ошибка копирования",
   "summary.copySummaryLabel": "Копировать сводку",
   "summary.copySummaryMarkdown": "Копировать сводку как Markdown",
+  "summary.copying": "Копирование…",
+  "summary.noContent": "Нет контента",
   "summary.copiedToClipboard": "Сводка скопирована в буфер обмена!",
   "summary.reprocess": "Пересоздать",
   "summary.reprocessLabel": "Пересоздать сводку",

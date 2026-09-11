@@ -1718,6 +1718,8 @@
   "summary.copyFailed": "Copy failed",
   "summary.copySummaryLabel": "Copy summary",
   "summary.copySummaryMarkdown": "Copy summary as markdown",
+  "summary.copying": "Copying…",
+  "summary.noContent": "No content",
   "summary.copiedToClipboard": "Summary copied to clipboard!",
   "summary.reprocess": "Reprocess",
   "summary.reprocessLabel": "Reprocess summary",

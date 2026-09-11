@@ -1718,6 +1718,8 @@
   "summary.copyFailed": "فشل النسخ",
   "summary.copySummaryLabel": "نسخ الملخص",
   "summary.copySummaryMarkdown": "نسخ الملخص بتنسيق Markdown",
+  "summary.copying": "جارٍ النسخ…",
+  "summary.noContent": "لا يوجد محتوى",
   "summary.copiedToClipboard": "تم نسخ الملخص إلى الحافظة!",
   "summary.reprocess": "إعادة المعالجة",
   "summary.reprocessLabel": "إعادة معالجة الملخص",

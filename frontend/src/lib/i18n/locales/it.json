@@ -1718,6 +1718,8 @@
   "summary.copyFailed": "Copia non riuscita",
   "summary.copySummaryLabel": "Copia riepilogo",
   "summary.copySummaryMarkdown": "Copia il riepilogo come markdown",
+  "summary.copying": "Copia in corso…",
+  "summary.noContent": "Nessun contenuto",
   "summary.copiedToClipboard": "Riepilogo copiato negli appunti!",
   "summary.reprocess": "Rielabora",
   "summary.reprocessLabel": "Rielabora riepilogo",

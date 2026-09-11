@@ -1717,6 +1717,8 @@
   "summary.copyFailed": "Falha ao copiar",
   "summary.copySummaryLabel": "Copiar resumo",
   "summary.copySummaryMarkdown": "Copiar resumo como markdown",
+  "summary.copying": "Copiando…",
+  "summary.noContent": "Sem conteúdo",
   "summary.copiedToClipboard": "Resumo copiado para a área de transferência!",
   "summary.reprocess": "Reprocessar",
   "summary.reprocessLabel": "Reprocessar resumo",

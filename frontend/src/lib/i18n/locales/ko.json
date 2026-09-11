@@ -1718,6 +1718,8 @@
   "summary.copyFailed": "복사에 실패했습니다",
   "summary.copySummaryLabel": "요약 복사",
   "summary.copySummaryMarkdown": "요약을 마크다운으로 복사",
+  "summary.copying": "복사 중…",
+  "summary.noContent": "내용 없음",
   "summary.copiedToClipboard": "요약이 클립보드에 복사되었습니다!",
   "summary.reprocess": "재처리",
   "summary.reprocessLabel": "요약 재처리",

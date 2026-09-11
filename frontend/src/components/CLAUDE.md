@@ -34,7 +34,11 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   bypasses the server's redaction and `export_locked` policy), and since issue #821
   `src/lib/export/` contains no serializer at all: `requestTranscriptExport.ts` asks the
   server. Every transcript byte a user can copy or download must come from
-  `GET /api/files/{uuid}/export`.
+  `GET /api/files/{uuid}/export`. **The summary path now complies too (issue #885):**
+  `SummaryModal.svelte`'s copy button used to build its own markdown client-side and dropped
+  the action-items/speaker-analysis sections doing so; it now calls
+  `requestSummaryExport.ts` -> `GET /api/files/{uuid}/summary/export`, which renders from the
+  same masked copy the summary read endpoint returns.
 - i18n everywhere via `$t(...)` from `$stores/locale`. Light/dark parity required.
 - Prefer `$store` auto-subscription in markup over `get(store)`.
 

@@ -42,8 +42,10 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import tomllib
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LICENSE_FILE = REPO_ROOT / "LICENSE"
@@ -72,10 +74,10 @@ _LICENSE_TITLES: tuple[tuple[str, str], ...] = (
     ("mit license", "MIT"),
 )
 
-#: Directories that hold third-party/vendored files, never first-party manifests.
-_EXCLUDED_DIR_NAMES = frozenset(
-    {"node_modules", "venv", ".venv", ".svelte-kit", "dist", "build", ".git"}
-)
+#: The pyproject `[project].license` shapes PEP 621 permits. A plain string is the modern
+#: SPDX-expression form this repo uses; `{text = "..."}` is the legacy table form, still valid
+#: and still an identifier; `{file = "LICENSE"}` names a file and asserts no identifier at all.
+_PYPROJECT_LICENSE_TEXT_KEY = "text"
 
 
 def _license_family_from_text(text: str) -> str:
@@ -120,20 +122,70 @@ def _current_spdx_ids(family: str) -> set[str]:
     return {family}
 
 
-def _is_excluded(path: Path) -> bool:
-    return any(part in _EXCLUDED_DIR_NAMES for part in path.parts)
+def _tracked_manifests(basename: str) -> list[Path]:
+    """Return every GIT-TRACKED file named `basename`, anywhere in the repo.
+
+    ⚠️ **"First-party" means "tracked by git", and enumerating it any other way is what
+    broke this module.** It used to walk the filesystem with `rglob` and subtract a
+    hand-maintained set of directory names (`node_modules`, `venv`, `dist`, …). That set can
+    only ever list the vendored directories somebody has already seen, so the walk collected,
+    on a developer machine and in the integration gate alike: **44 manifests from other
+    agents' `.claude/worktrees/*` checkouts** (each a full copy of this same repo),
+    `reference_repos/open-webui/`, and `backend/venv-eval/lib/python3.12/site-packages/pandas/`
+    — the last one slipping through because the exclusion was the literal name `venv` and the
+    directory is `venv-eval`. Every one of those is gitignored, so `git ls-files` excludes
+    all three classes by construction and needs no list to maintain.
+
+    Args:
+        basename: The manifest filename to enumerate, e.g. ``"package.json"``.
+
+    Returns:
+        Absolute paths, sorted. Never empty — see the assertion below.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z", "--", f"*/{basename}", basename],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    paths = sorted(REPO_ROOT / rel for rel in result.stdout.split("\0") if rel)
+    assert paths, (
+        f"git ls-files found no tracked {basename} in {REPO_ROOT} — every test below would "
+        f"then iterate an empty list and pass having checked nothing"
+    )
+    return paths
 
 
 def _first_party_package_jsons() -> list[Path]:
-    return sorted(
-        p for p in REPO_ROOT.rglob("package.json") if not _is_excluded(p.relative_to(REPO_ROOT))
-    )
+    return _tracked_manifests("package.json")
 
 
 def _first_party_pyproject_tomls() -> list[Path]:
-    return sorted(
-        p for p in REPO_ROOT.rglob("pyproject.toml") if not _is_excluded(p.relative_to(REPO_ROOT))
-    )
+    return _tracked_manifests("pyproject.toml")
+
+
+def _pyproject_license_id(path: Path) -> str | None:
+    """Return the SPDX identifier a `pyproject.toml` declares, or None.
+
+    PEP 621 allows `[project].license` to be a string (the SPDX-expression form) or a table.
+    Reading the raw value and comparing it against a `set` raised
+    ``TypeError: unhashable type: 'dict'`` on the first table-form manifest the walk reached
+    — a crash where a legible "this file declares no current identifier" was wanted.
+
+    Args:
+        path: Path to a `pyproject.toml`.
+
+    Returns:
+        The declared identifier, or None when the field is absent or names a **file**
+        (``{file = "LICENSE"}``) rather than asserting an identifier.
+    """
+    with path.open("rb") as handle:
+        value: Any = tomllib.load(handle).get("project", {}).get("license")
+    if isinstance(value, dict):
+        value = value.get(_PYPROJECT_LICENSE_TEXT_KEY)
+    if value is None:
+        return None
+    return str(value)
 
 
 def _production_dockerfiles() -> dict[str, Path]:
@@ -216,10 +268,9 @@ def _all_declared_license_ids() -> dict[str, str]:
         if value:
             declared[str(path.relative_to(REPO_ROOT))] = str(value)
     for path in _first_party_pyproject_tomls():
-        with path.open("rb") as handle:
-            value = tomllib.load(handle).get("project", {}).get("license")
+        value = _pyproject_license_id(path)
         if value:
-            declared[str(path.relative_to(REPO_ROOT))] = str(value)
+            declared[str(path.relative_to(REPO_ROOT))] = value
     for path in _production_dockerfiles().values():
         value = _dockerfile_license_label(path.read_text(encoding="utf-8"))
         if value:
@@ -258,6 +309,12 @@ def test_expected_manifest_set_is_what_the_886_sweep_found() -> None:
 
     Pins the exact set the 2026-09-09 sweep enumerated, so a manifest silently added
     outside that set cannot be missed by a scanner whose glob quietly matched nothing.
+
+    It is also the assertion that catches over-collection, and it did: when
+    `_tracked_manifests` walked the filesystem instead of asking git, this failed with 44
+    extra `package.json` files pulled out of other agents' `.claude/worktrees/*` checkouts
+    plus `reference_repos/`. An exact `==` is deliberate for exactly that reason — a
+    superset check would have called that state clean.
     """
     package_jsons = {str(p.relative_to(REPO_ROOT)) for p in _first_party_package_jsons()}
     pyproject_tomls = {str(p.relative_to(REPO_ROOT)) for p in _first_party_pyproject_tomls()}
@@ -328,8 +385,7 @@ def test_every_first_party_pyproject_declares_the_licence() -> None:
 
     offenders: list[str] = []
     for path in _first_party_pyproject_tomls():
-        with path.open("rb") as handle:
-            license_id = tomllib.load(handle).get("project", {}).get("license")
+        license_id = _pyproject_license_id(path)
         if license_id not in valid:
             offenders.append(f"{path.relative_to(REPO_ROOT)}: license={license_id!r}")
 

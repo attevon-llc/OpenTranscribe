@@ -24,6 +24,7 @@ from app.auth.provider_registry import has_verifiers
 from app.auth.provider_registry import register_verifier
 from app.auth.provider_registry import unregister_verifier
 from app.auth.provider_registry import verify_external_token
+from app.core.exceptions import ExternalIdentityLinkRefusedError
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.usage_event import UsageEvent
@@ -183,7 +184,16 @@ class TestExternalSync:
     def test_unverified_email_match_is_refused(self, db_session):
         """Anyone can register a victim's address at a self-serve IdP; without a
         verified-email assertion the email match must NOT link/convert the
-        existing local account (account-takeover vector)."""
+        existing local account (account-takeover vector).
+
+        The refusal type is ``ExternalIdentityLinkRefusedError``, deliberately NOT the
+        builtin ``PermissionError`` this asserted before #914 STEP 6. ``PermissionError``
+        is an ``OSError`` subclass, so a genuine EACCES anywhere in this call chain
+        satisfied it too — meaning a filesystem fault could have passed as this security
+        refusal, and the caller rendered its ``str(e)`` into the 401 body. Asserting the
+        dedicated type is what makes this test about the refusal rather than about
+        "something permission-shaped happened".
+        """
         email = f"seam-victim-{uuid.uuid4().hex[:8]}@example.com"
         local = User(
             email=email,
@@ -196,7 +206,7 @@ class TestExternalSync:
         db_session.commit()
 
         ident = _identity(email=email)  # email_verified defaults to False
-        with pytest.raises(PermissionError):
+        with pytest.raises(ExternalIdentityLinkRefusedError):
             sync_external_user_to_db(db_session, ident)
 
         db_session.refresh(local)
@@ -221,7 +231,7 @@ class TestExternalSync:
         db_session.commit()
 
         ident = _identity(email=email, email_verified=True)
-        with pytest.raises(PermissionError):
+        with pytest.raises(ExternalIdentityLinkRefusedError):
             sync_external_user_to_db(db_session, ident)
 
         db_session.refresh(owner)

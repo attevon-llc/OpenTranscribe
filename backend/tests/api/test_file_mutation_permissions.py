@@ -256,10 +256,17 @@ MUTATING_ENDPOINTS: list[tuple[str, int]] = [
     ("files/crud.py", 998),
     ("files/crud.py", 1089),
     ("files/crud.py", 1177),
-    ("files/management.py", 208),
-    ("files/management.py", 260),
-    ("files/management.py", 364),
-    ("files/management.py", 954),
+    # Re-anchored +5 (v0.5.0 integration branch): #786's sanitizing of the four unwired
+    # failure-notification consumers added lines above all four call sites. Re-derived, not
+    # hand-edited, and cross-checked by ENCLOSING FUNCTION rather than by line delta —
+    # cancel_file_processing / retry_file_processing / recover_file /
+    # _process_single_file_action, the same four endpoints this table has always tracked. A
+    # uniform shift is what a pure code-motion drift looks like; a NEW site would show up as
+    # a sixth function name, which is the thing this guard exists to catch.
+    ("files/management.py", 213),
+    ("files/management.py", 265),
+    ("files/management.py", 369),
+    ("files/management.py", 959),
     ("files/reprocess.py", 445),
     ("files/summary_status.py", 105),
     # Re-anchored (v0.5.0 wave): #911's WS-push fix removed lines above this call site.
@@ -272,9 +279,10 @@ MUTATING_ENDPOINTS: list[tuple[str, int]] = [
     ("summarization.py", 91),
     ("summarization.py", 468),
     ("summarization.py", 534),
-    # Re-anchored +30: Lane O's #906 fix (issue #906, release/v0.5.0-blockers) added
-    # inline dispatch logic above this call site in retry_file_processing.
-    ("tasks.py", 807),
+    # Re-anchored +30 then +8: Lane O's #906 fix added inline dispatch logic above this call
+    # site in retry_file_processing, and the #914 exception-echo sweep (ffd365f6) added eight
+    # more. Still the one call site, still in retry_file_processing.
+    ("tasks.py", 815),
     ("topics.py", 79),
     ("topics.py", 241),
     ("topics.py", 385),

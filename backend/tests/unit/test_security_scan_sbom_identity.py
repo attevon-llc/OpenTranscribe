@@ -49,8 +49,11 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SECURITY_SCAN_SH = REPO_ROOT / "scripts" / "security-scan.sh"
-RELEASE_ASSETS_SH = REPO_ROOT / "scripts" / "release" / "release-assets.sh"
+#: `generate_sbom` resolves its licence-promotion helper as `${SCRIPT_DIR}/lib/sbom_license.py`,
+#: so the harness has to supply the REAL scripts directory — see `_run_generate_sbom`.
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+SECURITY_SCAN_SH = SCRIPTS_DIR / "security-scan.sh"
+RELEASE_ASSETS_SH = SCRIPTS_DIR / "release" / "release-assets.sh"
 
 pytestmark = pytest.mark.skipif(
     not SECURITY_SCAN_SH.exists() or not RELEASE_ASSETS_SH.exists(),
@@ -61,10 +64,21 @@ REPO = "davidamacey/opentranscribe-backend"
 TAG = "v0.5.0"
 SCAN_ALIAS = f"{REPO}:{TAG}-scanleg-amd64"
 
-# A fake `syft`. It reproduces exactly one real behaviour: metadata.component.version comes
-# from --source-version when supplied, and otherwise from the tag of the reference it was
-# handed. Everything else about a CycloneDX document is irrelevant to the criterion under
-# test. It also records its full argv so the "one walk, not two" assertion is measurable.
+#: What the images really declare, and what the fake syft therefore reports having read off
+#: the image's OCI label. Not typed twice: `test_first_party_license_declarations.py` derives
+#: the same identifier from the repo's own `LICENSE` and gates every Dockerfile on it.
+IMAGE_LICENSE = "AGPL-3.0-only"
+SYFT_LABEL_PROPERTY = "syft:image:labels:org.opencontainers.image.licenses"
+
+# A fake `syft`. It reproduces exactly two real behaviours: metadata.component.version comes
+# from --source-version when supplied and otherwise from the tag of the reference it was
+# handed; and an image's `org.opencontainers.image.licenses` LABEL arrives as a
+# `syft:image:labels:*` entry under metadata.properties (never as
+# metadata.component.licenses, which syft has no way to populate — that gap is the whole
+# reason scripts/lib/sbom_license.py exists). The label is emitted only when
+# FAKE_SYFT_IMAGE_LICENSE is set, so the promoter's no-label branch stays reachable.
+# Everything else about a CycloneDX document is irrelevant to the criteria under test. It
+# also records its full argv so the "one walk, not two" assertion is measurable.
 _FAKE_SYFT = r"""#!/usr/bin/env python3
 import json
 import os
@@ -92,7 +106,13 @@ while i < len(argv):
     else:
         i += 1
 
-doc = json.dumps({"metadata": {"component": {"name": name, "version": version}}})
+metadata = {"component": {"name": name, "version": version}}
+label = os.environ.get("FAKE_SYFT_IMAGE_LICENSE", "")
+if label:
+    metadata["properties"] = [
+        {"name": "syft:image:labels:org.opencontainers.image.licenses", "value": label}
+    ]
+doc = json.dumps({"metadata": metadata})
 if not outputs:
     sys.stdout.write(doc)
 for spec in outputs:
@@ -118,9 +138,28 @@ def _extract_function(script: Path, name: str) -> str:
 
 
 def _run_generate_sbom(
-    tmp_path: Path, *, image: str, pass_identity: bool
+    tmp_path: Path, *, image: str, pass_identity: bool, image_license: str | None = IMAGE_LICENSE
 ) -> tuple[Path, list[list[str]]]:
-    """Run the REAL generate_sbom() against a fake syft. Returns (sbom path, syft argvs)."""
+    """Run the REAL generate_sbom() against a fake syft. Returns (sbom path, syft argvs).
+
+    ⚠️ **Every file-scope name `generate_sbom` reads has to be supplied here, and one was
+    not.** The harness stubbed three of `security-scan.sh`'s four print helpers and defined
+    only `OUTPUT_DIR`; when the #886 licence-promotion step landed, the extracted function
+    began reading `${SCRIPT_DIR}` (set at `security-scan.sh:30`) and calling `print_warning`
+    (defined at :135), so all three tests in this file died with
+    `python3: can't open file '/lib/sbom_license.py'` and
+    `print_warning: command not found` — a harness fault that reads exactly like the release
+    gate being broken. `SCRIPT_DIR` is set to the REAL `scripts/` directory rather than
+    stubbed, so the REAL `scripts/lib/sbom_license.py` runs and this closes the loop over the
+    promotion step too, not just over `--source-version`.
+
+    Args:
+        tmp_path: pytest tmp dir for the fake binary and the report output.
+        image: The reference handed to `generate_sbom` (normally the per-arch scan alias).
+        pass_identity: Whether to pass the repo/tag identity arguments.
+        image_license: The licence the fake image declares via its OCI label, or None for an
+            image that declares none (the promoter's exit-3 branch).
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "syft"
@@ -137,7 +176,9 @@ set -e
 print_header()  {{ :; }}
 print_success() {{ :; }}
 print_info()    {{ :; }}
+print_warning() {{ echo "WARN: $*" >&2; }}
 OUTPUT_DIR="{out_dir}"
+SCRIPT_DIR="{SCRIPTS_DIR}"
 
 {_extract_function(SECURITY_SCAN_SH, "generate_sbom")}
 
@@ -146,6 +187,7 @@ generate_sbom "{image}" "backend-amd64" {identity}
     env = dict(os.environ)
     env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
     env["SYFT_ARGV_LOG"] = str(argv_log)
+    env["FAKE_SYFT_IMAGE_LICENSE"] = image_license or ""
     proc = subprocess.run(["bash", "-c", snippet], capture_output=True, text=True, env=env)
     assert proc.returncode == 0, f"generate_sbom failed:\n{proc.stdout}\n{proc.stderr}"
 
@@ -168,7 +210,16 @@ release_assets_sbom_matches_version "{sbom}" "{version}"
 
 @pytest.mark.unit
 def test_sbom_written_for_a_scanleg_ref_names_the_release_tag(tmp_path: Path) -> None:
-    """The whole loop: scan alias in, release tag out, finish stage accepts it."""
+    """The whole loop: scan alias in, release tag out, finish stage accepts it.
+
+    Run against an image that DOES declare a licence label, so the #886 promotion step
+    (`scripts/lib/sbom_license.py`, called from `generate_sbom`) actually executes and
+    rewrites the document before the release gate reads it. That ordering is the point: the
+    promoter is the last thing to touch `metadata.component`, and `name`/`version` are the two
+    fields `95-finish.sh` compares EXACTLY. A promotion that moved either would fail every
+    SBOM of every real release, in the pipeline's last stage, after `:latest` had already
+    moved — so the assertions below run on the promoted file, never on what syft first wrote.
+    """
     sbom, _ = _run_generate_sbom(tmp_path, image=SCAN_ALIAS, pass_identity=True)
 
     doc = json.loads(sbom.read_text(encoding="utf-8"))
@@ -182,6 +233,33 @@ def test_sbom_written_for_a_scanleg_ref_names_the_release_tag(tmp_path: Path) ->
         "95-finish.sh's sbom-describes-this-version criterion rejected an SBOM produced by "
         "the real generate_sbom() — the release would stop in its last stage"
     )
+    assert component.get("licenses") == [{"license": {"id": IMAGE_LICENSE}}], (
+        f"the image's {SYFT_LABEL_PROPERTY} label must be promoted onto "
+        f"metadata.component.licenses — that field is the whole of #886's acceptance "
+        f"criterion 3, and syft cannot write it; got {component.get('licenses')!r}"
+    )
+
+
+@pytest.mark.unit
+def test_an_image_declaring_no_licence_still_produces_a_usable_sbom(tmp_path: Path) -> None:
+    """Must-stay-clean control for the promotion: no label is a WARNING, not a failure.
+
+    `generate_sbom`'s header is explicit that a missing label must not turn the SBOM step
+    into a release-blocking licence gate — the declaration is already gated at commit time by
+    `test_first_party_license_declarations.py`. Without this control the sibling above would
+    pass equally well against a promoter that exited non-zero on a missing label, which would
+    abort the scan of any third-party image.
+    """
+    sbom, _ = _run_generate_sbom(tmp_path, image=SCAN_ALIAS, pass_identity=True, image_license=None)
+
+    component = json.loads(sbom.read_text(encoding="utf-8"))["metadata"]["component"]
+    assert component["version"] == TAG
+    assert component["name"] == REPO
+    assert "licenses" not in component, (
+        "the promoter must never INVENT a licence — with no label on the image there is no "
+        f"source of truth to copy from; got {component.get('licenses')!r}"
+    )
+    assert _finish_stage_accepts(sbom, TAG)
 
 
 @pytest.mark.unit

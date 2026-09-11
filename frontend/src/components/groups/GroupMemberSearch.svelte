@@ -124,12 +124,12 @@
             disabled={addingUserUuid === user.uuid}
           >
             <div class="result-avatar">
-              {getInitials(user.full_name, user.email)}
+              {getInitials(user.full_name, user.masked_email)}
             </div>
             <div class="result-info">
-              <span class="result-name">{user.full_name || user.email}</span>
+              <span class="result-name">{user.full_name || user.masked_email}</span>
               {#if user.full_name}
-                <span class="result-email">{user.email}</span>
+                <span class="result-email">{user.masked_email}</span>
               {/if}
             </div>
             {#if addingUserUuid === user.uuid}

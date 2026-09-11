@@ -94,3 +94,52 @@ def mask_identifier(identifier: str) -> str:
         elif len(identifier) == 1:
             return f"{identifier[0]}***"
         return "***"
+
+
+def mask_email_for_display(email: str) -> str:
+    """Mask an email address for DISPLAY in a directory/sharing picker (issue #904).
+
+    Shows the first TWO local-part characters + ``***`` + ``@domain``, e.g.
+    ``"jane@acme.com"`` -> ``"ja***@acme.com"``. A local part shorter than two
+    characters masks to ``"***@domain"``. A value with no ``@`` (not really an
+    email) falls back to the same first-2-chars-plus-``***`` rule ``mask_identifier``
+    uses for usernames.
+
+    ⚠️ **Do NOT merge this with :func:`mask_identifier`, and do not reuse it here.**
+    That function's job is log safety: its email branch shows only the first
+    character (``"j***@acme.com"``), which is deliberately coarse because a log
+    line is not a UI a caller is choosing between two people with. This function's
+    job is the opposite — the ``GET /users/search`` picker exists so a caller can
+    tell two same-named accounts apart, and `mask_identifier`'s one-character rule
+    collides exactly there: ``"jane@acme.com"`` and ``"john@acme.com"`` both render
+    ``"j***@acme.com"`` under it. Two characters is the minimum that disambiguates
+    the common case (most first-name collisions differ by the second letter) while
+    still not handing back the full local part.
+
+    The domain is kept in clear on purpose: within one tenant every account shares
+    it, so showing it discloses nothing the caller does not already know, and across
+    a multi-domain deployment it is what actually distinguishes two same-named
+    people. Masking it would remove signal for zero privacy benefit.
+
+    Args:
+        email: The address to mask for display.
+
+    Returns:
+        The masked address string.
+    """
+    if not email:
+        return "***"
+
+    email = email.strip()
+
+    if "@" not in email:
+        if len(email) >= 2:
+            return f"{email[:2]}***"
+        if len(email) == 1:
+            return f"{email[0]}***"
+        return "***"
+
+    local_part, domain = email.split("@", 1)
+    if len(local_part) >= 2:
+        return f"{local_part[:2]}***@{domain}"
+    return f"***@{domain}"

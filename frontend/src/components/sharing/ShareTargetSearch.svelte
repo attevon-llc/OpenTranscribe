@@ -55,8 +55,8 @@
       const userResults: ShareTargetSearchResult[] = users.map(u => ({
         type: 'user' as const,
         uuid: u.uuid,
-        name: u.full_name || u.email,
-        email: u.email,
+        name: u.full_name || u.masked_email,
+        detail: u.masked_email,
       }));
 
       // Filter cached groups by query
@@ -122,8 +122,8 @@
               </svg>
               <div class="result-info">
                 <span class="result-name">{result.name}</span>
-                {#if result.email && result.email !== result.name}
-                  <span class="result-detail">{result.email}</span>
+                {#if result.detail && result.detail !== result.name}
+                  <span class="result-detail">{result.detail}</span>
                 {/if}
               </div>
             {:else}

@@ -37,6 +37,7 @@ from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
 from app.auth.utils import local_password_allowed
+from app.auth.utils import mask_email_for_display
 from app.core.security import get_password_hash
 from app.core.security import verify_password
 from app.db.base import get_db
@@ -443,6 +444,11 @@ def search_users(
     connection allowed. It is a volume/noise bound, not a proof against enumeration:
     the two-character minimum and the tenant gate above are what limit what any single
     request can see.
+
+    **Payload-minimized** (issue #904): the response never carries a full email
+    address. ``UserSearchResult.masked_email`` is a display-only mask
+    (``mask_email_for_display``) — even an exhaustive scrape at the allowed rate
+    cannot recover a real address from it.
     """
     from sqlalchemy import exists
     from sqlalchemy import or_
@@ -475,7 +481,12 @@ def search_users(
         .all()
     )
 
-    return [UserSearchResult(uuid=u.uuid, full_name=u.full_name, email=u.email) for u in users]
+    return [
+        UserSearchResult(
+            uuid=u.uuid, full_name=u.full_name, masked_email=mask_email_for_display(u.email)
+        )
+        for u in users
+    ]
 
 
 @router.get("/{user_uuid}", response_model=UserSchema)

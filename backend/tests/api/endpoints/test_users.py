@@ -4,6 +4,7 @@ import uuid as uuid_pkg
 
 import pytest
 
+from app.auth.utils import mask_email_for_display
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.user import User
@@ -321,8 +322,8 @@ def _join(db_session, org, user, role: str = "org:member") -> None:
     db_session.commit()
 
 
-def _emails(response) -> set[str]:
-    return {row["email"] for row in response.json()}
+def _masked_emails(response) -> set[str]:
+    return {row["masked_email"] for row in response.json()}
 
 
 def test_user_search_requires_a_session(client):
@@ -345,7 +346,7 @@ def test_user_search_finds_another_account_by_email(client, user_token_headers, 
         SEARCH_PATH, params={"q": other_user.email[:6]}, headers=user_token_headers
     )
     assert response.status_code == 200, response.text
-    assert other_user.email in _emails(response)
+    assert mask_email_for_display(other_user.email) in _masked_emails(response)
 
 
 def test_user_search_never_returns_the_caller(client, user_token_headers, normal_user):
@@ -353,7 +354,7 @@ def test_user_search_never_returns_the_caller(client, user_token_headers, normal
         SEARCH_PATH, params={"q": normal_user.email[:6]}, headers=user_token_headers
     )
     assert response.status_code == 200, response.text
-    assert normal_user.email not in _emails(response)
+    assert mask_email_for_display(normal_user.email) not in _masked_emails(response)
 
 
 def test_user_search_omits_deactivated_accounts(client, user_token_headers, other_user, db_session):
@@ -363,7 +364,7 @@ def test_user_search_omits_deactivated_accounts(client, user_token_headers, othe
         SEARCH_PATH, params={"q": other_user.email[:6]}, headers=user_token_headers
     )
     assert response.status_code == 200, response.text
-    assert other_user.email not in _emails(response)
+    assert mask_email_for_display(other_user.email) not in _masked_emails(response)
 
 
 def test_user_search_does_not_leak_another_tenants_accounts(
@@ -386,7 +387,7 @@ def test_user_search_does_not_leak_another_tenants_accounts(
         SEARCH_PATH, params={"q": other_user.email[:6]}, headers=user_token_headers
     )
     assert response.status_code == 200, response.text
-    assert other_user.email not in _emails(response)
+    assert mask_email_for_display(other_user.email) not in _masked_emails(response)
 
 
 def test_user_search_still_finds_a_member_of_the_callers_own_tenant(
@@ -404,7 +405,7 @@ def test_user_search_still_finds_a_member_of_the_callers_own_tenant(
         SEARCH_PATH, params={"q": other_user.email[:6]}, headers=user_token_headers
     )
     assert response.status_code == 200, response.text
-    assert other_user.email in _emails(response)
+    assert mask_email_for_display(other_user.email) in _masked_emails(response)
 
 
 def test_user_search_in_personal_scope_omits_org_members(
@@ -422,7 +423,7 @@ def test_user_search_in_personal_scope_omits_org_members(
         SEARCH_PATH, params={"q": other_user.email[:6]}, headers=user_token_headers
     )
     assert response.status_code == 200, response.text
-    assert other_user.email not in _emails(response)
+    assert mask_email_for_display(other_user.email) not in _masked_emails(response)
 
 
 def test_user_search_is_reachable_by_a_plain_user(client, user_token_headers, other_user):
@@ -432,3 +433,17 @@ def test_user_search_is_reachable_by_a_plain_user(client, user_token_headers, ot
         SEARCH_PATH, params={"q": other_user.full_name[:5]}, headers=user_token_headers
     )
     assert response.status_code == 200, response.text
+
+
+def test_user_search_never_returns_a_full_email_address(client, user_token_headers, other_user):
+    """Issue #904: the payload must not carry a real address anywhere, under any
+    key — not merely absent from the one key ("email") it used to live under."""
+    response = client.get(
+        SEARCH_PATH, params={"q": other_user.email[:6]}, headers=user_token_headers
+    )
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert rows, "expected at least one hit for the control to mean anything"
+    for row in rows:
+        assert "email" not in row
+        assert other_user.email not in row.values()

@@ -1612,6 +1612,13 @@ def admin_unlock_account(
         source_ip=client_ip,
         user_agent=user_agent,
         outcome=AuditOutcome.SUCCESS,
+        # issue #828: this is a SECOND AUTH_ACCOUNT_UNLOCK emitter (the other is
+        # account_security_service.audit_account_status_change) and it reproduced the
+        # exact pre-#443 shape — the target only in `details.target_user` (a UUID
+        # string), invisible to `query_audit_logs`. Top-level, typed, like every other
+        # administrative emitter.
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         details={
             "target_user": user_uuid,
             "unlocked_by": "admin",
@@ -2336,7 +2343,10 @@ def get_audit_logs(
     start_date: datetime | None = Query(None, description="Start date for log query"),
     end_date: datetime | None = Query(None, description="End date for log query"),
     event_type: str | None = Query(None, description="Filter by event type"),
-    user_id: int | None = Query(None, description="Filter by user ID"),
+    user_id: int | None = Query(None, description="Filter by user ID (the actor)"),
+    target_user_id: int | None = Query(
+        None, description="Filter by the affected/erased subject's user ID"
+    ),
     outcome: str | None = Query(None, description="Filter by outcome"),
     limit: int = Query(default=100, le=1000, description="Maximum results"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
@@ -2349,6 +2359,10 @@ def get_audit_logs(
     Org-admins get a tenant-scoped view of the same data at
     ``GET /org-admin/audit-logs`` (see ``endpoints/org_admin.py``).
 
+    ``user_id`` filters by the ACTOR who performed the action; ``target_user_id``
+    filters by the SUBJECT the action was performed on (e.g. the erased user in a
+    GDPR erasure) — see issue #443/#828 for the actor/subject convention.
+
     Note: This endpoint queries OpenSearch if audit logging to OpenSearch is
     enabled. If OpenSearch is not available, returns an error message.
     """
@@ -2359,6 +2373,7 @@ def get_audit_logs(
         end_date=end_date,
         event_type=event_type,
         user_id=user_id,
+        target_user_id=target_user_id,
         outcome=outcome,
         limit=limit,
         offset=offset,

@@ -438,34 +438,41 @@ def _audit(entry: ErasureLedgerEntry, *, action: str, outcome: AuditOutcome) -> 
 
     Carries surrogate keys only, for the same reason the table has no free-text column.
 
-    ⚠️ **``user_id`` is the SUBJECT, never the actor**, and the actor goes in
-    ``details.actor_user_id``. These records share ``ADMIN_USER_DELETE`` with the
-    erasure record ``gdpr_erasure_service`` emits between them, which has always put
-    the target in ``user_id`` — so a first version of this function that used the
-    actor gave one event type two opposite meanings for one field, in the same
-    three-record sequence. That is issue #443's ambiguity made concrete: "which
-    erasures touched user X" would have returned the middle record and missed the
-    two around it, and "which erasures did admin Y run" the reverse. Whatever #443
-    settles on, these three must move together.
+    ⚠️ **``user_id`` is the ACTOR and ``target_user_id`` is the SUBJECT — the
+    ambiguity issue #443 raised is now closed, not merely resolved one way.** This
+    function used to put the SUBJECT in ``user_id`` (with the actor buried in
+    ``details.actor_user_id``) because ``gdpr_erasure_service.erase_user``'s own
+    record did too, at the time; that made "which erasures touched user X" and
+    "which erasures did admin Y run" each see only two of the three records in a
+    sequence — and for ``erase_org_member_data``/``erase_organization`` (whose own
+    records have always kept the actor in ``user_id``) NEITHER query could see this
+    function's bracketing pair at all, because they disagreed with those two sites
+    from the start. The decision (recorded on #828, closing out the finding from
+    the #826/#827 gate-integrity pass): both parties get a first-class, indexed
+    field on every ``ADMIN_USER_DELETE`` record — ``user_id`` for the actor
+    (``None`` for a system actor, e.g. the reconciliation sweep retrying a deferred
+    entry — never backfilled with the subject or a placeholder), ``target_user_id``
+    for the subject. Query by either field and every record in a sequence agrees.
+    There is no ``target_username``: the ledger deliberately holds no free-text PII
+    to put there (see this module's docstring), so the subject is named by id only.
     """
     try:
         audit_logger.log(
             event_type=AuditEventType.ADMIN_USER_DELETE,
             outcome=outcome,
-            user_id=entry.subject_user_id,
+            user_id=entry.actor_user_id,
+            target_user_id=entry.subject_user_id,
             organization_id=entry.subject_organization_id,
             details={
                 "action": action,
                 "ledger_uuid": str(entry.uuid),
                 "subject_type": entry.subject_type,
-                "subject_user_id": entry.subject_user_id,
                 "subject_user_uuid": str(entry.subject_user_uuid)
                 if entry.subject_user_uuid
                 else None,
                 "subject_organization_id": entry.subject_organization_id,
                 "status": entry.status,
                 "actor_kind": entry.actor_kind,
-                "actor_user_id": entry.actor_user_id,
                 "attempts": entry.attempts,
                 "sla_due_at": entry.sla_due_at.isoformat() if entry.sla_due_at else None,
             },

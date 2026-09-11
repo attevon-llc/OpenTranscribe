@@ -26,6 +26,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 const SRC = path.resolve(__dirname, '..');
@@ -76,6 +77,54 @@ describe('dark-mode selector convention', () => {
       fs.readFileSync(f, 'utf8').includes(":global([data-theme='dark'])")
     );
     expect(migrated.length).toBeGreaterThan(20);
+  });
+});
+
+/**
+ * Regression fixture for issue #827: the scan used to walk `.svelte` files only, so a dead
+ * `:global(.dark)` rule sitting in a plain, unscoped `.css` file (exactly the shape
+ * `components/upload/upload-shared.css` had) was structurally invisible to it — not merely
+ * unlisted, but a file type the walker never even opened. That real instance has since been
+ * fixed (see `KNOWN_DEAD_DARK_SELECTOR_FILES` above, which no longer names it), so nothing in
+ * the live tree exercises the `.css` half of `themeScannableFiles` any more. Without a
+ * standalone fixture, the glob could regress back to `.svelte`-only and every test above would
+ * stay green — there would simply be nothing left in `src` for the blind spot to miss.
+ *
+ * Verified red against the pre-#827-fix scanner (a `.svelte`-only walk): it returns `[]` for
+ * this exact fixture, where `themeScannableFiles` below returns the one `.css` file.
+ */
+describe('the scan itself sees plain .css files, not just .svelte (issue #827)', () => {
+  function withTempDir(run: (dir: string) => void): void {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-parity-css-fixture-'));
+    try {
+      run(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('flags a `:global(.dark)` rule living in a .css-only fixture', () => {
+    withTempDir((dir) => {
+      const cssFile = path.join(dir, 'dead-in-plain-css.css');
+      fs.writeFileSync(cssFile, '.chip :global(.dark) { color: red; }\n');
+
+      const hits = themeScannableFiles(dir).filter((f) =>
+        fs.readFileSync(f, 'utf8').includes(':global(.dark)')
+      );
+
+      expect(hits).toEqual([cssFile]);
+    });
+  });
+
+  it('does not widen the scan past stylesheets — a .ts file is never opened', () => {
+    withTempDir((dir) => {
+      fs.writeFileSync(
+        path.join(dir, 'not-a-stylesheet.ts'),
+        '// :global(.dark) { color: red; }\n'
+      );
+
+      expect(themeScannableFiles(dir)).toEqual([]);
+    });
   });
 });
 

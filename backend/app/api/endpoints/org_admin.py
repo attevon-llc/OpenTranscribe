@@ -58,7 +58,13 @@ def get_org_audit_logs(
     start_date: datetime | None = Query(None, description="Start date for log query"),
     end_date: datetime | None = Query(None, description="End date for log query"),
     event_type: str | None = Query(None, description="Filter by event type"),
-    user_id: int | None = Query(None, description="Filter by user ID (must be an org member)"),
+    user_id: int | None = Query(
+        None, description="Filter by user ID — the actor (must be an org member)"
+    ),
+    target_user_id: int | None = Query(
+        None,
+        description=("Filter by the affected/erased subject's user ID (must be an org member)"),
+    ),
     outcome: str | None = Query(None, description="Filter by outcome"),
     limit: int = Query(default=100, le=1000, description="Maximum results"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
@@ -75,7 +81,14 @@ def get_org_audit_logs(
     legacy-window caveat about shared members). Events stamped with another
     org are never visible. The ``user_id`` filter, if given, is constrained to
     a member of the org (403 otherwise) so it can't be used to probe outside
-    the tenant.
+    the tenant. ``target_user_id`` (the subject — e.g. the erased user in a GDPR
+    erasure, issue #443/#828) gets the identical membership guard: without it,
+    an org-admin could enumerate erasure/action history for a user outside
+    their own org merely by supplying an ID and reading whether any rows came
+    back, even though the org-scope clause on the query itself already narrows
+    the result set to nothing for a non-member — the guard exists so that
+    probe fails loudly (403) rather than silently (empty list indistinguishable
+    from "no such events").
     """
     member_ids = _org_member_user_ids(db, ctx.org_id)  # type: ignore[arg-type]
 
@@ -84,12 +97,18 @@ def get_org_audit_logs(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Requested user is not a member of your organization",
         )
+    if target_user_id is not None and target_user_id not in member_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requested target user is not a member of your organization",
+        )
 
     return query_audit_logs(
         start_date=start_date,
         end_date=end_date,
         event_type=event_type,
         user_id=user_id,
+        target_user_id=target_user_id,
         outcome=outcome,
         scope_user_ids=member_ids,
         scope_org_id=int(ctx.org_id),  # type: ignore[arg-type]

@@ -1276,11 +1276,11 @@ Redis pattern deletes now use `SCAN` rather than `KEYS`, which is O(keyspace) *a
   and falls back to the userinfo endpoint when the claim is absent from the token. The internal-URL
   swap applies to discovered endpoints too.
 - **The OIDC surface is renamed `oidc_*`, and `KEYCLOAK_*` keeps working forever
-  (`v377`, `v378`)**: configuration keys, Pydantic schema, service, admin-panel tab, i18n across
+  (`v379`, `v380`)**: configuration keys, Pydantic schema, service, admin-panel tab, i18n across
   all 8 locales, and the routes (`/api/auth/oidc/login`, `/api/auth/oidc/callback`) are all
   provider-neutral. **No identity provider needs reconfiguring** — the registered redirect URI
   points at the SPA's `/login` page, never at the backend routes. Stored database configuration is
-  renamed by `v377` carrying the ciphertext across unchanged (no decrypt/re-encrypt), and `v378`
+  renamed by `v379` carrying the ciphertext across unchanged (no decrypt/re-encrypt), and `v380`
   renames `user.keycloak_id` → `user.oidc_subject` (named for what it is: a `sub` is unique per
   *issuer*, not globally), `keycloak_refresh_token` → `oidc_refresh_token`, and the `auth_type`
   value `keycloak` → `oidc`. `KEYCLOAK_*` environment variables are translated onto the canonical

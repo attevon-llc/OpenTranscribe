@@ -22,6 +22,7 @@ from app.utils import benchmark_timing
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
+from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +384,52 @@ def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: E
         redis_cache.invalidate_user_files(user_id)
     except Exception as cache_err:
         logger.debug(f"Cache invalidation after a dispatch failure failed: {cache_err}")
+
+    try:
+        _send_dispatch_failed_ws_event(media_file, user_id, message)
+    except Exception as ws_err:
+        logger.debug(f"WS notification after a dispatch failure failed: {ws_err}")
+
+
+def _send_dispatch_failed_ws_event(media_file: MediaFile, user_id: int, message: str) -> None:
+    """Best-effort LIVE gallery push for a post-storage dispatch failure (issue #911).
+
+    ``_mark_upload_dispatch_failed``'s Redis cache invalidation is enough for a page
+    refresh/poll to eventually show the row at ERROR, but a client with an open
+    WebSocket connection would otherwise wait on its own poll schedule instead of
+    updating instantly, unlike every other status transition in the app.
+
+    Shape matches the ``file_updated`` event ``send_completion_notification``
+    (``tasks/transcription/notifications.py``) sends on the success path, so the
+    SPA's existing gallery handler needs no new branch — same field set, an ERROR
+    status and ``last_error_message`` in place of a completed one.
+    """
+    from app.services.formatting_service import FormattingService
+
+    file_data = {
+        "id": str(media_file.uuid),
+        "filename": media_file.filename,
+        "status": FileStatus.ERROR.value,
+        "content_type": media_file.content_type,
+        "file_size": media_file.file_size,
+        "last_error_message": message,
+        "formatted_duration": FormattingService.format_duration(media_file.duration),
+        "formatted_upload_date": FormattingService.format_upload_date(media_file.upload_time),
+        "formatted_file_age": FormattingService.format_file_age(media_file.upload_time),
+        "formatted_file_size": FormattingService.format_bytes_detailed(media_file.file_size),
+        "display_status": FormattingService.format_status(media_file.status),
+        "status_badge_class": FormattingService.get_status_badge_class(FileStatus.ERROR.value),
+    }
+    send_ws_event(
+        user_id,
+        "file_updated",
+        {
+            "file_id": str(media_file.uuid),
+            "file": file_data,
+            "status": FileStatus.ERROR.value,
+            "message": message,
+        },
+    )
 
 
 def _get_or_create_file_record(

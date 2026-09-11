@@ -232,6 +232,13 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   (a plain admin write with no password proof used to be a fourth, ungated writer — the same
   account-takeover shape `auth/account_linking.py` exists to close on the other paths) and
   no-ops on resubmitting the unchanged value. See `test_admin_user_update_privilege_boundary.py`.
+  ⚠️ Since issue #912, the super_admin authority above also refuses an `auth_type == local`
+  target outright, even one carrying an external identifier column — the third authority on
+  `user.email` for a `local` account is `PUT /users/me` alone, matching "for a `local` account
+  the email *is* the credential identity" above. `link-identity`
+  (`PUT /admin/users/{uuid}/link-identity`) is the fourth admin-facing identity write in this
+  neighbourhood, but it writes `oidc_subject`/`ldap_uid`/`pki_subject_dn` (and, since #912,
+  `auth_type`) — never `user.email` — so it does not add a fourth authority to the list above.
 - `require_capability(key)` (`core/capabilities.py`) returns **404, not 403** — a gated router
   must look like an unknown route. Platform superusers bypass it.
 - **`endpoints/tags/` is a package** (`crud` · `discovery` · `sharing` · `operations` + `_common`),

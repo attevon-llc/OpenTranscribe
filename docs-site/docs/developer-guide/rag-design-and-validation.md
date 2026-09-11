@@ -18,26 +18,31 @@ This one is a narrative. It is the page to read before proposing a change to ret
 most of the obvious changes have already been tried, measured, or explicitly ruled out — and
 because several of the numbers that would have justified them turned out to be artefacts.
 
-:::info[Status — most of this is designed and measured, not shipped]
+:::info[Status — Stages 0-5 are shipped; 6-8 are not]
 Corpus-scale RAG ([issue&nbsp;#403](https://github.com/attevon-llc/OpenTranscribe/issues/403)) is
-an eight-stage programme. What is **live in the product today** is the hybrid retrieval and chat
-pipeline described in [RAG Chat](./rag-chat.md) — everything else on this page is marked.
+an eight-stage programme. **Live in the product today**: the hybrid retrieval and chat pipeline
+described in [RAG Chat](./rag-chat.md), plus Stages 1-5 below (evaluation harness, the digest
+tier, the v6 index, the query router/map-reduce/aggregation plane, and retrieval tuning). Stages
+6-8 (documents, opt-in enrichment, the whitepaper) are not.
 
 | Stage | What it adds | Status |
 |---|---|---|
 | 0 | Prerequisite fixes (bench container names, delete-before-reindex, ingest field map, speaker/title rename propagation) | Merged |
 | 1 | Evaluation harness + committed baseline | **Built** — `./opentr.sh bench rag` |
-| 2 | Deterministic ingest artifacts: per-file facts, extractive digests, keyphrases | In progress |
-| 3 | Index v6 — one reindex, digests in the index | Not started |
-| 4 | Query router, map-reduce, aggregation | Not started |
-| 5 | Retrieval tuning bake-off (fusion, reranker, synonyms) | Not started |
+| 2 | Deterministic ingest artifacts: per-file facts, extractive digests, keyphrases | **Built** — `services/ingest_artifacts/` |
+| 3 | Index v6 — one reindex, digests in the index | **Built** — `TARGET_INDEX_VERSION = 6` (`ingest_artifacts/index_mapping.py`) |
+| 4 | Query router, map-reduce, aggregation | **Built** — `chat/router.py`, `chat/mapreduce/`, `chat/aggregation_service.py` |
+| 5 | Retrieval tuning bake-off (fusion, reranker, synonyms) | **Built** — cross-encoder reranker live (`chat/reranker.py`); bake-off defaults pinned to the shipped `chat.rag.*` constants (`test_eval_fusion_arm.py`) |
 | 6 | Documents | Deferred past v0.5.0 — the document-ingestion lane lives on the `feat/doc-ingestion` branch and targets v0.6.0 (#362) |
 | 7 | Opt-in enrichment | Not started |
 | 8 | Whitepaper | Not started |
 
-Anything described below as *planned* is a design with a gate attached, not a feature you can
-use. The index is still at version 5 and the assistant's base prompt still has nine rules — both
-are the cheap ways to check.
+These counts rot — re-derive them rather than trusting this page. The index version is
+`TARGET_INDEX_VERSION` in `app/services/ingest_artifacts/index_mapping.py` (currently 6); the
+base prompt's rule count is the number of `_RULE_*` constants in
+`app/services/chat/prompting.py` (`grep -c '^_RULE_[0-9]' app/services/chat/prompting.py`,
+currently 15 — covering the `<counted>`, `<overview>`, `<recurrence>` and `<synthesis>` context
+blocks described below).
 :::
 
 ## The architecture, in plain language
@@ -88,7 +93,7 @@ Turn-bounded chunking is a **recorded decision not to relitigate** (#363). What 
 whether documents — which have no turns — should chunk differently; the plan says yes, using a
 sentence-boundary splitter for plain text and the parser's own chunker for PDFs.
 
-### The summary / digest tier (planned, Stage 2–3)
+### The summary / digest tier (Stage 2–3, built)
 
 The single most useful thing the Stage 1 baseline established is **where the loss is**:
 
@@ -118,11 +123,11 @@ Design constraints that fell out of it:
   per word on real transcript text (~1.37) rather than a guessed word count. A digest that
   overflows the window is worse than no digest: the tail is silently not embedded.
 
-### Query routing, map-reduce and aggregation (planned, Stage 4)
+### Query routing, map-reduce and aggregation (Stage 4, built)
 
 Four question shapes fail differently, so they get different machinery:
 
-| Shape | Example | How it is planned to be answered |
+| Shape | Example | How it is answered |
 |---|---|---|
 | lookup | "what did Dana say about pricing?" | Retrieval as today |
 | multi-file | "what did we decide about pricing across all my calls?" | Retrieval + digests |
@@ -215,7 +220,7 @@ per-domain alongside pooled, and never present the naive pool as a headline with
 
 ### 2. A document-naming convention can manufacture a gate pass
 
-Transcript chunks are identified `{file_uuid}_{chunk_index}`; the planned digests are
+Transcript chunks are identified `{file_uuid}_{chunk_index}`; digests are
 `{file_uuid}_digest`. `trec_eval` breaks tied scores by **document id, descending**, and in ASCII
 `d` sorts above every digit.
 

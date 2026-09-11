@@ -1052,7 +1052,7 @@
               {#if currentUser.is_active === false}
                 <span class="status-badge inactive">{$t('userManagement.inactiveBadge')}</span>
               {/if}
-              <!-- Admission state (v379). `approved` is the overwhelming majority
+              <!-- Admission state (v381). `approved` is the overwhelming majority
                    and the backend's default, so only the two held states are
                    badged — chipping every row "Approved" would be noise. -->
               {#if currentUser.approval_status === 'pending'}

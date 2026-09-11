@@ -19,7 +19,7 @@ Four rules shape everything here:
 3. **Disable, never delete.** Deleting data because LDAP hiccupped is unrecoverable.
 4. **Bounded and opt-in** — dry-run and ``enabled=False`` by default, plus a per-run cap.
 
-Since ``v376`` the same pass also **reconciles what the account still has**, not
+Since ``v378`` the same pass also **reconciles what the account still has**, not
 only whether it still exists: for every account the directory reports present, it
 applies the configured ``group_mapping`` rows through
 ``services/idp_group_mapping_service.reconcile_user`` — the same implementation

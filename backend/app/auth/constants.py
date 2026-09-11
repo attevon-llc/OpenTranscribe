@@ -11,7 +11,7 @@ AUTH_TYPE_LDAP = "ldap"
 AUTH_TYPE_OIDC = "oidc"
 AUTH_TYPE_PKI = "pki"
 # Trusted-header authentication: an authenticating reverse proxy asserts the identity
-# (app/auth/proxy/). The value was pre-authorised by v378's CHECK swap, so this phase
+# (app/auth/proxy/). The value was pre-authorised by v380's CHECK swap, so this phase
 # needed no second constraint change on a live "user" table.
 AUTH_TYPE_PROXY = "proxy"
 AUTH_TYPE_SAML = "saml"
@@ -21,8 +21,8 @@ AUTH_TYPE_SAML = "saml"
 # app.auth.provider_registry — they are not enumerated here.
 #
 # This list is what the application actually supports; the DB CHECK constraint
-# (v378) must always be a superset of it, which
-# tests/unit/test_v378_migration_consistency.py pins.
+# (v380) must always be a superset of it, which
+# tests/unit/test_v380_migration_consistency.py pins.
 VALID_AUTH_TYPES = [
     AUTH_TYPE_LOCAL,
     AUTH_TYPE_LDAP,
@@ -36,7 +36,7 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
-# v3 (0.5.x): the OIDC surface was renamed provider-neutral (v377/v378). The user
+# v3 (0.5.x): the OIDC surface was renamed provider-neutral (v379/v380). The user
 # identity columns became user.oidc_subject (the value is an OIDC `sub`, unique only
 # per ISSUER — the previous name asserted a global identifier) and
 # user.oidc_refresh_token, and the auth_type value became 'oidc'. The cardinality

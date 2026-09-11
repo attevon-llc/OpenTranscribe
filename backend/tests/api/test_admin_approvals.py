@@ -1,4 +1,4 @@
-"""The account-approval admin surface (``v379``): ``/api/admin/user-approvals``.
+"""The account-approval admin surface (``v381``): ``/api/admin/user-approvals``.
 
 Tier is **admin**, not super_admin: deciding who gets an account is user
 management, and only deployment configuration is super_admin. The switch that

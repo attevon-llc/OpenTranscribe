@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS "user" (
     auth_type VARCHAR(20) DEFAULT 'local' NOT NULL,
     allow_local_fallback BOOLEAN NOT NULL DEFAULT FALSE,
     ldap_uid VARCHAR(255) UNIQUE NULL,
-    -- OIDC `sub` claim: unique per ISSUER, not globally (renamed in v378).
+    -- OIDC `sub` claim: unique per ISSUER, not globally (renamed in v380).
     oidc_subject VARCHAR(255) UNIQUE NULL,
     oidc_refresh_token TEXT NULL,
     pki_subject_dn VARCHAR(512) UNIQUE NULL,
@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS "user" (
     banner_acknowledged_at TIMESTAMP WITH TIME ZONE NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    -- v378 removed the duplicate `users_auth_type_check` that used to live here;
-    -- `ck_user_auth_type_valid` (v375) is the single owner of this rule, and its
+    -- v380 removed the duplicate `users_auth_type_check` that used to live here;
+    -- `ck_user_auth_type_valid` (v377) is the single owner of this rule, and its
     -- value set is ('local','ldap','oidc','pki','proxy').
     CONSTRAINT ck_user_auth_type_valid
         CHECK (auth_type IN ('local', 'ldap', 'oidc', 'pki', 'proxy'))
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS refresh_token (
     revoked_at TIMESTAMP WITH TIME ZONE NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     -- Encrypted OIDC ID token, kept server-side (never in a cookie) so RP-initiated
-    -- logout has an `id_token_hint`. Dies with the session row. (v378)
+    -- logout has an `id_token_hint`. Dies with the session row. (v380)
     oidc_id_token TEXT NULL,
     user_agent VARCHAR(512) NULL,
     ip_address VARCHAR(45) NULL

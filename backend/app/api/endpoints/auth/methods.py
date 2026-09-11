@@ -144,7 +144,7 @@ def acknowledge_banner(
     """
     Record banner acknowledgment for the current user.
 
-    Must be called after login before granting full access — and since v375 that
+    Must be called after login before granting full access — and since v377 that
     is enforced rather than merely documented: ``get_current_active_user`` refuses
     every non-exempt route with ``detail.code == "banner_acknowledgment_required"``
     while the banner is enabled and this timestamp is missing or predates the last

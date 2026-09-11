@@ -225,7 +225,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 📱 **Enhanced User Experience**
 - **Progressive Web App**: Installable PWA with offline capabilities and bottom navigation bar for mobile
 - **Mobile-Responsive Overhaul**: Full mobile-first redesign optimized for phones, tablets, and desktop
-- **UI Internationalization**: Interface available in 8 languages (English, Spanish, French, German, Portuguese, Chinese, Japanese, Russian)
+- **UI Internationalization**: Interface available in 12 languages (English, Spanish, French, German, Italian, Portuguese, Dutch, Chinese, Japanese, Korean, Russian, Arabic)
 - **Interactive Waveform Player**: Click-to-seek audio visualization with precise timing
 - **Floating Upload Manager**: Draggable upload interface with real-time progress
 - **Smart Modal System**: Consistent modal design with improved accessibility
@@ -244,7 +244,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Svelte** - Reactive UI framework with excellent performance
 - **TypeScript** - Type-safe development with modern JavaScript and comprehensive ESLint integration
 - **Progressive Web App** - Offline capabilities and native-like experience
-- **Internationalization (i18n)** - Multi-language UI support with 8 languages
+- **Internationalization (i18n)** - Multi-language UI support with 12 languages
 - **Responsive Design** - Seamless experience across all devices
 - **Advanced UI Components** - Draggable upload manager, modal consistency, and real-time status updates
 - **Code Quality Tooling** - ESLint, TypeScript strict mode, and automated formatting
@@ -1054,7 +1054,7 @@ npm run test                     # Vitest unit + component tests (jsdom)
 npm run test:coverage            # …with coverage
 npm run check                    # svelte-check (type-checking; a11y issues print as warnings but don't fail it — #785)
 npm run lint                     # ESLint (flat config)
-npm run check:i18n               # locale key-parity across all 8 languages
+npm run check:i18n               # locale key-parity across all 12 languages
 
 # Browser end-to-end (Playwright via pytest, against the live stack)
 ./scripts/e2e/run-e2e.sh                     # full e2e suite, headless

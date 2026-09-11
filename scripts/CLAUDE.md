@@ -131,7 +131,7 @@ this file is for.
   would otherwise delete the entire screenshot suite from the gate in silence).
 - **Test-suite quality tooling** (issue #431) — four scripts whose job is to stop a test that
   cannot fail from looking like a passing one:
-  - `audit-tests.py <dir>` — **16** AST detectors. The original seven (permissive-status,
+  - `audit-tests.py <dir>` — **21** AST detectors. The original seven (permissive-status,
     conditional-only, conditional-skip, no-assertion, failure-masking, mock-heavy,
     fixture-named-test) missed 17 of 18 known evasion shapes, so seven more landed:
     `negated-status` (`assert r.status_code != 403` — **a 500 passes**), `status-guarded-assert`
@@ -170,6 +170,12 @@ this file is for.
       assignments resolved, so `f"{BASE_URL}/health"` counts); one derived argument means the
       target follows the stack under test, which is why `_reachable("127.0.0.1", port)` against
       an allocated port stays clean. 3 real findings, all `BACKLOG` — see below.
+    **Five more landed since**, past the seven-then-two count above (16): `broad-raises`,
+    `bare-return`, `self-comparison`, `sleep-sync`, `skipped-test` — bringing the total to the
+    21 named at the top of this bullet. Per the repo's "ask the tool, don't transcribe counts"
+    convention, don't trust that number either as it ages: `python3 scripts/audit-tests.py
+    --help` shows the live set via its `--category` flag's `choices=CATEGORIES`
+    (`audit-tests.py:2499`). There is no `--list-detectors` flag.
     **`--selftest` is not optional.** 29 must-fire + 24 must-stay-clean + 1 fires-exactly-once,
     run in-memory; `backend/tests/unit/test_audit_tests_selftest.py` runs the same cases under
     pytest so a dead detector fails the ordinary suite too, and the tree scan refuses to be
@@ -282,7 +288,7 @@ this file is for.
     after any interrupted run.
   - `frontend/scripts/audit-frontend-tests.mjs` (`npm run test:audit`) — the vitest sibling,
     10 detectors, TypeScript compiler API. Run `test:audit:selftest` after ANY detector change:
-    its 21 cases caught two detectors matching **nothing**, which reports 0 findings and reads
+    its 27 cases caught two detectors matching **nothing**, which reports 0 findings and reads
     exactly like a clean suite. Two of its detectors do NOT port to Python as-is:
     `toBeFalsy`-style weakness does not, because `assert not offenders, "<list>"` is this
     repo's standard AST-guard shape and fails on any violation — counting the negated form as

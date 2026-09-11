@@ -1,6 +1,6 @@
 """IdP group mapping — resolution, reconciliation semantics, and the super_admin cap.
 
-Before ``v376`` both directory paths built the caller's full group list and then
+Before ``v378`` both directory paths built the caller's full group list and then
 discarded it: ``LdapUserData.groups`` and ``OIDCUserData.roles`` existed, and
 only ``is_admin`` survived. ``UserGroup``/``UserGroupMember`` had **no auth code
 referencing them at all**, so a directory group could not become a sharing group.
@@ -342,7 +342,7 @@ class TestPrivilege:
         assert user.is_superuser is False
 
     def test_the_legacy_admin_signal_still_promotes_with_no_mappings(self):
-        """A deployment using ldap_admin_groups and no mappings behaves as before v376."""
+        """A deployment using ldap_admin_groups and no mappings behaves as before v378."""
         db = FakeSession()
         user = FakeUser()
 

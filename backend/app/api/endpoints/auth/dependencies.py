@@ -56,7 +56,7 @@ ERROR_CODE_PASSWORD_CHANGE_REQUIRED = "password_change_required"  # noqa: S105 #
 ERROR_CODE_ACCOUNT_EXPIRED = "account_expired"
 ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED = "banner_acknowledgment_required"
 #: Account exists and its credential worked, but an administrator has not admitted
-#: it yet (``v379``; see ``app/auth/approval.py``). Its own code rather than a reuse
+#: it yet (``v381``; see ``app/auth/approval.py``). Its own code rather than a reuse
 #: of ``account_expired`` because the remedy is somebody else's action, not the
 #: user's, and the SPA has to say so.
 ERROR_CODE_ACCOUNT_PENDING_APPROVAL = "account_pending_approval"

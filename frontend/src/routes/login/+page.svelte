@@ -43,7 +43,7 @@
   let mfaLoading = false;
   let useBackupCode = false;
 
-  // Email verification (v375). `/auth/login` raises exactly ONE 403 — an
+  // Email verification (v377). `/auth/login` raises exactly ONE 403 — an
   // unverified address on a deployment that requires verification — so the HTTP
   // status identifies this state and no substring match on the localised
   // message is needed.
@@ -884,7 +884,7 @@
           </div>
         </div>
       {:else if lifecyclePanel.code === 'account_pending_approval'}
-        <!-- Awaiting an administrator's decision (v379). The session is still
+        <!-- Awaiting an administrator's decision (v381). The session is still
              live — the hold clears the instant the queue is worked — but no route
              is exempt from the gate, so this is a blocking screen rather than a
              toast that would otherwise fire once per refused request, forever.

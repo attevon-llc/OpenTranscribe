@@ -1,5 +1,5 @@
 /**
- * Admin invitations + email verification (backend v375).
+ * Admin invitations + email verification (backend v377).
  *
  * Both flows share one backend wire-contract module (`app/schemas/invitation.py`)
  * and one pair of public, rate-limited, non-enumerable endpoints, so they share

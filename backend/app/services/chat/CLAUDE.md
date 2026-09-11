@@ -27,7 +27,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `router.py` | Rules-only intent + tiers (#403 Stage 4). Loads nothing, calls nothing |
 | `aggregation.py` | Counted answers, pure half: shapes, subject extraction, filters |
 | `aggregation_service.py` | Counted answers, I/O half: OpenSearch aggs + Postgres |
-| `mapreduce.py` | `tree_summarize` over the digest plane; two reducers, one no-LLM |
+| `mapreduce/` | `tree_summarize` over the digest plane; two reducers, one no-LLM. A **package**, not a single module (split from a 1242-line `mapreduce.py` — see its own `__init__.py` docstring for the seam table); every pre-split name is still re-exported from `app.services.chat.mapreduce` |
 | `reranker.py` | Lazy CPU cross-encoder singleton; `None` when the model cache is absent |
 | `query_rewriter.py` | Follow-up → standalone query; every failure returns the original |
 | `retrieval_cache.py` | Redis exact-query cache, keyed by user+org+query+scope+settings-rev |
@@ -358,17 +358,25 @@ zero calls before retrieval. Two invariants bound the cost of a misroute:
    could *promote* would let corpus size alone reroute an ordinary lookup, which is the one
    regression D5 forbids. Measured lookup leakage: **0.104%** (2 of 1,923 labelled queries).
 
-Two blocks can precede the excerpts, in this fixed order, and **both come off the top of the
-excerpt budget** rather than out of what is left after it:
+Several blocks can precede the excerpts, in a fixed order, and **all of them come off the top of
+the excerpt budget** rather than out of what is left after it:
 
 | Block | Built by | Why it outranks excerpts |
 |---|---|---|
 | `<counted>` | `aggregation_service.answer_aggregation` | It *is* the answer to "how many"; excerpts are examples beside it |
 | `<overview>` | `mapreduce.build_overview` | It covers every recording in scope; excerpts cover a handful |
+| `<recurrence>` | `recurrence.detect_recurring_items` | Items that recurred across TWO OR MORE recordings; excerpts show only one at a time |
+| `<synthesis>` | `service._maybe_run_enrichment` → `prompting.format_synthesis_block` | A machine-drafted reconciliation of evidence, not itself evidence |
 
-Base rules **10** and **11** exist because rule 3 ("answer from the excerpts") fights both of them:
-rule 10 says report a `<counted>` number exactly and never recount from the excerpts; rule 11 says
-cover every recording an `<overview>` lists rather than narrowing to whichever have excerpts.
+Base rules exist for each, because rule 3 ("answer from the excerpts") fights all of them: rule
+**10** says report a `<counted>` number exactly and never recount from the excerpts; rule **12**
+says cover every recording an `<overview>` lists rather than narrowing to whichever have
+excerpts (rule **14** is the same block's focus-speaker variant); rule **13** says a
+`<recurrence>` item is "recurred", never "open"/"done" (this data carries no completion status);
+rule **15** says treat a `<synthesis>` block as an unverified draft, not a source. Rule **11** is
+unrelated to any block — it is the same-language-as-the-question rule. `prompting.py`'s
+`_RULE_*` module constants are the index; don't infer a rule's subject from its number without
+checking there.
 
 ### The counted tier never lets a model count
 
@@ -410,7 +418,8 @@ better than a confident wrong count.
 
 ### The overview: ranking is not mapping
 
-`mapreduce.py` is `tree_summarize` over the digest plane. Level 1 of the map already ran at
+`mapreduce/` (a package, not a single module — see its `__init__.py`) is `tree_summarize` over
+the digest plane. Level 1 of the map already ran at
 ingest — the extractive digest **is** the per-file map output — so a summary over 1,000 recordings
 costs zero map-time work.
 
@@ -529,7 +538,7 @@ via `stores/chat.ts` folding the frame into `msg_metadata` exactly as
   silently dropped there would understate the warning — the user would be told
   fewer of their recordings were unsupported than actually were.
 
-`chat.message.unsupportedLanguage` exists in all 8 locales (`npm run check:i18n`
+`chat.message.unsupportedLanguage` exists in all 12 locales (`npm run check:i18n`
 enforces exact parity). Guards: `ChatMessage.unsupportedLanguage.test.ts`,
 `chat.reducer.test.ts`, and `formatting.test.ts` — the naming assertion lives in
 the last of those because vitest loads no locale bundle, so `$t` returns the raw

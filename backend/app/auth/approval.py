@@ -1,6 +1,6 @@
 """Administrator approval of newly provisioned accounts.
 
-``user.approval_status`` (``v379``) is the single place "may this account be used at
+``user.approval_status`` (``v381``) is the single place "may this account be used at
 all yet?" is recorded. It is deliberately **not** ``is_active``: deactivation is an
 administrator revoking an account that was once usable, approval is an account that
 has never been usable, and collapsing the two would make "approve" and "re-enable"
@@ -56,7 +56,7 @@ APPROVAL_PENDING = "pending"
 #: Refused by an administrator. Never assigned at creation time.
 APPROVAL_REJECTED = "rejected"
 
-#: The closed set, mirrored by the ``ck_user_approval_status_valid`` CHECK (v379).
+#: The closed set, mirrored by the ``ck_user_approval_status_valid`` CHECK (v381).
 #: The database may never be narrower than this or a write becomes a 500.
 VALID_APPROVAL_STATUSES = (APPROVAL_PENDING, APPROVAL_APPROVED, APPROVAL_REJECTED)
 

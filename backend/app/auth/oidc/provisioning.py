@@ -194,10 +194,10 @@ def sync_oidc_user_to_db(db, oidc_data: OIDCUserData, cfg=None):
 
     Handles creating new users, updating existing OIDC users, converting local users
     to OIDC, and race conditions — and then reconciles group membership and privilege
-    against the configured ``group_mapping`` rows (``v376``).
+    against the configured ``group_mapping`` rows (``v378``).
     ``oidc_data["roles"]`` is the full list read from the configurable roles claim
     (``realm_access.roles`` by default, or the provider's ``groups`` claim); until
-    v376 only ``is_admin`` survived it.
+    v378 only ``is_admin`` survived it.
 
     **Admission is decided first**, against ``oidc_allowed_groups`` /
     ``oidc_blocked_groups`` (:mod:`app.auth.oidc.admission`). Before that check

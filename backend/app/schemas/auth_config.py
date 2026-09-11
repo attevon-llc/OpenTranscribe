@@ -243,7 +243,7 @@ class PKIConfig(_CategoryConfig):
     #: revoke fallback a super_admin had granted.
     pki_allow_password_fallback: bool = True
 
-    # `pki_support_cac` / `pki_support_piv` were removed in v375: they gated
+    # `pki_support_cac` / `pki_support_piv` were removed in v377: they gated
     # nothing. `pki_auth.extract_display_name_from_gov_dn` parses both the DoD CAC
     # and the PIV CN formats for every certificate, unconditionally, and always
     # has. Their stored rows are deleted by the same revision.

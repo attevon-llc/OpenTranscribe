@@ -31,7 +31,7 @@ class RefreshToken(Base):
 
     **This row is the session.** There is no second session record: concurrent-
     session limits, rotation, revocation, the fail-closed revocation fallback and
-    (since ``v375``) idle/absolute timeouts all key off these rows. The Redis-
+    (since ``v377``) idle/absolute timeouts all key off these rows. The Redis-
     backed ``SessionManager`` that used to duplicate the timeout half was deleted
     rather than wired up — two owners would enforce against different session
     sets the moment Redis and Postgres diverged. See
@@ -79,7 +79,7 @@ class RefreshToken(Base):
     #: rotated row carries the rotation time. Compared against
     #: ``session_idle_timeout_minutes``.
     #:
-    #: NULLABLE on purpose: rows that predate ``v375`` have no recorded activity
+    #: NULLABLE on purpose: rows that predate ``v377`` have no recorded activity
     #: and must not be invalidated by the upgrade — see :attr:`absolute_expires_at`.
     last_activity_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -90,7 +90,7 @@ class RefreshToken(Base):
     #: thing that caps a client which refreshes forever; ``expires_at`` moves
     #: with each rotation and therefore caps nothing.
     #:
-    #: NULL means "no cap recorded" (a session established before ``v375``) and
+    #: NULL means "no cap recorded" (a session established before ``v377``) and
     #: is treated as valid; the next rotation stamps a real ceiling on the
     #: successor row.
     absolute_expires_at: Mapped[datetime | None] = mapped_column(

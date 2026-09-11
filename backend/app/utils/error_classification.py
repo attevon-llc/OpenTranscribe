@@ -12,7 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class ErrorCategory(Enum):
-    """Categories for classifying processing errors."""
+    """Categories for classifying processing errors.
+
+    Retry policy only; persisted to `media_file.error_category`; NEVER serialized to a
+    client — the user-facing vocabulary is `UserErrorReason`
+    (`app.services.error_categorization_service`), on the wire as `error_reason`.
+    """
 
     # Permanent failures - do not retry
     PRIVATE_OR_REMOVED = "private_removed"

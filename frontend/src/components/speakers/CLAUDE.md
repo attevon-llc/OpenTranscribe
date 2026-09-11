@@ -30,3 +30,13 @@ that page. They render the cluster / profile / inbox management UI for cross-fil
 - `SpeakerPreviewPlayer` dynamically imports `PlyrMiniPlayer` only when `browser` is true —
   Plyr breaks SSR/hydration on refresh; keep the guard.
 - Suggestions are never auto-applied — the inbox surfaces them for manual verification only.
+- **E2E-guarded selectors owned here** (`backend/tests/e2e/test_speaker_gender_clusters.py`):
+  `.cluster-card` and `.card-header` (click to expand a cluster) in `SpeakerClusterCard.svelte`,
+  which also renders `.gender-chip` (`.gender-chip.gender-coherent` /
+  `.gender-chip.gender-conflict`). `.member-row` (`.member-row.gender-outlier`) and
+  `.gender-icon` are `ClusterMemberList.svelte` — the test clicks `.card-header` first, since
+  members don't exist in the DOM until the cluster is expanded. `.profile-card` and
+  `.gender-toggle-btn` (`.gender-toggle-btn.active` once confirmed) are `ProfilesTab.svelte` —
+  this toggle is **profile**-scoped, a different confirmation than the cluster card's
+  `.gender-chip` badge, so don't conflate the two when renaming. Renaming any of these breaks
+  that suite.

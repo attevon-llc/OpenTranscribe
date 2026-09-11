@@ -809,3 +809,117 @@ class TestTheJoinBudgetArithmetic:
             f"{headroom}s left after the release watchdog, leaving too little for the abort to "
             "unwind, Reject to travel, and celery to drain the pool"
         )
+
+
+class TestStageBoundaryCheckpoints:
+    """#809 P1: every long GPU stage stands down at its boundaries.
+
+    Each test arms the flag, drives the real ``run()`` with mocked collaborators, and asserts
+    BOTH that the abort surfaced AND that the expensive call sitting immediately after the
+    checkpoint was never made. The second half is what makes these must-fire tests: without it
+    they would pass against a stage that raised for some unrelated reason, and — more likely —
+    against a checkpoint accidentally placed *after* the model load it exists to prevent.
+    """
+
+    @pytest.fixture
+    def engine_collaborators(self):
+        """Patch the four seams every stage entry touches, and expose the expensive ones.
+
+        Every one of these is imported INSIDE each ``run()``, so they must be patched at their
+        DEFINING module — patching a name on ``stages`` would create an attribute the stage
+        never reads, and the test would pass while the real collaborator ran.
+        """
+        manager = MagicMock()
+        with (
+            patch(
+                "app.transcription.model_manager.ModelManager.get_instance", return_value=manager
+            ),
+            patch("app.utils.hardware_detection.detect_hardware", return_value=MagicMock()),
+            patch("app.utils.vram_profiler.VRAMProfiler", return_value=MagicMock()),
+            patch("app.transcription.engine.audio_loader.load_from_shared_volume") as loader,
+        ):
+            yield {"manager": manager, "load_from_shared_volume": loader}
+
+    @staticmethod
+    def _config(enable_diarization: bool = True):
+        config = MagicMock()
+        tc = config.transcription_config
+        tc.enable_diarization = enable_diarization
+        tc.concurrent_requests = 1
+        tc.device = "cpu"
+        tc.diarizer_backend = "native"
+        return config
+
+    def test_gpu_stage_stands_down_before_loading_the_model(self, engine_collaborators):
+        from app.transcription.engine.stages import _GpuStage
+
+        ws.mark_shutting_down()
+        with pytest.raises(ws.TranscriptionAbortedError) as exc:
+            _GpuStage().run(MagicMock(), self._config())
+
+        assert "_GpuStage.run entry" in str(exc.value)
+        engine_collaborators["manager"].get_transcriber.assert_not_called()
+        engine_collaborators["manager"].get_diarizer.assert_not_called()
+
+    def test_gpu_raw_stage_stands_down_before_loading_the_model(self, engine_collaborators):
+        from app.transcription.engine.stages import _GpuRawStage
+
+        ws.mark_shutting_down()
+        with pytest.raises(ws.TranscriptionAbortedError) as exc:
+            _GpuRawStage().run(MagicMock(), self._config())
+
+        assert "_GpuRawStage.run entry" in str(exc.value)
+        engine_collaborators["manager"].get_transcriber.assert_not_called()
+        (
+            engine_collaborators["load_from_shared_volume"].assert_not_called(),
+            (
+                "the WAV must not even be read — the whole point of an ENTRY checkpoint is to "
+                "refuse before paying for the audio"
+            ),
+        )
+
+    def test_transcribe_only_stage_stands_down_before_loading_the_model(self, engine_collaborators):
+        from app.transcription.engine.stages import _TranscribeOnlyStage
+
+        ws.mark_shutting_down()
+        with pytest.raises(ws.TranscriptionAbortedError) as exc:
+            _TranscribeOnlyStage().run(MagicMock(), self._config())
+
+        assert "_TranscribeOnlyStage.run entry" in str(exc.value)
+        engine_collaborators["manager"].get_transcriber.assert_not_called()
+
+    def test_diarizer_only_stage_stands_down_before_loading_the_diarizer(
+        self, engine_collaborators
+    ):
+        """⚠️ This checkpoint is only safe because diarize_gpu_task can requeue the abort —
+        see TestEveryAcksLateTaskHandlesTheAbort. It was sequenced after that fix on purpose."""
+        from app.transcription.engine.stages import _DiarizerOnlyStage
+
+        ws.mark_shutting_down()
+        with pytest.raises(ws.TranscriptionAbortedError) as exc:
+            _DiarizerOnlyStage().run(MagicMock(), self._config())
+
+        assert "_DiarizerOnlyStage.run entry" in str(exc.value)
+        engine_collaborators["manager"].get_diarizer.assert_not_called()
+
+    def test_every_stage_runs_normally_while_the_worker_is_healthy(self, engine_collaborators):
+        """The control that stops all four tests above from passing against a stage that aborts
+        UNCONDITIONALLY. A checkpoint that fired regardless of the flag would break every
+        transcription on the host, and the must-fire tests alone cannot tell the difference.
+
+        Asserted at the boundary each checkpoint guards: with the flag clear, ``run()`` must get
+        PAST it — here, far enough to load audio — rather than raising TranscriptionAbortedError.
+        """
+        from app.transcription.engine.stages import _DiarizerOnlyStage
+
+        assert not ws._SHUTDOWN.is_set(), "precondition: a healthy worker"
+        engine_collaborators["load_from_shared_volume"].return_value = None
+
+        # RuntimeError (the stage's own "WAV unreadable" guard, reached only AFTER the entry
+        # checkpoint) proves the checkpoint let this run through.
+        with pytest.raises(RuntimeError) as exc:
+            _DiarizerOnlyStage().run(MagicMock(), self._config())
+
+        assert not isinstance(exc.value, ws.TranscriptionAbortedError), (
+            "the entry checkpoint fired on a HEALTHY worker — it is not reading the flag"
+        )

@@ -25,6 +25,9 @@ from typing import Any
 
 import numpy as np
 
+from app.core.worker_shutdown import raise_if_shutting_down
+from app.core.worker_shutdown import shutdown_requested
+
 if TYPE_CHECKING:
     from app.transcription.engine.config import EngineConfig
     from app.transcription.engine.job import JobResult
@@ -65,9 +68,11 @@ def _shutdown_join_timeout() -> float | None:
     and abandoning a live diarization thread would be a pure regression (it still holds a
     reference to the WAV a caller is about to unlink -- the issue #661 phase 1.1 hazard the
     unbounded join was added for).
-    """
-    from app.core.worker_shutdown import shutdown_requested
 
+    Imported at module scope rather than per call: ``app.core.worker_shutdown`` is stdlib-only
+    (no torch, no celery), so it costs a CPU-only or bare-pytest importer nothing — the reason
+    the repo's "heavy optional deps go inside the function" rule does not apply to it.
+    """
     return _SHUTDOWN_JOIN_BUDGET_S if shutdown_requested() else None
 
 
@@ -407,6 +412,11 @@ class _GpuStage:
         hw = detect_hardware()
         manager = ModelManager.get_instance()
 
+        # Issue #809: stand down BEFORE loading audio or warming Whisper. A worker that is
+        # already stopping must not start a multi-minute job it cannot finish — the message is
+        # requeued and the next worker runs it from the top, so nothing is lost by refusing here.
+        raise_if_shutting_down("_GpuStage.run entry")
+
         profiler.snapshot("pipeline_start")
 
         # Steps 1+2: Load audio and ensure model is warm in parallel
@@ -490,6 +500,12 @@ class _GpuStage:
                 )
 
             if tc.enable_diarization:
+                # Issue #809: transcription is done and its result is about to be thrown away
+                # either way, so standing down here costs the diarization only. INSIDE the try,
+                # deliberately — raised outside it, the `finally` below never runs and the
+                # overlapped diarization thread is left alive holding the WAV (issue #661
+                # phase 1.1, the hazard that try/finally was added for).
+                raise_if_shutting_down("_GpuStage.run before diarization")
                 result_dict, diarize_df = self._run_diarization(
                     audio,
                     transcript,
@@ -744,6 +760,11 @@ class _GpuRawStage:
         hw = detect_hardware()
         manager = ModelManager.get_instance()
 
+        # Issue #809: stand down before loading the WAV or warming Whisper — see the twin
+        # comment in _GpuStage.run. The shared-volume WAV is deliberately NOT cleaned up on an
+        # abort (core.py::_finish_failed_or_aborted), so the redelivered attempt still finds it.
+        raise_if_shutting_down("_GpuRawStage.run entry")
+
         profiler.snapshot("pipeline_start")
 
         emit(callback, 0.42, "Loading audio", "preprocess")
@@ -826,6 +847,10 @@ class _GpuRawStage:
             diar_model: str | None = None
 
             if tc.enable_diarization:
+                # Issue #809: INSIDE the try, for the same reason as _GpuStage.run's — an abort
+                # raised outside it skips `finally: async_diarization.close()` and leaks the
+                # overlapped thread under a WAV a caller may unlink.
+                raise_if_shutting_down("_GpuRawStage.run before diarization")
                 diarize_df, overlap_info, native_embeddings, diar_provider, diar_model = (
                     _collect_diarization(
                         audio,
@@ -985,6 +1010,10 @@ class _TranscribeOnlyStage:
         profiler = VRAMProfiler()
         manager = ModelManager.get_instance()
 
+        # Issue #809: stand down before loading the WAV or warming Whisper. This stage runs
+        # under transcribe_gpu_task, whose handler requeues the abort (core.py).
+        raise_if_shutting_down("_TranscribeOnlyStage.run entry")
+
         profiler.snapshot("pipeline_start")
 
         emit(callback, 0.42, "Loading audio", "preprocess")
@@ -1063,6 +1092,15 @@ class _DiarizerOnlyStage:
         hw = detect_hardware()
         manager = ModelManager.get_instance()
 
+        # Issue #809: stand down before reloading the WAV or loading the diarizer.
+        #
+        # ⚠️ This checkpoint is only SAFE because diarize_gpu_task now has an abort branch that
+        # requeues instead of failing the file. Before that, an abort here would have travelled
+        # diarize_task's generic `except Exception`, marked the file ERROR and ACKed the message
+        # under acks_late -- losing the transcription outright. Do not add a checkpoint to a
+        # stage whose task cannot requeue the abort.
+        raise_if_shutting_down("_DiarizerOnlyStage.run entry")
+
         profiler.snapshot("pipeline_start")
 
         emit(callback, 0.52, "Preparing speaker analysis", "diarize")
@@ -1081,6 +1119,11 @@ class _DiarizerOnlyStage:
         diar_model: str | None = None
 
         if tc.enable_diarization:
+            # Issue #809: the last bounded point before the diarizer load and the opaque
+            # diarize() call. There is no try/finally to sit inside here — this stage never
+            # constructs an _AsyncDiarization (it IS the diarization leg).
+            raise_if_shutting_down("_DiarizerOnlyStage.run before diarization")
+
             if tc.concurrent_requests > 1:
                 _wait_for_vram(2000, "diarization")
 

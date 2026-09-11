@@ -67,6 +67,27 @@ describe('ChatSources — digest citations (G7)', () => {
     expect(getByText('Dana Whitfield')).toBeTruthy();
   });
 
+  it('shows the expand toggle for a wide (700-char) digest snippet in the same list as an ordinary chunk (#913)', () => {
+    // #832 gave digests their own wider snippet cap (DIGEST_SNIPPET_CHARS, 700
+    // today) so a digest citation commonly carries far more text than an
+    // ordinary chunk's 240-char cap ever did. One ChatSources list must handle
+    // both sizes: the digest card gets a toggle, the short chunk card does not.
+    const wideDigest = 'word '.repeat(140).trim(); // ~700 chars
+    const { getAllByTestId, queryByTestId } = render(ChatSources, {
+      props: {
+        expanded: true,
+        sources: [
+          source({ id: 1, kind: 'digest', digest_section: 0, speaker: null, snippet: wideDigest }),
+          source({ id: 2, kind: 'chunk' }),
+        ],
+      },
+    });
+
+    const toggles = getAllByTestId('chat-source-snippet-toggle');
+    expect(toggles).toHaveLength(1);
+    expect(queryByTestId('chat-source-recurrence')).toBeNull();
+  });
+
   it('still deep-links a digest to the section timestamp, not to 0:00', () => {
     // A digest indexed with start_time=0 would give every summary citation a
     // link that looks like it works and lands at the top of the recording.

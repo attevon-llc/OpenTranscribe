@@ -681,6 +681,8 @@ class SubtitleService:
         subtitle_format: str,
         include_speakers: bool,
         redaction_cfg: "EffectiveRedactionConfig",
+        *,
+        include_quarantined: bool = False,
     ) -> tuple[bytes, int, int]:
         """Build a ZIP of subtitle files for a batch of media files.
 
@@ -706,18 +708,24 @@ class SubtitleService:
             redaction_cfg: The **requesting user's** effective policy — see
                 ``services/redaction/export_policy.py`` for why the reader and not the
                 file owner.
+            include_quarantined: Admin review bypass (issue #818). Default False: a
+                file taken down between dispatch and this build is skipped like any
+                other unusable entry, never exported.
 
         Returns:
             ``(zip_bytes, exported, skipped)``. Files whose subtitle generation fails,
-            whose redaction scan has not produced spans yet, or that yield empty
-            content are counted as skipped, never aborting the batch.
+            whose redaction scan has not produced spans yet, that were taken down
+            after dispatch, or that yield empty content are counted as skipped, never
+            aborting the batch.
         """
         fmt = subtitle_format.lower()
         ext = "vtt" if fmt == "webvtt" else fmt
         buf = io.BytesIO()
         exported = skipped = 0
-        withheld = SubtitleService._files_awaiting_redaction(
-            db, [fid for fid, _ in file_specs], redaction_cfg
+        file_ids = [fid for fid, _ in file_specs]
+        withheld = SubtitleService._files_awaiting_redaction(db, file_ids, redaction_cfg)
+        taken_down = SubtitleService._files_withheld_by_takedown(
+            db, file_ids, include_quarantined=include_quarantined
         )
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for file_id, base_name in file_specs:
@@ -728,6 +736,13 @@ class SubtitleService:
                         logger.info(
                             f"Skipping file {file_id} in bulk export: "
                             "content redaction has not finished for it"
+                        )
+                        skipped += 1
+                        continue
+                    if file_id in taken_down:
+                        logger.info(
+                            f"Skipping file {file_id} in bulk export: it was taken down "
+                            "(or removed) after this export was requested"
                         )
                         skipped += 1
                         continue
@@ -779,6 +794,32 @@ class SubtitleService:
             for fid in file_ids
             if fid in known and export_masking_is_pending(redaction_cfg, known[fid])
         }
+
+    @staticmethod
+    def _files_withheld_by_takedown(
+        db: Session, file_ids: list[int], *, include_quarantined: bool
+    ) -> set[int]:
+        """Which of file_ids must not be exported because of an abuse/DMCA takedown.
+
+        The complement of takedown_service.exclude_quarantined over the same ids, so the
+        quarantine predicate keeps exactly one spelling in the codebase. A file DELETED
+        between dispatch and execution also lands here — it cannot be proven visible.
+
+        The prepare endpoint already permission-filtered these ids, but a takedown can
+        land AFTER dispatch and before the worker runs — the whole reason quarantine is a
+        run-time predicate, not a dispatch-time one.
+        """
+        from app.services.takedown_service import exclude_quarantined
+
+        if include_quarantined or not file_ids:
+            return set()
+        visible = {
+            int(row[0])
+            for row in exclude_quarantined(
+                db.query(MediaFile.id).filter(MediaFile.id.in_(file_ids))
+            ).all()
+        }
+        return {fid for fid in file_ids if fid not in visible}
 
     @staticmethod
     def validate_subtitle_timing(db: Session, media_file_id: int) -> list[str]:

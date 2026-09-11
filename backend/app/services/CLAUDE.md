@@ -47,7 +47,9 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `app/utils/websocket_notify.py:send_ws_event_for_file` is the **required** call site for any
   WebSocket event naming a `MediaFile`; `send_ws_event` itself has no notion of quarantine at
   all. `tests/unit/test_ws_event_quarantine_discipline.py` is the structural gate that fails a
-  new unguarded call site.
+  new unguarded call site. …and `exclude_quarantined` is re-applied on the ASYNC export plane
+  (`tasks/media_download.py`) because a dispatch-time authorization does not survive a
+  takedown landing before the worker runs.
 - **Identity / account security** — see below. `auth_config_service.py` (DB > .env > coded
   default, AES-256-GCM at rest), `account_security_service.py`,
   `idp_group_mapping_service.py`, `directory_sync_service.py`, `auth_mail_config_service.py`,
@@ -494,6 +496,15 @@ config**, exporting the raw transcript for everyone — including under the admi
 Whose policy applies (the **requesting user**, not the file owner) and when it is resolved
 (**run time inside the task**, from a `user_id`, never a serialized config) are argued in
 `redaction/export_policy.py`.
+
+**And one rule that is not about redaction at all (issue #818): the export workers re-check
+QUARANTINE at run time.** Both entry points are permission-filtered at dispatch, but a
+takedown can land in the gap — `build_subtitle_archive` takes `include_quarantined` and
+*skips* a taken-down file like any other unusable entry (one file must not fail the other
+99), while `prepare_media_download_task` wraps its own file read in `exclude_quarantined` so
+a taken-down file is refused exactly as a deleted one is. Sharing/tenant scope is still
+decided once, at the endpoint; only the abuse gate, which is time-varying by design, is
+re-applied.
 
 ## Gotchas
 

@@ -407,6 +407,12 @@ def _summary_search_payload(
     summary. Masking runs per-leaf, before any snippet is extracted — see
     ``services/search/summary_search.py`` and ``redaction/summary_redaction.py``
     for why batching leaks repeated names.
+
+    Quarantine is applied INSIDE ``search_summaries`` via
+    ``exclude_quarantined`` — a pre-filter, so ``summary_total`` and the page
+    offsets are consistent with what is returned. This function used to
+    post-filter the hit list here; that left the count disclosing a
+    taken-down file whose hit fell outside the requested page (#818).
     """
     from app.services.redaction.config import resolve_effective_config
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
@@ -422,28 +428,10 @@ def _summary_search_payload(
             page=page,
             page_size=page_size,
             redaction_cfg=cfg,
+            include_quarantined=ctx.user.is_admin,
         )
     except SummaryMaskingUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-
-    hits = result.results
-    removed = 0
-    # Abuse/DMCA: same treatment as the transcript branch above — a summary is
-    # derived from the transcript, so a takedown must hide it too.
-    if not ctx.user.is_admin and hits:
-        from app.models.media import MediaFile
-
-        uuids = [h.file_uuid for h in hits]
-        quarantined = {
-            str(row[0])
-            for row in db.query(MediaFile.uuid)
-            .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
-            .all()
-        }
-        if quarantined:
-            before = len(hits)
-            hits = [h for h in hits if h.file_uuid not in quarantined]
-            removed = before - len(hits)
 
     return {
         "summary_results": [
@@ -453,9 +441,9 @@ def _summary_search_payload(
                 "title": hit.title,
                 "matches": [{"key_path": m.key_path, "snippet": m.snippet} for m in hit.matches],
             }
-            for hit in hits
+            for hit in result.results
         ],
-        "summary_total": max(0, result.total - removed),
+        "summary_total": result.total,
     }
 
 

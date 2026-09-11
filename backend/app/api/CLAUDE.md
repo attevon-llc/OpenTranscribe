@@ -369,7 +369,8 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   owner is `llm_guard`'s subject, and that governs third-party egress rather than a read), and at
   **run time inside the task** from a `user_id`, never a config serialized into the Celery
   signature. A file whose scan is unfinished is *skipped* by the batch (one file must not fail
-  the other 99) and *refused* by the burn-in, which cannot be un-burned.
+  the other 99) and *refused* by the burn-in, which cannot be un-burned. A file taken down
+  after dispatch is treated the same way — skipped by the batch, refused by the burn-in (#818).
 - **A burned-in-subtitle download is keyed by the caller's redaction policy, in three
   places at once** (#85): the object-storage cache key, the Redis dedup guard
   (`download_prep_guard_key`), and the `variant` field every `download_events` message

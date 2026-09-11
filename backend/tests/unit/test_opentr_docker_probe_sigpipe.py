@@ -1013,8 +1013,13 @@ def test_the_scanner_fires_on_every_shape_the_two_bug_fixes_could_have_blinded_i
 
 
 #: Payload size the ``printf`` exemption above is asserted safe at. Deliberately tiny --
-#: see the ceiling this pins.
-_PRINTF_SAFE_BYTES = 4 * 1024
+#: see the ceiling this pins. It has to stay below one stdio buffer: the exemption's
+#: premise is that the payload leaves in ONE ``write(2)``, and bash's ``printf`` builtin
+#: flushes through stdio, whose buffer for a pipe is ``st_blksize`` -- 4096 B on Linux.
+#: ``4 * 1024`` plus the ``FIRST\n`` header and the trailing newline is 4103 B, i.e. two
+#: writes, and under xdist load ``head`` can leave between them, which is exactly the
+#: SIGPIPE this test says a builtin cannot get (#918). 1 KiB is one write on every host.
+_PRINTF_SAFE_BYTES = 1024
 #: ...and a size at which the same construct provably breaks. Measured on this host
 #: 2026-09-07, `printf 'FIRST\n<payload>\n' | head -1` under `set -euo pipefail`:
 #: 1 KiB 0/100 aborts, 7 KiB 0/100, **16 KiB 4/100**, 32 KiB 31/100, 60 KiB 100/100,

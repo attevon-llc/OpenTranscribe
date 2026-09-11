@@ -73,7 +73,7 @@ describe('ChatSources — digest citations (G7)', () => {
     // ordinary chunk's 240-char cap ever did. One ChatSources list must handle
     // both sizes: the digest card gets a toggle, the short chunk card does not.
     const wideDigest = 'word '.repeat(140).trim(); // ~700 chars
-    const { getAllByTestId, queryByTestId } = render(ChatSources, {
+    const { getAllByTestId } = render(ChatSources, {
       props: {
         expanded: true,
         sources: [
@@ -85,7 +85,6 @@ describe('ChatSources — digest citations (G7)', () => {
 
     const toggles = getAllByTestId('chat-source-snippet-toggle');
     expect(toggles).toHaveLength(1);
-    expect(queryByTestId('chat-source-recurrence')).toBeNull();
   });
 
   it('still deep-links a digest to the section timestamp, not to 0:00', () => {

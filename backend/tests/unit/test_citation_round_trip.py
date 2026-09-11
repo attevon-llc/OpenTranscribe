@@ -153,6 +153,51 @@ def test_start_time_none_is_a_first_class_case_not_a_zero_sentinel():
     assert citation.start_time is None
 
 
+def test_content_chars_survives_a_reload():
+    """MUST-FIRE reproduction of the exact same regression class (issue #832):
+    ``content_chars`` is put into the citation dict at STREAM time
+    (``chat/citations.py``'s ``build_citation``/``build_overview_citations``) and,
+    without a declared field on ``Citation``, would be silently dropped by
+    Pydantic the moment the SAME message is read back after a reload — with no
+    error anywhere, exactly like ``kind``/``digest_section`` before them."""
+    raw = {
+        "id": 1,
+        "kind": "digest",
+        "file_uuid": "dddddddd-0000-0000-0000-000000000000",
+        "title": "Weekly sync",
+        "chunk_index": -1,
+        "digest_section": 1,
+        "start_time": 60.0,
+        "end_time": None,
+        "speaker": None,
+        "snippet": "We agreed the budget…",
+        "content_chars": 812,
+    }
+    reloaded = ChatMessageOut.model_validate(_message_row([raw]))
+
+    citation = reloaded.citations[0]
+    assert citation.content_chars == 812
+
+
+def test_content_chars_is_none_for_a_citation_persisted_before_the_field_existed():
+    """A pre-#832 citation carries no content_chars key at all — the correct
+    read is None, never a fabricated 0 (a real "empty excerpt" would look
+    identical to "never measured")."""
+    raw = {
+        "id": 1,
+        "kind": "chunk",
+        "file_uuid": "eeeeeeee-0000-0000-0000-000000000000",
+        "title": "A recording",
+        "chunk_index": 0,
+        "start_time": 10.0,
+        "end_time": 20.0,
+        "speaker": "Dana",
+        "snippet": "some text",
+    }
+    reloaded = ChatMessageOut.model_validate(_message_row([raw]))
+    assert reloaded.citations[0].content_chars is None
+
+
 def test_multiple_citations_of_different_kinds_round_trip_independently_in_one_message():
     """A single answer can cite a chunk, a digest, and a summary together —
     each must keep its own shape through one persisted message."""

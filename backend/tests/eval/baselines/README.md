@@ -107,6 +107,15 @@ committed). ⚠️ The corpus context matters: numbers here are not comparable t
 before the ELITR-Bench injection — the injection alone moved the identical config's floor
 score by ~40%.
 
+⚠️ **Its `quote_fidelity` was measured under the OLD single `SNIPPET_CHARS=240` cap, applied to
+BOTH chunk and digest citations alike (issue #832).** #832 gave digest citations their own,
+wider cap (`DIGEST_SNIPPET_CHARS`, derived from `ingest_artifacts.sizing.DIGEST_SECTION_MAX_WORDS`)
+because the plain 240-char cap truncated 100% of digest citations by construction. Any
+`quote_fidelity` number from a post-#832 run is measured at a **different, per-kind** cap and is
+therefore **not comparable** to this baseline's figure. This baseline's corpus (`otfresh-ragmeas`
+post-ELITR-Bench-injection) no longer exists on this host — **do not attempt to regenerate or
+re-run it**; the committed file here is left completely untouched.
+
 ## Re-deriving one
 
 ```bash

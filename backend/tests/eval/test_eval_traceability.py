@@ -14,6 +14,7 @@ import pytest
 from tests.eval.harness import probe_metrics
 from tests.eval.harness.probe_metrics import ProseLeakError
 from tests.eval.harness.traceability import TurnTraceability
+from tests.eval.harness.traceability import assert_no_prose
 from tests.eval.harness.traceability import build_traceability_results
 from tests.eval.harness.traceability import build_traceability_rows
 from tests.eval.harness.traceability import extract_turn_traceability
@@ -371,6 +372,111 @@ def test_build_traceability_results_never_contains_forbidden_keys_at_any_depth()
 
 
 # ---------------------------------------------------------------------------
+# snippet truncation + per-cap quote_fidelity (issue #832)
+# ---------------------------------------------------------------------------
+
+
+def test_quote_fidelity_at_240_matches_the_pooled_metric_when_nothing_exceeds_240() -> None:
+    """Identity control: no snippet in the default fixture exceeds 240 chars, so
+    re-truncating to 240 changes nothing."""
+    metrics = extract_turn_traceability(_record())
+    assert metrics.quote_fidelity_at_240 == metrics.quote_fidelity
+
+
+def test_quote_fidelity_at_240_differs_when_a_snippet_exceeds_240() -> None:
+    """Must-fire: a quote that lives past the 240-char mark is supported against
+    the full snippet and unsupported once that snippet is re-truncated to 240."""
+    filler = "filler word " * 40  # 480 chars, well past the 240-char cap
+    quote_target = "the actual quoted material"
+    snippet = filler + quote_target
+    assert len(snippet) > 240
+
+    record = _record(
+        app_answer=f'They said "{quote_target}"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": snippet}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+
+    assert metrics.quote_fidelity == 1.0
+    assert metrics.quote_fidelity_at_240 == 0.0
+    assert metrics.quote_fidelity_at_240 != metrics.quote_fidelity
+
+
+def test_the_truncated_and_complete_cohorts_sum_to_the_pooled_total() -> None:
+    """One citation with a known-truncated snippet, one with a known-complete one —
+    the two cohorts must add back up to the pooled quote_fidelity counts."""
+    record = _record(
+        app_answer='One point "alpha claim only"[1] and another "beta claim here"[2].',
+        citations=[
+            {
+                "id": 1,
+                "file_uuid": "file-a",
+                "snippet": "alpha claim only",
+                "content_chars": 500,  # > len(snippet) => truncated
+            },
+            {
+                "id": 2,
+                "file_uuid": "file-b",
+                "snippet": "beta claim here",
+                "content_chars": 10,  # <= len(snippet) => complete
+            },
+        ],
+        offered_citations=[
+            {"id": 1, "file_uuid": "file-a"},
+            {"id": 2, "file_uuid": "file-b"},
+        ],
+        chunks_used=2,
+    )
+    metrics = extract_turn_traceability(record)
+
+    assert metrics.quotes_truncated_total == 1
+    assert metrics.quotes_complete_total == 1
+    assert metrics.quotes_total == metrics.quotes_truncated_total + metrics.quotes_complete_total
+    assert (
+        metrics.quotes_unsupported
+        == metrics.quotes_truncated_unsupported + metrics.quotes_complete_unsupported
+    )
+
+
+def test_a_record_with_no_content_chars_reports_none_not_zero() -> None:
+    """A record simulating a pre-#832 probe row: no citation carries content_chars,
+    and no snippet ends in the ellipsis. Truncation is UNKNOWN, not "0% truncated"."""
+    record = _record()  # default citations carry neither signal
+    metrics = extract_turn_traceability(record)
+    assert metrics.citations_truncated == 0
+    assert metrics.snippet_truncation_rate is None
+
+
+def test_the_new_fields_pass_the_no_prose_check() -> None:
+    """The #832 fields are counts/rates, never text — confirm the artifact still
+    clears assert_no_prose, and that the fields actually appear (a check over an
+    empty payload would prove nothing)."""
+    results = build_traceability_results(
+        run_name="test-run",
+        target={"host": "localhost", "port": 5274},
+        records=[_record(label="a")],
+    )
+    assert_no_prose(results)
+
+    row = results["rows"][0]
+    for key in (
+        "citations_truncated",
+        "snippet_truncation_rate",
+        "quotes_truncated_total",
+        "quotes_truncated_unsupported",
+        "quote_fidelity_truncated",
+        "quotes_complete_total",
+        "quotes_complete_unsupported",
+        "quote_fidelity_complete",
+        "quotes_unsupported_at_240",
+        "quote_fidelity_at_240",
+    ):
+        assert key in row
+
+
+# ---------------------------------------------------------------------------
 # render_traceability_table
 # ---------------------------------------------------------------------------
 
@@ -412,6 +518,16 @@ def test_turn_traceability_as_json_field_shape() -> None:
         quotes_total=1,
         quotes_unsupported=0,
         quote_fidelity=1.0,
+        citations_truncated=0,
+        snippet_truncation_rate=None,
+        quotes_truncated_total=0,
+        quotes_truncated_unsupported=0,
+        quote_fidelity_truncated=None,
+        quotes_complete_total=1,
+        quotes_complete_unsupported=0,
+        quote_fidelity_complete=1.0,
+        quotes_unsupported_at_240=0,
+        quote_fidelity_at_240=1.0,
     )
     payload = metrics.as_json()
     assert set(payload) == {
@@ -429,4 +545,14 @@ def test_turn_traceability_as_json_field_shape() -> None:
         "quotes_total",
         "quotes_unsupported",
         "quote_fidelity",
+        "citations_truncated",
+        "snippet_truncation_rate",
+        "quotes_truncated_total",
+        "quotes_truncated_unsupported",
+        "quote_fidelity_truncated",
+        "quotes_complete_total",
+        "quotes_complete_unsupported",
+        "quote_fidelity_complete",
+        "quotes_unsupported_at_240",
+        "quote_fidelity_at_240",
     }

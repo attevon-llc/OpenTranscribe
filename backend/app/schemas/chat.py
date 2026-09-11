@@ -232,6 +232,15 @@ class Citation(BaseModel):
     #: Absent/``False`` on every citation minted before this field existed,
     #: which is the correct read for them: none of them were ever expanded.
     expanded: bool = False
+    #: Issue #832. The whitespace-normalized length of the excerpt BEFORE
+    #: truncation (``chat/citations.py``'s ``content_chars``) — a plain integer
+    #: count, never text. ``None`` is correct for any citation persisted before
+    #: this field existed, matching the "silently dropped, not fabricated" rule
+    #: this class's docstring already documents for ``kind``/``digest_section``:
+    #: a field absent from this schema is stripped on every reload, so a new
+    #: field must be declared here or it vanishes the moment the SAME message
+    #: is read back.
+    content_chars: int | None = None
 
 
 class ChatMessageOut(BaseModel):

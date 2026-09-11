@@ -12,10 +12,27 @@ import logging
 import re
 
 from app.services.chat.redactor import MaskedChunk
+from app.services.ingest_artifacts.sizing import DIGEST_SECTION_MAX_WORDS
 
 logger = logging.getLogger(__name__)
 
 _CITATION_RE = re.compile(r"\[(\d{1,3})\]")
+
+#: Ceiling for an ORDINARY (unexpanded, non-digest) chunk citation. A PREFIX
+#: window, not centered or quote-aware — the first ``SNIPPET_CHARS`` characters
+#: of the excerpt, cut on a word boundary, so a positional sample of the
+#: excerpt is shown, not necessarily a quote-bearing one. Measured against a
+#: committed eval baseline (issue #832): 31% of chunk citations exceed this
+#: cap, and `quote_fidelity` (does a citation's displayed snippet actually
+#: contain the quote the model claims to cite) scores 0.328 on the truncated
+#: subset vs 0.671 on the complete one in the same run — truncation is a real,
+#: measured cost, not a theoretical one. Raising this further is explicitly
+#: DEFERRED (see the #832 follow-up issue): it needs a redaction-policy
+#: decision (a local model already receives this text unmasked, but a wider
+#: chunk-cap changes what a REMOTE provider or the on-screen card gets, and the
+#: citation card currently clamps to 2 lines regardless of snippet length, so
+#: raising this alone would have no reader-visible effect without a UI change
+#: too).
 SNIPPET_CHARS = 240
 
 #: Snippet ceiling for an EXPANDED citation (issue #526). ``context_expansion``
@@ -31,6 +48,29 @@ SNIPPET_CHARS = 240
 #: much of an ALREADY-SENT excerpt the citation shows the reader, never what
 #: reaches the prompt.
 EXPANDED_SNIPPET_CHARS = 10 * 250
+
+#: Snippet ceiling for a DIGEST citation (issue #832). A digest section is
+#: bounded at ingest to :data:`~app.services.ingest_artifacts.sizing.DIGEST_SECTION_MAX_WORDS`
+#: words (``ingest_artifacts/sizing.py``) — and at the ordinary
+#: :data:`SNIPPET_CHARS` cap, a measured probe run found **100% of digest
+#: citations truncated (113/113, median snippet length 238 chars)**, by
+#: construction: a digest section is always longer than 240 chars, so a
+#: fixed-prefix window into it never covers the whole section. 10 chars/word
+#: is a generous per-word estimate against that SAME bound — the point is
+#: "cover the whole section", not "pick a new limit chosen by guesswork" — so
+#: this is derived, not independent. Masking (redaction) can only ever SHRINK
+#: text (placeholders replace spans, never lengthen them), so this is already
+#: an overestimate of the true ceiling and safe with respect to the redaction
+#: pipeline.
+DIGEST_SNIPPET_CHARS = 10 * DIGEST_SECTION_MAX_WORDS
+
+#: Snippet ceiling for an OVERVIEW citation (:func:`build_overview_citations`,
+#: #532 arm (a)). A ``FileSummary.digest`` there is MULTIPLE digest sections
+#: joined — up to ``mapreduce.overview.sections_budget()``'s ceiling of 3 per
+#: file (verified against that function's own ``min(3, ...)`` cap, not
+#: assumed) — so a citation covering the whole joined text needs three times
+#: :data:`DIGEST_SNIPPET_CHARS`, not the single-section cap.
+OVERVIEW_SNIPPET_CHARS = 3 * DIGEST_SNIPPET_CHARS
 
 
 def _snippet(text: str, limit: int = SNIPPET_CHARS) -> str:
@@ -95,7 +135,12 @@ def build_citation(index: int, chunk: MaskedChunk) -> dict:
     is_digest = getattr(chunk.source, "is_digest", False)
     kind = KIND_DIGEST if is_digest else KIND_CHUNK
     expanded = bool(getattr(chunk, "expanded", False)) if kind == KIND_CHUNK else False
-    snippet_limit = EXPANDED_SNIPPET_CHARS if expanded else SNIPPET_CHARS
+    if expanded:
+        snippet_limit = EXPANDED_SNIPPET_CHARS
+    elif is_digest:
+        snippet_limit = DIGEST_SNIPPET_CHARS
+    else:
+        snippet_limit = SNIPPET_CHARS
     return {
         "id": index,
         "kind": kind,
@@ -108,6 +153,12 @@ def build_citation(index: int, chunk: MaskedChunk) -> dict:
         "speaker": None if is_digest else chunk.speaker,
         "snippet": _snippet(chunk.content, snippet_limit),
         "expanded": expanded,
+        # A plain integer count, NEVER prose (never the excerpt text itself) — see
+        # module docstring's SNIPPET_CHARS/DIGEST_SNIPPET_CHARS comments. Exists so
+        # a future measurement of "what cap actually covers what this deployment
+        # produces" is a real number instead of a guess, and so the eval harness
+        # can report a truncation rate without ever touching source text (#832).
+        "content_chars": len(" ".join(chunk.content.split())),
     }
 
 
@@ -140,6 +191,7 @@ def build_overview_citations(
         summary = by_uuid.get(file_uuid)
         if summary is None:
             continue
+        digest_text = summary.digest or ""
         payloads.append(
             {
                 "id": citation_id,
@@ -151,12 +203,14 @@ def build_overview_citations(
                 "start_time": None,
                 "end_time": None,
                 "speaker": None,
-                "snippet": _snippet(summary.digest or "", SNIPPET_CHARS),
+                "snippet": _snippet(digest_text, OVERVIEW_SNIPPET_CHARS),
                 "expanded": False,
                 "page": None,
                 "section_path": None,
                 "char_start": None,
                 "char_end": None,
+                # See build_citation's content_chars comment — same rule, same reason.
+                "content_chars": len(" ".join(digest_text.split())),
             }
         )
     return payloads

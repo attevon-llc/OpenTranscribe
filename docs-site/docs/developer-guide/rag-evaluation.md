@@ -2365,6 +2365,49 @@ so. The two negative controls (an absent topic, an absent speaker/role) both cor
 rather than fabricating; every `single_specific`/`single_general` question consulted exactly the
 one file in its scope.
 
+### Traceability metrics (task #11 / GH #463) and the #832 quote_fidelity fix
+
+`tests/eval/harness/traceability.py` builds a purely deterministic, no-judge column over the same
+probe records: `citation_resolution` (does every `[n]` marker resolve to a rendered citation),
+`citation_validity` (does every citation stay inside the resolved scope), `prompt_membership`
+(does the offered-citation count match `chunks_used`, the issue #384 invariant), and
+`quote_fidelity` (does an explicitly quoted span actually appear in its cited citation's
+snippet). None of these score whether an answer is *correct* — only whether its citation
+apparatus is honest.
+
+**A measured probe run put pooled `quote_fidelity` at 0.527**, and issue #832 opened on the
+theory that the cause was "the citation snippet is too short and cuts the quote off mid-way."
+That theory was checked against the run's own data and is **false**: 0 of 69 failing quotes were
+cut by the ~240-char snippet boundary, and the longest quote anywhere in the corpus was 138
+chars — well inside even the old, single cap.
+
+The real defect, and the fix: `citations.py`'s `_snippet()` returns a fixed CHARACTER PREFIX of
+the source excerpt, with no relationship to where in a LONGER excerpt the cited quote actually
+sits. A digest section is bounded at ingest to more words than 240 chars can ever hold, so
+**every** digest citation was truncated by construction — measured **100% (113/113)**, median
+snippet length 238 chars — while an ordinary transcript-chunk citation (speaker-turn-shaped,
+usually much shorter) was truncated only **31% (105/340)** of the time. Splitting
+`quote_fidelity` by that same truncation signal on the same run: **0.328 on truncated citations
+vs 0.671 on complete ones** — truncation is a real, measured cost to citation trustworthiness,
+just not the mid-quote-cut shape the issue guessed at.
+
+**The fix gives each citation KIND its own cap, derived from an existing constant** —
+`DIGEST_SNIPPET_CHARS` from `ingest_artifacts.sizing.DIGEST_SECTION_MAX_WORDS`, so a digest
+section actually fits inside its own citation. The chunk-level `SNIPPET_CHARS` (240) is
+**deliberately unchanged**: raising it is gated on a redaction-policy decision (a wider excerpt
+shown to a REMOTE provider's reader is a different egress calculus) and a citation-card UI
+redesign (the card clamps to 2 lines regardless of snippet length today, so a wider cap alone has
+no reader-visible effect) — both tracked in a follow-up issue referencing #832.
+
+⚠️ **`quote_fidelity` is a function of the snippet cap it was measured at, and must never be
+quoted without naming that cap.** A future run comparing "0.527 before" against "0.71 after" is
+comparing two different caps for the digest plane, not a pure quality improvement — the harness
+now also reports `quote_fidelity_at_240` (every citation's snippet re-truncated to 240 chars
+locally, a zero-nondeterminism control) precisely so a future comparison can hold the cap fixed
+when that is the thing being isolated. The harness also carries `content_chars` per citation (the
+pre-truncation length, never text) so a future probe can pick an evidence-based cap for the chunk
+plane instead of guessing, when that redaction-policy decision is made.
+
 ### Arms and flags this instrument does NOT yet cover
 
 Recorded here so a future session does not have to rediscover it by reading code:

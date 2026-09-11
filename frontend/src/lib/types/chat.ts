@@ -106,6 +106,12 @@ export interface ChatSource {
    * contract still gets a valid uuid.
    */
   file_uuids?: string[] | null;
+  /**
+   * Diagnostic count, not rendered — the whitespace-normalized length of the
+   * excerpt BEFORE truncation (issue #832). `undefined`/`null` on any citation
+   * persisted before this field existed. See `backend/app/services/chat/citations.py`.
+   */
+  content_chars?: number | null;
 }
 
 /** Diagnostics attached to an assistant message (ids/counts only). */

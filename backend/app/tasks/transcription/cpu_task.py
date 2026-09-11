@@ -9,6 +9,7 @@ import tempfile
 
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.worker_shutdown import TranscriptionAbortedError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
@@ -20,6 +21,7 @@ from .context import TranscriptionContext
 from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import requeue_after_abort
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
 from .pipelines import _resolve_language_settings
@@ -185,6 +187,17 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
         error_message = _get_user_friendly_error_message("Connection or timeout error")
         _handle_transcription_failure(ctx, task_id, error_message, "cpu_processing_error")
         raise
+    except TranscriptionAbortedError as abort:
+        # issue #809: MUST sit before `except Exception` below. An abort is INTERRUPTED work,
+        # not broken work — routed through the generic handler it would mark the file ERROR,
+        # notify the user, and then `raise`, which under `acks_late=True` ACKS the message and
+        # LOSES the transcription. `requeue_after_abort` rejects with requeue=True so the broker
+        # redelivers it to the next worker instead.
+        #
+        # No WAV cleanup to skip here, unlike the GPU legs: this task's audio lives in a
+        # `tempfile.TemporaryDirectory()` whose context manager has already unlinked it by the
+        # time this handler runs, and the redelivered attempt re-downloads from MinIO.
+        requeue_after_abort(file_uuid, abort, stage="CPU transcription")
     except Exception as e:
         logger.error(f"CPU transcription failed for file {file_uuid}: {e}")
         error_message = _get_user_friendly_error_message(str(e))

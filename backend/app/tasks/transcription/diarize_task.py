@@ -7,6 +7,7 @@ import logging
 
 from app.core.celery import celery_app
 from app.core.constants import GPUPriority
+from app.core.worker_shutdown import TranscriptionAbortedError
 from app.db.session_utils import session_scope
 from app.transcription.diarizer_native import DiarSidecarUnavailableError
 from app.utils import benchmark_timing
@@ -16,6 +17,7 @@ from .context import TranscriptionContext
 from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import requeue_after_abort
 from .context import retry_on_diar_sidecar_unavailable
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
@@ -139,6 +141,18 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
         # redelivered attempt needs it, and it is cleaned up on eventual success or on
         # exhaustion of the retry ladder.
         retry_on_diar_sidecar_unavailable(self, exc, file_uuid)
+    except TranscriptionAbortedError as abort:
+        # issue #809: MUST sit before `except Exception` below. An abort is INTERRUPTED work,
+        # not broken work — routed through the generic handler it would mark the file ERROR,
+        # notify the user, and then `raise`, which under `acks_late=True` ACKS the message and
+        # LOSES the diarization entirely. `requeue_after_abort` rejects with requeue=True so the
+        # broker redelivers it to the next worker instead.
+        #
+        # Deliberately does NOT clean up the shared-volume WAV — same reasoning as the sidecar
+        # retry branch above: the redelivered attempt needs that WAV, and deleting it here would
+        # force a re-download and re-preprocess from MinIO (or fail outright, since Stage 2a has
+        # already returned and will not rewrite it).
+        requeue_after_abort(file_uuid, abort, stage="GPU diarization")
     except Exception as e:
         logger.error(f"Diarize GPU task failed for file {file_uuid}: {e}")
         # Best-effort cleanup on failure — WAV is no longer needed

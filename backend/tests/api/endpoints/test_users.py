@@ -326,6 +326,18 @@ def _masked_emails(response) -> set[str]:
     return {row["masked_email"] for row in response.json()}
 
 
+def _result_uuids(response) -> set[str]:
+    """The identities a search page returned.
+
+    ⚠️ Use this, not ``_masked_emails``, to assert that a SPECIFIC account is or
+    is not present. ``mask_email_for_display`` keeps two characters, so every
+    ``testuser_<uuid>@example.com`` fixture account — and every leftover one in
+    the dev database — renders as the same ``te***@example.com``. A masked
+    address identifies a namespace, not an account.
+    """
+    return {row["uuid"] for row in response.json()}
+
+
 def test_user_search_requires_a_session(client):
     response = client.get(SEARCH_PATH, params={"q": "test"})
     assert response.status_code == 401, response.text
@@ -349,12 +361,33 @@ def test_user_search_finds_another_account_by_email(client, user_token_headers, 
     assert mask_email_for_display(other_user.email) in _masked_emails(response)
 
 
-def test_user_search_never_returns_the_caller(client, user_token_headers, normal_user):
-    response = client.get(
-        SEARCH_PATH, params={"q": normal_user.email[:6]}, headers=user_token_headers
-    )
-    assert response.status_code == 200, response.text
-    assert mask_email_for_display(normal_user.email) not in _masked_emails(response)
+def test_user_search_never_returns_the_caller(
+    client, user_token_headers, other_user_auth_headers, normal_user
+):
+    """Asserted on the caller's UUID, with the same query run by somebody else
+    as the control.
+
+    It used to query ``email[:6]`` — i.e. ``"testus"`` — and assert the caller's
+    MASKED address was absent from the page. Every fixture account is
+    ``testuser_<uuid>@example.com`` and the mask keeps two characters, so the
+    assertion was about ``te***@example.com``, a string the whole fixture
+    namespace shares. Any second such account — including one left in the dev
+    database by an earlier run — failed it while the caller was in fact
+    correctly excluded, and the test could equally pass on a clean database with
+    the exclusion broken.
+    """
+    params = {"q": normal_user.email}
+
+    mine = client.get(SEARCH_PATH, params=params, headers=user_token_headers)
+    assert mine.status_code == 200, mine.text
+    assert str(normal_user.uuid) not in _result_uuids(mine)
+
+    # CONTROL: the identical query run by another account DOES find it, so the
+    # absence above is the caller-exclusion rule and not a query matching
+    # nothing.
+    theirs = client.get(SEARCH_PATH, params=params, headers=other_user_auth_headers)
+    assert theirs.status_code == 200, theirs.text
+    assert str(normal_user.uuid) in _result_uuids(theirs)
 
 
 def test_user_search_omits_deactivated_accounts(client, user_token_headers, other_user, db_session):

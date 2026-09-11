@@ -145,10 +145,9 @@ def test_every_kind_round_trips_through_persistence_and_reload(kind, extra):
 
 
 def test_start_time_none_is_a_first_class_case_not_a_zero_sentinel():
-    """A kind with no natural timestamp (a summary, or a future no-timestamp
-    `recurrence` kind) must be representable as `None`, not coerced to `0` —
-    rendering a missing timestamp as 0 would look like a working "jump to
-    0:00" link that just happens to be wrong."""
+    """A kind with no natural timestamp (a summary) must be representable as
+    `None`, not coerced to `0` — rendering a missing timestamp as 0 would
+    look like a working "jump to 0:00" link that just happens to be wrong."""
     citation = Citation(id=1, file_uuid="x", kind="summary", start_time=None)
     assert citation.start_time is None
 

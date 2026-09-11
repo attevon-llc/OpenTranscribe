@@ -26,6 +26,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import login as login_module
+from app.api.endpoints.auth import registration as registration_module
 from app.auth import audit as audit_module
 from app.auth import password_reset as pr_module
 from app.auth.audit import AuditEventType
@@ -147,6 +148,63 @@ class TestPasswordResetIsAudited:
         for name in ("AUTH_PASSWORD_RESET_REQUEST", "AUTH_PASSWORD_RESET_COMPLETE"):
             assert name in source
             assert hasattr(AuditEventType, name)
+
+
+@pytest.mark.unit
+class TestPasswordResetConfirmPassesAnIp:
+    """Issue #910(a): ``confirm_password_reset`` threads ``ip_address`` to every
+    audit call it makes, but the endpoint was the only production caller and
+    never passed the fourth argument — so every completed/failed reset was
+    audited with ``source_ip=None``. AST, not a substring/prose check, because a
+    comment claiming the ip is passed would satisfy a weaker assertion."""
+
+    def test_the_confirm_endpoint_passes_an_ip_to_the_service(self):
+        call = _find_call(
+            registration_module.confirm_password_reset_endpoint, "confirm_password_reset"
+        )
+        assert call is not None, "confirm_password_reset is no longer called from the endpoint"
+        has_four_positional = len(call.args) >= 4
+        has_ip_kwarg = any(kw.arg == "ip_address" for kw in call.keywords)
+        assert has_four_positional or has_ip_kwarg, (
+            "confirm_password_reset() is called with no ip_address — the audit log "
+            "will record source_ip=None for every reset again"
+        )
+
+    def test_both_reset_halves_resolve_the_ip_the_same_way(self):
+        """Neither handler may read ``request.client.host`` directly — that bypasses
+        ``_get_client_info``'s trusted-proxy resolution and records the wrong
+        address behind any reverse proxy."""
+        for fn in (
+            registration_module.request_password_reset_endpoint,
+            registration_module.confirm_password_reset_endpoint,
+        ):
+            assert not _references_client_host(fn), (
+                f"{fn.__name__} reads request.client.host directly instead of "
+                "_get_client_info(request)"
+            )
+
+
+def _find_call(fn, name: str) -> ast.Call | None:
+    """Return the first ``Call`` node invoking a function literally named ``name``."""
+    tree = ast.parse(inspect.getsource(fn))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name:
+            return node
+    return None
+
+
+def _references_client_host(fn) -> bool:
+    """True if ``fn``'s source contains a ``<expr>.client.host`` attribute access."""
+    tree = ast.parse(inspect.getsource(fn))
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "host"
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "client"
+        ):
+            return True
+    return False
 
 
 @pytest.mark.unit

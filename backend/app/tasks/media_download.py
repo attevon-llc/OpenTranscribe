@@ -19,6 +19,8 @@ from app.services.download_events import publish_download_event
 from app.services.download_events import release_download_prep_guard
 from app.services.minio_service import MinIOService
 from app.services.redaction.export_policy import ExportRedactionNotReadyError
+from app.services.takedown_service import exclude_quarantined
+from app.services.takedown_service import is_review_admin
 from app.services.video_processing_service import NoAudioTrackError
 from app.services.video_processing_service import VideoProcessingService
 
@@ -56,12 +58,19 @@ def prepare_media_download_task(
         # Phase 1 — read (short, DB only). Plain scalars, no ORM instance
         # escapes: the scope closes before any MinIO/ffmpeg work starts.
         with session_scope() as db:
-            row = (
-                db.query(MediaFile.uuid, MediaFile.filename, MediaFile.storage_path)
-                .filter(MediaFile.id == file_id)
-                .first()
-            )
+            row = exclude_quarantined(
+                db.query(MediaFile.uuid, MediaFile.filename, MediaFile.storage_path).filter(
+                    MediaFile.id == file_id
+                ),
+                include_quarantined=is_review_admin(db, user_id),
+            ).first()
             if not row:
+                # A quarantined file falls into this branch too — deliberately
+                # indistinguishable from a deleted one, matching `is_hidden_for`'s
+                # 404 semantics. Do not add a quarantine-specific message or a
+                # different SSE event: the prepare endpoint already permission-filtered
+                # this file at dispatch, and a takedown landing before the worker runs
+                # must not be disclosed to whoever still has the SSE stream open.
                 return {"status": "error", "message": "File not found"}
             file_uuid = str(row[0])
             filename = str(row[1])
@@ -187,8 +196,14 @@ def prepare_bulk_subtitles_task(
     both decisions and what the alternatives would have leaked (issue #85).
 
     Args:
-        file_specs: ``[[file_id, base_filename], ...]`` — already permission-filtered
-            by the prepare endpoint (the worker does not re-authorize).
+        file_specs: ``[[file_id, base_filename], ...]``. Permission-filtered by the
+            prepare endpoint at dispatch, and RE-CHECKED here for quarantine only
+            (issue #818): a takedown can land between the click and the build, and a
+            dispatch-time authorization does not survive that window. This is not a
+            second authorization pass -- sharing/tenant scope is still decided once, at
+            the endpoint; only the abuse/DMCA gate, which is time-varying by design, is
+            re-applied. A file taken down in the gap is skipped like any other
+            unusable entry; one file must not fail the other 99.
         subtitle_format: ``srt`` | ``webvtt`` | ``txt``.
         include_speakers: Whether to embed speaker labels.
         job_id: Opaque per-request id keying the SSE channel + reconnect result cache.
@@ -222,6 +237,7 @@ def prepare_bulk_subtitles_task(
                 subtitle_format,
                 include_speakers,
                 redaction_cfg,
+                include_quarantined=is_review_admin(db, user_id),
             )
         if exported == 0:
             publish_bulk_event(

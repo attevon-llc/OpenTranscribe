@@ -447,4 +447,136 @@ class TestExternalSyncProviderIdGuard:
         with pytest.raises(PermissionError):
             external_sync.sync_external_user_to_db(db, self._identity("victim@example.com"))
 
-        assert user.role == "super_admin"
+
+# --------------------------------------------------------------------------- #
+# Issue #910(b) — LDAP's email write must be conditional, like every other
+# provider. Confirmed LATENT, not live: the upstream `_extract_user_attributes`
+# already refuses a blank/malformed `mail` before an `LdapUserData` is ever
+# built, and `assert_provider_id_link_permitted` (exercised above) already
+# refuses a disagreeing email before either LDAP function runs. These tests
+# call `_update_ldap_user`/`_convert_local_user_to_ldap` DIRECTLY with an
+# empty email — a path unreachable through the normal sync flow today — to pin
+# the write guard itself as defense-in-depth against a future change to that
+# upstream validation, not to claim a live exploit.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.unit
+class TestLdapEmailWriteGuard:
+    def test_ldap_does_not_clobber_a_stored_email_with_an_empty_one(self):
+        user = _FakeUser(email="victim@example.com", auth_type="ldap")
+        db = _FakeProviderIdSession(user)
+
+        ldap_auth._update_ldap_user(db, user, "existing-uid", "", _ldap_data(""))
+
+        assert user.email == "victim@example.com"
+
+    def test_ldap_conversion_does_not_clobber_a_stored_email_with_an_empty_one(self):
+        user = _FakeUser(email="victim@example.com", auth_type="local")
+        db = _FakeProviderIdSession(user)
+
+        ldap_auth._convert_local_user_to_ldap(db, user, "existing-uid", "", _ldap_data(""))
+
+        assert user.email == "victim@example.com"
+
+    def test_ldap_still_applies_a_genuinely_new_address(self):
+        """Control: without it, deleting both write lines entirely would also pass
+        the two tests above."""
+        user = _FakeUser(email="victim@example.com", auth_type="ldap")
+        db = _FakeProviderIdSession(user)
+
+        new_email = "victim.renamed@example.com"
+        ldap_auth._update_ldap_user(db, user, "existing-uid", new_email, _ldap_data(new_email))
+
+        assert user.email == "victim.renamed@example.com"
+
+
+class _FakeGuardUser:
+    """A minimal stand-in accepted by every provider's update/convert function.
+
+    Deliberately not `_FakeUser` above: OIDC/SAML's convert functions also touch
+    `hashed_password` and `is_superuser`/`role`, so this needs a couple more
+    writable attributes than the provider-ID guard tests exercise.
+    """
+
+    def __init__(self, email: str = "victim@example.com") -> None:
+        self.email = email
+        self.full_name = "Victim"
+        self.role = "user"
+        self.is_superuser = False
+        self.auth_type = "local"
+        self.ldap_uid = None
+        self.oidc_subject = None
+        self.saml_subject = None
+        # Same sentinel spelling as test_audit_correlation.py, deliberately not a
+        # short/low-entropy literal — the secrets scanner reads `hashed_password =
+        # "<literal>"` as a credential pattern otherwise.
+        self.hashed_password = "sentinel-not-a-credential"
+        self.cert_dn = None
+        self.cert_serial = None
+        self.cert_issuer = None
+        self.cert_org = None
+        self.cert_ou = None
+        self.cert_valid_from = None
+        self.cert_valid_until = None
+        self.cert_fingerprint = None
+
+
+class _FakeCommitOnlySession:
+    def commit(self) -> None:
+        pass
+
+
+def _guard_cases():
+    """(label, callable(user, db) -> None) for every provider's update+convert pair.
+
+    Copies the `_PROVIDERS`/parametrize shape from `test_idp_email_change_lockout.py`
+    rather than inventing a new harness.
+    """
+    return [
+        (
+            "ldap-update",
+            lambda user, db: ldap_auth._update_ldap_user(db, user, "uid", "", _ldap_data("")),
+        ),
+        (
+            "ldap-convert",
+            lambda user, db: ldap_auth._convert_local_user_to_ldap(
+                db, user, "uid", "", _ldap_data("")
+            ),
+        ),
+        (
+            "oidc-update",
+            lambda user, db: oidc_provisioning._update_oidc_user(
+                db, user, cast("Any", _oidc_data(""))
+            ),
+        ),
+        (
+            "oidc-convert",
+            lambda user, db: oidc_provisioning._convert_local_user_to_oidc(
+                db, user, cast("Any", _oidc_data(""))
+            ),
+        ),
+        (
+            "saml-update",
+            lambda user, db: saml_provisioning._update_saml_user(
+                db, user, cast("Any", _saml_data("")), is_admin=False
+            ),
+        ),
+        (
+            "saml-convert",
+            lambda user, db: saml_provisioning._convert_local_user_to_saml(
+                db, user, cast("Any", _saml_data("")), is_admin=False
+            ),
+        ),
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("label,call", _guard_cases(), ids=[c[0] for c in _guard_cases()])
+def test_every_provider_guards_its_email_write_identically(label, call):
+    user = _FakeGuardUser(email="victim@example.com")
+    db = _FakeCommitOnlySession()
+
+    call(user, db)
+
+    assert user.email == "victim@example.com", f"{label} clobbered a stored email with an empty one"

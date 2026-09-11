@@ -28,6 +28,13 @@ with a password / still self-register?":
 
 - `local_enabled` does **not** hide the username/password form — LDAP authenticates through the
   same form. The login page renders it on `local_enabled || ldap_enabled`.
+- `local_enabled` gates LOGIN only — the password-reset chain is deliberately not gated by
+  it. `auth/password_reset.py` checks `auth_type == 'local'` and `is_active`, never
+  `local_enabled`. For an ordinary account that dead-ends (reset succeeds, next login still
+  refused). For an active `super_admin` the whole chain completes, and that is the point: an
+  operator who disabled local auth while their IdP was misconfigured, and who has also lost
+  the break-glass password, has no other way back into the super_admin-gated auth config
+  (issue #910; pinned by `tests/unit/test_identity_source_policy.py`).
 - The super_admin exemption is load-bearing, not a convenience: auth configuration is
   super_admin-gated, so without it a deployment that disabled local auth while its IdP was
   misconfigured would have no way back in. Enforced in

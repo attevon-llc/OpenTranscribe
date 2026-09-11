@@ -91,6 +91,9 @@ OpenTranscribe always maintains a local super_admin account for emergency access
 - "Break glass" account if external IdP systems fail
 - PKI mode includes a password fallback so the super admin can always log in with a password even when PKI is the primary method
 - Regular admins (from LDAP/Keycloak/PKI) cannot configure authentication settings
+- Password reset remains available to the break-glass account even with local sign-in
+  (`local_enabled`) turned off — so a working mail transport is part of your break-glass plan,
+  not an optional extra
 
 ### Creating additional super admins
 

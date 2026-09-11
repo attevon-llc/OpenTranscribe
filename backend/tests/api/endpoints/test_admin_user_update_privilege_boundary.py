@@ -35,6 +35,9 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
+import pytest
+from fastapi import HTTPException
+
 from app.core.security import get_password_hash
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -401,3 +404,129 @@ def test_super_admin_can_still_terminate_a_super_admins_sessions(
     assert response.status_code == 200, response.text
     db_session.refresh(token)
     assert token.revoked_at is not None
+
+
+# --------------------------------------------------------------------------- #
+# Issue #909 — a self-service email change must reset email_verified.
+#
+# ``user.email_verified``/``email_verified_at`` is proof THIS deployment mailed
+# the address on the row and someone holding it came back — a property of the
+# ADDRESS, not the account. ``PUT /users/me`` changed the address without
+# touching either field, so the NEW address silently inherited the OLD
+# address's verified status.
+# --------------------------------------------------------------------------- #
+
+
+def _mark_verified(db_session, user) -> None:
+    """Every test below that expects the flag to reset must first set it True —
+    otherwise it passes vacuously against the column's own ``default=False``."""
+    user.email_verified = True
+    user.email_verified_at = datetime.now(UTC)
+    db_session.commit()
+    db_session.refresh(user)
+
+
+def test_a_self_service_email_change_clears_the_verified_flag(
+    client, user_token_headers, normal_user, db_session
+):
+    _mark_verified(db_session, normal_user)
+    new_email = f"renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
+
+    response = client.put(
+        "/api/users/me",
+        headers=user_token_headers,
+        json={"email": new_email, "current_password": "password123"},
+    )
+
+    assert response.status_code == 200, response.text
+    db_session.refresh(normal_user)
+    assert str(normal_user.email) == new_email
+    assert normal_user.email_verified is False
+    assert normal_user.email_verified_at is None
+
+
+def test_a_case_only_resubmission_does_not_un_verify_the_same_mailbox(
+    client, user_token_headers, normal_user, db_session
+):
+    """Control proving ``mailbox_changed`` is narrower than ``email_changed``: a
+    case-only resubmission of the SAME address must not clear a flag that was
+    never actually invalidated."""
+    _mark_verified(db_session, normal_user)
+    recased = str(normal_user.email).upper()
+
+    response = client.put(
+        "/api/users/me",
+        headers=user_token_headers,
+        json={"email": recased, "current_password": "password123"},
+    )
+
+    assert response.status_code == 200, response.text
+    db_session.refresh(normal_user)
+    assert normal_user.email_verified is True
+
+
+def test_the_new_address_is_actually_unverified_at_login(
+    client, user_token_headers, normal_user, db_session, monkeypatch
+):
+    """The consequence, not just the column: the new address must actually fail
+    the local-login verification gate once the deployment requires it, and must
+    NOT have failed it before the change."""
+    from app.auth import email_verification as ev
+
+    monkeypatch.setattr(ev, "email_verification_required", lambda _db: True)
+
+    _mark_verified(db_session, normal_user)
+    # Before the change: verified, so the gate must let it through.
+    ev.assert_email_verified_for_local_login(db_session, str(normal_user.uuid))
+
+    new_email = f"renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
+    response = client.put(
+        "/api/users/me",
+        headers=user_token_headers,
+        json={"email": new_email, "current_password": "password123"},
+    )
+    assert response.status_code == 200, response.text
+    db_session.refresh(normal_user)
+
+    with pytest.raises(HTTPException) as exc:
+        ev.assert_email_verified_for_local_login(db_session, str(normal_user.uuid))
+    assert exc.value.status_code == 403
+
+
+def test_a_re_verification_link_is_mailed_when_the_deployment_requires_it(
+    client, user_token_headers, normal_user, db_session, monkeypatch
+):
+    """When the deployment requires verification, a mailbox change must send a
+    fresh link to the NEW address. Negative control: with verification not
+    required, no link is sent at all."""
+    from app.api.endpoints import users as users_module
+    from app.auth import email_verification as email_verification_module
+
+    sent: list[str] = []
+    monkeypatch.setattr(
+        email_verification_module.email_service,
+        "send_email_verification",
+        lambda to_email, verify_url, expires_in_hours: sent.append(to_email),
+    )
+
+    monkeypatch.setattr(users_module, "email_verification_required", lambda db: True)
+    new_email = f"renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
+    response = client.put(
+        "/api/users/me",
+        headers=user_token_headers,
+        json={"email": new_email, "current_password": "password123"},
+    )
+    assert response.status_code == 200, response.text
+    assert sent == [new_email], sent
+
+    # Negative control: verification not required -> no mail at all.
+    sent.clear()
+    monkeypatch.setattr(users_module, "email_verification_required", lambda db: False)
+    other_email = f"renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
+    response = client.put(
+        "/api/users/me",
+        headers=user_token_headers,
+        json={"email": other_email, "current_password": "password123"},
+    )
+    assert response.status_code == 200, response.text
+    assert sent == []

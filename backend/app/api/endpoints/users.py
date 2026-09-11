@@ -23,6 +23,8 @@ from app.auth.audit import audit_logger
 from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.constants import VALID_AUTH_TYPES
+from app.auth.email_verification import email_verification_required
+from app.auth.email_verification import issue_verification_token
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
 from app.auth.password_policy import password_min_age_remaining
@@ -213,6 +215,37 @@ def _assert_password_old_enough_to_change(user: User) -> None:
     )
 
 
+def _reset_mailbox_verification(current_user: User, mailbox_changed: bool) -> None:
+    """Clear the verified flag when the address itself changed (issue #909).
+
+    ``email_verified`` is proof THIS deployment mailed the address on the row and
+    someone holding it came back — a property of the ADDRESS, not the account, so
+    it cannot survive the address changing. Extracted so the caller's branch count
+    doesn't grow with every credential-grade field this endpoint handles.
+    """
+    if not mailbox_changed:
+        return
+    current_user.email_verified = False
+    current_user.email_verified_at = None
+
+
+def _maybe_issue_reverification(
+    db: Session, current_user: User, mailbox_changed: bool, client_ip: str
+) -> None:
+    """Mail a fresh verification link for the new address, when required.
+
+    Reuses ``auth/email_verification.py`` wholesale: token creation, the 3/hour
+    cap, hashing, delivery, and ``EmailDeliveryError`` absorption all live there.
+    No-ops for a non-local account and for an already-verified row, so it MUST
+    run after the caller has committed the flag reset above. This does not lock
+    the caller out: the verification gate only fires at LOGIN, and the caller
+    already handed them a fresh session via ``reissue_current_session``; an
+    active super_admin is fully exempt from the gate.
+    """
+    if mailbox_changed and email_verification_required(db):
+        issue_verification_token(db, current_user, client_ip)
+
+
 @router.put("/me", response_model=UserSchema)
 def update_current_user(
     request: Request,
@@ -249,7 +282,14 @@ def update_current_user(
 
     # Check if email is being changed and is already taken
     old_email = str(current_user.email)
+    # Byte-exact — deliberately NOT relaxed to `emails_agree`. This flag gates the
+    # uniqueness check, the current-password requirement, and session revocation,
+    # so widening it would let a case-only rewrite through without a password.
     email_changed = bool(user_update.email and user_update.email != current_user.email)
+    # Narrower than `email_changed`: a case/whitespace-only resubmission is still
+    # the SAME mailbox, so it must not un-verify an address that was never actually
+    # changed (issue #909).
+    mailbox_changed = email_changed and not emails_agree(str(user_update.email), old_email)
     if email_changed:
         existing_user = db.query(User).filter(User.email == user_update.email).first()
         if existing_user:
@@ -316,6 +356,8 @@ def update_current_user(
     for field, value in update_data.items():
         setattr(current_user, field, value)
 
+    _reset_mailbox_verification(current_user, mailbox_changed)
+
     if password_changed:
         # THE thing that ends a forced-change hold. Three paths set this flag
         # (admin create, admin force-change, password expiry at login) and until
@@ -343,6 +385,8 @@ def update_current_user(
         reissue_current_session(
             db, current_user, response, request, user_agent=user_agent, ip_address=client_ip
         )
+
+    _maybe_issue_reverification(db, current_user, mailbox_changed, client_ip)
 
     if password_changed:
         audit_password_change(current_user, current_user, client_ip, user_agent)

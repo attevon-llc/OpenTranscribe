@@ -80,6 +80,94 @@ class TestLocalAuthPermitted:
         assert authenticators._local_auth_permitted(None, None) is False
 
 
+@pytest.mark.unit
+class TestLocalEnabledDoesNotGateThePasswordResetChain:
+    """Issue #910(c) Part 1: ``local_enabled`` is enforced in exactly one place —
+    ``_local_auth_permitted`` — and the password-reset chain
+    (``auth/password_reset.py``) checks only ``auth_type == 'local'`` and
+    ``is_active``, never ``local_enabled``, for ANY role. That is intentional
+    for an active ``super_admin`` (the break-glass path: an operator who
+    disabled local auth while their IdP was misconfigured, and who has also
+    lost the password, has no other way back in) and a harmless dead end for
+    an ordinary account (the reset succeeds, the next login is still refused).
+    These tests pin today's behaviour so it cannot silently change; see
+    `auth/CLAUDE.md` for the documented decision not to gate it.
+    """
+
+    def test_the_reset_chain_is_not_gated_by_local_enabled(
+        self, local_enabled, normal_user, db_session, monkeypatch
+    ):
+        from app.auth import password_reset as password_reset_module
+
+        local_enabled(False)
+        sent: list[str] = []
+        monkeypatch.setattr(
+            password_reset_module.email_service,
+            "send_password_reset",
+            lambda to_email, reset_url: sent.append(to_email),
+        )
+
+        password_reset_module.request_password_reset(db_session, str(normal_user.email), "1.2.3.4")
+
+        assert sent == [str(normal_user.email)], (
+            "a reset link must still be mailed while local_enabled is off"
+        )
+
+    def test_the_break_glass_super_admin_can_complete_the_whole_chain_with_local_auth_off(
+        self, local_enabled, super_admin_user, db_session, monkeypatch
+    ):
+        """The composed claim nothing else asserts: request, confirm, AND the
+        resulting login exemption, all under one local_enabled(False)."""
+        from app.auth import password_reset as password_reset_module
+
+        local_enabled(False)
+        sent: list[str] = []
+        monkeypatch.setattr(
+            password_reset_module.email_service,
+            "send_password_reset",
+            lambda to_email, reset_url: sent.append(reset_url),
+        )
+
+        password_reset_module.request_password_reset(
+            db_session, str(super_admin_user.email), "1.2.3.4"
+        )
+        assert sent, "the break-glass super_admin was mailed no reset link"
+        raw_token = sent[0].split("token=")[1]
+
+        ok, errors = password_reset_module.confirm_password_reset(
+            db_session, raw_token, "Correct-Horse-9Battery!", "1.2.3.4"
+        )
+        assert (ok, errors) == (True, [])
+
+        assert authenticators._local_auth_permitted(db_session, super_admin_user) is True
+
+    def test_an_ordinary_account_gains_no_access_from_a_reset_while_local_auth_is_off(
+        self, local_enabled, normal_user, db_session, monkeypatch
+    ):
+        """Negative control for the test above: an ordinary account completes the
+        identical reset chain and is still refused login — the dead end."""
+        from app.auth import password_reset as password_reset_module
+
+        local_enabled(False)
+        sent: list[str] = []
+        monkeypatch.setattr(
+            password_reset_module.email_service,
+            "send_password_reset",
+            lambda to_email, reset_url: sent.append(reset_url),
+        )
+
+        password_reset_module.request_password_reset(db_session, str(normal_user.email), "1.2.3.4")
+        assert sent, "the ordinary account was mailed no reset link"
+        raw_token = sent[0].split("token=")[1]
+
+        ok, errors = password_reset_module.confirm_password_reset(
+            db_session, raw_token, "Correct-Horse-9Battery!", "1.2.3.4"
+        )
+        assert (ok, errors) == (True, [])
+
+        assert authenticators._local_auth_permitted(db_session, normal_user) is False
+
+
 class TestAuthMethodsContract:
     """`/auth/methods` drives what the login page renders."""
 

@@ -1,47 +1,123 @@
-"""Issue #886: no package manifest declared the project's licence, so an SBOM generated
-from these manifests attributed no licence to the first-party components.
+"""Issue #886: the project's own licence was invisible to every artifact that is supposed to
+report it — the package manifests declared none, and the release SBOM attributed none.
 
-Verified 2026-09-09 sweep, re-verified here: the repo root carries a full AGPL-3.0 `LICENSE`
-(GNU AFFERO GENERAL PUBLIC LICENSE, Version 3) and `README.md` states "GNU Affero General
-Public License v3.0 (AGPL-3.0)" with no "or later" qualifier — so the SPDX identifier is
-``AGPL-3.0-only``, not ``AGPL-3.0-or-later``. Before this fix, `rg -in "license"` returned
-zero matches in every first-party `package.json`/`pyproject.toml` in the tree.
+TWO HALVES, BOTH GUARDED HERE.
 
-⚠️ **What this test does NOT prove.** Manually forcing syft's `javascript-package-cataloger`
-onto a directory scan (`syft dir:frontend --select-catalogers +javascript-package-cataloger`)
-confirms it reads a `package.json`'s own `license` field correctly. But that cataloger's
-default tag scope is `image, installed`, and — measured directly — neither
-`frontend/Dockerfile.prod` nor `docs-site/Dockerfile` copies `package.json` into their final
-`nginx:*-alpine` stage (only the built static output is copied), so the manifest this test
-checks never reaches the image `scripts/security-scan.sh generate_sbom()` actually scans for
-those two components. On the Python side, syft's `python-package-cataloger` /
-`python-installed-package-cataloger` were measured (with a control POETRY project carrying
-both `pyproject.toml` and `poetry.lock`) to catalog exactly ZERO self-describing components
-from a source-tree `pyproject.toml` of any flavour — that cataloger enumerates declared/
-installed third-party dependencies, not the project's own metadata, so `backend/pyproject.toml`
-declaring a licence does not yet make it appear in an image-scanned SBOM either. Making the
-SBOM tool see it would need backend to be an actually-`pip install`ed package producing real
-`dist-info` metadata in the image — a build-pipeline change out of this fix's scope. This test
-therefore only pins the parity acceptance criterion (#886's #1/#2): every first-party manifest
-declares the SAME identifier, and a new one added without it fails here.
+**Manifests** (#886 acceptance criteria 1 and 2). Before the first half of this fix,
+`rg -in "license"` returned zero matches in every first-party `package.json`/`pyproject.toml`
+in the tree. They now all declare the same SPDX identifier, and a new manifest added without
+one fails here.
+
+**Images** (#886 acceptance criterion 3 — "a regenerated SBOM attributes the licence to the
+first-party components"). The manifests alone could never satisfy that, and the reasons were
+measured against syft 1.33.0, not assumed:
+
+* The final `nginx:*-alpine` stages of `frontend/Dockerfile.prod` and `docs-site/Dockerfile`
+  contain **zero** `package.json` files — `find / -name package.json` inside the published
+  `davidamacey/opentranscribe-frontend:v0.5.0` and `-docs:v0.5.0` images returns count 0. Only
+  the built static output and `nginx.conf` are copied in.
+* syft catalogues **nothing at all** from a `pyproject.toml`. Control: a `pyproject.toml`
+  carrying `[project] name/version/license`, scanned both as `dir:` and inside an image,
+  produced an EMPTY artifact list both times. (The npm control is the opposite — a bare
+  `package.json` in an image IS catalogued with its licence.) `backend/pyproject.toml` is not
+  copied into the backend image either, which makes it moot twice over.
+
+So the mechanism is the **OCI annotation** `org.opencontainers.image.licenses`, as a `LABEL`
+on the final stage of every production Dockerfile. syft surfaces image labels, and
+`scripts/lib/sbom_license.py` (called from `generate_sbom()` in `scripts/security-scan.sh`)
+promotes that value into CycloneDX `metadata.component.licenses`. This file is the gate on
+the declaration; that script is the gate on it reaching the document.
+
+⚠️ **The identifier is DERIVED from `LICENSE`, never typed here.** A test asserting
+`== "AGPL-3.0-only"` against sources that say `AGPL-3.0-only` proves only that the two were
+typed on the same day. `_license_family_from_license_file()` reads the licence's own title out
+of `LICENSE` and the tests assert every declaration is a **current** SPDX identifier for that
+family and that they all agree. That is what caught the real drift this half of the issue
+found: four Dockerfiles declared the **deprecated** bare `AGPL-3.0` (withdrawn from the SPDX
+list in favour of the `-only`/`-or-later` pair) while the manifests declared `AGPL-3.0-only`,
+and `docs-site/Dockerfile` declared nothing at all.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+LICENSE_FILE = REPO_ROOT / "LICENSE"
+SECURITY_SCAN_SCRIPT = REPO_ROOT / "scripts" / "security-scan.sh"
 
-#: The SPDX identifier every first-party manifest must declare, derived from LICENSE +
-#: README.md (see module docstring), not asserted from thin air.
-EXPECTED_SPDX_ID = "AGPL-3.0-only"
+#: The OCI annotation a production image declares its licence with.
+OCI_LICENSE_LABEL = "org.opencontainers.image.licenses"
+
+#: Licence families whose SPDX identifier is disjunctive — the bare family name is DEPRECATED
+#: and a current document must pick `-only` or `-or-later`. Membership of this set is what
+#: makes a bare `AGPL-3.0` a failure rather than a synonym.
+_DISJUNCTIVE_FAMILIES = frozenset(
+    {"AGPL-3.0", "GPL-3.0", "GPL-2.0", "LGPL-3.0", "LGPL-2.1", "LGPL-2.0"}
+)
+
+#: Licence title -> SPDX family, matched against the whitespace-normalised head of LICENSE.
+#: Ordered longest-first so the AGPL title cannot be swallowed by the GPL one.
+_LICENSE_TITLES: tuple[tuple[str, str], ...] = (
+    ("gnu affero general public license version 3", "AGPL-3.0"),
+    ("gnu lesser general public license version 3", "LGPL-3.0"),
+    ("gnu general public license version 3", "GPL-3.0"),
+    ("gnu general public license version 2", "GPL-2.0"),
+    ("apache license version 2.0", "Apache-2.0"),
+    ("mozilla public license version 2.0", "MPL-2.0"),
+    ("bsd 3-clause", "BSD-3-Clause"),
+    ("mit license", "MIT"),
+)
 
 #: Directories that hold third-party/vendored files, never first-party manifests.
 _EXCLUDED_DIR_NAMES = frozenset(
     {"node_modules", "venv", ".venv", ".svelte-kit", "dist", "build", ".git"}
 )
+
+
+def _license_family_from_text(text: str) -> str:
+    """Derive the SPDX licence family from a licence document's own title.
+
+    Args:
+        text: The full text of a licence file.
+
+    Returns:
+        An SPDX family such as ``"AGPL-3.0"`` or ``"MIT"``.
+
+    Raises:
+        AssertionError: If the head of the document matches no known licence title. That is
+            deliberately loud: a repo that relicensed to something this does not recognise
+            must not silently keep passing against the old identifier.
+    """
+    head = " ".join(" ".join(text.splitlines()[:8]).split()).lower()
+    for phrase, family in _LICENSE_TITLES:
+        if phrase in head:
+            return family
+    raise AssertionError(f"could not identify the licence from its own title: {head[:120]!r}")
+
+
+def _license_family_from_license_file() -> str:
+    """Derive the SPDX licence family from the repo's own ``LICENSE``."""
+    return _license_family_from_text(LICENSE_FILE.read_text(encoding="utf-8"))
+
+
+def _current_spdx_ids(family: str) -> set[str]:
+    """Return the SPDX identifiers a current document may use for `family`.
+
+    Args:
+        family: An SPDX family from :func:`_license_family_from_text`.
+
+    Returns:
+        For a disjunctive GNU family, the ``-only``/``-or-later`` pair — the bare family name
+        is deliberately excluded, because it is deprecated. For everything else, the family
+        name itself.
+    """
+    if family in _DISJUNCTIVE_FAMILIES:
+        return {f"{family}-only", f"{family}-or-later"}
+    return {family}
 
 
 def _is_excluded(path: Path) -> bool:
@@ -58,6 +134,123 @@ def _first_party_pyproject_tomls() -> list[Path]:
     return sorted(
         p for p in REPO_ROOT.rglob("pyproject.toml") if not _is_excluded(p.relative_to(REPO_ROOT))
     )
+
+
+def _production_dockerfiles() -> dict[str, Path]:
+    """Return ``{component: Dockerfile path}`` for every image this repo publishes.
+
+    Read out of ``security-scan.sh``'s ``SCAN_COMPONENT_DOCKERFILE`` table rather than listed
+    here, because that table is already the repo's single home for "what do we publish"
+    (issue #681) — so a sixth published component comes under this gate the moment it is
+    added there, instead of quietly escaping a hand-maintained copy.
+
+    Returns:
+        Component name mapped to the absolute path of its Dockerfile.
+    """
+    text = SECURITY_SCAN_SCRIPT.read_text(encoding="utf-8")
+    block = re.search(r"declare -A SCAN_COMPONENT_DOCKERFILE=\((.*?)\n\)", text, flags=re.DOTALL)
+    assert block is not None, (
+        "SCAN_COMPONENT_DOCKERFILE not found in security-scan.sh — this test derives the "
+        "published-image set from it and cannot be allowed to silently check nothing"
+    )
+    pairs = re.findall(r"\[(\w+)\]=\"([^\"]+)\"", block.group(1))
+    return {component: REPO_ROOT / path for component, path in pairs}
+
+
+def _final_stage(dockerfile_text: str) -> str:
+    """Return the portion of a Dockerfile belonging to its LAST build stage.
+
+    A ``LABEL`` in an earlier stage never reaches the published image — only the final
+    stage's metadata is committed — so a check that scanned the whole file would pass on a
+    declaration no `docker inspect` or SBOM could ever see.
+
+    Args:
+        dockerfile_text: The full Dockerfile source.
+
+    Returns:
+        Everything from the last ``FROM`` instruction onwards.
+    """
+    from_positions = [
+        match.start()
+        for match in re.finditer(r"^\s*FROM\s", dockerfile_text, flags=re.MULTILINE | re.IGNORECASE)
+    ]
+    if not from_positions:
+        return dockerfile_text
+    return dockerfile_text[from_positions[-1] :]
+
+
+def _dockerfile_license_label(dockerfile_text: str) -> str | None:
+    """Return the licence the final stage declares via ``LABEL``, or None.
+
+    Joins backslash continuations first, so the usual multi-line ``LABEL a=1 \\ b=2`` block
+    is matched as one instruction rather than depending on which physical line the licence
+    happens to land on.
+
+    Args:
+        dockerfile_text: The full Dockerfile source.
+
+    Returns:
+        The label's value, or None when the final stage declares no licence.
+    """
+    joined = re.sub(r"\\\s*\n\s*", " ", _final_stage(dockerfile_text))
+    for line in joined.splitlines():
+        if not line.lstrip().upper().startswith("LABEL "):
+            continue
+        match = re.search(rf'{re.escape(OCI_LICENSE_LABEL)}="([^"]*)"', line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _all_declared_license_ids() -> dict[str, str]:
+    """Return every first-party licence declaration in the tree, keyed by its source.
+
+    Returns:
+        ``{"<relative path>": "<declared SPDX id>"}`` across package.json manifests,
+        pyproject.toml manifests, and production Dockerfile labels. A source that declares
+        nothing is simply absent — the per-source tests below are what report those.
+    """
+    declared: dict[str, str] = {}
+    for path in _first_party_package_jsons():
+        value = json.loads(path.read_text(encoding="utf-8")).get("license")
+        if value:
+            declared[str(path.relative_to(REPO_ROOT))] = str(value)
+    for path in _first_party_pyproject_tomls():
+        with path.open("rb") as handle:
+            value = tomllib.load(handle).get("project", {}).get("license")
+        if value:
+            declared[str(path.relative_to(REPO_ROOT))] = str(value)
+    for path in _production_dockerfiles().values():
+        value = _dockerfile_license_label(path.read_text(encoding="utf-8"))
+        if value:
+            declared[str(path.relative_to(REPO_ROOT))] = value
+    return declared
+
+
+def test_license_family_is_derived_from_the_license_file_contents() -> None:
+    """Guards the derivation: it must read the file, not return a constant.
+
+    Without this, `_license_family_from_license_file()` could `return "AGPL-3.0"` and every
+    other test in this module would still pass while proving nothing about what the repo
+    actually ships.
+    """
+    assert _license_family_from_license_file() == "AGPL-3.0"
+    assert _license_family_from_text("                 MIT License\n\nCopyright (c)") == "MIT"
+    assert (
+        _license_family_from_text("   Apache License\n   Version 2.0, January 2004") == "Apache-2.0"
+    )
+
+
+def test_bare_gnu_family_identifiers_are_rejected_as_deprecated() -> None:
+    """A disjunctive family's bare name is not a current SPDX id and must not be accepted.
+
+    This is the rule that fails the real drift #886 found: four production Dockerfiles
+    declared `AGPL-3.0`, which SPDX deprecated in favour of the `-only`/`-or-later` pair.
+    """
+    valid = _current_spdx_ids("AGPL-3.0")
+    assert valid == {"AGPL-3.0-only", "AGPL-3.0-or-later"}
+    assert "AGPL-3.0" not in valid
+    assert _current_spdx_ids("MIT") == {"MIT"}
 
 
 def test_expected_manifest_set_is_what_the_886_sweep_found() -> None:
@@ -78,32 +271,94 @@ def test_expected_manifest_set_is_what_the_886_sweep_found() -> None:
     assert pyproject_tomls == {"pyproject.toml", "backend/pyproject.toml"}
 
 
+def test_production_dockerfile_set_is_derived_and_non_empty() -> None:
+    """Guards the guard: the published-image set must be read, present, and complete.
+
+    An empty or unresolvable table would make the label tests below scan nothing and pass —
+    the exact shape `scripts/audit-tests.py` exists to catch.
+    """
+    dockerfiles = _production_dockerfiles()
+    assert set(dockerfiles) == {"backend", "lite", "frontend", "docs", "blackwell"}
+
+    missing = [name for name, path in dockerfiles.items() if not path.is_file()]
+    assert not missing, f"SCAN_COMPONENT_DOCKERFILE names files that do not exist: {missing}"
+
+
+def test_every_production_dockerfile_declares_the_licence_label() -> None:
+    """Every published image must carry `org.opencontainers.image.licenses` on its FINAL stage.
+
+    This is the only mechanism that puts the licence into the SBOM for all five components:
+    the two nginx images ship no `package.json`, and syft catalogues nothing from a
+    `pyproject.toml` (module docstring). A label on a builder stage does not count — it never
+    reaches the published image — which is why `_final_stage` narrows the search.
+    """
+    valid = _current_spdx_ids(_license_family_from_license_file())
+
+    offenders: list[str] = []
+    for component, path in sorted(_production_dockerfiles().items()):
+        declared = _dockerfile_license_label(path.read_text(encoding="utf-8"))
+        if declared not in valid:
+            offenders.append(f"{component} ({path.relative_to(REPO_ROOT)}): {declared!r}")
+
+    assert not offenders, (
+        f"every production Dockerfile's final stage must declare {OCI_LICENSE_LABEL} as one "
+        f"of {sorted(valid)} — offenders: {offenders}"
+    )
+
+
 def test_every_first_party_package_json_declares_the_licence() -> None:
-    """A `package.json` missing `license`, or declaring a different SPDX id, fails here."""
+    """A `package.json` missing `license`, or declaring a non-current SPDX id, fails here."""
+    valid = _current_spdx_ids(_license_family_from_license_file())
+
     offenders: list[str] = []
     for path in _first_party_package_jsons():
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-        license_id = manifest.get("license")
-        if license_id != EXPECTED_SPDX_ID:
+        license_id = json.loads(path.read_text(encoding="utf-8")).get("license")
+        if license_id not in valid:
             offenders.append(f"{path.relative_to(REPO_ROOT)}: license={license_id!r}")
 
     assert not offenders, (
-        "every first-party package.json must declare "
-        f"license={EXPECTED_SPDX_ID!r} — offenders: {offenders}"
+        f"every first-party package.json must declare a license from {sorted(valid)} — "
+        f"offenders: {offenders}"
     )
 
 
 def test_every_first_party_pyproject_declares_the_licence() -> None:
-    """A `pyproject.toml` missing `[project].license`, or a different SPDX id, fails here."""
+    """A `pyproject.toml` missing `[project].license`, or a non-current SPDX id, fails here."""
+    valid = _current_spdx_ids(_license_family_from_license_file())
+
     offenders: list[str] = []
     for path in _first_party_pyproject_tomls():
-        with path.open("rb") as fh:
-            manifest = tomllib.load(fh)
-        license_id = manifest.get("project", {}).get("license")
-        if license_id != EXPECTED_SPDX_ID:
+        with path.open("rb") as handle:
+            license_id = tomllib.load(handle).get("project", {}).get("license")
+        if license_id not in valid:
             offenders.append(f"{path.relative_to(REPO_ROOT)}: license={license_id!r}")
 
     assert not offenders, (
-        "every first-party pyproject.toml [project] table must declare "
-        f"license={EXPECTED_SPDX_ID!r} — offenders: {offenders}"
+        f"every first-party pyproject.toml [project] table must declare a license from "
+        f"{sorted(valid)} — offenders: {offenders}"
     )
+
+
+def test_manifests_and_image_labels_agree_on_one_identifier() -> None:
+    """#886's core rule: ONE spelling everywhere, across manifests AND image labels.
+
+    "Two manifests declaring different spellings of the same licence is the drift this issue
+    exists to remove" — and the drift that actually existed was between the two planes, not
+    within one: manifests said `AGPL-3.0-only`, four Dockerfiles said the deprecated
+    `AGPL-3.0`, and the docs image said nothing. Checking each plane against its own
+    expectation would never have seen it.
+    """
+    declared = _all_declared_license_ids()
+    expected_sources = (
+        len(_first_party_package_jsons())
+        + len(_first_party_pyproject_tomls())
+        + len(_production_dockerfiles())
+    )
+    assert len(declared) == expected_sources, (
+        f"{expected_sources - len(declared)} first-party source(s) declare no licence at all; "
+        f"declared: {sorted(declared)}"
+    )
+
+    identifiers = set(declared.values())
+    assert len(identifiers) == 1, f"first-party licence identifiers disagree: {declared}"
+    assert identifiers <= _current_spdx_ids(_license_family_from_license_file())

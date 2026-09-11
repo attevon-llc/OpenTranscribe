@@ -410,7 +410,6 @@ detect_and_configure_hardware() {
   ARCH=$(uname -m)
 
   # Initialize default values
-  export TORCH_DEVICE="auto"
   export COMPUTE_TYPE="auto"
   export USE_GPU="auto"
   export DOCKER_RUNTIME=""
@@ -424,7 +423,6 @@ detect_and_configure_hardware() {
   # DOCKER_RUNTIME themselves; this only covers the .env-only opt-out those flags don't set.
   if [ "${FORCE_CPU_MODE:-}" = "true" ]; then
     echo "🧮 CPU-only mode (FORCE_CPU_MODE=true in .env) — skipping GPU detection"
-    export TORCH_DEVICE="cpu"
     export COMPUTE_TYPE="int8"
     export USE_GPU="false"
     export DOCKER_RUNTIME=""
@@ -435,7 +433,6 @@ detect_and_configure_hardware() {
     echo "📋 Hardware Configuration:"
     echo "  Platform: $PLATFORM"
     echo "  Architecture: $ARCH"
-    echo "  Device: $TORCH_DEVICE"
     echo "  Compute Type: $COMPUTE_TYPE"
     echo "  Docker Runtime: default"
     return
@@ -445,7 +442,6 @@ detect_and_configure_hardware() {
   if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
     echo "✅ NVIDIA GPU detected"
     export DOCKER_RUNTIME="nvidia"
-    export TORCH_DEVICE="cuda"
     export COMPUTE_TYPE="float16"
     export USE_GPU="true"
 
@@ -481,18 +477,15 @@ detect_and_configure_hardware() {
       echo "   and the diar-native sidecar will run on CPU (slower, and silently so)."
       echo "   On a GPU host, re-run this command once \`docker info\` reports the nvidia runtime."
       export DOCKER_RUNTIME=""
-      export TORCH_DEVICE="cpu"
       export COMPUTE_TYPE="int8"
       export USE_GPU="false"
     fi
   elif [[ "$PLATFORM" == "darwin" && "$ARCH" == "arm64" ]]; then
     echo "✅ Apple Silicon detected"
-    export TORCH_DEVICE="mps"
     export COMPUTE_TYPE="float32"
     export USE_GPU="false"
   else
     echo "ℹ️  Using CPU processing"
-    export TORCH_DEVICE="cpu"
     export COMPUTE_TYPE="int8"
     export USE_GPU="false"
   fi
@@ -504,7 +497,6 @@ detect_and_configure_hardware() {
   echo "📋 Hardware Configuration:"
   echo "  Platform: $PLATFORM"
   echo "  Architecture: $ARCH"
-  echo "  Device: $TORCH_DEVICE"
   echo "  Compute Type: $COMPUTE_TYPE"
   echo "  Docker Runtime: ${DOCKER_RUNTIME:-default}"
 }
@@ -2388,7 +2380,6 @@ start_app() {
       echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
     fi
     export DOCKER_RUNTIME=""
-    export TORCH_DEVICE="cpu"
     export COMPUTE_TYPE="int8"
     export USE_GPU="false"
   else
@@ -2403,8 +2394,9 @@ start_app() {
   # ~20 times). ensure_opensearch_models in particular will `docker pull` a multi-GB
   # backend image when the model cache is cold, which a validation loop must never do.
   # detect_and_configure_hardware above is deliberately NOT skipped: it is read-only
-  # and exports DOCKER_RUNTIME/COMPUTE_TYPE/TORCH_DEVICE, which the compose files
-  # interpolate — skipping it would validate a different config than we run.
+  # and exports DOCKER_RUNTIME, which add_gpu_overlay() below uses to decide whether
+  # docker-compose.gpu.yml (and its Blackwell variant) gets added to COMPOSE_FILES —
+  # skipping it would validate a different overlay set than we run.
   if [ -z "$DRY_RUN_FLAG" ]; then
     # Create necessary directories
     create_required_dirs
@@ -3155,7 +3147,6 @@ reset_and_init() {
       echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
     fi
     export DOCKER_RUNTIME=""
-    export TORCH_DEVICE="cpu"
     export COMPUTE_TYPE="int8"
     export USE_GPU="false"
   else

@@ -2135,6 +2135,15 @@ def update_speaker(
     # things: a cleared display name, an edit to `name` alone, and — issue
     # #605 — a confident LLM/embedding suggestion the writer would have
     # indexed instead of the raw name. See `_propagate_speaker_rename_to_chunks`.
+    #
+    # ⚠️ Issue #844: this rewrite is keyword-only — the chunk plane's kNN vector
+    # (`embedding`) is left stale on purpose. A rename doesn't change the audio, but
+    # it DOES change `embedding_text` (which bakes in the speaker roster), so the
+    # vector goes out of sync with what a reindex would produce; re-embedding every
+    # chunk of a long recording for a cosmetic rename was judged not worth the cost.
+    # Full reasoning is in `rename_propagation_task.propagate_speaker_rename`'s
+    # docstring — this is deliberate, not the #666 residue #844 asked to confirm.
+    # `test_speaker_rename_leaves_the_chunk_vector_unchanged` pins it.
     new_chunk_name = canonical_speaker_label_for_row(speaker)
     _propagate_speaker_rename_to_chunks(
         file_uuid=speaker_file_uuid,

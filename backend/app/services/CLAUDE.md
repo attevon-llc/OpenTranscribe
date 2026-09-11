@@ -398,6 +398,49 @@ deliberately **not applied**; it applies again if the conversation is later poin
 that can honour it. `tests/unit/test_llm_reasoning_capability.py` pins that non-regression, with
 a `works` control beside it so "always return None" cannot pass.
 
+### The context window is MEASURED too (`llm_context_window.py`, issues #533 / #833)
+
+`LLMConfig.max_tokens` **is** the context window (`LLMService.__init__`), and it used to be
+whatever the user *declared* in `UserLLMSettings.max_tokens` — never checked against what the
+endpoint actually serves. Issue #533 built the probe (a real, opt-in measurement, stored the
+same way as the reasoning verdict above); issue #833 is what actually **applies** it on the
+chat/summarization runtime path. Before #833, a declared value above the real ceiling produced
+either a hard 400 (vLLM/OpenAI-compatible) or silent front-of-context truncation (Ollama sends
+the declared value as `num_ctx`, which can drop the system prompt first) — and issue #873
+raising the declared Ollama default to 128000 made an over-declared config the common case, not
+the rare one.
+
+| What | Where |
+|---|---|
+| Probe, storage helpers, the narrowing rule | `services/llm_context_window.py` |
+| Status enum | `core/enums.ContextWindowStatus` |
+| Recorded measurement | `SystemSettings`, key `llm.context_window.<fp>` |
+| Run it | `POST /llm-settings/config/{uuid}/context-window-probe` |
+| Read it | `GET /llm-settings/config/{uuid}/context-window` |
+| Applied to a turn | `LLMService.create_from_*` → `llm_context_window.effective_window` |
+
+**It only ever narrows.** `effective_window` mirrors `resolve_enable_thinking`'s "return
+unchanged unless the verdict is definitively known" rule: no measurement record (the probe is
+opt-in, so this is the common case), a non-`MEASURED` status, or a measured value >= the
+declared one all return the declared value unchanged. Only a measured value *below* the declared
+one is applied, with a warning log naming both numbers — a declared value below the measured
+ceiling may be a deliberate VRAM/cost/shared-server decision, and raising it automatically would
+override that decision and reintroduce the failure this exists to prevent.
+
+**`LLMConfig.max_tokens` on a built service is therefore the EFFECTIVE window, while the
+`user_llm_settings` row keeps the DECLARED one** — the same split issue #64 draws between a
+stored preference and what the runtime actually honours. `LLMService.__init__` copies
+`config.max_tokens` into `self.user_context_window`, so every downstream budget computation
+(response token sizing, chunking, the Ollama `num_ctx` payload, `resolve_answer_tokens` /
+`build_messages` in `chat/prompting.py`) is narrowed automatically without a second call site.
+`chat/service.py` records the effective value actually used on `turn.metadata["context_window"]`
+after `build_messages`, so a truncated turn is attributable rather than reading as an unexplained
+retrieval failure.
+
+No pre-flight token-count validator was added on top of this: once the budget is computed
+against the real (possibly narrowed) window, prompt + answer fit by construction, and a second
+token-counting check would duplicate logic `build_messages` already owns.
+
 ## User transcription settings
 
 Per-user prefs (Settings → Transcription) are `UserSetting` key/value rows shaped by

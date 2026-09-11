@@ -56,6 +56,7 @@ __all__ = [
     "ContextWindowProbeResult",
     "ContextWindowStatus",
     "discovery_key",
+    "effective_window",
     "measured_window",
     "probe",
     "read_record",
@@ -308,6 +309,46 @@ def read_record(db: Session, provider: str, base_url: str | None, model: str) ->
         logger.warning("Discarding unreadable context-window record at %s", key)
         return {}
     return stored if isinstance(stored, dict) else {}
+
+
+def effective_window(
+    db: Session,
+    *,
+    provider: str,
+    base_url: str | None,
+    model: str,
+    declared: int,
+) -> int:
+    """The context window a chat turn should actually be budgeted against.
+
+    Narrow-only, mirroring resolve_enable_thinking's "return unchanged unless the
+    verdict is definitively known" rule (issue #64) and this module's own stated
+    principle: fail closed, never guess upward. A declared value BELOW the measured
+    one may be deliberate (VRAM, per-token cost, a shared server) -- raising it
+    automatically would override that decision and reintroduce the num_ctx blow-up
+    this function exists to prevent. The "below" case is already surfaced to the
+    operator as an explicit prompt to raise it by hand (_context_window_payload's
+    relation == "below").
+
+    Returns declared unchanged when: no measurement record exists (the common case
+    -- the probe is opt-in), the recorded status isn't a successful measurement
+    (unsupported/unreachable/not_found/unknown), or the measured value is >= declared.
+    Returns the measured value, with a WARNING log naming both numbers and the model,
+    only when measured < declared (issue #833).
+    """
+    measured = measured_window(read_record(db, provider, base_url, model))
+    if measured is None or declared <= 0 or measured >= declared:
+        return declared
+    logger.warning(
+        "Context window narrowed for %s/%s: configured %d exceeds the measured "
+        "maximum %d -- driving the model at the measured value (issue #833). Lower "
+        "max_tokens in Settings -> AI to make this explicit.",
+        provider,
+        model,
+        declared,
+        measured,
+    )
+    return measured
 
 
 def measured_window(stored: dict) -> int | None:

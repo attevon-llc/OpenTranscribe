@@ -12,10 +12,20 @@ reindex dispatch and a keystroke poll under one module docstring.
 
 The scoping tests substitute the search engine, because "which filters went to
 OpenSearch" is not observable from a response body — and the filter that scopes a
-count to the caller is the one that must never be dropped. The tests that do NOT
-substitute it assert only what holds against any cluster, including none:
-``count_matches`` and ``get_suggestions`` both degrade to ``0`` / ``[]`` without a
-client rather than raising, so this module needs no ``SKIP_OPENSEARCH`` gate.
+count to the caller is the one that must never be dropped.
+
+⚠️ ``count_matches`` degrades to ``0`` only when there is no OpenSearch CLIENT at all
+(``get_opensearch_client()`` returns ``None``) — it no longer degrades to ``0`` when a
+client exists but the query itself fails, e.g. a client pointed at a cluster that isn't
+actually reachable. Issue #817 made that a hard ``503`` on purpose: an unmatchable-looking
+``0`` and "the count could not be trusted" must stay distinguishable, or a quarantine
+exclusion that silently failed to apply would look identical to a genuinely empty result.
+Constructing an ``OpenSearch(...)`` client never checks reachability, so CI (no live
+cluster, no ``SKIP_OPENSEARCH`` gate on this module) hits exactly that path — a real client
+whose ``.search()`` raises. Tests that need a working query, including "an unmatchable
+query returns 0", substitute the engine like ``test_count_returns_the_engines_total``
+does; only genuinely client-independent behaviour (``get_suggestions`` degrading to ``[]``)
+may still assert against whatever cluster happens to be configured.
 """
 
 from __future__ import annotations
@@ -57,14 +67,20 @@ def _standin_count_engine(engine: _StandInEngine):
 # GET /count
 # ---------------------------------------------------------------------------
 def test_count_of_an_unmatchable_query_is_zero(client, user_token_headers):
-    """The shape the find bar reads, against whatever cluster is configured.
+    """The shape the find bar reads, when OpenSearch answers with no hits.
 
-    A random token cannot appear in any transcript, so ``0`` is the answer with or
-    without OpenSearch — but the response must still be the ``{"total": int}``
-    envelope. The find bar does ``body.total > loaded`` with no guard, so a bare
-    integer or a renamed key breaks it silently.
+    A random token cannot appear in any transcript, so ``0`` is the answer — but the
+    response must still be the ``{"total": int}`` envelope. The find bar does
+    ``body.total > loaded`` with no guard, so a bare integer or a renamed key breaks
+    it silently. Engine substituted (module docstring): #817 made a genuinely
+    unreachable cluster a 503, not a 0, so this needs a working query to test the
+    zero-hits case rather than the no-client one.
     """
-    response = client.get(COUNT, headers=user_token_headers, params={"q": uuid_pkg.uuid4().hex})
+    engine = _StandInEngine(total=0)
+    index_patch, infra_patch = _standin_count_engine(engine)
+
+    with index_patch, infra_patch:
+        response = client.get(COUNT, headers=user_token_headers, params={"q": uuid_pkg.uuid4().hex})
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"total": 0}

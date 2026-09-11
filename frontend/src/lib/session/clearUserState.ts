@@ -36,7 +36,6 @@
  * - Presigned media URL cache
  * - In-memory notification panel
  * - Recording blob (if in progress)
- * - Speaker color mappings
  * - Previous upload values (localStorage)
  */
 export async function clearUserState(): Promise<void> {
@@ -84,9 +83,6 @@ export async function clearUserState(): Promise<void> {
     import('$lib/apiCache').then(({ apiCache }) => apiCache.clear()),
     import('$lib/thumbnailCache').then(({ clearThumbnailCache }) => clearThumbnailCache()),
     import('$lib/api/mediaUrl').then(({ clearMediaUrlCache }) => clearMediaUrlCache()),
-    import('$stores/speakerColors').then(({ clearSpeakerColorMappings }) =>
-      clearSpeakerColorMappings()
-    ),
     // Capabilities are TIER-SCOPED in the cloud edition and `loadCapabilities()`
     // has a single call site (routes/+layout.svelte onMount), which an SPA login
     // never re-runs. Without this reset User B inherited User A's enabled-surface

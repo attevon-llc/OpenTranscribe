@@ -29,13 +29,20 @@ from app.tasks.transcription import audio_processor
 _TMP_DIR = tempfile.gettempdir()
 LEAKY_PATH = os.path.join(_TMP_DIR, "tmpXXXXXX", "secret.mp4")
 LEAKY_OS_ERROR = OSError(f"[Errno 13] Permission denied: {LEAKY_PATH}")
-INPUT_VIDEO_PATH = os.path.join(_TMP_DIR, "whatever", "input.mp4")
-INPUT_AUDIO_PATH = os.path.join(_TMP_DIR, "whatever", "input.mp3")
-OUTPUT_PATH = os.path.join(_TMP_DIR, "out.wav")
 
 
 def _raise_os_error(*_args, **_kwargs):
     raise LEAKY_OS_ERROR
+
+
+def _real_input(tmp_path, name: str) -> str:
+    """A real, non-empty file — `_reject_empty_input` runs before ffmpeg is ever
+    invoked, so a fake/nonexistent path would be rejected before the monkeypatched
+    `ffmpeg.input` these tests drive is ever reached.
+    """
+    path = tmp_path / name
+    path.write_bytes(b"not a real media file, just needs to be non-empty")
+    return str(path)
 
 
 class _FakeFfmpegOutput:
@@ -52,12 +59,16 @@ class _FakeFfmpegOutput:
 
 
 @pytest.mark.unit
-def test_a_generic_extraction_failure_does_not_embed_the_os_error_path(monkeypatch, caplog):
+def test_a_generic_extraction_failure_does_not_embed_the_os_error_path(
+    monkeypatch, caplog, tmp_path
+):
+    input_path = _real_input(tmp_path, "input.mp4")
+    output_path = str(tmp_path / "out.wav")
     monkeypatch.setattr(audio_processor.ffmpeg, "input", _raise_os_error)
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(ValueError) as excinfo:
-            audio_processor.extract_audio_from_video(INPUT_VIDEO_PATH, OUTPUT_PATH)
+            audio_processor.extract_audio_from_video(input_path, output_path)
 
     message = str(excinfo.value)
     assert _TMP_DIR not in message
@@ -69,12 +80,16 @@ def test_a_generic_extraction_failure_does_not_embed_the_os_error_path(monkeypat
 
 
 @pytest.mark.unit
-def test_a_generic_conversion_failure_does_not_embed_the_os_error_path(monkeypatch, caplog):
+def test_a_generic_conversion_failure_does_not_embed_the_os_error_path(
+    monkeypatch, caplog, tmp_path
+):
+    input_path = _real_input(tmp_path, "input.mp3")
+    output_path = str(tmp_path / "out.wav")
     monkeypatch.setattr(audio_processor.ffmpeg, "input", _raise_os_error)
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(ValueError) as excinfo:
-            audio_processor.convert_audio_format(INPUT_AUDIO_PATH, OUTPUT_PATH)
+            audio_processor.convert_audio_format(input_path, output_path)
 
     message = str(excinfo.value)
     assert _TMP_DIR not in message
@@ -86,24 +101,28 @@ def test_a_generic_conversion_failure_does_not_embed_the_os_error_path(monkeypat
 
 
 @pytest.mark.unit
-def test_a_drm_protected_video_input_gets_its_own_message(monkeypatch):
+def test_a_drm_protected_video_input_gets_its_own_message(monkeypatch, tmp_path):
+    input_path = _real_input(tmp_path, "input.mp4")
+    output_path = str(tmp_path / "out.wav")
     fake = _FakeFfmpegOutput(b"this stream appears to be encrypted and cannot be decoded")
     monkeypatch.setattr(audio_processor.ffmpeg, "input", lambda *_a, **_kw: fake)
 
     with pytest.raises(ValueError) as excinfo:
-        audio_processor.extract_audio_from_video(INPUT_VIDEO_PATH, OUTPUT_PATH)
+        audio_processor.extract_audio_from_video(input_path, output_path)
 
     message = str(excinfo.value)
     assert "DRM" in message or "encrypted" in message.lower()
 
 
 @pytest.mark.unit
-def test_a_drm_protected_audio_input_gets_its_own_message(monkeypatch):
+def test_a_drm_protected_audio_input_gets_its_own_message(monkeypatch, tmp_path):
+    input_path = _real_input(tmp_path, "input.mp3")
+    output_path = str(tmp_path / "out.wav")
     fake = _FakeFfmpegOutput(b"drm-protected content cannot be processed")
     monkeypatch.setattr(audio_processor.ffmpeg, "input", lambda *_a, **_kw: fake)
 
     with pytest.raises(ValueError) as excinfo:
-        audio_processor.convert_audio_format(INPUT_AUDIO_PATH, OUTPUT_PATH)
+        audio_processor.convert_audio_format(input_path, output_path)
 
     message = str(excinfo.value)
     assert "DRM" in message or "encrypted" in message.lower()

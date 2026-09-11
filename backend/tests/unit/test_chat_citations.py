@@ -7,6 +7,7 @@ answer against the recording. They are built from OUR chunk data and only
 
 from __future__ import annotations
 
+from app.core.config import settings
 from app.services.chat.citations import DIGEST_SNIPPET_CHARS
 from app.services.chat.citations import OVERVIEW_SNIPPET_CHARS
 from app.services.chat.citations import SNIPPET_CHARS
@@ -63,20 +64,25 @@ def test_snippet_uses_masked_text():
 
 
 def test_snippet_is_truncated_on_a_word_boundary():
-    citation = build_offered_citations([_masked(0, "word " * 200)])[0]
-    assert len(citation["snippet"]) <= 245
+    # "word " * SNIPPET_CHARS is guaranteed to exceed SNIPPET_CHARS regardless
+    # of what that constant is derived to (issue #913) -- a hardcoded literal
+    # here would silently stop exercising truncation the day the cap widened.
+    citation = build_offered_citations([_masked(0, "word " * SNIPPET_CHARS)])[0]
+    assert len(citation["snippet"]) <= SNIPPET_CHARS + 5
     assert citation["snippet"].endswith("…")
     assert "wor…" not in citation["snippet"]
 
 
-def test_unexpanded_citation_has_expanded_false_and_todays_snippet_cap():
-    """Control (issue #526): a chunk ``context_expansion`` never touched is
-    byte-identical to before this issue — same truncation length, no new
-    ``expanded`` behaviour."""
-    long_content = "word " * 200
+def test_unexpanded_citation_has_expanded_false_and_the_ordinary_snippet_cap():
+    """Control (issue #526): a chunk ``context_expansion`` never touched stays
+    on the ORDINARY (non-expanded) cap -- :data:`SNIPPET_CHARS`, whatever it is
+    derived to today (issue #913 widened it from a flat 240) -- with no new
+    ``expanded`` behaviour. Rebuilt off the constant rather than a hardcoded
+    245 so this keeps testing a real word-boundary truncation at any cap."""
+    long_content = "word " * SNIPPET_CHARS
     citation = build_offered_citations([_masked(0, long_content, expanded=False)])[0]
     assert citation["expanded"] is False
-    assert len(citation["snippet"]) <= 245
+    assert len(citation["snippet"]) <= SNIPPET_CHARS + 5
 
 
 def test_expanded_citation_is_marked_and_not_truncated_at_the_ordinary_limit():
@@ -230,18 +236,68 @@ def test_a_digest_citation_longer_than_its_cap_is_still_truncated():
     assert len(citation["snippet"]) <= DIGEST_SNIPPET_CHARS + 5
 
 
-def test_an_ordinary_chunk_citations_snippet_is_unchanged():
-    """Regression guard: an ordinary (non-digest, non-expanded) chunk citation
-    stays capped at the plain SNIPPET_CHARS, not the wider digest cap — the
-    fix must not accidentally widen the chunk plane too."""
-    long_content = "word " * 200
-    assert len(long_content) > DIGEST_SNIPPET_CHARS  # exceeds BOTH caps
+def test_an_ordinary_chunk_citations_snippet_is_capped_at_its_own_derived_constant():
+    """Regression guard, REWRITTEN for issue #913.
+
+    The old premise here was "the chunk cap must stay narrower than the digest
+    cap" -- true only by accident while SNIPPET_CHARS was a flat 240. #913
+    derives SNIPPET_CHARS from SEARCH_CHUNK_TARGET_WORDS (2000 today), which is
+    now WIDER than DIGEST_SNIPPET_CHARS (700) -- so that ordering is inverted
+    by design and asserting it would fail the very change it is meant to
+    protect. The rule that actually holds, and the one this asserts: each kind
+    is capped against its OWN derived constant, never a literal and never
+    another kind's cap.
+    """
+    long_content = "word " * (max(SNIPPET_CHARS, DIGEST_SNIPPET_CHARS) + 100)
+
+    chunk_citation = build_offered_citations([_masked(0, long_content)])[0]
+    digest_citation = build_offered_citations([_masked(0, long_content, digest_section=1)])[0]
+
+    assert chunk_citation["kind"] == "chunk"
+    assert chunk_citation["snippet"].endswith("…")
+    assert len(chunk_citation["snippet"]) <= SNIPPET_CHARS + 5
+
+    assert digest_citation["kind"] == "digest"
+    assert digest_citation["snippet"].endswith("…")
+    assert len(digest_citation["snippet"]) <= DIGEST_SNIPPET_CHARS + 5
+
+
+def test_a_chunk_at_the_indexing_word_target_is_not_truncated():
+    """A chunk built right up to the indexing target word count
+    (SEARCH_CHUNK_TARGET_WORDS, the same target chunking.py builds chunks
+    against) must show in full -- that is the whole point of deriving
+    SNIPPET_CHARS from it (issue #913).
+
+    RED before #913: SNIPPET_CHARS was a flat 240, and a
+    SEARCH_CHUNK_TARGET_WORDS-word chunk is always well past 240 chars, so
+    this always truncated.
+    """
+    content = " ".join(["word"] * settings.SEARCH_CHUNK_TARGET_WORDS)
+    citation = build_offered_citations([_masked(0, content)])[0]
+
+    assert citation["kind"] == "chunk"
+    assert citation["snippet"] == content
+    assert not citation["snippet"].endswith("…")
+
+
+def test_the_chunk_cap_is_derived_from_the_indexing_target_not_a_literal():
+    """Pins the derivation itself (issue #913): SNIPPET_CHARS must move with
+    SEARCH_CHUNK_TARGET_WORDS, not sit as an independent number that happens
+    to agree with it today."""
+    assert SNIPPET_CHARS == 10 * settings.SEARCH_CHUNK_TARGET_WORDS
+
+
+def test_a_chunk_far_longer_than_its_cap_is_still_truncated_with_content_chars_intact():
+    """Control: SNIPPET_CHARS (2000 today) is a real cap, not 'no cap at all',
+    and content_chars keeps reporting the PRE-truncation length regardless."""
+    long_content = "word " * SNIPPET_CHARS
+    assert len(long_content) > SNIPPET_CHARS
 
     citation = build_offered_citations([_masked(0, long_content)])[0]
 
-    assert citation["kind"] == "chunk"
     assert citation["snippet"].endswith("…")
     assert len(citation["snippet"]) <= SNIPPET_CHARS + 5
+    assert citation["content_chars"] == len(" ".join(long_content.split()))
 
 
 def test_content_chars_is_the_pre_truncation_length():

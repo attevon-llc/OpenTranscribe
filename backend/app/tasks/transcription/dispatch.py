@@ -151,6 +151,43 @@ def _resolve_gpu_queue(user_id: int, db) -> str:
     return CeleryQueues.GPU
 
 
+def _mark_dispatch_failed(file_uuid: str, task_id: str, message: str) -> None:
+    """Record a failed pipeline publish on the file and its task row.
+
+    The publish at the end of dispatch_transcription_pipeline happens AFTER
+    create_task_record has committed the file to PROCESSING, in an already-closed
+    session. A broker failure there leaves an in_progress task and a PROCESSING
+    file nothing will ever advance — link_error only fires for a chain that was
+    actually published. Best-effort: never raises, never masks the real exception.
+    """
+    truncated = message[:2000]
+    try:
+        with session_scope() as db:
+            # Task row first, file status LAST: update_task_status's terminal
+            # branch calls update_media_file_from_task_status, which would derive
+            # COMPLETED for a file owning an older completed task otherwise.
+            update_task_status(db, task_id, "failed", error_message=truncated, completed=True)
+
+            media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+            if media_file is None:
+                return
+            file_id = int(media_file.id)
+            user_id = int(media_file.user_id)
+            media_file.last_error_message = truncated
+            update_media_file_status(db, file_id, FileStatus.ERROR)  # takedown-aware, #824
+    except Exception as e:
+        logger.error(
+            f"Could not record the failed dispatch of {file_uuid} (task {task_id}): {e}",
+            exc_info=True,
+        )
+        return
+
+    with contextlib.suppress(Exception):
+        from .notifications import send_error_notification
+
+        send_error_notification(user_id, file_id, truncated)
+
+
 def dispatch_transcription_pipeline(
     file_uuid: str,
     min_speakers: int | None = None,
@@ -309,9 +346,18 @@ def dispatch_transcription_pipeline(
     benchmark_timing.capture_queue_depth(task_id)
 
     # Dispatch with error callback for cleanup
-    pipeline.apply_async(
-        link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue=CeleryQueues.UTILITY)],
-    )
+    try:
+        pipeline.apply_async(
+            link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue=CeleryQueues.UTILITY)],
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to publish the transcription pipeline for {file_uuid} "
+            f"(task_id={task_id}): {e}",
+            exc_info=True,
+        )
+        _mark_dispatch_failed(file_uuid, task_id, f"Could not queue transcription: {e}")
+        raise
 
     route = "cpu-transcribe" if use_cpu else gpu_queue
     logger.info(

@@ -85,15 +85,20 @@ def test_a_hosted_ollama_endpoint_is_masked():
 
 
 def test_a_compose_hosted_vllm_is_still_local():
-    """A `vllm` config at a docker-compose service name stays local, and
+    """A `vllm` config at a docker-compose service name stays local — issue #820
 
-    without a DNS round trip — mirrors `test_dotless_docker_hostname_is_
-    unmasked_without_dns` for the `custom` provider.
+    now resolves it the same way a dotted hostname is (mirrors
+    `test_dotless_docker_hostname_still_unmasked_when_unresolvable` for the
+    `custom` provider), but a genuinely unresolvable dot-free name still reads
+    local, exactly as before the fix.
     """
-    with patch("app.utils.url_validation.resolve_public_addresses") as mocked:
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=([], "Cannot resolve hostname: vllm"),
+    ) as mocked:
         cfg = _Config(provider="vllm", base_url="http://vllm:8000/v1")
         assert is_local_provider(cfg) is True
-        mocked.assert_not_called()
+        mocked.assert_called_once()
 
 
 def test_vllm_with_no_base_url_fails_closed():
@@ -330,18 +335,87 @@ def test_localhost_is_unmasked():
     assert is_local_provider(cfg) is True
 
 
-def test_dotless_docker_hostname_is_unmasked_without_dns():
-    """`http://backend:8000` — a docker-compose service name, judged local without
+def test_dotless_docker_hostname_still_unmasked_when_unresolvable():
+    """`http://mock-llm:5199/v1` — a docker-compose service name with no external
 
-    a DNS round trip (many of the environments this matters in have no resolver
-    entry for it at all).
+    DNS entry (issue #820's regression control). The dot-free branch now
+    ATTEMPTS resolution just like a dotted hostname (this used to be a hard
+    `mocked.assert_not_called()` before the fix) — but when that resolution
+    genuinely fails, the verdict must be unchanged from before the fix: local.
     """
-    with patch("app.utils.url_validation.resolve_public_addresses") as mocked:
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=([], "Cannot resolve hostname: mock-llm"),
+    ) as mocked:
         cfg = _Config(provider="custom", base_url="http://mock-llm:5199/v1")
         assert is_local_provider(cfg) is True
-        mocked.assert_not_called()
+        mocked.assert_called_once()
+
+
+def test_dotless_hostname_resolving_publicly_is_masked():
+    """Issue #820 — the actual gap: a dot-free, single-label hostname CAN carry a
+
+    real public A record (a registered single-label domain, or a resolver that
+    hijacks unknown names to a real IP). Must-fire: red against the pre-fix
+    code, which judged every dot-free hostname local unconditionally with no
+    DNS round trip at all.
+    """
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=(["93.184.216.34"], ""),
+    ):
+        cfg = _Config(provider="custom", base_url="http://intranet/v1")
+        assert is_local_provider(cfg) is False
+
+
+def test_dotless_hostname_resolving_privately_is_still_unmasked():
+    """A dot-free hostname that DOES resolve, but only to a private/loopback
+
+    address, is local exactly like a dotted one that resolves privately —
+    resolving it must not accidentally make it stricter than the dotted path.
+    """
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=(["10.0.0.5"], ""),
+    ):
+        cfg = _Config(provider="custom", base_url="http://intranet/v1")
+        assert is_local_provider(cfg) is True
+
+
+def test_dotless_hostname_blocked_as_metadata_is_masked():
+    """`instance-data` is itself in `url_validation.METADATA_HOSTNAMES` and is
+
+    dot-free — it must be refused as remote, not read as "unresolvable ->
+    local": only a genuine DNS *failure* gets the local fallback, never a
+    resolved-and-blocked verdict.
+    """
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=([], "Blocked hostname: instance-data"),
+    ):
+        cfg = _Config(provider="custom", base_url="http://instance-data/v1")
+        assert is_local_provider(cfg) is False
 
 
 def test_provider_is_case_and_whitespace_insensitive():
     cfg = _Config(provider=" VLLM ", base_url="http://localhost:8012/v1")
     assert is_local_provider(cfg) is True
+
+
+def test_the_unresolvable_reason_string_has_not_drifted():
+    """`llm_guard._DNS_UNRESOLVABLE_REASON_PREFIX` matches
+
+    `resolve_public_addresses`'s REAL "DNS lookup failed" reason string,
+    unmocked — the dot-free fallback in `_custom_endpoint_is_local` depends on
+    that prefix without widening `resolve_public_addresses`'s own return
+    contract, so a rewording there must fail HERE rather than silently making
+    every unresolvable dot-free hostname read remote.
+    """
+    from app.services.redaction.llm_guard import _DNS_UNRESOLVABLE_REASON_PREFIX
+    from app.utils.url_validation import resolve_public_addresses
+
+    addresses, reason = resolve_public_addresses(
+        "http://this-name-cannot-possibly-resolve.invalid/v1"
+    )
+    assert addresses == []
+    assert reason.startswith(_DNS_UNRESOLVABLE_REASON_PREFIX)

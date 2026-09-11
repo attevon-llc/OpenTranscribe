@@ -2,7 +2,7 @@
   import type { SummaryData } from '$lib/types/summary';
   import TopicsList from './TopicsList.svelte';
   import { t } from '$stores/locale';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { escapeHtml, sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
 
   export let summary: SummaryData;
   export let searchQuery: string = '';
@@ -173,12 +173,6 @@
         <div class="field-content">${renderValue(value, depth + 1)}</div>
       </div>
     `).join('');
-  }
-
-  function escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
   }
 
   // Extract text from value (handles both strings and objects)

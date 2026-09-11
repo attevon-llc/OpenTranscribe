@@ -19,6 +19,7 @@
 import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
 
+import { escapeHtml } from './sanitizeHtml';
 import type { ChatSourceKind } from '$lib/types/chat';
 
 /**
@@ -124,16 +125,6 @@ export function renderChatMarkdown(markdown: string | null | undefined): string 
   }) as unknown as string;
 }
 
-/** Escape text for safe literal rendering (user messages, fallbacks). */
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 /** Kinds `citationHref` routes on. */
 export type CitationLinkKind = ChatSourceKind;
 
@@ -188,3 +179,4 @@ export function citationHref(source: CitationLinkSource): string {
 // Time formatting lives ONLY in formatting.ts (see src/lib/utils/CLAUDE.md) —
 // re-exported here so existing chatMarkdown call sites don't need to change.
 export { formatClock } from './formatting';
+export { escapeHtml } from './sanitizeHtml';

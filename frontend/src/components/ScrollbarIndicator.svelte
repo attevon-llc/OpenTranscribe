@@ -6,6 +6,7 @@
     createThrottledPositionUpdate,
     type TranscriptSegment
   } from '$lib/utils/scrollbarCalculations';
+  import { formatClock } from '$lib/utils/formatting';
   import { t } from '$stores/locale';
 
   const dispatch = createEventDispatcher();
@@ -45,8 +46,8 @@
       if (showTooltip) {
         const currentSegment = findCurrentSegment(currentTime, transcriptSegments);
         tooltipText = currentSegment
-          ? `${formatTime(currentTime)} - ${currentSegment.text.substring(0, 40)}${currentSegment.text.length > 40 ? '...' : ''}\n\n${$t('scrollbar.clickToScroll')}`
-          : `${formatTime(currentTime)}\n\n${$t('scrollbar.clickToScroll')}`;
+          ? `${formatClock(currentTime)} - ${currentSegment.text.substring(0, 40)}${currentSegment.text.length > 40 ? '...' : ''}\n\n${$t('scrollbar.clickToScroll')}`
+          : `${formatClock(currentTime)}\n\n${$t('scrollbar.clickToScroll')}`;
       }
     } else {
       isVisible = false;
@@ -79,13 +80,6 @@
     }
   }
 
-  function formatTime(seconds: number): string {
-    if (isNaN(seconds) || seconds < 0) return '0:00';
-
-    const minutes = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  }
 
   function handleIndicatorClick(event: MouseEvent) {
     if (disabled || !transcriptSegments.length) return;
@@ -156,7 +150,7 @@
       style="top: {indicatorPosition}%;"
       role="button"
       tabindex="0"
-      aria-label={$t('scrollbar.ariaLabel', { time: formatTime(currentTime) })}
+      aria-label={$t('scrollbar.ariaLabel', { time: formatClock(currentTime) })}
       title={showTooltip ? tooltipText : ''}
       on:click={handleIndicatorClick}
       on:keydown={handleKeydown}

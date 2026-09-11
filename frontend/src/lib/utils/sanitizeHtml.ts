@@ -56,3 +56,38 @@ export function sanitizeToPlainText(html: string | null | undefined): string {
     KEEP_CONTENT: true,
   }) as unknown as string;
 }
+
+/**
+ * Escape HTML-significant characters for safe literal rendering inside a
+ * `{@html}` string (e.g. wrapping matched text in a `<mark>`/`<span>` before
+ * handing the whole string to `sanitizeHighlightHtml`).
+ *
+ * This is the single canonical implementation — issue #840 found five
+ * near-duplicate copies across `TranscriptModal.svelte`, `SummaryDisplay.svelte`,
+ * `SearchTranscriptModal.svelte`, `searchHighlight.ts`, and `chatMarkdown.ts`.
+ * Two divergent shapes existed:
+ *   - A DOM-based version (`div.textContent = text; return div.innerHTML`) used
+ *     by `TranscriptModal.svelte`/`SummaryDisplay.svelte`/`searchHighlight.ts`.
+ *     The browser's HTML text-serialization only escapes `&`/`<`/`>` — it does
+ *     NOT escape quotes, because quotes are only meaningful inside an attribute
+ *     value, never in text content.
+ *   - This regex chain, which additionally escapes `"` and `'`. All of this
+ *     module's callers only ever place the result in TEXT CONTENT (inside a
+ *     `<span>`/`<mark>`, never inside an attribute value), so escaping quotes is
+ *     a no-op for rendered output there — entities decode back to the literal
+ *     character regardless of position. This shape was chosen as the survivor
+ *     because it has no DOM dependency (testable without jsdom, and correct if
+ *     this ever runs somewhere `document` is unavailable) and is the shape
+ *     `chatMarkdown.ts` already exported.
+ *
+ * @param text - The text to escape.
+ * @returns HTML-safe text with `&`, `<`, `>`, `"`, `'` entity-encoded.
+ */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

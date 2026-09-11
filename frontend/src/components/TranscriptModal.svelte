@@ -6,7 +6,8 @@
   import { translateSpeakerLabel } from '$lib/i18n';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { escapeHtml, sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { formatClock } from '$lib/utils/formatting';
 
   export let fileId: number;
   export let fileName: string = '';
@@ -100,12 +101,6 @@
     return matches ? matches.length : 0;
   }
 
-  function escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
   function highlightSearchTerms(text: string, query: string, matchIndex: number = -1): string {
     if (!query.trim() || !text) return escapeHtml(text);
 
@@ -174,13 +169,6 @@
 
   function clearSearch() {
     searchQuery = '';
-  }
-
-
-  function formatSimpleTimestamp(seconds: number): string {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 
   // Handle scroll to update reading progress.
@@ -419,7 +407,7 @@
                           <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                         </svg>
                         <span class="overlap-label">{$t('transcript.overlapIndicator', { count: segment.overlapSegments.length })}</span>
-                        <span class="overlap-time">{formatSimpleTimestamp(segment.startTime ?? 0)} - {formatSimpleTimestamp(segment.endTime ?? 0)}</span>
+                        <span class="overlap-time">{formatClock(segment.startTime ?? 0)} - {formatClock(segment.endTime ?? 0)}</span>
                       </div>
                       <div class="overlap-connector"></div>
                       {#each segment.overlapSegments as overlapSeg}
@@ -429,7 +417,7 @@
                               class="segment-speaker"
                               style="background-color: {getSpeakerColorForSegment(overlapSeg).bg}; border-color: {getSpeakerColorForSegment(overlapSeg).border}; --speaker-light: {getSpeakerColorForSegment(overlapSeg).textLight}; --speaker-dark: {getSpeakerColorForSegment(overlapSeg).textDark};"
                             >{translateSpeakerLabel(overlapSeg.speakerName)}</div>
-                            <div class="segment-time">{formatSimpleTimestamp(overlapSeg.startTime ?? 0)}-{formatSimpleTimestamp(overlapSeg.endTime ?? 0)}</div>
+                            <div class="segment-time">{formatClock(overlapSeg.startTime ?? 0)}-{formatClock(overlapSeg.endTime ?? 0)}</div>
                           </div>
                           <div class="segment-text">{@html sanitizeHighlightHtml(highlightSearchTerms(overlapSeg.text, searchQuery, currentMatchIndex))}</div>
                         </div>
@@ -445,7 +433,7 @@
                           class="segment-speaker"
                           style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
                         >{translateSpeakerLabel(segment.speakerName)}</div>
-                        <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
+                        <div class="segment-time">{formatClock(segment.startTime ?? 0)}-{formatClock(segment.endTime ?? 0)}</div>
                       </div>
                     {/if}
                     <div class="segment-text">{@html sanitizeHighlightHtml(highlightSearchTerms(segment.text, searchQuery, currentMatchIndex))}</div>

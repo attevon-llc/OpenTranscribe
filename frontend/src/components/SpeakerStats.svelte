@@ -1,5 +1,6 @@
 <script>
   import { getSpeakerColor } from '$lib/utils/speakerColors';
+  import { formatClock } from '$lib/utils/formatting';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import EmptyState from './ui/EmptyState.svelte';
@@ -183,16 +184,6 @@
     return getSpeakerColor(speakerKey).bg;
   }
 
-  /**
-   * Format time in minutes and seconds
-   * @param {number} seconds - The time in seconds
-   * @returns {string} - Formatted time string in MM:SS format
-   */
-  function formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
 </script>
 
 <div class="speaker-stats compact-layout">
@@ -218,7 +209,7 @@
         </svg>
       </div>
       <div class="card-content">
-        <div class="card-value">{formatTime(normalizedAnalytics.duration_seconds || 0)}</div>
+        <div class="card-value">{formatClock(normalizedAnalytics.duration_seconds || 0)}</div>
         <div class="card-label">{$t('stats.duration')}</div>
       </div>
     </div>
@@ -276,7 +267,7 @@
               width: {safeCalculatePercentage(time, normalizedAnalytics.talk_time.total)}%;
               background-color: {getSpeakerBgColor(speakerName)};
             "
-            title="{getSpeakerDisplayName(speakerName)}: {formatTime(time)} ({safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%)"
+            title="{getSpeakerDisplayName(speakerName)}: {formatClock(time)} ({safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%)"
           ></div>
         {/each}
       </div>
@@ -292,7 +283,7 @@
             </div>
             <div class="chip-stats">
               <div class="stat-item">
-                <span class="stat-value">{formatTime(time)}</span>
+                <span class="stat-value">{formatClock(time)}</span>
                 <span class="stat-label">{$t('stats.time')}</span>
               </div>
               <div class="stat-item">

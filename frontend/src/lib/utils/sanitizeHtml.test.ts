@@ -26,7 +26,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sanitizeHighlightHtml, sanitizeToPlainText } from '$lib/utils/sanitizeHtml';
+import { escapeHtml, sanitizeHighlightHtml, sanitizeToPlainText } from '$lib/utils/sanitizeHtml';
 
 describe('sanitizeHighlightHtml — blocks execution', () => {
   it('strips an <img onerror> payload entirely', () => {
@@ -187,5 +187,37 @@ describe('sanitizeToPlainText', () => {
     expect(sanitizeToPlainText(null)).toBe('');
     expect(sanitizeToPlainText(undefined)).toBe('');
     expect(sanitizeToPlainText('')).toBe('');
+  });
+});
+
+describe('escapeHtml (issue #840 — the consolidated survivor of 5 near-duplicates)', () => {
+  it('escapes all five HTML-significant characters, including quotes', () => {
+    // The DOM-based duplicates this replaced (`div.textContent = text; return
+    // div.innerHTML`) do NOT escape quotes — the browser's text-serialization only
+    // touches &, <, > because quotes only matter inside an attribute value. This
+    // regex-chain survivor additionally escapes " and ' for a stronger guarantee
+    // that is a no-op everywhere these callers use it (always inside a <span>/
+    // <mark> TEXT node, never an attribute value): entities decode back to the
+    // literal character regardless of position.
+    expect(escapeHtml(`<a href="x">&'</a>`)).toBe(
+      '&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;'
+    );
+  });
+
+  it('is a pure string transform with no DOM dependency', () => {
+    // One of the five duplicates (searchHighlight.ts) special-cased
+    // `typeof window === 'undefined'` and returned the text UNESCAPED in that
+    // branch. This app has no SSR (adapter-static, ssr = false everywhere), so
+    // that branch was already dead code; the survivor has no such branch and
+    // always escapes regardless of environment.
+    expect(escapeHtml('<b>x</b>')).toBe('&lt;b&gt;x&lt;/b&gt;');
+  });
+
+  it('returns an empty string for empty input without throwing', () => {
+    expect(escapeHtml('')).toBe('');
+  });
+
+  it('leaves text with no HTML-significant characters unchanged', () => {
+    expect(escapeHtml('plain text 123')).toBe('plain text 123');
   });
 });

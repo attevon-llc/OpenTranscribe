@@ -10,7 +10,7 @@
   import { toastStore } from '$stores/toast';
   import Spinner from '../ui/Spinner.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { escapeHtml, sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { formatClock } from '$lib/utils/formatting';
   import type { SearchOccurrence } from '$stores/search';
 
@@ -91,15 +91,6 @@
 
   function overlapsAny(start: number, end: number, ranges: { start: number; end: number }[]): boolean {
     return ranges.some(r => start < r.end && end > r.start);
-  }
-
-  function escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#x27;');
   }
 
   /**

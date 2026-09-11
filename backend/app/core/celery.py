@@ -129,6 +129,7 @@ celery_app = Celery(
         "app.tasks.transcription.preprocess",
         "app.tasks.transcription.postprocess",
         "app.tasks.transcription.dispatch",
+        "app.tasks.transcription.cancellation",
         "app.tasks.waveform",
         "app.tasks.waveform_generation",
         "app.tasks.summarization",
@@ -289,6 +290,7 @@ celery_app.conf.update(
         "transcription.postprocess": {"queue": CeleryQueues.CPU},
         "transcription.enrich_and_dispatch": {"queue": CeleryQueues.CPU},
         "transcription.pipeline_error": {"queue": CeleryQueues.UTILITY},
+        "transcription.reconcile_cancellation": {"queue": CeleryQueues.UTILITY},
         # The speaker/diarization family that PREFERS a GPU but runs correctly
         # without one — 'gpu' in a full deployment, 'cpu' in lite, where nothing
         # consumes 'gpu' (issue #865). Listed once in GPU_PREFERRED_TASKS above so

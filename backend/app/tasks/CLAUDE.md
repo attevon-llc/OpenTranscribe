@@ -73,6 +73,40 @@ indexing → WebSocket notification.
   exactly who it exists for (#403 D6). Dispatched fire-and-forget from
   `transcription/postprocess.enrich_and_dispatch`; logic lives in
   `services/ingest_artifacts/` (its own CLAUDE.md).
+- `transcription/cancellation.py` — what a **user cancel** does when the cooperative
+  checkpoint fires (#823). It is deliberately NOT `context.requeue_after_abort`:
+
+  | trigger | outcome | why |
+  |---|---|---|
+  | worker shutdown (#809) | `Reject(requeue=True)` — run it elsewhere | the work is still wanted |
+  | user cancel (#823) | `finish_cancelled` — return, ack, stop for good | the user asked it to stop |
+
+  Requeueing a cancelled job resurrects it on the next worker, so the UI says "Cancelled" and
+  the file goes back to processing. `finish_cancelled` **returns** a
+  `{"status": "cancelled", ...}` dict — that normal return is what acks under `acks_late=True`
+  — and `postprocess.finalize_transcription` recognises it and no-ops (cleaning up the temp
+  audio). It never travels `_handle_transcription_failure`: a cancel is not a failure.
+  - ⚠️ **Two-phase status, and `FileStatus.CANCELLING` is the honest middle.** The API
+    (`utils/task_utils.cancel_active_task`) arms the flag and writes `CANCELLING` — *we asked*;
+    only `finish_cancelled` writes `CANCELLED` — *it actually stopped*, with `Task.completed_at`
+    as the timestamp. It used to write `CANCELLED` optimistically while the GPU carried on.
+    `CANCELLING` already existed in `core/enums.FileStatus`, the API filter list,
+    `formatting_service` and the frontend status union; nothing had ever written it.
+  - `active_task_id` is **retained** while `CANCELLING` — it is the handle both the worker's
+    confirmation and `transcription.reconcile_cancellation` key on.
+  - `reconcile_cancellation` (utility queue, `countdown=CANCEL_RECONCILE_DELAY_S`) stops
+    `CANCELLING` wedging when no checkpoint can ever fire (worker died; or on `--lite`, a run
+    published into a queue nothing drains). It resolves to `CANCELLED` **unconfirmed** and logs
+    at WARNING — a bounded, logged version of the pre-#823 behaviour, not a guarantee. It
+    deliberately does **not** clear the flag: a stage still running must stand down at its next
+    checkpoint rather than finish and mark the file COMPLETED.
+  - Both `finish_cancelled` and `reconcile_cancellation` re-check ownership
+    (`_owns_the_file`). `POST /files/{uuid}/reprocess` cancels and immediately re-dispatches,
+    so the old run's checkpoint can fire minutes later against a file a NEW run already owns.
+  - ⚠️ **`revoke(active_task_id, terminate=True)` is gone, and it was dead on every pool type.**
+    Not just `--pool=threads`: `dispatch.py` calls `pipeline.apply_async()` with no `task_id=`,
+    so celery mints its own ids while `active_task_id` holds the separate application `uuid4`.
+    The id being revoked had never belonged to a celery message anywhere. Don't "restore" it.
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
 - `erasure_reconciliation.py` — `gdpr.erasure_reconcile`, **utility** queue, daily 04:40.

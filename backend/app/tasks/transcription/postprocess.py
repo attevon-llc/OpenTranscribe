@@ -74,6 +74,21 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         _cleanup_temp(gpu_result.get("file_uuid"))
         return gpu_result
 
+    if gpu_result.get("status") == "cancelled":
+        # issue #823: the GPU/CPU stage stood down at a cooperative checkpoint because the user
+        # cancelled this file, and `cancellation.finish_cancelled` has already written the
+        # terminal state and notified. It RETURNS rather than raising precisely so acks_late
+        # acks the message — which means this successor link still runs, and its job is to
+        # release the temp audio and otherwise do nothing. Marking the file COMPLETED here
+        # would undo the cancellation the user asked for.
+        logger.info(
+            "Skipping postprocess — file %s was cancelled by the user (task %s)",
+            gpu_result.get("file_id"),
+            gpu_result.get("task_id"),
+        )
+        _cleanup_temp(gpu_result.get("file_uuid"))
+        return gpu_result
+
     if gpu_result.get("status") == "split_forwarded":
         # gpu-split topology (core.py::transcribe_gpu_task): this dict is what the
         # transcribe-only leg returns to satisfy the OUTER pipeline chain's

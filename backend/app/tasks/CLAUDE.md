@@ -108,6 +108,14 @@ indexing → WebSocket notification.
   `tests/unit/test_ws_event_quarantine_discipline.py` is the structural gate — an
   allowlist-with-written-reason covers the small set of genuinely corpus-wide events
   (admin-migration progress counters, cache invalidation) that carry no single file's identity.
+- **A task that re-reads a `MediaFile` by id must re-apply the quarantine gate.**
+  `media_download.py`'s two tasks are the worked examples (issue #818):
+  `prepare_media_download_task` wraps its file read in `takedown_service.exclude_quarantined`,
+  and `prepare_bulk_subtitles_task` passes `include_quarantined` through to
+  `SubtitleService.build_subtitle_archive`, which skips a taken-down file rather than
+  exporting it. Both re-resolve the admin bypass at RUN time via
+  `takedown_service.is_review_admin(db, user_id)` — a task holds a user id, never a `User`,
+  and a role captured at dispatch cannot reflect a privilege change made in the gap.
 - Queues (`core/constants.py:CeleryQueues`): `gpu`, `cpu`, `download`, `nlp`, `embedding`,
   `utility`, `redaction`, plus dynamic `cloud-asr`, `cpu-transcribe`, `gpu-transcribe`,
   `gpu-diarize`. **`task_create_missing_queues=False`** — a queue-name typo raises at

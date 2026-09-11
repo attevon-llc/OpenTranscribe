@@ -106,7 +106,9 @@ non-admins — gallery list, file detail, search results/snippets, streaming,
 download, and thumbnail all return *not found* (404). The original media and
 transcript are **never deleted** by a takedown — hiding is a read-time transform,
 so the row survives for the audit and appeal trail. Admins retain visibility to
-review and release.
+review and release. An export already in flight is re-checked when the worker
+runs, not only when it was requested, so a takedown applied mid-render still
+takes effect.
 
 ### Owner notice (DMCA §512(g))
 

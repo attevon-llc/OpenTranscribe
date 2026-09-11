@@ -32,7 +32,6 @@ from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
-from app.services.media_download_service import create_user_friendly_error
 from app.tasks.youtube_processing import process_youtube_playlist_task
 from app.tasks.youtube_processing import process_youtube_url_task
 
@@ -332,12 +331,15 @@ def _extract_video_info(
         # Re-raise HTTPExceptions (they already have proper error messages)
         raise
     except Exception as e:
-        logger.exception(f"Error extracting video info from {normalized_url}: {e}")
-        # Create user-friendly error message
-        user_friendly_error = create_user_friendly_error(str(e), normalized_url)
+        # create_user_friendly_error is NOT a sanitizer despite the name — it only
+        # strips four literal yt-dlp prefixes on the non-auth-error branch, so the
+        # raw message (which can carry cookie/config paths or the URL itself) used
+        # to reach the response verbatim (#859). Log the real error; return a
+        # fixed, caller-safe literal.
+        logger.exception(f"Error extracting video info from {normalized_url}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to extract video information: {user_friendly_error}",
+            detail="Could not read information for that media URL.",
         ) from e
 
     if not video_id:

@@ -6,7 +6,6 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi import status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -23,6 +22,7 @@ from app.schemas.media import PrepareUploadRequest
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tags
 from app.utils import benchmark_timing
+from app.utils.error_handlers import ErrorHandler
 from app.utils.file_hash import check_duplicate_by_fingerprint
 from app.utils.file_hash import cleanup_failed_duplicates
 
@@ -334,8 +334,6 @@ async def prepare_upload(
         # duplicate) — don't bury them in a generic 500.
         raise
     except Exception as e:
-        logger.exception(f"Error preparing upload: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error preparing upload: {str(e)}",
-        ) from e
+        # DB/MinIO internals (SQL text, storage paths) are logged, never returned (#859).
+        logger.exception("Error preparing upload")
+        raise ErrorHandler.internal_error("Could not prepare the upload.") from e

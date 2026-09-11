@@ -122,10 +122,12 @@ def _assemble_multipart(req: CompleteUploadRequest, object_name: str) -> None:
         # Leave the upload for the abort path / lifecycle rule rather than
         # aborting here: a retry of /complete is the cheap recovery, and
         # aborting would throw away gigabytes the client could still assemble.
-        logger.warning(f"Multipart completion failed for {object_name}: {e}")
+        # The MinIO S3Error detail (bucket/host/internal path) is logged with a
+        # traceback, never returned to the caller (#859).
+        logger.exception(f"Multipart completion failed for {object_name}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Could not complete multipart upload: {e}",
+            detail="Could not complete the multipart upload.",
         ) from e
 
 

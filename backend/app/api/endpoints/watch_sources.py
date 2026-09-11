@@ -731,11 +731,18 @@ def test_watch_source(
     try:
         with create_client(source) as client:
             ok, message = client.test_connection()
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         # This endpoint's whole purpose is to report whether the connection
         # works, so any failure is a successful *test* with a negative result.
+        # But this broad catch also wraps create_client(source) itself — a
+        # keyring/decrypt/DNS failure building the client, not a connection-test
+        # RESULT — so the caught text can be an internal detail rather than
+        # anything about the remote endpoint. Kept generic rather than echoed
+        # into the response (#859); the real error is still logged above.
         logger.exception(f"Connection test failed for watch source {source_uuid}")
-        return ConnectionTestResponse(success=False, message=str(e))
+        return ConnectionTestResponse(
+            success=False, message="The connection test failed unexpectedly."
+        )
     return ConnectionTestResponse(
         success=ok, message=message, latency_ms=round((time.perf_counter() - started) * 1000, 1)
     )

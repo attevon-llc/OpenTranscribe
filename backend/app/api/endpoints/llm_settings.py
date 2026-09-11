@@ -910,14 +910,20 @@ def test_llm_connection(
         finally:
             llm_service.close()
 
-    except Exception as e:
+    except Exception:
+        # This broad handler wraps config load + key decryption + service
+        # construction, not just the connection dial — so the caught exception can
+        # be an internal detail (a decryption failure, a malformed stored config)
+        # rather than anything about the provider's reachability. The useful
+        # diagnostic already comes back via the success path's own `message`
+        # (which embeds the actual URL dialled); this arm stays generic (#859).
         response_time = int((time.time() - start_time) * 1000)
-        logger.exception(f"LLM connection test failed: {e}")
+        logger.exception("LLM connection test failed")
 
         return schemas.ConnectionTestResponse(
             success=False,
             status=schemas.ConnectionStatus.FAILED,
-            message=f"Connection test failed: {str(e)}",
+            message="Connection test failed.",
             response_time_ms=response_time,
         )
 
@@ -1367,13 +1373,16 @@ async def get_ollama_models(
             "total": 0,
             "message": f"Connection error: {str(e)}",
         }
-    except Exception as e:
-        logger.exception(f"Error fetching Ollama models from {base_url}: {e}")
+    except Exception:
+        # Broad catch around whatever aiohttp/JSON parsing can raise beyond the
+        # narrow ClientError above — kept generic rather than echoing the
+        # exception text into the response (#859).
+        logger.exception(f"Error fetching Ollama models from {base_url}")
         return {
             "success": False,
             "models": [],
             "total": 0,
-            "message": f"Unexpected error: {str(e)}",
+            "message": "Unexpected error while contacting the provider.",
         }
 
 
@@ -1534,9 +1543,13 @@ async def get_openai_compatible_models(
             False,
             message=f"Connection timeout: Server at {base_url} did not respond within 10 seconds.",
         )
-    except Exception as e:
-        logger.error(f"Error fetching OpenAI-compatible models from {base_url}: {e}", exc_info=True)
-        return _model_discovery_response(False, message=f"Unexpected error: {str(e)}")
+    except Exception:
+        # Broad catch beyond the narrow aiohttp errors above — kept generic
+        # rather than echoing the exception text into the response (#859).
+        logger.exception(f"Error fetching OpenAI-compatible models from {base_url}")
+        return _model_discovery_response(
+            False, message="Unexpected error while contacting the provider."
+        )
 
 
 async def _fetch_and_parse_models(
@@ -1570,10 +1583,13 @@ async def _fetch_and_parse_models(
         # Parse JSON response
         try:
             data = await response.json()
-        except Exception as json_err:
-            logger.warning(f"Model discovery: Invalid JSON response from {models_url}: {json_err}")
+        except Exception:
+            # A response body that failed to parse as JSON could quote a token or
+            # other sensitive fragment of what the provider sent back — never
+            # returned to the caller (#859).
+            logger.exception(f"Model discovery: Invalid JSON response from {models_url}")
             return _model_discovery_response(
-                False, message=f"Invalid JSON response from provider: {str(json_err)}"
+                False, message="The provider returned an unparseable response."
             )
 
         # Extract raw models from various formats
@@ -1674,9 +1690,13 @@ async def get_anthropic_models(
         return _model_discovery_response(
             False, message="Connection timeout: Anthropic API did not respond within 10 seconds"
         )
-    except Exception as e:
-        logger.error(f"Error fetching Anthropic models: {e}", exc_info=True)
-        return _model_discovery_response(False, message=f"Unexpected error: {str(e)}")
+    except Exception:
+        # Broad catch beyond the narrow aiohttp errors above — kept generic
+        # rather than echoing the exception text into the response (#859).
+        logger.exception("Error fetching Anthropic models")
+        return _model_discovery_response(
+            False, message="Unexpected error while contacting the provider."
+        )
 
 
 @router.get("/encryption-test")

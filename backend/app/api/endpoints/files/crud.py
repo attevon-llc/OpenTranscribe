@@ -33,6 +33,7 @@ from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
+from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
@@ -966,11 +967,10 @@ def get_media_file_detail(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Error in get_media_file_detail: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving media file: {str(e)}",
-        ) from e
+        # The real failure (often a SQL fragment or a DSN) is logged with a
+        # traceback, never returned to the caller (#859).
+        logger.exception("Error in get_media_file_detail")
+        raise ErrorHandler.internal_error("Could not retrieve this media file.") from e
 
 
 def update_media_file(

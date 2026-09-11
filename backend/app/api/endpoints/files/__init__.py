@@ -47,6 +47,7 @@ from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
+from app.utils.error_handlers import ErrorHandler
 
 from . import cancel_upload
 from . import complete_upload
@@ -614,10 +615,11 @@ def get_media_file_stream_url(
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.exception(f"Error generating presigned URL for file {file_uuid}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating streaming URL: {str(e)}",
+        # The real MinIO/presign failure (host, bucket, credential details) is logged,
+        # never returned — the response only ever names the operation (#859).
+        logger.exception(f"Error generating presigned URL for file {file_uuid}")
+        raise ErrorHandler.internal_error(
+            "Could not generate a streaming URL for this file."
         ) from e
 
 

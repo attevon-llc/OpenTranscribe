@@ -121,6 +121,26 @@ def test_clean_path_fixture_produces_no_finding(rel: str, source: str) -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("label", "check"),
+    auditor.ALLOWLIST_SELFTEST_CASES,
+    ids=[label for label, _ in auditor.ALLOWLIST_SELFTEST_CASES],
+)
+def test_allowlist_rail_case(label: str, check) -> None:
+    """The allowlist RAILS get the same treatment as the detectors (issue #826).
+
+    A rail that stops rejecting a reason-less entry is as invisible as a dead
+    detector — this is what makes sure it fails the ordinary suite too, not only a
+    manually-typed ``--selftest`` run.
+    """
+    try:
+        ok = check()
+    except auditor.AllowlistReasonError as exc:
+        pytest.fail(f"{label}: raised {exc!r}")
+    assert ok, label
+
+
+@pytest.mark.unit
 def test_every_category_has_a_must_fire_case() -> None:
     """A detector with no fixture is a detector nobody would notice going blind."""
     covered = {category for category, _ in auditor.SELFTEST_CASES}

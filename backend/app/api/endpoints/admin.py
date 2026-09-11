@@ -1611,6 +1611,13 @@ def admin_unlock_account(
         source_ip=client_ip,
         user_agent=user_agent,
         outcome=AuditOutcome.SUCCESS,
+        # issue #828: this is a SECOND AUTH_ACCOUNT_UNLOCK emitter (the other is
+        # account_security_service.audit_account_status_change) and it reproduced the
+        # exact pre-#443 shape — the target only in `details.target_user` (a UUID
+        # string), invisible to `query_audit_logs`. Top-level, typed, like every other
+        # administrative emitter.
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         details={
             "target_user": user_uuid,
             "unlocked_by": "admin",

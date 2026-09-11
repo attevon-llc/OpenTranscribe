@@ -676,11 +676,11 @@ def recover_task(
                 except ASRConfigurationError:
                     raise  # let it reach main.py's 503 handler
                 except Exception as e:
-                    logger.error(
-                        f"Failed to re-dispatch transcription for file {file_uuid}: {e}",
-                        exc_info=True,
-                    )
-                    dispatch_error = str(e)
+                    # dispatch_error is returned verbatim in this endpoint's response
+                    # body (see below) — never interpolate the raw exception text
+                    # here, only its class name (#914).
+                    logger.exception(f"Failed to re-dispatch transcription for file {file_uuid}")
+                    dispatch_error = f"Re-dispatch failed ({type(e).__name__})"
 
         return {
             "success": success and dispatch_error is None,

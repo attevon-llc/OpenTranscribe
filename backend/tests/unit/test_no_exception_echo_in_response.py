@@ -472,6 +472,13 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "already calls _sanitize_message(str(exc), api_key) before returning it",
     ),
+    "api/endpoints/asr_settings.py::test_saved_asr_config": (
+        1,
+        "same as test_asr_connection beside it: already calls "
+        "_sanitize_message(str(exc), api_key) before storing/returning it. Only "
+        "surfaced as its own finding once the 4b taint-through-assignment fix "
+        "landed (message is assigned in the except handler, read after it closes)",
+    ),
     "api/endpoints/files/__init__.py::_ready_frame": (
         1,
         "re-surfaces e.detail of an HTTPException WE raised ourselves two lines "

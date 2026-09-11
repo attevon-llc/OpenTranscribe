@@ -210,6 +210,20 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 
 ## Gotchas
 
+- **The upload failure boundary is the commit of the row with its `storage_path`** (issue #905).
+  Before that commit — bad MIME, magic-byte mismatch, oversized, object never landed — delete the
+  row; both `files/upload.py::process_file_upload` (legacy multipart) and
+  `files/complete_upload.py::complete_upload` (presigned) already agree here. At or after that
+  commit the bytes are in object storage and the row is real, so a dispatch failure must NEVER
+  delete it — persist `status=ERROR` + `last_error_message`, invalidate the file-list cache, and
+  re-raise unchanged (so `ASRConfigurationError` still reaches `main.py`'s `OpenTranscribeError`
+  handler as 503 with the real message). Both routes funnel their post-commit dispatch through
+  `files/upload.py::dispatch_upload_pipeline_or_mark_error` so this can't drift between them
+  again. Before this fix, the legacy route's single broad `except Exception` around the whole
+  request body caught a post-storage dispatch failure the same as a pre-storage one and deleted
+  the row + leaked the MinIO object; the presigned route had no handling around dispatch at all,
+  so a non-`ASRConfigurationError` failure left the row at PENDING forever — invisible to
+  `orphan_upload_sweeper`, which deliberately skips a PENDING row whose object exists.
 - **`user.email` on an existing account is writable through exactly THREE authorities**
   (issue #867 follow-up): the account holder themselves, via `PUT /users/me` (password-proven);
   a super_admin, via `PUT /admin/users/{uuid}/external-email`, for an already-linked account

@@ -158,6 +158,7 @@ import json
 import re
 import sys
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1856,29 +1857,83 @@ def scan_file(path: Path, root: Path) -> list[Finding]:
 #: the failure mode that let `expected-schemas.tsv` rot for four months.
 _BACKLOG_PREFIX = 'BACKLOG'
 
+#: Reasons that read as "no justification" rather than a real, written one. Exact match only
+#: (case-insensitive, trimmed) — a reason that merely CONTAINS one of these words as part of an
+#: actual sentence (e.g. "needs a design decision, not a mechanical edit") is not rejected; only
+#: a line whose entire reason IS one of these placeholders is. `no reason given` is the sentinel
+#: this file used to silently substitute for an empty reason (issue #826) — it is included here
+#: so a reason that is literally that sentinel is *also* rejected, not just an empty one.
+_NOT_A_REAL_REASON = frozenset(
+    {
+        'no reason given',
+        'todo',
+        'tbd',
+        'flaky',
+        'wip',
+        'fixme',
+        'n/a',
+        'na',
+        'none',
+    }
+)
 
-def load_allowlist(root: Path) -> dict[str, list[str]]:
-    """Map ``<file>::<test>::<category>`` to the reason of EACH line carrying that key.
 
-    A list, not a string, because **one line buys one finding**. Set membership could not see a
-    partial fix: ``test_personal_file_read_surfaces_unaffected`` produces three
+class AllowlistReasonError(ValueError):
+    """An allowlist entry carries no real, written reason — empty or a placeholder.
+
+    The allowlist's whole safeguard is that every accepted/deferred finding was a deliberate,
+    reviewed decision. Substituting a placeholder for a missing reason (the previous behaviour)
+    made that safeguard decorative: an entry with no justification still passed. This raises
+    instead, so a reason-less entry fails the run rather than sitting in the allowlist looking
+    reviewed.
+    """
+
+
+def _is_real_reason(reason: str) -> bool:
+    return bool(reason) and reason.casefold() not in _NOT_A_REAL_REASON
+
+
+def parse_allowlist_text(text: str, *, source: object = '<text>') -> dict[str, list[str]]:
+    """Parse allowlist lines, REJECTING any entry whose reason is not a real one.
+
+    Split out from :func:`load_allowlist` so both the CLI (given a file on disk) and
+    ``--selftest`` (given an in-memory string) exercise the identical rejection path — the
+    finding in issue #826 was specifically that the file-reading path substituted a placeholder
+    instead of refusing, so the two must not diverge again.
+
+    Returns a map of ``<file>::<test>::<category>`` to the reason of EACH line carrying that
+    key. A list, not a string, because **one line buys one finding**. Set membership could not
+    see a partial fix: ``test_personal_file_read_surfaces_unaffected`` produces three
     ``negated-status`` findings and ``test_community_router_reachable`` produces two, and under
     a set the whole test was exempt as soon as one line existed — fix two of the three
     assertions and the run stayed green with the third still covered. Duplicate keys are
     therefore the encoding of a count, not a mistake to reject; the file already contained
     exactly as many lines as findings for both of those tests.
     """
-    path = root / _ALLOWLIST_NAME
-    if not path.exists():
-        return {}
     allowed: dict[str, list[str]] = {}
-    for raw in path.read_text().splitlines():
+    for lineno, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line or line.startswith('#'):
             continue
         key, _, reason = line.partition('#')
-        allowed.setdefault(key.strip(), []).append(reason.strip() or 'no reason given')
+        key = key.strip()
+        reason = reason.strip()
+        if not _is_real_reason(reason):
+            raise AllowlistReasonError(
+                f'{source}:{lineno}: allowlist entry for `{key}` has no real reason '
+                f'(got {reason!r}). A written reason is mandatory — see the header of '
+                f'{_ALLOWLIST_NAME}.'
+            )
+        allowed.setdefault(key, []).append(reason)
     return allowed
+
+
+def load_allowlist(root: Path) -> dict[str, list[str]]:
+    """Load and parse ``<root>/audit-allowlist.txt``, or ``{}`` if it does not exist."""
+    path = root / _ALLOWLIST_NAME
+    if not path.exists():
+        return {}
+    return parse_allowlist_text(path.read_text(), source=path)
 
 
 def apply_allowlist(
@@ -2424,6 +2479,50 @@ SELFTEST_ONCE: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def _allowlist_rejects(text: str) -> bool:
+    """True iff parsing ``text`` raises :class:`AllowlistReasonError`."""
+    try:
+        parse_allowlist_text(text)
+    except AllowlistReasonError:
+        return True
+    return False
+
+
+#: ``(label, check)`` pairs for the allowlist RAILS themselves (issue #826) — not the
+#: detectors. A detector that stops matching is invisible; so is a rail that stops rejecting a
+#: reason-less entry, which is exactly what shipped: an empty or placeholder reason was
+#: silently substituted with `'no reason given'` instead of failing the run. Each check is a
+#: predicate so `run_selftest` can report it the same way as a detector case.
+ALLOWLIST_SELFTEST_CASES: tuple[tuple[str, Callable[[], bool]], ...] = (
+    (
+        'a reason-less entry is REJECTED, not defaulted to a placeholder',
+        lambda: _allowlist_rejects('a.py::test_a::weak-only'),
+    ),
+    (
+        'an empty reason after "#" is REJECTED',
+        lambda: _allowlist_rejects('a.py::test_a::weak-only  #'),
+    ),
+    (
+        'a placeholder reason ("flaky") is REJECTED',
+        lambda: _allowlist_rejects('a.py::test_a::weak-only  # flaky'),
+    ),
+    (
+        'a placeholder reason ("TODO") is REJECTED, case-insensitively',
+        lambda: _allowlist_rejects('a.py::test_a::weak-only  # TODO'),
+    ),
+    (
+        'a genuine written reason is ACCEPTED',
+        lambda: parse_allowlist_text('a.py::test_a::weak-only  # a real, written reason')
+        == {'a.py::test_a::weak-only': ['a real, written reason']},
+    ),
+    (
+        'a BACKLOG reason is ACCEPTED (deferred is still a real reason)',
+        lambda: parse_allowlist_text('a.py::test_a::weak-only  # BACKLOG(#431): tbd for now')
+        == {'a.py::test_a::weak-only': ['BACKLOG(#431): tbd for now']},
+    ),
+)
+
+
 def run_selftest(verbose: bool = True) -> list[str]:
     """Return a list of failure descriptions — empty means every detector is alive."""
     failures: list[str] = []
@@ -2465,6 +2564,20 @@ def run_selftest(verbose: bool = True) -> list[str]:
         check_clean(source, 'fixture.py', f'clean case {i}')
     for rel, source in SELFTEST_PATH_CLEAN:
         check_clean(source, rel, f'clean case @ {rel}')
+    for label, check in ALLOWLIST_SELFTEST_CASES:
+        try:
+            ok = check()
+        except AllowlistReasonError as exc:
+            # An "ACCEPTED" case whose reason the rail wrongly rejects raises here rather
+            # than returning False — report it the same way as a failed check.
+            ok = False
+            failures.append(f'allowlist: {label}: raised {exc!r}')
+        else:
+            if not ok:
+                failures.append(f'allowlist: {label}')
+        if verbose:
+            mark = '\033[31m✗' if not ok else '\033[32m✓'
+            print(f'  {mark}\033[0m allowlist: {label}')
     return failures
 
 
@@ -2483,6 +2596,7 @@ def _selftest_main() -> int:
         + len(SELFTEST_ONCE)
         + len(SELFTEST_CLEAN)
         + len(SELFTEST_PATH_CLEAN)
+        + len(ALLOWLIST_SELFTEST_CASES)
     )
     print(f'\n\033[32mall {total} self-test cases pass\033[0m\n')
     return 0
@@ -2525,7 +2639,11 @@ def main() -> int:
     if args.category:
         findings = [f for f in findings if f.category == args.category]
 
-    allowed = load_allowlist(args.root)
+    try:
+        allowed = load_allowlist(args.root)
+    except AllowlistReasonError as exc:
+        print(f'error: {exc}', file=sys.stderr)
+        return 2
     unallowed, backlog, accepted, all_stale = apply_allowlist(findings, allowed)
 
     # An allowlist entry with no finding left to cover is an entry nobody will ever delete.

@@ -2126,12 +2126,21 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                     logger.error(f"Failed to decrypt API key for LLM config {config_id}")
                     return None
 
+            from app.services import llm_context_window
+
+            declared_window = int(user_settings.max_tokens)
             config = LLMConfig(
                 provider=LLMProvider(user_settings.provider),
                 model=str(user_settings.model_name),
                 api_key=api_key,
                 base_url=str(user_settings.base_url) if user_settings.base_url else None,
-                max_tokens=int(user_settings.max_tokens),
+                max_tokens=llm_context_window.effective_window(
+                    db,
+                    provider=str(user_settings.provider),
+                    base_url=str(user_settings.base_url) if user_settings.base_url else None,
+                    model=str(user_settings.model_name),
+                    declared=declared_window,
+                ),
                 temperature=float(user_settings.temperature),
             )
             return LLMService(config)
@@ -2197,16 +2206,27 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                     logger.error(f"Failed to decrypt API key for user {user_id}")
                     return LLMService.create_from_system_settings()
 
-            # Create config from user settings - USE ONLY USER'S MAX_TOKENS
+            # Create config from user settings - USER'S DECLARED CONTEXT WINDOW, narrowed
+            # only by a MEASURED ceiling read off the live server (#833) -- never inferred.
+            from app.services import llm_context_window
+
             provider = LLMProvider(user_settings.provider)
             temperature_float = float(user_settings.temperature)
+            base_url = str(user_settings.base_url) if user_settings.base_url else None
+            declared_window = int(user_settings.max_tokens)
 
             config = LLMConfig(
                 provider=provider,
                 model=str(user_settings.model_name),
                 api_key=api_key,
-                base_url=str(user_settings.base_url) if user_settings.base_url else None,
-                max_tokens=int(user_settings.max_tokens),  # USER'S CONTEXT WINDOW - NO INFERENCE
+                base_url=base_url,
+                max_tokens=llm_context_window.effective_window(
+                    db,
+                    provider=str(user_settings.provider),
+                    base_url=base_url,
+                    model=str(user_settings.model_name),
+                    declared=declared_window,
+                ),
                 temperature=temperature_float,
             )
 
@@ -2355,13 +2375,28 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
 
         model, api_key, base_url = provider_config
 
+        window = 32768  # Conservative system default
+        try:
+            from app.db.base import SessionLocal
+            from app.services import llm_context_window
+
+            db = SessionLocal()
+            try:
+                window = llm_context_window.effective_window(
+                    db, provider=str(provider), base_url=base_url, model=model, declared=window
+                )
+            finally:
+                db.close()
+        except Exception as exc:  # noqa: BLE001 -- a capability read must not break the fallback service
+            logger.warning("Context-window measurement unavailable for the system LLM: %s", exc)
+
         try:
             config = LLMConfig(
                 provider=provider,
                 model=model,
                 api_key=api_key,
                 base_url=base_url,
-                max_tokens=32768,  # Conservative system default
+                max_tokens=window,
                 temperature=0.3,
             )
 

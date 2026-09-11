@@ -626,6 +626,9 @@ because the cross-encoder may not be installed on that deployment.
 `resolve_answer_tokens` (in `service.py`) does the same for the reply budget and
 is resolved **before** `build_messages`, which reserves context for the answer —
 raising `max_tokens` afterwards would let prompt + answer overrun the window.
+`llm.user_context_window` is already the measured-narrowed value by the time chat sees it
+(issue #833, `app/services/CLAUDE.md`), so nothing on the chat path should re-consult the
+measurement separately.
 
 ## The excerpt budget is a hard ceiling, and citations follow it
 

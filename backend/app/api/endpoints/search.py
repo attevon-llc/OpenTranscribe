@@ -10,12 +10,17 @@ from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
+from fastapi import Response
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.auth.rate_limit import get_search_rate_limit
+from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.core.config import settings
 from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
@@ -108,7 +113,10 @@ def _search_response_to_schema(response) -> dict[str, Any]:
 
 
 @router.get("")
+@limiter.limit(get_search_rate_limit(), key_func=user_or_ip_key)
 def search_transcripts(
+    *,
+    request: Request,
     q: str = Query(..., min_length=1, description="Search query"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(
@@ -151,6 +159,7 @@ def search_transcripts(
             "Defaults to transcripts for byte-identical behavior against existing callers."
         ),
     ),
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
@@ -180,6 +189,13 @@ def search_transcripts(
           already combine both keyword and semantic signals.
         - Sorting by 'completed_at' uses upload_time as a fallback since the completion
           timestamp is not indexed in the search layer.
+        - **Rate-limited** (issue #904), keyed per-user: ``RATE_LIMIT_SEARCH_PER_MINUTE``
+          (default 30/minute) — this route can burn ~2s of Presidio snippet masking
+          per call. ``/count`` and ``/suggestions`` are deliberately NOT limited: they
+          are per-keystroke polls by design (``TranscriptSearch.svelte``,
+          ``SearchAutocomplete.svelte``), built to be cheap
+          (see ``search_match_count``'s docstring), already quarantine-hardened by
+          issue #817. A 30/min cap on either would break the find bar.
     """
     valid_sort_fields = (
         "relevance",
@@ -213,7 +229,7 @@ def search_transcripts(
         from app.services.search.hybrid_search_service import HybridSearchService
 
         search_service = HybridSearchService()
-        response = search_service.search(
+        search_response = search_service.search(
             query=q,
             user_id=ctx.user.id,
             page=page,
@@ -241,9 +257,9 @@ def search_transcripts(
         # drop any taken-down files from the result page against the DB (page-sized,
         # one IN query). Admins keep visibility for review.
         if not ctx.user.is_admin:
-            response = _drop_quarantined_search_hits(db, response)
+            search_response = _drop_quarantined_search_hits(db, search_response)
 
-        payload = _search_response_to_schema(response)
+        payload = _search_response_to_schema(search_response)
     else:
         # Same shape a transcript-search response carries, with nothing found —
         # so a `summaries`-only caller still gets a well-formed SearchResponseSchema

@@ -242,6 +242,24 @@ def get_directory_rate_limit() -> str:
     return f"{settings.RATE_LIMIT_DIRECTORY_PER_MINUTE}/minute"
 
 
+def get_search_rate_limit() -> str:
+    """Rate limit string for ``GET /search`` (the hybrid transcript+summary
+    search, issue #904).
+
+    Not :func:`get_api_rate_limit` (100/minute, meant for cheap CRUD reads) —
+    this route can burn ~2s of Presidio snippet masking per call, the same
+    argument ``RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE`` already makes. See the
+    ``RATE_LIMIT_SEARCH_PER_MINUTE`` docstring in ``core/config.py`` for the
+    derivation. Deliberately does NOT cover ``GET /search/count`` or
+    ``GET /search/suggestions`` — see ``search_transcripts``'s own docstring
+    for why those stay unlimited.
+
+    Returns:
+        Rate limit string in slowapi format (e.g., "30/minute").
+    """
+    return f"{settings.RATE_LIMIT_SEARCH_PER_MINUTE}/minute"
+
+
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
     """
     Exception handler for rate limit exceeded errors.

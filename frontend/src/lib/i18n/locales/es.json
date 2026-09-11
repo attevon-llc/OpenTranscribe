@@ -1788,7 +1788,7 @@
   "settings.statistics.queueNlp": "NLP",
   "settings.statistics.queueEmbedding": "Embeddings",
   "settings.statistics.queueCpu": "CPU",
-  "settings.statistics.queueTotal": "Total en cola",
+  "settings.statistics.queueTotal": "En cola + en curso",
   "settings.statistics.fileTimingAvg": "Promedio por archivo",
   "settings.statistics.fileTimingMin": "Más rápido",
   "settings.statistics.fileTimingMax": "Más lento",

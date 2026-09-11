@@ -1043,7 +1043,7 @@
   "settings.statistics.queueNlp": "NLP",
   "settings.statistics.queueEmbedding": "임베딩",
   "settings.statistics.queueCpu": "CPU",
-  "settings.statistics.queueTotal": "총 대기 작업",
+  "settings.statistics.queueTotal": "대기 + 실행 중",
   "settings.statistics.fileTimingAvg": "파일당 평균",
   "settings.statistics.fileTimingMin": "최단",
   "settings.statistics.fileTimingMax": "최장",

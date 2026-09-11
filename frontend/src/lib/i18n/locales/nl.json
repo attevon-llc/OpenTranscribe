@@ -1043,7 +1043,7 @@
   "settings.statistics.queueNlp": "NLP",
   "settings.statistics.queueEmbedding": "Embedding",
   "settings.statistics.queueCpu": "CPU",
-  "settings.statistics.queueTotal": "Totaal in wachtrij",
+  "settings.statistics.queueTotal": "In wachtrij + actief",
   "settings.statistics.fileTimingAvg": "Gem. per bestand",
   "settings.statistics.fileTimingMin": "Snelste",
   "settings.statistics.fileTimingMax": "Traagste",

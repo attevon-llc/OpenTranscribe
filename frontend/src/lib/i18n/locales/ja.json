@@ -1042,7 +1042,7 @@
   "settings.statistics.queueNlp": "NLP",
   "settings.statistics.queueEmbedding": "埋め込み",
   "settings.statistics.queueCpu": "CPU",
-  "settings.statistics.queueTotal": "合計キュー",
+  "settings.statistics.queueTotal": "待機中 + 実行中",
   "settings.statistics.fileTimingAvg": "ファイル平均",
   "settings.statistics.fileTimingMin": "最速",
   "settings.statistics.fileTimingMax": "最遅",

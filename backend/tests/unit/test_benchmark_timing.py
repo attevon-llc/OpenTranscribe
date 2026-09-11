@@ -432,6 +432,15 @@ def test_capture_queue_depth_noop_when_disabled(monkeypatch, caplog):
 def test_capture_queue_depth_writes_json_depths_and_in_flight_count(
     monkeypatch, db_session, normal_user
 ):
+    """A task waiting at a NON-DEFAULT priority must still be counted.
+
+    The bare ``LLEN <queue>`` this replaced only ever saw the priority-0
+    sub-list, so a queue holding only priority-7 work read as empty. Seeding
+    exactly that sub-list is what makes this red against the old
+    implementation: its ``pipe.execute()`` shape (one LLEN per queue) doesn't
+    even match this canned return list, so it fails before ever writing the
+    payload this test reads back.
+    """
     _enable(monkeypatch)
     import contextlib
 
@@ -463,7 +472,10 @@ def test_capture_queue_depth_writes_json_depths_and_in_flight_count(
 
     client = _redis()
     pipe = client.pipeline.return_value
-    pipe.execute.return_value = [1] * len(CeleryQueues.ALL)
+    llens = [0] * (len(CeleryQueues.ALL) * 10)
+    gpu_offset = CeleryQueues.ALL.index(CeleryQueues.GPU) * 10
+    llens[gpu_offset + 7] = 5  # 5 tasks queued at priority 7 -- invisible to a bare LLEN
+    pipe.execute.return_value = [*llens, []]  # trailing [] is the empty `unacked` hvals
 
     with patch("app.core.redis.get_redis", return_value=client):
         benchmark_timing.capture_queue_depth("task-1")
@@ -476,7 +488,8 @@ def test_capture_queue_depth_writes_json_depths_and_in_flight_count(
     )
     depths_payload = json.loads(depth_call.kwargs["mapping"]["queue_depth_at_dispatch"])
     assert set(depths_payload) == set(CeleryQueues.ALL)
-    assert all(v == 1 for v in depths_payload.values())
+    assert depths_payload[CeleryQueues.GPU] == 5
+    assert all(v == 0 for k, v in depths_payload.items() if k != CeleryQueues.GPU)
 
     concurrent_call = next(
         c
@@ -494,10 +507,11 @@ def test_capture_queue_depth_survives_llen_failure(monkeypatch, caplog):
 
     with (
         patch("app.core.redis.get_redis", return_value=client),
-        caplog.at_level("DEBUG", logger="app.utils.benchmark_timing"),
+        caplog.at_level("DEBUG", logger="app.core.celery_metrics"),
     ):
-        # Must not raise even though the LLEN pipeline blew up.
+        # Must not raise even though the pipelined LLEN/HVALS blew up.
         benchmark_timing.capture_queue_depth("task-1", queues=["gpu"])
 
     # Prove the failure was actually hit and swallowed, not skipped entirely.
-    assert any("queue depth LLEN failed" in r.message for r in caplog.records)
+    # Logged by celery_metrics.queue_snapshot, which this now delegates to.
+    assert any("Queue snapshot skipped" in r.message for r in caplog.records)

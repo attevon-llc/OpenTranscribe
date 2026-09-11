@@ -32,6 +32,9 @@ so keep heavy imports lazy.
   → shares, in that order), `require_resource_owner`.
 - `db_helpers.py` — `apply_tenant_scope` (SQL-plane default-deny tenant filter mirroring
   `api/deps_context.scope_to_context`), user file/tag/speaker query builders, tag-cache busting.
+- `stats_helpers.py`'s `get_queue_depths()` (the admin Statistics API) is a thin caller of
+  `app.core.celery_metrics.queue_snapshot` — the single source for Celery queue measurement
+  (issue #892). Do not re-add a local `LLEN`/pipeline here; call that function instead.
 - **There are no authorization decorators here, and reintroducing one is the mistake to avoid.**
   `auth_decorators.py` was deleted in issue #450: zero call sites for its four gates, and its only
   importer (`services/transcription_service.py`, a whole parallel copy of the transcription

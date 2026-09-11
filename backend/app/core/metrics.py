@@ -88,6 +88,7 @@ db_queries_per_request: Histogram
 cache_operations_total: Counter
 security_state_degraded_total: Counter
 celery_queue_depth: Gauge
+celery_queue_reserved: Gauge
 user_signups_total: Counter
 files_uploaded_total: Counter
 backup_runs_total: Counter
@@ -110,6 +111,7 @@ def _register() -> None:
     global cache_operations_total
     global security_state_degraded_total
     global celery_queue_depth
+    global celery_queue_reserved
     global user_signups_total
     global files_uploaded_total
     global backup_runs_total
@@ -167,6 +169,14 @@ def _register() -> None:
     celery_queue_depth = Gauge(
         "celery_queue_depth",
         "Pending tasks per Celery queue (priority sub-lists summed).",
+        ["queue"],
+    )
+    celery_queue_reserved = Gauge(
+        "celery_queue_reserved",
+        "Tasks delivered to a worker and not yet acknowledged, per Celery queue "
+        "(prefetched, plus RUNNING acks_late tasks). Autoscale on "
+        "celery_queue_depth + celery_queue_reserved: depth alone trends to zero "
+        "as the fleet saturates.",
         ["queue"],
     )
     user_signups_total = Counter(

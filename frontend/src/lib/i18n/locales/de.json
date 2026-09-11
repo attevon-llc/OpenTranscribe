@@ -2195,6 +2195,8 @@
   "summary.copyFailed": "Kopieren fehlgeschlagen",
   "summary.copySummaryLabel": "Zusammenfassung kopieren",
   "summary.copySummaryMarkdown": "Zusammenfassung als Markdown kopieren",
+  "summary.copying": "Wird kopiert…",
+  "summary.noContent": "Kein Inhalt",
   "summary.errorLoading": "Fehler beim Laden der Zusammenfassung",
   "summary.executiveSummary": "Zusammenfassung (BLUF)",
   "summary.followUpItems": "Folgepunkte",

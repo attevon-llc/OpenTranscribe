@@ -22,6 +22,11 @@ writes to it, each with a written reason, so the next one has to answer the ques
   the download flow and the clipboard copy. ⚠️ Never give it a local fallback: a `catch` that
   serialized in the browser would reinstate the bypass for precisely the cases the server
   refuses (503 = policy unresolvable, 409 = redaction scan unfinished).
+- `requestSummaryExport.ts` — the equivalent for AI summaries (issue #885): the ONE call onto
+  `GET /api/files/{uuid}/summary/export`, used by `SummaryModal.svelte`'s copy button. Fed
+  from the same masked copy the summary read endpoint returns, so there is one masking
+  implementation behind both. ⚠️ Same fallback rule as `requestTranscriptExport.ts` — never
+  give it a local fallback.
 - `clipboardSurfaces.test.ts` — the allowlist of clipboard-writing surfaces. It proves they
   are _enumerated_, not that each is correct; the reason text is the claim a human checks.
 - `txtExportPrefs.ts` — `loadTxtPrefs` / `saveTxtPrefs`: localStorage persistence for the TXT
@@ -42,8 +47,9 @@ writes to it, each with a written reason, so the next one has to answer the ques
   add it to `transcript_export_service.VALID_FORMATS` and the backend builder functions — a
   client-side one would silently opt that format out of `export_locked` again.
 - **A "copy" button is an export.** So is anything that hands transcript text to another
-  application. Route it through `requestTranscriptExport` and add the surface to
-  `clipboardSurfaces.test.ts`'s allowlist with a reason.
+  application. Route it through `requestTranscriptExport` (transcripts) or
+  `requestSummaryExport` (AI summaries) and add the surface to `clipboardSurfaces.test.ts`'s
+  allowlist with a reason.
 - The copied text is now the server's **TXT** rendering (`[hh:mm:ss --> hh:mm:ss]` on its own
   line, then `Speaker:`, then the text), not the modal's old
   `Speaker [m:ss-m:ss]: text`. That is deliberate: one renderer for the download and the

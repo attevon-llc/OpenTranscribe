@@ -1717,6 +1717,8 @@
   "summary.copyFailed": "复制失败",
   "summary.copySummaryLabel": "复制摘要",
   "summary.copySummaryMarkdown": "以 markdown 格式复制摘要",
+  "summary.copying": "正在复制…",
+  "summary.noContent": "无内容",
   "summary.copiedToClipboard": "摘要已复制到剪贴板!",
   "summary.reprocess": "重新处理",
   "summary.reprocessLabel": "重新处理摘要",

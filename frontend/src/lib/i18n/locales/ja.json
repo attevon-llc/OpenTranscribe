@@ -1717,6 +1717,8 @@
   "summary.copyFailed": "コピー失敗",
   "summary.copySummaryLabel": "要約をコピー",
   "summary.copySummaryMarkdown": "要約をMarkdownでコピー",
+  "summary.copying": "コピー中…",
+  "summary.noContent": "コンテンツがありません",
   "summary.copiedToClipboard": "要約をクリップボードにコピーしました！",
   "summary.reprocess": "再処理",
   "summary.reprocessLabel": "要約を再処理",

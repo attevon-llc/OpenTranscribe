@@ -291,6 +291,19 @@ def test_the_chat_export_resolves_a_policy():
     assert _reaches_resolver(plane[key]), "chat export stopped resolving a redaction policy"
 
 
+def test_the_summary_export_resolves_a_policy():
+    """Issue #885's route, asserted by name — the sweep above goes green if it is deleted.
+
+    #885 was filed as a redaction bypass and the premise was wrong: this route calls the
+    same ``_redacted_summary`` helper ``GET .../summary`` does, so there is one masking
+    implementation for both, not two that could drift.
+    """
+    plane = dict((key, endpoint) for key, _path, endpoint in _plane())
+    key = "GET /api/files/{file_uuid}/summary/export"
+    assert key in plane
+    assert _reaches_resolver(plane[key]), "summary export stopped resolving a redaction policy"
+
+
 def test_every_exemption_still_names_a_live_route():
     """A stale exemption is a silent hole: it excuses a route that no longer exists, and
     the next route to take that path inherits the excuse."""

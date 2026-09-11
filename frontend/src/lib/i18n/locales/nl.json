@@ -1718,6 +1718,8 @@
   "summary.copyFailed": "Kopiëren mislukt",
   "summary.copySummaryLabel": "Samenvatting kopiëren",
   "summary.copySummaryMarkdown": "Samenvatting kopiëren als markdown",
+  "summary.copying": "Kopiëren…",
+  "summary.noContent": "Geen inhoud",
   "summary.copiedToClipboard": "Samenvatting gekopieerd naar klembord!",
   "summary.reprocess": "Opnieuw verwerken",
   "summary.reprocessLabel": "Samenvatting opnieuw verwerken",

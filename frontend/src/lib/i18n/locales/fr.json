@@ -2195,6 +2195,8 @@
   "summary.copyFailed": "Échec de la copie",
   "summary.copySummaryLabel": "Copier le résumé",
   "summary.copySummaryMarkdown": "Copier le résumé en markdown",
+  "summary.copying": "Copie…",
+  "summary.noContent": "Aucun contenu disponible",
   "summary.errorLoading": "Erreur de Chargement du Résumé",
   "summary.executiveSummary": "Résumé Exécutif (BLUF)",
   "summary.followUpItems": "Éléments de Suivi",

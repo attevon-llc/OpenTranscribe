@@ -259,13 +259,13 @@ def _wait_for_completed(headers, file_uuid, max_wait=180):
             body = resp.json()
             status = body.get("status")
             if status in _TERMINAL_FAILURE_STATUSES:
-                # `GET /files/{uuid}` carries error_category, not last_error_message; the
-                # full message lives on /status-detail, so name the category and point at it
+                # `GET /files/{uuid}` carries error_reason, not last_error_message; the
+                # full message lives on /status-detail, so name the reason and point at it
                 # rather than reporting an empty string.
-                detail = body.get("last_error_message") or body.get("error_category") or "unknown"
+                detail = body.get("last_error_message") or body.get("error_reason") or "unknown"
                 pytest.fail(
                     f"file {file_uuid} reached terminal status {status!r} after {i}s and "
-                    f"cannot become completed (error_category={detail}). "
+                    f"cannot become completed (error_reason={detail}). "
                     f"Full message: GET {BASE_URL}/files/{file_uuid}/status-detail"
                 )
             if status == "completed":

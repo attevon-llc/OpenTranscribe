@@ -829,6 +829,9 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
             media_file.task_last_update = None
             media_file.cancellation_requested = False
             media_file.last_error_message = None
+            # A retry that clears the message but keeps the retry-policy classification
+            # would strand a `worker_lost` category on a freshly-PENDING row.
+            media_file.error_category = None
             media_file.force_delete_eligible = False
 
             # Clear existing transcript data for clean retry

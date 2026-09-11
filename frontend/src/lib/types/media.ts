@@ -74,7 +74,7 @@ export interface MediaFile {
   status_badge_class?: string;
 
   // Error handling fields from backend
-  error_category?: string;
+  error_reason?: string;
   error_suggestions?: string[];
   user_message?: string;
   is_retryable?: boolean;

@@ -312,6 +312,19 @@ class VideoProcessingService:
     ):
         """Send download progress update via WebSocket."""
         try:
+            # This publishes straight to the ``websocket_notifications`` Redis
+            # channel rather than going through ``send_ws_event``/
+            # ``send_ws_event_for_file`` (issue #908, finding A) — but the payload
+            # still carries ``file_id``, so a quarantined file's identity must not
+            # reach a non-admin over this path either, even though no filename is
+            # included: the fact that a download for that id exists and is
+            # progressing is itself the disclosure a takedown is supposed to hide.
+            from app.services.takedown_service import is_notification_suppressed
+
+            if is_notification_suppressed(file_id, user_id):
+                logger.debug(f"download_progress notification suppressed for file {file_id}")
+                return
+
             redis_client = redis.from_url(settings.REDIS_URL)
             notification_data = {
                 "user_id": user_id,

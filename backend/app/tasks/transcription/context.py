@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import NoReturn
 
+from celery.exceptions import Reject
+
 from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
 from app.core.constants import DIAR_SIDECAR_RETRY_BASE
 from app.core.constants import DIAR_SIDECAR_RETRY_MAX
@@ -100,6 +102,55 @@ def retry_transcribe_gpu_exception(task, exc, file_uuid: str) -> NoReturn:
         retry_on_diar_sidecar_unavailable(task, exc, file_uuid)
     else:
         retry_on_asr_rate_limit(task, exc, file_uuid)
+
+
+def requeue_after_abort(file_uuid: str, abort: Exception, *, stage: str) -> NoReturn:
+    """Stand a shutdown-aborted pipeline stage down without failing the file (#809).
+
+    THE single implementation, shared by all three tasks that can reach a cooperative-abort
+    checkpoint — ``transcribe_gpu_task`` (``core.py``), ``diarize_gpu_task``
+    (``diarize_task.py``) and ``transcribe_cpu_task`` (``cpu_task.py``). It lives here rather
+    than in any one of them because three copies of a "do NOT travel the failure path" rule is
+    three chances for one of them to drift into marking the file errored, which is the exact
+    defect this function exists to prevent.
+
+    The work was INTERRUPTED, not broken, so this deliberately does not travel the failure
+    path -- no ``_handle_transcription_failure``, no error notification. Marking the file
+    errored would turn a clean restart into a user-visible failure and stop it being retried.
+
+    ``Reject(requeue=True)``, never a bare ``raise``: under ``acks_late=True`` celery acks on
+    RETURN -- success or exception -- so raising anything else here would ACK the message and
+    LOSE the work. That is worse than the SIGKILL this replaces, since after a SIGKILL the
+    message is redelivered.
+
+    ``Reject`` also does not fire the chain's ``link_error`` errback (celery's tracer handles
+    it in its own ``except Reject`` arm, which never reaches ``handle_failure``), so a
+    graceful shutdown does not present to the user as a pipeline failure. Pinned by
+    ``tests/unit/test_cooperative_abort.py::TestRejectDoesNotFireErrbacks``.
+
+    Redis is not AMQP, so #809 required this be verified rather than inferred from the AMQP
+    contract. Measured against a real celery worker on a real Redis broker with
+    ``acks_late=True``, rejecting on first delivery: DELIVERY #1, DELIVERY #2, second
+    completed. ``Reject(requeue=True)`` does redeliver on the Redis transport.
+
+    Args:
+        file_uuid: The file whose stage stood down, for the log line.
+        abort: The ``TranscriptionAbortedError`` that reached the task layer; chained onto the
+            ``Reject`` so the checkpoint that fired is still readable from the traceback.
+        stage: Which task stood down ("GPU transcription", "GPU diarization", ...). Named
+            explicitly rather than derived, so the log says which leg of the pipeline is being
+            requeued when several are draining at once.
+
+    Raises:
+        Reject: always -- this function exists to convert an abort into a requeue.
+    """
+    logger.warning(
+        "%s for file %s stood down for worker shutdown (%s) -- requeueing",
+        stage,
+        file_uuid,
+        abort,
+    )
+    raise Reject(requeue=True) from abort
 
 
 @dataclass

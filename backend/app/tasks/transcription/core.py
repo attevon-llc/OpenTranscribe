@@ -19,7 +19,6 @@ import time
 from typing import NoReturn
 
 from celery import chain
-from celery.exceptions import Reject
 
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
@@ -41,6 +40,7 @@ from .context import TranscriptionContext
 from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import requeue_after_abort
 from .context import retry_transcribe_gpu_exception
 from .cpu_task import transcribe_cpu_task
 from .diarize_task import diarize_gpu_task
@@ -337,44 +337,12 @@ def _finish_failed_or_aborted(
     """
     _cleanup_wav_quietly(local_wav_path)
     if isinstance(exc, TranscriptionAbortedError):
-        _requeue_after_abort(file_uuid, exc)
+        requeue_after_abort(file_uuid, exc, stage="GPU transcription")
     logger.error(f"GPU transcription failed for file {file_uuid}: {exc}")
     _handle_transcription_failure(
         ctx, task_id, _get_user_friendly_error_message(str(exc)), "gpu_processing_error"
     )
     raise exc
-
-
-def _requeue_after_abort(file_uuid: str, abort: Exception) -> NoReturn:
-    """Stand a shutdown-aborted GPU transcription down without failing the file (#809).
-
-    Extracted from ``transcribe_gpu_task`` rather than inlined: that task body is already at
-    the C901 complexity ceiling, and an abort path is exactly the kind of branch that should
-    not make the hot path harder to read.
-
-    The work was INTERRUPTED, not broken, so this deliberately does not travel the failure
-    path -- no ``_handle_transcription_failure``, no error notification. Marking the file
-    errored would turn a clean restart into a user-visible failure and stop it being retried.
-
-    ``Reject(requeue=True)``, never a bare ``raise``: under ``acks_late=True`` celery acks on
-    RETURN -- success or exception -- so raising anything else here would ACK the message and
-    LOSE the transcription. That is worse than the SIGKILL this replaces, since after a
-    SIGKILL the message is redelivered.
-
-    Redis is not AMQP, so #809 required this be verified rather than inferred from the AMQP
-    contract. Measured against a real celery worker on a real Redis broker with
-    ``acks_late=True``, rejecting on first delivery: DELIVERY #1, DELIVERY #2, second
-    completed. ``Reject(requeue=True)`` does redeliver on the Redis transport.
-
-    Raises:
-        Reject: always -- this function exists to convert an abort into a requeue.
-    """
-    logger.warning(
-        "GPU transcription for file %s stood down for worker shutdown (%s) -- requeueing",
-        file_uuid,
-        abort,
-    )
-    raise Reject(requeue=True) from abort
 
 
 @celery_app.task(

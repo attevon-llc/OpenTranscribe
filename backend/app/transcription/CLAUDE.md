@@ -243,11 +243,27 @@ Docs: `docs-site/docs/features/boundary-correction.md`,
 - **Overlapped diarization requires a REACHABLE sidecar**, not merely a configured one.
   `engine/stages._overlap_diarization_enabled` gates on `diarizer_native.sidecar_ready()`
   (`DIAR_OVERLAP=0` still forces the sequential order). This matters because when overlap is on,
-  `_collect_diarization` skips `_make_room_for_local_diarizer` — the **only**
-  `release_transcriber()` call site — so keying it off configuration alone left Whisper and the
-  in-process PyAnnote fallback co-resident on one GPU (#665, fixed). The probe is TTL-cached in
-  `diarizer_native.py`; the cache is deliberately short so an admin toggle and a recovered
-  sidecar are still picked up without a worker restart.
+  `_collect_diarization` skips `_make_room_for_local_diarizer` — the only `release_transcriber()`
+  call site **on the combined-stage path** — so keying it off configuration alone left Whisper
+  and the in-process PyAnnote fallback co-resident on one GPU (#665, fixed). The probe is
+  TTL-cached in `diarizer_native.py`; the cache is deliberately short so an admin toggle and a
+  recovered sidecar are still picked up without a worker restart.
+  ⚠️ This bullet said **"the only `release_transcriber()` call site"** until it was checked
+  (2026-09-10): there are **two** in `engine/stages.py` — `_make_room_for_local_diarizer`, and
+  `_TranscribeOnlyStage.run`, which releases unconditionally before handing off to the
+  gpu-diarize worker. The gpu-split path therefore frees the transcriber whether or not overlap
+  is on, so #665's co-residency reasoning applies to `_GpuStage`/`_GpuRawStage` only. Re-derive
+  with `rg 'release_transcriber' backend/app` rather than trusting the count here.
+- **A stopping worker stands down between stages, and the chain-level effect is not a failure**
+  (#809). `core/worker_shutdown.raise_if_shutting_down` is called at each stage boundary in
+  `engine/stages.py` and inside `transcriber.py`'s decode loop; the task layer
+  (`tasks/transcription/context.requeue_after_abort`) turns the resulting
+  `TranscriptionAbortedError` into `Reject(requeue=True)`. Two consequences worth knowing before
+  you debug a "vanished" task: celery's tracer handles `Reject` in its own arm, so **`link_error`
+  does NOT fire** — an aborted run is not marked ERROR and sends no failure notification — and
+  the redelivered message **re-runs the task from the top**, resuming at the aborted stage's
+  input rather than mid-stage. The preprocessed WAV is deliberately left on the shared volume on
+  an abort so that redelivery need not re-download and re-decode.
 - Changing `EMBEDDING_BATCH_SIZE` changes VRAM predictability, not accuracy. Don't "optimize"
   it back to auto-scaling without re-running the VRAM profile.
 - `DiarizationProviderFactory` (`app/services/diarization/`) is a **different axis** from

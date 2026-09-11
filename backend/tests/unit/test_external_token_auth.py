@@ -5,8 +5,8 @@ verifiers before the local-JWT path. The community edition registers none, so th
 branch is a no-op here; the *failure* handling is what this suite pins, because
 each of its three failure modes is silent when it is wrong:
 
-* a **refused link** (``PermissionError`` — unverified email match, or a
-  ``super_admin`` target) must be a clean 401. Anything else turns
+* a **refused link** (``ExternalIdentityLinkRefusedError`` — unverified email match,
+  or a ``super_admin`` target) must be a clean 401. Anything else turns
   ``account_linking``'s one unconditional rule into a 500 an operator reads as an
   outage rather than as a refusal;
 * **any other sync failure** must be a clean 401 *and* must roll the session back.
@@ -46,6 +46,7 @@ from app.auth.provider_registry import ExternalIdentity
 from app.auth.provider_registry import has_verifiers
 from app.auth.provider_registry import register_verifier
 from app.auth.provider_registry import unregister_verifier
+from app.core.exceptions import ExternalIdentityLinkRefusedError
 from app.core.security import get_password_hash
 from app.models.user import User
 
@@ -190,7 +191,7 @@ class TestASuccessfulExternalAuthentication:
 
 
 class TestARefusedLinkIsACleanRefusal:
-    """``PermissionError`` is ``account_linking``'s refusal, not a fault."""
+    """``ExternalIdentityLinkRefusedError`` is ``account_linking``'s refusal, not a fault."""
 
     @pytest.fixture
     def existing_local_account(self, db_session) -> User:
@@ -247,7 +248,7 @@ class TestARefusedLinkIsACleanRefusal:
         rather than replaced by the generic provisioning failure."""
 
         def _refuse(_db, _identity):
-            raise PermissionError("External identity email is not verified")
+            raise ExternalIdentityLinkRefusedError("External identity email is not verified")
 
         monkeypatch.setattr(external_sync, "sync_external_user_to_db", _refuse)
         register_verifier(PROVIDER, _Verifier(TOKEN, _identity()))
@@ -313,6 +314,27 @@ class TestAnyOtherSyncFailureIsContained:
 
         assert user is not None
         assert rollbacks == []
+
+    def test_a_real_permission_error_is_generic_not_the_link_refusal(self, db_session, monkeypatch):
+        """#914 STEP 6: a genuine ``EACCES`` (the builtin ``PermissionError`` is
+        an ``OSError`` subclass, and can be raised anywhere in this call chain --
+        a decrypt, a keyring, a filesystem probe) must NOT be caught by the
+        link-refusal branch, which used to render ``str(e)`` -- an arbitrary
+        OS-level message, potentially naming a host path -- straight into the
+        401 detail. It must fall through to this generic, non-leaking branch."""
+
+        def _real_os_permission_error(_db, _identity):
+            raise PermissionError("[Errno 13] Permission denied: '/etc/shadow-ish-path'")
+
+        monkeypatch.setattr(external_sync, "sync_external_user_to_db", _real_os_permission_error)
+        register_verifier(PROVIDER, _Verifier(TOKEN, _identity()))
+
+        with pytest.raises(HTTPException) as exc:
+            _authenticate(_request(), TOKEN, db_session)
+
+        assert exc.value.status_code == 401
+        assert exc.value.detail == "Could not provision external identity"
+        assert "shadow-ish-path" not in str(exc.value.detail)
 
 
 class TestADeactivatedExternalAccountIsRefusedAsDeactivated:

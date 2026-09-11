@@ -211,12 +211,15 @@ class ErrorHandler:
 
 #### Error Handling Decorators
 ```python
-def handle_database_errors(func: Callable) -> Callable:
-    """Decorator to handle common database errors."""
-
 def handle_not_found(resource_name: str = "Resource") -> Callable:
     """Decorator factory to handle resource not found errors."""
 ```
+
+`handle_database_errors` was removed (#914 STEP 6): it caught a plain
+`except Exception` around the wrapped function, which reclassified any
+`HTTPException` the function raised into an opaque 500 — the passthrough
+defect `test_http_exception_passthrough.py` exists to catch elsewhere. It had
+zero call sites under `app/`.
 
 ### Usage Examples
 ```python
@@ -242,12 +245,6 @@ class FileService:
         except StorageError as e:
             raise ErrorHandler.file_processing_error("upload", e)
 
-# Endpoint with error decorator
-@handle_database_errors
-@router.get("/files/{file_id}")
-def get_file(file_id: int, db: Session = Depends(get_db)):
-    # Database errors automatically handled
-    return db.query(MediaFile).filter(MediaFile.id == file_id).first()
 ```
 
 ### Features

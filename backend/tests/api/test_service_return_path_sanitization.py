@@ -10,7 +10,9 @@ against the pre-fix code too and prove nothing.
 
 from __future__ import annotations
 
+import inspect
 import logging
+import tempfile
 import uuid as uuid_pkg
 
 from fastapi import status
@@ -244,8 +246,20 @@ def test_bulk_tag_flush_failure_never_leaks_exception_text(
 ):
     media_file = _make_file(db_session, normal_user)
 
-    def _raise_flush(*_args, **_kwargs):
-        raise RuntimeError(f"flush failed against {PATH_SENTINEL}")
+    # A blanket ``db_session.flush`` patch also catches SQLAlchemy's OWN
+    # internal flush inside ``Session.begin_nested()`` (it snapshots pending
+    # state before opening the savepoint) -- which fires before
+    # ``apply_tag_to_file``'s try/except is ever entered and turns this into
+    # an unhandled 500 that proves nothing about the sanitization. Only fail
+    # the deliberate ``db.flush()`` call inside ``apply_tag_to_file`` itself.
+    _real_flush = db_session.flush
+
+    def _raise_flush(*args, **kwargs):
+        frame = inspect.currentframe()
+        caller = frame.f_back if frame is not None else None
+        if caller is not None and caller.f_code.co_name == "apply_tag_to_file":
+            raise RuntimeError(f"flush failed against {PATH_SENTINEL}")
+        return _real_flush(*args, **kwargs)
 
     monkeypatch.setattr(db_session, "flush", _raise_flush)
 
@@ -313,7 +327,7 @@ def test_llm_validate_connection_never_leaks_the_endpoint_host(
     monkeypatch.setattr("app.utils.url_validation.pinned_requests_session", _raise_pinned_session)
 
     with caplog.at_level(logging.ERROR):
-        response = client.post("/api/llm-status/test-connection", headers=user_token_headers)
+        response = client.post("/api/llm/test-connection", headers=user_token_headers)
 
     assert response.status_code == status.HTTP_200_OK
     assert LLM_HOST_SENTINEL not in response.text
@@ -356,9 +370,7 @@ def test_combine_sections_failure_never_leaks_exception_text(
     media_file.summary_data = summary
     db_session.commit()
 
-    response = client.get(
-        f"/api/summarization/{media_file.uuid}/summary", headers=user_token_headers
-    )
+    response = client.get(f"/api/files/{media_file.uuid}/summary", headers=user_token_headers)
     assert response.status_code == status.HTTP_200_OK
     assert PATH_SENTINEL not in response.text
 
@@ -377,6 +389,14 @@ def test_watch_source_local_test_connection_never_leaks_a_host_path(
     source = _make_watch_source(db_session, admin_user, local_path="../../etc")
 
     from app.models.watch_source import WatchSource as WatchSourceModel
+    from app.services.watch_sources import local_client as local_client_module
+
+    # test_connection() bails out before ever touching resolved_local_path
+    # when WATCH_FOLDER_PATH isn't configured -- which is the default in the
+    # test environment -- so the monkeypatched property below would never be
+    # reached and caplog would stay empty. Give it a root so the code proceeds
+    # into the try/except that's actually under test.
+    monkeypatch.setattr(local_client_module.settings, "WATCH_FOLDER_PATH", tempfile.gettempdir())
 
     def _raise_root(self):
         raise ValueError(f"Resolved path {PATH_SENTINEL} escapes watch root /watch")

@@ -26,6 +26,7 @@ from app.models.user import User
 from app.services.minio_service import download_file
 from app.tasks.transcription.waveform_generator import WaveformGenerator
 from app.tasks.waveform_generation import trigger_waveform_generation
+from app.utils.error_handlers import ErrorHandler
 
 from .crud import get_media_file_by_uuid
 
@@ -197,11 +198,9 @@ def _generate_and_cache_waveform(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating waveform for file {file_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate waveform: {str(e)}",
-        ) from e
+        # The real ffmpeg/librosa failure is logged, never returned (#859).
+        logger.exception(f"Error generating waveform for file {file_id}")
+        raise ErrorHandler.internal_error("Could not generate the waveform.") from e
     finally:
         if temp_file_path:
             _cleanup_temp_file(temp_file_path)
@@ -324,11 +323,9 @@ def get_audio_waveform_peaks(
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.error(f"Error generating waveform peaks for file {file_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate waveform peaks: {str(e)}",
-        ) from e
+        # The real ffmpeg/librosa failure is logged, never returned (#859).
+        logger.exception(f"Error generating waveform peaks for file {file_id}")
+        raise ErrorHandler.internal_error("Could not generate the waveform peaks.") from e
 
     # Convert waveform data to height-based peaks
     peaks = _convert_waveform_to_peaks(waveform_data["waveform"], height)
@@ -397,11 +394,9 @@ def generate_waveform_for_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Error triggering waveform generation for file {file_uuid}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to start waveform generation: {str(e)}",
-        ) from e
+        # The real DB/Celery failure is logged, never returned (#859).
+        logger.exception(f"Error triggering waveform generation for file {file_uuid}")
+        raise ErrorHandler.internal_error("Could not start waveform generation.") from e
 
 
 @router.post("/waveforms/generate")
@@ -465,11 +460,9 @@ def generate_waveforms_for_files(
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.exception(f"Error triggering waveform generation: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to start waveform generation: {str(e)}",
-        ) from e
+        # The real DB/Celery failure is logged, never returned (#859).
+        logger.exception("Error triggering waveform generation")
+        raise ErrorHandler.internal_error("Could not start waveform generation.") from e
 
 
 @router.get("/waveforms/status")
@@ -533,8 +526,6 @@ def get_waveform_status(
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.exception(f"Error getting waveform status: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get waveform status: {str(e)}",
-        ) from e
+        # The real DB failure is logged, never returned (#859).
+        logger.exception("Error getting waveform status")
+        raise ErrorHandler.internal_error("Could not read waveform generation status.") from e

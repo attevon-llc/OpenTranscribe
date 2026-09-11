@@ -19,6 +19,7 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file_tuned
 from app.utils import benchmark_timing
+from app.utils.error_handlers import ErrorHandler
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
@@ -176,11 +177,9 @@ def create_media_file_record(
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.exception(f"Error creating MediaFile: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating media file record: {str(e)}",
-        ) from e
+        # The real error (often SQL text) is logged, never returned (#859).
+        logger.exception("Error creating MediaFile")
+        raise ErrorHandler.internal_error("Could not create the media file record.") from e
 
 
 def upload_file_to_storage(
@@ -740,14 +739,12 @@ async def process_file_upload(
         db.commit()
         raise
     except Exception as e:
-        # Clean up on failure
+        # Clean up on failure. Container paths and storage errors are logged,
+        # never returned to the caller (#859).
         db.delete(db_file)
         db.commit()
-        logger.error(f"Upload failed: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error during file upload: {str(e)}",
-        ) from e
+        logger.exception("Upload failed")
+        raise ErrorHandler.internal_error("The file upload could not be completed.") from e
     finally:
         # Close the spool on every path. Once it has rolled over to disk this also
         # unlinks the backing file, so a failed multi-GB upload cannot leave one

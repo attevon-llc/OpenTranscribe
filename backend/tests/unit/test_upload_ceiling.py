@@ -106,7 +106,7 @@ def test_complete_upload_enforces_against_the_observed_size():
     source = inspect.getsource(mod.complete_upload)
     validate_at = source.index("validate_file_size_for_tenant(minio_size")
     # The call, not the import line at the top of the function.
-    dispatch_at = source.index("dispatch_upload_pipeline(")
+    dispatch_at = source.index("dispatch_upload_pipeline_or_mark_error(")
 
     assert validate_at < dispatch_at, "the ceiling must be enforced before dispatching to the GPU"
 

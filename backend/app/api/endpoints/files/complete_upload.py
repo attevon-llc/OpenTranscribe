@@ -174,7 +174,7 @@ def complete_upload(
     from urllib3.exceptions import MaxRetryError
 
     from app.api.endpoints.files.upload import _update_file_hash
-    from app.api.endpoints.files.upload import dispatch_upload_pipeline
+    from app.api.endpoints.files.upload import dispatch_upload_pipeline_or_mark_error
     from app.services.minio_service import object_exists_and_size
 
     benchmark_timing.mark(request.task_id, "http_request_received")
@@ -340,7 +340,13 @@ def complete_upload(
     # (same call the legacy path uses). The thumbnail runs concurrently so the
     # gallery shows it via the live file_updated refresh during processing, and
     # the pre-minted task_id keeps every downstream marker in one benchmark hash.
-    dispatch_upload_pipeline(
+    # A dispatch failure here leaves the row visible at ERROR rather than stuck
+    # at PENDING forever (issue #905) — this route previously had no handling at
+    # all around this call, so any dispatch exception propagated as a bare 500
+    # with the row unreachable by orphan_upload_sweeper (it skips a PENDING row
+    # whose object exists).
+    dispatch_upload_pipeline_or_mark_error(
+        db,
         db_file,
         user_id=current_user.id,
         whisper_model=whisper_model,

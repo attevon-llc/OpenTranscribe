@@ -2756,6 +2756,7 @@ def quarantine_media_file(
         is_quarantined=bool(file.is_quarantined),
         legal_hold=bool(file.legal_hold),
         status=str(file.status.value if hasattr(file.status, "value") else file.status),
+        presign_revoked=bool(getattr(file, "presign_revoked", False)),
     )
 
 
@@ -2792,4 +2793,5 @@ def release_media_file(
         is_quarantined=bool(file.is_quarantined),
         legal_hold=bool(file.legal_hold),
         status=str(file.status.value if hasattr(file.status, "value") else file.status),
+        presign_tag_cleared=bool(getattr(file, "presign_tag_cleared", True)),
     )

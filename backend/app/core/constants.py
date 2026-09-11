@@ -1575,3 +1575,14 @@ RESERVED_SCRATCH_NAMESPACES = frozenset({"engine", "diar"})
 # search plane's got the #463 fix that makes an unrecognized value narrow to nothing instead
 # of being silently dropped.
 FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
+
+# =============================================================================
+# Presigned-URL revocation (issue #907)
+# =============================================================================
+# The S3/MinIO object tag key the restricted presign identity's policy Denies
+# s3:GetObject on (StringEquals, value STORAGE_QUARANTINE_TAG_VALUE — see
+# storage_presign_identity.QUARANTINE_TAG_VALUE for the case-sensitivity note).
+# Both the policy builder (storage_presign_identity.build_presign_policy) and
+# the tagger (minio_service.set_object_quarantine_tag) import this ONE constant
+# rather than hardcoding the string twice.
+STORAGE_QUARANTINE_TAG_KEY = "ot-quarantine"

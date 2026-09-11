@@ -530,6 +530,17 @@ class Settings(BaseSettings):
     # resumable, so the default sits far under it. Raise it to keep more uploads on the
     # single-PUT path; it can never disable multipart for objects that need it.
     MULTIPART_THRESHOLD_MB: int = 512
+    # Presigned-URL revocation on quarantine (issue #907). Browser-facing GET presigns
+    # (get_file_url, get_presigned_download_url, MinIOService.get_presigned_url) are
+    # signed with a dedicated, least-privilege MinIO service-account identity instead
+    # of the root credential, whose policy Denies s3:GetObject on any object carrying
+    # the quarantine tag — so a takedown revokes an already-minted URL mid-window.
+    # MinIO-only (there is no admin API on native S3); fails open to the root client
+    # (today's pre-#907 behavior) if the identity cannot be provisioned. See
+    # app/services/storage_presign_identity.py and docs/abuse-and-takedown.md.
+    STORAGE_PRESIGN_IDENTITY_ENABLED: bool = (
+        os.getenv("STORAGE_PRESIGN_IDENTITY_ENABLED", "true").lower() == "true"
+    )
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: str = os.getenv("REDIS_PORT", "6379")

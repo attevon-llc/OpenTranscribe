@@ -178,27 +178,19 @@ def capture_queue_depth(
     try:
         import json
 
+        from app.core.celery_metrics import queue_snapshot
         from app.core.constants import CeleryQueues
-        from app.core.redis import get_redis
 
-        client = get_redis()
         queue_names = list(queues) if queues else list(CeleryQueues.ALL)
 
-        # Celery + kombu use list keys named after the queue for default
-        # priority levels and ``<queue>\x06\x163`` etc. for other priorities.
-        # We LLEN the base name — good enough as a comparative signal without
-        # scanning every priority suffix.
-        depths: dict[str, int] = {}
-        pipe = client.pipeline(transaction=False)
-        for q in queue_names:
-            pipe.llen(q)
-        try:
-            results = pipe.execute()
-        except Exception as e:
-            logger.debug(f"queue depth LLEN failed: {e}")
-            results = [0] * len(queue_names)
-        for name, depth in zip(queue_names, results, strict=True):
-            depths[name] = int(depth or 0)
+        # PENDING only, deliberately — this is a dispatch-time backlog signal
+        # compared across historical benchmark rows, and folding in `reserved`
+        # would break that comparability. See app/core/celery_metrics.py for
+        # the priority-sharded measurement this delegates to.
+        snapshot = queue_snapshot()
+        depths: dict[str, int] = {
+            name: snapshot.get(name, {"pending": 0})["pending"] for name in queue_names
+        }
 
         mark_many(task_id, {"queue_depth_at_dispatch": json.dumps(depths)})
 

@@ -18,8 +18,13 @@ A1.17 — kombu will not connect over `rediss://` without an SSL context.
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import pytest
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+COMPOSE = REPO_ROOT / "docker-compose.yml"
 
 # ── A1.1 visibility_timeout ──────────────────────────────────────────────────────
 
@@ -76,6 +81,40 @@ def test_global_prefetch_stays_gpu_safe():
     from app.core.celery import celery_app
 
     assert celery_app.conf.worker_prefetch_multiplier == 1
+
+
+def test_no_worker_overrides_the_global_prefetch_multiplier():
+    """Pins the fact `celery.py`'s comment got wrong, not a regression test.
+
+    The comment above ``worker_prefetch_multiplier=1`` used to claim that the
+    short-task queues (cpu/nlp/download/utility) override the global value
+    per-worker with ``--prefetch-multiplier``. Grepping every celery worker
+    command in ``docker-compose.yml`` shows no service does — every worker
+    runs at the same global 1. This is GREEN on HEAD by construction: it pins
+    that fact so the day someone adds a real override, it goes red and forces
+    a revisit of ``celery_metrics.queue_snapshot``'s ``unacked``-hash cost
+    bound, which assumes an effective prefetch of 1.
+    """
+    data = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    services = data.get("services", {})
+
+    worker_services = []
+    for name, svc in services.items():
+        command = svc.get("command")
+        if not command:
+            continue
+        tokens = str(command).split()
+        if "celery" in tokens and "worker" in tokens:
+            worker_services.append((name, str(command)))
+
+    assert worker_services, "no celery worker services found — the parse itself is broken"
+
+    overriding = [name for name, command in worker_services if "--prefetch-multiplier" in command]
+    assert overriding == [], (
+        f"{overriding} now override the global prefetch multiplier — revisit the "
+        "unacked-hash cost bound in app/core/celery_metrics.py before relying on "
+        "an effective prefetch of 1"
+    )
 
 
 # ── A1.17 TLS Redis ──────────────────────────────────────────────────────────────

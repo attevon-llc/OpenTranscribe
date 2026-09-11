@@ -1042,7 +1042,7 @@
   "settings.statistics.queueNlp": "NLP",
   "settings.statistics.queueEmbedding": "嵌入",
   "settings.statistics.queueCpu": "CPU",
-  "settings.statistics.queueTotal": "总计排队",
+  "settings.statistics.queueTotal": "排队中 + 运行中",
   "settings.statistics.fileTimingAvg": "每文件平均",
   "settings.statistics.fileTimingMin": "最快",
   "settings.statistics.fileTimingMax": "最慢",

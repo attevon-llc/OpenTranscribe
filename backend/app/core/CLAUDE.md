@@ -146,8 +146,15 @@ should import `app.api` or `app.services` at module scope.
 - `SETTINGS_CACHE_TTL` (30 s) staleness is **cross-process by design**: an admin change is
   instant in the API process but up to 30 s stale in Celery workers. The cache fully bypasses
   when `TESTING=true`, read from `os.environ` at call time.
-- `celery_metrics`: kombu shards priority queues into `f"{queue}\x06\x16{prio}"` lists — a bare
-  `LLEN <queue>` **undercounts**; depth is the sum over all 10 sub-lists.
+- `celery_metrics.queue_snapshot()` is the SINGLE source for both `/metrics` and
+  `/api/system/stats` (issue #892 — those used to be two implementations that disagreed).
+  kombu shards priority queues into `f"{queue}\x06\x16{prio}"` lists — a bare `LLEN <queue>`
+  **undercounts**; pending depth is the sum over all 10 sub-lists, read in one pipelined round
+  trip. `celery_queue_depth` stays **pending-only** (dashboards/alerts depend on its meaning);
+  `celery_queue_reserved` is new — unacked-from-the-broker, i.e. messages a worker has picked
+  up and not yet acknowledged (prefetched, or RUNNING under `acks_late=True`). Autoscale on
+  `celery_queue_depth + celery_queue_reserved`, which is exactly what the admin Statistics UI
+  now displays via `stats_helpers.get_queue_depths`.
 - `db_metrics` per-request counting stores a **mutable dict** in a ContextVar: `BaseHTTPMiddleware`
   runs `call_next` in a child task, so re-`set()`ing the var would not propagate back.
 - `FileStatus` is `(str, enum.Enum)` and deliberately **not** `StrEnum` — `str(FileStatus.X) ==

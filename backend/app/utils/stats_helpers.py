@@ -385,27 +385,28 @@ def get_file_timing_stats(db: Session) -> dict[str, Any]:
 
 
 def get_queue_depths() -> dict[str, int]:
-    """Get Celery queue depths from Redis using LLEN.
+    """Get Celery queue depths (pending + reserved) per queue.
 
-    Ported from scripts/bulk-processing-cheatsheet.sh bulk-queues.
+    Backed by ``app.core.celery_metrics.queue_snapshot`` — the single source
+    of truth for this measurement, also used by the ``/metrics`` gauges
+    (issue #892). Each returned value is ``pending + reserved``: pending tasks
+    sitting in a queue's 10 priority sub-lists, plus tasks a worker has
+    already picked up and not yet acknowledged (prefetched, or RUNNING under
+    ``acks_late=True`` — see that module's docstring for the full caveat).
+    Summing the two fixes the inversion where a saturated GPU fleet reported
+    queue depth 0 while every worker was fully loaded.
 
     Returns:
-        Dictionary mapping queue name to pending task count
+        Dictionary mapping queue name to task count, plus a ``"total"`` key.
     """
+    from app.core.celery_metrics import queue_snapshot
     from app.core.constants import CeleryQueues
 
     try:
-        from app.core.celery import celery_app
-
-        redis_client = celery_app.backend.client
-        queues = CeleryQueues.ALL
-        depths: dict[str, int] = {}
-        for queue_name in queues:
-            try:
-                depths[queue_name] = redis_client.llen(queue_name) or 0
-            except Exception:
-                depths[queue_name] = 0
-
+        snapshot = queue_snapshot()
+        depths: dict[str, int] = {
+            name: counts["pending"] + counts["reserved"] for name, counts in snapshot.items()
+        }
         depths["total"] = sum(depths.values())
         return depths
     except Exception as e:

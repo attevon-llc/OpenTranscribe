@@ -277,17 +277,28 @@ except (json.JSONDecodeError, AttributeError, TypeError) as exc:
 "
 }
 
-# Queue depths (via Redis directly - always works)
+# Queue depths (via Redis directly - always works).
+#
+# Celery is configured with priority_steps=range(10), so kombu shards each
+# queue into 10 priority sub-lists named "<queue>\x06\x16<priority>"
+# (kombu.transport.redis.Channel.sep), priority 0 being the bare queue name.
+# A bare LLEN only ever sees priority 0 and undercounts -- see
+# backend/app/core/celery_metrics.py's module docstring, the app-side
+# equivalent of this same measurement. The EVAL below sums all 10 sub-lists
+# in the SAME single docker exec / redis-cli round trip a bare LLEN used, so
+# there is no added latency. \6 and \22 are Lua decimal escapes for
+# Channel.sep's two bytes (0x06, 0x16).
 bulk-queues() {
     local redis_pass="${REDIS_PASSWORD:-}"
     local auth=""
     [[ -n "$redis_pass" ]] && auth="-a $redis_pass"
-    echo "  gpu queue:       $(docker exec opentranscribe-redis redis-cli $auth LLEN gpu 2>/dev/null)"
-    echo "  download queue:  $(docker exec opentranscribe-redis redis-cli $auth LLEN download 2>/dev/null)"
-    echo "  nlp queue:       $(docker exec opentranscribe-redis redis-cli $auth LLEN nlp 2>/dev/null)"
-    echo "  embedding queue: $(docker exec opentranscribe-redis redis-cli $auth LLEN embedding 2>/dev/null)"
-    echo "  cpu queue:       $(docker exec opentranscribe-redis redis-cli $auth LLEN cpu 2>/dev/null)"
-    echo "  utility queue:   $(docker exec opentranscribe-redis redis-cli $auth LLEN utility 2>/dev/null)"
+    local depth_script='local t=0 for i=0,9 do local k=KEYS[1] if i>0 then k=KEYS[1].."\6\22"..i end t=t+redis.call("llen",k) end return t'
+    echo "  gpu queue:       $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 gpu 2>/dev/null)"
+    echo "  download queue:  $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 download 2>/dev/null)"
+    echo "  nlp queue:       $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 nlp 2>/dev/null)"
+    echo "  embedding queue: $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 embedding 2>/dev/null)"
+    echo "  cpu queue:       $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 cpu 2>/dev/null)"
+    echo "  utility queue:   $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 utility 2>/dev/null)"
 }
 
 # Container logs (last N lines)

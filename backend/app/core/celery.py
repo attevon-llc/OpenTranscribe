@@ -191,10 +191,14 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
-    # GPU-safe default: one task at a time. Short-task queues (cpu/nlp/download/
-    # utility) override this per-worker with --prefetch-multiplier, since a global 1
-    # makes every worker round-trip the broker between tasks (issue #284 A1.8).
-    # Keep the GPU worker at 1 — it must never hold a second task it cannot start.
+    # GPU-safe default: one task at a time. This is a GLOBAL setting and, as of
+    # #892's audit, NO worker in docker-compose.yml passes --prefetch-multiplier
+    # to override it — every worker (cpu/nlp/download/utility included) runs at
+    # this same global 1, round-tripping the broker between tasks (issue #284
+    # A1.8's per-worker override was never actually wired up). Keep the GPU
+    # worker at 1 regardless — it must never hold a second task it cannot start
+    # — and see backend/app/core/celery_metrics.py for why the *effective*
+    # prefetch also bounds the cost of reading Redis's `unacked` hash.
     worker_prefetch_multiplier=1,
     # Global task time limits (issue #284 A1.2). There were NONE, so a hung CUDA call
     # held the single GPU slot forever and no later transcription could start.

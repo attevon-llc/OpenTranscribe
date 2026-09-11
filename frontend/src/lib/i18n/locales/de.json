@@ -1788,7 +1788,7 @@
   "settings.statistics.queueNlp": "NLP",
   "settings.statistics.queueEmbedding": "Embeddings",
   "settings.statistics.queueCpu": "CPU",
-  "settings.statistics.queueTotal": "Gesamt in Warteschlange",
+  "settings.statistics.queueTotal": "In Warteschlange + laufend",
   "settings.statistics.fileTimingAvg": "Durchschnitt pro Datei",
   "settings.statistics.fileTimingMin": "Schnellste",
   "settings.statistics.fileTimingMax": "Langsamste",

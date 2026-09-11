@@ -56,7 +56,6 @@ import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import bindparam
@@ -765,50 +764,100 @@ class TestGetProcessingEta:
 
 
 # ---------------------------------------------------------------------------
-# get_queue_depths — no DB, patches app.core.celery.celery_app
+# get_queue_depths — no DB. Backed by app.core.celery_metrics.queue_snapshot
+# (issue #892), so these patch app.core.redis.get_redis (imported inside that
+# function, which is why monkeypatch.setattr works despite the lru_cache) and
+# drive a fake pipeline rather than patching app.core.celery.celery_app, which
+# this code no longer touches at all.
 # ---------------------------------------------------------------------------
 
 
+class _FakeQueueDepthsPipeline:
+    """Minimal double for a redis-py Pipeline: records llen/hvals in order."""
+
+    def __init__(self, llen_map: dict[str, int], unacked_values: list):
+        self.commands: list[tuple[str, str]] = []
+        self._llen_map = llen_map
+        self._unacked_values = unacked_values
+
+    def llen(self, key):
+        self.commands.append(("llen", key))
+        return self
+
+    def hvals(self, key):
+        self.commands.append(("hvals", key))
+        return self
+
+    def execute(self) -> list[int | list]:
+        # A real redis-py pipeline's execute() is genuinely heterogeneous: each
+        # command answers with its own type (LLEN -> int, HVALS -> list).
+        results: list[int | list] = []
+        for cmd, key in self.commands:
+            if cmd == "llen":
+                results.append(self._llen_map.get(key, 0))
+            else:
+                results.append(self._unacked_values)
+        return results
+
+
+class _FakeQueueDepthsRedis:
+    def __init__(
+        self,
+        llen_map: dict[str, int] | None = None,
+        unacked_values: list | None = None,
+        broken: bool = False,
+    ):
+        self._llen_map = llen_map or {}
+        self._unacked_values = unacked_values or []
+        self._broken = broken
+
+    def pipeline(self, transaction=False):
+        if self._broken:
+            raise RuntimeError("redis unreachable")
+        return _FakeQueueDepthsPipeline(self._llen_map, self._unacked_values)
+
+
 class TestGetQueueDepths:
-    def test_reports_llen_per_queue_and_a_total(self, monkeypatch):
-        depths = {q: i for i, q in enumerate(CeleryQueues.ALL, start=1)}
-
-        class _FakeRedis:
-            def llen(self, name):
-                return depths[name]
-
-        fake_celery_app = SimpleNamespace(backend=SimpleNamespace(client=_FakeRedis()))
-        monkeypatch.setattr("app.core.celery.celery_app", fake_celery_app)
+    def test_reports_pending_per_queue_and_a_total(self, monkeypatch):
+        llen_map = {q: i for i, q in enumerate(CeleryQueues.ALL, start=1)}
+        fake = _FakeQueueDepthsRedis(llen_map=llen_map)
+        monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
 
         result = get_queue_depths()
 
-        for q, n in depths.items():
+        for q, n in llen_map.items():
             assert result[q] == n
-        assert result["total"] == sum(depths.values())
+        assert result["total"] == sum(llen_map.values())
 
-    def test_a_single_queue_error_reports_zero_for_that_queue_only(self, monkeypatch):
-        class _FlakyRedis:
-            def llen(self, name):
-                if name == CeleryQueues.GPU:
-                    raise RuntimeError("redis hiccup")
-                return 5
+    def test_a_task_at_a_non_default_priority_is_still_counted(self, monkeypatch):
+        """The whole point of #892: a bare LLEN misses this; get_queue_depths must not."""
+        from kombu.transport.redis import Channel
 
-        fake_celery_app = SimpleNamespace(backend=SimpleNamespace(client=_FlakyRedis()))
-        monkeypatch.setattr("app.core.celery.celery_app", fake_celery_app)
+        key = f"{CeleryQueues.GPU}{Channel.sep}7"
+        fake = _FakeQueueDepthsRedis(llen_map={key: 4})
+        monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
 
         result = get_queue_depths()
 
-        assert result[CeleryQueues.GPU] == 0
-        other_queues = [q for q in CeleryQueues.ALL if q != CeleryQueues.GPU]
-        for q in other_queues:
-            assert result[q] == 5
-        assert result["total"] == 5 * len(other_queues)
+        assert result[CeleryQueues.GPU] == 4
 
-    def test_a_broken_celery_app_falls_back_to_all_zero(self, monkeypatch):
-        # celery_app.backend has no `.client` attribute -> AttributeError inside the try.
-        monkeypatch.setattr(
-            "app.core.celery.celery_app", SimpleNamespace(backend=SimpleNamespace())
-        )
+    def test_the_returned_value_is_pending_plus_reserved(self, monkeypatch):
+        """The autoscaler inversion this lane fixes: a queue holding only
+        in-flight (reserved) work must not read as empty.
+        """
+        import json
+
+        unacked = [json.dumps([{}, CeleryQueues.GPU, CeleryQueues.GPU])]
+        fake = _FakeQueueDepthsRedis(llen_map={CeleryQueues.GPU: 2}, unacked_values=unacked)
+        monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+
+        result = get_queue_depths()
+
+        assert result[CeleryQueues.GPU] == 3  # 2 pending + 1 reserved
+
+    def test_a_broker_error_falls_back_to_all_zero(self, monkeypatch):
+        fake = _FakeQueueDepthsRedis(broken=True)
+        monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
 
         result = get_queue_depths()
 

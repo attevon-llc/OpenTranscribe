@@ -1033,7 +1033,7 @@
   "settings.statistics.queueNlp": "NLP",
   "settings.statistics.queueEmbedding": "Эмбеддинги",
   "settings.statistics.queueCpu": "CPU",
-  "settings.statistics.queueTotal": "Всего в очереди",
+  "settings.statistics.queueTotal": "В очереди + выполняется",
   "settings.statistics.fileTimingAvg": "Среднее на файл",
   "settings.statistics.fileTimingMin": "Быстрейший",
   "settings.statistics.fileTimingMax": "Медленнейший",

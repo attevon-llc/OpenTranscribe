@@ -281,9 +281,9 @@
 
           <!-- Status -->
           <div class="list-cell list-cell-status">
-            <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
+            <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.user_message}>
               <span class="status-dot"></span>
-              {#if file.status === 'error' && file.last_error_message}
+              {#if file.status === 'error' && file.user_message}
                 <!-- svelte-ignore a11y-click-events-have-key-events -->
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <span

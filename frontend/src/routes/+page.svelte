@@ -1023,14 +1023,14 @@
   // Enhanced error notification using backend categorization
   function showEnhancedErrorNotification(file: MediaFile) {
     // Use backend-provided error categorization
-    if (file.error_category && file.error_suggestions) {
+    if (file.error_reason && file.error_suggestions) {
       const suggestions = file.error_suggestions.map(s => `• ${s}`).join('\n');
       toastStore.error(
         $t('gallery.processingFailedWithSuggestions', {
           message: file.user_message || $t('gallery.processingFailed', { filename: file.title || file.filename }),
           suggestions: suggestions
         }),
-        file.error_category === 'file_quality' ? 10000 : 8000
+        file.error_reason === 'file_quality' ? 10000 : 8000
       );
     } else {
       // Minimal fallback for unexpected cases

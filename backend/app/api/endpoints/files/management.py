@@ -26,6 +26,7 @@ from app.models.media import FileStatus
 from app.models.media import Tag
 from app.models.user import User
 from app.services import system_settings_service
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.tag_bulk import CHANGED_OUTCOMES
 from app.services.tag_bulk import TAG_ACTIONS
 from app.services.tag_bulk import BulkTagOutcome
@@ -176,7 +177,11 @@ def get_file_status_detail(
             task_last_update=db_file.task_last_update.isoformat()
             if db_file.task_last_update
             else None,
-            last_error_message=str(db_file.last_error_message)
+            # Never put the raw exception text on the wire (issue #786) — a fixed,
+            # user-facing sentence from ErrorCategorizationService, not the raw message.
+            last_error_message=ErrorCategorizationService.get_error_info(
+                str(db_file.last_error_message)
+            )["user_message"]
             if db_file.last_error_message
             else None,
             recovery_attempts=int(db_file.recovery_attempts or 0),

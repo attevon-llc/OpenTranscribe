@@ -45,7 +45,9 @@ Request/response shaping and validation only; logic lives in `app/services`. 25 
 
 - **Pre-formatted display fields — fat backend, thin frontend.** `MediaFile` L475-496:
   `formatted_duration|upload_date|file_age|file_size`, `display_status`, `status_badge_class`,
-  `speaker_summary`, `error_category`/`error_suggestions`, `is_retryable`. `TranscriptSegment` L365-370:
+  `speaker_summary`, `error_reason`/`error_suggestions`/`user_message`, `is_retryable`
+  (`error_reason` is the renamed wire field, issue #843 — never `media_file.error_category`,
+  which is the retry-policy column and is not on the wire at all). `TranscriptSegment` L365-370:
   `formatted_timestamp`, `display_timestamp`, `speaker_label` (always the raw `SPEAKER_01`, for colour
   stability), `resolved_speaker_name`. `Task` L671-673: `age_category`, `formatted_duration`,
   **`status_display`** (inverted name vs `MediaFile.display_status`). Producers:

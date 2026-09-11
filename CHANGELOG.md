@@ -2357,6 +2357,19 @@ impact. Everything below is fixed in this release.
 
 ### Breaking Changes
 
+#### `MediaFile.error_category` renamed to `error_reason` on the wire (issue #786)
+
+`GET /api/files/{uuid}`, `GET /api/files` and `GET /api/tasks` sent a field called
+`error_category`, but the backend also has an *unrelated* `error_category` — the retry-policy
+classification (`app.utils.error_classification.ErrorCategory`) stored on
+`media_file.error_category` — with the same field name and a colliding `unknown`/`worker_lost`
+vocabulary. The wire field is renamed to `error_reason` to make it unambiguous which vocabulary
+a client is reading (`app.services.error_categorization_service.UserErrorReason`), and so the
+retry-policy column can no longer reach the wire under a name that suggests it already does.
+The database column `media_file.error_category` is unchanged — this is a response-shape rename
+only. Any script reading `error_category` from a file/task JSON response should read
+`error_reason` instead.
+
 #### Deployment configuration moved from `admin` to `super_admin`
 
 Six admin panels now require the `super_admin` role instead of `admin`: **ASR provider**,

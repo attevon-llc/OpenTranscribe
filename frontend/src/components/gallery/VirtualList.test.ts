@@ -193,7 +193,7 @@ describe('interaction', () => {
 
   it('dispatches errorclick when the error trigger is clicked, but only when a message exists', async () => {
     const scrollContainer = scrollContainerWithHeight(400);
-    const items = [file('f0', { status: 'error', last_error_message: 'disk full' })];
+    const items = [file('f0', { status: 'error', user_message: 'This file could not be read.' })];
     const handler = vi.fn();
 
     const { container } = render(VirtualList, {

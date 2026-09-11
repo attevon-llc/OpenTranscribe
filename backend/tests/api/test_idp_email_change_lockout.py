@@ -34,6 +34,17 @@ Two changes, tested here:
 ⚠️ The controls at the bottom are what keep the remedy narrow. Without them this endpoint is
 "a super_admin can rewrite anyone's login email", which is a bigger authority than the bug
 needs and is not what was built.
+
+Issue #912 narrowing (2026-09-11): the no-external-identity refusal above was not narrow
+enough. It checked ``_EXTERNAL_IDENTITY_COLUMNS`` and stopped — so a ``local`` account that
+happened to carry a stray identifier column (which, before #912, `link-identity` could leave
+behind without ever converting `auth_type`) passed the check and had its login email rewritten
+through an endpoint whose whole premise is "an IdP owns this address". `link-identity` no
+longer produces that state (see `test_admin_link_identity.py`), but a SCIM-provisioned account
+legitimately carries `auth_type='local'` **and** `external_id` (`scim_service.create_user`) —
+so the fix here is a second, independent precondition (`auth_type == AUTH_TYPE_LOCAL` is
+refused), checked *after* the existing one so each refusal still names the defect it actually
+found, not a membership test against the valid-auth-type set.
 """
 
 from __future__ import annotations
@@ -48,6 +59,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi import status
 
+from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.oidc.claims import OIDCUserData
 from app.auth.oidc.provisioning import sync_oidc_user_to_db
 from app.core.security import get_password_hash
@@ -297,10 +309,15 @@ def test_a_genuinely_different_person_is_still_refused(db_session, linked_user):
 
 
 def test_the_remedy_refuses_a_super_admin_target(
-    client, super_admin_token_headers, db_session, super_admin_user
+    client, super_admin_token_headers, db_session, super_admin_user, monkeypatch
 ):
     """Matching ``link-identity``: a super_admin is local-only and is the break-glass
     account for exactly the IdP that might be failing."""
+    from app.api.endpoints import admin as admin_module
+
+    captured: list[dict] = []
+    monkeypatch.setattr(admin_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs))
+
     response = client.put(
         _REMEDY.format(uuid=super_admin_user.uuid),
         json={"email": f"newsa-{uuid_pkg.uuid4().hex[:8]}@example.com"},
@@ -308,21 +325,96 @@ def test_the_remedy_refuses_a_super_admin_target(
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST, response.text
 
+    assert captured, "the super_admin-target refusal emitted no audit record"
+    event = captured[-1]
+    assert event["details"]["action"] == "external_email_super_admin_target"
+    assert event["target_user_id"] == super_admin_user.id
+
 
 def test_the_remedy_refuses_an_account_with_no_external_identity(
-    client, super_admin_token_headers, db_session, normal_user
+    client, super_admin_token_headers, db_session, normal_user, monkeypatch
 ):
     """This is a remedy for an IdP-linked account, NOT a general 'edit anyone's email'.
 
     Without this narrowing the endpoint would be a new, broader authority than the bug
     calls for: rewriting a local account's email rewrites the credential it logs in with.
+
+    ``normal_user`` carries no identifier column at all, so this exercises the
+    ``_EXTERNAL_IDENTITY_COLUMNS`` check specifically — it must keep firing on that defect
+    and not be silently subsumed by the newer ``auth_type == local`` check below it, which
+    is why the audited ``action`` is asserted rather than just the status code.
     """
+    from app.api.endpoints import admin as admin_module
+
+    captured: list[dict] = []
+    monkeypatch.setattr(admin_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs))
+
     response = client.put(
         _REMEDY.format(uuid=normal_user.uuid),
         json={"email": f"whatever-{uuid_pkg.uuid4().hex[:8]}@example.com"},
         headers=super_admin_token_headers,
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST, response.text
+
+    assert captured, "the no-external-identity refusal emitted no audit record"
+    event = captured[-1]
+    assert event["details"]["action"] == "external_email_no_external_identity"
+    assert event["target_user_id"] == normal_user.id
+
+
+@pytest.mark.parametrize("identifier_column", ["ldap_uid", "external_id"])
+def test_the_remedy_refuses_a_local_password_account_carrying_an_identifier(
+    client, super_admin_token_headers, db_session, normal_user, identifier_column
+):
+    """Issue #912: a ``local`` account carrying an identifier column must still be refused.
+
+    Parametrized over both producers of that state: ``ldap_uid`` is what `link-identity`
+    used to be able to leave behind before its #912 fix (now closed — see
+    `test_admin_link_identity.py`), and ``external_id`` is what `scim_service.create_user`
+    deliberately still leaves on every SCIM-provisioned account. Building the row directly
+    via `db_session` is required for the first case precisely because the endpoint that used
+    to produce it no longer can.
+    """
+    setattr(normal_user, identifier_column, f"external-{uuid_pkg.uuid4().hex[:8]}")
+    db_session.commit()
+    assert str(normal_user.auth_type) == AUTH_TYPE_LOCAL
+    original_email = str(normal_user.email)
+
+    response = client.put(
+        _REMEDY.format(uuid=normal_user.uuid),
+        json={"email": f"whatever-{uuid_pkg.uuid4().hex[:8]}@example.com"},
+        headers=super_admin_token_headers,
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST, response.text
+    assert "local password" in response.json()["detail"]
+
+    db_session.refresh(normal_user)
+    assert str(normal_user.email) == original_email
+    assert normal_user.email_verified is False
+
+
+def test_the_local_account_refusal_is_audited(
+    client, super_admin_token_headers, db_session, normal_user, monkeypatch
+):
+    from app.api.endpoints import admin as admin_module
+
+    normal_user.external_id = f"scim-{uuid_pkg.uuid4().hex[:8]}"
+    db_session.commit()
+
+    captured: list[dict] = []
+    monkeypatch.setattr(admin_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs))
+
+    response = client.put(
+        _REMEDY.format(uuid=normal_user.uuid),
+        json={"email": f"whatever-{uuid_pkg.uuid4().hex[:8]}@example.com"},
+        headers=super_admin_token_headers,
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST, response.text
+
+    assert captured, "the local-account refusal emitted no audit record"
+    event = captured[-1]
+    assert event["details"]["action"] == "external_email_local_account"
+    assert event["target_user_id"] == normal_user.id
 
 
 def test_the_remedy_refuses_an_email_another_account_already_holds(
@@ -500,18 +592,33 @@ def test_the_idempotent_resubmission_leaves_the_flag_alone(
     assert linked_user.email_verified is True
 
 
-def test_a_link_identity_local_account_is_not_left_verified_for_an_address_it_never_held(
-    client, super_admin_token_headers, db_session, normal_user, monkeypatch
+def test_a_local_password_account_can_no_longer_reach_the_external_email_remedy(
+    client, super_admin_token_headers, db_session, normal_user
 ):
-    """The live-gap regression: ``link-identity`` sets an external identifier
-    WITHOUT changing ``auth_type`` away from ``local``, so an ``auth_type='local'``
-    account can reach the external-email remedy — and for that account the
-    verification gate really does apply to login.
-    """
-    from app.auth.email_verification import assert_email_verified_for_local_login
+    """Supersedes the original #909 regression test (issue #912).
 
-    _mark_verified(db_session, normal_user)
-    assert str(normal_user.auth_type) == "local"
+    That test pinned three things, and #912 changes exactly one of them:
+
+    1. "link-identity must not change auth_type" — this was the BUG statement, not an
+       invariant to protect. It is now inverted by
+       `test_admin_link_identity.py::test_linking_a_local_account_converts_its_auth_type`.
+    2. External-email genuinely clears `email_verified` on a real change — still pinned,
+       unaffected, by `test_the_admin_external_email_remedy_clears_the_verified_flag`
+       (which runs against an `oidc` account, never a converted-from-local one).
+    3. The cleared flag has teeth (a 403 at local login) — still pinned, unaffected, by
+       `test_admin_user_update_privilege_boundary.py` (around its
+       `test_the_new_address_is_actually_unverified_at_login`), because
+       `assert_email_verified_for_local_login` returns early for every non-local account,
+       so after this fix no account that reaches the external-email remedy is ever subject
+       to that login gate in the first place — pinning it against a `local` account (which
+       #912 makes unreachable here) would no longer describe anything this endpoint can do.
+
+    What replaces it: since `link-identity` now converts `auth_type` away from `local`
+    on first use, and `admin_update_external_email` now refuses `auth_type == local`
+    outright, the two endpoints must agree — an account link-identity has just converted
+    must be exactly the kind of account external-email accepts.
+    """
+    assert str(normal_user.auth_type) == AUTH_TYPE_LOCAL
 
     ldap_uid = f"ldap-uid-{uuid_pkg.uuid4().hex[:8]}"
     link_response = client.put(
@@ -521,8 +628,8 @@ def test_a_link_identity_local_account_is_not_left_verified_for_an_address_it_ne
     )
     assert link_response.status_code == status.HTTP_200_OK, link_response.text
     db_session.refresh(normal_user)
-    assert str(normal_user.auth_type) == "local", (
-        "link-identity must not change auth_type — that is the whole gap this pins"
+    assert str(normal_user.auth_type) != AUTH_TYPE_LOCAL, (
+        "link-identity must convert auth_type away from local (#912)"
     )
 
     new_email = f"renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
@@ -533,11 +640,5 @@ def test_a_link_identity_local_account_is_not_left_verified_for_an_address_it_ne
     )
     assert remedy_response.status_code == status.HTTP_200_OK, remedy_response.text
     db_session.refresh(normal_user)
+    assert str(normal_user.email) == new_email
     assert normal_user.email_verified is False
-
-    from app.auth import email_verification as ev
-
-    monkeypatch.setattr(ev, "email_verification_required", lambda _db: True)
-    with pytest.raises(HTTPException) as exc:
-        assert_email_verified_for_local_login(db_session, str(normal_user.uuid))
-    assert exc.value.status_code == status.HTTP_403_FORBIDDEN

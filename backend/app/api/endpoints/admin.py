@@ -28,6 +28,7 @@ from app.auth.account_linking import emails_agree
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.lockout import unlock_account as lockout_unlock_account
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
@@ -1826,11 +1827,44 @@ def admin_change_user_role(
     return {"success": True, "old_role": old_role, "new_role": new_role}
 
 
+def _audit_admin_identity_refusal(
+    action: str, user: User, current_user: User, client_ip: str, user_agent: str
+) -> None:
+    """Record a refusal from the link-identity / external-email endpoints below.
+
+    Mirrors ``users.py::_audit_privilege_boundary_denial`` exactly, including its
+    reuse of ``ADMIN_USER_UPDATE`` with ``outcome=FAILURE`` rather than a new
+    ``AuditEventType`` — both endpoints' successful writes already emit that type,
+    so a refusal is the same event with a different outcome and an ``action``
+    naming which precondition stopped it. There is no third convention to invent
+    here; the sibling in ``users.py`` already answered this. Actor vs. subject
+    follows issue #443: ``user_id``/``username`` are the caller, ``target_user_id``/
+    ``target_username`` are the account the write was attempted against.
+    """
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_UPDATE,
+        outcome=AuditOutcome.FAILURE,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        target_user_id=int(user.id),
+        target_username=str(user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        details={"action": action},
+    )
+
+
 #: Column each linkable provider's identifier lives on. Mirrors
 #: `auth/account_linking.py`'s lookup order (provider id first, email second) —
 #: setting this column is what makes a *subsequent* login match here instead of
 #: ever reaching the email-match branch that provider's `email_verified` posture
-#: might refuse.
+#: might refuse. The three keys are byte-identical to `AUTH_TYPE_OIDC` /
+#: `AUTH_TYPE_LDAP` / `AUTH_TYPE_PKI` — `LinkExternalIdentityRequest`'s
+#: `_provider_is_linkable` validator restricts `payload.provider` to exactly that
+#: set, so `payload.provider` doubles as the auth_type to convert to below, and
+#: this map stays total over it. `saml_subject` and `external_id` are deliberately
+#: NOT linkable here: SAML has no local test IdP yet (see `auth/CLAUDE.md`), and
+#: `external_id` is SCIM's column, which this endpoint has no business writing.
 _LINK_IDENTITY_COLUMN = {
     "oidc": "oidc_subject",
     "ldap": "ldap_uid",
@@ -1856,6 +1890,30 @@ def admin_link_external_identity(
     account, so the identity resolves by that identifier on the very next login
     and the email-match branch (and its refusal) is never reached at all.
 
+    **Linking a `local`-password account converts its `auth_type`, and revokes its
+    sessions** (issue #912). Before this, the identifier column was set without
+    touching `auth_type`, leaving a `local` account that carried (say) an
+    `ldap_uid` — a contradictory state that resolves through the provider-id login
+    branch while every other reader of `auth_type` still believed the account
+    authenticated with a local password. The conversion is guarded on the
+    account's `auth_type` being exactly `local` at the time of the call: an
+    already-external `auth_type` (a `pki` account with `allow_local_fallback`
+    set, or a downstream registry provider) is left untouched, so this can never
+    demote one external method to another. It also deliberately does **not**
+    clear `hashed_password` — the login-path conversions do that, but this write
+    is effectively irreversible from the API (`assert_password_auth_possible`
+    refuses to set a password on a non-local account), so a mistyped identifier
+    would strand the admin with no way back. Leaving the hash in place is inert:
+    `auth.utils.local_password_allowed` already refuses it unconditionally for
+    `ldap` and refuses it for `pki`/`oidc` without the super_admin-only
+    `allow_local_fallback` flag.
+
+    A `local` account carrying an external identifier can also arrive here via
+    `scim_service.create_user`, which deliberately stamps `external_id`
+    without guessing an `auth_type` for the IdP behind a SCIM client — that state
+    is legitimate and this endpoint's `_EXTERNAL_IDENTITY_COLUMNS` sibling below
+    (`external-email`) does not touch it either.
+
     Never for a `super_admin` target — that account is local-only by
     architectural invariant, the break-glass account for exactly the IdP that
     might be failing, and linking it to an external identity would make it
@@ -1868,6 +1926,9 @@ def admin_link_external_identity(
         raise HTTPException(status_code=404, detail="User not found")
 
     if str(user.role) == ROLE_SUPER_ADMIN:
+        _audit_admin_identity_refusal(
+            "link_identity_super_admin_target", user, current_user, client_ip, user_agent
+        )
         raise HTTPException(
             status_code=400,
             detail="super_admin accounts are local-only and cannot be linked to an external identity",
@@ -1887,6 +1948,14 @@ def admin_link_external_identity(
         )
 
     setattr(user, column, payload.identifier)
+    previous_auth_type = str(user.auth_type)
+    converted = previous_auth_type == AUTH_TYPE_LOCAL
+    if converted:
+        # payload.provider IS the auth-type string — the schema's validator closes
+        # it to exactly {oidc, ldap, pki}, which are AUTH_TYPE_OIDC/_LDAP/_PKI
+        # verbatim (see _LINK_IDENTITY_COLUMN's comment).
+        user.auth_type = payload.provider
+        revoke_all_sessions(db, user, reason="external identity linked")
     db.commit()
 
     logger.info(
@@ -1909,17 +1978,27 @@ def admin_link_external_identity(
             "action": "link_external_identity",
             "target_user": user_uuid,
             "provider": payload.provider,
+            "previous_auth_type": previous_auth_type,
+            "auth_type": str(user.auth_type),
         },
     )
 
     return LinkExternalIdentityResponse(
-        success=True, provider=payload.provider, identifier=payload.identifier
+        success=True,
+        provider=payload.provider,
+        identifier=payload.identifier,
+        auth_type=str(user.auth_type),
     )
 
 
 #: The identifier column each external method stamps on an account. A row carrying
 #: any of these is "already linked" — which is what makes the email remedy below a
-#: REMEDY rather than a general "edit anyone's login address" power.
+#: REMEDY rather than a general "edit anyone's login address" power. NOT the same
+#: claim as "already linked implies non-local", though: `scim_service.create_user`
+#: deliberately provisions `auth_type='local'` rows carrying `external_id` (it has
+#: no basis for guessing which IdP a SCIM client speaks for), and that state is
+#: legitimate — this tuple does not declare it illegal. The handler below adds a
+#: SEPARATE, narrower `auth_type == local` check for exactly that reason (#912).
 _EXTERNAL_IDENTITY_COLUMNS = (
     "oidc_subject",
     "ldap_uid",
@@ -1962,6 +2041,17 @@ def admin_update_external_email(
     Never a `super_admin`, matching `link-identity`: that account is local-only and is
     the break-glass for exactly the IdP that might be failing.
 
+    **A second, narrower precondition (issue #912):** an `auth_type == local` account
+    is refused even if it carries one of `_EXTERNAL_IDENTITY_COLUMNS`. Before #912's
+    fix to `link-identity`, that endpoint could leave exactly this state behind (an
+    external identifier stamped on a still-`local` account); it no longer can, but a
+    SCIM-provisioned account (`scim_service.create_user`) legitimately still
+    carries `auth_type='local'` and `external_id` together, by explicit design in that
+    module. This check is a plain equality against `AUTH_TYPE_LOCAL`, never a
+    membership test against the valid-auth-type set — a downstream registry provider's
+    account (`auth_type='managed_idp'` or similar) must keep reaching this remedy, and
+    a closed allow-list here would plant a second hardcoded set beside issue #866's.
+
     Sessions are revoked, because the address is what the account authenticates as.
     """
     client_ip, user_agent = _get_client_info(request)
@@ -1971,18 +2061,38 @@ def admin_update_external_email(
         raise HTTPException(status_code=404, detail="User not found")
 
     if str(user.role) == ROLE_SUPER_ADMIN:
+        _audit_admin_identity_refusal(
+            "external_email_super_admin_target", user, current_user, client_ip, user_agent
+        )
         raise HTTPException(
             status_code=400,
             detail="super_admin accounts are local-only and cannot be linked to an external identity",
         )
 
     if not any(getattr(user, column, None) for column in _EXTERNAL_IDENTITY_COLUMNS):
+        _audit_admin_identity_refusal(
+            "external_email_no_external_identity", user, current_user, client_ip, user_agent
+        )
         raise HTTPException(
             status_code=400,
             detail=(
                 "This account is not linked to an external identity. This endpoint accepts an "
                 "identity provider's updated address for an already-linked account; it is not a "
                 "general email change."
+            ),
+        )
+
+    if str(user.auth_type) == AUTH_TYPE_LOCAL:
+        _audit_admin_identity_refusal(
+            "external_email_local_account", user, current_user, client_ip, user_agent
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This account authenticates with a local password, so its email address is its "
+                "own login credential — not an address an identity provider owns. This endpoint "
+                "accepts an IdP's updated address for an externally-authenticated account. "
+                "Change the account's auth_type first if that is what it should be."
             ),
         )
 
@@ -2013,15 +2123,19 @@ def admin_update_external_email(
     user.email = new_email
     # email_verified is proof THIS deployment mailed the address on the row — a
     # property of the ADDRESS, so it cannot survive the address changing (#909).
-    # NOT inert just because this is an IdP remedy: link-identity sets an external
-    # identifier WITHOUT changing auth_type, so an auth_type='local' account can
-    # reach this handler, and for that account the verification gate really does
-    # apply to login. Deliberately no re-verification token is issued here (unlike
-    # the self-service path in users.py): this endpoint is an administrator
-    # accepting an IdP's assertion for an already-linked account, and mailing an
-    # IdP-owned address unprompted isn't its job — issue_verification_token would
-    # also no-op for a genuinely external account. Clearing the flag is the honest
-    # record.
+    # Every account that reaches this line is now non-local (the auth_type==local
+    # check above refuses the rest, #912), and assert_email_verified_for_local_login
+    # returns early for a non-local account — so clearing this flag is not a live
+    # login gate for anyone who reaches here today. It is still the honest record
+    # rather than a no-op: it matters the moment the account is ever converted back
+    # to local (or if a future local-fallback path starts reading it), and leaving a
+    # stale True on an address the deployment never actually verified is exactly the
+    # kind of "looks fine, isn't" state this module exists to avoid. Deliberately no
+    # re-verification token is issued here (unlike the self-service path in
+    # users.py): this endpoint is an administrator accepting an IdP's assertion for
+    # an already-linked account, and mailing an IdP-owned address unprompted isn't
+    # its job — issue_verification_token would also no-op for a genuinely external
+    # account.
     user.email_verified = False
     user.email_verified_at = None
     # Same shape as the self-service email change in `users.py`: revoke IN the

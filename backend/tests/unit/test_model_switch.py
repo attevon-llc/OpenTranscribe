@@ -24,6 +24,7 @@ are tested against REAL logic:
 
 from __future__ import annotations
 
+import logging
 import uuid as uuid_pkg
 from contextlib import contextmanager
 from unittest.mock import MagicMock
@@ -270,11 +271,17 @@ def test_dispatch_reindex_drops_a_named_owner_with_an_empty_file_list(
 
 
 def test_dispatch_reindex_raises_when_delay_fails_and_message_reports_partial_progress(
-    db_session, normal_user, other_user
+    db_session, normal_user, other_user, caplog
 ):
     """A failed dispatch is intentionally NOT caught per-user (see the module
     docstring) — the whole switch is already applied by the time this runs, so
-    swallowing the failure would silently under-report a mixed vector space."""
+    swallowing the failure would silently under-report a mixed vector space.
+
+    The RAISED message must carry only the progress facts, never the caught
+    broker/result-backend exception's own text (issue #891) — that text can
+    quote a connection URL with an embedded credential
+    (``redis://:<password>@host:port/db``). The real failure is still logged.
+    """
     baseline = _baseline_completed_owner_ids(db_session)
     _make_media_file(db_session, other_user, FileStatus.COMPLETED)
     total_owners = len(baseline | {normal_user.id, other_user.id})
@@ -291,13 +298,17 @@ def test_dispatch_reindex_raises_when_delay_fails_and_message_reports_partial_pr
     with (
         patch("app.db.session_utils.session_scope", lambda: _yield_session(db_session)),
         patch("app.tasks.reindex_task.reindex_transcripts_task.delay", side_effect=_boom),
+        caplog.at_level(logging.ERROR),
     ):
         with pytest.raises(ReindexDispatchError) as exc_info:
             dispatch_reindex_for_every_owner(triggered_by=normal_user.id)
 
     message = str(exc_info.value)
     assert f"1 of {total_owners} users" in message
-    assert "Retry limit exceeded" in message
+    # The caught exception's own text must NOT appear in the raised message...
+    assert "Retry limit exceeded" not in message
+    # ...but it must still be logged, so the real cause is diagnosable.
+    assert "Retry limit exceeded" in caplog.text
 
 
 # =============================================================================

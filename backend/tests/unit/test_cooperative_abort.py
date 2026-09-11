@@ -20,8 +20,11 @@ from __future__ import annotations
 
 import ast
 import inspect
+import re
 import sys
 import textwrap
+import threading
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -158,21 +161,54 @@ class TestTaskLayerTranslation:
         assert raised.value is boom
         failed.assert_called_once()
 
-    def test_the_wav_is_cleaned_up_on_both_paths(self):
-        """Whichever way the task ends, the shared-volume WAV must not be left behind."""
+    def test_the_wav_survives_an_abort(self):
+        """#809: an abort must NOT delete the preprocessed WAV, for two separate reasons.
+
+        This test replaces one that asserted the WAV was cleaned up on *both* paths. That was
+        the behaviour, and it was wrong:
+
+        1. The redelivered task needs the WAV. ``preprocess`` has already returned and will not
+           rewrite it, so deleting it forces a full MinIO re-download and ffmpeg re-run.
+        2. ``_AsyncDiarization``'s thread may still be reading it — the stage's bounded join
+           (``_SHUTDOWN_JOIN_BUDGET_S``) can abandon that thread mid-request during a shutdown,
+           so unlinking here can pull the file out from under a live reader.
+        """
         from app.tasks.transcription import core
 
-        for exc in (ws.TranscriptionAbortedError("x"), RuntimeError("boom")):
-            with (
-                patch.object(core, "_handle_transcription_failure"),
-                patch.object(core, "_get_user_friendly_error_message", return_value="f"),
-                patch.object(core, "_cleanup_wav_quietly") as cleanup,
-            ):
-                with pytest.raises((Reject, RuntimeError)):
-                    core._finish_failed_or_aborted(
-                        MagicMock(), "t", "file-uuid", "wav-sentinel-path", exc
-                    )
-            cleanup.assert_called_once_with("wav-sentinel-path")
+        with (
+            patch.object(core, "_handle_transcription_failure"),
+            patch.object(core, "_get_user_friendly_error_message", return_value="f"),
+            patch.object(core, "_cleanup_wav_quietly") as cleanup,
+        ):
+            with pytest.raises(Reject):
+                core._finish_failed_or_aborted(
+                    MagicMock(),
+                    "t",
+                    "file-uuid",
+                    "wav-sentinel-path",
+                    ws.TranscriptionAbortedError("x"),
+                )
+
+        cleanup.assert_not_called()
+
+    def test_the_wav_is_still_cleaned_up_on_a_real_failure(self):
+        """The control, and the half of the old behaviour that was always correct: a genuinely
+        broken run is not going to be resumed, so leaving its WAV on the shared volume is a
+        leak. Without this test, `_finish_failed_or_aborted` could stop cleaning up entirely
+        and the test above would still pass."""
+        from app.tasks.transcription import core
+
+        with (
+            patch.object(core, "_handle_transcription_failure"),
+            patch.object(core, "_get_user_friendly_error_message", return_value="f"),
+            patch.object(core, "_cleanup_wav_quietly") as cleanup,
+        ):
+            with pytest.raises(RuntimeError):
+                core._finish_failed_or_aborted(
+                    MagicMock(), "t", "file-uuid", "wav-sentinel-path", RuntimeError("boom")
+                )
+
+        cleanup.assert_called_once_with("wav-sentinel-path")
 
 
 # ── The registry gate ────────────────────────────────────────────────────────────────────
@@ -581,3 +617,195 @@ class TestTheTwoNewlyProtectedTasks:
 
         assert raised.value is boom
         cpu_seams.assert_called_once()
+
+
+class TestTheBoundedDiarizationJoin:
+    """#809 P0-2: the ``finally`` that could swallow the whole abort.
+
+    Both overlapping GPU stages wrap their checkpoint-carrying body in
+    ``try: ... finally: async_diarization.close()``. Unbounded, that join can block for
+    ``DIAR_NATIVE_TIMEOUT_S`` (1800s by default) waiting on the diar-native sidecar — 60x
+    docker's 30s grace period — so the worker is SIGKILLed mid-CUDA and the cooperative abort
+    accomplishes nothing. These tests drive REAL threads rather than a mocked ``join``, because
+    the property under test is "does close() actually return", which a mock cannot show.
+    """
+
+    @staticmethod
+    def _async_diarization(diarizer, thread):
+        """An ``_AsyncDiarization`` around a pre-built thread.
+
+        ``__new__`` plus the four attributes ``close()`` reads, rather than the real
+        ``__init__``: that constructor calls ``manager.get_diarizer()`` and starts a diarization
+        against real audio, which would make this a GPU test.
+        """
+        from app.transcription.engine import stages
+
+        ad = stages._AsyncDiarization.__new__(stages._AsyncDiarization)
+        ad._diarizer = diarizer
+        ad._thread = thread
+        ad._task_id = "task-under-shutdown"
+        ad._value = None
+        ad._error = None
+        return ad
+
+    @staticmethod
+    def _sidecar_client():
+        """A real ``NativeSpeakerDiarizer`` instance (uninitialised — only its TYPE matters
+        to the safety predicate, and constructing one properly would probe a live sidecar)."""
+        from app.transcription.diarizer_native import NativeSpeakerDiarizer
+
+        return NativeSpeakerDiarizer.__new__(NativeSpeakerDiarizer)
+
+    @staticmethod
+    def _in_process_pyannote():
+        """A real in-process ``SpeakerDiarizer`` — the engine that CAN hold a CUDA context."""
+        from app.transcription.diarizer import SpeakerDiarizer
+
+        return SpeakerDiarizer.__new__(SpeakerDiarizer)
+
+    def test_a_sidecar_thread_is_abandoned_once_the_bound_elapses(self):
+        """The fix. A thread blocked on the sidecar must not hold the abort past its budget."""
+        release = threading.Event()
+        thread = threading.Thread(target=release.wait, daemon=True)
+        thread.start()
+        try:
+            ad = self._async_diarization(self._sidecar_client(), thread)
+
+            started = time.monotonic()
+            ad.close(timeout=0.2)
+            elapsed = time.monotonic() - started
+
+            assert thread.is_alive(), (
+                "precondition: the thread must still be running, or this test would pass "
+                "against an unbounded join that simply had nothing to wait for"
+            )
+            assert elapsed < 2.0, (
+                f"close() took {elapsed:.2f}s against a 0.2s bound — it is still joining "
+                "without a timeout, so a shutdown would block here until docker SIGKILLs"
+            )
+        finally:
+            release.set()
+            thread.join(timeout=5.0)
+
+    def test_a_cuda_holding_thread_is_never_abandoned_even_under_a_bound(self):
+        """The safety gate, and the reason the bound is conditional rather than unconditional.
+
+        ``_AsyncDiarization`` is only built when ``_overlap_diarization_enabled`` saw a ready
+        sidecar — but that probe is TTL-cached, and ``ModelManager._build_diarizer`` falls back
+        to the in-process PyAnnote engine on ANY exception, so this thread CAN be running a
+        local CUDA model. Abandoning that risks orphaning a CUDA context, which on this hardware
+        has twice required a full machine restart. The timeout must be ignored.
+        """
+        # The "diarization" blocks until this test releases it, so it is provably still running
+        # while close() is called. close() therefore runs on its own thread: if the bound were
+        # (wrongly) honoured it would return immediately, and `closer_returned` would be set.
+        release_the_worker = threading.Event()
+        closer_returned = threading.Event()
+
+        worker = threading.Thread(target=release_the_worker.wait, daemon=True)
+        worker.start()
+        ad = self._async_diarization(self._in_process_pyannote(), worker)
+
+        def _close_under_a_bound():
+            ad.close(timeout=0.01)
+            closer_returned.set()
+
+        closer = threading.Thread(target=_close_under_a_bound, daemon=True)
+        closer.start()
+        try:
+            # A condition wait, not a fixed sleep: it returns the instant close() returns, so a
+            # regression fails this in milliseconds rather than after the full window.
+            assert not closer_returned.wait(timeout=2.0), (
+                "close() returned while the in-process diarization thread was still running, "
+                "despite that thread potentially holding a CUDA context. Abandoning it can "
+                "orphan the context and wedge the GPU — the bound must apply to the sidecar "
+                "client ONLY."
+            )
+            assert worker.is_alive(), (
+                "precondition: the worker must still be running, or close() returning would "
+                "prove nothing about whether the bound was honoured"
+            )
+
+            release_the_worker.set()
+            assert closer_returned.wait(timeout=5.0), (
+                "close() never returned even after the diarization thread finished — the "
+                "unbounded join is now hanging outright, which is a different bug"
+            )
+        finally:
+            release_the_worker.set()
+            worker.join(timeout=5.0)
+            closer.join(timeout=5.0)
+
+    def test_the_predicate_separates_the_two_engines(self):
+        """Guard the guard: if `_holds_no_local_cuda` answered the same for both engines, one
+        of the two tests above would be vacuous and neither would say which."""
+        sidecar = self._async_diarization(
+            self._sidecar_client(), threading.Thread(target=lambda: None)
+        )
+        local = self._async_diarization(
+            self._in_process_pyannote(), threading.Thread(target=lambda: None)
+        )
+
+        assert sidecar._holds_no_local_cuda is True
+        assert local._holds_no_local_cuda is False
+
+    def test_a_healthy_worker_still_joins_without_a_bound(self):
+        """Outside a shutdown the bound must not apply: abandoning a live diarization thread
+        would reintroduce the issue #661 phase 1.1 hazard (the thread still references a WAV
+        the caller is about to unlink) for no benefit, since there is no deadline to race."""
+        from app.transcription.engine import stages
+
+        assert not ws._SHUTDOWN.is_set(), (
+            "precondition: the autouse fixture hands us a healthy worker"
+        )
+        assert stages._shutdown_join_timeout() is None
+
+        ws.mark_shutting_down()
+        assert stages._shutdown_join_timeout() == stages._SHUTDOWN_JOIN_BUDGET_S
+
+
+class TestTheJoinBudgetArithmetic:
+    """The constant is DERIVED from two others. Pin the derivation, not the number — otherwise
+    raising the release watchdog or lowering the compose grace period silently makes the join
+    budget unsatisfiable, and the only symptom is a SIGKILL in production.
+    """
+
+    @staticmethod
+    def _compose_grace_seconds() -> int:
+        compose = Path(__file__).resolve().parents[3] / "docker-compose.yml"
+        matches = set(
+            re.findall(r"\$\{OT_STOP_GRACE_GPU:-(\d+)\}s", compose.read_text(encoding="utf-8"))
+        )
+        assert len(matches) == 1, (
+            f"expected exactly one OT_STOP_GRACE_GPU default in docker-compose.yml, got {matches}"
+        )
+        return int(matches.pop())
+
+    def test_the_join_budget_and_the_release_watchdog_both_fit_in_the_grace_period(self):
+        from app.transcription.engine import stages
+
+        grace = self._compose_grace_seconds()
+        release_budget = ws._BUDGET_S
+        join_budget = stages._SHUTDOWN_JOIN_BUDGET_S
+
+        assert join_budget + release_budget < grace, (
+            f"the abandon-the-diarization-thread budget ({join_budget}s) plus the model-release "
+            f"watchdog ({release_budget}s) is {join_budget + release_budget}s, which does not "
+            f"fit inside docker's {grace}s stop_grace_period. The worker would be SIGKILLed "
+            "mid-CUDA — the exact outcome #809 exists to prevent. Lower the join budget, or "
+            "raise OT_STOP_GRACE_GPU in docker-compose.yml."
+        )
+
+    def test_the_join_budget_leaves_room_for_the_rest_of_the_abort_path(self):
+        """The join is only one step. The abort still has to unwind out of the stage, reach the
+        task layer, raise Reject, and let celery drain the pool — so the join may claim at most
+        half of what is left after the release watchdog."""
+        from app.transcription.engine import stages
+
+        headroom = self._compose_grace_seconds() - ws._BUDGET_S
+
+        assert headroom / 2 >= stages._SHUTDOWN_JOIN_BUDGET_S, (
+            f"join budget {stages._SHUTDOWN_JOIN_BUDGET_S}s claims more than half of the "
+            f"{headroom}s left after the release watchdog, leaving too little for the abort to "
+            "unwind, Reject to travel, and celery to drain the pool"
+        )

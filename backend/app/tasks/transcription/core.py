@@ -331,13 +331,24 @@ def _finish_failed_or_aborted(
       replaces, since after a SIGKILL the message is redelivered.
     * A failure is BROKEN work: mark the file, notify, re-raise unchanged.
 
+    ⚠️ The WAV cleanup runs on the FAILURE branch ONLY, and the ordering below is load-bearing
+    for two independent reasons (both issue #809):
+
+    1. The redelivered attempt needs that WAV. Deleting it makes the next worker re-download
+       from MinIO and re-run ffmpeg for work that is already on the shared volume -- and
+       ``preprocess`` has already returned, so nothing will rewrite it.
+    2. ``_AsyncDiarization``'s thread may still be READING it. The stage's bounded join
+       (``engine/stages.py``, ``_SHUTDOWN_JOIN_BUDGET_S``) can abandon that thread mid-request
+       during a shutdown, so unlinking the WAV here could pull the file out from under a live
+       reader. The two changes are interlocked and must not be split.
+
     Raises:
         Reject: on abort, to requeue.
         Exception: the original exception, on a real failure.
     """
-    _cleanup_wav_quietly(local_wav_path)
     if isinstance(exc, TranscriptionAbortedError):
         requeue_after_abort(file_uuid, exc, stage="GPU transcription")
+    _cleanup_wav_quietly(local_wav_path)
     logger.error(f"GPU transcription failed for file {file_uuid}: {exc}")
     _handle_transcription_failure(
         ctx, task_id, _get_user_friendly_error_message(str(exc)), "gpu_processing_error"

@@ -124,11 +124,27 @@ class TestListTasksUsesRealTaskRows:
         assert item["task_type"] == "summarization"
         assert item["progress"] == pytest.approx(0.7)
 
-    def test_error_message_is_the_files_real_error_not_a_literal(
+    def test_error_message_is_sanitized_but_still_derived_from_the_files_own_error(
         self, client, user_token_headers, db_session, normal_user
     ):
-        """A file in ERROR with no task row must surface its own error text."""
-        media_file = MediaFile(
+        """Renamed from ``..._is_the_files_real_error_not_a_literal``.
+
+        That name asserted the pre-#786/#841 contract — that the RAW error text reaches
+        the wire — which is the defect those lanes closed: ``_build_task_item`` now routes
+        every ``error_message`` through ``ErrorCategorizationService.get_error_info()`` so
+        a client receives a fixed, user-facing sentence and the raw text stays on
+        ``media_file.last_error_message`` and in the log.
+
+        ⚠️ **The original test's REASON is preserved, and it is the point of this one.**
+        It existed to stop #76's regression, where the endpoint read `MediaFile` while
+        every writer stayed on `task` and stamped the literal ``"Transcription failed"``
+        on every failing file regardless of cause (#431). Sanitizing is not licence to
+        collapse back to one constant: the sentence is fixed *per category*, so two files
+        that failed for different reasons must still answer differently. This test
+        therefore seeds TWO files in different categories and asserts the two messages
+        DIFFER — it fails both if the raw text returns and if a single literal does.
+        """
+        corrupt = MediaFile(
             user_id=normal_user.id,
             filename="broken.mp4",
             storage_path=f"{normal_user.id}/broken.mp4",
@@ -137,6 +153,62 @@ class TestListTasksUsesRealTaskRows:
             status=FileStatus.ERROR,
             last_error_message="ffmpeg: moov atom not found",
         )
+        silent = MediaFile(
+            user_id=normal_user.id,
+            filename="silent.mp4",
+            storage_path=f"{normal_user.id}/silent.mp4",
+            file_size=1024,
+            content_type="video/mp4",
+            status=FileStatus.ERROR,
+            last_error_message="No audio track found in file",
+        )
+        db_session.add_all([corrupt, silent])
+        db_session.commit()
+
+        response = client.get("/api/tasks", headers=user_token_headers)
+
+        assert response.status_code == 200
+        body = response.json()
+        corrupt_item = _find_task(body, f"task_{corrupt.id}")
+        silent_item = _find_task(body, f"task_{silent.id}")
+
+        # 1. Each file gets the fixed sentence for ITS OWN category, not the raw text.
+        assert corrupt_item["error_message"] == "Processing failed for this file."
+        assert (
+            silent_item["error_message"]
+            == "This file has no audio track, so there is nothing to transcribe."
+        )
+
+        # 2. The anti-placeholder guarantee #431 bought: two different causes must not
+        #    collapse onto one string, and never onto #76's hardcoded literal.
+        assert corrupt_item["error_message"] != silent_item["error_message"]
+        assert "Transcription failed" not in response.text
+
+        # 3. No raw exception text anywhere on the wire (#786).
+        assert "moov atom" not in response.text
+        assert "ffmpeg" not in response.text
+
+        # 4. ...and the raw text is still where an operator can reach it.
+        db_session.refresh(corrupt)
+        assert corrupt.last_error_message == "ffmpeg: moov atom not found"
+
+    def test_a_file_that_did_not_fail_carries_no_error_message(
+        self, client, user_token_headers, db_session, normal_user
+    ):
+        """CONTROL for the test above: the sanitized sentence is not stamped on everything.
+
+        Without this, an implementation that returned ``"Processing failed for this file."``
+        unconditionally would satisfy every positive assertion above for the corrupt file.
+        """
+        media_file = MediaFile(
+            user_id=normal_user.id,
+            filename="fine.mp4",
+            storage_path=f"{normal_user.id}/fine.mp4",
+            file_size=1024,
+            content_type="video/mp4",
+            status=FileStatus.COMPLETED,
+            last_error_message="a stale error from an earlier attempt",
+        )
         db_session.add(media_file)
         db_session.commit()
 
@@ -144,7 +216,8 @@ class TestListTasksUsesRealTaskRows:
 
         assert response.status_code == 200
         item = _find_task(response.json(), f"task_{media_file.id}")
-        assert item["error_message"] == "ffmpeg: moov atom not found"
+        assert item["error_message"] is None
+        assert "stale error" not in response.text
 
     def test_processing_file_without_a_task_row_reports_unknown_progress(
         self, client, user_token_headers, db_session, normal_user

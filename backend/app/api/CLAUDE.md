@@ -125,7 +125,7 @@ one-click UI button.
 | `POST /admin/gdpr/erase-user/{uuid}` | super_admin. `erase_user` cascades storage + OpenSearch + rows, then **deletes the account** |
 | `POST /org-admin/gdpr/erase-user/{uuid}` | `require_org_admin` + `require_capability("organizations")`. Destroys only rows stamped with **this** org; the account and personal-scope data survive |
 | `POST /org-admin/gdpr/erase-organization?confirm=true` | Same gate; refuses without `confirm`. Irreversible whole-tenant erasure; members keep their accounts |
-| `GET /org-admin/audit-logs` | Same gate; scoped to org members, and a `user_id` filter outside the org is 403 |
+| `GET /org-admin/audit-logs` | Same gate; scoped to org members, and a `user_id` (actor) or `target_user_id` (subject, issue #443/#828) filter outside the org is 403 either way |
 | `GET /admin/files/quarantined` · `POST /admin/files/{uuid}/{quarantine,release}` | Admin. DMCA/abuse takedown + legal hold; `release` is 409 when not quarantined |
 
 An org admin has authority over the tenant's **data**, never over the **person's account** —

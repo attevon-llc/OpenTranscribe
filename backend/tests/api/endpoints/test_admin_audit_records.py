@@ -16,6 +16,8 @@ defect ``test_gdpr_erasure_names_the_acting_super_admin`` covers.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi import status
 
@@ -185,6 +187,166 @@ def test_the_full_erasure_sequence_agrees_on_actor_and_subject_everywhere(
         f"least one record in the sequence does not name the actor: {sequence}"
     )
     assert by_subject == by_actor == sequence
+
+
+class _FilteringFakeAuditOS:
+    """An in-memory OpenSearch stand-in that actually FILTERS, not just records.
+
+    ``_FakeAuditOS`` elsewhere in this repo (``tests/test_org_admin_gdpr.py``) only
+    captures the query body — enough to assert on the request shape, but it would
+    let a filter that never reaches OpenSearch pass vacuously, since a query that
+    is silently ignored returns everything and "everything" can equal "the right
+    three records" if nothing else is in the index. This fake actually applies the
+    ``must`` clauses ``query_audit_logs`` builds, so a ``target_user_id`` filter
+    that FastAPI silently drops (unknown query param -> ignored, not a 422) shows
+    up as too many rows coming back, not as a false green.
+
+    Supports exactly the clause shapes this module emits: ``term`` and ``terms``.
+    Anything else raises, deliberately — a shape this fake cannot evaluate must
+    not be silently treated as "matches everything".
+    """
+
+    class _Indices:
+        """Stub for ``client.indices`` — the real one is only asked whether the
+        monthly index exists / to create it; this fake needs no actual index."""
+
+        def exists(self, index):
+            return True
+
+        def create(self, index, body):
+            pass
+
+    def __init__(self):
+        self.docs: list[dict] = []
+        self.indices = self._Indices()
+
+    def index(self, index, body):  # noqa: A002 - matches opensearch-py's kwarg name
+        self.docs.append(dict(body))
+
+    def search(self, index, body):  # noqa: A002
+        query = body["query"]
+        if query == {"match_all": {}}:
+            hits = list(self.docs)
+        else:
+            clauses = query["bool"]["must"]
+            hits = [d for d in self.docs if all(self._clause_matches(d, c) for c in clauses)]
+        return {
+            "hits": {
+                "hits": [{"_source": h} for h in hits],
+                "total": {"value": len(hits)},
+            }
+        }
+
+    @staticmethod
+    def _clause_matches(doc: dict[str, Any], clause: dict[str, Any]) -> bool:
+        if "term" in clause:
+            ((field, value),) = clause["term"].items()
+            return bool(doc.get(field) == value)
+        if "terms" in clause:
+            ((field, values),) = clause["terms"].items()
+            return bool(doc.get(field) in values)
+        raise AssertionError(f"unsupported clause shape in test fake: {clause}")
+
+
+def test_erasure_sequence_is_queryable_through_the_real_audit_log_endpoint(
+    client,
+    super_admin_token_headers,
+    super_admin_user,
+    normal_user,
+    monkeypatch,
+):
+    """The read-path half of issue #443/#828's fix, through the REAL HTTP endpoint.
+
+    ``test_the_full_erasure_sequence_agrees_on_actor_and_subject_everywhere`` above
+    proves the three records are internally consistent — but it reads them from
+    the captured ``audit_logger.log`` kwargs, never through ``query_audit_logs`` or
+    ``GET /admin/audit-logs`` at all. Before this fix, ``target_user_id`` had no
+    filter on either: the subject-correct records this session produced were
+    unqueryable by subject through the one supported read path, which is WORSE
+    than the pre-#828 state where ``user_id`` held the subject at some sites and
+    at least THAT filter found something. A "show me everything done to user X"
+    compliance query (GDPR Art. 15) must return this sequence.
+
+    A decoy document — same event type, a DIFFERENT actor and a DIFFERENT
+    subject, seeded directly into the fake index rather than produced by a real
+    erasure — is what makes this test able to fail. Without it, an ignored
+    ``target_user_id`` filter would still return exactly the erasure's own three
+    records (nothing else is in this test's index), which would pass by
+    accident. With the decoy present, a silently-ignored filter returns all
+    FOUR records and the ``== 3`` assertions catch it.
+    """
+    from app.auth import audit as audit_module
+
+    fake = _FilteringFakeAuditOS()
+    monkeypatch.setattr(audit_module.audit_logger, "_opensearch_client", fake)
+    monkeypatch.setattr(audit_module, "_build_audit_opensearch_client", lambda: fake)
+    monkeypatch.setattr(audit_module.settings, "AUDIT_LOG_TO_OPENSEARCH", True)
+
+    target_id = int(normal_user.id)
+    actor_id = int(super_admin_user.id)
+    decoy_actor_id = -998
+    decoy_target_id = -999
+    fake.docs.append(
+        {
+            "timestamp": "2020-01-01T00:00:00+00:00",
+            "event_type": AuditEventType.ADMIN_USER_DELETE.value,
+            "outcome": AuditOutcome.SUCCESS.value,
+            "user_id": decoy_actor_id,
+            "target_user_id": decoy_target_id,
+            "details": {"action": "gdpr_erasure", "decoy": True},
+        }
+    )
+
+    response = client.post(
+        f"/api/admin/gdpr/erase-user/{normal_user.uuid}", headers=super_admin_token_headers
+    )
+    assert response.status_code == status.HTTP_200_OK, response.text
+    # 3 real records + the 1 decoy planted above.
+    assert len(fake.docs) == 4, f"expected 3 erasure records plus the decoy, got {fake.docs}"
+
+    by_subject = client.get(
+        "/api/admin/audit-logs",
+        params={
+            "target_user_id": target_id,
+            "event_type": AuditEventType.ADMIN_USER_DELETE.value,
+        },
+        headers=super_admin_token_headers,
+    )
+    assert by_subject.status_code == status.HTTP_200_OK, by_subject.text
+    subject_data = by_subject.json()
+    # Non-vacuity: the equality below would also pass at 0 == 0.
+    assert subject_data["total"] > 0, f"query by subject returned nothing at all: {subject_data}"
+    assert subject_data["total"] == 3, (
+        f"query by target_user_id did not return exactly the erasure's own three "
+        f"records — either the filter is not reaching OpenSearch (returned "
+        f"everything, including the decoy) or it is over-narrowing: {subject_data}"
+    )
+    assert len(subject_data["logs"]) == 3
+    assert all(log["target_user_id"] == target_id for log in subject_data["logs"])
+    assert not any(log["target_user_id"] == decoy_target_id for log in subject_data["logs"])
+
+    by_actor = client.get(
+        "/api/admin/audit-logs",
+        params={"user_id": actor_id, "event_type": AuditEventType.ADMIN_USER_DELETE.value},
+        headers=super_admin_token_headers,
+    )
+    assert by_actor.status_code == status.HTTP_200_OK, by_actor.text
+    actor_data = by_actor.json()
+    assert actor_data["total"] > 0, f"query by actor returned nothing at all: {actor_data}"
+    assert actor_data["total"] == 3, (
+        f"query by user_id did not return exactly the erasure's own three records: {actor_data}"
+    )
+    assert len(actor_data["logs"]) == 3
+    assert all(log["user_id"] == actor_id for log in actor_data["logs"])
+    assert not any(log["user_id"] == decoy_actor_id for log in actor_data["logs"])
+
+    subject_actions = {log["details"]["action"] for log in subject_data["logs"]}
+    actor_actions = {log["details"]["action"] for log in actor_data["logs"]}
+    assert (
+        subject_actions
+        == actor_actions
+        == {"gdpr_erasure", "gdpr_erasure_requested", "gdpr_erasure_recorded"}
+    )
 
 
 # ---------------------------------------------------------------------------

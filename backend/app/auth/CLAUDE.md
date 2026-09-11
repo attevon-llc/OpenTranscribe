@@ -245,8 +245,11 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
 - Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table.
 - **`user_id` is the ACTOR; the subject goes in `target_user_id` / `target_username`**
   (issue #443). This is an access-control invariant, not a style rule: `query_audit_logs`
-  filters on `user_id` and `build_org_scope_clause` attributes un-stamped events to an org by
-  member user-id, so keying it on the subject changes **who can see the record**. Five emitters
+  filters on both `user_id` (actor) and `target_user_id` (subject, issue #828 — the write-side
+  fix was shipped first and briefly had no read path; both `/audit-logs` endpoints now expose
+  it, org-scoped identically to `user_id`) and `build_org_scope_clause` attributes un-stamped
+  events to an org by member user-id, so keying it on the subject changes **who can see the
+  record**. Five emitters
   of `auth.account.disabled` disagreed three ways and `admin.role.change` two, which meant
   "actions Bob performed" returned Bob's own privilege escalation while filtering by the acting
   admin missed every IdP-driven promotion. For a **system** actor — the directory-sync sweep,

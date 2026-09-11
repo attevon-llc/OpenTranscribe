@@ -26,6 +26,13 @@ Five things live here so they can never drift apart:
     ``status``/``completed_at`` write through, so a file mid-transcription when
     it gets taken down is neither stranded at a stale status nor has a held
     file's retention clock restarted (issue #824).
+  * :func:`is_notification_suppressed` / :func:`is_notification_suppressed_for_uuid` /
+    :func:`filter_suppressed_file_uuids` — the WebSocket-push-side twin of
+    ``exclude_quarantined``/``is_hidden_for``: a quarantined file's identity must
+    not reach a non-admin over a live WS event any more than through a read
+    surface. ``app/utils/websocket_notify.py:send_ws_event_for_file`` is the
+    required call site for anything naming a ``MediaFile`` over WebSocket
+    (issue #908); ``send_ws_event`` itself has no notion of quarantine at all.
 
 Community-edition invariance: nothing quarantines automatically, the columns
 default to the not-quarantined state, and ``exclude_quarantined``/``is_hidden_for``
@@ -33,6 +40,8 @@ are behavior-preserving no-ops for files that were never taken down.
 """
 
 import logging
+import uuid as uuid_pkg
+from collections.abc import Sequence
 from datetime import UTC
 from datetime import datetime
 
@@ -131,15 +140,155 @@ def is_notification_suppressed(file_id: int, recipient_user_id: int) -> bool:
             file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
             if file is None or not bool(getattr(file, "is_quarantined", False)):
                 return False
-            recipient = db.query(User).filter(User.id == recipient_user_id).first()
-            recipient_is_admin = bool(recipient and recipient.is_admin)
-            return not recipient_is_admin
+            return not _recipient_is_admin(db, recipient_user_id)
     except Exception as e:  # noqa: BLE001 — fail CLOSED, see docstring
         logger.warning(
             f"Notification suppression check failed for file {file_id}; "
             f"suppressing as a precaution: {e}"
         )
         return True
+
+
+def is_notification_suppressed_for_uuid(
+    file_uuid: str | uuid_pkg.UUID, recipient_user_id: int
+) -> bool:
+    """UUID-keyed twin of :func:`is_notification_suppressed`.
+
+    Most Celery tasks in the pipeline hold only a file's UUID (never its Postgres
+    integer id) at the point they are ready to fire a WebSocket notification, so a
+    caller that only has a UUID had no suppression check to call before this —
+    issue #908 found 20 such call sites reaching ``send_ws_event`` directly.
+
+    Same contract as the id-keyed original: fails CLOSED. A UUID that does not
+    parse, or that does not resolve to any row, is treated as suppressed — the
+    caller cannot *prove* the file is not quarantined, and the asymmetry (a
+    missed notification vs. a filename disclosure) is the same one
+    :func:`is_notification_suppressed` accepts. A DB error is likewise
+    suppressed rather than risking a leak.
+
+    Args:
+        file_uuid: The MediaFile's UUID (string or ``UUID``).
+        recipient_user_id: The user the notification would be sent to.
+
+    Returns:
+        True if the notification must be suppressed.
+    """
+    try:
+        normalized = _coerce_uuid(file_uuid)
+        if normalized is None:
+            return True  # malformed/unknown — cannot prove it's safe to send
+
+        from app.db.session_utils import session_scope
+
+        with session_scope() as db:
+            file = db.query(MediaFile).filter(MediaFile.uuid == normalized).first()
+            if file is None:
+                # Unlike the id-keyed original, an unresolvable UUID here is
+                # NOT treated as "clearly nothing to leak" — the docstring's
+                # contract is fail-closed on "cannot prove it's safe", and a
+                # UUID (unlike an internal auto-increment id) has no meaning
+                # by construction, so a miss is at least as likely to be an
+                # upstream typo/race as a genuinely deleted row.
+                return True
+            if not bool(getattr(file, "is_quarantined", False)):
+                return False
+            return not _recipient_is_admin(db, recipient_user_id)
+    except Exception as e:  # noqa: BLE001 — fail CLOSED, see docstring
+        logger.warning(
+            f"Notification suppression check failed for file {file_uuid}; "
+            f"suppressing as a precaution: {e}"
+        )
+        return True
+
+
+def filter_suppressed_file_uuids(
+    file_uuids: Sequence[str | uuid_pkg.UUID], recipient_user_id: int
+) -> list[str]:
+    """The visible subset of ``file_uuids`` for ``recipient_user_id``, in input order.
+
+    For a multi-file WebSocket event (e.g. a bulk speaker-rename propagation) that
+    names every touched file's UUID in its payload — the single-file predicates
+    above cannot answer "which of these"; this is the batch counterpart. ONE
+    query for the whole list, not N per-uuid round trips.
+
+    Fails CLOSED: any exception returns ``[]`` (nothing is provably safe to
+    disclose), matching the asymmetry the single-file checks accept. Admins get
+    the full (de-duplication-preserving) list back, same rule as everywhere else
+    in this module. A malformed or unresolvable UUID is dropped — it cannot be
+    proven un-quarantined, so it is treated the same as "quarantined" for
+    disclosure purposes.
+
+    Args:
+        file_uuids: The candidate UUIDs (string or ``UUID``), as they appear in
+            the caller's payload.
+        recipient_user_id: The user the notification would be sent to.
+
+    Returns:
+        The stringified UUIDs that are safe to disclose to this recipient,
+        preserving the input order (and any duplicates).
+    """
+    candidates = list(file_uuids)
+    if not candidates:
+        return []
+
+    try:
+        parsed: dict[str, uuid_pkg.UUID] = {}
+        for raw in candidates:
+            key = str(raw)
+            if key in parsed:
+                continue
+            normalized = _coerce_uuid(raw)
+            if normalized is not None:
+                parsed[key] = normalized
+
+        if not parsed:
+            return []
+
+        from app.db.session_utils import session_scope
+
+        with session_scope() as db:
+            rows = (
+                db.query(MediaFile.uuid, MediaFile.is_quarantined)
+                .filter(MediaFile.uuid.in_(parsed.values()))
+                .all()
+            )
+            quarantined_by_key = {str(row[0]): bool(row[1]) for row in rows}
+            recipient_is_admin = _recipient_is_admin(db, recipient_user_id)
+
+        visible: list[str] = []
+        for raw in candidates:
+            key = str(raw)
+            if key not in parsed:
+                continue  # malformed — cannot prove un-quarantined
+            is_quarantined = quarantined_by_key.get(key)
+            if is_quarantined is None:
+                continue  # unknown uuid — cannot prove un-quarantined
+            if is_quarantined and not recipient_is_admin:
+                continue
+            visible.append(key)
+        return visible
+    except Exception as e:  # noqa: BLE001 — fail CLOSED, see docstring
+        logger.warning(
+            f"Batch notification suppression check failed for {len(candidates)} file(s); "
+            f"suppressing all as a precaution: {e}"
+        )
+        return []
+
+
+def _coerce_uuid(value: str | uuid_pkg.UUID) -> uuid_pkg.UUID | None:
+    """Best-effort parse to a ``UUID``; ``None`` on anything that doesn't parse."""
+    if isinstance(value, uuid_pkg.UUID):
+        return value
+    try:
+        return uuid_pkg.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _recipient_is_admin(db: Session, recipient_user_id: int) -> bool:
+    """Shared admin lookup for the notification-suppression predicates."""
+    recipient = db.query(User).filter(User.id == recipient_user_id).first()
+    return bool(recipient and recipient.is_admin)
 
 
 def apply_processing_status(file: MediaFile, new_status: FileStatus) -> None:

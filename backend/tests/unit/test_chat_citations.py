@@ -7,9 +7,15 @@ answer against the recording. They are built from OUR chunk data and only
 
 from __future__ import annotations
 
+from app.services.chat.citations import DIGEST_SNIPPET_CHARS
+from app.services.chat.citations import OVERVIEW_SNIPPET_CHARS
+from app.services.chat.citations import SNIPPET_CHARS
 from app.services.chat.citations import build_offered_citations
+from app.services.chat.citations import build_overview_citations
 from app.services.chat.citations import extract_used_citations
+from app.services.chat.mapreduce.file_summaries import FileSummary
 from app.services.chat.redactor import MaskedChunk
+from app.services.ingest_artifacts.sizing import DIGEST_SECTION_MAX_WORDS
 from app.services.search.chunk_retrieval import ChunkHit
 
 
@@ -190,3 +196,86 @@ def test_extracted_citations_cannot_exceed_what_was_offered():
     used = extract_used_citations("Per [1] and [3] and [5].", offered)
 
     assert [c["id"] for c in used] == [1]
+
+
+# ---------------------------------------------------------------------------
+# Per-kind snippet caps + content_chars (issue #832)
+# ---------------------------------------------------------------------------
+
+
+def test_a_digest_citation_at_the_ingest_word_bound_is_not_truncated():
+    """A digest section is bounded at ingest to DIGEST_SECTION_MAX_WORDS words —
+    exactly at that bound, the citation must show the whole thing.
+
+    RED before #832: every digest citation was capped at the plain 240-char
+    SNIPPET_CHARS, and a DIGEST_SECTION_MAX_WORDS-word section is always well
+    past 240 chars, so this always truncated.
+    """
+    content = " ".join(["word"] * DIGEST_SECTION_MAX_WORDS)
+    citation = build_offered_citations([_masked(0, content, digest_section=1)])[0]
+
+    assert citation["kind"] == "digest"
+    assert citation["snippet"] == content
+    assert not citation["snippet"].endswith("…")
+
+
+def test_a_digest_citation_longer_than_its_cap_is_still_truncated():
+    """Control: DIGEST_SNIPPET_CHARS is a real cap, not 'no cap at all'."""
+    content = "word " * 300
+    assert len(content) > DIGEST_SNIPPET_CHARS
+
+    citation = build_offered_citations([_masked(0, content, digest_section=1)])[0]
+
+    assert citation["snippet"].endswith("…")
+    assert len(citation["snippet"]) <= DIGEST_SNIPPET_CHARS + 5
+
+
+def test_an_ordinary_chunk_citations_snippet_is_unchanged():
+    """Regression guard: an ordinary (non-digest, non-expanded) chunk citation
+    stays capped at the plain SNIPPET_CHARS, not the wider digest cap — the
+    fix must not accidentally widen the chunk plane too."""
+    long_content = "word " * 200
+    assert len(long_content) > DIGEST_SNIPPET_CHARS  # exceeds BOTH caps
+
+    citation = build_offered_citations([_masked(0, long_content)])[0]
+
+    assert citation["kind"] == "chunk"
+    assert citation["snippet"].endswith("…")
+    assert len(citation["snippet"]) <= SNIPPET_CHARS + 5
+
+
+def test_content_chars_is_the_pre_truncation_length():
+    """content_chars is present, and equal to the pre-truncation length, for a
+    chunk, a digest, AND an overview citation — even when the snippet was NOT
+    truncated (a diagnostic that only appears on failure can't compute a rate)."""
+    chunk_content = "short chunk text here"
+    chunk_citation = build_offered_citations([_masked(0, chunk_content)])[0]
+    assert chunk_citation["content_chars"] == len(chunk_content)
+    assert not chunk_citation["snippet"].endswith("…")
+
+    digest_content = "short digest text here"
+    digest_citation = build_offered_citations([_masked(0, digest_content, digest_section=1)])[0]
+    assert digest_citation["content_chars"] == len(digest_content)
+    assert not digest_citation["snippet"].endswith("…")
+
+    overview_content = "short overview text"
+    summary = FileSummary(file_uuid="file-x", title="Recording X", digest=overview_content)
+    overview_citation = build_overview_citations(((1, "file-x"),), [summary])[0]
+    assert overview_citation["content_chars"] == len(overview_content)
+    assert not overview_citation["snippet"].endswith("…")
+
+
+def test_overview_citations_use_the_wider_cap():
+    """An overview citation spans multiple joined digest sections
+    (mapreduce.overview.sections_budget()'s ceiling of 3 per file), so it needs
+    OVERVIEW_SNIPPET_CHARS — not the single-section DIGEST_SNIPPET_CHARS."""
+    long_digest = "word " * 500
+    assert len(long_digest) > OVERVIEW_SNIPPET_CHARS  # forces truncation somewhere
+
+    summary = FileSummary(file_uuid="file-x", title="Recording X", digest=long_digest)
+    citation = build_overview_citations(((1, "file-x"),), [summary])[0]
+
+    assert citation["snippet"].endswith("…")
+    # Proves it used the WIDER cap, not the single-section one.
+    assert len(citation["snippet"]) > DIGEST_SNIPPET_CHARS
+    assert len(citation["snippet"]) <= OVERVIEW_SNIPPET_CHARS + 5

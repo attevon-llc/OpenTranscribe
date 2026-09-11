@@ -689,6 +689,71 @@ fetches `max_turns * 2` rows and `build_messages` slices
 `history[-(max_turns * 2):]`. They disagreed until #386, which halved the
 advertised conversation depth and threw away half of every fetch.
 
+## A citation snippet is a PREFIX SAMPLE, not a quote-aware window (issue #832)
+
+`citations.py`'s `snippet` field is `clean[:limit]`, cut on a word boundary, plus an
+ellipsis if it cut anything. It is **positional**, not chosen for what the model
+actually quoted — `_snippet` has no idea which part of the excerpt a `[n]` marker's
+quote came from, and never will: the module's own docstring states citations are
+built from structured data, never parsed out of model prose beyond the `[n]`
+marker itself, so "re-window around the quote" is out of scope by that same rule
+(see "explicitly out of scope" below).
+
+That mattered more than it looked like it should. A measured probe run found
+`quote_fidelity` (does a citation's displayed snippet actually contain the quote
+the model claims to cite) at **0.527 pooled** — and the issue that reported it
+guessed the cause was "the snippet is too short and gets cut mid-quote". That
+guess was **wrong**: 0 of 69 failing quotes were cut by the boundary; the longest
+quote in the whole corpus was 138 chars. The real defect was the fixed-prefix
+window having no relationship to where the quote lived in a LONGER excerpt, and
+it hit one plane far harder than the other:
+
+| Kind | Cap | Why |
+|---|---|---|
+| ordinary chunk | `SNIPPET_CHARS` = 240 | Unchanged by #832 — deliberately (see below) |
+| digest | `DIGEST_SNIPPET_CHARS` = 10 × `ingest_artifacts.sizing.DIGEST_SECTION_MAX_WORDS` (700 today) | A digest section is bounded at ingest to that many words, always > 240 chars — so the plain 240 cap truncated **100% (113/113)** of digest citations in the measured probe, vs 31% of chunk citations |
+| overview (`build_overview_citations`, #532 arm (a)) | `OVERVIEW_SNIPPET_CHARS` = 3 × `DIGEST_SNIPPET_CHARS` | A `FileSummary.digest` there is several digest sections JOINED, up to `mapreduce.overview.sections_budget()`'s ceiling of 3 per file |
+
+**`build_citation` and `build_overview_citations` are TWO separate call sites and
+must be kept in sync** — each computes its own `snippet_limit` and its own
+`content_chars`. There is no shared helper that derives both from one place; if a
+future kind is added, give it its own cap here rather than reusing the wrong one.
+
+**`content_chars`** (on both citation payloads, and on `schemas.chat.Citation`) is
+the whitespace-normalized length of the excerpt BEFORE truncation — a plain
+integer count, never text. It exists so a future measurement of "what cap
+actually covers what this deployment produces" is a real number instead of a
+guess, and so `tests/eval/harness/traceability.py` can report a truncation rate
+without ever touching source text. Like `kind`/`digest_section` before it (see
+`schemas/chat.py`'s own docstring), a citation field that is not declared on
+`Citation` is **silently stripped** by Pydantic on every reload — declare it
+there or it works mid-stream and vanishes after a refresh.
+
+**Which surfaces mask a citation snippet, and which do not — pre-existing,
+provider-keyed policy, unchanged by this fix.** Export masks it
+(`export_policy.py`). The live SSE `sources` frame, the persisted
+`chat_message.citations` JSONB, and an in-app conversation reload do **not** — a
+citation's `snippet` already went through `redactor.mask_chunks`/`mask_digests`
+at retrieval time (masked-if-the-policy-required-it, unmasked for a genuinely
+local provider — see "Masking is conditional on WHERE the model runs" above), so
+what a citation card shows is exactly what the model was given, never a second,
+independently-decided masking pass.
+
+**Explicitly out of scope for #832, and why:**
+
+- **Raising `SNIPPET_CHARS` for the chunk plane.** Gated on a redaction-policy
+  decision (does a wider excerpt shown to a REMOTE provider's reader change the
+  egress calculus?) that has not been made, and on a UI change — the citation
+  card currently clamps to 2 lines regardless of snippet length, so raising the
+  cap alone has zero reader-visible effect. Tracked in the #832 follow-up issue.
+- **Quote-aware re-windowing** (choosing the snippet based on what the model
+  actually quoted). Would contradict the module's own invariant that a citation
+  is never built by parsing model prose beyond the `[n]` marker.
+- **`EXPANDED_SNIPPET_CHARS`/the `expanded` context-expansion path.** Unrelated
+  to this fix and untouched — it is chunk-only by construction
+  (`needs_expansion` excludes digests) and unreachable on shipped defaults
+  (`context_expansion` is behind a default-off flag).
+
 ## Concurrency slots leak if you release them in the wrong place
 
 `limits.acquire_stream_slot` returns a **slot id** (or `None` when refused), and

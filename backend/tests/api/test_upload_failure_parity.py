@@ -325,7 +325,7 @@ def test_dispatch_failure_pushes_a_live_ws_update_and_invalidates_cache(
 
     monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
     monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
-    monkeypatch.setattr(upload_mod, "send_ws_event", ws_mock)
+    monkeypatch.setattr(upload_mod, "send_ws_event_for_file", ws_mock)
     monkeypatch.setattr("app.services.redis_cache_service.redis_cache", cache_mock)
 
     filename = f"ws-push-{uuid.uuid4().hex[:8]}.wav"
@@ -364,7 +364,7 @@ def test_dispatch_failure_still_invalidates_cache_when_the_ws_push_fails(
 
     monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
     monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
-    monkeypatch.setattr(upload_mod, "send_ws_event", _raise_ws_failure)
+    monkeypatch.setattr(upload_mod, "send_ws_event_for_file", _raise_ws_failure)
     monkeypatch.setattr("app.services.redis_cache_service.redis_cache", cache_mock)
 
     filename = f"ws-push-failure-{uuid.uuid4().hex[:8]}.wav"

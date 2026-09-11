@@ -22,7 +22,7 @@ from app.utils import benchmark_timing
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
-from app.utils.websocket_notify import send_ws_event
+from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
 
@@ -420,7 +420,7 @@ def _send_dispatch_failed_ws_event(media_file: MediaFile, user_id: int, message:
         "display_status": FormattingService.format_status(media_file.status),
         "status_badge_class": FormattingService.get_status_badge_class(FileStatus.ERROR.value),
     }
-    send_ws_event(
+    send_ws_event_for_file(
         user_id,
         "file_updated",
         {
@@ -429,6 +429,7 @@ def _send_dispatch_failed_ws_event(media_file: MediaFile, user_id: int, message:
             "status": FileStatus.ERROR.value,
             "message": message,
         },
+        file_id=int(media_file.id),
     )
 
 

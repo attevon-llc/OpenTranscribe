@@ -525,3 +525,45 @@ def test_version_conflicts_are_retried_rather_than_reported_as_success(chunk_ind
         "the conflict count is not reported, so an operator cannot tell a partial "
         "rewrite from a complete one"
     )
+
+
+def test_speaker_rename_leaves_the_chunk_vector_unchanged(chunk_index):
+    """Issue #844: confirms the stale-vector trade is DELIBERATE, not an oversight.
+
+    ⚠️ This is a PIN, not a regression test — it is green on HEAD by
+    construction, not because it caught a bug going red first. The deliberate
+    choice is already documented at length in
+    ``propagate_speaker_rename``'s own docstring: the rewrite touches
+    ``speaker``/``speakers`` only, because re-embedding every chunk of a long
+    recording for a cosmetic rename costs hundreds of model calls for a change
+    nobody notices semantically (the roster is baked into ``embedding_text``,
+    not derived from ``speaker`` at read time). This test exists so that if a
+    future edit starts touching ``embedding`` on rename — completing what
+    looks like an unfinished rewrite — it fails loudly here instead of quietly
+    changing a trade nobody re-decided.
+    """
+    from app.tasks.rename_propagation_task import propagate_speaker_rename
+
+    file_uuid = str(uuid.uuid4())
+    embedding = [round(0.001 * i, 6) for i in range(384)]
+    doc = _doc(file_uuid, 0, OLD_NAME, [OLD_NAME, OTHER_NAME], "we should raise pricing")
+    doc["embedding"] = embedding
+    doc["embedding_model"] = "all-MiniLM-L6-v2"
+    _index_docs(chunk_index, [doc])
+
+    before = _sources(chunk_index, file_uuid)[0]
+    assert before["embedding"] == embedding, "control: the vector we indexed is what comes back"
+
+    result = propagate_speaker_rename(file_uuid, [OLD_NAME], NEW_NAME)
+    assert result["status"] == "success"
+    assert result["updated"] == 1
+
+    after = _sources(chunk_index, file_uuid)[0]
+    assert after["speaker"] == NEW_NAME, "the keyword field WAS rewritten"
+    assert after["embedding"] == embedding, (
+        "the vector must stay byte-identical after a rename. If this fails, the "
+        "painless script started touching `embedding` — that is a deliberate design "
+        "change (dispatch a real reindex instead), not a bugfix, and this pin needs "
+        "updating alongside it, not silencing."
+    )
+    assert after["embedding_model"] == "all-MiniLM-L6-v2", "provenance is left alone too"

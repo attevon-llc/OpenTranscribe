@@ -17,7 +17,6 @@
   import FloatingPreviewPlayer from '$components/FloatingPreviewPlayer.svelte';
   import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
-  import { prefetchNextSearchPage } from '$lib/prefetch';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
 
   const searchSortOptions: SortOption[] = [
@@ -290,12 +289,6 @@
       searchStore.setResults(searchData);
       // D3: Store params that produced these results
       searchStore.setLastSearchParams(buildSearchParamsString(query, pageNum));
-
-      // Prefetch next page of results
-      const totalPages = Math.ceil((searchData.total_results || 0) / $searchStore.pageSize);
-      if (totalPages > pageNum) {
-        prefetchNextSearchPage(query, pageNum, totalPages, apiParams);
-      }
     } catch (e: unknown) {
       // A superseded search is not a failure: a newer request owns the results
       // and the loading flag, so leave both alone.

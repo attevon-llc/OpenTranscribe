@@ -531,8 +531,8 @@ def migrate_speaker_embeddings_v4_task(
         )
         tracker.start(message="Starting embedding migration...")
 
-        send_ws_event(
-            user_id or 1,
+        _notify_migration_admin(
+            user_id,
             NOTIFICATION_TYPE_MIGRATION_PROGRESS,
             {
                 "processed_files": 0,
@@ -576,8 +576,8 @@ def migrate_speaker_embeddings_v4_task(
     # Notify frontend that batches are queued and waiting for a GPU worker.
     # The first WS event (above) had no message; this one tells the user why
     # progress is stuck at 0% — GPU may be busy with another task.
-    send_ws_event(
-        user_id or 1,
+    _notify_migration_admin(
+        user_id,
         NOTIFICATION_TYPE_MIGRATION_PROGRESS,
         {
             "processed_files": 0,
@@ -695,8 +695,8 @@ def extract_v4_embeddings_batch_task(
     if is_complete and migration_progress.complete_migration(success=True):
         logger.info(f"All {total} migration files processed")
         tracker.complete(message="Migration complete")
-        send_ws_event(
-            user_id or 1,
+        _notify_migration_admin(
+            user_id,
             NOTIFICATION_TYPE_MIGRATION_COMPLETE,
             {
                 "status": "complete",
@@ -715,6 +715,23 @@ def extract_v4_embeddings_batch_task(
         "status": "success",
         "batch_index": batch_index,
     }
+
+
+def _notify_migration_admin(user_id: int | None, event_type: str, payload: dict) -> None:
+    """Send a v4-embedding-migration WS event to the requesting admin, or log-only.
+
+    ``user_id`` is None either for a deployment-wide migration with no specific
+    admin watching, or for a batch task whose orchestrator itself had none.
+    Falling back to account id 1 (issue #908, finding B) misdirected admin-only
+    migration progress/completion events — which include ``failed_files``, a
+    list of file UUIDs — to whichever account happens to hold that id, which
+    need not be an admin. Matches the pattern already fixed for this exact bug
+    in ``opensearch_integrity_task.py``'s ``_notify``.
+    """
+    if user_id is None:
+        logger.debug(f"{event_type}: no requesting admin for this run, logging only")
+        return
+    send_ws_event(user_id, event_type, payload)
 
 
 def _emit_progress(

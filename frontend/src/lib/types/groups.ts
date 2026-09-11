@@ -90,13 +90,20 @@ export interface SharedCollection {
 export interface UserSearchResult {
   uuid: string;
   full_name: string | null;
-  email: string;
+  // Display-only mask (issue #904) — never a real address. Named for what it
+  // holds so a stale consumer expecting a real email fails to compile instead
+  // of silently rendering a mask under a field called `email`.
+  masked_email: string;
 }
 
 export interface ShareTargetSearchResult {
   type: 'user' | 'group';
   uuid: string;
   name: string;
-  email?: string;
+  // Secondary detail line shown under `name` — a masked email for a user result,
+  // absent for a group result. Never a real email address (issue #904); renamed
+  // from `email` for the same reason `UserSearchResult.masked_email` is named
+  // for what it holds rather than what it used to hold.
+  detail?: string;
   member_count?: number;
 }

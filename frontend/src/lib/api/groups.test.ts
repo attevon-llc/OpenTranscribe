@@ -96,7 +96,7 @@ describe('GroupsApi', () => {
   });
 
   it('searches users with a query param', async () => {
-    const users = [{ uuid: USER_UUID, full_name: 'Jane', email: 'jane@example.com' }];
+    const users = [{ uuid: USER_UUID, full_name: 'Jane', masked_email: 'ja***@example.com' }];
     mockInstance.get.mockResolvedValue({ data: users });
 
     const result = await GroupsApi.searchUsers('jane');

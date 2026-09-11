@@ -29,11 +29,15 @@ from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
 from app.auth.password_policy import password_min_age_remaining
 from app.auth.password_policy import password_policy
+from app.auth.rate_limit import get_directory_rate_limit
+from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
 from app.auth.utils import local_password_allowed
+from app.auth.utils import mask_email_for_display
 from app.core.security import get_password_hash
 from app.core.security import verify_password
 from app.db.base import get_db
@@ -406,8 +410,12 @@ def update_current_user(
 
 
 @router.get("/search", response_model=list[UserSearchResult])
+@limiter.limit(get_directory_rate_limit(), key_func=user_or_ip_key)
 def search_users(
+    *,
+    request: Request,
     q: str = Query(..., min_length=2, max_length=100, description="Search query (min 2 chars)"),
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ):
@@ -429,6 +437,18 @@ def search_users(
     are. Community-edition invariance holds exactly — the membership table is
     empty there, so every account is in personal scope and the result set is
     unchanged.
+
+    **Rate-limited** (issue #904), keyed per-user: ``RATE_LIMIT_DIRECTORY_PER_MINUTE``
+    (default 60/minute). This closes the request-VOLUME gap this route had — an
+    authenticated user could otherwise page the whole tenant directory as fast as the
+    connection allowed. It is a volume/noise bound, not a proof against enumeration:
+    the two-character minimum and the tenant gate above are what limit what any single
+    request can see.
+
+    **Payload-minimized** (issue #904): the response never carries a full email
+    address. ``UserSearchResult.masked_email`` is a display-only mask
+    (``mask_email_for_display``) — even an exhaustive scrape at the allowed rate
+    cannot recover a real address from it.
     """
     from sqlalchemy import exists
     from sqlalchemy import or_
@@ -461,7 +481,12 @@ def search_users(
         .all()
     )
 
-    return [UserSearchResult(uuid=u.uuid, full_name=u.full_name, email=u.email) for u in users]
+    return [
+        UserSearchResult(
+            uuid=u.uuid, full_name=u.full_name, masked_email=mask_email_for_display(u.email)
+        )
+        for u in users
+    ]
 
 
 @router.get("/{user_uuid}", response_model=UserSchema)

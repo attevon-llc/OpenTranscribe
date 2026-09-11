@@ -4615,6 +4615,7 @@
   "upload.youtubeVideo": "Видео с YouTube",
   "upload.videoUrl": "URL видео",
   "common.somethingWentWrong": "Что-то пошло не так",
+  "common.rateLimited": "Слишком много запросов — пожалуйста, подождите немного.",
   "search.searchFailed": "Не удалось выполнить поиск",
   "search.switchModelFailed": "Не удалось сменить модель",
   "search.reindexStartFailed": "Не удалось запустить переиндексацию",

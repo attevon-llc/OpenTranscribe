@@ -4615,6 +4615,7 @@
   "upload.youtubeVideo": "YouTube-video",
   "upload.videoUrl": "Video-URL",
   "common.somethingWentWrong": "Er is iets misgegaan",
+  "common.rateLimited": "Te veel verzoeken — wacht even.",
   "search.searchFailed": "Zoeken mislukt",
   "search.switchModelFailed": "Model wisselen mislukt",
   "search.reindexStartFailed": "Starten van herindexering mislukt",

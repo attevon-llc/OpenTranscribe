@@ -4615,6 +4615,7 @@
   "upload.youtubeVideo": "YouTube 동영상",
   "upload.videoUrl": "동영상 URL",
   "common.somethingWentWrong": "문제가 발생했습니다",
+  "common.rateLimited": "요청이 너무 많습니다 — 잠시 기다려 주세요.",
   "search.searchFailed": "검색에 실패했습니다",
   "search.switchModelFailed": "모델 전환에 실패했습니다",
   "search.reindexStartFailed": "재인덱싱을 시작하지 못했습니다",

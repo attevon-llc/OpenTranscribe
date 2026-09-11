@@ -4615,6 +4615,7 @@
   "upload.youtubeVideo": "فيديو YouTube",
   "upload.videoUrl": "رابط الفيديو",
   "common.somethingWentWrong": "حدث خطأ ما",
+  "common.rateLimited": "طلبات كثيرة جدًا — يرجى الانتظار لحظة.",
   "search.searchFailed": "فشل البحث",
   "search.switchModelFailed": "تعذّر تبديل النموذج",
   "search.reindexStartFailed": "تعذّر بدء إعادة الفهرسة",

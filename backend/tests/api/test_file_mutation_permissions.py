@@ -237,12 +237,12 @@ def _find_min_permission_editor_sites() -> list[tuple[str, int]]:
 # ``user_files.py``) were fixed by a prior commit (issue #588 part 1) and are
 # listed here only so the guard's count matches the codebase exactly.
 MUTATING_ENDPOINTS: list[tuple[str, int]] = [
-    # Re-anchored: the issue #817 takedown gate added lines to get_thumbnail,
-    # which sits above both of these. The guard is keyed by file:line, so it is
+    # Re-anchored (v0.5.0 wave, #859/#891 sweep): the exception-echo fixes in this file
+    # added lines above both call sites. The guard is keyed by file:line, so it is
     # SUPPOSED to be re-anchored when code moves — that is the cost of it being
     # able to notice a NEW call site rather than just counting them.
-    ("files/__init__.py", 1156),
-    ("files/__init__.py", 1223),
+    ("files/__init__.py", 1158),
+    ("files/__init__.py", 1225),
     # Re-anchored again, +1: the release/v0.5.0-blockers merge added a line to
     # files/crud.py above all three. ⚠️ The previous re-anchoring was done against
     # the lane's own pre-merge tree, so the merge shifted them straight back out
@@ -262,13 +262,16 @@ MUTATING_ENDPOINTS: list[tuple[str, int]] = [
     ("files/management.py", 954),
     ("files/reprocess.py", 445),
     ("files/summary_status.py", 105),
-    ("files/waveform.py", 362),
+    # Re-anchored (v0.5.0 wave): #911's WS-push fix removed lines above this call site.
+    ("files/waveform.py", 359),
     ("media_collections.py", 703),
     ("media_collections.py", 800),
     ("media_collections.py", 886),
-    ("summarization.py", 86),
-    ("summarization.py", 349),
-    ("summarization.py", 415),
+    # Re-anchored (v0.5.0 wave): #885 added the export_summary endpoint (+ its
+    # exception-echo fix, #859/#891) above and between these call sites.
+    ("summarization.py", 91),
+    ("summarization.py", 468),
+    ("summarization.py", 534),
     # Re-anchored +30: Lane O's #906 fix (issue #906, release/v0.5.0-blockers) added
     # inline dispatch logic above this call site in retry_file_processing.
     ("tasks.py", 807),

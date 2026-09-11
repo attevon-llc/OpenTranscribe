@@ -325,7 +325,12 @@ def export_summary(
         # any that appeared as a 500.
         raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        # Fixed literal, not str(e) (issue #859/#891): `export_format` is already validated
+        # against VALID_SUMMARY_EXPORT_FORMATS above, so this branch is believed unreachable in
+        # practice, but the whole-tree exception-echo gate does not grant an exemption for
+        # "probably unreachable" — the site is fixed rather than allowlisted.
+        logger.exception("Unexpected ValueError building summary export for file %s", file_uuid)
+        raise HTTPException(status_code=400, detail="Invalid summary export request.") from e
     except Exception as e:
         logger.exception("Failed to generate summary export for file %s", file_uuid)
         raise HTTPException(status_code=500, detail="Failed to generate summary export.") from e

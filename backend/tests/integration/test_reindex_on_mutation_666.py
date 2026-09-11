@@ -93,6 +93,7 @@ def real_db():
     try:
         yield db, created_media_file_ids, created_user_ids
     finally:
+        from app.models.media import Analytics
         from app.models.media import MediaFile
         from app.models.media import Speaker
         from app.models.media import Task
@@ -114,6 +115,15 @@ def real_db():
                 TranscriptSegment.media_file_id.in_(created_media_file_ids)
             ).delete(synchronize_session=False)
             db.query(Speaker).filter(Speaker.media_file_id.in_(created_media_file_ids)).delete(
+                synchronize_session=False
+            )
+            # Issue #890 landed after this fixture: the segment-text-edit test now
+            # triggers `AnalyticsService.refresh_analytics`, which commits a real
+            # `analytics` row (`analytics_media_file_id_fkey`, no ON DELETE) on this
+            # same real, non-savepoint session — without deleting it first, the
+            # `MediaFile` delete below fails with a FK violation on every run that
+            # exercises that path.
+            db.query(Analytics).filter(Analytics.media_file_id.in_(created_media_file_ids)).delete(
                 synchronize_session=False
             )
             db.query(MediaFile).filter(MediaFile.id.in_(created_media_file_ids)).delete(

@@ -1,5 +1,6 @@
 {
   "name": "ffmpeg-wasm-minimal-test",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "license": "AGPL-3.0-only"
 }

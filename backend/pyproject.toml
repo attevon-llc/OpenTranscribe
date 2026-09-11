@@ -1,6 +1,25 @@
 [build-system]
 requires = ["setuptools", "wheel"]
 
+# No first-party wheel is ever built from this table — Dockerfile.prod copies backend/ as
+# source and installs requirements.txt directly, never `pip install .` — so [build-system]
+# above has been vestigial since it was added. This [project] table exists only to declare
+# metadata (name/version/license) for tooling that reads pyproject.toml directly (e.g. an
+# SBOM generator), not to make the backend installable. Kept in sync with the root
+# pyproject.toml's `license`/`version` by hand; nothing enforces that automatically.
+[project]
+name = "opentranscribe-backend"
+version = "0.5.0"
+description = "OpenTranscribe FastAPI backend: transcription, diarization, and LLM features"
+authors = [
+    {name = "OpenTranscribe Contributors"}
+]
+requires-python = ">=3.12"
+license = "AGPL-3.0-only"
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+]
+
 [tool.ruff]
 # Same as Black.
 line-length = 100

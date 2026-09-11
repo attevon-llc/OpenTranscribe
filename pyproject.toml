@@ -8,6 +8,10 @@ authors = [
     {name = "OpenTranscribe Contributors"}
 ]
 requires-python = ">=3.12"
+license = "AGPL-3.0-only"
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+]
 
 [tool.black]
 line-length = 100

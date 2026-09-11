@@ -119,13 +119,14 @@ class Result:
     chunks_used: int | None = None
     retrieved: int | None = None
     #: The ``sources`` SSE frame's citations, captured mid-stream and stripped down to
-    #: ``id``/``file_uuid`` only (see :func:`_offered_citation_refs`). This is the FULL
-    #: set the model was offered — a superset of ``citations`` above, which is the
-    #: PERSISTED/used subset re-fetched after the stream closes (issue #384: "the
-    #: citations a user can click are exactly the excerpts the model was given" is a
-    #: claim about the offered set, not the used one). Traceability metrics
-    #: (``tests.eval.harness.traceability``) need this to check the #384 invariant and
-    #: a scope leak per turn, not only in a unit test.
+    #: ``id``/``file_uuid``/``kind``/``content_chars`` only (see
+    #: :func:`_offered_citation_refs`) — every one of those a count or an enum value,
+    #: never source text. This is the FULL set the model was offered — a superset of
+    #: ``citations`` above, which is the PERSISTED/used subset re-fetched after the
+    #: stream closes (issue #384: "the citations a user can click are exactly the
+    #: excerpts the model was given" is a claim about the offered set, not the used
+    #: one). Traceability metrics (``tests.eval.harness.traceability``) need this to
+    #: check the #384 invariant and a scope leak per turn, not only in a unit test.
     offered_citations: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -348,15 +349,18 @@ def create_conversation(session: Any, base_url: str, file_uuids: list[str], titl
 
 
 def _offered_citation_refs(citations: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Strip a ``sources`` frame's citations down to ``id``/``file_uuid`` only.
+    """Strip a ``sources`` frame's citations down to safe, non-prose fields only.
 
     The full citation payload carries a ``snippet`` (a transcript excerpt) and a
     ``title`` — prose this public repo cannot commit (see
     ``tests.eval.harness.probe_metrics``'s module docstring, ``FORBIDDEN_KEYS``).
-    Traceability only needs to know WHICH excerpt id was offered and WHICH file it
-    belongs to, so everything else is dropped before it ever reaches :class:`Result`.
-    A malformed entry (missing ``id`` or ``file_uuid``) is skipped rather than raising —
-    this is a probe against a live server, and one odd frame must not abort the run.
+    Traceability needs to know WHICH excerpt id was offered, WHICH file it belongs
+    to, WHAT KIND it is (``chunk``/``digest``/``summary``/``recurrence`` — an enum
+    value, never text drawn from the transcript), and its pre-truncation length
+    (``content_chars``, a plain integer count — issue #832), so everything else is
+    dropped before it ever reaches :class:`Result`. A malformed entry (missing
+    ``id`` or ``file_uuid``) is skipped rather than raising — this is a probe
+    against a live server, and one odd frame must not abort the run.
     """
     refs: list[dict[str, Any]] = []
     for citation in citations:
@@ -365,7 +369,14 @@ def _offered_citation_refs(citations: list[dict[str, Any]]) -> list[dict[str, An
         cid, file_uuid = citation.get('id'), citation.get('file_uuid')
         if cid is None or file_uuid is None:
             continue
-        refs.append({'id': int(cid), 'file_uuid': str(file_uuid)})
+        ref: dict[str, Any] = {'id': int(cid), 'file_uuid': str(file_uuid)}
+        kind = citation.get('kind')
+        if kind is not None:
+            ref['kind'] = str(kind)
+        content_chars = citation.get('content_chars')
+        if content_chars is not None:
+            ref['content_chars'] = int(content_chars)
+        refs.append(ref)
     return refs
 
 

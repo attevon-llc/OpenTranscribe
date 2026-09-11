@@ -29,7 +29,7 @@
   color: var(--text-secondary, #64748b);
 }
 
-:global(.dark) .previous-banner {
+:global([data-theme='dark']) .previous-banner {
   background: rgba(59, 130, 246, 0.08);
   border-color: rgba(59, 130, 246, 0.2);
 }
@@ -74,9 +74,16 @@
   border: 1px solid var(--primary-border, #bfdbfe);
 }
 
-:global(.dark) .chip {
+:global([data-theme='dark']) .chip {
   background: rgba(59, 130, 246, 0.15);
   border-color: rgba(59, 130, 246, 0.3);
+  /* --primary-color stays the same blue in both themes (see theme.css), but
+     composited over the dark surface that background resolves to ~#223657 —
+     #2563eb text on it is ~2.0:1, far under WCAG AA. --primary-on-surface is
+     the token this codebase already uses for "text on a dark surface must be
+     light" (see .tag-chip below, via --tag-color -> --primary-dark ->
+     --primary-on-surface); use it here too. */
+  color: var(--primary-on-surface, #93c5fd);
 }
 
 .tag-chip {
@@ -85,7 +92,7 @@
   border-color: var(--tag-border, #bbf7d0);
 }
 
-:global(.dark) .tag-chip {
+:global([data-theme='dark']) .tag-chip {
   background: rgba(22, 163, 74, 0.15);
   border-color: rgba(22, 163, 74, 0.3);
 }
@@ -112,7 +119,7 @@
   background: rgba(0, 0, 0, 0.1);
 }
 
-:global(.dark) .chip-remove:hover {
+:global([data-theme='dark']) .chip-remove:hover {
   background: rgba(255, 255, 255, 0.15);
 }
 
@@ -134,7 +141,7 @@
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
 
-:global(.dark) .item-filter {
+:global([data-theme='dark']) .item-filter {
   background: var(--dark-input-bg, #1e293b);
   border-color: var(--dark-border, #334155);
   color: var(--dark-text, #e2e8f0);
@@ -169,7 +176,7 @@
 .item-row:hover {
   background: var(--surface-color, #f8fafc);
 }
-:global(.dark) .item-row:hover {
+:global([data-theme='dark']) .item-row:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -232,7 +239,7 @@
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
 
-:global(.dark) .create-input {
+:global([data-theme='dark']) .create-input {
   background: var(--dark-input-bg, #1e293b);
   border-color: var(--dark-border, #334155);
   color: var(--dark-text, #e2e8f0);

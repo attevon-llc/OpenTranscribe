@@ -426,7 +426,10 @@ CLOUD_ASR_CONCURRENCY=4            # Concurrency for cloud-asr worker
 
 ```bash
 DEPLOYMENT_MODE=full  # full (local GPU + optional cloud) or lite (cloud-only, no GPU, ~2GB image)
-BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest
+# BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest
+# ^ leave commented out: docker-compose.lite.yml derives it from OT_IMAGE_TAG when unset,
+# which is what lets `update --version` / `--rollback` pin/upgrade/roll back a lite install.
+# Setting it (as this line used to ship, uncommented) overrides that pinning permanently.
 ```
 
 ## LLM Integration

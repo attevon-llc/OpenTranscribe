@@ -31,7 +31,7 @@ from app.utils import benchmark_timing
 from app.utils.error_classification import RETRIABLE_CATEGORIES
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
-from app.utils.websocket_notify import send_ws_event
+from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
 
@@ -355,7 +355,7 @@ def process_youtube_url_task(
                         }
 
                         # Send file_updated notification
-                        send_ws_event(
+                        send_ws_event_for_file(
                             user_id,
                             "file_updated",
                             {
@@ -371,6 +371,7 @@ def process_youtube_url_task(
                                 else "Pending",
                                 "message": "YouTube processing completed",
                             },
+                            file_id=file_id,
                         )
                         logger.info(
                             f"Sent file_updated notification for YouTube completion: {file_id}"
@@ -394,8 +395,18 @@ def process_youtube_url_task(
                         f"Dispatched pipeline chain for MediaFile {file_id} (task_id={task_id})"
                     )
                 except Exception as e:
-                    logger.error(f"Failed to start tasks for {file_id}: {e}")
-                    # Don't fail the whole process if task scheduling fails
+                    # Download DID succeed, but nothing will ever transcribe this file
+                    # (dispatch marks it ERROR — #865/#906) — reporting "success" here
+                    # contradicts the row this task just wrote.
+                    logger.error(
+                        f"Downloaded {file_id} but could not start transcription: {e}",
+                        exc_info=True,
+                    )
+                    return {
+                        "status": "error",
+                        "message": f"Download complete, but transcription could not be started: {e}",
+                        "file_id": file_id if file_id is not None else 0,
+                    }
 
                 return {
                     "status": "success",
@@ -575,13 +586,14 @@ def _send_file_created_notification(user_id: int, media_file: MediaFile) -> None
             "upload_time": media_file.upload_time.isoformat() if media_file.upload_time else None,
         }
 
-        send_ws_event(
+        send_ws_event_for_file(
             user_id,
             "file_created",
             {
                 "file_id": str(media_file.uuid),
                 "file": file_data,
             },
+            file_uuid=media_file.uuid,
         )
     except Exception as e:
         logger.error(f"Failed to send file_created notification for video {media_file.id}: {e}")

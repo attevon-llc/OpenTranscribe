@@ -18,6 +18,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import delete_media_file
 from app.api.endpoints.files.crud import get_media_file_by_uuid
+from app.core.exceptions import ASRConfigurationError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
@@ -39,6 +40,7 @@ from app.utils.task_utils import check_for_stuck_files
 from app.utils.task_utils import is_file_safe_to_delete
 from app.utils.task_utils import recover_stuck_file
 from app.utils.task_utils import reset_file_for_retry
+from app.utils.task_utils import transcript_is_regenerable
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -335,6 +337,12 @@ def retry_file_processing(
 
     except HTTPException:
         raise
+    except ASRConfigurationError:
+        # A deliberate refusal (e.g. a lite deployment with no cloud ASR
+        # configured, issue #865) — let it reach the global OpenTranscribeError
+        # handler in main.py, which surfaces the real message and a 503
+        # instead of the generic 500 below.
+        raise
     except Exception as e:
         logger.exception(f"Error retrying file {file_uuid}: {e}")
         raise HTTPException(
@@ -620,6 +628,7 @@ def _handle_reprocess_action(
     """
     import os
 
+    from app.api.endpoints.files.reprocess import MEDIA_REQUIRING_STAGES
     from app.models.media import MediaFile
 
     db_file = db.query(MediaFile).filter_by(id=file_id).first()
@@ -651,6 +660,22 @@ def _handle_reprocess_action(
                 message=ceiling_message,
                 error="RETRY_CEILING_REACHED",
             )
+
+    # Issue #872: this is the bulk gallery action, so one click can reach many
+    # files. Mirror the single-file endpoint's refusal — `reset_file_for_retry`
+    # guards its own deletes, but `clear_selective_data` below runs even when
+    # `transcription` is not among the stages (`rediarize` deletes speakers).
+    needs_media = not stages or bool(MEDIA_REQUIRING_STAGES.intersection(stages))
+    if needs_media and not transcript_is_regenerable(db, db_file):
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=(
+                "This file's media could not be found in storage, so reprocessing "
+                "would delete its existing transcript with nothing to regenerate it from."
+            ),
+            error="MEDIA_UNAVAILABLE",
+        )
 
     if stages:
         # Selective reprocessing

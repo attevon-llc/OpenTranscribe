@@ -33,6 +33,7 @@ from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
 from app.services.tag_operations import cleanup_unreferenced_tags
 from app.services.tag_service import on_tags_changed
+from app.utils.error_handlers import ErrorHandler
 
 
 @router.post("", response_model=TagSchema)
@@ -212,12 +213,10 @@ def cleanup_unused_tags(
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.exception(f"Error in cleanup_unused_tags: {e}")
+        # The real SQL failure is logged, never returned (#859).
+        logger.exception("Error in cleanup_unused_tags")
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error cleaning up unused tags: {str(e)}",
-        ) from e
+        raise ErrorHandler.internal_error("Could not clean up unused tags.") from e
 
 
 @router.post("/files/{file_uuid}/tags", response_model=TagSchema)

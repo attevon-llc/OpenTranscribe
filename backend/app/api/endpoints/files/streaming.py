@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
+from app.utils.error_handlers import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +115,6 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.exception(f"Error retrieving thumbnail: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving thumbnail: {str(e)}",
-        ) from e
+        # The storage path / S3 error detail is logged, never returned (#859).
+        logger.exception("Error retrieving thumbnail")
+        raise ErrorHandler.internal_error("Could not retrieve the thumbnail.") from e

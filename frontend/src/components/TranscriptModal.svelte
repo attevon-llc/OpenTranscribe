@@ -2,7 +2,6 @@
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { getSpeakerColorForSegment } from '$lib/utils/speakerColors';
   import { processedTranscriptSegments, transcriptStore } from '../stores/transcriptStore';
-  import { copyToClipboard } from '$lib/utils/clipboard';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import Spinner from './ui/Spinner.svelte';
@@ -26,6 +25,7 @@
     close: void;
     loadMore: void;
     toggleRedaction: void;
+    copyTranscript: void;
   }>();
 
   // Content redaction toggle (owner/admin only) — state lives on the file
@@ -34,9 +34,15 @@
   export let showOriginal: boolean = false;
   export let redactionToggleBusy: boolean = false;
 
+  /**
+   * Progress of the parent-owned copy (issue #821). Mirrors `redactionToggleBusy`: this
+   * modal is a presentational child, so the request and the clipboard write belong to the
+   * coordinator (`routes/files/[id]/+page.svelte`) and only the button state comes back.
+   */
+  export let copyStatus: 'idle' | 'copying' | 'copied' | 'failed' | 'empty' = 'idle';
+
   let loading = false;
   let error: string | null = null;
-  let consolidatedTranscript = '';
 
   // Infinite scroll sentinel element
   let infiniteScrollSentinel: HTMLElement | null = null;
@@ -53,21 +59,27 @@
   let searchQuery = '';
   let currentMatchIndex = 0;
   let totalMatches = 0;
-  let copyButtonText = $t('transcriptModal.copy');
+  $: copyButtonText =
+    copyStatus === 'copied'
+      ? $t('transcriptModal.copied')
+      : copyStatus === 'failed'
+        ? $t('transcriptModal.copyFailed')
+        : copyStatus === 'empty'
+          ? $t('transcriptModal.noContent')
+          : copyStatus === 'copying'
+            ? $t('transcriptModal.copying')
+            : $t('transcriptModal.copy');
 
   // Subscribe to the processed transcript segments from the store
   $: displaySegments = $processedTranscriptSegments;
 
-  // Generate consolidated transcript when display segments change
-  $: if (displaySegments && displaySegments.length > 0) {
-    consolidatedTranscript = diarizationDisabled
-      ? displaySegments.map(block => block.text).join(' ')
-      : displaySegments
-          .map(block => `${translateSpeakerLabel(block.speakerName)} [${formatSimpleTimestamp(block.startTime ?? 0)}-${formatSimpleTimestamp(block.endTime ?? 0)}]: ${block.text}`)
-          .join('\n\n');
-  } else {
-    consolidatedTranscript = '';
-  }
+  // ⚠️ There is deliberately NO consolidated-transcript string built here any more
+  // (issue #821). This modal used to serialize `displaySegments` into one blob and copy
+  // it, which broke two ways at once: it never consulted the admin `export_locked` floor
+  // (a client-side serializer has nothing to ask), and — because the modal paginates —
+  // `displaySegments` is only the segments loaded so far, so "Copy" on a long recording
+  // silently produced a PREFIX of the transcript. Both are fixed by asking the server,
+  // which is what the five download formats already do (#673).
 
   $: if (searchQuery && displaySegments.length > 0) {
     // Count matches across all segment text for accurate search navigation
@@ -156,29 +168,7 @@
   }
 
   function handleCopy() {
-    if (!consolidatedTranscript) {
-      copyButtonText = $t('transcriptModal.noContent');
-      setTimeout(() => {
-        copyButtonText = $t('transcriptModal.copy');
-      }, 2000);
-      return;
-    }
-
-    copyToClipboard(
-      consolidatedTranscript,
-      () => {
-        copyButtonText = $t('transcriptModal.copied');
-        setTimeout(() => {
-          copyButtonText = $t('transcriptModal.copy');
-        }, 2000);
-      },
-      (error) => {
-        copyButtonText = $t('transcriptModal.copyFailed');
-        setTimeout(() => {
-          copyButtonText = $t('transcriptModal.copy');
-        }, 2000);
-      }
-    );
+    dispatch('copyTranscript');
   }
 
 
@@ -281,15 +271,16 @@
           </button>
         {/if}
         <div class="header-actions">
-          {#if consolidatedTranscript}
+          {#if displaySegments.length > 0}
             <button
               class="copy-button-header"
-              class:copied={copyButtonText === $t('transcriptModal.copied')}
+              class:copied={copyStatus === 'copied'}
               on:click={handleCopy}
-              aria-label={$t('transcriptModal.searchTranscript')}
-              title={copyButtonText === $t('transcriptModal.copied') ? $t('transcriptModal.transcriptCopied') : $t('transcriptModal.copyTranscript')}
+              disabled={copyStatus === 'copying'}
+              aria-label={$t('transcriptModal.copyTranscript')}
+              title={copyStatus === 'copied' ? $t('transcriptModal.transcriptCopied') : $t('transcriptModal.copyTranscript')}
             >
-              {#if copyButtonText === $t('transcriptModal.copied')}
+              {#if copyStatus === 'copied'}
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
                 </svg>

@@ -7,7 +7,16 @@ level):
 
   * A quarantined file 404s for its OWNER on the per-resource access gate
     (``get_file_by_uuid_with_permission``) — and on every surface that goes
-    through it (detail/stream/download/thumbnail).
+    through it (detail/stream/download).
+
+    ⚠️ ``GET /files/{uuid}/thumbnail`` does **not** go through that helper (it
+    resolves with plain ``get_file_by_uuid`` because it must also serve
+    anonymous callers on public files), so this module's gate tests say nothing
+    about it. That was a false coverage claim here for as long as issue #817 was
+    open, during which a taken-down public file streamed its thumbnail to
+    unauthenticated callers. It now calls ``is_hidden_for`` directly, and the
+    route-level regression tests for it live beside the other thumbnail tests in
+    ``tests/api/test_files_streaming.py`` — not here.
   * An ADMIN still resolves the quarantined file (for review).
   * Releasing restores access for the owner and clears the legal-hold.
   * ``exclude_quarantined`` drops the file from a list/gallery query for normal
@@ -344,6 +353,77 @@ class TestPriorStatusRestore:
 
         release_file(db, file, admin=admin)
         assert file.status == FileStatus.COMPLETED
+
+    def test_a_file_quarantined_mid_transcription_survives_pipeline_completion_and_release(
+        self, world
+    ):
+        """The actual issue #824 defect, reproduced end to end: quarantine a file
+        while it is still PROCESSING, let the pipeline's own completion writer run
+        (exactly as it would for real, unaware the file was just taken down), then
+        release. Before the fix this left the file stuck at PROCESSING forever with
+        completed_at still None: release_file only restores from
+        pre_quarantine_status when status == QUARANTINED, and an unguarded second
+        writer (task_utils.update_media_file_status) had already overwritten that
+        display status by the time the pipeline finished."""
+        from app.tasks.transcription.storage import update_media_file_transcription_status
+
+        db, _owner, admin, file = world
+        file.status = FileStatus.PROCESSING
+        db.commit()
+
+        quarantine_file(db, file, admin=admin, reason="mid-transcription takedown")
+        assert file.status == FileStatus.QUARANTINED
+        assert file.pre_quarantine_status == FileStatus.PROCESSING.value
+
+        # The pipeline finishes, unaware the file was just taken down.
+        update_media_file_transcription_status(
+            db, file.id, [{"start": 0.0, "end": 1.0, "text": "hello"}], language="en"
+        )
+        db.refresh(file)
+        assert file.status == FileStatus.QUARANTINED, (
+            "still display-quarantined while the hold is in effect"
+        )
+        assert file.pre_quarantine_status == FileStatus.COMPLETED.value
+        assert file.completed_at is not None
+
+        release_file(db, file, admin=admin)
+        assert file.status == FileStatus.COMPLETED, (
+            "must release to COMPLETED, not be stuck at PROCESSING -- the issue #824 defect"
+        )
+        assert file.completed_at is not None
+        assert file.pre_quarantine_status is None
+
+
+class TestCorpusVersionBump:
+    """Issue #817 item 9: a takedown/release must bump the chat retrieval cache's
+    corpus version, mirroring ``tests/integration/test_rename_propagation_chunks.py``'s
+    ``test_propagation_bumps_the_chat_corpus_version``. Otherwise a cached chat
+    retrieval or ``/search`` response can outlive the takedown for the rest of
+    the cache TTL."""
+
+    def test_quarantining_bumps_the_corpus_version(self, world, monkeypatch):
+        from app.services.chat import retrieval_cache
+
+        db, _owner, admin, file = world
+        bumps: list[int] = []
+        monkeypatch.setattr(retrieval_cache, "bump_corpus_version", lambda: bumps.append(1))
+
+        quarantine_file(db, file, admin=admin, reason="DMCA-corpus")
+
+        assert len(bumps) == 1
+
+    def test_releasing_bumps_the_corpus_version_too(self, world, monkeypatch):
+        from app.services.chat import retrieval_cache
+
+        db, _owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="DMCA-corpus")
+
+        bumps: list[int] = []
+        monkeypatch.setattr(retrieval_cache, "bump_corpus_version", lambda: bumps.append(1))
+
+        release_file(db, file, admin=admin)
+
+        assert len(bumps) == 1
 
 
 class TestOwnerNotification:

@@ -7,6 +7,7 @@
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { resolveSummaryKeyPath } from '$lib/utils/summaryKeyPath';
+  import { requestSummaryExport } from '$lib/export/requestSummaryExport';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
 
@@ -286,149 +287,101 @@
     }
   }
 
-  function handleCopy() {
-    if (!summary) return;
+  // ⚠️ There is deliberately NO consolidated-markdown serializer built here any more
+  // (issue #885). This modal used to build the whole copied document from `summary` client
+  // side, and it silently dropped the action-items and speaker-analysis sections that
+  // `SummaryDisplay` below renders — a real bug, not a redaction bypass (the summary this
+  // modal holds is already masked for this reader by `GET /files/{uuid}/summary`, issue
+  // #465). It was also the LAST client-side re-serialization of server data left in the SPA
+  // (see #673/#821 for the transcript's equivalent history). Both are fixed by asking the
+  // server for a fresh render — `GET /files/{uuid}/summary/export` — same pattern as the
+  // transcript modal's copy button.
+  let copyStatus: 'idle' | 'copying' | 'copied' | 'failed' | 'empty' = 'idle';
 
-    const markdown = formatSummaryAsMarkdown(summary);
-
-    copyToClipboard(
-      markdown,
-      () => {
-        copyButtonText = $t('summary.copied');
-        setTimeout(() => {
-          copyButtonText = $t('summary.copy');
-        }, 2000);
-      },
-      (error) => {
-        copyButtonText = $t('summary.copyFailed');
-        setTimeout(() => {
-          copyButtonText = $t('summary.copy');
-        }, 2000);
-      }
-    );
+  function settleCopyStatus(next: 'copied' | 'failed' | 'empty') {
+    copyStatus = next;
+    setTimeout(() => {
+      copyStatus = 'idle';
+    }, 2000);
   }
 
-  function removeEmojis(text: string | null | undefined): string {
-    // Remove all emoji characters using Unicode ranges
-    if (!text) return '';
-    return text.replace(/[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').trim();
+  /** Resolved i18n strings the server renders into the exported document (translation-free
+   * backend — see `requestSummaryExport.ts`). */
+  function exportLabels() {
+    return {
+      title: $t('summary.modalTitle', { fileName }),
+      executiveSummary: $t('summary.executiveSummary'),
+      briefSummary: $t('summary.briefSummary'),
+      majorTopics: $t('summary.majorTopics'),
+      // Passing the LITERAL string '{participants}' (not a resolved name list) is
+      // non-obvious but deliberate: the server substitutes the real, already-masked
+      // participant names into this translated label template per topic, so the
+      // interpolation has to happen after masking, not here.
+      keyParticipants: $t('summary.keyParticipants', { participants: '{participants}' }),
+      importanceHigh: $t('summary.importance.high'),
+      importanceMedium: $t('summary.importance.medium'),
+      importanceLow: $t('summary.importance.low'),
+      actionItems: $t('summary.actionItems'),
+      owner: $t('summary.owner'),
+      dueDate: $t('summary.dueDate'),
+      keyDecisions: $t('summary.keyDecisions'),
+      speakerAnalysis: $t('summary.speakerAnalysis'),
+      followUpItems: $t('summary.followUpItems'),
+      disclaimer: buildDisclaimer(),
+    };
   }
 
-  function formatSummaryAsMarkdown(data: SummaryData): string {
-    let markdown = `# ${$t('summary.modalTitle', { fileName })}\n\n`;
-
-    // Check if this is standard BLUF format or custom format
-    const isStandardBLUF = !!(data.bluf && data.brief_summary);
-
-    if (isStandardBLUF) {
-      // Standard BLUF format
-      if (data.bluf) {
-        markdown += `## ${$t('summary.executiveSummary')}\n${removeEmojis(data.bluf)}\n\n`;
-      }
-
-      // Brief Summary
-      if (data.brief_summary) {
-        markdown += `## ${$t('summary.briefSummary')}\n${removeEmojis(data.brief_summary)}\n\n`;
-      }
-
-      // Major Topics
-      if (data.major_topics && data.major_topics.length > 0) {
-        markdown += `## ${$t('summary.majorTopics')}\n`;
-        data.major_topics.forEach((topic: any) => {
-          // Use text indicators instead of emojis
-          const importanceText = topic.importance === 'high' ? `[${$t('summary.importance.high')}] ` : topic.importance === 'medium' ? `[${$t('summary.importance.medium')}] ` : `[${$t('summary.importance.low')}] `;
-          markdown += `### ${importanceText}${removeEmojis(topic.topic || '')}\n`;
-          if (topic.participants && topic.participants.length > 0) {
-            markdown += `*${$t('summary.keyParticipants', { participants: topic.participants.join(', ') })}*\n\n`;
-          }
-          if (topic.key_points && topic.key_points.length > 0) {
-            topic.key_points.forEach((point: string) => {
-              markdown += `- ${removeEmojis(point)}\n`;
-            });
-          }
-          markdown += '\n';
+  /** The AI disclaimer footer, fully resolved (the backend stays translation-free and
+   * renders whatever string it is given). Only emitted when `summary.metadata` exists —
+   * mirrors `build_summary_export`'s own check, so an empty disclaimer never appears alone. */
+  function buildDisclaimer(): string {
+    let disclaimer = $t('summary.aiDisclaimer');
+    if (summary?.metadata) {
+      disclaimer += ' ' + $t('summary.generatedBy', {
+        provider: summary.metadata.provider,
+        model: summary.metadata.model,
+      });
+      if (summary.metadata.processing_time_ms) {
+        disclaimer += ' ' + $t('summary.processingTime', {
+          time: (summary.metadata.processing_time_ms / 1000).toFixed(1),
         });
-      }
-
-      // Key Decisions
-      if (data.key_decisions && data.key_decisions.length > 0) {
-        markdown += `## ${$t('summary.keyDecisions')}\n`;
-        data.key_decisions.forEach((decision: any) => {
-          const text = typeof decision === 'string' ? decision : (decision.decision || JSON.stringify(decision));
-          markdown += `- ${removeEmojis(text)}\n`;
-        });
-        markdown += '\n';
-      }
-
-      // Follow-up Items
-      if (data.follow_up_items && data.follow_up_items.length > 0) {
-        markdown += `## ${$t('summary.followUpItems')}\n`;
-        data.follow_up_items.forEach((item: any) => {
-          const text = typeof item === 'string' ? item : (item.item || JSON.stringify(item));
-          markdown += `- ${removeEmojis(text)}\n`;
-        });
-        markdown += '\n';
-      }
-    } else {
-      // Custom format - recursively convert any structure to markdown
-      markdown += formatCustomSummaryMarkdown(data, 2);
-    }
-
-    // AI Disclaimer
-    if (data.metadata) {
-      markdown += `---\n\n*${$t('summary.aiDisclaimer')} `;
-      markdown += $t('summary.generatedBy', { provider: data.metadata.provider, model: data.metadata.model });
-      if (data.metadata.processing_time_ms) {
-        markdown += ` ${$t('summary.processingTime', { time: (data.metadata.processing_time_ms / 1000).toFixed(1) })}`;
-      }
-      markdown += `.*\n`;
-    }
-
-    return markdown;
-  }
-
-  function formatCustomSummaryMarkdown(obj: any, headingLevel: number = 2): string {
-    let markdown = '';
-    const headingPrefix = '#'.repeat(headingLevel);
-
-    for (const [key, value] of Object.entries(obj)) {
-      // Skip metadata field
-      if (key === 'metadata') continue;
-
-      // Format key as heading
-      const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      markdown += `${headingPrefix} ${formattedKey}\n`;
-
-      // Format value based on type
-      if (value === null || value === undefined) {
-        markdown += `*No data*\n\n`;
-      } else if (typeof value === 'string') {
-        markdown += `${removeEmojis(value)}\n\n`;
-      } else if (Array.isArray(value)) {
-        value.forEach(item => {
-          if (typeof item === 'string') {
-            markdown += `- ${removeEmojis(item)}\n`;
-          } else if (typeof item === 'object' && item !== null) {
-            // Extract text from object
-            const text = item.text || item.decision || item.item || item.description || JSON.stringify(item);
-            markdown += `- ${removeEmojis(text)}\n`;
-          } else {
-            markdown += `- ${String(item)}\n`;
-          }
-        });
-        markdown += '\n';
-      } else if (typeof value === 'object' && value !== null) {
-        // Nested object - recurse with increased heading level
-        markdown += formatCustomSummaryMarkdown(value, headingLevel + 1);
-      } else {
-        markdown += `${String(value)}\n\n`;
       }
     }
-
-    return markdown;
+    return disclaimer;
   }
 
-  let copyButtonText = $t('summary.copy');
+  async function handleCopy() {
+    if (!summary || copyStatus === 'copying') return;
+    copyStatus = 'copying';
+    try {
+      const { data } = await requestSummaryExport({ fileUuid: fileId, labels: exportLabels() });
+      if (!data.trim()) {
+        settleCopyStatus('empty');
+        return;
+      }
+      await copyToClipboard(
+        data,
+        () => settleCopyStatus('copied'),
+        () => settleCopyStatus('failed')
+      );
+    } catch (err) {
+      // A refusal must stay a refusal — a local catch-and-serialize-anyway here would
+      // reinstate the exact client-side serializer this fix removes.
+      console.error('Error copying summary:', err);
+      settleCopyStatus('failed');
+    }
+  }
+
+  $: copyButtonText =
+    copyStatus === 'copied'
+      ? $t('summary.copied')
+      : copyStatus === 'failed'
+        ? $t('summary.copyFailed')
+        : copyStatus === 'empty'
+          ? $t('summary.noContent')
+          : copyStatus === 'copying'
+            ? $t('summary.copying')
+            : $t('summary.copy');
 </script>
 
 <div class="summary-modal-wrapper">
@@ -439,22 +392,23 @@
           <div class="header-actions">
               <button
                 class="copy-button-header"
-                class:copied={copyButtonText === $t('summary.copied')}
+                class:copied={copyStatus === 'copied'}
                 on:click={handleCopy}
+                disabled={copyStatus === 'copying'}
                 aria-label={$t('summary.copySummaryLabel')}
-                title={copyButtonText === $t('summary.copied') ? $t('summary.copiedToClipboard') : $t('summary.copySummaryMarkdown')}
+                title={copyStatus === 'copied' ? $t('summary.copiedToClipboard') : $t('summary.copySummaryMarkdown')}
               >
-                {#if copyButtonText === $t('summary.copied')}
+                {#if copyStatus === 'copied'}
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
                   </svg>
-                  {$t('summary.copied')}
+                  {copyButtonText}
                 {:else}
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
                     <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
                   </svg>
-                  {$t('summary.copy')}
+                  {copyButtonText}
                 {/if}
               </button>
 
@@ -607,10 +561,15 @@
     font-size: 0.85rem;
   }
 
-  .copy-button-header:hover {
+  .copy-button-header:hover:not(:disabled) {
     background-color: var(--hover-bg);
     color: var(--primary-on-surface);
     border-color: var(--primary-color);
+  }
+
+  .copy-button-header:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .copy-button-header.copied {

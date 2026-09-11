@@ -1902,6 +1902,25 @@ Also fixed: the E2E API session never sent a CSRF token, so every mutation retur
 
 ### Security
 
+- **A quarantined file's identity could still leak over a live WebSocket push** (#908). Read
+  surfaces have hidden a taken-down file from non-admins since the takedown/quarantine work
+  landed (`exclude_quarantined`/`is_hidden_for`), but the notification funnel had only one
+  guarded chokepoint (`notification_service.send_task_notification`) — a full AST-verified
+  inventory found 20 other `send_ws_event` call sites across the transcription pipeline,
+  speaker plane, and file-creation paths that carried a filename/title/thumbnail/speaker
+  display name with no quarantine check at all, plus 4 sites that published to the WebSocket
+  Redis channel directly, bypassing that primitive entirely. A new
+  `send_ws_event_for_file(user_id, type, data, *, file_id=… | file_uuid=… | file_uuids=…)`
+  wrapper and two new `takedown_service` predicates (`is_notification_suppressed_for_uuid`,
+  `filter_suppressed_file_uuids`) close every one of them, a raw progress-notification path
+  (`video_processing_service.py`) is now gated inline, and an AST structural test
+  (`test_ws_event_quarantine_discipline.py`) fails the build on any future unguarded call site.
+  Two related findings from the same inventory pass: admin-migration progress/completion events
+  (which include a `failed_files` UUID list) fell back to account id 1 whenever no requesting
+  admin was known, misdirecting them to whichever account happens to hold that id; and
+  `POST /speakers/{uuid}/verify` / `.../confirm-gender` resolved their target file with no
+  quarantine check at all, so a non-admin who already knew a speaker's UUID could mutate it on
+  a file their own file list no longer shows.
 - **Export lock was enforced for subtitles only** (#673). `export_locked` gated the subtitle
   path while every other transcript export format ignored it, so an admin lock could be
   walked around by choosing a different format. It is now enforced for every format, and the

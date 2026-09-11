@@ -49,10 +49,14 @@ DOCUMENTATION:
 - README-WINDOWS.md: Installation instructions and troubleshooting
 - README.md: Full application documentation
 - API Documentation: http://localhost:5174/docs
+- LICENSE.txt (in this install directory): the full GNU Affero General Public
+  License v3.0 - the terms OpenTranscribe is distributed under
+- NOTICE.txt (in this install directory): required attribution for the third-party
+  models and libraries OpenTranscribe ships or runs
 
 SUPPORT:
 
-- GitHub Issues: https://github.com/davidamacey/opentranscribe/issues
-- Documentation: https://github.com/davidamacey/opentranscribe
+- GitHub Issues: https://github.com/attevon-llc/OpenTranscribe/issues
+- Documentation: https://github.com/attevon-llc/OpenTranscribe
 
 Enjoy using OpenTranscribe!

@@ -26,6 +26,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.core.exceptions import ASRConfigurationError
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -34,6 +35,7 @@ from app.models.user import User
 from app.schemas.media import PaginatedTaskResponse
 from app.schemas.media import Task
 from app.services import system_settings_service
+from app.services.takedown_service import exclude_quarantined
 from app.services.task_detection_service import task_detection_service
 from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_recovery_service import task_recovery_service
@@ -91,6 +93,10 @@ def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
     query = db.query(*columns)
     if not current_user.is_admin:
         query = query.filter(MediaFile.user_id == current_user.id)
+    # A quarantined file must 404 everywhere under `files/`, so it must not surface
+    # in the task list either — the two are the same "does this file exist for you"
+    # question. Admin "see all" keeps every row (review needs the quarantined ones).
+    query = exclude_quarantined(query, include_quarantined=current_user.is_admin)
     return query.all()  # type: ignore[no-any-return]
 
 
@@ -125,6 +131,9 @@ def _latest_task_by_file(
     )
     if not current_user.is_admin:
         query = query.filter(MediaFile.user_id == current_user.id)
+    # Same quarantine exclusion as `_get_user_media_files` — this query is joined
+    # through `MediaFile` independently, so it needs its own copy of the filter.
+    query = exclude_quarantined(query, include_quarantined=current_user.is_admin)
     if file_id is not None:
         query = query.filter(TaskModel.media_file_id == file_id)
 
@@ -427,7 +436,6 @@ def task_system_health(
 
 @router.post("/recover-stuck-tasks", response_model=dict[str, Any])
 def recover_all_stuck_tasks(
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can recover tasks
 ):
@@ -435,6 +443,12 @@ def recover_all_stuck_tasks(
     Attempt to recover all stuck tasks
 
     This endpoint will identify and recover all stuck tasks in the system.
+
+    Dispatches inline rather than via ``background_tasks.add_task`` — FastAPI sends the
+    response BEFORE a background task runs, so a response built from ``background_tasks``
+    can never reflect the actual re-dispatch outcome (issue #906). This handler stays a
+    plain ``def`` (see ``tests/api/test_handler_blocking_io.py::HARDENED_HANDLERS``), so it
+    already runs in Starlette's threadpool and dispatching inline is safe.
     """
     try:
         # Identify stuck tasks
@@ -442,38 +456,48 @@ def recover_all_stuck_tasks(
         if not stuck_tasks:
             return {"success": True, "count": 0, "message": "No stuck tasks found"}
 
-        # Try to recover each task
         recovered_count = 0
+        retried_count = 0
+        retry_failures: list[dict[str, str]] = []
         for task in stuck_tasks:
-            success = task_recovery_service.recover_stuck_task(db, task)
-            if success:
-                recovered_count += 1
+            if not task_recovery_service.recover_stuck_task(db, task):
+                continue
+            recovered_count += 1
+            if task.task_type != "transcription" or not task.media_file_id:
+                continue
+            file_uuid = str(task.media_file.uuid) if task.media_file else None
+            if not file_uuid:
+                continue
+            try:
+                from app.tasks.transcription import dispatch_transcription_pipeline
 
-                # If it's a transcription task, retry it
-                if task.task_type == "transcription" and task.media_file_id:
-                    # Schedule a retry in the background for each recovered task
-                    def retry_transcription(file_uuid):
-                        try:
-                            from app.tasks.transcription import dispatch_transcription_pipeline
-
-                            task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
-                            logger.info(
-                                f"Retrying transcription for file {file_uuid}, "
-                                f"new task ID: {task_id}"
-                            )
-                        except Exception as e:
-                            logger.exception(f"Error retrying transcription: {e}")
-
-                    # Get UUID from the relationship
-                    file_uuid = str(task.media_file.uuid) if task.media_file else None
-                    if file_uuid:
-                        background_tasks.add_task(retry_transcription, file_uuid)
+                new_task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+                retried_count += 1
+                logger.info(
+                    f"Retrying transcription for file {file_uuid}, new task ID: {new_task_id}"
+                )
+            except Exception as e:
+                # PER-FILE catch deliberately: one bad config must not abort the sweep
+                # for everyone else. What changes is the outcome now reaches the
+                # caller, not just the log. File is marked ERROR by dispatch itself.
+                logger.error(
+                    f"Failed to re-dispatch transcription for file {file_uuid}: {e}",
+                    exc_info=True,
+                )
+                retry_failures.append({"file_uuid": file_uuid, "error": str(e)})
 
         return {
-            "success": True,
+            "success": not retry_failures,
             "count": recovered_count,
             "total": len(stuck_tasks),
-            "message": f"Successfully recovered {recovered_count} of {len(stuck_tasks)} tasks",
+            "retried": retried_count,
+            "retry_failures": retry_failures,
+            "message": (
+                f"Successfully recovered {recovered_count} of {len(stuck_tasks)} tasks"
+                if not retry_failures
+                else f"Recovered {recovered_count} of {len(stuck_tasks)} tasks, but "
+                f"{len(retry_failures)} could not be re-queued"
+            ),
         }
     except HTTPException:
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
@@ -616,7 +640,6 @@ def trigger_user_file_recovery(
 @router.post("/system/recover-task/{task_id}", response_model=dict[str, Any])
 def recover_task(
     task_id: str,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can recover tasks
 ):
@@ -624,6 +647,9 @@ def recover_task(
     Attempt to recover a stuck task
 
     This endpoint will mark a stuck task as failed and retry it if appropriate.
+
+    Dispatches inline rather than via ``background_tasks.add_task`` — a response built
+    before the background task runs can never reflect its outcome (issue #906).
     """
     try:
         # Find the task
@@ -634,33 +660,41 @@ def recover_task(
         # Attempt recovery
         success = task_recovery_service.recover_stuck_task(db, task)
 
-        # If successful and appropriate, retry the task
+        retry_scheduled = False
+        dispatch_error: str | None = None
         if success and task.task_type == "transcription" and task.media_file_id:
-            # Schedule a retry in the background
-            # This avoids blocking the API call
             file_uuid = str(task.media_file.uuid) if task.media_file else None
             if file_uuid:
+                try:
+                    from app.tasks.transcription import dispatch_transcription_pipeline
 
-                def retry_transcription():
-                    try:
-                        from app.tasks.transcription import dispatch_transcription_pipeline
-
-                        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
-                        logger.info(
-                            f"Retrying transcription for file {file_uuid}, new task ID: {task_id}"
-                        )
-                    except Exception as e:
-                        logger.exception(f"Error retrying transcription: {e}")
-
-                background_tasks.add_task(retry_transcription)
+                    new_task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+                    retry_scheduled = True
+                    logger.info(
+                        f"Retrying transcription for file {file_uuid}, new task ID: {new_task_id}"
+                    )
+                except ASRConfigurationError:
+                    raise  # let it reach main.py's 503 handler
+                except Exception as e:
+                    logger.error(
+                        f"Failed to re-dispatch transcription for file {file_uuid}: {e}",
+                        exc_info=True,
+                    )
+                    dispatch_error = str(e)
 
         return {
-            "success": success,
+            "success": success and dispatch_error is None,
             "task_id": task_id,
             "message": "Task recovery successful" if success else "Task recovery failed",
-            "retry_scheduled": success and task.task_type == "transcription",
+            "retry_scheduled": retry_scheduled,
+            "dispatch_error": dispatch_error,
         }
     except HTTPException:
+        raise
+    except ASRConfigurationError:
+        # A deliberate refusal (e.g. lite deployment, no cloud ASR — #865). Let it
+        # reach main.py's OpenTranscribeError handler: real message + 503, not a
+        # generic 500.
         raise
     except Exception as e:
         logger.error("Error in recover_task: %s", e, exc_info=True)
@@ -751,13 +785,17 @@ def fix_all_inconsistent_files(
 @router.post("/retry/{file_uuid}", response_model=dict[str, Any])
 def retry_file_processing(
     file_uuid: str,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),  # Any user can retry their own files
     ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Retry processing for a file that failed or got stuck
+
+    Dispatches inline rather than via ``background_tasks.add_task`` — a response built
+    before the background task runs can never reflect its outcome (issue #906). Mirrors
+    ``files/management.py``'s ``/{file_uuid}/retry``, including its ``SKIP_CELERY``
+    test-mode branch.
     """
     try:
         # Find the media file (tenant-gated via ctx.org_id for non-admins)
@@ -825,24 +863,32 @@ def retry_file_processing(
 
         db.commit()
 
-        # Schedule a new transcription in the background
-        def start_new_transcription():
-            try:
-                from app.tasks.transcription import dispatch_transcription_pipeline
+        # Start a new transcription synchronously — see the docstring for why.
+        import os
 
-                task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
-                logger.info(f"Started new transcription for file {file_id}, task ID: {task_id}")
-            except Exception as e:
-                logger.exception(f"Error starting new transcription: {e}")
+        if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+            from app.tasks.transcription import dispatch_transcription_pipeline
 
-        background_tasks.add_task(start_new_transcription)
-
+            new_task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+            logger.info(f"Started new transcription for file {file_id}, task ID: {new_task_id}")
+            return {
+                "success": True,
+                "file_id": str(media_file.uuid),
+                "task_id": new_task_id,
+                "message": "File processing restarted",
+            }
+        logger.info("Skipping Celery task in test environment")
         return {
             "success": True,
-            "file_id": str(media_file.uuid),  # Use UUID for frontend
-            "message": "File processing restarted",
+            "file_id": str(media_file.uuid),
+            "message": "File processing restarted (test mode)",
         }
     except HTTPException:
+        raise
+    except ASRConfigurationError:
+        # A deliberate refusal (e.g. lite deployment, no cloud ASR — #865). Let it
+        # reach main.py's OpenTranscribeError handler: real message + 503, not a
+        # generic 500.
         raise
     except Exception as e:
         logger.error("Error in retry_file_processing: %s", e, exc_info=True)
@@ -888,7 +934,13 @@ def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> Medi
     else:
         media_file = (
             db.query(MediaFile)
-            .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+            .filter(
+                MediaFile.id == file_id,
+                MediaFile.user_id == current_user.id,
+                # A quarantined file must 404 on this surface too — see the matching
+                # exclusion on `_get_user_media_files`/`_latest_task_by_file` above.
+                MediaFile.is_quarantined.is_(False),
+            )
             .first()
         )
 

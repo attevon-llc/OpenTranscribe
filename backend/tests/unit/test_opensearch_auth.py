@@ -72,6 +72,26 @@ def test_basic_does_not_impose_a_connection_class(basic_auth):
     assert "connection_class" not in opensearch_auth.opensearch_connection_kwargs()
 
 
+def test_empty_credentials_omit_http_auth_entirely(basic_auth, monkeypatch):
+    """Issue #858: an empty ("", "") tuple is NOT equivalent to omitting http_auth --
+    opensearch-py still sends `Authorization: Basic Og==` for it. With no credential
+    configured at all (the coded default, since #858), the key must be absent."""
+    monkeypatch.setattr(settings, "OPENSEARCH_USER", "")
+    monkeypatch.setattr(settings, "OPENSEARCH_PASSWORD", "")
+    kwargs = opensearch_auth.opensearch_connection_kwargs()
+    assert "http_auth" not in kwargs
+
+
+def test_a_single_configured_half_still_sends_the_pair(basic_auth, monkeypatch):
+    """Only fully-empty is inert-by-omission; a partially configured pair is a
+    misconfiguration that should still be sent (and therefore surfaced as a real
+    auth failure, not silently dropped)."""
+    monkeypatch.setattr(settings, "OPENSEARCH_USER", "admin")
+    monkeypatch.setattr(settings, "OPENSEARCH_PASSWORD", "")
+    kwargs = opensearch_auth.opensearch_connection_kwargs()
+    assert kwargs["http_auth"] == ("admin", "")
+
+
 def test_overrides_are_merged(basic_auth):
     from opensearchpy import RequestsHttpConnection
 

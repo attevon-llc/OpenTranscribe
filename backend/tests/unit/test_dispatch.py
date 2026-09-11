@@ -37,8 +37,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from kombu.exceptions import OperationalError
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.config import settings
 from app.core.constants import CeleryQueues
+from app.core.exceptions import ASRConfigurationError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
@@ -231,6 +235,89 @@ class TestResolveGpuQueue:
         db_session.commit()
 
         assert self._resolve(normal_user.id, db_session) == CeleryQueues.CLOUD_ASR
+
+    def test_lite_deployment_with_no_cloud_provider_refuses_instead_of_routing_to_a_dead_queue(
+        self, db_session, normal_user, monkeypatch
+    ):
+        """THE REGRESSION TEST for issue #865's follow-up. A lite deployment
+        (DEPLOYMENT_MODE=lite) ships no local WhisperX — ``docker-compose.lite.yml``
+        scales the 'gpu' consumers to zero replicas. Before this fix, the old bare
+        ``except Exception: logger.debug(...)`` swallowed the factory's
+        ``ASRConfigurationError`` (raised by ``services/asr/factory.py`` for exactly
+        this deployment shape) and fell through to the ordinary 'gpu' routing below —
+        publishing into a queue nothing drains, with the API already having answered
+        200. It must instead propagate so the caller can mark the file ERROR."""
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+
+        with pytest.raises(ASRConfigurationError, match="[Ll]ite"):
+            self._resolve(normal_user.id, db_session)
+
+    def test_lite_deployment_with_a_working_cloud_provider_still_routes_to_cloud_asr(
+        self, db_session, normal_user, monkeypatch
+    ):
+        """Control #1: lite is only a problem when there is nothing else to route
+        to. A configured cloud provider must resolve exactly as it would under a
+        full deployment — same fixture shape as test_cloud_provider_wins_over_split."""
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+        cfg = UserASRSettings(
+            user_id=normal_user.id,
+            name="cloud-test-lite",
+            provider="deepgram",
+            model_name="nova-2",
+            is_active=True,
+        )
+        db_session.add(cfg)
+        db_session.commit()
+        db_session.refresh(cfg)
+        db_session.add(
+            UserSetting(
+                user_id=normal_user.id,
+                setting_key="active_asr_config_id",
+                setting_value=str(cfg.id),
+            )
+        )
+        db_session.commit()
+
+        assert self._resolve(normal_user.id, db_session) == CeleryQueues.CLOUD_ASR
+
+    def test_full_deployment_with_no_config_still_routes_to_gpu(
+        self, db_session, normal_user, monkeypatch
+    ):
+        """Control #2: a full deployment with no ASR config must keep resolving to
+        the always-staffed 'gpu' queue — the refusal is lite-specific, not a general
+        tightening of the no-config fallback."""
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+        monkeypatch.delenv("ENGINE_GPU_SPLIT", raising=False)
+
+        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
+
+    def test_transient_provider_error_still_falls_back_to_gpu_with_a_warning(
+        self, db_session, normal_user, monkeypatch, caplog
+    ):
+        """Control #3: the taxonomy split itself. A transient failure (e.g. a DB
+        hiccup while loading the user's ASR config) is NOT a deliberate refusal —
+        it must still fall back to 'gpu' exactly as before, but now log at WARNING
+        instead of the previous DEBUG so an operator can see resolution is failing.
+        A bare ``except Exception: raise`` would wrongly pass the regression test
+        above alone; asserting the WARNING here is what proves the split is by
+        exception type, not just "ASRConfigurationError happens to be raised"."""
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
+
+        def _boom(user_id, db):
+            raise SQLAlchemyError("connection reset")
+
+        monkeypatch.setattr("app.services.asr.factory.ASRProviderFactory.create_for_user", _boom)
+
+        with caplog.at_level("WARNING"):
+            result = self._resolve(normal_user.id, db_session)
+
+        assert result == CeleryQueues.GPU
+        assert any(
+            record.levelname == "WARNING" and "ASR provider resolution failed" in record.message
+            for record in caplog.records
+        )
 
 
 class TestGpuTranscribeConsumerPresent:
@@ -595,3 +682,114 @@ class TestDispatchBatchTranscription:
         db_session.refresh(media_file)
         assert media_file.status == FileStatus.PROCESSING
         assert db_session.query(Task).filter(Task.id == result["task_ids"][0]).one() is not None
+
+
+class TestDispatchTranscriptionPipelineAsrRefusal:
+    """``dispatch_transcription_pipeline()`` — the single-file caller of
+    ``_resolve_gpu_queue()`` — must surface a deliberate ASR refusal as a real file
+    state, not merely propagate an exception with the file left dangling at
+    PROCESSING and no explanation (issue #865's follow-up)."""
+
+    @staticmethod
+    def _dispatch(file_uuid: str) -> str:
+        from app.tasks.transcription.dispatch import dispatch_transcription_pipeline
+
+        return dispatch_transcription_pipeline(file_uuid=file_uuid)
+
+    def test_lite_with_no_cloud_provider_raises_marks_error_and_creates_no_task(
+        self, db_session, dispatch_seams, make_media_file, normal_user, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+        media_file = make_media_file(FileStatus.PENDING)
+
+        with pytest.raises(ASRConfigurationError):
+            self._dispatch(str(media_file.uuid))
+
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.ERROR
+        assert "lite" in (media_file.last_error_message or "").lower()
+        assert db_session.query(Task).filter(Task.media_file_id == media_file.id).first() is None
+
+
+class TestDispatchTranscriptionPipelinePublishFailure:
+    """``dispatch_transcription_pipeline()``'s ``pipeline.apply_async(...)`` call happens
+    AFTER ``create_task_record``/``update_media_file_status`` have already committed the file
+    to PROCESSING, in a session that has already closed. Issue #865 covers the
+    ``ASRConfigurationError`` raised BEFORE that commit; this covers the far more common
+    failure of the Celery **publish itself** (broker down, unroutable queue) — which, before
+    this fix, left an ``in_progress`` task and a PROCESSING file nothing would ever advance,
+    because ``link_error`` only fires for a chain that was actually published (issue #906)."""
+
+    _CHAIN = f"{_DISPATCH}.chain"
+
+    @staticmethod
+    def _dispatch(file_uuid: str) -> str:
+        from app.tasks.transcription.dispatch import dispatch_transcription_pipeline
+
+        # gpu_queue="gpu" bypasses ASR-provider resolution entirely — that seam is
+        # #865's, not this one's.
+        return dispatch_transcription_pipeline(file_uuid=file_uuid, gpu_queue="gpu")
+
+    def test_a_failed_publish_marks_the_file_error_with_the_real_reason(
+        self, db_session, dispatch_seams, make_media_file
+    ):
+        media_file = make_media_file(FileStatus.PENDING)
+        chain_stub = SimpleNamespace(
+            apply_async=lambda **kwargs: (_ for _ in ()).throw(OperationalError("broker down"))
+        )
+
+        with patch(self._CHAIN, return_value=chain_stub), pytest.raises(OperationalError):
+            self._dispatch(str(media_file.uuid))
+
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.ERROR
+        assert "broker down" in (media_file.last_error_message or "")
+        task = db_session.query(Task).filter(Task.media_file_id == media_file.id).one()
+        assert task.status == "failed"
+        assert "broker down" in (task.error_message or "")
+
+    def test_a_successful_publish_leaves_the_file_processing(
+        self, db_session, dispatch_seams, make_media_file
+    ):
+        """CONTROL: the same fixture shape, but the publish succeeds."""
+        media_file = make_media_file(FileStatus.PENDING)
+        chain_stub = SimpleNamespace(apply_async=lambda **kwargs: SimpleNamespace(id="ok"))
+
+        with patch(self._CHAIN, return_value=chain_stub):
+            self._dispatch(str(media_file.uuid))
+
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.PROCESSING
+        task = db_session.query(Task).filter(Task.media_file_id == media_file.id).one()
+        assert task.status == "in_progress"
+
+    def test_a_failure_to_record_the_failure_does_not_mask_the_original_exception(
+        self, db_session, dispatch_seams, make_media_file
+    ):
+        """``_mark_dispatch_failed`` is best-effort: if IT also fails, the real (broker)
+        exception must still be what the caller sees — never the secondary DB error.
+
+        ``update_task_status`` is patched to fail only on the SECOND call (the
+        ``"failed"`` write inside ``_mark_dispatch_failed``) — the real function must
+        still run for the initial ``"in_progress"`` write, or the chain is never even
+        reached.
+        """
+        from app.tasks.transcription.dispatch import update_task_status as real_update_task_status
+
+        media_file = make_media_file(FileStatus.PENDING)
+        chain_stub = SimpleNamespace(
+            apply_async=lambda **kwargs: (_ for _ in ()).throw(OperationalError("broker down"))
+        )
+
+        def _fail_on_the_failed_write(db, task_id, task_status, **kwargs):
+            if task_status == "failed":
+                raise RuntimeError("db also down")
+            return real_update_task_status(db, task_id, task_status, **kwargs)
+
+        with (
+            patch(self._CHAIN, return_value=chain_stub),
+            patch(f"{_DISPATCH}.update_task_status", side_effect=_fail_on_the_failed_write),
+            pytest.raises(OperationalError, match="broker down"),
+        ):
+            self._dispatch(str(media_file.uuid))

@@ -19,9 +19,11 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file_tuned
 from app.utils import benchmark_timing
+from app.utils.error_handlers import ErrorHandler
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
+from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
 
@@ -175,11 +177,9 @@ def create_media_file_record(
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.exception(f"Error creating MediaFile: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating media file record: {str(e)}",
-        ) from e
+        # The real error (often SQL text) is logged, never returned (#859).
+        logger.exception("Error creating MediaFile")
+        raise ErrorHandler.internal_error("Could not create the media file record.") from e
 
 
 def upload_file_to_storage(
@@ -317,6 +317,118 @@ def dispatch_upload_pipeline(
         num_speakers,
         whisper_model=whisper_model,
         task_id=task_id,
+    )
+
+
+def dispatch_upload_pipeline_or_mark_error(
+    db: Session,
+    db_file: MediaFile,
+    *,
+    user_id: int,
+    whisper_model: str | None,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    task_id: str | None,
+) -> str | None:
+    """``dispatch_upload_pipeline``, but a failure leaves a VISIBLE row (issue #905).
+
+    Call only AFTER the row is committed with its ``storage_path`` — at that point
+    the bytes are in object storage, so a dispatch failure is a PROCESSING
+    failure, surfaced like every other one in this app (ERROR + ``last_error_message``)
+    instead of the row being deleted out from under an upload that actually landed.
+    Re-raises unchanged so ``ASRConfigurationError`` still reaches ``main.py``'s 503
+    handler with the real message.
+    """
+    file_id = int(db_file.id)
+    try:
+        return dispatch_upload_pipeline(
+            db_file,
+            user_id=user_id,
+            whisper_model=whisper_model,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
+            task_id=task_id,
+        )
+    except Exception as exc:
+        _mark_upload_dispatch_failed(db, file_id, user_id, exc)
+        raise
+
+
+def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: Exception) -> None:
+    """Persist ERROR + ``last_error_message`` on a stored-but-undispatchable upload.
+
+    Best-effort, never raises: the caller re-raises the real failure regardless of
+    whether this bookkeeping succeeds.
+    """
+    from app.utils.task_utils import update_media_file_status
+
+    message = getattr(exc, "message", None) or str(exc) or exc.__class__.__name__
+    try:
+        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+        if media_file is None:
+            return
+        media_file.last_error_message = message  # type: ignore[assignment]
+        update_media_file_status(db, file_id, FileStatus.ERROR)  # takedown-aware writer, #824
+    except Exception:
+        logger.exception("Could not mark file %s ERROR after a dispatch failure", file_id)
+        with contextlib.suppress(Exception):
+            db.rollback()
+        return
+
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_user_files(user_id)
+    except Exception as cache_err:
+        logger.debug(f"Cache invalidation after a dispatch failure failed: {cache_err}")
+
+    try:
+        _send_dispatch_failed_ws_event(media_file, user_id, message)
+    except Exception as ws_err:
+        logger.debug(f"WS notification after a dispatch failure failed: {ws_err}")
+
+
+def _send_dispatch_failed_ws_event(media_file: MediaFile, user_id: int, message: str) -> None:
+    """Best-effort LIVE gallery push for a post-storage dispatch failure (issue #911).
+
+    ``_mark_upload_dispatch_failed``'s Redis cache invalidation is enough for a page
+    refresh/poll to eventually show the row at ERROR, but a client with an open
+    WebSocket connection would otherwise wait on its own poll schedule instead of
+    updating instantly, unlike every other status transition in the app.
+
+    Shape matches the ``file_updated`` event ``send_completion_notification``
+    (``tasks/transcription/notifications.py``) sends on the success path, so the
+    SPA's existing gallery handler needs no new branch — same field set, an ERROR
+    status and ``last_error_message`` in place of a completed one.
+    """
+    from app.services.formatting_service import FormattingService
+
+    file_data = {
+        "id": str(media_file.uuid),
+        "filename": media_file.filename,
+        "status": FileStatus.ERROR.value,
+        "content_type": media_file.content_type,
+        "file_size": media_file.file_size,
+        "last_error_message": message,
+        "formatted_duration": FormattingService.format_duration(media_file.duration),
+        "formatted_upload_date": FormattingService.format_upload_date(media_file.upload_time),
+        "formatted_file_age": FormattingService.format_file_age(media_file.upload_time),
+        "formatted_file_size": FormattingService.format_bytes_detailed(media_file.file_size),
+        "display_status": FormattingService.format_status(media_file.status),
+        "status_badge_class": FormattingService.get_status_badge_class(FileStatus.ERROR.value),
+    }
+    send_ws_event_for_file(
+        user_id,
+        "file_updated",
+        {
+            "file_id": str(media_file.uuid),
+            "file": file_data,
+            "status": FileStatus.ERROR.value,
+            "message": message,
+        },
+        file_id=int(media_file.id),
     )
 
 
@@ -618,52 +730,21 @@ async def process_file_upload(
             db.commit()
             db.refresh(db_file)
 
-        # Capture file context for later reporting (persists until flushed
-        # into file_pipeline_timing by finalize_transcription).
-        benchmark_timing.set_context(
-            task_id,
-            {
-                "file_size_bytes": int(file_size),
-                "content_type": file.content_type or "",
-                "http_flow": "legacy",
-            },
-        )
-
-        # Fire the thumbnail + transcription pipeline via the shared dispatch
-        # tail so this route stays in lockstep with the presigned /complete one.
-        dispatch_upload_pipeline(
-            db_file,
-            user_id=current_user.id,
-            whisper_model=whisper_model,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers,
-            num_speakers=num_speakers,
-            task_id=task_id,
-        )
-
-        # Product metric: file accepted via direct (legacy) upload (API process).
-        from app.core.metrics import files_uploaded_total
-
-        files_uploaded_total.labels(source="upload").inc()
-
-        benchmark_timing.mark(task_id, "http_response_end")
-        logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
-        return db_file
-
     except HTTPException:
-        # Re-raise HTTP exceptions after cleanup
+        # Re-raise HTTP exceptions after cleanup. Everything below this try/except
+        # only runs once the row has committed with its storage_path, i.e. the
+        # bytes are already in object storage — nothing past this point may
+        # re-enter this delete-the-row handling (issue #905).
         db.delete(db_file)
         db.commit()
         raise
     except Exception as e:
-        # Clean up on failure
+        # Clean up on failure. Container paths and storage errors are logged,
+        # never returned to the caller (#859).
         db.delete(db_file)
         db.commit()
-        logger.error(f"Upload failed: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error during file upload: {str(e)}",
-        ) from e
+        logger.exception("Upload failed")
+        raise ErrorHandler.internal_error("The file upload could not be completed.") from e
     finally:
         # Close the spool on every path. Once it has rolled over to disk this also
         # unlinks the backing file, so a failed multi-GB upload cannot leave one
@@ -671,3 +752,40 @@ async def process_file_upload(
         if spooled_upload is not None:
             with contextlib.suppress(Exception):
                 spooled_upload.close()
+
+    # Capture file context for later reporting (persists until flushed
+    # into file_pipeline_timing by finalize_transcription).
+    benchmark_timing.set_context(
+        task_id,
+        {
+            "file_size_bytes": int(file_size),
+            "content_type": file.content_type or "",
+            "http_flow": "legacy",
+        },
+    )
+
+    # Fire the thumbnail + transcription pipeline via the shared dispatch tail so
+    # this route stays in lockstep with the presigned /complete one. The row is
+    # committed with its storage_path by this point — a dispatch failure here is
+    # a PROCESSING failure (ERROR + last_error_message), never a deleted row
+    # (issue #905): the bytes are already stored, so deleting the row would leak
+    # the MinIO object and hide a real failure behind a generic 500.
+    dispatch_upload_pipeline_or_mark_error(
+        db,
+        db_file,
+        user_id=current_user.id,
+        whisper_model=whisper_model,
+        min_speakers=min_speakers,
+        max_speakers=max_speakers,
+        num_speakers=num_speakers,
+        task_id=task_id,
+    )
+
+    # Product metric: file accepted via direct (legacy) upload (API process).
+    from app.core.metrics import files_uploaded_total
+
+    files_uploaded_total.labels(source="upload").inc()
+
+    benchmark_timing.mark(task_id, "http_response_end")
+    logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
+    return db_file

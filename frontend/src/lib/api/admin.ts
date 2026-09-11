@@ -167,6 +167,28 @@ export class AdminApi {
     return response.data;
   }
 
+  /**
+   * The sibling remedy, for the OTHER way an external login gets stuck (issue #867).
+   *
+   * When an account is already linked by provider identifier and the IdP later changes
+   * the person's address, `assert_provider_id_link_permitted` refuses the login — and
+   * because that check runs before every provider's profile refresh, the stored address
+   * can never catch up on its own. Every retry produces the identical 401. This accepts
+   * the new address so the next ordinary login succeeds.
+   *
+   * Refused for an account carrying no external identifier: it is a remedy for a linked
+   * identity, not a general email change.
+   */
+  static async updateExternalEmail(
+    userUuid: string,
+    email: string
+  ): Promise<{ success: boolean; email: string; previous_email: string }> {
+    const response = await axiosInstance.put(`/admin/users/${userUuid}/external-email`, {
+      email,
+    });
+    return response.data;
+  }
+
   // User Search
   static async searchUsers(params: {
     query?: string;

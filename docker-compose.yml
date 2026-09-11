@@ -236,6 +236,18 @@ services:
       - ${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-./models}/diar-native}:/models
       # Shared scratch for cross-worker preprocessed-WAV handoff
       - pipeline_scratch:/scratch/opentranscribe
+      # DATA_DIR (issue #870): the GDPR erasure journal
+      # (gdpr/erasure-journal.jsonl, app/services/erasure_ledger_service.py) is
+      # append-only and lives here. Before this, NO overlay mounted DATA_DIR at all —
+      # only dev was durable, by the accident of docker-compose.override.yml's
+      # ./backend:/app bind covering this subpath too. prod/lite/nginx/offline had
+      # nothing, so a routine `--force-recreate` silently destroyed the journal.
+      - app_data:/app/data
+      # AUDIT_LOG_FALLBACK_PATH (issue #877): where audit events land when OpenSearch
+      # is unreachable (app/auth/audit.py:_write_fallback_log). Same gap as DATA_DIR
+      # above, but with no dev exception — this path is not under /app, so even the
+      # dev bind mount never covered it.
+      - audit_fallback_logs:/var/log/opentranscribe
     ports:
       # BACKEND_BIND_HOST defaults to the wildcard address, which is the
       # historical behaviour and what a plain deployment expects. A --with-pki
@@ -492,6 +504,17 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
+      # DATA_DIR (issue #870) and AUDIT_LOG_FALLBACK_PATH (issue #877). This worker
+      # consumes the `utility`/`cpu` queues, which is where the GDPR erasure
+      # journal is read/re-opened (`gdpr.erasure_reconcile`,
+      # app/tasks/erasure_reconciliation.py) and where the audit-writing sweeps
+      # run (`session.cap_sweep`, `account.inactivity_sweep`, `directory.sync_run`
+      # all call into app/auth/audit.py). Without these mounts here too, a
+      # reconciliation pass or a sweep on THIS container would read/write a
+      # container-local copy that diverges from whatever `backend` sees. See
+      # `backend`'s comment above for the full rationale.
+      - app_data:/app/data
+      - audit_fallback_logs:/var/log/opentranscribe
     environment:
       - PRELOAD_CPU_WHISPER=true
       # ffmpeg preprocess threading (opt-in CPU-contention control; default off).
@@ -1133,6 +1156,14 @@ volumes:
   redis_data:
   opensearch_data:
   flower_data:
+  # DATA_DIR (issue #870) — the GDPR erasure journal. See the `backend` service's
+  # comment above; overridden per-service in docker-compose.override.yml (dev,
+  # preserving its existing bind-mount durability) and docker-compose.bench.yml
+  # (issue #878, isolating it from the live/dev journal).
+  app_data:
+  # AUDIT_LOG_FALLBACK_PATH (issue #877). Same overrides as app_data, minus the dev
+  # exception — see the `backend` service's comment above.
+  audit_fallback_logs:
   # Shared scratch volume for cross-worker artifact handoff (issue #661 E2: ONE volume,
   # three namespaces). Holds the preprocessed 16 kHz WAV under `<file_uuid>/` (one per
   # in-flight file, plus ephemeral derived artifacts — see backend/app/utils/scratch_volume.py

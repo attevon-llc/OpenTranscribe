@@ -67,6 +67,14 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   use. Top-level `metadata` is skipped — masking a `DATE_TIME` in `created_at` is a correctness
   loss and no privacy gain. ⚠️ **Per leaf, never batched** — same spaCy once-per-document
   property as snippets.
+- **`_redacted_summary` (`api/endpoints/summarization.py`) now serves TWO routes off one
+  masking call** (issue #885): `GET .../summary` (the read) and `GET .../summary/export` (the
+  copy-button/download endpoint backing `SummaryModal.svelte`, rendered by
+  `services/summary_export_service.build_summary_export`). #885 was filed as a redaction
+  bypass on the export path and the premise was wrong — the export route calls the identical
+  `_redacted_summary` helper, so there is exactly one summary-masking implementation, not two
+  that could drift. `build_summary_export` itself never touches redaction; it must always be
+  handed the already-masked dict.
 - **Redact-before-LLM is centralized in `llm_guard.py`.** Every path that ships transcript text
   to a provider resolves its config through `resolve_llm_masking(db, media_file)` — summarization,
   speaker identification and topic extraction (chat has its own, see below). Do not call

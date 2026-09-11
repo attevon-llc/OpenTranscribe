@@ -217,11 +217,18 @@ async def test_websocket_endpoint_survives_session_close(db_session, normal_user
     session — caught live, not by any existing test. The fix for *that* is
     ``db.expunge(user)`` before each auth block exits/commits.
 
-    Calls the real ``websocket_endpoint()`` directly with a minimal fake ``WebSocket``
-    (driving it through Starlette's actual ASGI ``TestClient.websocket_connect`` hit an
-    unrelated, unexplained clean disconnect — nothing in this codebase tests the real
-    ``/ws`` route end-to-end yet, and chasing that was out of scope for this fix). This
-    still exercises the unmodified function body end to end, so removing either
+    Calls the real ``websocket_endpoint()`` directly with a minimal fake ``WebSocket``.
+
+    ⚠️ The "unrelated, unexplained clean disconnect" this docstring used to blame for
+    not using Starlette's ``TestClient.websocket_connect`` was **explained** while
+    fixing issue #903: the route is mounted at ``/api/ws``, and a websocket to an
+    unmatched path is closed by Starlette's router with a clean **1000**. The real
+    route IS drivable end to end — ``tests/api/test_ws_origin_gate.py`` does it. The
+    fake ``WebSocket`` is kept here because this test needs to observe
+    ``DetachedInstanceError`` around a bridged session, not because the ASGI path
+    does not work.
+
+    This still exercises the unmodified function body end to end, so removing either
     ``db.expunge(user)`` call reintroduces the exact crash and fails this test.
     """
     import contextlib
@@ -259,6 +266,12 @@ async def test_websocket_endpoint_survives_session_close(db_session, normal_user
 
     fake_ws = AsyncMock()
     fake_ws.cookies = {"access_token": token}
+    # A REAL mapping, not the AsyncMock's auto-attribute: the Origin gate added for
+    # issue #903 calls headers.get("origin") before accept(), and an AsyncMock hands
+    # back a coroutine that reads as a present-but-foreign origin — the endpoint would
+    # then close 4403 and never reach the session handling this test is about. Empty
+    # headers spell the non-browser client the gate allows.
+    fake_ws.headers = {}
     # Ends the message loop immediately via the same path a real client disconnect
     # takes, exercising manager.disconnect(websocket, user.id) too — the second of the
     # two user.id accesses that follow the auth check.

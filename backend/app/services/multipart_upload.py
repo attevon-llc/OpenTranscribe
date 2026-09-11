@@ -94,6 +94,10 @@ def presign_parts(
         ``(urls_by_part_number, expires_in_seconds)``. The lifetime is the
         clamped value actually signed, so the client can re-ask before it lapses
         rather than discovering the expiry as a 403 half-way through a part.
+
+    Stays on the ROOT ``minio_client`` (issue #907): these are PUT presigns, and the
+    presign identity's Deny condition only applies to GetObject — writes don't need,
+    and must not have, the restricted identity.
     """
     expires = clamp_presigned_expiry(PART_URL_EXPIRE_SECONDS)
     delta = datetime.timedelta(seconds=expires)

@@ -33,6 +33,7 @@ from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
+from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
@@ -365,6 +366,7 @@ def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -
     error_info = ErrorCategorizationService.get_error_info(error_message)
     response.error_category = error_info["category"]
     response.error_suggestions = error_info["suggestions"]
+    response.user_message = error_info["user_message"]
     response.is_retryable = error_info["is_retryable"]
 
 
@@ -965,11 +967,10 @@ def get_media_file_detail(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Error in get_media_file_detail: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving media file: {str(e)}",
-        ) from e
+        # The real failure (often a SQL fragment or a DSN) is logged with a
+        # traceback, never returned to the caller (#859).
+        logger.exception("Error in get_media_file_detail")
+        raise ErrorHandler.internal_error("Could not retrieve this media file.") from e
 
 
 def update_media_file(
@@ -1237,6 +1238,19 @@ def update_single_transcript_segment(
         dispatch_transcript_reindex(
             file_id=db_file.id, file_uuid=str(db_file.uuid), user_id=int(db_file.user_id)
         )
+
+        # Word counts and talk time are derived from segment text, so the stored
+        # analytics row is stale the moment the text changes. The SPA's post-save GET
+        # /analytics reads that row, and _get_or_compute_analytics only computes when
+        # it is ABSENT — so without this the UI silently renders pre-edit numbers with
+        # no error (issue #890). Mirrors what the speaker-change path already does at
+        # transcript_segments.py:188. Placed after the segment commit above:
+        # refresh_analytics deletes+recomputes, so running it before that commit would
+        # recompute against the pre-edit text.
+        from app.services.analytics_service import AnalyticsService
+
+        if not AnalyticsService.refresh_analytics(db, db_file.id):
+            logger.warning("Analytics refresh failed after text edit on file %s", db_file.uuid)
 
     # Manually construct Pydantic response with all required fields
     return TranscriptSegmentSchema(

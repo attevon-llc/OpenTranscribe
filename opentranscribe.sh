@@ -259,6 +259,7 @@ check_environment() {
 STALE_ENV_CHECKS=(
     "ENGINE_SHARED_VOLUME_PATH|remove this line from .env (or set it to /scratch/opentranscribe/engine) — the path it names was removed by issue #661 E2's pipeline_scratch consolidation"
     "GPU_SCALE_WORKERS|comment this out in .env so docker-compose.gpu-scale.yml derives it from DIAR_NATIVE_MAX_INFLIGHT instead — an explicit value here can oversubscribe the diar-native sidecar's admission gate"
+    "BACKEND_LITE_IMAGE|comment this out in .env so docker-compose.lite.yml derives the image from OT_IMAGE_TAG instead — the old .env.example shipped this line SET to :latest, which overrides release pinning and makes 'update --version' / '--rollback' silently no-ops for every lite service (issue #895)"
 )
 
 # Prints one "  • KEY=value — remedy" line per stale key found in $1 (default .env) to
@@ -289,6 +290,17 @@ check_stale_env_values() {
                     ''|*[!0-9]*) continue ;;
                 esac
                 [ "$val" -gt "$max_inflight" ] || continue
+                ;;
+            BACKEND_LITE_IMAGE)
+                # Deliberately narrow: flag ONLY the exact value the old .env.example
+                # shipped, never any value whose tag merely differs from OT_IMAGE_TAG. A
+                # broader "pin doesn't track OT_IMAGE_TAG" rule would also flag a private
+                # registry mirror, a capability-leg pin (e.g. :v0.5.0-cpu-arm64, which is
+                # supposed to differ from the plain release tag), and the release
+                # rehearsal's own deliberate local pin — all legitimate, none of them the
+                # #895 regression. This checks the one string that IS the regression: the
+                # exact stale default, byte for byte.
+                [ "$val" = "davidamacey/opentranscribe-backend-lite:latest" ] || continue
                 ;;
             *)
                 continue
@@ -441,10 +453,8 @@ effective_deployment_mode() {
     echo "$mode" | tr '[:upper:]' '[:lower:]'
 }
 
-# arm64 hosts: the FULL (CUDA) image has no arm64 leg, so default to lite (#680).
-#
-# This is not a preference, it is what is publishable. Three independent reasons,
-# each one sufficient on its own:
+# arm64 hosts: the FULL (CUDA) image has no working arm64 CAPABILITY, so default
+# to lite (#680). Three independent reasons, each one sufficient on its own:
 #
 #   1. No CUDA/torch parity. The cu128 index has no aarch64 torch wheel for the
 #      pinned version, and the 14 nvidia-*-cu12 dependencies are gated
@@ -457,17 +467,25 @@ effective_deployment_mode() {
 #      *-provision-arm64), so the sidecar binary the full image COPYs in does
 #      not exist for this architecture.
 #
-# Consequently `davidamacey/opentranscribe-backend:<version>` publishes an
-# amd64-only manifest index. Pulling it on arm64 fails with "no matching
-# manifest for linux/arm64" — which is the CORRECT, loud outcome, and much
-# better than the pre-#680 state where a degraded arm64 image was published
-# under that same tag and started successfully before failing at model-load
-# time inside a worker.
+# ⚠️ "No arm64 manifest at all, so the pull fails loudly" is NOT the current
+# state and must not be assumed to be — `docker manifest inspect
+# davidamacey/opentranscribe-backend:latest` (checked 2026-09-09) still lists
+# BOTH linux/amd64 AND linux/arm64 platforms. That arm64 leg is exactly the
+# pre-#680 DEGRADED build described above: it pulls fine, starts, and only then
+# fails (or silently runs CPU-only) at model-load time inside a worker — not the
+# clean "no matching manifest for linux/arm64" refusal this comment used to
+# promise. `scripts/CLAUDE.md`'s `cuda-arm64` capability is "RESERVED and NOT
+# BUILT" going forward, but nothing here retracts what an OLDER tag already
+# published, and there is no cleanup step that removes it. This is why routing
+# arm64 (and lite generally) to the LITE image matters MORE, not less: an arm64
+# host that pulled the full/CUDA tag would not fail loudly, it would silently
+# get the degraded build back.
 #
 # So on arm64 this switches the run to DEPLOYMENT_MODE=lite (the CPU-only image,
-# which DOES publish an arm64 leg) and says why. Override with
-# OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true if you have built a full arm64 image
-# yourself — nothing here can produce one for you.
+# which publishes a REAL, capability-matched arm64 leg) and says why. Override
+# with OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true if you have built a full arm64
+# image yourself — nothing here can produce one for you, and nothing here
+# protects you from the degraded published leg above if you go looking for one.
 #
 # MUST be called as a plain statement, never through `$(...)` — same subshell
 # hazard documented on pin_diar_native_image_for_blackwell: the `export` below
@@ -484,13 +502,16 @@ arm64_deployment_preflight() {
 
     if [ "${OPENTRANSCRIBE_FORCE_FULL_ON_ARM64:-}" = "true" ]; then
         echo -e "${YELLOW}⚠️  arm64 host with OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true — NOT switching to lite${NC}" >&2
-        echo -e "${YELLOW}   The published full/CUDA image has no arm64 manifest. Unless you built one${NC}" >&2
-        echo -e "${YELLOW}   yourself, the pull will fail with 'no matching manifest for linux/arm64'.${NC}" >&2
+        echo -e "${YELLOW}   Warning: some published full/CUDA tags (including :latest) still carry an${NC}" >&2
+        echo -e "${YELLOW}   arm64 manifest left over from before issue #680 — it is a DEGRADED CPU-only${NC}" >&2
+        echo -e "${YELLOW}   build, not a working GPU image. The pull may SUCCEED and the stack may${NC}" >&2
+        echo -e "${YELLOW}   START, then fail (or silently run CPU-only) at model-load time. Unless you${NC}" >&2
+        echo -e "${YELLOW}   built a real full arm64 image yourself, use lite instead.${NC}" >&2
         return 0
     fi
 
     echo -e "${YELLOW}🖥️  arm64 host detected — defaulting to the lite (CPU-only) image${NC}" >&2
-    echo -e "${YELLOW}   The full/CUDA image is published for linux/amd64 ONLY. On arm64:${NC}" >&2
+    echo -e "${YELLOW}   The full/CUDA image has no WORKING arm64 build. On arm64:${NC}" >&2
     echo -e "${YELLOW}     • no aarch64 CUDA torch wheel exists at the pinned version, and the${NC}" >&2
     echo -e "${YELLOW}       nvidia-*-cu12 dependencies are gated platform_machine == \"x86_64\"${NC}" >&2
     echo -e "${YELLOW}     • onnxruntime-gpu publishes no aarch64 wheels at all${NC}" >&2
@@ -612,6 +633,61 @@ pin_diar_native_image_for_blackwell() {
     fi
 }
 
+# Pin DIAR_NATIVE_IMAGE to the lite backend image for a lite deployment, so
+# docker-compose.diar-native.yml's own `${DIAR_NATIVE_IMAGE:-...}` interpolation
+# resolves to the CPU-only lite image instead of falling through to the FULL/CUDA
+# image's `${OT_IMAGE_TAG:-latest}` default (issue #896). Without this, a lite
+# deployment — including every arm64 host, which arm64_deployment_preflight
+# defaults to lite — pulled the full CUDA image for the diarization sidecar: a
+# large, pointless download on amd64, and an outright failure on arm64 (the
+# published CUDA repository has no arm64 leg for diar-native's binary; see
+# scripts/CLAUDE.md's `cuda-arm64` reservation note).
+#
+# Mirrors opentr.sh's (dev-only) one-liner:
+#   [ -n "${LITE_FLAG:-}" ] && export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}}"
+# and follows the SAME calling contract as pin_diar_native_image_for_blackwell:
+# MUST be called as a plain statement, before `compose_files=$(get_compose_files)`,
+# never through `$(...)` — an export made inside a command-substitution subshell
+# dies with that subshell before the `docker compose` command that needs it runs.
+#
+# ⚠️ Deliberately NEVER persisted to .env, unlike pin_diar_native_image_for_blackwell
+# above. Blackwell's pin is safe to persist because `:blackwell` is a fixed,
+# non-versioned tag that `update --version`/`--rollback` never rewrite. A
+# `OT_IMAGE_TAG`-derived value is not safe the same way: the `update)` case arm
+# only ever rewrites `OT_IMAGE_TAG` itself, so a resolved `...-lite:vX.Y.Z` string
+# written here once would silently stop tracking every later `update --version` —
+# defeating issue #895's whole point for exactly the one service that needed the
+# same fix. Re-deriving it on every call (below) instead of persisting means the
+# in-script call sites (start/stop/restart/status/update/rollback) always resolve
+# the CURRENT `OT_IMAGE_TAG`; only the documented piped `compose-files` one-liner
+# usage (a separate `docker compose` process that cannot see an in-process export)
+# does not carry this pin — the same limitation `resolve_diar_native_downloader_image()`
+# already has no way around either.
+pin_diar_native_image_for_lite() {
+    [ "$(effective_deployment_mode)" = "lite" ] || return 0
+
+    # An operator's own DIAR_NATIVE_IMAGE pin always wins.
+    local existing
+    existing=$(read_env_value DIAR_NATIVE_IMAGE)
+    if [ -n "$existing" ]; then
+        export DIAR_NATIVE_IMAGE="$existing"
+        return 0
+    fi
+
+    # BACKEND_LITE_IMAGE (the operator's own lite tag) next, ahead of the
+    # hardcoded davidamacey default — same precedence opentr.sh's dev script uses.
+    local lite_image
+    lite_image=$(read_env_value BACKEND_LITE_IMAGE)
+    if [ -n "$lite_image" ]; then
+        export DIAR_NATIVE_IMAGE="$lite_image"
+        return 0
+    fi
+
+    local tag
+    tag=$(read_env_value OT_IMAGE_TAG)
+    export DIAR_NATIVE_IMAGE="davidamacey/opentranscribe-backend-lite:${tag:-latest}"
+}
+
 # Whether this deployment should run GPU split — celery-worker-gpu-transcribe /
 # celery-worker-gpu-diarize on separate host GPUs (issue #708).
 #
@@ -652,6 +728,41 @@ pin_gpu_split_profile() {
     if gpu_split_active; then
         export COMPOSE_PROFILES="gpu-split"
     fi
+}
+
+# Single entry point for the FOUR calls every case arm below needs before it resolves
+# the compose chain and calls `docker compose` — the arm64 preflight, then the two
+# DIAR_NATIVE_IMAGE pins, then the GPU-split profile export. Issue #896's remaining
+# gap: `arm64_deployment_preflight` used to be called explicitly only by the `start)`
+# arm, plus once more inside `get_compose_files()` itself. That second call does not
+# count for every OTHER arm: `get_compose_files()` is always invoked as
+# `compose_files=$(get_compose_files)`, a command substitution, and the preflight's
+# `export DEPLOYMENT_MODE=lite` dies with that subshell the instant it exits — before
+# the `docker compose` invocation that needs it, and before
+# `pin_diar_native_image_for_lite` (which reads `effective_deployment_mode()`) ever
+# sees it. So `stop`/`restart`/`status`/`compose-files`/`logs`/`update`/`update-full`/
+# `clean`/`shell`/`health` all resolved DIAR_NATIVE_IMAGE against whatever
+# DEPLOYMENT_MODE happened to already be on disk — silently skipping the lite pin on
+# an arm64 host that had not already run `start` to persist it.
+#
+# Order is load-bearing: arm64_deployment_preflight MUST run FIRST, because it is the
+# one call that can change DEPLOYMENT_MODE, and pin_diar_native_image_for_lite's
+# answer depends on effective_deployment_mode() having already seen that change. The
+# Blackwell/gpu-split pins do not depend on the arm64 preflight, but keeping a single
+# fixed order here means every call site behaves identically rather than each one
+# choosing its own — which is exactly how the missing-preflight gap this closes came
+# to exist in the first place (11 of 12 call sites had it right for the two DIAR_NATIVE
+# pins and the gpu-split pin, and wrong for arm64 alone).
+#
+# MUST be called as a plain statement, never through `$(...)` — same subshell hazard
+# as every function it wraps: an export made inside a command-substitution subshell
+# dies with that subshell before the `docker compose` invocation in the SAME calling
+# shell ever runs.
+apply_deployment_pins() {
+    arm64_deployment_preflight
+    pin_diar_native_image_for_blackwell
+    pin_diar_native_image_for_lite
+    pin_gpu_split_profile
 }
 
 # Resolve where the diar-native ONNX/PLDA export lives (or will land), from .env alone.
@@ -700,6 +811,15 @@ get_compose_files() {
     # a teardown that resolves a different overlay set than the bring-up addresses
     # a different set of services. Its banners go to stderr like every other banner
     # in this function, so `compose-files` still prints only the chain on stdout.
+    #
+    # Belt-and-braces, not the primary fix: every case arm below now calls
+    # apply_deployment_pins() (which runs this same preflight) as a plain statement
+    # BEFORE resolving `compose_files=$(get_compose_files)`, so DEPLOYMENT_MODE=lite
+    # is already exported in the calling shell by the time this function's own call
+    # runs. This call keeps get_compose_files() correct on its own even if some
+    # future caller forgets apply_deployment_pins — it just can no longer be the
+    # ONLY thing propagating the export, since a call from inside this subshell can
+    # never escape it (issue #896's remaining gap).
     arm64_deployment_preflight
 
     # Production deployment always uses prod overrides
@@ -1067,8 +1187,15 @@ preflight_upgrade_env() {
     # running fine, and lite's requirements-lite.txt ships pyannote.audio (CPU) so the
     # in-process engine remains a working fallback while the operator sorts out a token.
     # The hard refusal stays everywhere else — same case issue #670 was written for.
+    #
+    # effective_deployment_mode(), not a raw read_env_value: a bare .env read is invisible to
+    # arm64_deployment_preflight's in-process DEPLOYMENT_MODE=lite export, so an arm64 host
+    # upgrading BEFORE ever running `start` (the one arm that always called the preflight)
+    # would hit the hard "native, unprovisioned, no token" refusal above instead of this
+    # warn-don't-block lite path — issue #896's remaining gap, this function's half of it.
+    # Already lowercases internally, so the separate `tr` this used to need is gone too.
     local deployment_mode
-    deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
+    deployment_mode=$(effective_deployment_mode)
 
     # Same case-fold as get_compose_files' identical gate above: the backend resolves
     # this value case-insensitively (config.py:357-366) and fail-safes unknowns to
@@ -1431,8 +1558,16 @@ resolve_diar_native_downloader_image() {
     # Without this branch, `download-models diar-native` on a lite install pulled the
     # 15.2 GB full image to produce a 484 MB export — breaking this function's own header
     # contract that the export must come from the image the deployment actually runs.
+    #
+    # effective_deployment_mode(), not a raw read_env_value: a bare .env read cannot see
+    # arm64_deployment_preflight's in-process DEPLOYMENT_MODE=lite export (issue #896's
+    # remaining gap), so an arm64 host that had never run `start` first resolved this
+    # export from the FULL/CUDA repository — the exact 15.2 GB-for-484 MB mistake this
+    # branch exists to prevent, just reached from a different starting .env state.
+    # download_models_diar_native() below calls arm64_deployment_preflight itself before
+    # reaching this function, so the export is already in-process by the time this reads it.
     local deployment_mode
-    deployment_mode=$(read_env_value DEPLOYMENT_MODE | tr '[:upper:]' '[:lower:]')
+    deployment_mode=$(effective_deployment_mode)
     if [ "$deployment_mode" = "lite" ]; then
         echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend-lite:${tag:-latest}"
         return 0
@@ -1456,6 +1591,18 @@ resolve_diar_native_downloader_image() {
 # the pinned deployment image via resolve_diar_native_downloader_image() above.
 download_models_diar_native() {
     check_environment
+    # arm64_deployment_preflight, as a plain statement (never `$(...)`, same subshell hazard
+    # documented throughout this file) — issue #896's remaining gap: without this, an arm64
+    # host running `download-models diar-native` before ever running `start` resolved
+    # resolve_diar_native_downloader_image()'s effective_deployment_mode() against whatever
+    # DEPLOYMENT_MODE was already on disk (typically unset), pulling the FULL/CUDA image for
+    # a host that image cannot even run on. Only the preflight is needed here, not the full
+    # apply_deployment_pins — this function reads DIAR_NATIVE_IMAGE back via read_env_value
+    # (a PERSISTED pin, by design, for the reasons documented on
+    # pin_diar_native_image_for_blackwell below), so pin_diar_native_image_for_lite's
+    # in-process-only export would be invisible to it and would only add confusion, not
+    # fix anything.
+    arm64_deployment_preflight
     # Same Blackwell-tag pin `start`/`restart`/`status` apply, before resolving the
     # downloader image below — without this call here, a Blackwell host's `start` used
     # `:blackwell` while `download-models diar-native` used the plain release tag (#4 in
@@ -1585,14 +1732,19 @@ case "${1:-help}" in
         if declare -F ensure_minio_kms_secret >/dev/null; then
             ensure_minio_kms_secret ".env"
         fi
+        # Unconditional owner-only lock (issue #857) -- not reachable via
+        # ensure_minio_kms_secret alone once a real key is already in place.
+        # Same guard rationale as above: an install whose scripts/common.sh
+        # predates this fix should still be able to `start`, just without it.
+        if declare -F ensure_env_permissions >/dev/null; then
+            ensure_env_permissions ".env"
+        fi
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
-        # Plain statement, not `$(...)`: get_compose_files() calls this too, but from
-        # inside a command substitution, where the DEPLOYMENT_MODE export dies with the
-        # subshell. `docker compose up` below interpolates ${BACKEND_LITE_IMAGE}/
+        # Plain statement, not `$(...)`: get_compose_files() calls arm64_deployment_preflight
+        # too, but from inside a command substitution, where the DEPLOYMENT_MODE export dies
+        # with the subshell. `docker compose up` below interpolates ${BACKEND_LITE_IMAGE}/
         # ${DEPLOYMENT_MODE} itself, so the export has to exist in THIS shell as well.
-        arm64_deployment_preflight
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         docker compose $compose_files up -d
         echo -e "${GREEN}✅ OpenTranscribe started!${NC}"
@@ -1601,8 +1753,7 @@ case "${1:-help}" in
     stop)
         check_environment
         echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         ot_drain_gpu_workers "$compose_files"
         docker compose $compose_files down
@@ -1615,8 +1766,7 @@ case "${1:-help}" in
         # `docker compose` step runs and reports its own, more specific error.
         fix_model_cache_permissions || true
         echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         ot_drain_gpu_workers "$compose_files"
         docker compose $compose_files down
@@ -1627,8 +1777,7 @@ case "${1:-help}" in
     status)
         check_environment
         echo -e "${BLUE}📊 Container Status:${NC}"
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         docker compose $compose_files ps
         print_diar_native_status "$compose_files"
@@ -1652,8 +1801,7 @@ case "${1:-help}" in
         # is exactly the chain and stays composable:
         #   docker compose $(./opentranscribe.sh compose-files 2>/dev/null) ps
         check_environment
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         get_compose_files
         ;;
     download-models)
@@ -1683,8 +1831,7 @@ case "${1:-help}" in
     logs)
         check_environment
         service=${2:-}
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
 
         if [ -z "$service" ]; then
@@ -1780,8 +1927,7 @@ case "${1:-help}" in
             # down, postgres included, so this is the last point a plain
             # `docker compose exec postgres` can reach it.
             if [ "$do_rollback" = true ] && [ "$force_downgrade" = false ]; then
-                pin_diar_native_image_for_blackwell
-                pin_gpu_split_profile
+                apply_deployment_pins
                 rollback_compose_files=$(get_compose_files)
                 # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
                 rollback_live_head=$(docker compose $rollback_compose_files exec -T postgres psql -tA \
@@ -1810,8 +1956,7 @@ case "${1:-help}" in
             echo -e "${YELLOW}📥 Updating to the newest images for tag '${current_tag}'...${NC}"
         fi
 
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
 
         preflight_upgrade_env || exit 1
@@ -1969,8 +2114,7 @@ case "${1:-help}" in
         # call above — a failed fix here must not abort this command before the actual
         # `docker compose` step runs and reports its own, more specific error.
         fix_model_cache_permissions || true
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         # Same gate as `update`: refuse while the old stack is still running
         # rather than after it is torn down (#410).
@@ -2030,8 +2174,7 @@ case "${1:-help}" in
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}🗑️  Removing all data...${NC}"
-            pin_diar_native_image_for_blackwell
-            pin_gpu_split_profile
+            apply_deployment_pins
             compose_files=$(get_compose_files)
             ot_drain_gpu_workers "$compose_files"
             docker compose $compose_files down -v
@@ -2044,18 +2187,22 @@ case "${1:-help}" in
         check_environment
         service=${2:-backend}
         echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
         ;;
     backup|restore)
         check_environment
         require_db_helpers
-        # No pin_diar_native_image_for_blackwell here, deliberately: this arm never starts
-        # or pulls the diar-native sidecar — backup_database/restore_database only `docker
-        # compose exec` into containers that are already running — so DIAR_NATIVE_IMAGE is
-        # not read by anything this arm does.
+        # No apply_deployment_pins here, deliberately: this arm never starts or pulls the
+        # diar-native sidecar — backup_database/restore_database only `docker compose exec`
+        # into containers that are already running — so DIAR_NATIVE_IMAGE is not read by
+        # anything this arm does. This is the ONE case arm below `case "${1:-help}" in` that
+        # resolves `compose_files=$(get_compose_files)` without a preceding
+        # apply_deployment_pins call, and it is exempt for that reason, not an oversight —
+        # backend/tests/unit/test_opentranscribe_arm64_pin_ordering.py asserts this arm is
+        # the ONLY exemption in the structural "every get_compose_files() consumer applies
+        # the pins first" check, by name, so a second silent exemption would fail loudly.
         compose_files=$(get_compose_files)
 
         # opentr.sh gets these from its prologue `set -a; source ./.env`; this script
@@ -2104,8 +2251,7 @@ case "${1:-help}" in
 
         # Check container status
         echo "Container Status:"
-        pin_diar_native_image_for_blackwell
-        pin_gpu_split_profile
+        apply_deployment_pins
         compose_files=$(get_compose_files)
         docker compose $compose_files ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
 

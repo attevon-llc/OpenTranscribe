@@ -1117,7 +1117,15 @@ def identification_env(db_session, monkeypatch):
 
     monkeypatch.setattr(sid, "session_scope", tracker.scope)
     monkeypatch.setattr(sid, "resolve_llm_masking", lambda db, media_file: None)
-    monkeypatch.setattr(sid, "send_ws_event", lambda *a, **kw: None)
+    monkeypatch.setattr(sid, "send_ws_event_for_file", lambda *a, **kw: None)
+    # send_ws_event_for_file (issue #908) resolves quarantine via its OWN
+    # session_scope() on a real connection, which cannot see this test's
+    # savepoint-isolated MediaFile — stub the check itself rather than bridge
+    # a second session, keeping this suite focused on scope depth.
+    monkeypatch.setattr(
+        "app.services.takedown_service.is_notification_suppressed",
+        lambda *a, **kw: False,
+    )
 
     service = _FakeLLMService(tracker, recorded)
     monkeypatch.setattr(sid, "_create_llm_service", lambda user_id: service)

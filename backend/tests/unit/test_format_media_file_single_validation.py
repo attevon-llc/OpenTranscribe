@@ -52,6 +52,7 @@ def _reference_two_pass(media_file, speakers=None) -> MediaFileSchema:
         )
         file_dict["error_category"] = error_info["category"]
         file_dict["error_suggestions"] = error_info["suggestions"]
+        file_dict["user_message"] = error_info["user_message"]
         file_dict["is_retryable"] = error_info["is_retryable"]
 
     if speakers:
@@ -161,6 +162,27 @@ def test_display_fields_are_populated():
     # Untouched fields survive the copy.
     assert result.filename == "meeting.mp4"
     assert result.title == "Quarterly review"
+
+
+@pytest.mark.unit
+def test_error_info_user_message_reaches_the_response():
+    """Issue #842 — ``get_error_info`` computes ``user_message`` and it must not be
+    dropped before it reaches the caller. Assert it is both present and matches what
+    ``ErrorCategorizationService`` actually computed, not just non-empty — a stale or
+    generic placeholder would also satisfy a bare truthiness check.
+    """
+    media_file = _make_media_file(
+        status=FileStatus.ERROR,
+        last_error_message="CUDA out of memory while loading the model",
+    )
+    expected = ErrorCategorizationService.get_error_info(
+        "CUDA out of memory while loading the model"
+    )
+
+    result = FormattingService.format_media_file(media_file, None)
+
+    assert result.user_message
+    assert result.user_message == expected["user_message"]
 
 
 @pytest.mark.unit

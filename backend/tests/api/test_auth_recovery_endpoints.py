@@ -274,6 +274,66 @@ class TestPasswordResetConfirm:
         }
         assert len(outcomes) == 1, f"token state leaked through the response: {outcomes}"
 
+    def test_a_completed_reset_records_the_requesting_ip(
+        self, client, normal_user, mailer, monkeypatch
+    ):
+        """``confirm_password_reset`` threads ``ip_address`` to every audit call it
+        makes, but the endpoint was the only production caller and never passed the
+        fourth argument — every completed reset was audited with ``source_ip=None``
+        (#910). Under ``TestClient`` the peer is literally ``"testclient"``, so this
+        asserts the field is populated at all, not an exact value."""
+        from app.auth import password_reset as password_reset_module
+        from app.auth.audit import AuditEventType
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            password_reset_module.audit_logger,
+            "log",
+            lambda **kwargs: captured.append(kwargs),
+        )
+
+        client.post(RESET_REQUEST_PATH, json={"email": normal_user.email})
+        token = RecordingMailer.token_of(mailer.resets[0])
+        response = client.post(
+            RESET_CONFIRM_PATH, json={"token": token, "new_password": STRONG_PASSWORD}
+        )
+        assert response.status_code == 200, response.text
+
+        complete_events = [
+            e for e in captured if e["event_type"] == AuditEventType.AUTH_PASSWORD_RESET_COMPLETE
+        ]
+        assert complete_events, "no AUTH_PASSWORD_RESET_COMPLETE event was recorded at all"
+        event = complete_events[-1]
+        assert event["source_ip"], "the completed reset carries no source_ip"
+        assert event["source_ip"] != "unknown"
+
+    def test_a_failed_reset_also_records_the_ip(self, client, monkeypatch):
+        """The FAILURE branch — a bogus token — must carry a source_ip too; the bug
+        was in the wiring shared by every exit path, not just the success path."""
+        from app.auth import password_reset as password_reset_module
+        from app.auth.audit import AuditEventType
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            password_reset_module.audit_logger,
+            "log",
+            lambda **kwargs: captured.append(kwargs),
+        )
+
+        response = client.post(
+            RESET_CONFIRM_PATH,
+            json={"token": "no-such-token-at-all", "new_password": STRONG_PASSWORD},
+        )
+        assert response.status_code == 400, response.text
+
+        complete_events = [
+            e for e in captured if e["event_type"] == AuditEventType.AUTH_PASSWORD_RESET_COMPLETE
+        ]
+        assert complete_events, "no AUTH_PASSWORD_RESET_COMPLETE event was recorded at all"
+        event = complete_events[-1]
+        assert event["source_ip"], "the failed reset carries no source_ip"
+        assert event["source_ip"] != "unknown"
+
     def test_a_policy_rejected_password_does_not_burn_the_link(self, client, normal_user, mailer):
         """A weak first attempt must not consume the token — otherwise the user's
         only recovery path is spent on a typo."""

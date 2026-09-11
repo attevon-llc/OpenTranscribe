@@ -194,7 +194,11 @@ def request_password_reset_endpoint(
     """
     from app.auth.password_reset import request_password_reset
 
-    client_ip = request.client.host if request.client else "unknown"
+    # `_get_client_info` resolves through the trusted-proxy chain
+    # (`app/utils/client_ip.py`) — the raw `request.client.host` this used to read
+    # directly is the immediate peer, which behind a reverse proxy is the proxy's
+    # own address, not the requester's (#910).
+    client_ip, _ = _get_client_info(request)
     request_password_reset(db, body.email, client_ip)
 
     return {"message": "If that email address is registered, you will receive a reset link."}
@@ -215,7 +219,13 @@ def confirm_password_reset_endpoint(
     """
     from app.auth.password_reset import confirm_password_reset
 
-    ok, errors = confirm_password_reset(db, body.token, body.new_password)
+    # `confirm_password_reset` threads `ip_address` to every audit call it makes,
+    # but this was the only production caller and never passed the fourth
+    # argument — every completed/failed reset was audited with `source_ip=None`
+    # (#910). Use `_get_client_info`, not `request.client.host`, for the same
+    # trusted-proxy reason as the request handler above.
+    client_ip, _ = _get_client_info(request)
+    ok, errors = confirm_password_reset(db, body.token, body.new_password, client_ip)
     if not ok:
         detail = errors[0] if errors else "Invalid or expired reset token"
         raise HTTPException(status_code=400, detail=detail)

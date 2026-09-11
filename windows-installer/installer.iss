@@ -12,7 +12,7 @@
 #define MyAppName "OpenTranscribe"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "OpenTranscribe Project"
-#define MyAppURL "https://github.com/davidamacey/opentranscribe"
+#define MyAppURL "https://github.com/attevon-llc/OpenTranscribe"
 #define MyAppExeName "run_opentranscribe.bat"
 #define MyAppExeUninstallName "uninstall_opentranscribe.bat"
 ; CHANGE THIS PATH to where you extracted the build folder on Windows
@@ -41,7 +41,13 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 
 ; User interaction
-LicenseFile={#BuildDir}\license.txt
+; The AGPL-3.0 TEXT itself, copied verbatim from the repo root by
+; scripts/build-windows-installer.sh (issue #862). This used to point at
+; windows-installer/license.txt — a 61-line SUMMARY that paraphrased the licence, carried
+; a hand-maintained third-party list NOTICE already owns, and linked to a repository URL
+; that had been renamed away. A summary is not the licence, and GPL-family licences
+; require the licence to accompany the copy you convey.
+LicenseFile={#BuildDir}\LICENSE.txt
 InfoBeforeFile={#BuildDir}\preinstall.txt
 InfoAfterFile={#BuildDir}\after-install.txt
 
@@ -94,6 +100,12 @@ Source: "{#BuildDir}\config\*"; DestDir: "{app}\config"; Flags: ignoreversion re
 
 ; Database initialization
 Source: "{#BuildDir}\database\*"; DestDir: "{app}\database"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; Legal — the licence and the third-party attribution have to land ON DISK, not merely be
+; shown once in the wizard: the wizard page is consent, the installed file is the copy the
+; AGPL requires to accompany the software (issue #862).
+Source: "{#BuildDir}\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildDir}\NOTICE.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Documentation
 Source: "{#BuildDir}\README-WINDOWS.md"; DestDir: "{app}"; Flags: ignoreversion isreadme

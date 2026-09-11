@@ -59,10 +59,12 @@ _EXTERNAL_INTEGRATION_PREFIXES = (
     "/api/auth/proxy",  # an authenticating reverse proxy asserting a header
     "/health",
     "/metrics",
-    # Build identity. Same category as /health: the callers are the release
-    # harness (which asserts the running version equals the version under test),
-    # `opentranscribe.sh version`, and anything checking what is deployed — none
-    # of which live in frontend/src.
+    # Build identity. Mostly the same category as /health — the release harness
+    # (which asserts the running version equals the version under test),
+    # `opentranscribe.sh version`, and anything checking what is deployed. Since
+    # issue #862 `AboutModal.svelte` calls it too (it needs `git_sha` for the AGPL
+    # §13 source offer), so this entry is no longer load-bearing for that route;
+    # it stays because those non-SPA callers are still the majority of them.
     "/api/version",
     "/api/docs",
     "/api/redoc",

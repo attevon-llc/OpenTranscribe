@@ -281,6 +281,50 @@ describe('presigned PUT flow', () => {
     const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
     expect(legacyCall).toBeUndefined();
   });
+
+  // Issue #911: a 503 from /files/complete is `main.py`'s OpenTranscribeError handler
+  // surfacing a deterministic ASRConfigurationError (issue #905) — retrying via the
+  // legacy full-body POST would fail identically, at the cost of a wasted multi-GB
+  // re-upload. The body already landed in MinIO by this point, so the failure is
+  // ONLY reachable once the PUT itself has resolved.
+  it('does NOT fall back to legacy when /files/complete fails with a 503 (deterministic dispatch refusal)', async () => {
+    const asrRefusal = Object.assign(new Error('Request failed with status code 503'), {
+      response: {
+        status: 503,
+        data: { detail: 'No local ASR provider is configured on this deployment.' },
+      },
+    });
+    mockAxiosInstance.post.mockResolvedValueOnce(prepared()).mockRejectedValueOnce(asrRefusal);
+    mockAxiosDefault.put.mockResolvedValueOnce({ headers: { etag: '"x"' } });
+
+    const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'));
+
+    const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacyCall).toBeUndefined();
+    expect(uploadService.getUpload(id)?.error).toContain(
+      'No local ASR provider is configured on this deployment.'
+    );
+  });
+
+  // Control: a genuinely transient failure from the SAME call (/files/complete, not
+  // the PUT) must still fall back exactly as before this change.
+  it('still falls back to legacy when /files/complete fails with a transient (non-503) error', async () => {
+    const transientFailure = Object.assign(new Error('Request failed with status code 500'), {
+      response: { status: 500, data: { detail: 'Internal Server Error' } },
+    });
+    mockAxiosInstance.post
+      .mockResolvedValueOnce(prepared())
+      .mockRejectedValueOnce(transientFailure)
+      .mockResolvedValueOnce({ data: {} }); // the legacy POST /files
+    mockAxiosDefault.put.mockResolvedValueOnce({ headers: { etag: '"x"' } });
+
+    const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('completed'));
+
+    const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacyCall).toBeDefined();
+  });
 });
 
 describe('multipart delegation', () => {

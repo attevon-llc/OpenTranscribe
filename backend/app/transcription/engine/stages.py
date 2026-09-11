@@ -25,6 +25,13 @@ from typing import Any
 
 import numpy as np
 
+# The ONE cooperative checkpoint, consulted at every stage boundary below. It answers both
+# stand-down triggers — worker shutdown (#809, requeue) and a user cancel of THIS file (#823,
+# stop for good) — so a checkpoint cannot accidentally honour only one of them. That is why
+# #823 extended these call sites instead of adding a second set beside them.
+from app.core.task_cancellation import stand_down_if_requested
+from app.core.worker_shutdown import shutdown_requested
+
 if TYPE_CHECKING:
     from app.transcription.engine.config import EngineConfig
     from app.transcription.engine.job import JobResult
@@ -35,6 +42,42 @@ if TYPE_CHECKING:
     from app.transcription.engine.progress import ProgressCallback
 
 logger = logging.getLogger(__name__)
+
+#: How long a stage will wait for the overlapped-diarization thread when the worker is SHUTTING
+#: DOWN, before abandoning it and letting the stage's abort propagate (issue #809).
+#:
+#: Derived, not tunable — a new env var here would be a knob whose only correct value is this
+#: arithmetic, and getting it wrong silently reintroduces the SIGKILL this whole mechanism exists
+#: to avoid:
+#:
+#:     30s   docker-compose.yml `stop_grace_period: ${OT_STOP_GRACE_GPU:-30}s`
+#:           -- the total SIGTERM-to-SIGKILL window for every CUDA-holding service
+#:   - 20s   worker_shutdown._BUDGET_S (`OT_WORKER_SHUTDOWN_BUDGET_S`), the model-release
+#:           watchdog, which only STARTS once celery has drained the pool
+#:   ------
+#:     10s   left for everything between the checkpoint firing and the release beginning:
+#:           the abort unwinding out of the stage, the task layer's Reject, celery's drain
+#:   / 2  -> 5.0s for this join, leaving the other half for the rest of that path
+#:
+#: Unbounded (the pre-#809 behaviour) this join could block for DIAR_NATIVE_TIMEOUT_S -- 1800s by
+#: default -- so docker would SIGKILL the worker at 30s and the cooperative abort would have
+#: achieved nothing.
+_SHUTDOWN_JOIN_BUDGET_S = 5.0
+
+
+def _shutdown_join_timeout() -> float | None:
+    """The join bound to pass to :meth:`_AsyncDiarization.close`, or ``None`` when healthy.
+
+    ``None`` on the normal path is deliberate: outside a shutdown there is no deadline to race,
+    and abandoning a live diarization thread would be a pure regression (it still holds a
+    reference to the WAV a caller is about to unlink -- the issue #661 phase 1.1 hazard the
+    unbounded join was added for).
+
+    Imported at module scope rather than per call: ``app.core.worker_shutdown`` is stdlib-only
+    (no torch, no celery), so it costs a CPU-only or bare-pytest importer nothing — the reason
+    the repo's "heavy optional deps go inside the function" rule does not apply to it.
+    """
+    return _SHUTDOWN_JOIN_BUDGET_S if shutdown_requested() else None
 
 
 def _overlap_diarization_enabled(tc) -> bool:
@@ -229,17 +272,82 @@ class _AsyncDiarization:
         self._thread = threading.Thread(target=_run, name="diarize-async", daemon=True)
         self._thread.start()
 
-    def close(self) -> None:
+    @property
+    def _holds_no_local_cuda(self) -> bool:
+        """Whether this thread is provably free of in-process CUDA state (issue #809).
+
+        THE safety predicate for :meth:`close`'s bounded join, and the reason that join is
+        conditional rather than unconditional. Abandoning a thread that holds a CUDA context is
+        exactly the class of shutdown this repo has twice wedged a GPU with: the context is not
+        guaranteed to be released, and no userspace command recovers the device.
+
+        True only for ``NativeSpeakerDiarizer``, whose ``diarize()`` on this thread is a numpy
+        clip/convert, a ``wave`` write, one ``urllib`` POST to the diar-native SIDECAR (a
+        different container, holding its own GPU memory) and a numpy parse of the reply. There is
+        no local model, no torch call, and no CUDA context in this process. Crucially,
+        ``_run()`` passes ``allow_local_fallback=False``, so a sidecar failure RAISES here rather
+        than loading the in-process PyAnnote fallback -- that flag is what makes the property
+        hold for the whole life of the call, not just its happy path.
+
+        It is NOT unconditionally true, which is the finding that made this a predicate:
+        ``_AsyncDiarization`` is constructed only when ``_overlap_diarization_enabled`` saw a
+        ready sidecar, but that probe is TTL-cached, and ``manager.get_diarizer`` can still hand
+        back a plain in-process ``SpeakerDiarizer`` when ``_build_diarizer``'s native branch
+        raises in that window (``model_manager._build_diarizer`` falls back on ANY exception).
+        ``_run_diarize`` then calls the PyAnnote engine on this thread, which does hold CUDA. In
+        that case the join below stays UNBOUNDED: a late SIGKILL is a worse outcome than a wedged
+        card, and the narrow window makes it rare.
+        """
+        from app.transcription.diarizer_native import NativeSpeakerDiarizer
+
+        return isinstance(self._diarizer, NativeSpeakerDiarizer)
+
+    def close(self, timeout: float | None = None) -> None:
         """Join the diarization thread if it hasn't been joined yet, idempotently.
 
         ``threading.Thread.join()`` is itself idempotent (joining an already-joined thread is a
-        no-op), so this is just a documented name for it. Callers wrap the whole span from
-        construction to their last use of this object in ``try/finally: async_diarization.close()``
-        so an early return (e.g. no transcript segments) can never leave this daemon thread
-        running past ``run()`` while holding a reference to a WAV another caller is about to
-        unlink (issue #661 phase 1.1).
+        no-op). Callers wrap the whole span from construction to their last use of this object in
+        ``try/finally: async_diarization.close()`` so an early return (e.g. no transcript
+        segments) can never leave this daemon thread running past ``run()`` while holding a
+        reference to a WAV another caller is about to unlink (issue #661 phase 1.1).
+
+        Args:
+            timeout: Bound the join, in seconds, instead of waiting indefinitely. Passed only
+                during a worker shutdown (:func:`_shutdown_join_timeout`), and HONORED only when
+                :attr:`_holds_no_local_cuda` says the thread cannot be holding a CUDA context.
+
+                Issue #809: unbounded, this ``finally`` defeats the entire cooperative abort. A
+                checkpoint fires, the abort starts unwinding, and then the stage blocks here
+                waiting on a sidecar request that may have up to ``DIAR_NATIVE_TIMEOUT_S``
+                (1800s) left to run -- 60x docker's 30s grace period, so the worker is SIGKILLed
+                mid-CUDA anyway and nothing was gained.
         """
-        self._thread.join()
+        if timeout is None:
+            self._thread.join()
+            return
+
+        if not self._holds_no_local_cuda:
+            # See _holds_no_local_cuda: this thread fell through to the in-process PyAnnote
+            # engine, so abandoning it risks orphaning a CUDA context on the device.
+            logger.warning(
+                "worker shutdown: overlapped diarization for task %s is running the in-process "
+                "engine, which may hold a CUDA context -- waiting for it rather than abandoning "
+                "it, even though that risks a SIGKILL",
+                self._task_id,
+            )
+            self._thread.join()
+            return
+
+        self._thread.join(timeout)
+        if self._thread.is_alive():
+            logger.warning(
+                "worker shutdown: abandoning the overlapped diarization thread for task %s after "
+                "%.1fs -- it is blocked on the diar-native sidecar (another container) and holds "
+                "no CUDA state in this process, so the abort proceeds without it. The task is "
+                "requeued; the redelivered attempt re-runs diarization from the start.",
+                self._task_id,
+                timeout,
+            )
 
     def result(self) -> tuple | None:
         from app.utils.benchmark_timing import mark
@@ -307,6 +415,11 @@ class _GpuStage:
         profiler = VRAMProfiler()
         hw = detect_hardware()
         manager = ModelManager.get_instance()
+
+        # Issue #809: stand down BEFORE loading audio or warming Whisper. A worker that is
+        # already stopping must not start a multi-minute job it cannot finish — the message is
+        # requeued and the next worker runs it from the top, so nothing is lost by refusing here.
+        stand_down_if_requested("_GpuStage.run entry")
 
         profiler.snapshot("pipeline_start")
 
@@ -391,6 +504,12 @@ class _GpuStage:
                 )
 
             if tc.enable_diarization:
+                # Issue #809: transcription is done and its result is about to be thrown away
+                # either way, so standing down here costs the diarization only. INSIDE the try,
+                # deliberately — raised outside it, the `finally` below never runs and the
+                # overlapped diarization thread is left alive holding the WAV (issue #661
+                # phase 1.1, the hazard that try/finally was added for).
+                stand_down_if_requested("_GpuStage.run before diarization")
                 result_dict, diarize_df = self._run_diarization(
                     audio,
                     transcript,
@@ -410,7 +529,9 @@ class _GpuStage:
             )
         finally:
             if async_diarization is not None:
-                async_diarization.close()
+                # Bounded ONLY while shutting down (issue #809) — see close()'s docstring for
+                # why an unbounded join here would otherwise swallow the whole cooperative abort.
+                async_diarization.close(timeout=_shutdown_join_timeout())
 
     @staticmethod
     def _finalize_job_result(
@@ -643,6 +764,11 @@ class _GpuRawStage:
         hw = detect_hardware()
         manager = ModelManager.get_instance()
 
+        # Issue #809: stand down before loading the WAV or warming Whisper — see the twin
+        # comment in _GpuStage.run. The shared-volume WAV is deliberately NOT cleaned up on an
+        # abort (core.py::_finish_failed_or_aborted), so the redelivered attempt still finds it.
+        stand_down_if_requested("_GpuRawStage.run entry")
+
         profiler.snapshot("pipeline_start")
 
         emit(callback, 0.42, "Loading audio", "preprocess")
@@ -725,6 +851,10 @@ class _GpuRawStage:
             diar_model: str | None = None
 
             if tc.enable_diarization:
+                # Issue #809: INSIDE the try, for the same reason as _GpuStage.run's — an abort
+                # raised outside it skips `finally: async_diarization.close()` and leaks the
+                # overlapped thread under a WAV a caller may unlink.
+                stand_down_if_requested("_GpuRawStage.run before diarization")
                 diarize_df, overlap_info, native_embeddings, diar_provider, diar_model = (
                     _collect_diarization(
                         audio,
@@ -784,7 +914,9 @@ class _GpuRawStage:
             )
         finally:
             if async_diarization is not None:
-                async_diarization.close()
+                # Bounded ONLY while shutting down (issue #809) — see close()'s docstring for
+                # why an unbounded join here would otherwise swallow the whole cooperative abort.
+                async_diarization.close(timeout=_shutdown_join_timeout())
 
 
 class _FinalizeStage:
@@ -882,6 +1014,10 @@ class _TranscribeOnlyStage:
         profiler = VRAMProfiler()
         manager = ModelManager.get_instance()
 
+        # Issue #809: stand down before loading the WAV or warming Whisper. This stage runs
+        # under transcribe_gpu_task, whose handler requeues the abort (core.py).
+        stand_down_if_requested("_TranscribeOnlyStage.run entry")
+
         profiler.snapshot("pipeline_start")
 
         emit(callback, 0.42, "Loading audio", "preprocess")
@@ -960,6 +1096,17 @@ class _DiarizerOnlyStage:
         hw = detect_hardware()
         manager = ModelManager.get_instance()
 
+        # Issue #809: stand down before reloading the WAV or loading the diarizer.
+        #
+        # ⚠️ This checkpoint is only SAFE because diarize_gpu_task now has an abort branch that
+        # requeues instead of failing the file. Before that, an abort here would have travelled
+        # diarize_task's generic `except Exception`, marked the file ERROR and ACKed the message
+        # under acks_late -- losing the transcription outright. Do not add a checkpoint to a
+        # stage whose task cannot requeue the abort -- nor, since #823, to one that cannot
+        # finish a TranscriptionCancelledError: routed through the generic handler THAT reads
+        # to the user as "your file failed" for a stop they asked for.
+        stand_down_if_requested("_DiarizerOnlyStage.run entry")
+
         profiler.snapshot("pipeline_start")
 
         emit(callback, 0.52, "Preparing speaker analysis", "diarize")
@@ -978,6 +1125,11 @@ class _DiarizerOnlyStage:
         diar_model: str | None = None
 
         if tc.enable_diarization:
+            # Issue #809: the last bounded point before the diarizer load and the opaque
+            # diarize() call. There is no try/finally to sit inside here — this stage never
+            # constructs an _AsyncDiarization (it IS the diarization leg).
+            stand_down_if_requested("_DiarizerOnlyStage.run before diarization")
+
             if tc.concurrent_requests > 1:
                 _wait_for_vram(2000, "diarization")
 

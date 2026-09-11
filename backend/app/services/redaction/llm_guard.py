@@ -226,27 +226,29 @@ def is_local_provider(config: object) -> bool:
     check: is a config's ``base_url`` a loopback / RFC1918 / link-local / IPv6
     ULA address, or a bare "dotless" hostname — the shape of an unqualified
     docker-compose/Kubernetes service name (``http://backend:8000``,
-    ``http://mock-llm:5199/v1``), which cannot resolve outside this
-    deployment's own network and would otherwise fail DNS in exactly the
-    environments (CI, a fresh dev stack) where treating a lookup failure as
-    "remote" would be wrong most often. A ``vllm``/``ollama`` config with no
-    ``base_url`` at all now reads remote (it used to read local) — that is
-    correct and inert: with no endpoint to reach, it cannot serve a model
-    either way.
-
-    Every other provider (``openai``, ``anthropic``, ``claude``, ``openrouter``,
-    ``bedrock``) is a hosted third-party API by construction and is never local,
-    whatever its ``base_url`` says.
+    ``http://mock-llm:5199/v1``). A dot-free hostname is now (issue #820)
+    **resolved the same way a dotted one is**, and only judged local *without*
+    a DNS round trip when that resolution genuinely fails — many of the
+    environments this matters most in (CI, a fresh dev stack) have no external
+    resolver entry for a bare service name, and treating that lookup failure
+    as "remote" would misclassify the common case. A dot-free hostname that
+    resolves to a real, public address (a registered single-label domain, or
+    a resolver that hijacks unknown names to a real IP) is classified exactly
+    like a dotted one: remote. A ``vllm``/``ollama`` config with no
+    ``base_url`` at all reads remote — that is correct and inert: with no
+    endpoint to reach, it cannot serve a model either way.
 
     Every other provider (``openai``, ``anthropic``, ``claude``, ``openrouter``,
     ``bedrock``) is a hosted third-party API by construction and is never local,
     whatever its ``base_url`` says.
 
     **ANY ambiguity resolves to False (remote — mask).** An unparseable
-    ``base_url``, a missing one, a hostname that fails to resolve, or one that
-    resolves to a public address are all judged remote. This function is a
-    safety gate, not a diagnostic: a config it cannot confidently classify as
-    local must be treated exactly like a real third-party endpoint.
+    ``base_url``, a missing one, or a hostname that resolves to a public
+    address are all judged remote. The ONE exception is a dot-free hostname
+    that cannot be resolved at all, which reads local for the reason above —
+    every other form of ambiguity fails closed. This function is a safety
+    gate, not a diagnostic: a config it cannot confidently classify as local
+    must be treated exactly like a real third-party endpoint.
 
     Args:
         config: The ``LLMConfig`` in play for this turn, typed ``object`` because
@@ -269,6 +271,19 @@ def is_local_provider(config: object) -> bool:
     if provider not in _LOCAL_HOSTED_PROVIDERS and provider != "custom":
         return False
     return _custom_endpoint_is_local(getattr(config, "base_url", None))
+
+
+#: The exact prefix `app.utils.url_validation.resolve_public_addresses` uses for its
+#: two "DNS lookup itself failed" reasons (`socket.gaierror`/`UnicodeError`), as opposed
+#: to its other rejection reasons (malformed URL, blocked/metadata hostname, blocked
+#: resolved address) — all of which mean something was resolved or recognised and then
+#: refused, not that resolution was impossible. `_custom_endpoint_is_local` depends on
+#: telling these apart for a dot-free hostname (issue #820) without widening
+#: `resolve_public_addresses`'s own return contract, which is depended on elsewhere
+#: (SSRF guards, `media_source.py`) as a plain `(addresses, reason)` pair.
+#: `test_llm_provider_locality.py` pins that this string still matches that function's
+#: real output, so a rewording there cannot silently break the fallback below.
+_DNS_UNRESOLVABLE_REASON_PREFIX = "Cannot resolve hostname"
 
 
 def _custom_endpoint_is_local(base_url: str | None) -> bool:
@@ -297,15 +312,8 @@ def _custom_endpoint_is_local(base_url: str | None) -> bool:
     if literal is not None:
         return _is_local_address(literal)
 
-    if "." not in hostname:
-        # A bare service name — `http://backend:8000`, `http://mock-llm:5199/v1`.
-        # Only a docker-compose/K8s service name is shaped like this; a public
-        # hostname always has a dot. Judged local WITHOUT a DNS round trip: many
-        # of the environments this matters most in (a fresh dev stack, CI, the
-        # mock-LLM fixture) have no resolver entry for it outside the app's own
-        # network, and treating that lookup failure as "remote" would misclassify
-        # the common case rather than the rare one.
-        #
+    dot_free = "." not in hostname
+    if dot_free:
         # Guard: an UNBRACKETED IPv6 literal in the URL also lands here — e.g.
         # `urlparse("http://2001:db8::1/v1").hostname` returns `"2001"`, which
         # has no dot and no letters. A real compose/K8s service name is never
@@ -316,8 +324,9 @@ def _custom_endpoint_is_local(base_url: str | None) -> bool:
         try:
             int(hostname, 16)
         except ValueError:
-            return True
-        return False
+            pass
+        else:
+            return False
 
     from app.utils.url_validation import resolve_public_addresses
 
@@ -326,11 +335,24 @@ def _custom_endpoint_is_local(base_url: str | None) -> bool:
     # before we can judge it ourselves) while still refusing cloud metadata
     # addresses outright — and nothing self-hosts an inference server behind
     # instance metadata, so a metadata verdict is correctly judged remote below.
+    #
+    # A dot-free hostname is resolved through this SAME call (issue #820) rather
+    # than being judged local unconditionally: a single-label hostname CAN carry a
+    # real public A record (a registered single-label domain, or a resolver that
+    # hijacks unknown names to a real IP), and that must be classified exactly like
+    # a dotted one that resolves publicly — remote.
     addresses, reason = resolve_public_addresses(base_url, allow_private=True)
     if not addresses or reason:
-        # DNS failure, malformed URL, or blocked as instance metadata — all
-        # ambiguous or definitively not-ours. Fail closed to remote.
-        return False
+        # The ONLY exception to "fail closed on ambiguity": a dot-free hostname whose
+        # lookup itself was impossible — not blocked, not resolved-and-rejected, just
+        # no such record. A bare service name — `backend`, `mock-llm` — has no
+        # external DNS entry in many of the environments this matters most in (a
+        # fresh dev stack, CI, the mock-LLM fixture), and treating THAT lookup
+        # failure as "remote" would misclassify the common case rather than the rare
+        # one. Everything else here — blocked as instance metadata, a malformed URL,
+        # or (for a dotted hostname) a genuine DNS failure — stays ambiguous or
+        # definitively not-ours, and fails closed to remote.
+        return dot_free and reason.startswith(_DNS_UNRESOLVABLE_REASON_PREFIX)
     # Every resolved address must be local — a hostname split between a private
     # and a public A record is exactly the ambiguity this function refuses to
     # guess about.

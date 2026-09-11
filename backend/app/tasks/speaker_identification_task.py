@@ -40,7 +40,7 @@ from app.services.redaction.llm_guard import resolve_llm_masking
 from app.utils.transcript_builders import build_full_transcript
 from app.utils.transcript_builders import build_speaker_segments
 from app.utils.user_settings_helpers import get_user_llm_output_language
-from app.utils.websocket_notify import send_ws_event
+from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
 
@@ -542,10 +542,11 @@ def identify_speakers_llm_task(self, file_uuid: str):
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
         # Notify enrichment tracker
-        send_ws_event(
+        send_ws_event_for_file(
             user_id,
             "enrichment_task_complete",
             {"file_id": file_uuid, "task": "speaker_identification"},
+            file_id=file_id,
         )
 
         return {

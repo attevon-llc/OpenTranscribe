@@ -53,11 +53,22 @@ same as :mod:`tests.eval.harness.probe_metrics`):
    quoted span (``"...text..."[n]``), what fraction of those quotes appear, verbatim
    (casefolded, whitespace-collapsed), in the CITED citation's ``snippet``. Reported as
    ``quote_fidelity``, never as "groundedness" — an unquoted claim is not measured by this at
-   all (most of an answer is unquoted prose, and none of it is checked here), and a quote's
-   true home in the source chunk can extend past the ~240-char snippet ``citations._snippet``
-   keeps, so a real quote can still score unsupported if it starts before or ends after that
-   window. This is a proxy for one narrow failure mode (a fabricated quotation attributed to a
-   real citation), not a substitute for a correctness judge.
+   all (most of an answer is unquoted prose, and none of it is checked here). This is a proxy
+   for one narrow failure mode (a fabricated quotation attributed to a real citation), not a
+   substitute for a correctness judge.
+
+   ⚠️ **The "cut mid-quote" theory is retired — it was measured and found false (issue #832).**
+   A probe run found 0 of 69 failing quotes were cut by the ~240-char snippet boundary
+   (``citations.SNIPPET_CHARS``); the longest quote in the corpus was 138 chars. The real defect
+   was a **fixed-prefix window** with no relationship to where in the excerpt a quote actually
+   lived, and it hit the digest plane hardest: a digest section is bounded at ingest to more
+   words than 240 chars can ever hold, so **100% (113/113)** of digest citations were truncated
+   by construction, vs 31% of chunk citations. Citations now use different caps per kind
+   (``citations.DIGEST_SNIPPET_CHARS`` / ``OVERVIEW_SNIPPET_CHARS`` for a digest/overview
+   citation; ``SNIPPET_CHARS`` — still 240, deliberately unchanged — for an ordinary chunk). The
+   fields below (``citations_truncated``, ``quote_fidelity_truncated``/``_complete``,
+   ``quote_fidelity_at_240``) exist to keep measuring this per-cap rather than assuming a single
+   fixed number describes every citation kind.
 
 Every extractor below reads ``app_answer`` / a citation's ``snippet`` PURELY internally, to
 compute a count or a ratio — the text itself is never assigned to an output field.
@@ -167,8 +178,8 @@ def _quote_fidelity_counts(answer: str, citations: list[dict[str, Any]]) -> tupl
     """``(quotes_total, quotes_unsupported)`` — see module docstring, measure 4.
 
     Matched against ``record["citations"]`` (never ``offered_citations``, which is
-    deliberately stripped down to ``id``/``file_uuid`` and carries no ``snippet`` to
-    check a quote against).
+    deliberately stripped down to ``id``/``file_uuid``/``kind``/``content_chars`` and
+    carries no ``snippet`` to check a quote against).
     """
     by_id = {
         int(citation["id"]): str(citation.get("snippet") or "")
@@ -184,6 +195,141 @@ def _quote_fidelity_counts(answer: str, citations: list[dict[str, Any]]) -> tupl
         if snippet is None or _normalise(quote_text) not in _normalise(snippet):
             unsupported += 1
     return total, unsupported
+
+
+def _truncation_signal(citation: dict[str, Any]) -> bool | None:
+    """Whether one citation's snippet was truncated — ``True``/``False`` when
+    knowable, ``None`` when neither signal is available (issue #832).
+
+    Primary signal: ``content_chars`` (the pre-truncation length,
+    ``chat/citations.py``'s field of the same name) compared against the actual
+    rendered ``snippet`` length — definitive either way. Fallback, for a record
+    captured before ``content_chars`` existed: ``snippet`` ending in ``"…"`` is a
+    definitive POSITIVE signal (:func:`app.services.chat.citations._snippet`
+    appends it if and only if it cut the text). Its ABSENCE is not a reliable
+    negative signal on an old record — nothing else there rules out a different
+    truncation shape that added no ellipsis — so an old record with no ellipsis
+    and no ``content_chars`` reports unknown, not "not truncated".
+    """
+    content_chars = citation.get("content_chars")
+    snippet = str(citation.get("snippet") or "")
+    if content_chars is not None:
+        return int(content_chars) > len(snippet)
+    if snippet.endswith("…"):
+        return True
+    return None
+
+
+def _truncation_counts(citations: list[dict[str, Any]]) -> tuple[int, int]:
+    """``(citations_measured, citations_truncated)`` over citations with a knowable
+    truncation signal — see :func:`_truncation_signal`. A citation with neither
+    signal contributes to neither count, rather than being counted as "not
+    truncated" by default.
+    """
+    measured = 0
+    truncated = 0
+    for citation in citations:
+        if not isinstance(citation, dict):
+            continue
+        signal = _truncation_signal(citation)
+        if signal is None:
+            continue
+        measured += 1
+        if signal:
+            truncated += 1
+    return measured, truncated
+
+
+def _quote_fidelity_split_counts(
+    answer: str, citations: list[dict[str, Any]]
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Split :func:`_quote_fidelity_counts` by whether the CITED citation (not just
+    any citation) was truncated — see module docstring, measure 4's #832 amendment.
+
+    Returns ``((truncated_total, truncated_unsupported), (complete_total,
+    complete_unsupported))``. A quote whose cited marker is dangling, or whose
+    cited citation's truncation status is unknown (:func:`_truncation_signal`
+    returns ``None``), lands in NEITHER cohort — it is still counted in the
+    pooled ``quotes_total``/``quotes_unsupported`` from :func:`_quote_fidelity_counts`,
+    so the two cohorts sum to the pooled total only when every cited citation's
+    truncation status is knowable, never assumed to always be so.
+    """
+    by_id = {
+        int(citation["id"]): citation
+        for citation in citations
+        if isinstance(citation, dict) and "id" in citation
+    }
+    truncated_total = truncated_unsupported = 0
+    complete_total = complete_unsupported = 0
+    for match in _QUOTED_CITATION_RE.finditer(answer):
+        quote_text, marker_text = match.group(1), match.group(2)
+        citation = by_id.get(int(marker_text))
+        if citation is None:
+            continue
+        snippet = str(citation.get("snippet") or "")
+        is_unsupported = _normalise(quote_text) not in _normalise(snippet)
+        signal = _truncation_signal(citation)
+        if signal is True:
+            truncated_total += 1
+            truncated_unsupported += int(is_unsupported)
+        elif signal is False:
+            complete_total += 1
+            complete_unsupported += int(is_unsupported)
+        # signal is None: excluded from both cohorts, deliberately.
+    return (truncated_total, truncated_unsupported), (complete_total, complete_unsupported)
+
+
+def _truncate_local(text: str, limit: int) -> str:
+    """Prefix-truncate ``text`` at ``limit`` chars, cut on a word boundary — a pure,
+    LOCAL re-implementation of ``app.services.chat.citations._snippet``'s truncation
+    shape, kept local rather than imported so this eval-only package never depends
+    on ``app.*`` at import time (see this module's own import list / the package's
+    isolation convention).
+
+    Deliberately the SAME shape as the app function it mirrors: for any pure-prefix
+    truncation function ``f``, ``f(f(t, 700), 240) == f(t, 240)`` — re-truncating an
+    already-truncated string to a SMALLER limit reproduces truncating the original
+    text to that smaller limit directly, because the first pass never removes
+    anything before the 240-char mark. That identity is what makes
+    ``quote_fidelity_at_240`` a valid, zero-nondeterminism re-score of an existing
+    run's citations rather than a new measurement needing its own probe.
+    """
+    clean = " ".join(text.split())
+    if len(clean) <= limit:
+        return clean
+    cut = clean[:limit]
+    if " " in cut:
+        cut = cut[: cut.rfind(" ")]
+    return cut + "…"
+
+
+#: The ordinary chunk-citation snippet cap (``citations.SNIPPET_CHARS``), duplicated
+#: here as a plain int rather than imported — see :func:`_truncate_local`'s docstring
+#: for why this package never imports ``app.*``.
+_CHUNK_SNIPPET_CHARS_CONTROL = 240
+
+
+def _quote_fidelity_at_240_unsupported(answer: str, citations: list[dict[str, Any]]) -> int:
+    """``quotes_unsupported`` re-scored against every snippet re-truncated to
+    :data:`_CHUNK_SNIPPET_CHARS_CONTROL` chars locally — see module docstring,
+    measure 4's #832 amendment. The total is unchanged from
+    :func:`_quote_fidelity_counts` (same regex, same answer), only which quotes
+    are found "unsupported" can differ.
+    """
+    by_id = {
+        int(citation["id"]): _truncate_local(
+            str(citation.get("snippet") or ""), _CHUNK_SNIPPET_CHARS_CONTROL
+        )
+        for citation in citations
+        if isinstance(citation, dict) and "id" in citation
+    }
+    unsupported = 0
+    for match in _QUOTED_CITATION_RE.finditer(answer):
+        quote_text, marker_text = match.group(1), match.group(2)
+        snippet = by_id.get(int(marker_text))
+        if snippet is None or _normalise(quote_text) not in _normalise(snippet):
+            unsupported += 1
+    return unsupported
 
 
 @dataclass(frozen=True)
@@ -214,6 +360,24 @@ class TurnTraceability:
             citation's snippet.
         quote_fidelity: See :func:`_rate`; ``None`` when the answer made no quoted
             claims. NOT a groundedness score — see the module docstring.
+        citations_truncated: Of the rendered citations with a knowable truncation
+            signal (:func:`_truncation_signal`), how many were truncated. Never
+            counts a citation whose signal is unknown.
+        snippet_truncation_rate: ``citations_truncated`` / the number of rendered
+            citations with a knowable signal — ``None`` when nothing was
+            measurable (issue #832), never a fabricated ``0.0``.
+        quotes_truncated_total / quotes_truncated_unsupported / quote_fidelity_truncated:
+            ``quote_fidelity`` restricted to quotes whose CITED citation was
+            truncated. See :func:`_quote_fidelity_split_counts`.
+        quotes_complete_total / quotes_complete_unsupported / quote_fidelity_complete:
+            The complementary cohort — quotes whose cited citation was NOT
+            truncated. The two cohorts sum to the pooled ``quotes_total``/
+            ``quotes_unsupported`` only when every cited citation's truncation
+            status is knowable.
+        quotes_unsupported_at_240 / quote_fidelity_at_240: The pooled
+            ``quote_fidelity`` re-scored with every snippet re-truncated to 240
+            chars locally (:func:`_truncate_local`) — a paired, zero-nondeterminism
+            control for comparing this run against a future run at a different cap.
     """
 
     query_id: str
@@ -230,6 +394,16 @@ class TurnTraceability:
     quotes_total: int
     quotes_unsupported: int
     quote_fidelity: float | None
+    citations_truncated: int
+    snippet_truncation_rate: float | None
+    quotes_truncated_total: int
+    quotes_truncated_unsupported: int
+    quote_fidelity_truncated: float | None
+    quotes_complete_total: int
+    quotes_complete_unsupported: int
+    quote_fidelity_complete: float | None
+    quotes_unsupported_at_240: int
+    quote_fidelity_at_240: float | None
 
     def as_json(self) -> dict[str, Any]:
         """JSON-safe, deterministic form. Field order matches the dataclass."""
@@ -248,6 +422,16 @@ class TurnTraceability:
             "quotes_total": self.quotes_total,
             "quotes_unsupported": self.quotes_unsupported,
             "quote_fidelity": self.quote_fidelity,
+            "citations_truncated": self.citations_truncated,
+            "snippet_truncation_rate": self.snippet_truncation_rate,
+            "quotes_truncated_total": self.quotes_truncated_total,
+            "quotes_truncated_unsupported": self.quotes_truncated_unsupported,
+            "quote_fidelity_truncated": self.quote_fidelity_truncated,
+            "quotes_complete_total": self.quotes_complete_total,
+            "quotes_complete_unsupported": self.quotes_complete_unsupported,
+            "quote_fidelity_complete": self.quote_fidelity_complete,
+            "quotes_unsupported_at_240": self.quotes_unsupported_at_240,
+            "quote_fidelity_at_240": self.quote_fidelity_at_240,
         }
 
 
@@ -290,6 +474,18 @@ def extract_turn_traceability(record: dict[str, Any]) -> TurnTraceability:
 
     quotes_total, quotes_unsupported = _quote_fidelity_counts(answer, rendered_citations)
 
+    citations_measured, citations_truncated = _truncation_counts(rendered_citations)
+    snippet_truncation_rate = (
+        None if citations_measured <= 0 else citations_truncated / citations_measured
+    )
+
+    (
+        (quotes_truncated_total, quotes_truncated_unsupported),
+        (quotes_complete_total, quotes_complete_unsupported),
+    ) = _quote_fidelity_split_counts(answer, rendered_citations)
+
+    quotes_unsupported_at_240 = _quote_fidelity_at_240_unsupported(answer, rendered_citations)
+
     return TurnTraceability(
         query_id=str(record["label"]),
         category=str(record["category"]),
@@ -307,6 +503,16 @@ def extract_turn_traceability(record: dict[str, Any]) -> TurnTraceability:
         quotes_total=quotes_total,
         quotes_unsupported=quotes_unsupported,
         quote_fidelity=_rate(quotes_total, quotes_unsupported),
+        citations_truncated=citations_truncated,
+        snippet_truncation_rate=snippet_truncation_rate,
+        quotes_truncated_total=quotes_truncated_total,
+        quotes_truncated_unsupported=quotes_truncated_unsupported,
+        quote_fidelity_truncated=_rate(quotes_truncated_total, quotes_truncated_unsupported),
+        quotes_complete_total=quotes_complete_total,
+        quotes_complete_unsupported=quotes_complete_unsupported,
+        quote_fidelity_complete=_rate(quotes_complete_total, quotes_complete_unsupported),
+        quotes_unsupported_at_240=quotes_unsupported_at_240,
+        quote_fidelity_at_240=_rate(quotes_total, quotes_unsupported_at_240),
     )
 
 
@@ -406,8 +612,11 @@ def build_traceability_results(
         "scope_note": (
             "Traceability, not correctness. citation_resolution / citation_validity / "
             "prompt_membership are structural checks against what the turn rendered and "
-            "was offered. quote_fidelity checks only EXPLICITLY QUOTED spans against a "
-            "~240-char citation snippet and is not a groundedness or accuracy score. "
+            "was offered. quote_fidelity checks only EXPLICITLY QUOTED spans against the "
+            "citation's rendered snippet and is not a groundedness or accuracy score — and "
+            "it is a function of the snippet cap the citation was built under (240 chars for "
+            "an ordinary chunk, wider for a digest/overview citation since #832), so it must "
+            "never be quoted in a future report without naming the cap it was measured at. "
             "Whether the answer's claims are actually correct needs an LLM judge, which "
             "is not calibrated yet (GH #518) and is deliberately not reported here."
         ),

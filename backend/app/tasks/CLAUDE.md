@@ -73,6 +73,40 @@ indexing → WebSocket notification.
   exactly who it exists for (#403 D6). Dispatched fire-and-forget from
   `transcription/postprocess.enrich_and_dispatch`; logic lives in
   `services/ingest_artifacts/` (its own CLAUDE.md).
+- `transcription/cancellation.py` — what a **user cancel** does when the cooperative
+  checkpoint fires (#823). It is deliberately NOT `context.requeue_after_abort`:
+
+  | trigger | outcome | why |
+  |---|---|---|
+  | worker shutdown (#809) | `Reject(requeue=True)` — run it elsewhere | the work is still wanted |
+  | user cancel (#823) | `finish_cancelled` — return, ack, stop for good | the user asked it to stop |
+
+  Requeueing a cancelled job resurrects it on the next worker, so the UI says "Cancelled" and
+  the file goes back to processing. `finish_cancelled` **returns** a
+  `{"status": "cancelled", ...}` dict — that normal return is what acks under `acks_late=True`
+  — and `postprocess.finalize_transcription` recognises it and no-ops (cleaning up the temp
+  audio). It never travels `_handle_transcription_failure`: a cancel is not a failure.
+  - ⚠️ **Two-phase status, and `FileStatus.CANCELLING` is the honest middle.** The API
+    (`utils/task_utils.cancel_active_task`) arms the flag and writes `CANCELLING` — *we asked*;
+    only `finish_cancelled` writes `CANCELLED` — *it actually stopped*, with `Task.completed_at`
+    as the timestamp. It used to write `CANCELLED` optimistically while the GPU carried on.
+    `CANCELLING` already existed in `core/enums.FileStatus`, the API filter list,
+    `formatting_service` and the frontend status union; nothing had ever written it.
+  - `active_task_id` is **retained** while `CANCELLING` — it is the handle both the worker's
+    confirmation and `transcription.reconcile_cancellation` key on.
+  - `reconcile_cancellation` (utility queue, `countdown=CANCEL_RECONCILE_DELAY_S`) stops
+    `CANCELLING` wedging when no checkpoint can ever fire (worker died; or on `--lite`, a run
+    published into a queue nothing drains). It resolves to `CANCELLED` **unconfirmed** and logs
+    at WARNING — a bounded, logged version of the pre-#823 behaviour, not a guarantee. It
+    deliberately does **not** clear the flag: a stage still running must stand down at its next
+    checkpoint rather than finish and mark the file COMPLETED.
+  - Both `finish_cancelled` and `reconcile_cancellation` re-check ownership
+    (`_owns_the_file`). `POST /files/{uuid}/reprocess` cancels and immediately re-dispatches,
+    so the old run's checkpoint can fire minutes later against a file a NEW run already owns.
+  - ⚠️ **`revoke(active_task_id, terminate=True)` is gone, and it was dead on every pool type.**
+    Not just `--pool=threads`: `dispatch.py` calls `pipeline.apply_async()` with no `task_id=`,
+    so celery mints its own ids while `active_task_id` holds the separate application `uuid4`.
+    The id being revoked had never belonged to a celery message anywhere. Don't "restore" it.
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
 - `erasure_reconciliation.py` — `gdpr.erasure_reconcile`, **utility** queue, daily 04:40.
@@ -97,11 +131,51 @@ indexing → WebSocket notification.
 
 ## Conventions / patterns
 
+- **Any WebSocket event naming a `MediaFile` must go through
+  `app/utils/websocket_notify.py:send_ws_event_for_file`, never the raw `send_ws_event`**
+  (issue #908). `send_ws_event` has no notion of quarantine at all — a filename, title, or
+  speaker-display-name event pushed with it can disclose a taken-down file to a non-admin
+  recipient even though the file already 404s on every read surface. The wrapper consults
+  `takedown_service.is_notification_suppressed` (by file id), `_for_uuid` (by UUID — most
+  tasks here hold only a UUID), or `filter_suppressed_file_uuids` (a multi-file event); pass
+  exactly one of `file_id=`/`file_uuid=`/`file_uuids=` or it raises `TypeError`.
+  `tests/unit/test_ws_event_quarantine_discipline.py` is the structural gate — an
+  allowlist-with-written-reason covers the small set of genuinely corpus-wide events
+  (admin-migration progress counters, cache invalidation) that carry no single file's identity.
+- **A task that re-reads a `MediaFile` by id must re-apply the quarantine gate.**
+  `media_download.py`'s two tasks are the worked examples (issue #818):
+  `prepare_media_download_task` wraps its file read in `takedown_service.exclude_quarantined`,
+  and `prepare_bulk_subtitles_task` passes `include_quarantined` through to
+  `SubtitleService.build_subtitle_archive`, which skips a taken-down file rather than
+  exporting it. Both re-resolve the admin bypass at RUN time via
+  `takedown_service.is_review_admin(db, user_id)` — a task holds a user id, never a `User`,
+  and a role captured at dispatch cannot reflect a privilege change made in the gap.
 - Queues (`core/constants.py:CeleryQueues`): `gpu`, `cpu`, `download`, `nlp`, `embedding`,
   `utility`, `redaction`, plus dynamic `cloud-asr`, `cpu-transcribe`, `gpu-transcribe`,
   `gpu-diarize`. **`task_create_missing_queues=False`** — a queue-name typo raises at
   dispatch instead of creating a phantom queue. `_validate_task_routes()` warns at worker
   startup for any registered task with no `task_routes` entry.
+- ⚠️ **A valid route is not a drained route, and `--lite` is where they diverge.**
+  `docker-compose.lite.yml` scales BOTH `gpu` consumers (`celery-worker`,
+  `celery-worker-gpu-scaled`) to `replicas: 0`, so anything pinned to `gpu` there is
+  published into a queue nothing drains — no error, no retry, and the API has already
+  answered 200 (issue #865, and issue #584 for one earlier instance of the same shape).
+  The eight speaker/diarization tasks that PREFER a GPU but are correct without one are
+  listed once as `celery.py:GPU_PREFERRED_TASKS` and routed through
+  `constants.gpu_preferred_queue()`, which resolves to `cpu` when `DEPLOYMENT_MODE=lite`
+  (the lite overlay sets that on **every** service, and routing is decided by the
+  publisher). The reroute costs only speed — `requirements-lite.txt` deliberately keeps
+  `torch+cpu`/`torchaudio`/`pyannote.audio`/`onnxruntime`.
+  `transcription.process_file` stays on `gpu` on purpose: lite ships no local ASR and
+  `services/asr/factory.py` refuses it by name, so a reroute would only relocate the
+  failure. `tests/unit/test_lite_mode_queue_consumers.py` derives the lite consumer set
+  from the compose files and fails on any new route into a dead queue; an exemption
+  there requires a written reason.
+  This is deliberately NOT the live `inspect().active_queues()` probe that
+  `transcription/dispatch.py` uses — that costs a broker broadcast on interactive
+  request paths, and a full deployment whose GPU worker is momentarily down is an
+  outage where queueing is the *correct* behaviour, not a case for silent CPU
+  downgrade.
 - Priorities are **per-queue** (`GPUPriority.X` is unrelated to `CPUPriority.X`); the scheme
   is documented in the comment block above `task_routes` in `core/celery.py`.
 - ⚠️ **Not every worker runs `--pool=threads`, and assuming so cost issue #631 an entire

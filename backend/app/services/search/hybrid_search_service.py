@@ -17,6 +17,7 @@ from typing import Any
 from nltk.stem import SnowballStemmer
 
 from app.core.config import settings
+from app.core.constants import FILE_TYPE_MIME_PREFIXES
 from app.core.constants import SEARCH_CACHE_MAX_SIZE
 from app.core.constants import SEARCH_CACHE_TTL_SECONDS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
@@ -600,10 +601,33 @@ def _redaction_policy_fingerprint(cfg: "EffectiveRedactionConfig | None") -> str
 
 # A single OpenSearch `terms` clause is bounded by `index.max_terms_count`
 # (65536 by default); quarantine is expected to be rare, so this cap is a
-# defensive ceiling, not a normal operating limit. Exceeding it degrades to
-# excluding only the oldest-quarantined files rather than failing the whole
-# facet request.
+# defensive ceiling, not a normal operating limit. It is queried with `+ 1` so
+# hitting it is DETECTABLE — a silently truncated exclusion set is the same
+# failure as no exclusion set at all, just harder to notice (issue #876).
 _QUARANTINED_UUID_CAP = 10_000
+
+
+class QuarantineExclusionUnavailableError(RuntimeError):
+    """The set of quarantined files could not be resolved completely.
+
+    Raised instead of degrading to a partial (or empty) exclusion set. Callers
+    must treat it as "I cannot prove taken-down content is absent from this
+    response" and withhold the response, mirroring how the redaction plane
+    withholds snippet text rather than emitting text it could not mask.
+    """
+
+
+class SearchCountUnavailableError(QuarantineExclusionUnavailableError):
+    """``count_matches`` could not produce a trustworthy count.
+
+    A subclass of :class:`QuarantineExclusionUnavailableError`, not a sibling —
+    ``search.py``'s single ``except QuarantineExclusionUnavailableError`` must
+    catch both "the quarantine exclusion set could not be resolved" and "the
+    OpenSearch query itself failed", because both mean the same thing to the
+    caller: this number cannot be trusted, and reporting it as ``0`` is a
+    content oracle (issue #817) — a caller polling this endpoint while
+    searching for a term learns whether it exists somewhere they cannot see.
+    """
 
 
 def _quarantined_file_uuids() -> list[str]:
@@ -616,10 +640,22 @@ def _quarantined_file_uuids() -> list[str]:
     caller can see (``accessible_user_ids``), so a global list only ever narrows
     that intersection, never widens what a caller could learn.
 
+    **Fails closed** (issue #876). This is the mechanism that keeps taken-down
+    content out of a read surface, not an approximate sidebar count, so neither
+    of its two failure modes may degrade quietly:
+
+    * a DB error used to return ``[]``, which means *exclude nothing* — a
+      transient outage served quarantined files' facets with an HTTP 200 and an
+      exception in a log nobody watches;
+    * exceeding ``_QUARANTINED_UUID_CAP`` used to truncate with no signal at all.
+
     Returns:
-        Quarantined file uuids as strings, capped at ``_QUARANTINED_UUID_CAP``.
-        Empty (never raises) if the DB is unreachable — an aggregation request
-        must not break because this best-effort exclusion could not run.
+        Quarantined file uuids as strings.
+
+    Raises:
+        QuarantineExclusionUnavailableError: The set could not be read, or is
+            larger than ``_QUARANTINED_UUID_CAP`` so it cannot be expressed as a
+            single ``terms`` clause without dropping members.
     """
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
@@ -630,13 +666,30 @@ def _quarantined_file_uuids() -> list[str]:
                 db.query(MediaFile.uuid)
                 .filter(MediaFile.is_quarantined.is_(True))
                 .order_by(MediaFile.quarantined_at.desc().nullslast())
-                .limit(_QUARANTINED_UUID_CAP)
+                # One more than the cap: the extra row is what makes truncation
+                # distinguishable from "there are exactly `cap` of them".
+                .limit(_QUARANTINED_UUID_CAP + 1)
                 .all()
             )
-            return [str(row[0]) for row in rows]
-    except Exception:  # noqa: BLE001 — best-effort; see docstring
+    except Exception as exc:
         logger.exception("Could not resolve quarantined file uuids for facet exclusion")
-        return []
+        raise QuarantineExclusionUnavailableError(
+            "The quarantine exclusion set could not be read; "
+            "search filters are unavailable until it can be."
+        ) from exc
+
+    if len(rows) > _QUARANTINED_UUID_CAP:
+        logger.error(
+            "More than %d quarantined files: the facet exclusion set cannot be "
+            "expressed without dropping members",
+            _QUARANTINED_UUID_CAP,
+        )
+        raise QuarantineExclusionUnavailableError(
+            f"More than {_QUARANTINED_UUID_CAP} files are quarantined; the facet "
+            "exclusion set cannot be applied completely."
+        )
+
+    return [str(row[0]) for row in rows]
 
 
 def _get_cached_response(cache_key: str) -> SearchResponse | None:
@@ -701,12 +754,6 @@ def _append_range_filter(
     filters.append({"range": {field: range_clause}})
 
 
-#: Coarse buckets the SPA's ``file_type`` filter sends today, mapped to the MIME
-#: family prefix that actually appears in the indexed ``content_type`` field
-#: (``audio/mpeg``, ``video/mp4``, ...). See :func:`_file_type_filter_clause`.
-_FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
-
-
 def _file_type_filter_clause(file_type: list[str]) -> dict[str, Any]:
     """Match ``content_type`` against coarse file-type filters (issue #463 lane).
 
@@ -734,7 +781,7 @@ def _file_type_filter_clause(file_type: list[str]) -> dict[str, Any]:
     """
     should: list[dict[str, Any]] = []
     for value in file_type:
-        prefix = _FILE_TYPE_MIME_PREFIXES.get(value.lower())
+        prefix = FILE_TYPE_MIME_PREFIXES.get(value.lower())
         if prefix:
             should.append({"prefix": {"content_type": prefix}})
         else:
@@ -1275,6 +1322,7 @@ class HybridSearchService:
         user_id: int,
         limit: int = 8,
         organization_id: int | None = None,
+        is_admin: bool = False,
     ) -> list[dict[str, Any]]:
         """Get auto-complete suggestions.
 
@@ -1283,9 +1331,19 @@ class HybridSearchService:
             user_id: Current user ID.
             limit: Maximum number of suggestions.
             organization_id: Active org id (None = personal) — tenant gate.
+            is_admin: When True, skip the quarantine exclusion on both legs —
+                matches the admin review bypass ``get_available_filters`` and
+                the results page already apply.
 
         Returns:
             List of suggestion dicts with type, text, and optional metadata.
+
+        Raises:
+            QuarantineExclusionUnavailableError: For a non-admin, the quarantine
+                exclusion set could not be resolved completely, so neither the
+                title leg nor the speaker leg can be proven free of taken-down
+                content. Fail closed — the caller turns this into a 503 rather
+                than serving suggestions built from an unproven exclusion.
         """
         if not opensearch_client:
             return []
@@ -1315,6 +1373,20 @@ class HybridSearchService:
             chunk_plane_clause(),
         ]
 
+        # Quarantine is Postgres-only (`takedown_service.quarantine_file` never
+        # touches OpenSearch), so — same reasoning as `get_available_filters` —
+        # BOTH legs below need an explicit exclusion, not a field to filter on:
+        # the title leg used to be covered only by a DB post-filter in search.py
+        # (which this replaces), and the speaker leg carries no file linkage at
+        # all, so nothing could ever post-filter it — a quarantined file's
+        # speaker names leaked into autocomplete for everyone who had access
+        # before the takedown, forever (issue #817). Deliberately OUTSIDE the
+        # try below: a QuarantineExclusionUnavailableError must reach the
+        # endpoint, not be folded into the empty-suggestions fallback the
+        # `except Exception` below returns — same posture as #876.
+        quarantined_uuids = [] if is_admin else _quarantined_file_uuids()
+        scope_must_not = [{"terms": {"file_uuid": quarantined_uuids}}] if quarantined_uuids else []
+
         try:
             # Multi-search for title and speaker suggestions
             msearch_body = [
@@ -1326,6 +1398,7 @@ class HybridSearchService:
                         "bool": {
                             "must": [{"match_phrase_prefix": {"title": prefix}}],
                             "filter": scope_filter,
+                            **({"must_not": scope_must_not} if scope_must_not else {}),
                         }
                     },
                     "_source": ["title", "file_uuid"],
@@ -1339,6 +1412,7 @@ class HybridSearchService:
                         "bool": {
                             "must": [{"prefix": {"speaker": {"value": prefix.lower()}}}],
                             "filter": scope_filter,
+                            **({"must_not": scope_must_not} if scope_must_not else {}),
                         }
                     },
                     "aggs": {"speakers": {"terms": {"field": "speaker", "size": 4}}},
@@ -1394,6 +1468,12 @@ class HybridSearchService:
 
         Returns:
             Dict with speakers, tags, and date_range.
+
+        Raises:
+            QuarantineExclusionUnavailableError: For a non-admin, the quarantine
+                exclusion set could not be resolved completely, so these facets
+                cannot be proven free of taken-down content. Fail closed — the
+                caller turns this into a 503 rather than serving the buckets.
         """
         if not opensearch_client:
             return {"speakers": [], "tags": [], "date_range": {}}
@@ -1433,6 +1513,9 @@ class HybridSearchService:
         # the OpenSearch `terms` clause is naturally bounded, unlike the general
         # accessible-file set, so excluding by quarantined uuid (rather than trying
         # to enumerate every accessible-and-non-quarantined uuid) keeps this cheap.
+        # Deliberately OUTSIDE the try below: a QuarantineExclusionUnavailableError
+        # must reach the endpoint, not be folded into the empty-facets fallback
+        # that the OpenSearch failure path returns (issue #876).
         quarantined_uuids = [] if is_admin else _quarantined_file_uuids()
         if quarantined_uuids:
             query_must_not.append({"terms": {"file_uuid": quarantined_uuids}})
@@ -1561,6 +1644,7 @@ class HybridSearchService:
         user_id: int,
         file_uuid: str | None = None,
         organization_id: int | None = None,
+        is_admin: bool = False,
     ) -> int:
         """Count transcript chunks matching ``query`` (optionally within one file).
 
@@ -1571,6 +1655,34 @@ class HybridSearchService:
         serves the searches concurrently). Returns the exact matching-chunk count
         (``track_total_hits``), used purely as a "matches exist beyond the loaded
         window" signal for progressive loading.
+
+        ``client is None`` and an empty/whitespace ``query`` both still return ``0``
+        rather than raising — the first is "lite mode" (no OpenSearch client at all),
+        the second is "nothing to search for". Neither is a quarantine-exclusion
+        failure and neither has content to withhold, so ``0`` is the honest answer.
+
+        Args:
+            query: The search text.
+            user_id: Current user id — scopes to ``accessible_user_ids``.
+            file_uuid: Optional single-file scope. Callers (``search.py``) resolve
+                this through ``get_file_by_uuid_with_permission`` BEFORE calling
+                here, which already 404s a quarantined file — so this method does
+                not additionally apply the quarantine exclusion when scoped to one
+                file; there is nothing left for it to hide.
+            organization_id: Active org id (None = personal) — tenant gate.
+            is_admin: When True, skip the quarantine exclusion — the admin review
+                bypass every other quarantine-aware read surface applies.
+
+        Returns:
+            The exact matching-chunk count.
+
+        Raises:
+            SearchCountUnavailableError: The quarantine exclusion set could not be
+                resolved, or the OpenSearch query itself failed. Either way this
+                count cannot be trusted (issue #817) — reporting it as ``0`` would
+                make this endpoint a content oracle for a file the caller cannot
+                see, since "0 matches" and "the search itself failed" would be
+                indistinguishable to the find bar.
         """
         clean = (query or "").strip()
         if not clean:
@@ -1589,17 +1701,33 @@ class HybridSearchService:
             file_uuid=file_uuid,
             organization_id=organization_id,
         )
+        # Same posture as `get_available_filters`: quarantine is Postgres-only,
+        # so an unscoped (whole-corpus) count has to exclude taken-down files
+        # itself. A file-scoped count needs no exclusion of its own — the
+        # caller's permission check already refused the request if that one
+        # file is quarantined.
+        quarantined_uuids = [] if (is_admin or file_uuid) else _quarantined_file_uuids()
+        query_must_not = [{"terms": {"file_uuid": quarantined_uuids}}] if quarantined_uuids else []
+
         text_query = self._build_text_query(clean, ["content", "content.exact"])
         body = {
             "size": 0,
             "track_total_hits": True,
-            "query": {"bool": {"filter": filters, "must": [text_query]}},
+            "query": {
+                "bool": {
+                    "filter": filters,
+                    "must": [text_query],
+                    **({"must_not": query_must_not} if query_must_not else {}),
+                }
+            },
         }
         try:
             resp = client.search(index=settings.OPENSEARCH_CHUNKS_INDEX, body=body)
-        except Exception as exc:  # noqa: BLE001 — degrade to "unknown" on any OS error
+        except Exception as exc:
             logger.warning(f"count_matches failed: {exc}")
-            return 0
+            raise SearchCountUnavailableError(
+                "The transcript match count could not be computed."
+            ) from exc
 
         total = resp.get("hits", {}).get("total", {})
         if isinstance(total, dict):

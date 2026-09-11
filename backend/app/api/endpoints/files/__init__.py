@@ -47,6 +47,7 @@ from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
+from app.utils.error_handlers import ErrorHandler
 
 from . import cancel_upload
 from . import complete_upload
@@ -614,10 +615,11 @@ def get_media_file_stream_url(
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.exception(f"Error generating presigned URL for file {file_uuid}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating streaming URL: {str(e)}",
+        # The real MinIO/presign failure (host, bucket, credential details) is logged,
+        # never returned — the response only ever names the operation (#859).
+        logger.exception(f"Error generating presigned URL for file {file_uuid}")
+        raise ErrorHandler.internal_error(
+            "Could not generate a streaming URL for this file."
         ) from e
 
 
@@ -1001,16 +1003,33 @@ def get_thumbnail(
     """
     Get the thumbnail image for a media file.
 
-    Security: Requires authentication OR file must be public. Authenticated org
-    users are gated to their active tenant scope (cross-org thumbnails 403).
+    Security: an abuse/DMCA takedown outranks every other rule here; after that,
+    requires authentication OR the file must be public. Authenticated org users
+    are gated to their active tenant scope (cross-org thumbnails 403).
 
     Note: For gallery/list views, use the presigned thumbnail_url returned in the
     file listing response. This endpoint is a fallback for direct access.
     """
+    from app.services.takedown_service import is_hidden_for
     from app.utils.uuid_helpers import get_file_by_uuid
 
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
+
+    # Abuse/DMCA takedown (issue #817). This route resolves with plain
+    # `get_file_by_uuid`, so it does NOT inherit the quarantine 404 that
+    # `get_file_by_uuid_with_permission` applies to the detail/stream/download
+    # surfaces — and the `is_public` short-circuit below skips the whole
+    # authorization block, so a taken-down public file was streaming its
+    # thumbnail to unauthenticated callers. The gate goes FIRST, before the
+    # public branch, and uses the same `is_admin` bypass as the permission
+    # helper so admins keep the review visibility they need to release a file.
+    # 404 (not 403) keeps a taken-down file indistinguishable from a missing one.
+    if is_hidden_for(db_file, is_admin=bool(current_user and current_user.is_admin)):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found",
+        )
 
     # Security check: must be public OR user must be authenticated and own file (or be admin)
     is_public = getattr(db_file, "is_public", False)

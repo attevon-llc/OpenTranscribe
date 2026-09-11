@@ -20,6 +20,12 @@ section their policy would mask; only the returned snippet is masked. See
 Access control: this reuses ``PermissionService.get_accessible_file_ids_subquery``
 verbatim — the single authority the whole codebase already routes owner-scoped
 listings through — rather than writing a second sharing predicate here.
+
+Quarantine (abuse/DMCA takedown) is applied here too, via
+``takedown_service.exclude_quarantined`` — as a PRE-filter, not a post-filter on the
+hit list, because a post-filter cannot correct total/offset and a count that includes
+a taken-down file is a content oracle (issue #818, same class as #876's
+``/search/count``).
 """
 
 from __future__ import annotations
@@ -46,6 +52,7 @@ from app.services.permission_service import PermissionService
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.summary_redaction import _UNMASKED_TOP_LEVEL_KEYS
 from app.services.redaction.summary_redaction import mask_summary
+from app.services.takedown_service import exclude_quarantined
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +173,7 @@ def search_summaries(
     page: int = 1,
     page_size: int = 20,
     redaction_cfg: EffectiveRedactionConfig | None = None,
+    include_quarantined: bool = False,
 ) -> SummarySearchResult:
     """Full-text search over accessible files' AI summaries.
 
@@ -187,6 +195,11 @@ def search_summaries(
             names after their first mention). ``None`` (the default) means
             "resolve nothing, return unmasked" and must only be passed by a
             caller that has independently decided masking does not apply.
+        include_quarantined: Admin review bypass, matching the
+            ``exclude_quarantined`` convention used elsewhere (e.g.
+            ``files/__init__.py``'s ``include_quarantined=is_admin``). Default
+            False: a taken-down file must not appear in, or be COUNTED by, a
+            normal user's summary search.
 
     Returns:
         A page of file-level hits, each carrying every matching leaf's
@@ -213,17 +226,21 @@ def search_summaries(
         predicate,
     )
 
-    total = db.query(func.count(MediaFile.id)).filter(*base_filter).scalar() or 0
+    def _scoped(q):
+        return exclude_quarantined(q.filter(*base_filter), include_quarantined=include_quarantined)
+
+    total = _scoped(db.query(func.count(MediaFile.id))).scalar() or 0
 
     rows = (
-        db.query(
-            MediaFile.id,
-            MediaFile.uuid,
-            MediaFile.title,
-            MediaFile.filename,
-            MediaFile.summary_data,
+        _scoped(
+            db.query(
+                MediaFile.id,
+                MediaFile.uuid,
+                MediaFile.title,
+                MediaFile.filename,
+                MediaFile.summary_data,
+            )
         )
-        .filter(*base_filter)
         .order_by(MediaFile.id.desc())
         .offset(max(0, (page - 1) * page_size))
         .limit(page_size)

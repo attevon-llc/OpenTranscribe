@@ -10,7 +10,11 @@
  *    <body> (see `src/stores/theme.js` and `static/theme.js`). No element in the
  *    app is ever given the class `dark`, so every `:global(.dark) …` rule a
  *    component wrote as its dark-mode override was dead code: the light-mode
- *    value stayed applied in dark mode.
+ *    value stayed applied in dark mode. This scan originally only looked at
+ *    `.svelte` files, which is exactly why it missed
+ *    `components/upload/upload-shared.css` (a plain, unscoped `.css` file
+ *    imported by two components) carrying 7 instances of the same dead
+ *    selector — fixed, and the scan now covers `.css` under `src` too.
  *
  * 2. `form-elements.css` repainted `background-color` on `button:focus`. A
  *    browser puts `:focus` on a <button> on mouse-down, so the repaint stuck
@@ -26,11 +30,19 @@ import path from 'path';
 
 const SRC = path.resolve(__dirname, '..');
 
-function svelteFiles(dir: string, out: string[] = []): string[] {
+/**
+ * Walks `.svelte` AND plain `.css` files — a dead `:global(.dark)` selector is
+ * just as dead in an unscoped stylesheet as in component markup, and the
+ * `.svelte`-only version of this scan is precisely what let 7 such rules in
+ * `components/upload/upload-shared.css` go uncaught (issue #835 investigation).
+ * Verified against the tree before that fix: this pattern matches exactly one
+ * file, so widening the scan does not flood the suite with unrelated findings.
+ */
+function themeScannableFiles(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, entry.name);
-    if (entry.isDirectory()) svelteFiles(p, out);
-    else if (entry.name.endsWith('.svelte')) out.push(p);
+    if (entry.isDirectory()) themeScannableFiles(p, out);
+    else if (entry.name.endsWith('.svelte') || entry.name.endsWith('.css')) out.push(p);
   }
   return out;
 }
@@ -50,7 +62,7 @@ const KNOWN_DEAD_DARK_SELECTOR_FILES = [
 ];
 
 describe('dark-mode selector convention', () => {
-  const offenders = svelteFiles(SRC)
+  const offenders = themeScannableFiles(SRC)
     .filter((f) => fs.readFileSync(f, 'utf8').includes(':global(.dark)'))
     .map((f) => path.relative(SRC, f).split(path.sep).join('/'))
     .sort();
@@ -60,7 +72,7 @@ describe('dark-mode selector convention', () => {
   });
 
   it('has at least one migrated component, so the convention is actually in use', () => {
-    const migrated = svelteFiles(SRC).filter((f) =>
+    const migrated = themeScannableFiles(SRC).filter((f) =>
       fs.readFileSync(f, 'utf8').includes(":global([data-theme='dark'])")
     );
     expect(migrated.length).toBeGreaterThan(20);

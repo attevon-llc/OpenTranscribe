@@ -12,10 +12,20 @@ reindex dispatch and a keystroke poll under one module docstring.
 
 The scoping tests substitute the search engine, because "which filters went to
 OpenSearch" is not observable from a response body — and the filter that scopes a
-count to the caller is the one that must never be dropped. The tests that do NOT
-substitute it assert only what holds against any cluster, including none:
-``count_matches`` and ``get_suggestions`` both degrade to ``0`` / ``[]`` without a
-client rather than raising, so this module needs no ``SKIP_OPENSEARCH`` gate.
+count to the caller is the one that must never be dropped.
+
+⚠️ ``count_matches`` degrades to ``0`` only when there is no OpenSearch CLIENT at all
+(``get_opensearch_client()`` returns ``None``) — it no longer degrades to ``0`` when a
+client exists but the query itself fails, e.g. a client pointed at a cluster that isn't
+actually reachable. Issue #817 made that a hard ``503`` on purpose: an unmatchable-looking
+``0`` and "the count could not be trusted" must stay distinguishable, or a quarantine
+exclusion that silently failed to apply would look identical to a genuinely empty result.
+Constructing an ``OpenSearch(...)`` client never checks reachability, so CI (no live
+cluster, no ``SKIP_OPENSEARCH`` gate on this module) hits exactly that path — a real client
+whose ``.search()`` raises. Tests that need a working query, including "an unmatchable
+query returns 0", substitute the engine like ``test_count_returns_the_engines_total``
+does; only genuinely client-independent behaviour (``get_suggestions`` degrading to ``[]``)
+may still assert against whatever cluster happens to be configured.
 """
 
 from __future__ import annotations
@@ -57,14 +67,20 @@ def _standin_count_engine(engine: _StandInEngine):
 # GET /count
 # ---------------------------------------------------------------------------
 def test_count_of_an_unmatchable_query_is_zero(client, user_token_headers):
-    """The shape the find bar reads, against whatever cluster is configured.
+    """The shape the find bar reads, when OpenSearch answers with no hits.
 
-    A random token cannot appear in any transcript, so ``0`` is the answer with or
-    without OpenSearch — but the response must still be the ``{"total": int}``
-    envelope. The find bar does ``body.total > loaded`` with no guard, so a bare
-    integer or a renamed key breaks it silently.
+    A random token cannot appear in any transcript, so ``0`` is the answer — but the
+    response must still be the ``{"total": int}`` envelope. The find bar does
+    ``body.total > loaded`` with no guard, so a bare integer or a renamed key breaks
+    it silently. Engine substituted (module docstring): #817 made a genuinely
+    unreachable cluster a 503, not a 0, so this needs a working query to test the
+    zero-hits case rather than the no-client one.
     """
-    response = client.get(COUNT, headers=user_token_headers, params={"q": uuid_pkg.uuid4().hex})
+    engine = _StandInEngine(total=0)
+    index_patch, infra_patch = _standin_count_engine(engine)
+
+    with index_patch, infra_patch:
+        response = client.get(COUNT, headers=user_token_headers, params={"q": uuid_pkg.uuid4().hex})
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"total": 0}
@@ -90,17 +106,25 @@ def test_count_returns_the_engines_total(client, user_token_headers):
 
 
 def test_count_is_scoped_to_the_caller_and_optionally_one_file(
-    client, user_token_headers, normal_user
+    client, db_session, user_token_headers, normal_user
 ):
     """Every count carries the caller's own id, and ``file_uuid`` narrows to one file.
 
     This is the isolation invariant: without the ``accessible_user_ids`` filter the
     find bar would report matches from other accounts' transcripts. Not observable
     from the response, hence the substituted engine.
+
+    ``file_uuid`` must name a REAL file the caller can see (issue #817): the
+    endpoint now resolves it through the permission chokepoint before ever
+    reaching OpenSearch, so a made-up uuid 404s rather than reaching the engine
+    at all — see ``test_search_count_quarantine.py`` for that behaviour.
     """
+    from tests.user_owned_rows import make_media_file
+
     engine = _StandInEngine(total=1)
     index_patch, infra_patch = _standin_count_engine(engine)
-    file_uuid = "22222222-2222-4222-8222-222222222222"
+    owned = make_media_file(db_session, int(normal_user.id))
+    file_uuid = str(owned.uuid)
 
     with index_patch, infra_patch:
         client.get(COUNT, headers=user_token_headers, params={"q": "pricing"})
@@ -160,62 +184,13 @@ def test_suggestions_rejects_a_zero_limit(client, user_token_headers):
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_suggestions_drops_a_quarantined_files_title_for_a_plain_user(
-    client, db_session, user_token_headers, normal_user
-):
-    """A taken-down file must not surface in autocomplete.
-
-    The chunks index carries no quarantine field, so the handler re-checks against
-    Postgres — the DMCA/abuse path's only defence on this surface. The engine is
-    substituted so the two candidate titles are known; the quarantine decision under
-    test is made in the handler against a real row.
-    """
-    from tests.user_owned_rows import make_media_file
-
-    hidden = make_media_file(db_session, int(normal_user.id))
-    visible = make_media_file(db_session, int(normal_user.id))
-    hidden.is_quarantined = True
-    db_session.commit()
-
-    suggestions = [
-        {"type": "title", "text": "hidden recording", "file_uuid": str(hidden.uuid)},
-        {"type": "title", "text": "visible recording", "file_uuid": str(visible.uuid)},
-        {"type": "speaker", "text": "Dana"},
-    ]
-    with patch(
-        "app.services.search.hybrid_search_service.HybridSearchService.get_suggestions",
-        return_value=suggestions,
-    ):
-        response = client.get(SUGGESTIONS, headers=user_token_headers, params={"q": "rec"})
-
-    assert response.status_code == status.HTTP_200_OK
-    texts = [s["text"] for s in response.json()]
-    assert texts == ["visible recording", "Dana"]
-
-
-def test_suggestions_keeps_a_quarantined_title_for_an_admin(
-    client, db_session, admin_token_headers, admin_user
-):
-    """The control for the filter above: admins keep visibility for review.
-
-    Without this, a handler that dropped every ``file_uuid``-bearing suggestion
-    would pass the test above and quietly break the moderation view.
-    """
-    from tests.user_owned_rows import make_media_file
-
-    hidden = make_media_file(db_session, int(admin_user.id))
-    hidden.is_quarantined = True
-    db_session.commit()
-
-    suggestions = [{"type": "title", "text": "hidden recording", "file_uuid": str(hidden.uuid)}]
-    with patch(
-        "app.services.search.hybrid_search_service.HybridSearchService.get_suggestions",
-        return_value=suggestions,
-    ):
-        response = client.get(SUGGESTIONS, headers=admin_token_headers, params={"q": "rec"})
-
-    assert response.status_code == status.HTTP_200_OK
-    assert [s["text"] for s in response.json()] == ["hidden recording"]
+# The quarantine exclusion for suggestions used to be a DB post-filter here,
+# covering titles only (and unable to reach the speaker leg at all, since a
+# speaker suggestion carries no file linkage to post-filter against). It has
+# moved INTO ``HybridSearchService.get_suggestions`` itself (issue #817), so
+# mocking that method — as the two tests this comment replaced did — would
+# bypass the very logic under test. See ``test_search_suggestions_quarantine.py``
+# for the exclusion's coverage, at the OpenSearch-body level.
 
 
 def test_suggestions_requires_authentication(client):
@@ -234,13 +209,14 @@ def test_suggestions_engine_is_asked_for_the_callers_own_scope(
     """
     calls: list[dict] = []
 
-    def _record(_self, *, prefix, user_id, limit, organization_id):
+    def _record(_self, *, prefix, user_id, limit, organization_id, is_admin):
         calls.append(
             {
                 "prefix": prefix,
                 "user_id": user_id,
                 "limit": limit,
                 "organization_id": organization_id,
+                "is_admin": is_admin,
             }
         )
         return []
@@ -254,5 +230,11 @@ def test_suggestions_engine_is_asked_for_the_callers_own_scope(
 
     assert response.status_code == status.HTTP_200_OK
     assert calls == [
-        {"prefix": "pric", "user_id": normal_user.id, "limit": 5, "organization_id": None}
+        {
+            "prefix": "pric",
+            "user_id": normal_user.id,
+            "limit": 5,
+            "organization_id": None,
+            "is_admin": False,
+        }
     ]

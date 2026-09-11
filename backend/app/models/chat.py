@@ -181,9 +181,18 @@ class ChatConversation(Base):
 class ChatMessage(Base):
     """One turn in a conversation, with its citations and token accounting.
 
-    Assistant ``content`` and citation snippets are stored post-masking: when
-    redact-before-LLM applies, the masked text is what was sent to the provider
-    and therefore what the thread should replay.
+    ⚠️ **The two text fields are stored under DIFFERENT policies, and treating them
+    as one is issue #863.**
+
+    * ``content`` / ``reasoning_content`` are masked by ``chat/output_redactor``
+      before they are accumulated, so the row always holds the *display*-masked
+      text the reader already saw.
+    * ``citations[].snippet`` is masked only insofar as the **egress** policy
+      masked the chunk it was sliced from — and on a deployment running a local
+      model that policy deliberately masks nothing (``redaction/llm_guard``). So a
+      snippet here can be raw transcript text. Any surface that hands this column
+      to a user must mask it for itself; ``chat/export_redaction.py`` is the one
+      that does.
     """
 
     __tablename__ = "chat_message"

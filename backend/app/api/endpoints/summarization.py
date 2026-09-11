@@ -30,6 +30,8 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Path
+from fastapi import Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -42,6 +44,9 @@ from app.schemas.summary import SpeakerIdentificationResponse
 from app.schemas.summary import SummaryResponse
 from app.schemas.summary import SummaryTaskRequest
 from app.services.llm_service import is_llm_available
+from app.services.summary_export_service import VALID_SUMMARY_EXPORT_FORMATS
+from app.services.summary_export_service import SummaryExportLabels
+from app.services.summary_export_service import build_summary_export
 from app.tasks.speaker_tasks import identify_speakers_llm_task
 from app.tasks.summarization import summarize_transcript_task
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
@@ -227,6 +232,120 @@ def get_file_summary(
         file_id=UUID(str(media_file.uuid)),
         filename=media_file.title or media_file.filename,
         summary_data=_redacted_summary(db, current_user, dict(media_file.summary_data)),
+    )
+
+
+@router.get("/{file_uuid}/summary/export", response_class=Response)
+def export_summary(
+    file_uuid: str = Path(..., description="UUID of the media file"),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    db: Session = Depends(get_db),
+    export_format: str = Query("md", alias="format"),
+    title_label: str = Query("AI Summary"),
+    executive_summary_label: str = Query("Executive Summary (BLUF)"),
+    brief_summary_label: str = Query("Brief Summary"),
+    major_topics_label: str = Query("Major Topics Discussed"),
+    key_participants_label: str = Query("Key participants: {participants}"),
+    importance_high_label: str = Query("HIGH"),
+    importance_medium_label: str = Query("MED"),
+    importance_low_label: str = Query("LOW"),
+    action_items_label: str = Query("Action Items"),
+    owner_label: str = Query("Owner"),
+    due_date_label: str = Query("Due"),
+    key_decisions_label: str = Query("Key Decisions"),
+    speaker_analysis_label: str = Query("Speaker Analysis"),
+    follow_up_items_label: str = Query("Follow-up Items"),
+    disclaimer_label: str = Query("AI-generated summary - please verify important details."),
+):
+    """Export the requesting user's masked summary as a downloadable/copyable document.
+
+    This is issue #885's real fix. #885 was filed as a redaction bypass and the premise was
+    wrong — this route calls the SAME ``_redacted_summary`` helper as ``GET .../summary``
+    below, so there is exactly one masking implementation for both. The actual defects were
+    client-side: ``SummaryModal.svelte``'s clipboard-copy serializer dropped the action-items
+    and speaker-analysis sections, and it was the last client-side re-serialization of server
+    data left in the SPA. See ``summary_export_service``'s module docstring for the full
+    argument.
+
+    ⚠️ **Three things this route deliberately does NOT do — do not "fix" their absence:**
+
+    - **No ``redact``/reveal query parameter.** There is no cached-artifact analog of the
+      transcript's owner "show original" toggle here, so there is nothing for an
+      ``export_locked`` floor to lock — adding a reveal parameter would CREATE the exact
+      redaction-bypass vulnerability #885 mistakenly believed already existed.
+    - **No ``_redaction_pending``/409 gate.** That gate exists because the transcript path
+      masks from CACHED spans that a redaction scan produces asynchronously — before the scan
+      finishes there is nothing to apply. A summary is masked by LIVE detection over
+      LLM-authored prose (``mask_summary``) every time it is read; there is no cached artifact
+      whose absence a 409 would need to protect.
+    - **No audit-event call.** ``audit_unredacted_reveal`` early-returns whenever the reveal
+      set is empty, and this route never computes one (see the first bullet) — calling it here
+      would be dead code recording an event that never happens.
+    """
+    fmt = export_format.lower()
+    if fmt not in VALID_SUMMARY_EXPORT_FORMATS:
+        raise HTTPException(status_code=400, detail=f"Unsupported export format: {export_format}")
+
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+    )
+
+    if not media_file.summary_data:
+        raise HTTPException(
+            status_code=404,
+            detail="No summary available for this file. Please generate one first.",
+        )
+
+    masked = _redacted_summary(db, current_user, dict(media_file.summary_data))
+
+    labels = SummaryExportLabels(
+        title=title_label,
+        executive_summary=executive_summary_label,
+        brief_summary=brief_summary_label,
+        major_topics=major_topics_label,
+        key_participants=key_participants_label,
+        importance_high=importance_high_label,
+        importance_medium=importance_medium_label,
+        importance_low=importance_low_label,
+        action_items=action_items_label,
+        owner=owner_label,
+        due_date=due_date_label,
+        key_decisions=key_decisions_label,
+        speaker_analysis=speaker_analysis_label,
+        follow_up_items=follow_up_items_label,
+        disclaimer=disclaimer_label,
+    )
+
+    try:
+        content = build_summary_export(masked, export_format=fmt, labels=labels)
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged (issue #431's guard) — nothing in
+        # build_summary_export raises one today, but the broad handler below would report
+        # any that appeared as a 500.
+        raise
+    except ValueError as e:
+        # Fixed literal, not str(e) (issue #859/#891): `export_format` is already validated
+        # against VALID_SUMMARY_EXPORT_FORMATS above, so this branch is believed unreachable in
+        # practice, but the whole-tree exception-echo gate does not grant an exemption for
+        # "probably unreachable" — the site is fixed rather than allowlisted.
+        logger.exception("Unexpected ValueError building summary export for file %s", file_uuid)
+        raise HTTPException(status_code=400, detail="Invalid summary export request.") from e
+    except Exception as e:
+        logger.exception("Failed to generate summary export for file %s", file_uuid)
+        raise HTTPException(status_code=500, detail="Failed to generate summary export.") from e
+
+    source_name = media_file.title or media_file.filename or str(media_file.uuid)
+    base_filename = source_name.rsplit(".", 1)[0] if "." in source_name else source_name
+    filename = f"{base_filename}-summary.{fmt}"
+
+    return Response(
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(content.encode("utf-8"))),
+        },
     )
 
 

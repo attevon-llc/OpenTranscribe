@@ -40,6 +40,16 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
   system settings, usage, GDPR erasure (`gdpr_erasure_service.py` +
   `erasure_ledger_service.py` — **see below**).
+- **Abuse takedown / quarantine** — `takedown_service.py` is the one place quarantine lives:
+  `exclude_quarantined`/`is_hidden_for` gate reads, `quarantine_file`/`release_file` are the
+  admin actions. Its `is_notification_suppressed` / `is_notification_suppressed_for_uuid` /
+  `filter_suppressed_file_uuids` are the WS-push-side twin of that same gate (issue #908) —
+  `app/utils/websocket_notify.py:send_ws_event_for_file` is the **required** call site for any
+  WebSocket event naming a `MediaFile`; `send_ws_event` itself has no notion of quarantine at
+  all. `tests/unit/test_ws_event_quarantine_discipline.py` is the structural gate that fails a
+  new unguarded call site. …and `exclude_quarantined` is re-applied on the ASYNC export plane
+  (`tasks/media_download.py`) because a dispatch-time authorization does not survive a
+  takedown landing before the worker runs.
 - **Identity / account security** — see below. `auth_config_service.py` (DB > .env > coded
   default, AES-256-GCM at rest), `account_security_service.py`,
   `idp_group_mapping_service.py`, `directory_sync_service.py`, `auth_mail_config_service.py`,
@@ -238,6 +248,19 @@ every difference between the two backends (issue #284 A1.11/A1.12):
 - Don't reintroduce a second host-rewrite. `MinIOService.get_presigned_url` used to
   hardcode `http://minio:9000` → `localhost:5178`/`EXTERNAL_MINIO_URL`; it now shares
   `rewrite_public_host` like everything else.
+- **Two presigning clients, not one (issue #907).** `minio_client` (root) signs everything
+  except browser-facing GETs; `storage_presign_identity.presign_client()` — a dedicated,
+  least-privilege MinIO service-account identity — signs the three that reach a browser:
+  `get_file_url`, `get_presigned_download_url`, `MinIOService.get_presigned_url`. Its policy
+  Denies `s3:GetObject` on any object carrying `STORAGE_QUARANTINE_TAG_KEY=true`
+  (`core/constants.py`), so `takedown_service.quarantine_file` tagging an object revokes an
+  already-minted presigned URL immediately — no new mint required. **Never grant this
+  identity tagging rights** (`s3:PutObjectTagging`/`s3:DeleteObjectTagging`) or
+  `s3:ListBucket` — the identity a Deny is keyed on must not be able to clear its own key,
+  and measured least-privilege containment depends on it staying that way. MinIO-only (no
+  admin API on native S3) and fails open to the root client if the identity can't be
+  provisioned — see `storage_presign_identity.py`'s module docstring and
+  `docs/abuse-and-takedown.md`.
 
 ## LLM features (optional)
 
@@ -377,6 +400,49 @@ deliberately **not applied**; it applies again if the conversation is later poin
 that can honour it. `tests/unit/test_llm_reasoning_capability.py` pins that non-regression, with
 a `works` control beside it so "always return None" cannot pass.
 
+### The context window is MEASURED too (`llm_context_window.py`, issues #533 / #833)
+
+`LLMConfig.max_tokens` **is** the context window (`LLMService.__init__`), and it used to be
+whatever the user *declared* in `UserLLMSettings.max_tokens` — never checked against what the
+endpoint actually serves. Issue #533 built the probe (a real, opt-in measurement, stored the
+same way as the reasoning verdict above); issue #833 is what actually **applies** it on the
+chat/summarization runtime path. Before #833, a declared value above the real ceiling produced
+either a hard 400 (vLLM/OpenAI-compatible) or silent front-of-context truncation (Ollama sends
+the declared value as `num_ctx`, which can drop the system prompt first) — and issue #873
+raising the declared Ollama default to 128000 made an over-declared config the common case, not
+the rare one.
+
+| What | Where |
+|---|---|
+| Probe, storage helpers, the narrowing rule | `services/llm_context_window.py` |
+| Status enum | `core/enums.ContextWindowStatus` |
+| Recorded measurement | `SystemSettings`, key `llm.context_window.<fp>` |
+| Run it | `POST /llm-settings/config/{uuid}/context-window-probe` |
+| Read it | `GET /llm-settings/config/{uuid}/context-window` |
+| Applied to a turn | `LLMService.create_from_*` → `llm_context_window.effective_window` |
+
+**It only ever narrows.** `effective_window` mirrors `resolve_enable_thinking`'s "return
+unchanged unless the verdict is definitively known" rule: no measurement record (the probe is
+opt-in, so this is the common case), a non-`MEASURED` status, or a measured value >= the
+declared one all return the declared value unchanged. Only a measured value *below* the declared
+one is applied, with a warning log naming both numbers — a declared value below the measured
+ceiling may be a deliberate VRAM/cost/shared-server decision, and raising it automatically would
+override that decision and reintroduce the failure this exists to prevent.
+
+**`LLMConfig.max_tokens` on a built service is therefore the EFFECTIVE window, while the
+`user_llm_settings` row keeps the DECLARED one** — the same split issue #64 draws between a
+stored preference and what the runtime actually honours. `LLMService.__init__` copies
+`config.max_tokens` into `self.user_context_window`, so every downstream budget computation
+(response token sizing, chunking, the Ollama `num_ctx` payload, `resolve_answer_tokens` /
+`build_messages` in `chat/prompting.py`) is narrowed automatically without a second call site.
+`chat/service.py` records the effective value actually used on `turn.metadata["context_window"]`
+after `build_messages`, so a truncated turn is attributable rather than reading as an unexplained
+retrieval failure.
+
+No pre-flight token-count validator was added on top of this: once the budget is computed
+against the real (possibly narrowed) window, prompt + answer fit by construction, and a second
+token-counting check would duplicate logic `build_messages` already owns.
+
 ## User transcription settings
 
 Per-user prefs (Settings → Transcription) are `UserSetting` key/value rows shaped by
@@ -430,6 +496,15 @@ config**, exporting the raw transcript for everyone — including under the admi
 Whose policy applies (the **requesting user**, not the file owner) and when it is resolved
 (**run time inside the task**, from a `user_id`, never a serialized config) are argued in
 `redaction/export_policy.py`.
+
+**And one rule that is not about redaction at all (issue #818): the export workers re-check
+QUARANTINE at run time.** Both entry points are permission-filtered at dispatch, but a
+takedown can land in the gap — `build_subtitle_archive` takes `include_quarantined` and
+*skips* a taken-down file like any other unusable entry (one file must not fail the other
+99), while `prepare_media_download_task` wraps its own file read in `exclude_quarantined` so
+a taken-down file is refused exactly as a deleted one is. Sharing/tenant scope is still
+decided once, at the endpoint; only the abuse gate, which is time-varying by design, is
+re-applied.
 
 ## Gotchas
 

@@ -125,7 +125,7 @@ Phase A policy conclusion (confirmed end-to-end): **bs=16 fp32 for all deploymen
 
 ## MPS (Apple Silicon) cross-platform validation — 2026-04-20
 
-**Host:** Mac Studio, M2 Max (superstudio@192.168.30.26). torch `mps.is_available() == True`, `recommended_max_memory = 21 845 MB`.
+**Host:** Mac Studio, M2 Max (remote arm64 host). torch `mps.is_available() == True`, `recommended_max_memory = 21 845 MB`.
 
 **Unit tests:** all 28 `test_budget.py` assertions pass on `darwin-arm64`. `_budget.py` is pure-Python + stdlib so the ladder math is host-independent.
 

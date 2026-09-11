@@ -176,8 +176,25 @@ def update_media_file_transcription_status(
     # decline as an uncovered gap rather than credit itself — see that function's
     # `normalize_language(media.language) is None` branch for the other, load-bearing half.
     media_file.language = normalize_language(language)
-    media_file.status = FileStatus.COMPLETED
-    media_file.completed_at = datetime.datetime.now(datetime.UTC)
+    # Issue #824 (#664's item 3, corrected by the takedown_service helpers below):
+    # a file quarantined or placed under legal hold while still transcribing must
+    # not have its status/completed_at clobbered by this unrelated pipeline write.
+    # The original fix here just skipped both writes outright, which left a file
+    # stranded once a SECOND, unguarded writer (task_utils.update_media_file_status)
+    # clobbered QUARANTINED with PROCESSING/COMPLETED moments later -- release_file
+    # only restores from pre_quarantine_status when status == QUARANTINED, so that
+    # file was never releasable again. apply_processing_status records the real
+    # verdict into pre_quarantine_status instead of skipping it, and
+    # stamp_completion_time writes completed_at unless doing so would move an
+    # ALREADY-set timestamp forward while the file is held (which would restart
+    # the retention clock #664's sweep predicate is keyed on). Function-local
+    # import: takedown_service pulls in app.auth.audit, and this module is
+    # imported broadly across the pipeline.
+    from app.services.takedown_service import apply_processing_status
+    from app.services.takedown_service import stamp_completion_time
+
+    apply_processing_status(media_file, FileStatus.COMPLETED)
+    stamp_completion_time(media_file, datetime.datetime.now(datetime.UTC))
 
     # Store processing model info
     if whisper_model:

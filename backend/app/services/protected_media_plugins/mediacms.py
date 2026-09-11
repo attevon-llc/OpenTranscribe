@@ -371,10 +371,13 @@ class MediacmsProvider(ProtectedMediaProvider):
         except HTTPException:
             raise
         except requests.exceptions.RequestException as e:
-            # Re-wrap as HTTPException for consistency with FastAPI error handling
+            # Re-wrap as HTTPException for consistency with FastAPI error handling.
+            # The raw requests exception carries the FULL internal URL, including
+            # host:port — never returned to the caller (#859).
+            logger.exception("Failed to fetch media information from MediaCMS")
             raise HTTPException(
                 status_code=502,
-                detail=f"Failed to fetch media information from MediaCMS: {e}",
+                detail="Could not fetch media information from the configured media source.",
             ) from e
 
         return friendly_token, base_url, info, auth_token
@@ -543,12 +546,15 @@ class MediacmsProvider(ProtectedMediaProvider):
         except HTTPException:
             raise
         except requests.exceptions.RequestException as e:
-            # Clean up partial file on failure
+            # Clean up partial file on failure. The raw requests exception
+            # carries the FULL internal URL, including host:port — never
+            # returned to the caller (#859).
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
+            logger.exception("Failed to download media file from MediaCMS")
             raise HTTPException(
                 status_code=502,
-                detail=f"Failed to download media file from MediaCMS: {e}",
+                detail="Could not download the media file from the configured media source.",
             ) from e
 
         # Build info dict from already-fetched data (no redundant second login)

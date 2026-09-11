@@ -1,4 +1,6 @@
+import contextlib
 import logging
+import os
 import time
 from datetime import UTC
 from datetime import datetime
@@ -11,7 +13,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.core.celery import celery_app
 from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -149,12 +150,23 @@ def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> M
     # Log state transition for debugging
     logger.debug(f"Media file {file_id} state change: {media_file.status} -> {status}")
 
-    # Update status and timestamps
-    media_file.status = status
+    # Issue #824: this is the SECOND writer of status/completed_at (the first is
+    # transcription/storage.py's update_media_file_transcription_status) and it
+    # used to write both fields unconditionally -- with no quarantine/legal-hold
+    # awareness at all -- reached via a separate chain
+    # (postprocess.py -> update_task_status -> update_media_file_from_task_status
+    # -> here). That made the first writer's guard vacuous: it would decline to
+    # write, and this function would clobber QUARANTINED with COMPLETED/PROCESSING
+    # moments later on the very same request. Function-local import: see
+    # storage.py's identical note on why takedown_service isn't a module-level import.
+    from app.services.takedown_service import apply_processing_status
+    from app.services.takedown_service import stamp_completion_time
+
+    apply_processing_status(media_file, status)
 
     # Set completed_at timestamp if status is COMPLETED or ERROR
-    if status in [FileStatus.COMPLETED, FileStatus.ERROR] and not media_file.completed_at:
-        media_file.completed_at = datetime.now(UTC)
+    if status in [FileStatus.COMPLETED, FileStatus.ERROR]:
+        stamp_completion_time(media_file, datetime.now(UTC))
 
     db.commit()
     db.refresh(media_file)
@@ -265,44 +277,126 @@ def get_task_summary_for_media_file(db: Session, file_id: int) -> dict[str, Any]
     }
 
 
+def _finalize_unconfirmed_cancellation(db: Session, media_file: MediaFile, task_id: str) -> None:
+    """Flip a file straight to CANCELLED when no cooperative stop could be armed.
+
+    The pre-#823 behaviour, kept for the one case that still needs it: Redis was unreachable,
+    so ``request_cancel`` could not write the flag and no checkpoint will ever fire. Leaving
+    the file ``CANCELLING`` then would wedge it until the reconciliation task ran, for a stop
+    that was never actually requested of the worker.
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if task:
+        task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
+        task.error_message = "Task cancelled by user"  # type: ignore[assignment]
+        task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+
+    media_file.status = FileStatus.CANCELLED
+    media_file.active_task_id = None  # type: ignore[assignment]
+    media_file.task_started_at = None  # type: ignore[assignment]
+    media_file.cancellation_requested = False
+
+
 def cancel_active_task(db: Session, file_id: int) -> bool:
-    """Cancel the active task for a media file.
+    """Ask the active task for a media file to stop, cooperatively (issue #823).
+
+    **What this used to do, and why none of it worked.** It called
+    ``celery_app.control.revoke(active_task_id, terminate=True)`` and flipped the file to
+    ``CANCELLED`` in the same breath. ``terminate=True`` signals the pool worker running the
+    task, which does nothing under the ``--pool=threads`` every GPU queue runs — and, worse,
+    ``active_task_id`` holds the *application* task id ``dispatch.py`` mints, never the celery
+    message id, so the revoke targeted an id no worker has ever seen on ANY pool. The GPU kept
+    decoding while the UI said the job had stopped; on a single-GPU host that blocks the user's
+    own next upload. The ``revoke()`` call is gone rather than repaired: threading celery's ids
+    through would buy only the prefork legs, and the cooperative path below covers every leg.
+
+    **What it does now — two phases.** ``request_cancel`` arms a per-run flag the running task
+    polls at its own checkpoints (``app/core/task_cancellation.py``), and the file moves to
+    ``FileStatus.CANCELLING`` — "we asked". The worker writes ``CANCELLED`` when it has
+    actually stood down (``tasks/transcription/cancellation.finish_cancelled``), so the status
+    distinguishes the request from the confirmed stop instead of asserting the stop optimistically.
+    ``reconcile_cancellation`` is queued with a countdown so ``CANCELLING`` cannot wedge.
+
+    ``active_task_id`` is deliberately **retained** while ``CANCELLING``: it is the handle the
+    reconciliation task and the worker's own confirmation both key on, and clearing it here is
+    what would make the two phases unable to find each other.
 
     Args:
         db: Database session
         file_id: ID of the media file
 
     Returns:
-        True if task was cancelled, False otherwise
+        True when the cancellation was recorded — either armed cooperatively (file is now
+        ``CANCELLING``) or, when the flag could not be armed, finalized outright (file is now
+        ``CANCELLED``). False when there is nothing to cancel or the write failed.
     """
+    from app.core.task_cancellation import request_cancel
+
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file or not media_file.active_task_id:
         return False
 
+    task_id = str(media_file.active_task_id)
+    file_uuid = str(media_file.uuid)
+
     try:
-        # Revoke the Celery task
-        celery_app.control.revoke(media_file.active_task_id, terminate=True)
+        armed = request_cancel(task_id, file_uuid)
 
-        # Update task status in database
-        task = db.query(Task).filter(Task.id == media_file.active_task_id).first()
-        if task:
-            task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
-            task.error_message = "Task cancelled by user"  # type: ignore[assignment]
-            task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+        if not armed:
+            _finalize_unconfirmed_cancellation(db, media_file, task_id)
+            db.commit()
+            logger.error(
+                f"Could not arm the cooperative cancellation for file {file_id} "
+                f"(task {task_id}) -- Redis is unreachable. The file is marked CANCELLED but "
+                f"the worker was never told to stop, so the work may still be running "
+                f"(issue #823)."
+            )
+            return True
 
-        # Update media file status
-        media_file.status = FileStatus.CANCELLED
-        media_file.active_task_id = None
-        media_file.task_started_at = None
-        media_file.cancellation_requested = False
+        media_file.cancellation_requested = True
+        # Through update_media_file_status for the quarantine/legal-hold gate (issue #824),
+        # rather than assigning `.status` directly.
+        update_media_file_status(db, file_id, FileStatus.CANCELLING)
 
-        db.commit()
-        logger.info(f"Successfully cancelled task for file {file_id}")
-        return True
-
+        logger.info(
+            f"Cancellation armed for file {file_id} (task {task_id}): status CANCELLING. "
+            f"The running stage stands down at its next checkpoint and confirms by writing "
+            f"CANCELLED (issue #823)."
+        )
     except Exception as e:
         logger.error(f"Failed to cancel task for file {file_id}: {e}")
         return False
+
+    _schedule_cancellation_reconcile(file_id, task_id)
+    return True
+
+
+def _schedule_cancellation_reconcile(file_id: int, task_id: str) -> None:
+    """Queue the bounded backstop that resolves a file the worker never answers for.
+
+    Dispatch failures are logged, not raised: the cooperative flag is already armed and the
+    cancellation is genuinely under way, so reporting the whole request as failed because a
+    *backstop* could not be queued would be the wrong answer. Skipped under ``SKIP_CELERY``
+    like every other dispatch site in this module's callers.
+    """
+    if os.environ.get("SKIP_CELERY", "False").lower() == "true":
+        return
+    try:
+        from app.core.constants import CeleryQueues
+        from app.tasks.transcription.cancellation import CANCEL_RECONCILE_DELAY_S
+        from app.tasks.transcription.cancellation import reconcile_cancellation
+
+        reconcile_cancellation.apply_async(
+            args=[file_id, task_id],
+            countdown=CANCEL_RECONCILE_DELAY_S,
+            queue=CeleryQueues.UTILITY,
+        )
+    except Exception as e:
+        logger.warning(
+            f"Could not queue the cancellation reconciliation for file {file_id} "
+            f"(task {task_id}): {e}. The cooperative stop is still armed; the file will stay "
+            f"CANCELLING if no worker confirms it."
+        )
 
 
 def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> list[int]:
@@ -505,10 +599,17 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
         if media_file.status == FileStatus.ORPHANED:
             return _recover_orphaned_file(db, media_file)
 
-        # Handle files with transcript data
+        # Handle files with transcript data. Routed through the same takedown-aware
+        # helpers as the two pipeline writers above for consistency -- not reachable
+        # for a quarantined row today (this branch only runs for a PROCESSING file
+        # with no live task), but a direct `media_file.status =` here would be the
+        # same footgun issue #824 was about if that ever changes.
         if media_file.transcript_segments:
-            media_file.status = FileStatus.COMPLETED
-            media_file.completed_at = datetime.now(UTC)
+            from app.services.takedown_service import apply_processing_status
+            from app.services.takedown_service import stamp_completion_time
+
+            apply_processing_status(media_file, FileStatus.COMPLETED)
+            stamp_completion_time(media_file, datetime.now(UTC))
         else:
             # No transcript data, mark as orphaned for potential retry
             media_file.status = FileStatus.ORPHANED
@@ -520,7 +621,17 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
         return True
 
     except Exception as e:
-        logger.error(f"Failed to recover stuck file {file_id}: {e}")
+        logger.error(f"Failed to recover stuck file {file_id}: {e}", exc_info=True)
+        # Recovery branches above COMMIT before dispatching, so landing here means
+        # the file was already changed and the restart never happened. Record the
+        # ATTEMPT so a repeatedly-failing file shows up in recovery_attempts instead
+        # of looking untried. Status/last_error_message are written by
+        # dispatch_transcription_pipeline itself when dispatch was the failure (#906).
+        with contextlib.suppress(Exception):
+            db.rollback()
+            failed_file = get_refreshed_object(db, MediaFile, file_id)
+            if failed_file is not None:
+                _update_recovery_tracking(db, failed_file)
         return False
 
 
@@ -595,6 +706,79 @@ _DEADLOCK_RETRY_ATTEMPTS = 3
 _DEADLOCK_RETRY_DELAY_S = 0.5
 
 
+def media_object_is_resolvable(media_file: MediaFile) -> bool:
+    """Whether this row's media actually resolves to an object in storage.
+
+    Fails **closed**: only a positive "the object is there" answers True. The
+    caller uses this to decide whether deleting a transcript is recoverable, and
+    the two error directions are not symmetric — reading a storage outage as
+    "present" destroys the transcript, reading it as "absent" merely refuses a
+    reprocess the user can repeat once storage is back.
+
+    Args:
+        media_file: The file whose ``storage_path`` should be resolved.
+
+    Returns:
+        True only when the object was confirmed present.
+    """
+    storage_path = media_file.storage_path
+    if not storage_path:
+        # The repo's own "this row has no media" convention (four writers, eight
+        # readers) — there is nothing to look up.
+        return False
+
+    if os.environ.get("SKIP_S3", "False").lower() == "true":
+        # No object storage is in play in this deployment mode, so there is no
+        # absence to confirm and nothing this check could learn. Same switch the
+        # upload/streaming/thumbnail paths already read.
+        return True
+
+    from app.services.minio_service import object_exists_and_size
+
+    try:
+        return object_exists_and_size(str(storage_path)) is not None
+    except Exception as e:
+        # object_exists_and_size only returns None for a genuine "no such key";
+        # everything else (outage, credentials, network) raises, and none of
+        # those is evidence the object is gone.
+        logger.warning(
+            f"Could not confirm media object {storage_path!r} for file {media_file.id}: "
+            f"{type(e).__name__}: {e}. Treating it as unresolvable."
+        )
+        return False
+
+
+def transcript_is_regenerable(db: Session, media_file: MediaFile) -> bool:
+    """Whether re-running the pipeline could reproduce this file's transcript.
+
+    False only when the file **has** transcript segments and its media object
+    cannot be found — the state in which clearing the transcript destroys the
+    only copy (issue #872). A file with no segments has nothing to lose, so it
+    stays retryable: rows created by the upload, URL-ingestion, media-download
+    and watch-source paths legitimately carry no storage object yet, and
+    retrying one is how the download re-runs.
+
+    Args:
+        db: Database session.
+        media_file: The file about to have its transcript cleared.
+
+    Returns:
+        True when clearing the transcript is safe.
+    """
+    from app.models.media import TranscriptSegment
+
+    has_segments = (
+        db.query(TranscriptSegment.id)
+        .filter(TranscriptSegment.media_file_id == media_file.id)
+        .first()
+        is not None
+    )
+    if not has_segments:
+        return True
+
+    return media_object_is_resolvable(media_file)
+
+
 def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = False) -> bool:
     """Reset a file for retry processing.
 
@@ -609,6 +793,19 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
     for attempt in range(1, _DEADLOCK_RETRY_ATTEMPTS + 1):
         media_file = get_refreshed_object(db, MediaFile, file_id)
         if not media_file:
+            return False
+
+        # Issue #872: the deletes below are unconditional and COMMIT, so a file
+        # whose media cannot be found loses its only copy of the transcript with
+        # nothing left to regenerate it from. The refusal lives here rather than
+        # at the callers because every reprocess/retry/recovery entry point
+        # reaches this one function.
+        if not transcript_is_regenerable(db, media_file):
+            logger.error(
+                f"Refusing to reset file {file_id} for retry: it has transcript segments "
+                f"and its media object ({media_file.storage_path!r}) could not be resolved "
+                "in storage, so re-running the pipeline could not reproduce them."
+            )
             return False
 
         try:

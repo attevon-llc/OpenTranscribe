@@ -39,8 +39,14 @@ import time
 logger = logging.getLogger(__name__)
 
 #: Set by ``mark_shutting_down()`` (the ``worker_shutting_down`` signal, BEFORE the drain).
-#: Read-only probe for a future cooperative-abort checkpoint (issue #782 follow-up, out of
-#: scope for this change) — deliberately not consulted by anything in this module.
+#:
+#: LOAD-BEARING as of issue #809 — this was "a read-only probe for a FUTURE cooperative-abort
+#: checkpoint, out of scope, deliberately not consulted by anything". It is now the flag the
+#: whole graceful-abort mechanism turns on: :func:`raise_if_shutting_down` (every GPU stage
+#: boundary plus the decode loop) and :func:`shutdown_requested` (the bounded diarization join in
+#: ``transcription/engine/stages.py``) both read it. Nothing in *this module* consults it, which
+#: is a different and still-true statement: releasing models here would free VRAM underneath a
+#: live CUDA kernel, which is exactly what :func:`mark_shutting_down` must not do.
 _SHUTDOWN = threading.Event()
 
 #: Guards :func:`release_worker_resources` against running twice (celery can, in principle,
@@ -67,8 +73,11 @@ def mark_shutting_down() -> None:
 def shutdown_requested() -> bool:
     """Whether a shutdown signal has been received.
 
-    Read-only; exists for a future cooperative-abort checkpoint to poll. Nothing in this
-    module consults it.
+    Read-only. The caller is ``transcription/engine/stages._shutdown_join_timeout`` (issue
+    #809), which uses it to decide whether to BOUND the join on an overlapped-diarization
+    thread — unbounded, that join can outlast docker's stop_grace_period by 60x and the worker
+    is SIGKILLed mid-CUDA regardless of any checkpoint. Prefer :func:`raise_if_shutting_down`
+    when you want to stand down; this exists for the cases that must degrade rather than raise.
     """
     return _SHUTDOWN.is_set()
 

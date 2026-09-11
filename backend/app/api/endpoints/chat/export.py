@@ -1,4 +1,4 @@
-"""Export a conversation (issue #52).
+"""Export a conversation (issue #52), under the reader's export redaction policy (#863).
 
 Chat answers frequently end up in a meeting note, a ticket or an email, so
 getting one out of the app without copy-pasting message by message is table
@@ -8,12 +8,18 @@ Markdown is the default because that is what the answers already are; JSON is
 offered for anyone piping conversations into their own tooling. Citations are
 rendered as a source list per answer so the export stays verifiable away from
 the app, with deep links back to the exact moment in each recording.
+
+⚠️ **Whose redaction policy applies, and why ``citations[].snippet`` is the only
+field this module masks, is argued in ``export_redaction.py``.** Read it before
+adding a field, a format, or a reveal parameter here.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 
 from fastapi import APIRouter
@@ -25,6 +31,8 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
+from app.api.endpoints.chat.export_redaction import mask_citations
+from app.api.endpoints.chat.export_redaction import resolve_export_policy
 from app.db.base import get_db
 from app.models.chat import ROLE_USER
 from app.models.chat import STATUS_SUPERSEDED
@@ -33,6 +41,36 @@ from app.models.chat import ChatMessage
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@dataclass(frozen=True)
+class _ExportMessage:
+    """One message as PLAIN DATA — never an ORM instance.
+
+    The masking below runs live detectors, and no DB transaction may be open
+    across one (``services/chat/CLAUDE.md``: gather → close → mask). Handing the
+    renderers ORM rows would re-open a session on the first attribute read after
+    the close, silently undoing that; a frozen dataclass cannot.
+    """
+
+    uuid: str
+    role: str
+    content: str
+    reasoning_content: str | None
+    citations: list[dict]
+    provider: str | None
+    model: str | None
+    created_at: datetime | None
+
+
+@dataclass(frozen=True)
+class _ExportConversation:
+    """The conversation header, likewise as plain data."""
+
+    uuid: str
+    title: str | None
+    created_at: datetime | None
+    scope: dict
 
 
 def _clock(seconds: float | None) -> str:
@@ -94,7 +132,7 @@ def _render_citation(citation: dict) -> list[str]:
     return lines
 
 
-def _render_markdown(conversation, messages: list[ChatMessage]) -> str:
+def _render_markdown(conversation: _ExportConversation, messages: list[_ExportMessage]) -> str:
     lines: list[str] = [f"# {conversation.title or 'Chat'}", ""]
 
     created = conversation.created_at
@@ -122,7 +160,7 @@ def _render_markdown(conversation, messages: list[ChatMessage]) -> str:
 
         lines.extend([message.content or "", ""])
 
-        citations = message.citations or []
+        citations = message.citations
         if citations:
             lines.append("**Sources**")
             lines.append("")
@@ -137,7 +175,7 @@ def _render_markdown(conversation, messages: list[ChatMessage]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _render_json(conversation, messages: list[ChatMessage]) -> str:
+def _render_json(conversation: _ExportConversation, messages: list[_ExportMessage]) -> str:
     payload = {
         "uuid": str(conversation.uuid),
         "title": conversation.title,
@@ -149,7 +187,7 @@ def _render_json(conversation, messages: list[ChatMessage]) -> str:
                 "role": m.role,
                 "content": m.content,
                 "reasoning_content": m.reasoning_content,
-                "citations": m.citations or [],
+                "citations": m.citations,
                 "provider": m.provider,
                 "model": m.model,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
@@ -173,18 +211,68 @@ def export_conversation(
 
     Superseded turns (edited questions and their replaced answers) are omitted:
     an export should read as the conversation the user actually had.
-    """
-    conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
-    messages = (
+    Runs in three phases — **gather, close, mask** — because citation masking runs
+    live detectors and a Presidio pass inside an open transaction holds ACCESS SHARE
+    for its duration, queuing every ``ALTER TABLE`` behind a download
+    (``services/chat/CLAUDE.md``; ``scripts/audit-session-lifetime.py`` exists for
+    exactly this shape).
+    """
+    conversation_row = get_owned_conversation(db, ctx, conversation_uuid)
+
+    rows = (
         db.query(ChatMessage)
         .filter(
-            ChatMessage.conversation_id == conversation.id,
+            ChatMessage.conversation_id == conversation_row.id,
             ChatMessage.status != STATUS_SUPERSEDED,
         )
         .order_by(ChatMessage.id.asc())
         .all()
     )
+    conversation = _ExportConversation(
+        uuid=str(conversation_row.uuid),
+        title=conversation_row.title,
+        created_at=conversation_row.created_at,
+        scope=conversation_row.scope,
+    )
+    raw_messages = [
+        _ExportMessage(
+            uuid=str(row.uuid),
+            role=row.role,
+            content=row.content,
+            reasoning_content=row.reasoning_content,
+            citations=list(row.citations or []),
+            provider=row.provider,
+            model=row.model,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+    cfg = resolve_export_policy(db, ctx.user.id)
+
+    # A citation is persisted at answer time and never re-checked against the
+    # file's CURRENT quarantine state, so a file taken down after this
+    # conversation cited it would otherwise export fully readable — the same
+    # gap #817 closed for the media-preview and transcript-segment routes.
+    # Must run BEFORE `db.close()` below: it needs the session to check
+    # `MediaFile.is_quarantined`.
+    from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
+
+    filtered_citation_lists = drop_quarantined_citations_bulk(
+        db, [m.citations for m in raw_messages], is_admin=ctx.user.is_admin
+    )
+    raw_messages = [
+        dataclasses.replace(m, citations=citations)
+        for m, citations in zip(raw_messages, filtered_citation_lists, strict=True)
+    ]
+
+    # Phase 2: end the read transaction before any detector runs. Everything above is
+    # now plain data, so nothing can lazily re-open it.
+    db.close()
+
+    messages = [
+        dataclasses.replace(m, citations=mask_citations(m.citations, cfg)) for m in raw_messages
+    ]
 
     if export_format == "json":
         body = _render_json(conversation, messages)

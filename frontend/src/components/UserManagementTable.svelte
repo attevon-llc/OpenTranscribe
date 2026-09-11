@@ -1112,7 +1112,7 @@
                     </svg>
                   </button>
                   {/if}
-                  {#if currentUser.auth_type === 'local' || currentUser.allow_local_fallback}
+                  {#if (currentUser.auth_type === 'local' || currentUser.allow_local_fallback) && (currentUser.role !== 'super_admin' || isSuperAdmin)}
                   <button
                     class="icon-button reset-password-button"
                     on:click={() => openPasswordResetModal(currentUser)}

@@ -58,7 +58,8 @@ The `windows-installer/` directory contains all source files for creating the Wi
 ### Assets and Documentation
 
 - **`ot-icon.ico`** - Application icon
-- **`license.txt`** - Software license and attributions
+- **`LICENSE.txt`** - The full GNU AGPL-3.0 text this software is licensed under
+- **`NOTICE.txt`** - Third-party component attributions
 - **`preinstall.txt`** - Pre-installation information
 - **`after-install.txt`** - Post-installation guide
 - **`README-WINDOWS.md`** - End-user documentation (included in installer)
@@ -165,7 +166,8 @@ offline-package-build/
     ├── uninstall_opentranscribe.bat
     ├── check-prerequisites.ps1  # Prerequisite checker
     ├── ot-icon.ico             # Application icon
-    ├── license.txt
+    ├── LICENSE.txt
+    ├── NOTICE.txt
     ├── preinstall.txt
     ├── after-install.txt
     ├── README-WINDOWS.md       # User documentation
@@ -642,7 +644,7 @@ docker images --filter "reference=davidamacey/opentranscribe-*" --format "{{.Rep
 
 ### Getting Help
 
-- **GitHub Issues**: https://github.com/davidamacey/opentranscribe/issues
+- **GitHub Issues**: https://github.com/attevon-llc/OpenTranscribe/issues
 - **Documentation**: See README-WINDOWS.md in installation directory
 - **Logs**: Check Docker logs for detailed error messages
 
@@ -801,8 +803,8 @@ Model selection affects:
 
 ### Links
 
-- **GitHub Repository**: https://github.com/davidamacey/opentranscribe
-- **Issue Tracker**: https://github.com/davidamacey/opentranscribe/issues
+- **GitHub Repository**: https://github.com/attevon-llc/OpenTranscribe
+- **Issue Tracker**: https://github.com/attevon-llc/OpenTranscribe/issues
 - **Docker Desktop**: https://www.docker.com/products/docker-desktop
 - **Inno Setup**: https://jrsoftware.org/isdl.php
 - **HuggingFace**: https://huggingface.co/settings/tokens
@@ -811,4 +813,4 @@ Model selection affects:
 
 ## License
 
-See [license.txt](license.txt) for full license terms and third-party component licenses.
+See [LICENSE.txt](LICENSE.txt) for the full AGPL-3.0 terms and [NOTICE.txt](NOTICE.txt) for third-party component licenses. Both are installed alongside the application.

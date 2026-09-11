@@ -73,8 +73,14 @@ def opensearch_connection_kwargs(**overrides: Any) -> dict[str, Any]:
         "use_ssl": settings.OPENSEARCH_USE_TLS,
         "verify_certs": settings.OPENSEARCH_VERIFY_CERTS,
         "ssl_show_warn": False,
-        "http_auth": (settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
     }
+    # An empty ("", "") tuple is NOT equivalent to omitting http_auth entirely --
+    # opensearch-py still sends `Authorization: Basic Og==` for it, which a
+    # security-enabled cluster would (correctly) 401 on, but which is needless
+    # noise on the security-disabled default. Only send a credential pair when at
+    # least one half is actually configured.
+    if settings.OPENSEARCH_USER or settings.OPENSEARCH_PASSWORD:
+        kwargs["http_auth"] = (settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD)
     kwargs.update(overrides)
 
     if is_sigv4():

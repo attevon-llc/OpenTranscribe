@@ -109,6 +109,17 @@ def _history_for_prompt(db: Session, conversation_id: int, max_turns: int) -> li
     the value as individual messages instead, half of what was fetched here was
     thrown away every turn and the setting delivered half the depth it promised
     (issue #386).
+
+    ⚠️ Deliberately carries ``role``/``content`` ONLY — a row's ``citations`` are
+    never read here and never replayed to the LLM provider (checked against
+    issue #817's citation-replay concern: this function has no such bug to fix).
+    A citation's ``snippet`` is unmasked transcript text on a local-model
+    deployment (``redaction/llm_guard.is_local_provider``), but ``content`` —
+    the only field this function forwards — is already the model's own
+    previously-generated, already-masked-at-persist-time answer
+    (``chat/output_redactor``), so there is nothing here for a takedown to
+    leak. Keep it that way if this function ever grows a reason to read more
+    of the row.
     """
     rows = (
         db.query(ChatMessage)
@@ -138,8 +149,22 @@ def list_messages(
     total = query.count()
     rows = query.order_by(ChatMessage.id.asc()).offset(offset).limit(limit).all()
 
+    serialized = [_serialize_message(row) for row in rows]
+    # A citation is persisted at answer time and never re-checked against the
+    # file's CURRENT quarantine state — so a file taken down after a
+    # conversation cited it stayed fully readable through the conversation's
+    # history forever (issue #817). Applied here, after serialization, so it
+    # covers the same field shape `export_conversation` masks.
+    from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
+
+    citation_lists = drop_quarantined_citations_bulk(
+        db, [m["citations"] or [] for m in serialized], is_admin=ctx.user.is_admin
+    )
+    for message, citations in zip(serialized, citation_lists, strict=True):
+        message["citations"] = citations
+
     return MessageList(
-        messages=[_serialize_message(row) for row in rows],  # type: ignore[misc]
+        messages=serialized,  # type: ignore[arg-type]
         total=total,
         limit=limit,
         offset=offset,

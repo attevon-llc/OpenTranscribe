@@ -1012,9 +1012,16 @@ def test_the_scanner_fires_on_every_shape_the_two_bug_fixes_could_have_blinded_i
     assert kind in offenders[0], f"{label}: {offenders}"
 
 
-#: Payload size the ``printf`` exemption above is asserted safe at. Deliberately tiny --
-#: see the ceiling this pins.
-_PRINTF_SAFE_BYTES = 4 * 1024
+#: Payload size the ``printf`` exemption above is asserted safe at (issue #918). The old
+#: value (4 KiB) was wrong: once the ``FIRST\n``/trailing-newline overhead is added, 4 KiB
+#: totals just over the 4096-byte pipe buffer glibc sizes from ``st_blksize`` on Linux, so
+#: bash's ``printf`` builtin ends up flushing it in two separate writes instead of one.
+#: The test's whole premise is that the payload leaves in a single write -- with two
+#: writes, ``head -1`` is free to exit after the first and SIGPIPE the second under load,
+#: which is the intermittent failure this pins against. Staying under one buffer's worth
+#: keeps it a single write on any host, so the "safe" half tests the construct again
+#: rather than depending on how fast the reader happens to be scheduled.
+_PRINTF_SAFE_BYTES = 1024
 #: ...and a size at which the same construct provably breaks. Measured on this host
 #: 2026-09-07, `printf 'FIRST\n<payload>\n' | head -1` under `set -euo pipefail`:
 #: 1 KiB 0/100 aborts, 7 KiB 0/100, **16 KiB 4/100**, 32 KiB 31/100, 60 KiB 100/100,

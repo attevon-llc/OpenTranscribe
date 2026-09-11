@@ -106,7 +106,9 @@ non-admins — gallery list, file detail, search results/snippets, streaming,
 download, and thumbnail all return *not found* (404). The original media and
 transcript are **never deleted** by a takedown — hiding is a read-time transform,
 so the row survives for the audit and appeal trail. Admins retain visibility to
-review and release.
+review and release. An export already in flight is re-checked when the worker
+runs, not only when it was requested, so a takedown applied mid-render still
+takes effect.
 
 ### Owner notice (DMCA §512(g))
 
@@ -141,6 +143,91 @@ and **never blocks the takedown or the release**.
 
 Audit event types: `admin.file.quarantine`, `admin.file.release` (in the FedRAMP
 AU-2/AU-3 audit log).
+
+## Presigned URL revocation (issue #907, FIXED)
+
+A takedown revokes **access going forward** — the file 404s on every list/detail/stream/
+download/search-snippet surface, immediately. Historically it did **not** revoke a presigned
+MinIO URL that had already been handed out before the takedown: every presigned media URL is
+valid for `MEDIA_URL_EXPIRE_SECONDS` (6 hours, default) from the moment it was minted, so a URL
+a viewer opened minutes before an admin quarantined the file kept working for the rest of that
+window regardless of the takedown. **This is now fixed for the bundled MinIO backend.**
+
+### The mechanism
+
+Browser-facing GET presigns — `GET /api/files/{uuid}/stream-url` (video/audio/thumbnail,
+`backend/app/api/endpoints/files/__init__.py`) and the download/preview equivalents
+(`minio_service.get_presigned_download_url`, `MinIOService.get_presigned_url`) — are signed by
+a dedicated, **non-root MinIO service-account identity** (`backend/app/services/
+storage_presign_identity.py`) instead of the root credential. That identity's inline policy
+**Denies `s3:GetObject`** on any object carrying the object tag
+`STORAGE_QUARANTINE_TAG_KEY=true` (`ot-quarantine`, `backend/app/core/constants.py`), with a
+`StringEquals` condition — MinIO evaluates the Deny against the object's *current* tags on every
+request, not at signing time, so:
+
+- **Quarantining a file tags it** (`takedown_service.quarantine_file` →
+  `minio_service.set_object_quarantine_tag`, both the primary object and the thumbnail). A URL
+  minted **before** the takedown 403s the instant the tag lands — same URL, same signature, no
+  re-mint needed.
+- **Releasing a file untags it** (`takedown_service.release_file`), which restores the SAME
+  pre-existing URL to 200. Because a still-tagged object also 403s a *brand-new* presigned URL,
+  the untag is retried up to 3 times with a short backoff before the release logs an ERROR (not
+  a warning) — a failed untag leaves the file released in the database but unplayable until it
+  is retried and succeeds.
+- The identity is least-privilege by construction: it cannot list the bucket and cannot clear
+  the quarantine tag itself (no `s3:ListBucket`/`s3:PutObjectTagging`/`s3:DeleteObjectTagging`
+  in its policy) — the identity a Deny is keyed on must not be able to remove its own key.
+
+### Honest limitations
+
+- **MinIO-only.** There is no admin API on native AWS S3 (`STORAGE_BACKEND=s3`): the quarantine
+  tag is still written to the object (harmless), but nothing enforces a Deny on it. An operator
+  running against real S3 must attach an equivalent bucket policy by hand:
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::<your-media-bucket>/*",
+        "Condition": {
+          "StringEquals": { "s3:ExistingObjectTag/ot-quarantine": "true" }
+        }
+      }
+    ]
+  }
+  ```
+
+  Note this Denies the **whole bucket policy**, including root-signed requests — S3 bucket
+  policies (unlike root-signed requests under a MinIO service-account Deny) apply regardless of
+  which principal signed the request, so this is actually *stronger* than the MinIO mechanism on
+  that one axis, at the cost of needing to be applied by hand rather than shipped automatically.
+
+- **Fails open, visibly.** If the restricted identity cannot be provisioned (MinIO admin API
+  unreachable, `STORAGE_PRESIGN_IDENTITY_ENABLED=false`, or a non-MinIO S3-compatible backend
+  with no admin API), presigning silently falls back to the root client — today's pre-#907
+  behavior, no regression, but inert. This is made visible: an ERROR is logged once per process,
+  and the takedown/release audit event records whether revocation actually happened
+  (`presign_revoked` / `presign_tag_cleared` in the event's `extra`).
+
+- **Admin review sees the same 403.** Admins presign through the same restricted identity, so an
+  admin reviewing a quarantined file's *media* also gets a 403 on its presigned URL — this is a
+  deliberate decision, not a gap: a root-signed bypass for admin review would reopen a signed URL
+  that outlives the review window. Admins review via the transcript text, which this mechanism
+  does not touch.
+
+- **Reads only, and only going forward.** This revokes a presigned URL's ability to be used
+  again; it cannot un-download bytes a client already fetched before the tag landed.
+
+Four cheaper mitigations were evaluated and rejected before this design: shortening the TTL
+(breaks long-recording playback for legitimate viewers), a bucket-policy Deny alone (bypassed —
+root-signed URLs ignore bucket policy, which is exactly why this uses a restricted *identity*
+instead), rotating the signing credential (invalidates every other user's unrelated in-flight
+URLs, not just the taken-down file's), and renaming/moving the object key (conflicts with
+`legal_hold` blocking deletes, and isn't cleanly reversible on release).
 
 ## Configuration reference
 

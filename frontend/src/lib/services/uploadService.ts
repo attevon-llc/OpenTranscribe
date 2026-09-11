@@ -445,6 +445,25 @@ class UploadService {
   }
 
   /**
+   * Detect a deterministic, non-retryable failure from `POST /files/complete`.
+   *
+   * A 503 here is `main.py`'s global `OpenTranscribeError` handler surfacing
+   * `ASRConfigurationError` (`backend/app/core/exceptions.py`, issue #905's fix): the
+   * backend has definitively decided it cannot dispatch this upload under the current
+   * deployment config (e.g. a `lite` image with no local ASR provider). Retrying via
+   * the legacy `POST /files` re-upload would hit the exact same refusal, at the cost of
+   * re-sending the whole file body through the API container for nothing (issue #911).
+   *
+   * A network-level failure (stall, dropped connection, no response at all) carries no
+   * `response.status` and is unaffected — those stay eligible for the legacy fallback,
+   * same as before this check existed.
+   */
+  private isNonRetryableCompleteFailure(err: unknown): boolean {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    return status === 503;
+  }
+
+  /**
    * Build the axios progress callback for one upload: updates percentage + ETA
    * and keeps the stall watchdog fed.
    */
@@ -716,8 +735,11 @@ class UploadService {
 
     // --- Presigned flow ---------------------------------------------------
     if (uploadUrl && uploadMethod === 'PUT' && taskId) {
+      let clientPutStartMs = 0;
+      let clientPutEndMs = 0;
+      let putSucceeded = false;
       try {
-        const clientPutStartMs = Date.now();
+        clientPutStartMs = Date.now();
         await this.sendBody((watchdog) =>
           axios.put(uploadUrl, file, {
             headers: {
@@ -730,23 +752,8 @@ class UploadService {
             onUploadProgress: progressHandler(watchdog),
           })
         );
-        const clientPutEndMs = Date.now();
-
-        await axiosInstance.post('/files/complete', {
-          file_id: fileId,
-          task_id: taskId,
-          file_hash: fingerprint,
-          file_size: file.size,
-          client_hash_start_ms: clientHashStartMs,
-          client_hash_end_ms: clientHashEndMs,
-          client_put_start_ms: clientPutStartMs,
-          client_put_end_ms: clientPutEndMs,
-          min_speakers: upload.minSpeakers ?? null,
-          max_speakers: upload.maxSpeakers ?? null,
-          num_speakers: upload.numSpeakers ?? null,
-        });
-
-        return { uuid: fileId, isDuplicate: false };
+        clientPutEndMs = Date.now();
+        putSucceeded = true;
       } catch (err: unknown) {
         // A stalled connection is a network fault, not "the server can't do
         // presigned uploads" — re-sending the whole body through the API
@@ -755,6 +762,43 @@ class UploadService {
           throw err;
         }
         // Fall through to the legacy flow below.
+      }
+
+      // The body already landed in MinIO — a `/complete` failure here is a
+      // separate question from whether the PUT itself worked, and separated
+      // into its own try/catch so a deterministic refusal (issue #911) can be
+      // told apart from a transient one without re-triggering the PUT's own
+      // fallback comment above.
+      if (putSucceeded) {
+        try {
+          await axiosInstance.post('/files/complete', {
+            file_id: fileId,
+            task_id: taskId,
+            file_hash: fingerprint,
+            file_size: file.size,
+            client_hash_start_ms: clientHashStartMs,
+            client_hash_end_ms: clientHashEndMs,
+            client_put_start_ms: clientPutStartMs,
+            client_put_end_ms: clientPutEndMs,
+            min_speakers: upload.minSpeakers ?? null,
+            max_speakers: upload.maxSpeakers ?? null,
+            num_speakers: upload.numSpeakers ?? null,
+          });
+
+          return { uuid: fileId, isDuplicate: false };
+        } catch (err: unknown) {
+          if (axios.isCancel(err) || err instanceof UploadStalledError) {
+            throw err;
+          }
+          // A deterministic dispatch refusal (e.g. ASRConfigurationError, 503) will
+          // fail identically through the legacy path — don't pay for a full re-upload
+          // to learn that twice. Surface it directly; the row is already visible at
+          // ERROR (issue #905) so the gallery's normal error display picks it up.
+          if (this.isNonRetryableCompleteFailure(err)) {
+            throw err;
+          }
+          // Fall through to the legacy flow below.
+        }
       }
     }
 
@@ -881,8 +925,11 @@ class UploadService {
 
     // --- Presigned flow: PUT the audio blob straight to MinIO, then finalize.
     if (uploadUrl && uploadMethod === 'PUT' && taskId) {
+      let clientPutStartMs = 0;
+      let clientPutEndMs = 0;
+      let putSucceeded = false;
       try {
-        const clientPutStartMs = Date.now();
+        clientPutStartMs = Date.now();
         await this.sendBody((watchdog) =>
           axios.put(uploadUrl, audioBlob, {
             headers: { 'Content-Type': contentType },
@@ -893,21 +940,8 @@ class UploadService {
             onUploadProgress: progressHandler(watchdog),
           })
         );
-        const clientPutEndMs = Date.now();
-
-        await axiosInstance.post('/files/complete', {
-          file_id: fileId,
-          task_id: taskId,
-          file_hash: sourceFingerprint,
-          file_size: audioBlob.size,
-          client_put_start_ms: clientPutStartMs,
-          client_put_end_ms: clientPutEndMs,
-          min_speakers: upload.minSpeakers ?? null,
-          max_speakers: upload.maxSpeakers ?? null,
-          num_speakers: upload.numSpeakers ?? null,
-        });
-
-        return { uuid: fileId, isDuplicate: false };
+        clientPutEndMs = Date.now();
+        putSucceeded = true;
       } catch (err: unknown) {
         // See uploadFile(): a stall must not silently re-send the body through
         // the API container.
@@ -915,6 +949,36 @@ class UploadService {
           throw err;
         }
         // Fall through to the legacy flow below.
+      }
+
+      // See uploadFile(): separated so a deterministic `/complete` refusal
+      // (issue #911) can be told apart from a transient one.
+      if (putSucceeded) {
+        try {
+          await axiosInstance.post('/files/complete', {
+            file_id: fileId,
+            task_id: taskId,
+            file_hash: sourceFingerprint,
+            file_size: audioBlob.size,
+            client_put_start_ms: clientPutStartMs,
+            client_put_end_ms: clientPutEndMs,
+            min_speakers: upload.minSpeakers ?? null,
+            max_speakers: upload.maxSpeakers ?? null,
+            num_speakers: upload.numSpeakers ?? null,
+          });
+
+          return { uuid: fileId, isDuplicate: false };
+        } catch (err: unknown) {
+          if (axios.isCancel(err) || err instanceof UploadStalledError) {
+            throw err;
+          }
+          // See uploadFile(): a deterministic dispatch refusal must not pay for a
+          // full re-upload to learn the same refusal twice.
+          if (this.isNonRetryableCompleteFailure(err)) {
+            throw err;
+          }
+          // Fall through to the legacy flow below.
+        }
       }
     }
 

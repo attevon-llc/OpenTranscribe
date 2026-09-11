@@ -33,6 +33,14 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   under `/chat` and FastAPI matches in registration order, so `/chat/projects` would otherwise
   be shadowed. The admin settings router requires `get_current_admin_user` on **both** GET and
   PUT — the UI tab is cosmetic, that dependency is the authority.
+  **`export.py` is an export surface and is gated like one** (#863): it resolves the
+  requesting user's `EffectiveRedactionConfig` and masks `citations[].snippet`, which is the
+  only field of a chat message that is NOT already masked in the database — `content` and
+  `reasoning_content` are masked at persist time by `chat/output_redactor`, a snippet is
+  masked only by the *egress* policy and a local-model deployment leaves that unmasked by
+  design. The argument, and why there is deliberately no `?redact=false` here, is in
+  `endpoints/chat/export_redaction.py`. `tests/unit/test_export_plane_resolves_a_policy.py`
+  walks the live route table so the next export route cannot be missed the way this one was.
 - `endpoints/files/` — the oversized files router split into a package (`upload`, `crud`,
   `filtering`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
   `management.py` exports a second router mounted at the same `/files` prefix.
@@ -202,6 +210,28 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 
 ## Gotchas
 
+- **The upload failure boundary is the commit of the row with its `storage_path`** (issue #905).
+  Before that commit — bad MIME, magic-byte mismatch, oversized, object never landed — delete the
+  row; both `files/upload.py::process_file_upload` (legacy multipart) and
+  `files/complete_upload.py::complete_upload` (presigned) already agree here. At or after that
+  commit the bytes are in object storage and the row is real, so a dispatch failure must NEVER
+  delete it — persist `status=ERROR` + `last_error_message`, invalidate the file-list cache, and
+  re-raise unchanged (so `ASRConfigurationError` still reaches `main.py`'s `OpenTranscribeError`
+  handler as 503 with the real message). Both routes funnel their post-commit dispatch through
+  `files/upload.py::dispatch_upload_pipeline_or_mark_error` so this can't drift between them
+  again. Before this fix, the legacy route's single broad `except Exception` around the whole
+  request body caught a post-storage dispatch failure the same as a pre-storage one and deleted
+  the row + leaked the MinIO object; the presigned route had no handling around dispatch at all,
+  so a non-`ASRConfigurationError` failure left the row at PENDING forever — invisible to
+  `orphan_upload_sweeper`, which deliberately skips a PENDING row whose object exists.
+- **`user.email` on an existing account is writable through exactly THREE authorities**
+  (issue #867 follow-up): the account holder themselves, via `PUT /users/me` (password-proven);
+  a super_admin, via `PUT /admin/users/{uuid}/external-email`, for an already-linked account
+  accepting an IdP's updated address; and the IdP itself at JIT sync. **`PUT /users/{uuid}` is
+  not one of them** — it 403s on an email *change* for every caller, including super_admin
+  (a plain admin write with no password proof used to be a fourth, ungated writer — the same
+  account-takeover shape `auth/account_linking.py` exists to close on the other paths) and
+  no-ops on resubmitting the unchanged value. See `test_admin_user_update_privilege_boundary.py`.
 - `require_capability(key)` (`core/capabilities.py`) returns **404, not 403** — a gated router
   must look like an unknown route. Platform superusers bypass it.
 - **`endpoints/tags/` is a package** (`crud` · `discovery` · `sharing` · `operations` + `_common`),
@@ -339,7 +369,8 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   owner is `llm_guard`'s subject, and that governs third-party egress rather than a read), and at
   **run time inside the task** from a `user_id`, never a config serialized into the Celery
   signature. A file whose scan is unfinished is *skipped* by the batch (one file must not fail
-  the other 99) and *refused* by the burn-in, which cannot be un-burned.
+  the other 99) and *refused* by the burn-in, which cannot be un-burned. A file taken down
+  after dispatch is treated the same way — skipped by the batch, refused by the burn-in (#818).
 - **A burned-in-subtitle download is keyed by the caller's redaction policy, in three
   places at once** (#85): the object-storage cache key, the Redis dedup guard
   (`download_prep_guard_key`), and the `variant` field every `download_events` message
@@ -355,10 +386,29 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   pub/sub channel, then read it **again**. A single check-then-subscribe loses a worker
   completion published in the gap and the stream waits on `get_message` forever (#284 A1.22,
   #334). `test_handler_blocking_io.py` AST-pins the ordering for both.
-- The WS endpoint `accept()`s *before* authenticating (cookie, else a 10 s first-message
-  `authenticate` frame), then closes with 4001/4002/4003 — not HTTP status codes.
+- **The WS endpoint is `/api/ws`, not `/ws`** — `websockets.router` declares `/ws` and
+  `main.py` mounts `api_router` under `settings.API_PREFIX`. A websocket to an unmatched
+  path is closed by Starlette's router with a clean **1000**, which reads exactly like the
+  app hanging up on you; that is what a test connecting to `/ws` sees.
+- **An `Origin` gate runs BEFORE `accept()`** (issue #903): a handshake whose `Origin` is
+  neither same-origin nor in `settings.CORS_ORIGINS` is closed with **4403** without ever
+  being accepted. The handshake is not subject to the same-origin policy and browsers
+  attach cookies to it, while CORS/CSRF middleware here is `BaseHTTPMiddleware`-based and
+  does not run on this path — so this is the only thing standing between any web page and
+  a visiting user's live event stream. A **missing** `Origin` passes (non-browser clients
+  carry no ambient cookie); same-origin passes because `CORS_ORIGINS` is set by no shipped
+  compose file and a gate keyed only on it would refuse every production deployment.
+  Connection/frame/rate caps are still absent — tracked separately on #903.
+- After that gate, the endpoint `accept()`s *before* authenticating (cookie, else a 10 s
+  first-message `authenticate` frame), then closes with 4001/4002/4003 — not HTTP status
+  codes.
 - Never touch `websockets.manager` from sync code; publish with
   `app/utils/websocket_notify.py:send_ws_event` (Redis pub/sub) so all API/worker processes reach
-  the connection-owning process.
+  the connection-owning process. **If the event names a `MediaFile`**, use
+  `send_ws_event_for_file(..., file_id=… | file_uuid=… | file_uuids=…)` instead — `send_ws_event`
+  itself has no notion of quarantine, and a taken-down file must not be disclosed over a live WS
+  push (issue #908). Both `speakers.py::verify_speaker_identification` and `::confirm_speaker_gender`
+  also gate on `takedown_service.is_hidden_for` before mutating anything, so a quarantined file
+  404s there exactly like every other resource lookup.
 - Middleware order is load-bearing: `ObservabilityMiddleware` is added **last** in `main.py` so
   it runs outermost.

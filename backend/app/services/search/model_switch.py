@@ -177,9 +177,15 @@ def dispatch_reindex_for_every_owner(
                 user_id=user_id, file_uuids=payloads[user_id]
             ).id
     except Exception as e:
+        # The broker/result-backend exception this raises on (see the docstring
+        # above) can quote a connection URL with an embedded credential, e.g.
+        # redis://:<password>@host:port/db (#891). The progress facts (how many
+        # of how many users) are the useful, safe part of the message; the raw
+        # exception text is logged, never returned.
+        logger.exception("Reindex dispatch failed after %d of %d users", len(tasks), len(ordered))
         raise ReindexDispatchError(
             f"The re-index could not be queued after {len(tasks)} of {len(ordered)} "
-            f"users ({e}). Restore the message broker and re-run it."
+            "users. Restore the message broker and re-run it."
         ) from e
 
     logger.info(f"Dispatched reindex for {len(tasks)} users")

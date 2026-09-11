@@ -19,10 +19,11 @@ import numpy as np
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
+from app.core.constants import gpu_preferred_queue
 from app.db.session_utils import session_scope
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
-from app.utils.websocket_notify import send_ws_event
+from app.utils.websocket_notify import send_ws_event_for_file
 
 from .notifications import send_completion_notification
 from .notifications import send_progress_notification
@@ -69,6 +70,21 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
     if gpu_result.get("status") == "error":
         logger.warning(
             f"Skipping postprocess — GPU task failed for file {gpu_result.get('file_id')}"
+        )
+        _cleanup_temp(gpu_result.get("file_uuid"))
+        return gpu_result
+
+    if gpu_result.get("status") == "cancelled":
+        # issue #823: the GPU/CPU stage stood down at a cooperative checkpoint because the user
+        # cancelled this file, and `cancellation.finish_cancelled` has already written the
+        # terminal state and notified. It RETURNS rather than raising precisely so acks_late
+        # acks the message — which means this successor link still runs, and its job is to
+        # release the temp audio and otherwise do nothing. Marking the file COMPLETED here
+        # would undo the cancellation the user asked for.
+        logger.info(
+            "Skipping postprocess — file %s was cancelled by the user (task %s)",
+            gpu_result.get("file_id"),
+            gpu_result.get("task_id"),
         )
         _cleanup_temp(gpu_result.get("file_uuid"))
         return gpu_result
@@ -141,7 +157,12 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                         "pipeline_completion": True,
                         "pipeline_task_id": task_id,
                     },
-                    queue=CeleryQueues.GPU,
+                    # Resolved at CALL time, not pinned to 'gpu' (issue #865): this
+                    # is the cloud-ASR-plus-local-diarization branch, which is
+                    # exactly the shape a lite deployment runs — and lite has no
+                    # 'gpu' consumer, so the pin published this into a dead queue
+                    # while the pipeline reported progress and waited forever.
+                    queue=gpu_preferred_queue(),
                 )
                 # rediarize consumes the temp WAV on the GPU worker; keep
                 # the file around until that task finishes its own cleanup.
@@ -242,13 +263,14 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         )
 
         # Notify frontend that background enrichment tasks are running
-        send_ws_event(
+        send_ws_event_for_file(
             user_id,
             "enrichment_started",
             {
                 "file_id": str(file_uuid),
                 "tasks": enrichment_tasks,
             },
+            file_id=file_id,
         )
 
     except Exception as e:
@@ -432,10 +454,11 @@ def enrich_and_dispatch(
     # Search indexing (invisible to user)
     try:
         _index_transcript(file_id, file_uuid, user_id, pipeline_task_id=pipeline_task_id)
-        send_ws_event(
+        send_ws_event_for_file(
             user_id,
             "enrichment_task_complete",
             {"file_id": str(file_uuid), "task": "search_indexing"},
+            file_id=file_id,
         )
     except Exception as e:
         logger.warning(f"Search indexing failed for file {file_id}: {e}")

@@ -64,6 +64,55 @@ class CeleryQueues:
     ]
 
 
+def gpu_preferred_queue(deployment_mode: str | None = None) -> str:
+    """Queue for work that PREFERS a GPU but produces a correct result without one.
+
+    ``gpu`` in a full deployment; ``cpu`` in lite. ``docker-compose.lite.yml``
+    scales BOTH ``gpu``-consuming workers (``celery-worker`` and
+    ``celery-worker-gpu-scaled``) to ``replicas: 0``, so a task published to
+    ``gpu`` there lands in a queue with no consumer, forever, with no error
+    anywhere and the API having already answered 200 (issue #865). Nine tasks did
+    exactly that; the user-visible shape was a speaker reassignment reporting
+    success while the cross-file voiceprint update never happened.
+
+    Routing is decided by the PUBLISHER, and ``docker-compose.lite.yml`` sets
+    ``DEPLOYMENT_MODE=lite`` on **every** service in the deployment — including
+    beat, flower and each worker — so keying on it covers every process that can
+    publish one of these tasks. Read at call time, never cached, so a test can
+    flip the mode per-case (the same contract as :func:`gpu_split_enabled`).
+
+    The reroute costs only speed: the lite image ships the whole CPU inference
+    stack these tasks need (``torch==...+cpu``, ``torchaudio``, ``pyannote.audio``,
+    ``onnxruntime`` — see ``requirements-lite.txt``, which keeps them deliberately,
+    per issue #660), and a lite deployment has no faster option by definition. It
+    is the same argument issue #584 already accepted for
+    ``extract_speaker_embeddings``, generalised to the rest of the family.
+
+    ⚠️ **Not for work that REQUIRES a GPU to be correct.**
+    ``transcription.process_file`` stays pinned to ``gpu``: lite ships no local
+    ASR and ``services/asr/factory.py`` refuses it by name, so rerouting it would
+    replace a clear refusal with a different failure on another worker.
+
+    ⚠️ Deliberately **not** a live consumer probe. ``inspect().active_queues()``
+    (as in ``tasks/transcription/dispatch.py``) costs a broker broadcast of up to
+    2 s, and that file's own docstring justifies it only because it sits behind a
+    rare operator opt-in — whereas these tasks dispatch from interactive request
+    handlers like ``PUT /segments/{uuid}/speaker``. More importantly the two
+    conditions differ: a *deployment* with no GPU worker by design is permanent
+    and knowable for free, while a full deployment whose GPU worker is briefly
+    down is an outage, where queueing until it returns is the CORRECT behaviour
+    and a silent downgrade to CPU would be the regression.
+
+    Args:
+        deployment_mode: Override for the ambient ``DEPLOYMENT_MODE`` (tests).
+
+    Returns:
+        ``CeleryQueues.CPU`` in lite, otherwise ``CeleryQueues.GPU``.
+    """
+    mode = deployment_mode if deployment_mode is not None else _os.getenv("DEPLOYMENT_MODE", "full")
+    return CeleryQueues.CPU if mode.strip().lower() == "lite" else CeleryQueues.GPU
+
+
 def gpu_split_enabled() -> bool:
     """Whether THIS process's environment ASKS FOR the gpu-split topology.
 
@@ -1517,3 +1566,23 @@ DIAR_NATIVE_SHARED_DIR_DEFAULT = "/scratch/opentranscribe/diar"
 # ordinary per-file dir would eventually rmtree an in-flight handoff WAV out from under a
 # running job (issue #661 E2 phase 1.2).
 RESERVED_SCRATCH_NAMESPACES = frozenset({"engine", "diar"})
+
+# Coarse buckets the SPA's `file_type` filter sends, mapped to the MIME family prefix that
+# actually appears in the indexed/stored `content_type` field (`audio/mpeg`, `video/mp4`, ...).
+# The single source of truth for both the search plane (hybrid_search_service's
+# _file_type_filter_clause) and the gallery plane (files/filtering.py's
+# apply_file_type_filter) — issue #871. They used to keep separate copies, and only the
+# search plane's got the #463 fix that makes an unrecognized value narrow to nothing instead
+# of being silently dropped.
+FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
+
+# =============================================================================
+# Presigned-URL revocation (issue #907)
+# =============================================================================
+# The S3/MinIO object tag key the restricted presign identity's policy Denies
+# s3:GetObject on (StringEquals, value STORAGE_QUARANTINE_TAG_VALUE — see
+# storage_presign_identity.QUARANTINE_TAG_VALUE for the case-sensitivity note).
+# Both the policy builder (storage_presign_identity.build_presign_policy) and
+# the tagger (minio_service.set_object_quarantine_tag) import this ONE constant
+# rather than hardcoding the string twice.
+STORAGE_QUARANTINE_TAG_KEY = "ot-quarantine"

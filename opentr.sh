@@ -2426,6 +2426,9 @@ start_app() {
     # shipped placeholder, so a genuinely fresh `cp .env.example .env` boots
     # MinIO's KMS auto-encryption without manual intervention (issue #614).
     ensure_minio_kms_secret ".env"
+    # Unconditional owner-only lock (issue #857) -- not reachable via
+    # ensure_minio_kms_secret alone once a real key is already in place.
+    ensure_env_permissions ".env"
 
     # Fetch the NLTK corpora BEFORE de-hardlinking them: nothing else prefetches
     # them, so they were fetched at runtime from inside the transcription and
@@ -3483,6 +3486,9 @@ reset_and_init() {
   # Generate a real MinIO KMS secret key if .env still has .env.example's
   # shipped placeholder (issue #614).
   ensure_minio_kms_secret ".env"
+  # Unconditional owner-only lock (issue #857) -- not reachable via
+  # ensure_minio_kms_secret alone once a real key is already in place.
+  ensure_env_permissions ".env"
 
   # Fetch the NLTK corpora BEFORE de-hardlinking them (issue #491).
   ensure_nltk_corpora
@@ -4275,7 +4281,9 @@ case "$1" in
           "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
           "${BENCH_VOLUME_PREFIX}_redis_bench_data" \
           "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" \
-          "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
+          "${BENCH_VOLUME_PREFIX}_flower_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_app_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_audit_fallback_bench_data" 2>/dev/null || true
 
         # Switch git branch
         CURRENT_BRANCH="$(git branch --show-current)"
@@ -4320,7 +4328,9 @@ case "$1" in
           "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
           "${BENCH_VOLUME_PREFIX}_redis_bench_data" \
           "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" \
-          "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
+          "${BENCH_VOLUME_PREFIX}_flower_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_app_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_audit_fallback_bench_data" 2>/dev/null || true
         echo "✅ Bench volumes wiped."
         ;;
 
@@ -4426,7 +4436,9 @@ case "$1" in
           "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
           "${BENCH_VOLUME_PREFIX}_redis_bench_data" \
           "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" \
-          "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
+          "${BENCH_VOLUME_PREFIX}_flower_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_app_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_audit_fallback_bench_data" 2>/dev/null || true
 
         # Build and start bench stack on current branch.
         # Build the full backend service set (every worker sharing the backend

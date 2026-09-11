@@ -221,6 +221,24 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
                 "your administrator (BEDROCK_REGION/AWS_REGION), not per configuration."
             ),
         ),
+        # Issue #839: this catalog is the source the admin UI's provider dropdown
+        # renders from (GET /llm-settings/providers -> LLMSettings.svelte ->
+        # LLMConfigModal's <select>). CUSTOM was a fully translated, fully
+        # implemented provider (llm_service.py, is_local_provider, docker-compose
+        # overlay docs telling operators to select it) that this catalog simply
+        # never listed, making it unreachable from the UI it was built for.
+        schemas.ProviderDefaults(
+            provider=schemas.LLMProvider.CUSTOM,
+            default_model="",
+            default_base_url=None,
+            requires_api_key=False,
+            supports_custom_url=True,
+            max_context_length=None,
+            description=(
+                "Any OpenAI-compatible endpoint not covered above — point it at a "
+                "self-hosted or third-party server by base URL and model name."
+            ),
+        ),
     ]
 
 
@@ -239,6 +257,15 @@ def _assert_safe_llm_endpoint(base_url: str | None, purpose: str) -> None:
     Celery task — so there is no single call frame in which one resolution could serve both
     steps. Where the handler *does* fetch, use :func:`_pin_llm_endpoint` instead; it keeps
     the resolved address and hands it to the client.
+
+    **Called from three places, and all three must agree** (issue #820): ``POST
+    /test-connection`` (below), ``POST ""`` (create), and ``PUT /config/{uuid}`` (update,
+    only when the request actually sets ``base_url``). Before #820 only the test-connection
+    handler called this — a config could be created or updated with an unsafe ``base_url``
+    simply by never pressing "Test connection" first, including via the API directly. All
+    three read the same ``settings.LLM_ALLOW_PRIVATE_ENDPOINTS`` escape hatch, so a LAN
+    self-hoster who has opted in is not treated differently at create/update time than at
+    test time.
     """
     if not base_url:
         return
@@ -489,6 +516,12 @@ def create_user_llm_configuration(
     """
     Create a new LLM configuration for the current user
     """
+    # Refuse an unsafe base_url at the point of persistence, not only on the
+    # "Test connection" button (issue #820) — otherwise a config saved without
+    # ever being tested, or one written directly against this API, bypasses the
+    # SSRF guard entirely.
+    _assert_safe_llm_endpoint(settings_in.base_url, "LLM configuration create")
+
     # Check if user already has a configuration with this name
     existing_config = (
         db.query(models.UserLLMSettings)
@@ -570,6 +603,14 @@ def update_user_llm_configuration(
     )
 
     config_id = user_config.id
+
+    # Refuse an unsafe base_url at the point of persistence, not only on the
+    # "Test connection" button (issue #820). Only when this request actually
+    # SETS base_url — `UserLLMSettingsUpdate` is all-Optional and a PUT that
+    # doesn't touch base_url (e.g. renaming the config) must not re-validate an
+    # already-accepted, unchanged value.
+    if "base_url" in settings_in.model_fields_set:
+        _assert_safe_llm_endpoint(settings_in.base_url, "LLM configuration update")
 
     # Check for name conflicts if name is being updated
     if settings_in.name and settings_in.name != user_config.name:
@@ -869,14 +910,20 @@ def test_llm_connection(
         finally:
             llm_service.close()
 
-    except Exception as e:
+    except Exception:
+        # This broad handler wraps config load + key decryption + service
+        # construction, not just the connection dial — so the caught exception can
+        # be an internal detail (a decryption failure, a malformed stored config)
+        # rather than anything about the provider's reachability. The useful
+        # diagnostic already comes back via the success path's own `message`
+        # (which embeds the actual URL dialled); this arm stays generic (#859).
         response_time = int((time.time() - start_time) * 1000)
-        logger.exception(f"LLM connection test failed: {e}")
+        logger.exception("LLM connection test failed")
 
         return schemas.ConnectionTestResponse(
             success=False,
             status=schemas.ConnectionStatus.FAILED,
-            message=f"Connection test failed: {str(e)}",
+            message="Connection test failed.",
             response_time_ms=response_time,
         )
 
@@ -1326,13 +1373,16 @@ async def get_ollama_models(
             "total": 0,
             "message": f"Connection error: {str(e)}",
         }
-    except Exception as e:
-        logger.exception(f"Error fetching Ollama models from {base_url}: {e}")
+    except Exception:
+        # Broad catch around whatever aiohttp/JSON parsing can raise beyond the
+        # narrow ClientError above — kept generic rather than echoing the
+        # exception text into the response (#859).
+        logger.exception(f"Error fetching Ollama models from {base_url}")
         return {
             "success": False,
             "models": [],
             "total": 0,
-            "message": f"Unexpected error: {str(e)}",
+            "message": "Unexpected error while contacting the provider.",
         }
 
 
@@ -1493,9 +1543,13 @@ async def get_openai_compatible_models(
             False,
             message=f"Connection timeout: Server at {base_url} did not respond within 10 seconds.",
         )
-    except Exception as e:
-        logger.error(f"Error fetching OpenAI-compatible models from {base_url}: {e}", exc_info=True)
-        return _model_discovery_response(False, message=f"Unexpected error: {str(e)}")
+    except Exception:
+        # Broad catch beyond the narrow aiohttp errors above — kept generic
+        # rather than echoing the exception text into the response (#859).
+        logger.exception(f"Error fetching OpenAI-compatible models from {base_url}")
+        return _model_discovery_response(
+            False, message="Unexpected error while contacting the provider."
+        )
 
 
 async def _fetch_and_parse_models(
@@ -1529,10 +1583,13 @@ async def _fetch_and_parse_models(
         # Parse JSON response
         try:
             data = await response.json()
-        except Exception as json_err:
-            logger.warning(f"Model discovery: Invalid JSON response from {models_url}: {json_err}")
+        except Exception:
+            # A response body that failed to parse as JSON could quote a token or
+            # other sensitive fragment of what the provider sent back — never
+            # returned to the caller (#859).
+            logger.exception(f"Model discovery: Invalid JSON response from {models_url}")
             return _model_discovery_response(
-                False, message=f"Invalid JSON response from provider: {str(json_err)}"
+                False, message="The provider returned an unparseable response."
             )
 
         # Extract raw models from various formats
@@ -1633,9 +1690,13 @@ async def get_anthropic_models(
         return _model_discovery_response(
             False, message="Connection timeout: Anthropic API did not respond within 10 seconds"
         )
-    except Exception as e:
-        logger.error(f"Error fetching Anthropic models: {e}", exc_info=True)
-        return _model_discovery_response(False, message=f"Unexpected error: {str(e)}")
+    except Exception:
+        # Broad catch beyond the narrow aiohttp errors above — kept generic
+        # rather than echoing the exception text into the response (#859).
+        logger.exception("Error fetching Anthropic models")
+        return _model_discovery_response(
+            False, message="Unexpected error while contacting the provider."
+        )
 
 
 @router.get("/encryption-test")

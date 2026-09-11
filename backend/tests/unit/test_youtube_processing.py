@@ -210,7 +210,7 @@ def yt_url_seams(monkeypatch, db_session):
 
     monkeypatch.setattr(youtube_processing, "send_youtube_notification_via_redis", _notify)
     monkeypatch.setattr(youtube_processing, "dispatch_transcription_pipeline", lambda **_kw: None)
-    monkeypatch.setattr(youtube_processing, "send_ws_event", lambda *_a, **_kw: None)
+    monkeypatch.setattr(youtube_processing, "send_ws_event_for_file", lambda *_a, **_kw: None)
 
     return SimpleNamespace(notifications=notifications)
 
@@ -322,6 +322,83 @@ def test_a_terminal_attempt_at_the_retry_cap_writes_the_original_error_and_stops
 
 
 # --------------------------------------------------------------------------------------
+# 2b. The download succeeded but transcription dispatch failed — issue #906.
+#
+# Before this fix, a dispatch failure here was caught, logged with no traceback, and
+# then FALLEN THROUGH to the unconditional "success" return a few lines down — reporting
+# success for a file that (per #865/#906's dispatch-side fix) was simultaneously being
+# marked ERROR by dispatch_transcription_pipeline itself. Nothing that reads this task's
+# result (none of its callers do, but the return value is still the task's contract)
+# could tell the two states apart.
+# --------------------------------------------------------------------------------------
+
+
+def test_a_download_that_cannot_start_transcription_is_not_reported_as_success(
+    monkeypatch, db_session, normal_user, yt_url_seams
+):
+    media_file = _make_media_file(db_session, normal_user)
+    fake_service = _FakeMediaDownloadService()
+    monkeypatch.setattr(youtube_processing, "MediaDownloadService", lambda: fake_service)
+    monkeypatch.setattr(
+        youtube_processing,
+        "dispatch_transcription_pipeline",
+        lambda **_kw: (_ for _ in ()).throw(RuntimeError("broker down")),
+    )
+
+    result = process_youtube_url_task.apply(
+        args=("https://youtu.be/abc123", normal_user.id, str(media_file.uuid)),
+    ).get()
+
+    assert result["status"] == "error"
+    assert "broker down" in result["message"]
+    assert result["file_id"] == media_file.id
+
+
+def test_a_successful_dispatch_still_reports_success(
+    monkeypatch, db_session, normal_user, yt_url_seams
+):
+    """CONTROL: same fixture shape, ``yt_url_seams``'s default dispatch stub succeeds."""
+    media_file = _make_media_file(db_session, normal_user)
+    fake_service = _FakeMediaDownloadService()
+    monkeypatch.setattr(youtube_processing, "MediaDownloadService", lambda: fake_service)
+
+    result = process_youtube_url_task.apply(
+        args=("https://youtu.be/abc123", normal_user.id, str(media_file.uuid)),
+    ).get()
+
+    assert result == {
+        "status": "success",
+        "message": "YouTube processing completed",
+        "file_id": media_file.id,
+    }
+
+
+def test_the_dispatch_failure_is_logged_with_a_traceback(
+    monkeypatch, db_session, normal_user, yt_url_seams, caplog
+):
+    media_file = _make_media_file(db_session, normal_user)
+    fake_service = _FakeMediaDownloadService()
+    monkeypatch.setattr(youtube_processing, "MediaDownloadService", lambda: fake_service)
+    monkeypatch.setattr(
+        youtube_processing,
+        "dispatch_transcription_pipeline",
+        lambda **_kw: (_ for _ in ()).throw(RuntimeError("broker down")),
+    )
+
+    with caplog.at_level("ERROR"):
+        process_youtube_url_task.apply(
+            args=("https://youtu.be/abc123", normal_user.id, str(media_file.uuid)),
+        ).get()
+
+    matching = [r for r in caplog.records if "could not start transcription" in r.message]
+    assert matching, "expected a 'could not start transcription' error log record"
+    assert matching[0].exc_info is not None
+    formatted = matching[0].getMessage()
+    assert str(media_file.id) in formatted
+    assert "broker down" in formatted
+
+
+# --------------------------------------------------------------------------------------
 # 3. _dispatch_video_task / _handle_playlist_result — the unvalidated source_url
 # --------------------------------------------------------------------------------------
 
@@ -378,7 +455,7 @@ def test_handle_playlist_result_dispatches_every_video_with_no_source_url_filter
     identified directly on ``_dispatch_video_task`` also reaches the playlist path
     that is its only production caller.
     """
-    monkeypatch.setattr(youtube_processing, "send_ws_event", lambda *_a, **_kw: None)
+    monkeypatch.setattr(youtube_processing, "send_ws_event_for_file", lambda *_a, **_kw: None)
     monkeypatch.setattr(notification_service, "send_ws_event", lambda *_a, **_kw: None)
 
     good = _make_media_file(db_session, normal_user, source_url="https://youtu.be/good")

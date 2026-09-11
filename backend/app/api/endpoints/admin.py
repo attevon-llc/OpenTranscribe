@@ -24,6 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.auth.account_linking import emails_agree
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
@@ -84,6 +85,8 @@ from app.schemas.admin import RetentionPreviewResponse
 from app.schemas.admin import RetentionRunResponse
 from app.schemas.admin import RetryConfig
 from app.schemas.admin import RetryConfigUpdate
+from app.schemas.admin import UpdateExternalEmailRequest
+from app.schemas.admin import UpdateExternalEmailResponse
 from app.schemas.user import AdminPasswordResetRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
@@ -94,6 +97,7 @@ from app.services.account_security_service import audit_password_change
 from app.services.account_security_service import audit_role_change
 from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
+from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions
 from app.utils.stats_helpers import format_bytes
 
@@ -1618,6 +1622,19 @@ def admin_unlock_account(
     return {"success": True, "was_locked": unlocked, "was_disabled": was_disabled}
 
 
+def _targets_a_super_admin_without_authority(user: User, current_user: User) -> bool:
+    """Whether ``current_user`` (not super_admin) is acting on a super_admin ``user``.
+
+    Shared by ``admin_lock_account`` and ``admin_terminate_user_sessions`` — both were
+    gated only at the admin tier, which let a plain admin lock, or force-logout the
+    sessions of, every super_admin account: a deployment-wide lockout reachable through
+    two endpoints that were never meant to reach that far (issue #867 finding (e), same
+    shape as ``_validate_user_deletion`` above and ``update_user``'s guard in
+    ``users.py``).
+    """
+    return str(user.role) == ROLE_SUPER_ADMIN and str(current_user.role) != ROLE_SUPER_ADMIN
+
+
 @router.post("/users/{user_uuid}/lock")
 def admin_lock_account(
     request: Request,
@@ -1626,12 +1643,29 @@ def admin_lock_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Admin lock of user account."""
+    """Admin lock of user account. Only a super_admin may lock a super_admin."""
     client_ip, user_agent = _get_client_info(request)
 
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if _targets_a_super_admin_without_authority(user, current_user):
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_ACCOUNT_DISABLED,
+            outcome=AuditOutcome.FAILURE,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            target_user_id=int(user.id),
+            target_username=str(user.email),
+            details={"target_user": user_uuid, "reason": reason, "action": "lock_denied"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super_admin can lock a super_admin account",
+        )
 
     user.is_active = False  # type: ignore[assignment]
     # Locking an account that keeps a live refresh token is not a lock: token
@@ -1681,6 +1715,23 @@ def admin_terminate_user_sessions(
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if _targets_a_super_admin_without_authority(user, current_user):
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_LOGOUT_ALL,
+            outcome=AuditOutcome.FAILURE,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            target_user_id=int(user.id),
+            target_username=str(user.email),
+            details={"target_user": user_uuid, "action": "terminate_sessions_denied"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super_admin can terminate a super_admin account's sessions",
+        )
 
     count = revoke_all_sessions(db, user, reason="admin session termination")
     db.commit()
@@ -1850,6 +1901,8 @@ def admin_link_external_identity(
         outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         source_ip=client_ip,
         user_agent=user_agent,
         details={
@@ -1862,6 +1915,149 @@ def admin_link_external_identity(
     return LinkExternalIdentityResponse(
         success=True, provider=payload.provider, identifier=payload.identifier
     )
+
+
+#: The identifier column each external method stamps on an account. A row carrying
+#: any of these is "already linked" — which is what makes the email remedy below a
+#: REMEDY rather than a general "edit anyone's login address" power.
+_EXTERNAL_IDENTITY_COLUMNS = (
+    "oidc_subject",
+    "ldap_uid",
+    "pki_subject_dn",
+    "saml_subject",
+    "external_id",
+)
+
+
+@router.put("/users/{user_uuid}/external-email", response_model=UpdateExternalEmailResponse)
+def admin_update_external_email(
+    request: Request,
+    user_uuid: str,
+    payload: UpdateExternalEmailRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+) -> UpdateExternalEmailResponse:
+    """Accept an IdP's new address for an already-linked account (issue #867).
+
+    `auth/account_linking.assert_provider_id_link_permitted` refuses a login whose
+    asserted email no longer agrees with the stored one — the signal that a recycled
+    `sub`/`uid`/DN may now belong to a different real person. That check is right, but
+    it sits **before** every provider's profile-refresh code, so the stored address can
+    never catch up on its own: a benign IdP-side rename (a marriage, a domain
+    migration, a corrected typo) became a permanent lockout with no path back short of
+    direct SQL. This is that path.
+
+    **Why an explicit admin action rather than auto-accepting the new address.** At the
+    point of the check the two cases are indistinguishable — a legitimate rename and an
+    identifier reassigned to somebody else look identical, because in both the source
+    asserts an address the account does not hold. Auto-accepting resolves that ambiguity
+    in the attacker's favour, which is the vector `account_linking` was written to close.
+    A human comparing the two addresses can tell them apart; the refusal's audit record
+    carries both for exactly that purpose.
+
+    **Deliberately narrow.** It refuses an account that carries no external identifier
+    at all, so it is a remedy for an IdP-linked account and not a general
+    "rewrite anyone's login email" power — for a `local` account the email *is* the
+    credential identity, and moving it is a different decision that this endpoint is not.
+    Never a `super_admin`, matching `link-identity`: that account is local-only and is
+    the break-glass for exactly the IdP that might be failing.
+
+    Sessions are revoked, because the address is what the account authenticates as.
+    """
+    client_ip, user_agent = _get_client_info(request)
+
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if str(user.role) == ROLE_SUPER_ADMIN:
+        raise HTTPException(
+            status_code=400,
+            detail="super_admin accounts are local-only and cannot be linked to an external identity",
+        )
+
+    if not any(getattr(user, column, None) for column in _EXTERNAL_IDENTITY_COLUMNS):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This account is not linked to an external identity. This endpoint accepts an "
+                "identity provider's updated address for an already-linked account; it is not a "
+                "general email change."
+            ),
+        )
+
+    new_email = payload.email.strip()
+    previous_email = str(user.email)
+    if emails_agree(new_email, previous_email):
+        # Idempotent: re-applying the remedy must not churn sessions for nothing.
+        return UpdateExternalEmailResponse(
+            success=True, email=previous_email, previous_email=previous_email
+        )
+
+    # Case-INSENSITIVE, deliberately stricter than the byte-exact unique index on
+    # `user.email`: `emails_agree` treats `Alice@x` and `alice@x` as one mailbox, so
+    # letting two rows hold both would make the account a login resolves to depend on
+    # which comparison ran. Refusing is the safe direction; the admin can pick another.
+    conflict = (
+        db.query(User)
+        .filter(func.lower(User.email) == new_email.lower())
+        .filter(User.id != user.id)
+        .first()
+    )
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail="That email address is already in use by another account",
+        )
+
+    user.email = new_email
+    # email_verified is proof THIS deployment mailed the address on the row — a
+    # property of the ADDRESS, so it cannot survive the address changing (#909).
+    # NOT inert just because this is an IdP remedy: link-identity sets an external
+    # identifier WITHOUT changing auth_type, so an auth_type='local' account can
+    # reach this handler, and for that account the verification gate really does
+    # apply to login. Deliberately no re-verification token is issued here (unlike
+    # the self-service path in users.py): this endpoint is an administrator
+    # accepting an IdP's assertion for an already-linked account, and mailing an
+    # IdP-owned address unprompted isn't its job — issue_verification_token would
+    # also no-op for a genuinely external account. Clearing the flag is the honest
+    # record.
+    user.email_verified = False
+    user.email_verified_at = None
+    # Same shape as the self-service email change in `users.py`: revoke IN the
+    # transaction so a commit failure rolls the revocation back with it. An email
+    # change is an identity change on an account that authenticates by it, and
+    # `auth/CLAUDE.md` makes revocation non-optional for that class of change.
+    revoke_all_sessions(db, user, reason="external email change")
+    db.commit()
+
+    logger.info(
+        "super_admin %s accepted a new external email for user %s (was %s)",
+        current_user.email,
+        user_uuid,
+        previous_email,
+    )
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_UPDATE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        target_user_id=int(user.id),
+        target_username=new_email,
+        source_ip=client_ip,
+        user_agent=user_agent,
+        details={
+            "action": "update_external_email",
+            "target_user": user_uuid,
+            "previous_email": previous_email,
+        },
+    )
+    # Best-effort, and it may well bounce (a dead domain is one of the triggers) — but
+    # a silent address change is the first half of an account takeover, so the previous
+    # address is told, exactly as the self-service change in `users.py` does.
+    notify_email_changed(previous_email, new_email)
+
+    return UpdateExternalEmailResponse(success=True, email=new_email, previous_email=previous_email)
 
 
 # ============== MFA Management ==============
@@ -2490,6 +2686,15 @@ def _request_meta(request: Request) -> tuple[str, str]:
 def list_quarantined_files(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    include_legal_holds: bool = Query(
+        False,
+        description=(
+            "Also include files that are no longer quarantined but remain under "
+            "legal hold -- the release(clear_legal_hold=False) intermediate state "
+            "(issue #825). Additive: still-quarantined files are always included "
+            "regardless of this flag."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
@@ -2497,8 +2702,19 @@ def list_quarantined_files(
 
     Quarantined files are hidden from every normal read surface, so this is the
     only place an admin can see and act on them. Newest takedown first.
+
+    By default this is the takedown QUEUE (``is_quarantined IS TRUE``) only.
+    ``release(clear_legal_hold=False)`` unquarantines a file (restoring normal
+    visibility) while keeping its legal-hold, which produced a state no endpoint
+    could list at all until ``include_legal_holds=true`` was added (issue #825) --
+    an admin who deliberately kept a hold on a released file had no way to find
+    it again through the API a review-queue client would use.
     """
-    base = db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True))
+    if include_legal_holds:
+        condition = or_(MediaFile.is_quarantined.is_(True), MediaFile.legal_hold.is_(True))
+    else:
+        condition = MediaFile.is_quarantined.is_(True)
+    base = db.query(MediaFile).filter(condition)
     total = base.with_entities(func.count(MediaFile.id)).scalar() or 0
     rows = (
         base.order_by(MediaFile.quarantined_at.desc().nullslast()).offset(offset).limit(limit).all()
@@ -2513,6 +2729,7 @@ def list_quarantined_files(
             quarantined_at=f.quarantined_at.isoformat() if f.quarantined_at else None,
             quarantined_by=f.quarantined_by,
             legal_hold=bool(f.legal_hold),
+            is_quarantined=bool(f.is_quarantined),
         )
         for f in rows
     ]
@@ -2552,6 +2769,7 @@ def quarantine_media_file(
         is_quarantined=bool(file.is_quarantined),
         legal_hold=bool(file.legal_hold),
         status=str(file.status.value if hasattr(file.status, "value") else file.status),
+        presign_revoked=bool(getattr(file, "presign_revoked", False)),
     )
 
 
@@ -2588,4 +2806,5 @@ def release_media_file(
         is_quarantined=bool(file.is_quarantined),
         legal_hold=bool(file.legal_hold),
         status=str(file.status.value if hasattr(file.status, "value") else file.status),
+        presign_tag_cleared=bool(getattr(file, "presign_tag_cleared", True)),
     )

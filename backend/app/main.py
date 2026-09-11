@@ -19,6 +19,7 @@ from app.core.constants import NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS
 from app.core.constants import NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS
 from app.core.entropy import assert_csprng_available
 from app.core.entropy import validate_secret_entropy
+from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import AuthenticationError
 from app.core.exceptions import EmailDeliveryError
 from app.core.exceptions import LLMServiceError
@@ -283,6 +284,37 @@ async def _drain_websockets() -> None:
         logger.warning(f"WebSocket drain failed (non-fatal): {e}")
 
 
+def _backfill_quarantine_tags() -> None:
+    """One-time-per-boot, best-effort: tag files quarantined before issue #907 shipped.
+
+    ``quarantine_file``/``release_file`` keep the presigned-URL-revocation tag in sync with
+    ``is_quarantined`` going forward; this covers the gap for rows that were already
+    quarantined when a deployment upgrades onto this feature. Normally zero rows — a
+    takedown is rare and this only matters for one still open at upgrade time. Never
+    raises; the caller treats a failure here as non-fatal to startup.
+    """
+    from app.db.base import SessionLocal
+    from app.models.media import MediaFile
+    from app.services.minio_service import set_object_quarantine_tag
+
+    db = SessionLocal()
+    try:
+        rows = db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True)).all()
+        if not rows:
+            return
+        tagged = 0
+        for row in rows:
+            if row.storage_path and set_object_quarantine_tag(str(row.storage_path), True):
+                tagged += 1
+            if row.thumbnail_path:
+                set_object_quarantine_tag(str(row.thumbnail_path), True)
+        logger.info(
+            f"Quarantine-tag backfill: tagged {tagged}/{len(rows)} already-quarantined file(s)"
+        )
+    finally:
+        db.close()
+
+
 def _setup_minio():
     """Initialize the media bucket on startup.
 
@@ -336,6 +368,31 @@ def _setup_minio():
         from app.services.multipart_upload import ensure_abort_incomplete_lifecycle
 
         ensure_abort_incomplete_lifecycle(bucket_name)
+
+        # Presigned-URL revocation on quarantine (issue #907): provision the restricted
+        # presign identity now, at process startup, rather than lazily on the first
+        # presigned URL request — so a provisioning failure is visible in the startup
+        # log instead of buried in the first user's request. No-op (and no admin call)
+        # on native S3 or when the feature is disabled; never raises.
+        from app.services import storage_presign_identity
+
+        if storage_presign_identity.ensure_presign_identity():
+            logger.info("Presign identity ready — quarantine will revoke presigned media URLs")
+        elif not native_s3 and settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
+            logger.error(
+                "Presign identity NOT provisioned — presigned media URLs will be signed "
+                "with the root credential and quarantine will NOT revoke them. See the "
+                "preceding log line for why."
+            )
+
+        # Bounded best-effort backfill (issue #907): tag any file quarantined BEFORE this
+        # feature shipped, so upgrading enforces revocation on pre-existing takedowns too.
+        # Normally zero rows. Never blocks startup — a backfill failure just means those
+        # rows stay uncovered until the next restart.
+        try:
+            _backfill_quarantine_tags()
+        except Exception as e:  # noqa: BLE001 — best-effort, must never block startup
+            logger.warning(f"Quarantine-tag backfill failed (non-fatal): {e}")
 
         if native_s3:
             return
@@ -1014,6 +1071,7 @@ async def handle_app_error(request, exc: OpenTranscribeError):
         SearchIndexError: 503,
         LLMServiceError: 502,
         EmailDeliveryError: 503,
+        ASRConfigurationError: 503,
     }
     status = status_map.get(type(exc), 500)
     return JSONResponse(

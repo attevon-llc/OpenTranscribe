@@ -116,21 +116,30 @@ search, content redaction landed across every display and export surface, and th
 local/LDAP/OIDC/SAML/PKI/MFA/SCIM identity plane arrived at once. A large share of the work went
 into speed and refinement of things that already worked.
 
-The feature milestone closed at 285 issues. What remains is **release integrity**: five items
-found by an engineering review on 2026-09-06, kept in this release because each one changes what
-the release ships or what upgrading into it does to a user.
+The feature milestone closed at 285 issues. An engineering review on 2026-09-06 found five
+release-integrity gaps — each one changing what the release ships or what upgrading into it does
+to a user — and all five were fixed the same review cycle: the docs image was on EOL Node 20
+(#780, now `node:26-alpine`), release assets carried no checksums and the SBOM was attached by
+glob rather than gated (#781, now derived + gated in `scripts/release/release-assets.sh`),
+`./opentr.sh stop` SIGKILLed GPU workers with no grace period or shutdown handler (#782, base fix
+landed; #809 then closed the deeper gap — a *mid-decode* transcription still hit the grace
+ceiling and lost work — with cooperative-abort checkpoints throughout the ASR pipeline),
+`FROM_VERSIONS` was dead code with no stated skip-version policy (#783), and there was no patch
+path despite four of the last five minors needing one within 24 hours (#784).
 
-- The docs image builds on **EOL Node 20** and is a published, scanned artifact.
-- Release assets carry **no checksums**, and the SBOM is attached by glob rather than gated — so a
-  missing SBOM ships silently.
-- `./opentr.sh stop` **SIGKILLs GPU workers after 10 seconds**, which is the wedged-CUDA incident
-  this project's own safety rules exist to prevent, reached through the command those rules
-  prescribe.
-- `FROM_VERSIONS` is documented as keeping the oldest upgrade path tested and is **dead code**, and
-  no document states whether a user may skip versions.
-- There is **no patch path**, and four of the last five minors needed one within 24 hours.
+A second sweep on 2026-09-11, prompted by the volume of issues filed in the days after the first
+review, found three more real gaps that are release-blocking for the same reason (each changes
+what shipped behavior actually is, not what capability exists): #823 (`revoke(terminate=True)` is
+a no-op under the GPU workers' `--pool=threads`, so a user-cancelled transcription keeps running
+on the GPU while the UI reports it stopped), #857 (`.env` is not unconditionally `chmod 600`'d, so
+the documented `cp .env.example .env` first-install step can leave secrets world-readable), and
+#839 (the `custom` LLM provider is fully translated but omitted from the provider-defaults
+endpoint, so an operator following a shipped overlay's own docs hits a UI that doesn't offer the
+option they were told to use). Tracked and fixed alongside the rest of this release's fix wave —
+see PR [#915](https://github.com/attevon-llc/OpenTranscribe/pull/915) for the full list.
 
-Nothing here is new capability. Each is either a one-line change or a written policy.
+This section is a historical record of what the two reviews found, not a live status page — check
+the linked issues for current state rather than trusting the prose above it to stay in sync.
 
 **Exit criteria**
 

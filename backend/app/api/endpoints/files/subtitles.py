@@ -251,7 +251,9 @@ def prepare_bulk_export(
     The ZIP is built on the ``download`` worker, uploaded to object storage, and
     delivered to the browser as a presigned URL over the ``bulk-export-stream`` SSE
     channel — the API never proxies the archive bytes. UUIDs are permission-filtered
-    here so the worker can trust the resolved file ids without re-authorizing.
+    here so the worker can trust the resolved file ids for sharing/tenant scope; the
+    worker separately RE-CHECKS quarantine at run time (issue #818), since a takedown
+    can land in the gap between this dispatch and the build.
 
     Redaction is applied on the worker with **this** user's effective policy; files
     whose detection scan has not finished are skipped there rather than exported raw

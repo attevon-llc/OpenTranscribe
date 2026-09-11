@@ -918,20 +918,21 @@ class MediaDownloadService:
                 info = ydl.extract_info(url, download=False)
                 return info  # type: ignore[no-any-return]
         except yt_dlp.DownloadError as e:
-            error_msg = str(e)
-            logger.error(f"Error extracting video info from {url}: {error_msg}")
-            # Create user-friendly error message
-            user_friendly_error = create_user_friendly_error(error_msg, url)
+            # create_user_friendly_error is NOT a sanitizer despite the name — it
+            # only strips four literal yt-dlp prefixes on the non-auth-error
+            # branch, so the raw yt-dlp message (which can carry cookie/config
+            # paths or the URL itself) used to reach the response verbatim
+            # (#859). Log the real error with a traceback; return a fixed literal.
+            logger.exception(f"Error extracting video info from {url}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to extract video information: {user_friendly_error}",
+                detail="Could not read information for that media URL.",
             ) from e
         except Exception as e:
-            logger.error(f"Error extracting video info from {url}: {e}")
-            user_friendly_error = create_user_friendly_error(str(e), url)
+            logger.exception(f"Error extracting video info from {url}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to extract video information: {user_friendly_error}",
+                detail="Could not read information for that media URL.",
             ) from e
 
     def extract_playlist_info(self, url: str) -> dict[str, Any]:
@@ -997,10 +998,12 @@ class MediaDownloadService:
                 }
 
         except Exception as e:
-            logger.error(f"Error extracting playlist info from {url}: {e}")
+            # Same "create_user_friendly_error is not a sanitizer" reasoning as
+            # extract_video_info above — never echo the raw yt-dlp message (#859).
+            logger.exception(f"Error extracting playlist info from {url}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to extract playlist information: {str(e)}",
+                detail="Could not read that playlist.",
             ) from e
 
     def download_video(
@@ -1216,20 +1219,18 @@ class MediaDownloadService:
             }
 
         except yt_dlp.DownloadError as e:
-            error_msg = str(e)
-            logger.error(f"yt-dlp download error for {url}: {error_msg}")
-            # Create user-friendly error message
-            user_friendly_error = create_user_friendly_error(error_msg, url)
+            # Same "create_user_friendly_error is not a sanitizer" reasoning as
+            # extract_video_info above — never echo the raw yt-dlp message (#859).
+            logger.exception(f"yt-dlp download error for {url}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to download video: {user_friendly_error}",
+                detail="The media could not be downloaded from that URL.",
             ) from e
         except Exception as e:
-            logger.error(f"Unexpected error downloading {url}: {e}")
-            user_friendly_error = create_user_friendly_error(str(e), url)
+            logger.exception(f"Unexpected error downloading {url}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected error during download: {user_friendly_error}",
+                detail="The media download failed.",
             ) from e
 
     def _extract_technical_metadata(self, file_path: str) -> dict[str, Any]:
@@ -1783,10 +1784,10 @@ class MediaDownloadService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error extracting playlist info: {e}")
+            logger.exception("Error extracting playlist info")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to extract playlist information: {str(e)}",
+                detail="Could not read that playlist.",
             ) from e
 
         video_count = playlist_info.get("video_count", 0)

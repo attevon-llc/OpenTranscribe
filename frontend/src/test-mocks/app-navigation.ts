@@ -24,3 +24,20 @@ export function invalidate(): Promise<void> {
 export function invalidateAll(): Promise<void> {
   return Promise.resolve();
 }
+
+/** Callbacks registered via {@link beforeNavigate}, newest last. */
+export const beforeNavigateCallbacks: Array<(navigation: unknown) => void> = [];
+
+/**
+ * Stub for SvelteKit's navigation guard.
+ *
+ * Added with issue #787's unsaved-changes guard: the real `beforeNavigate` is
+ * `onMount`-based and lives in the router, so a component calling it under Vitest
+ * threw `beforeNavigate is not a function` and every test of that PAGE failed —
+ * `routes/files/[id]/page.test.ts` went from 8 green to 8 red on an import, not on
+ * any behaviour. Registrations are recorded rather than dropped so a test can drive
+ * them; clear `beforeNavigateCallbacks` in a `beforeEach` when asserting on it.
+ */
+export function beforeNavigate(callback: (navigation: unknown) => void): void {
+  beforeNavigateCallbacks.push(callback);
+}

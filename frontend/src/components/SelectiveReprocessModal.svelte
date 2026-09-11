@@ -10,6 +10,7 @@
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   export let showModal: boolean = false;
   export let file: any = null;
@@ -248,9 +249,14 @@
     } catch (error) {
       console.error('Error reprocessing:', error);
       if (bulkMode) {
-        toastStore.error($t('reprocess.bulkStartFailed', { count: bulkFiles.length }));
+        toastStore.error(
+          getErrorMessage(error, $t('reprocess.bulkStartFailed', { count: bulkFiles.length }))
+        );
       } else {
-        toastStore.error($t('reprocess.startFailed'));
+        // Surface the server's reason when it gave one — the refusal for a file
+        // whose media is missing (409) is only actionable if the user is told
+        // which precondition failed. Falls back to the generic string otherwise.
+        toastStore.error(getErrorMessage(error, $t('reprocess.startFailed')));
       }
       reprocessing = false;
     }

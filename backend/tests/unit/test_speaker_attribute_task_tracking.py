@@ -118,7 +118,16 @@ def tracking_env(db_session, monkeypatch):
     monkeypatch.setattr(sat, "session_scope", lambda: _real_scope(db_session))
     monkeypatch.setattr(sat, "_is_speaker_attribute_detection_enabled", lambda user_id: True)
     monkeypatch.setattr(sat, "_dispatch_llm_speaker_identification", lambda file_uuid: None)
-    monkeypatch.setattr(sat, "send_ws_event", lambda *a, **kw: None)
+    monkeypatch.setattr(sat, "send_ws_event_for_file", lambda *a, **kw: None)
+    # send_ws_event_for_file (issue #908) resolves quarantine via its OWN
+    # session_scope() on a real connection, which cannot see this test's
+    # savepoint-isolated MediaFile even after _real_scope's commit (a nested
+    # savepoint release is not visible across connections) — stub the check
+    # itself rather than bridge a second session.
+    monkeypatch.setattr(
+        "app.services.takedown_service.is_notification_suppressed_for_uuid",
+        lambda *a, **kw: False,
+    )
     monkeypatch.setattr("app.services.minio_service.minio_client", _FakeMinio())
     monkeypatch.setattr(
         "app.services.speaker_attribute_service.get_cached_attribute_service",

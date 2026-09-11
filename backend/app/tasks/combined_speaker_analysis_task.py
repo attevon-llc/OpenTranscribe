@@ -191,8 +191,8 @@ def analyze_speakers_combined_batch_task(
         logger.info("All %d files processed for combined speaker analysis", total)
         failed_files = status.get("failed_files", [])
         tracker.complete(message=f"Processed {total} files")
-        send_ws_event(
-            user_id or 1,
+        _notify_migration_admin(
+            user_id,
             NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE,
             {
                 "status": "complete",
@@ -254,8 +254,8 @@ def migrate_speakers_combined_task(self, user_id: int):
 
         combined_migration_progress.start_migration(total_files=total_files, task_id=task_id)
 
-        send_ws_event(
-            user_id or 1,
+        _notify_migration_admin(
+            user_id,
             NOTIFICATION_TYPE_COMBINED_MIGRATION_PROGRESS,
             {
                 "processed_files": 0,
@@ -313,6 +313,23 @@ def migrate_speakers_combined_task(self, user_id: int):
 # ---------------------------------------------------------------------------
 # Progress helper
 # ---------------------------------------------------------------------------
+
+
+def _notify_migration_admin(user_id: int | None, event_type: str, payload: dict) -> None:
+    """Send a combined-speaker-migration WS event to the requesting admin, or log-only.
+
+    ``user_id`` is None either for a deployment-wide migration with no specific
+    admin watching, or for a batch task whose orchestrator itself had none.
+    Falling back to account id 1 (issue #908, finding B) misdirected admin-only
+    migration progress/completion events — which include ``failed_files``, a
+    list of file UUIDs — to whichever account happens to hold that id, which
+    need not be an admin. Matches the pattern already fixed for this exact bug
+    in ``opensearch_integrity_task.py``'s ``_notify``.
+    """
+    if user_id is None:
+        logger.debug(f"{event_type}: no requesting admin for this run, logging only")
+        return
+    send_ws_event(user_id, event_type, payload)
 
 
 def _emit_combined_progress(

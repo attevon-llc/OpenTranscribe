@@ -19,7 +19,6 @@ import time
 from typing import NoReturn
 
 from celery import chain
-from celery.exceptions import Reject
 
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
@@ -27,6 +26,9 @@ from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
+from app.core.task_cancellation import TranscriptionCancelledError
+from app.core.task_cancellation import cancellation_scope
+from app.core.task_cancellation import stand_down_if_requested
 from app.core.worker_shutdown import TranscriptionAbortedError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
@@ -36,11 +38,13 @@ from app.transcription.diarizer_native import DiarSidecarUnavailableError
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 
+from .cancellation import finish_cancelled
 from .cloud_asr import _run_cloud_asr_pipeline
 from .context import TranscriptionContext
 from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import requeue_after_abort
 from .context import retry_transcribe_gpu_exception
 from .cpu_task import transcribe_cpu_task
 from .diarize_task import diarize_gpu_task
@@ -331,50 +335,29 @@ def _finish_failed_or_aborted(
       replaces, since after a SIGKILL the message is redelivered.
     * A failure is BROKEN work: mark the file, notify, re-raise unchanged.
 
+    ⚠️ The WAV cleanup runs on the FAILURE branch ONLY, and the ordering below is load-bearing
+    for two independent reasons (both issue #809):
+
+    1. The redelivered attempt needs that WAV. Deleting it makes the next worker re-download
+       from MinIO and re-run ffmpeg for work that is already on the shared volume -- and
+       ``preprocess`` has already returned, so nothing will rewrite it.
+    2. ``_AsyncDiarization``'s thread may still be READING it. The stage's bounded join
+       (``engine/stages.py``, ``_SHUTDOWN_JOIN_BUDGET_S``) can abandon that thread mid-request
+       during a shutdown, so unlinking the WAV here could pull the file out from under a live
+       reader. The two changes are interlocked and must not be split.
+
     Raises:
         Reject: on abort, to requeue.
         Exception: the original exception, on a real failure.
     """
-    _cleanup_wav_quietly(local_wav_path)
     if isinstance(exc, TranscriptionAbortedError):
-        _requeue_after_abort(file_uuid, exc)
+        requeue_after_abort(file_uuid, exc, stage="GPU transcription")
+    _cleanup_wav_quietly(local_wav_path)
     logger.error(f"GPU transcription failed for file {file_uuid}: {exc}")
     _handle_transcription_failure(
         ctx, task_id, _get_user_friendly_error_message(str(exc)), "gpu_processing_error"
     )
     raise exc
-
-
-def _requeue_after_abort(file_uuid: str, abort: Exception) -> NoReturn:
-    """Stand a shutdown-aborted GPU transcription down without failing the file (#809).
-
-    Extracted from ``transcribe_gpu_task`` rather than inlined: that task body is already at
-    the C901 complexity ceiling, and an abort path is exactly the kind of branch that should
-    not make the hot path harder to read.
-
-    The work was INTERRUPTED, not broken, so this deliberately does not travel the failure
-    path -- no ``_handle_transcription_failure``, no error notification. Marking the file
-    errored would turn a clean restart into a user-visible failure and stop it being retried.
-
-    ``Reject(requeue=True)``, never a bare ``raise``: under ``acks_late=True`` celery acks on
-    RETURN -- success or exception -- so raising anything else here would ACK the message and
-    LOSE the transcription. That is worse than the SIGKILL this replaces, since after a
-    SIGKILL the message is redelivered.
-
-    Redis is not AMQP, so #809 required this be verified rather than inferred from the AMQP
-    contract. Measured against a real celery worker on a real Redis broker with
-    ``acks_late=True``, rejecting on first delivery: DELIVERY #1, DELIVERY #2, second
-    completed. ``Reject(requeue=True)`` does redeliver on the Redis transport.
-
-    Raises:
-        Reject: always -- this function exists to convert an abort into a requeue.
-    """
-    logger.warning(
-        "GPU transcription for file %s stood down for worker shutdown (%s) -- requeueing",
-        file_uuid,
-        abort,
-    )
-    raise Reject(requeue=True) from abort
 
 
 @celery_app.task(
@@ -418,206 +401,232 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
         content_type=preprocess_context["content_type"],
     )
 
-    try:
-        from app.services.minio_service import download_temp_audio
+    # issue #823: bind this run so the cooperative checkpoints inside the engine know WHICH
+    # file they are executing. Everything that can raise TranscriptionCancelledError must sit
+    # inside this block -- outside it `stand_down_if_requested` has no run to ask about and
+    # silently never fires. The context manager's reset is what stops celery's REUSED pool
+    # thread from carrying this run's id into the next task.
+    with cancellation_scope(task_id, file_uuid):
+        try:
+            # issue #823: the cheapest place to catch a cancel that landed while this
+            # message sat in the broker queue -- one Redis read, before any download,
+            # model warm-up or GPU allocation. The engine's own entry checkpoints cover
+            # the stage bodies; this covers everything the task does before reaching one.
+            stand_down_if_requested("transcribe_gpu_task.entry")
 
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.22)
+            from app.services.minio_service import download_temp_audio
 
-        # ── Check for cloud ASR provider (needed in both code paths) ──────────
-        provider = _resolve_asr_provider_or_none(user_id)
+            with session_scope() as db:
+                update_task_status(db, task_id, "in_progress", progress=0.22)
 
-        # Read diarization settings (needed in both code paths)
-        diarization_source = preprocess_context.get("diarization_source", "provider")
-        disable_diarization = diarization_source == "off"
-        with session_scope() as db:
-            media_file = get_refreshed_object(db, MediaFile, file_id)
-            if media_file:
-                media_file.diarization_disabled = disable_diarization
-                db.commit()
+            # ── Check for cloud ASR provider (needed in both code paths) ──────────
+            provider = _resolve_asr_provider_or_none(user_id)
 
-        whisper_model = preprocess_context.get("whisper_model")
+            # Read diarization settings (needed in both code paths)
+            diarization_source = preprocess_context.get("diarization_source", "provider")
+            disable_diarization = diarization_source == "off"
+            with session_scope() as db:
+                media_file = get_refreshed_object(db, MediaFile, file_id)
+                if media_file:
+                    media_file.diarization_disabled = disable_diarization
+                    db.commit()
 
-        # ── Phase 1b fast path: shared-volume WAV skips MinIO download ────────
-        # When the preprocess task wrote a WAV to the shared volume we can feed it
-        # directly to Engine.run_gpu_stage() without touching MinIO or creating a
-        # temp dir.  Cloud ASR always needs the MinIO download, so we only use
-        # this path for local ASR.
-        local_wav_path = preprocess_context.get("local_wav_path", "")
-        has_shared_wav = (
-            bool(local_wav_path)
-            and os.path.exists(local_wav_path)
-            and (provider is None or provider.provider_name == "local")
-        )
+            whisper_model = preprocess_context.get("whisper_model")
 
-        if has_shared_wav:
-            logger.info(
-                "GPU task: using engine fast path (shared WAV) for file %d — skipping "
-                "MinIO download",
-                file_id,
+            # ── Phase 1b fast path: shared-volume WAV skips MinIO download ────────
+            # When the preprocess task wrote a WAV to the shared volume we can feed it
+            # directly to Engine.run_gpu_stage() without touching MinIO or creating a
+            # temp dir.  Cloud ASR always needs the MinIO download, so we only use
+            # this path for local ASR.
+            local_wav_path = preprocess_context.get("local_wav_path", "")
+            has_shared_wav = (
+                bool(local_wav_path)
+                and os.path.exists(local_wav_path)
+                and (provider is None or provider.provider_name == "local")
             )
-            with benchmark_timing.stage(task_id, "gpu_audio_load"):
-                pass  # no download — file is already local; mark stage for timing parity
 
-            send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
-
-            # ── Phase 4: multi-GPU split path ─────────────────────────────────
-            # When ENGINE_GPU_SPLIT=true, transcription-only runs here on the
-            # gpu-transcribe queue and the result is forwarded to diarize_gpu_task
-            # on the gpu-diarize queue.  The current task returns the serialized
-            # RawTranscriptResult so Celery records it; the finalize chain runs
-            # after diarize_gpu_task completes.
-            if gpu_split_enabled():
-                transcript_data = _run_transcribe_only_stage(
-                    ctx, local_wav_path, preprocess_context
+            if has_shared_wav:
+                logger.info(
+                    "GPU task: using engine fast path (shared WAV) for file %d — skipping "
+                    "MinIO download",
+                    file_id,
                 )
+                with benchmark_timing.stage(task_id, "gpu_audio_load"):
+                    pass  # no download — file is already local; mark stage for timing parity
 
-                # Dispatch the real completion chain — see
-                # _dispatch_gpu_split_diarize_chain's docstring (issue #703-followup) for why
-                # this can't just be another apply_async of diarize_gpu_task alone.
-                _dispatch_gpu_split_diarize_chain(
-                    task_id, file_uuid, transcript_data, preprocess_context
-                )
+                send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
+
+                # ── Phase 4: multi-GPU split path ─────────────────────────────────
+                # When ENGINE_GPU_SPLIT=true, transcription-only runs here on the
+                # gpu-transcribe queue and the result is forwarded to diarize_gpu_task
+                # on the gpu-diarize queue.  The current task returns the serialized
+                # RawTranscriptResult so Celery records it; the finalize chain runs
+                # after diarize_gpu_task completes.
+                if gpu_split_enabled():
+                    transcript_data = _run_transcribe_only_stage(
+                        ctx, local_wav_path, preprocess_context
+                    )
+
+                    # Dispatch the real completion chain — see
+                    # _dispatch_gpu_split_diarize_chain's docstring (issue #703-followup) for why
+                    # this can't just be another apply_async of diarize_gpu_task alone.
+                    _dispatch_gpu_split_diarize_chain(
+                        task_id, file_uuid, transcript_data, preprocess_context
+                    )
+
+                    benchmark_timing.mark(task_id, "gpu_end")
+                    return {
+                        "status": "split_forwarded",
+                        "file_uuid": file_uuid,
+                        "file_id": file_id,
+                        "task_id": task_id,
+                        "split_stage": "transcribe_only",
+                    }
+
+                result = _run_engine_pipeline(ctx, local_wav_path, preprocess_context)
+
+                # Annotate result with diarization flags for downstream
+                if isinstance(result, dict):
+                    result["diarization_disabled"] = disable_diarization
+                    result["diarization_source"] = diarization_source
+
+                # Validate result
+                validation_error = _validate_transcription_result(result, ctx, task_id)
+                if validation_error:
+                    return {
+                        "status": "error",
+                        "file_uuid": file_uuid,
+                        "file_id": file_id,
+                        "task_id": task_id,
+                    }
+
+                # Process speakers, save to DB, release GPU
+                gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
+
+                # Shared-volume WAV is no longer needed after GPU stage finishes
+                from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
+
+                cleanup_shared_volume_wav(local_wav_path)
 
                 benchmark_timing.mark(task_id, "gpu_end")
-                return {
-                    "status": "split_forwarded",
-                    "file_uuid": file_uuid,
-                    "file_id": file_id,
-                    "task_id": task_id,
-                    "split_stage": "transcribe_only",
-                }
-
-            result = _run_engine_pipeline(ctx, local_wav_path, preprocess_context)
-
-            # Annotate result with diarization flags for downstream
-            if isinstance(result, dict):
-                result["diarization_disabled"] = disable_diarization
-                result["diarization_source"] = diarization_source
-
-            # Validate result
-            validation_error = _validate_transcription_result(result, ctx, task_id)
-            if validation_error:
-                return {
-                    "status": "error",
-                    "file_uuid": file_uuid,
-                    "file_id": file_id,
-                    "task_id": task_id,
-                }
-
-            # Process speakers, save to DB, release GPU
-            gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
-
-            # Shared-volume WAV is no longer needed after GPU stage finishes
-            from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
-
-            cleanup_shared_volume_wav(local_wav_path)
-
-            benchmark_timing.mark(task_id, "gpu_end")
-            if isinstance(result, dict):
-                benchmark_timing.set_context(
-                    task_id,
-                    {
-                        "asr_provider": result.get("asr_provider", "local"),
-                        "asr_model": result.get("asr_model"),
-                    },
-                )
-
-            return gpu_result
-
-        # ── Fallback / cloud path: download from MinIO ────────────────────────
-        # Reaching here means `has_shared_wav` was False — log WHICH condition failed so a
-        # misconfigured shared volume (path written but not found — the ENGINE_SHARED_VOLUME_PATH
-        # mismatch issue #661 E0 fixes) is distinguishable from the expected reasons (no local
-        # ASR provider, or preprocess never wrote a shared WAV at all). Before this, every
-        # fallback logged identically, so a broken shared-volume mount was invisible.
-        _log_shared_wav_fallback_reason(local_wav_path, file_id)
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Download preprocessed audio from MinIO temp
-            step_start = time.perf_counter()
-            local_audio_path = os.path.join(temp_dir, "audio.wav")
-            with benchmark_timing.stage(task_id, "gpu_audio_load"):
-                download_temp_audio(file_uuid, local_audio_path)
-            logger.info(
-                f"TIMING: audio download from temp completed in "
-                f"{time.perf_counter() - step_start:.3f}s"
-            )
-
-            send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
-
-            if provider is not None and provider.provider_name != "local":
-                # Per-task model override is only for local ASR
-                if whisper_model:
-                    logger.info(
-                        "whisper_model override '%s' ignored for cloud ASR provider",
-                        whisper_model,
+                if isinstance(result, dict):
+                    benchmark_timing.set_context(
+                        task_id,
+                        {
+                            "asr_provider": result.get("asr_provider", "local"),
+                            "asr_model": result.get("asr_model"),
+                        },
                     )
-                result = _run_cloud_asr_pipeline(
-                    ctx,
-                    local_audio_path,
-                    preprocess_context.get("min_speakers"),
-                    preprocess_context.get("max_speakers"),
-                    preprocess_context.get("num_speakers"),
-                    provider=provider,
-                    diarization_source=diarization_source,
-                )
-            else:
-                result = _run_transcription_pipeline(
-                    ctx,
-                    local_audio_path,
-                    preprocess_context.get("min_speakers"),
-                    preprocess_context.get("max_speakers"),
-                    preprocess_context.get("num_speakers"),
-                    source_language=preprocess_context.get("source_language"),
-                    translate_to_english=preprocess_context.get("translate_to_english"),
-                    disable_diarization=disable_diarization,
-                    whisper_model=whisper_model,
-                )
 
-            # Annotate result with diarization flags for downstream
-            if isinstance(result, dict):
-                result["diarization_disabled"] = disable_diarization
-                result["diarization_source"] = diarization_source
+                return gpu_result
 
-            # Validate result
-            validation_error = _validate_transcription_result(result, ctx, task_id)
-            if validation_error:
-                return {
-                    "status": "error",
-                    "file_uuid": file_uuid,
-                    "file_id": file_id,
-                    "task_id": task_id,
-                }
-
-            # Process speakers, save to DB, release GPU
-            gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
-
-            # Record GPU end timestamp for inter-stage gap measurement.
-            # Persist ASR provider + model context for the timing table.
-            benchmark_timing.mark(task_id, "gpu_end")
-            if isinstance(result, dict):
-                benchmark_timing.set_context(
-                    task_id,
-                    {
-                        "asr_provider": result.get("asr_provider", "local"),
-                        "asr_model": result.get("asr_model"),
-                    },
+            # ── Fallback / cloud path: download from MinIO ────────────────────────
+            # Reaching here means `has_shared_wav` was False — log WHICH condition failed so a
+            # misconfigured shared volume (path written but not found — the ENGINE_SHARED_VOLUME_PATH
+            # mismatch issue #661 E0 fixes) is distinguishable from the expected reasons (no local
+            # ASR provider, or preprocess never wrote a shared WAV at all). Before this, every
+            # fallback logged identically, so a broken shared-volume mount was invisible.
+            _log_shared_wav_fallback_reason(local_wav_path, file_id)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Download preprocessed audio from MinIO temp
+                step_start = time.perf_counter()
+                local_audio_path = os.path.join(temp_dir, "audio.wav")
+                with benchmark_timing.stage(task_id, "gpu_audio_load"):
+                    download_temp_audio(file_uuid, local_audio_path)
+                logger.info(
+                    f"TIMING: audio download from temp completed in "
+                    f"{time.perf_counter() - step_start:.3f}s"
                 )
 
-            return gpu_result
+                send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
 
-    except (ASRRateLimitedError, DiarSidecarUnavailableError) as exc:
-        # Both raise celery.exceptions.Retry via self.retry(), which Celery's task machinery
-        # handles as a scheduled retry (not a task failure) — dispatch.py's on_pipeline_error
-        # link_error callback does not fire for it, so the file is not marked FAILED here.
-        # Combined into one except clause, dispatching in context.py's
-        # retry_transcribe_gpu_exception (rather than inline isinstance-branching here), to
-        # keep this function's cyclomatic complexity under the repo's C901 gate.
-        # issue #656 Step 5: this MUST sit before `except Exception` below — raised from
-        # inside that generic handler instead, `_handle_transcription_failure` would already
-        # have marked the file ERROR and sent an error notification on every attempt,
-        # including ones that go on to succeed (a real, pre-existing defect in the existing
-        # `autoretry_for` policy below — worth this comment, not a fix here).
-        retry_transcribe_gpu_exception(self, exc, file_uuid)
-    except Exception as e:
-        _finish_failed_or_aborted(ctx, task_id, file_uuid, locals().get("local_wav_path", ""), e)
+                if provider is not None and provider.provider_name != "local":
+                    # Per-task model override is only for local ASR
+                    if whisper_model:
+                        logger.info(
+                            "whisper_model override '%s' ignored for cloud ASR provider",
+                            whisper_model,
+                        )
+                    result = _run_cloud_asr_pipeline(
+                        ctx,
+                        local_audio_path,
+                        preprocess_context.get("min_speakers"),
+                        preprocess_context.get("max_speakers"),
+                        preprocess_context.get("num_speakers"),
+                        provider=provider,
+                        diarization_source=diarization_source,
+                    )
+                else:
+                    result = _run_transcription_pipeline(
+                        ctx,
+                        local_audio_path,
+                        preprocess_context.get("min_speakers"),
+                        preprocess_context.get("max_speakers"),
+                        preprocess_context.get("num_speakers"),
+                        source_language=preprocess_context.get("source_language"),
+                        translate_to_english=preprocess_context.get("translate_to_english"),
+                        disable_diarization=disable_diarization,
+                        whisper_model=whisper_model,
+                    )
+
+                # Annotate result with diarization flags for downstream
+                if isinstance(result, dict):
+                    result["diarization_disabled"] = disable_diarization
+                    result["diarization_source"] = diarization_source
+
+                # Validate result
+                validation_error = _validate_transcription_result(result, ctx, task_id)
+                if validation_error:
+                    return {
+                        "status": "error",
+                        "file_uuid": file_uuid,
+                        "file_id": file_id,
+                        "task_id": task_id,
+                    }
+
+                # Process speakers, save to DB, release GPU
+                gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
+
+                # Record GPU end timestamp for inter-stage gap measurement.
+                # Persist ASR provider + model context for the timing table.
+                benchmark_timing.mark(task_id, "gpu_end")
+                if isinstance(result, dict):
+                    benchmark_timing.set_context(
+                        task_id,
+                        {
+                            "asr_provider": result.get("asr_provider", "local"),
+                            "asr_model": result.get("asr_model"),
+                        },
+                    )
+
+                return gpu_result
+
+        except TranscriptionCancelledError as cancelled:
+            # issue #823: MUST sit before `except Exception` below, and it is deliberately NOT
+            # folded into _finish_failed_or_aborted's isinstance dispatch — that helper is
+            # `-> NoReturn`, and a cancel is the one outcome here that RETURNS. Returning is
+            # what acks the message under acks_late, i.e. what stops the job coming back; the
+            # user asked it to stop, unlike #809's shutdown abort which must requeue.
+            #
+            # ⚠️ The WAV *is* cleaned up here, unlike on the abort path. That asymmetry is the
+            # point: nothing will redeliver this message, so a retained WAV is a leak on the
+            # shared volume rather than a head start for the next attempt.
+            _cleanup_wav_quietly(locals().get("local_wav_path", ""))
+            return finish_cancelled(ctx, task_id, file_uuid, cancelled, stage="GPU transcription")
+        except (ASRRateLimitedError, DiarSidecarUnavailableError) as exc:
+            # Both raise celery.exceptions.Retry via self.retry(), which Celery's task machinery
+            # handles as a scheduled retry (not a task failure) — dispatch.py's on_pipeline_error
+            # link_error callback does not fire for it, so the file is not marked FAILED here.
+            # Combined into one except clause, dispatching in context.py's
+            # retry_transcribe_gpu_exception (rather than inline isinstance-branching here), to
+            # keep this function's cyclomatic complexity under the repo's C901 gate.
+            # issue #656 Step 5: this MUST sit before `except Exception` below — raised from
+            # inside that generic handler instead, `_handle_transcription_failure` would already
+            # have marked the file ERROR and sent an error notification on every attempt,
+            # including ones that go on to succeed (a real, pre-existing defect in the existing
+            # `autoretry_for` policy below — worth this comment, not a fix here).
+            retry_transcribe_gpu_exception(self, exc, file_uuid)
+        except Exception as e:
+            _finish_failed_or_aborted(
+                ctx, task_id, file_uuid, locals().get("local_wav_path", ""), e
+            )

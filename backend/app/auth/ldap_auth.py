@@ -724,12 +724,18 @@ def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserDa
     """
     logger.info(f"Updating existing LDAP user: {username} ({email})")
 
+    # Conditional, matching oidc/provisioning.py, saml/provisioning.py and
+    # external_sync.py: an unconditional write is a footgun the moment the upstream
+    # _is_valid_email gate changes (#910). Latent today — that gate refuses a
+    # blank/malformed mail, and assert_provider_id_link_permitted above already
+    # refuses a disagreeing one — so what this actually changes is that a directory
+    # re-casing an address no longer rewrites the stored column.
     if email and email != user.email:
         logger.warning(
             f"SECURITY: User email changed during LDAP login. "
             f"ldap_uid={username}, old_email={user.email}, new_email={email}"
         )
-    user.email = email
+        user.email = email
     user.full_name = ldap_data["full_name"] or user.full_name
     user.ldap_uid = username
     user.auth_type = AUTH_TYPE_LDAP
@@ -751,7 +757,7 @@ def _convert_local_user_to_ldap(db, user, username: str, email: str, ldap_data: 
             f"SECURITY: User email changed during LDAP conversion. "
             f"ldap_uid={username}, old_email={user.email}, new_email={email}"
         )
-    user.email = email
+        user.email = email
     user.full_name = ldap_data["full_name"] or user.full_name
 
     # Privilege is applied by reconcile_user after this returns — see

@@ -237,31 +237,50 @@ def _find_min_permission_editor_sites() -> list[tuple[str, int]]:
 # ``user_files.py``) were fixed by a prior commit (issue #588 part 1) and are
 # listed here only so the guard's count matches the codebase exactly.
 MUTATING_ENDPOINTS: list[tuple[str, int]] = [
-    ("files/__init__.py", 1139),
-    ("files/__init__.py", 1206),
-    ("files/crud.py", 997),
-    ("files/crud.py", 1088),
-    ("files/crud.py", 1176),
-    ("files/management.py", 206),
-    ("files/management.py", 258),
-    ("files/management.py", 356),
-    ("files/management.py", 929),
-    ("files/reprocess.py", 434),
+    # Re-anchored (v0.5.0 wave, #859/#891 sweep): the exception-echo fixes in this file
+    # added lines above both call sites. The guard is keyed by file:line, so it is
+    # SUPPOSED to be re-anchored when code moves — that is the cost of it being
+    # able to notice a NEW call site rather than just counting them.
+    ("files/__init__.py", 1158),
+    ("files/__init__.py", 1225),
+    # Re-anchored again, +1: the release/v0.5.0-blockers merge added a line to
+    # files/crud.py above all three. ⚠️ The previous re-anchoring was done against
+    # the lane's own pre-merge tree, so the merge shifted them straight back out
+    # and this guard sat RED on the integration branch — a file:line table has to
+    # be re-derived AFTER the merge, not before it. Re-derive, don't hand-edit:
+    #   python3 -c "import ast,pathlib;[print(p.name,n.lineno) for p in
+    #   [pathlib.Path('backend/app/api/endpoints/files/crud.py')]
+    #   for n in ast.walk(ast.parse(p.read_text())) if isinstance(n,ast.Call)
+    #   and any(k.arg=='min_permission' and getattr(k.value,'value',None)=='editor'
+    #   for k in n.keywords)]"
+    ("files/crud.py", 998),
+    ("files/crud.py", 1089),
+    ("files/crud.py", 1177),
+    ("files/management.py", 208),
+    ("files/management.py", 260),
+    ("files/management.py", 364),
+    ("files/management.py", 954),
+    ("files/reprocess.py", 445),
     ("files/summary_status.py", 105),
-    ("files/waveform.py", 362),
+    # Re-anchored (v0.5.0 wave): #911's WS-push fix removed lines above this call site.
+    ("files/waveform.py", 359),
     ("media_collections.py", 703),
     ("media_collections.py", 800),
     ("media_collections.py", 886),
-    ("summarization.py", 86),
-    ("summarization.py", 349),
-    ("summarization.py", 415),
-    ("tasks.py", 769),
+    # Re-anchored (v0.5.0 wave): #885 added the export_summary endpoint (+ its
+    # exception-echo fix, #859/#891) above and between these call sites.
+    ("summarization.py", 91),
+    ("summarization.py", 468),
+    ("summarization.py", 534),
+    # Re-anchored +30: Lane O's #906 fix (issue #906, release/v0.5.0-blockers) added
+    # inline dispatch logic above this call site in retry_file_processing.
+    ("tasks.py", 807),
     ("topics.py", 79),
     ("topics.py", 241),
     ("topics.py", 385),
     ("topics.py", 460),
     ("topics.py", 519),
-    ("user_files.py", 360),
+    ("user_files.py", 378),
 ]
 
 

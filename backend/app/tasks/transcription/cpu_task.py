@@ -9,6 +9,10 @@ import tempfile
 
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.task_cancellation import TranscriptionCancelledError
+from app.core.task_cancellation import cancellation_scope
+from app.core.task_cancellation import stand_down_if_requested
+from app.core.worker_shutdown import TranscriptionAbortedError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
@@ -16,10 +20,12 @@ from app.transcription.config import LIGHTWEIGHT_MODELS
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 
+from .cancellation import finish_cancelled
 from .context import TranscriptionContext
 from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import requeue_after_abort
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
 from .pipelines import _resolve_language_settings
@@ -125,68 +131,106 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
         content_type=preprocess_context["content_type"],
     )
 
-    try:
-        from app.services.minio_service import download_temp_audio
+    # issue #823: bind this run so the cooperative checkpoints inside the engine know WHICH
+    # file they are executing. Everything that can raise TranscriptionCancelledError must sit
+    # inside this block -- outside it `stand_down_if_requested` has no run to ask about and
+    # silently never fires. The context manager's reset is what stops celery's REUSED pool
+    # thread from carrying this run's id into the next task.
+    with cancellation_scope(task_id, file_uuid):
+        try:
+            # issue #823: the cheapest place to catch a cancel that landed while this
+            # message sat in the broker queue -- one Redis read, before any download,
+            # model warm-up or GPU allocation. The engine's own entry checkpoints cover
+            # the stage bodies; this covers everything the task does before reaching one.
+            stand_down_if_requested("transcribe_cpu_task.entry")
 
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.22)
+            from app.services.minio_service import download_temp_audio
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Download preprocessed audio from MinIO temp
-            local_audio_path = os.path.join(temp_dir, "audio.wav")
-            with benchmark_timing.stage(task_id, "gpu_audio_load"):
-                download_temp_audio(file_uuid, local_audio_path)
-
-            send_progress_notification(user_id, file_id, 0.25, "Starting fast CPU transcription")
-
-            # Persist diarization_disabled=True for CPU path
             with session_scope() as db:
-                media_file = get_refreshed_object(db, MediaFile, file_id)
-                if media_file:
-                    media_file.diarization_disabled = True
-                    db.commit()
+                update_task_status(db, task_id, "in_progress", progress=0.22)
 
-            whisper_model = preprocess_context.get("whisper_model")
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Download preprocessed audio from MinIO temp
+                local_audio_path = os.path.join(temp_dir, "audio.wav")
+                with benchmark_timing.stage(task_id, "gpu_audio_load"):
+                    download_temp_audio(file_uuid, local_audio_path)
 
-            result = _run_cpu_transcription(
-                ctx,
-                local_audio_path,
-                source_language=preprocess_context.get("source_language"),
-                translate_to_english=preprocess_context.get("translate_to_english"),
-                whisper_model=whisper_model,
-            )
+                send_progress_notification(
+                    user_id, file_id, 0.25, "Starting fast CPU transcription"
+                )
 
-            # Validate result
-            validation_error = _validate_transcription_result(result, ctx, task_id)
-            if validation_error:
-                return {
-                    "status": "error",
-                    "file_uuid": file_uuid,
-                    "file_id": file_id,
-                    "task_id": task_id,
-                }
+                # Persist diarization_disabled=True for CPU path
+                with session_scope() as db:
+                    media_file = get_refreshed_object(db, MediaFile, file_id)
+                    if media_file:
+                        media_file.diarization_disabled = True
+                        db.commit()
 
-            # Process speakers, save to DB (same as GPU path)
-            cpu_result = _process_and_save_critical(ctx, result, preprocess_context)
-            benchmark_timing.mark(task_id, "gpu_end")
-            return cpu_result
+                whisper_model = preprocess_context.get("whisper_model")
 
-    except (ConnectionError, TimeoutError):
-        # Let autoretry_for handle these silently ON A RETRYABLE ATTEMPT — running
-        # the failure side effects here (ERROR status, user notification,
-        # quota-release) would fire BEFORE Celery's retry wrapper ever sees the
-        # exception, producing a false failure notification for a transient blip
-        # the task is about to retry. But once retries are exhausted this IS the
-        # final failure — Celery will not attempt again — so it must still be
-        # reported like any other terminal error.
-        if self.request.retries < self.max_retries:
+                result = _run_cpu_transcription(
+                    ctx,
+                    local_audio_path,
+                    source_language=preprocess_context.get("source_language"),
+                    translate_to_english=preprocess_context.get("translate_to_english"),
+                    whisper_model=whisper_model,
+                )
+
+                # Validate result
+                validation_error = _validate_transcription_result(result, ctx, task_id)
+                if validation_error:
+                    return {
+                        "status": "error",
+                        "file_uuid": file_uuid,
+                        "file_id": file_id,
+                        "task_id": task_id,
+                    }
+
+                # Process speakers, save to DB (same as GPU path)
+                cpu_result = _process_and_save_critical(ctx, result, preprocess_context)
+                benchmark_timing.mark(task_id, "gpu_end")
+                return cpu_result
+
+        except (ConnectionError, TimeoutError):
+            # Let autoretry_for handle these silently ON A RETRYABLE ATTEMPT — running
+            # the failure side effects here (ERROR status, user notification,
+            # quota-release) would fire BEFORE Celery's retry wrapper ever sees the
+            # exception, producing a false failure notification for a transient blip
+            # the task is about to retry. But once retries are exhausted this IS the
+            # final failure — Celery will not attempt again — so it must still be
+            # reported like any other terminal error.
+            if self.request.retries < self.max_retries:
+                raise
+            logger.error(f"CPU transcription failed for file {file_uuid} after all retries")
+            error_message = _get_user_friendly_error_message("Connection or timeout error")
+            _handle_transcription_failure(ctx, task_id, error_message, "cpu_processing_error")
             raise
-        logger.error(f"CPU transcription failed for file {file_uuid} after all retries")
-        error_message = _get_user_friendly_error_message("Connection or timeout error")
-        _handle_transcription_failure(ctx, task_id, error_message, "cpu_processing_error")
-        raise
-    except Exception as e:
-        logger.error(f"CPU transcription failed for file {file_uuid}: {e}")
-        error_message = _get_user_friendly_error_message(str(e))
-        _handle_transcription_failure(ctx, task_id, error_message, "cpu_processing_error")
-        raise
+        except TranscriptionCancelledError as cancelled:
+            # issue #823: MUST sit before `except Exception` below, for the same reason the
+            # abort branch does — routed through the generic handler a user's own cancel would
+            # be reported back to them as a failed transcription. It must NOT go through
+            # `requeue_after_abort` either: requeueing would hand the cancelled job to the next
+            # worker and the file would go back to processing seconds after the UI said it had
+            # stopped.
+            #
+            # On this leg the only checkpoint that can fire once transcription is under way is
+            # `transcriber.transcribe`'s segment loop (the CPU path runs the legacy
+            # TranscriptionPipeline, not the engine stages), so cancel latency here is one
+            # decode batch plus the poll interval.
+            return finish_cancelled(ctx, task_id, file_uuid, cancelled, stage="CPU transcription")
+        except TranscriptionAbortedError as abort:
+            # issue #809: MUST sit before `except Exception` below. An abort is INTERRUPTED work,
+            # not broken work — routed through the generic handler it would mark the file ERROR,
+            # notify the user, and then `raise`, which under `acks_late=True` ACKS the message and
+            # LOSES the transcription. `requeue_after_abort` rejects with requeue=True so the broker
+            # redelivers it to the next worker instead.
+            #
+            # No WAV cleanup to skip here, unlike the GPU legs: this task's audio lives in a
+            # `tempfile.TemporaryDirectory()` whose context manager has already unlinked it by the
+            # time this handler runs, and the redelivered attempt re-downloads from MinIO.
+            requeue_after_abort(file_uuid, abort, stage="CPU transcription")
+        except Exception as e:
+            logger.error(f"CPU transcription failed for file {file_uuid}: {e}")
+            error_message = _get_user_friendly_error_message(str(e))
+            _handle_transcription_failure(ctx, task_id, error_message, "cpu_processing_error")
+            raise

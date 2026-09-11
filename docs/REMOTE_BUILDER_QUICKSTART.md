@@ -28,8 +28,8 @@ From your Ubuntu server, test SSH to Mac Studio:
 
 ```bash
 # Replace 'username' with your Mac Studio username
-# Use your local hostname (e.g., superstudio.local)
-ssh username@superstudio.local "echo 'Connection OK'"
+# Use your local hostname (e.g., mac-studio.local)
+ssh username@mac-studio.local "echo 'Connection OK'"
 
 # Or use IP address if hostname doesn't resolve
 ssh username@192.168.1.100 "echo 'Connection OK'"
@@ -47,10 +47,10 @@ ssh username@192.168.1.100 "echo 'Connection OK'"
 ssh-keygen -t ed25519 -C "docker-buildx"
 
 # Copy key to Mac Studio (replace with your actual hostname)
-ssh-copy-id username@superstudio.local
+ssh-copy-id username@mac-studio.local
 
 # Test again (should not ask for password)
-ssh username@superstudio.local "echo 'Connection OK'"
+ssh username@mac-studio.local "echo 'Connection OK'"
 ```
 
 ### 2. Run Setup Script
@@ -62,11 +62,11 @@ cd /path/to/transcribe-app
 ./scripts/setup-remote-builder.sh setup
 
 # Or provide host directly (skip interactive prompt)
-./scripts/setup-remote-builder.sh setup --host username@superstudio.local
+./scripts/setup-remote-builder.sh setup --host username@mac-studio.local
 ```
 
 **What it will ask (interactive mode):**
-- Remote host: `username@superstudio.local`
+- Remote host: `username@mac-studio.local`
   - This is where you provide your Mac Studio's hostname or IP
 
 **What it will do:**

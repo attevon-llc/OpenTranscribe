@@ -332,6 +332,18 @@ class MediaFile(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    if TYPE_CHECKING:
+        # Non-persisted, TYPE_CHECKING-only: `takedown_service.quarantine_file`/
+        # `release_file` stamp these plain (non-`Mapped`) attributes onto the
+        # instance they return, to report the presigned-URL-revocation storage-plane
+        # outcome to the admin quarantine/release endpoint (issue #907) without a DB
+        # column or a second return type. `TYPE_CHECKING` keeps this invisible to
+        # SQLAlchemy's declarative scanner at import time — it exists purely so mypy
+        # accepts `file.presign_revoked = ...` — and nothing here creates a "true"
+        # unmapped ORM attribute name collision.
+        presign_revoked: bool
+        presign_tag_cleared: bool
+
     # Declared here, not only in v391, because a constraint the database enforces and
     # Python never states is invisible until it fires at runtime — see
     # ``tests/unit/test_orm_ddl_divergence.py``, whose allowlist is empty by

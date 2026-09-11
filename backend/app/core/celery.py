@@ -62,6 +62,35 @@ from kombu import Queue  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.constants import CeleryQueues  # noqa: E402
+from app.core.constants import gpu_preferred_queue  # noqa: E402
+
+# Speaker/diarization work that PREFERS a GPU but produces a correct result on CPU
+# (issue #865). All eight were pinned to 'gpu' — a queue `docker-compose.lite.yml`
+# scales to zero consumers — so in lite mode every one of them was published into a
+# queue nothing drains, with no error and the API already returned 200. The
+# user-visible shape: a speaker reassignment reports success and the cross-file
+# voiceprint update never happens.
+#
+# Named as a set so the family and its routing rule live in ONE place;
+# `tests/unit/test_lite_mode_queue_consumers.py` reads it and asserts that in lite
+# every routed queue actually has a live consumer, which no per-line route could be
+# checked for. `transcription.process_file` is deliberately NOT here — see
+# gpu_preferred_queue()'s docstring for why a task that REQUIRES a GPU must stay put.
+GPU_PREFERRED_TASKS: tuple[str, ...] = (
+    "rediarize",
+    "update_speaker_embedding_on_reassignment",
+    "extract_v4_embeddings",
+    "extract_v4_embeddings_batch",
+    "speaker.recluster_all",
+    "detect_speaker_attributes_batch",
+    "analyze_speakers_combined_batch",
+    "speaker_embedding_consistency_repair_batch",
+)
+
+# Resolved once here because `task_routes` is a static dict built at import time.
+# Every dispatch site that needs it at CALL time (postprocess.py's explicit
+# apply_async) calls gpu_preferred_queue() directly instead of importing this.
+_GPU_PREFERRED_QUEUE = gpu_preferred_queue()
 
 # Explicit queue declarations — single source of truth.
 # With task_create_missing_queues=False, any typo in a queue name will raise
@@ -100,6 +129,7 @@ celery_app = Celery(
         "app.tasks.transcription.preprocess",
         "app.tasks.transcription.postprocess",
         "app.tasks.transcription.dispatch",
+        "app.tasks.transcription.cancellation",
         "app.tasks.waveform",
         "app.tasks.waveform_generation",
         "app.tasks.summarization",
@@ -260,11 +290,12 @@ celery_app.conf.update(
         "transcription.postprocess": {"queue": CeleryQueues.CPU},
         "transcription.enrich_and_dispatch": {"queue": CeleryQueues.CPU},
         "transcription.pipeline_error": {"queue": CeleryQueues.UTILITY},
-        "rediarize": {"queue": CeleryQueues.GPU},
-        "update_speaker_embedding_on_reassignment": {"queue": CeleryQueues.GPU},
-        "extract_v4_embeddings": {"queue": CeleryQueues.GPU},
-        "extract_v4_embeddings_batch": {"queue": CeleryQueues.GPU},
-        "speaker.recluster_all": {"queue": CeleryQueues.GPU},
+        "transcription.reconcile_cancellation": {"queue": CeleryQueues.UTILITY},
+        # The speaker/diarization family that PREFERS a GPU but runs correctly
+        # without one — 'gpu' in a full deployment, 'cpu' in lite, where nothing
+        # consumes 'gpu' (issue #865). Listed once in GPU_PREFERRED_TASKS above so
+        # the set and its routing rule cannot drift apart.
+        **{name: {"queue": _GPU_PREFERRED_QUEUE} for name in GPU_PREFERRED_TASKS},
         "speaker.cluster_for_file": {"queue": CeleryQueues.CPU},
         # Download Queue - Network I/O tasks (concurrency=3, no GPU)
         "download.media_url": {"queue": CeleryQueues.DOWNLOAD},
@@ -277,8 +308,8 @@ celery_app.conf.update(
         "analytics.analyze_transcript": {"queue": CeleryQueues.CPU},
         "detect_speaker_attributes": {"queue": CeleryQueues.CPU},
         "migrate_speaker_attributes": {"queue": CeleryQueues.CPU},
-        "detect_speaker_attributes_batch": {"queue": CeleryQueues.GPU},
-        "analyze_speakers_combined_batch": {"queue": CeleryQueues.GPU},
+        # detect_speaker_attributes_batch / analyze_speakers_combined_batch are in
+        # GPU_PREFERRED_TASKS above (they were pinned to 'gpu' here).
         "migrate_speakers_combined": {"queue": CeleryQueues.CPU},
         "system.update_gpu_stats": {"queue": CeleryQueues.CPU},
         "migrate_speaker_embeddings_to_v4": {"queue": CeleryQueues.CPU},
@@ -292,7 +323,7 @@ celery_app.conf.update(
         "neural_search_bootstrap": {"queue": CeleryQueues.UTILITY},
         "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_check": {"queue": CeleryQueues.CPU},
-        "speaker_embedding_consistency_repair_batch": {"queue": CeleryQueues.GPU},
+        # speaker_embedding_consistency_repair_batch is in GPU_PREFERRED_TASKS above.
         "process_speaker_update_background": {"queue": CeleryQueues.CPU},
         # Rename propagation into the chunk plane (issue #405). Lightweight
         # update_by_query, but user-visible latency matters (chat and search go

@@ -2329,6 +2329,11 @@ class ChatService:
             chunks_used = len(excerpt_ids)
             turn.metadata["chunks_used"] = chunks_used
             turn.metadata.update(prompt_diagnostics)
+            # The window `budget_chars` above was computed against -- after any #833
+            # narrowing. Without recording this, a truncated turn reads as a retrieval
+            # failure, which is how a too-small window silently invalidated four full
+            # evaluation runs before this fix.
+            turn.metadata["context_window"] = llm.user_context_window
 
             # GH #514. BUDGETED and PRESENTED fire AFTER the retrieval drain has
             # already returned, so without a flush here they would sit in the

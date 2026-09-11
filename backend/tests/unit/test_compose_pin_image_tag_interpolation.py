@@ -38,6 +38,7 @@ yaml = pytest.importorskip("yaml")
 REPO_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_PATCH = REPO_ROOT / "scripts" / "release-tests" / "lib" / "compose-patch.sh"
 PROD_COMPOSE = REPO_ROOT / "docker-compose.prod.yml"
+LITE_COMPOSE = REPO_ROOT / "docker-compose.lite.yml"
 
 pytestmark = pytest.mark.skipif(
     not COMPOSE_PATCH.is_file() or shutil.which("bash") is None,
@@ -157,4 +158,92 @@ def test_the_real_prod_compose_still_uses_the_literal_repo_form_too():
     assert "opentranscribe-frontend:${OT_IMAGE_TAG" in text, (
         "docker-compose.prod.yml no longer has a literal-repo/interpolated-tag image; the "
         "second branch of repo_of is now untested by this module"
+    )
+
+
+# --- Issue #895: docker-compose.lite.yml used to hardcode `:latest` and ignore ---
+# --- OT_IMAGE_TAG entirely, so a lite install could not be pinned/upgraded/rolled ---
+# --- back by release at all. Fixed to use the SAME `${VAR:-repo:${OT_IMAGE_TAG:-latest}}` ---
+# --- shape prod already used, which is exactly the shape cp_pin_image_tag exists for. ---
+
+
+def test_a_lite_interpolated_image_is_pinned_to_the_right_repository(tmp_path: Path):
+    lite_interpolated = (
+        "${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}"
+    )
+    text = f"services:\n  backend:\n    image: '{lite_interpolated}'\n"
+    result, target = _pin(text, "backend", "v0.5.0", tmp_path)
+    assert result.returncode == 0, f"cp_pin_image_tag failed:\n{result.stderr}"
+
+    pinned = yaml.safe_load(target.read_text(encoding="utf-8"))["services"]["backend"]["image"]
+    assert pinned == "davidamacey/opentranscribe-backend-lite:v0.5.0", (
+        f"expected the lite repo from inside the ${{VAR:-default}} form; got {pinned!r}"
+    )
+    assert "${" not in pinned, (
+        f"the pinned lite image still contains an interpolation fragment ({pinned!r})"
+    )
+
+
+def test_the_real_lite_compose_now_uses_the_same_interpolated_form():
+    """Prove the fix landed, not just that cp_pin_image_tag CAN parse the shape.
+
+    Before issue #895's fix, every service in docker-compose.lite.yml hardcoded
+    `${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}` — no
+    `${OT_IMAGE_TAG:-...}` anywhere, so no `OT_IMAGE_TAG` pin could ever reach a lite
+    deployment. This asserts the shipped file, not a synthetic string, actually
+    carries the fix — a regression here means the bug is back regardless of whether
+    cp_pin_image_tag itself still parses the old OR new form correctly.
+    """
+    if not LITE_COMPOSE.is_file():
+        pytest.skip("docker-compose.lite.yml is not in this checkout")
+    text = LITE_COMPOSE.read_text(encoding="utf-8")
+    image_lines = [line for line in text.splitlines() if "image:" in line]
+    assert image_lines, "docker-compose.lite.yml has no image: lines to check"
+    for line in image_lines:
+        assert "${OT_IMAGE_TAG" in line, (
+            f"docker-compose.lite.yml still hardcodes a tag and ignores OT_IMAGE_TAG "
+            f"(issue #895 regression): {line!r}"
+        )
+
+
+def test_no_shipped_overlay_hardcodes_an_image_tag():
+    """Repo-wide guard (the acceptance criterion issue #895 itself asks for): a
+    hardcoded tag on ANY service in ANY shipped docker-compose*.yml is exactly how
+    lite silently drifted out of sync with prod's OT_IMAGE_TAG pinning — prod was
+    fixed in isolation and nothing compared the two. Every `image:` line that names
+    a `davidamacey/opentranscribe-*` repository must resolve its tag through
+    `${OT_IMAGE_TAG:-...}` (directly, or nested inside an outer `${VAR:-...}`
+    override) rather than a bare literal tag.
+    """
+    # docker-compose.offline.yml is DELIBERATELY not pinned with ${OT_IMAGE_TAG} in
+    # the repo template — its own header comment explains why: an air-gapped install
+    # only ever has the `:latest`-tagged images `docker load` put there, so
+    # interpolating OT_IMAGE_TAG here would make compose look for a tag the package
+    # never loaded. build-offline-package.sh rewrites the tag in the PACKAGED COPY at
+    # build time instead; this repo template is never the thing actually deployed.
+    exempt_files = {"docker-compose.offline.yml"}
+
+    offenders: dict[str, list[str]] = {}
+    for compose_file in sorted(REPO_ROOT.glob("docker-compose*.yml")):
+        if compose_file.name in exempt_files:
+            continue
+        for line in compose_file.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("image:"):
+                continue
+            if "davidamacey/opentranscribe" not in stripped:
+                continue
+            if "${OT_IMAGE_TAG" in stripped:
+                continue
+            # `:blackwell` is a deliberate, permanently-floating tag (never part of
+            # the vX.Y.Z release scheme — see opentranscribe.sh's
+            # pin_diar_native_image_for_blackwell docstring), not a regression of
+            # this kind.
+            if ":blackwell" in stripped or ":${OT_BLACKWELL_IMAGE_TAG" in stripped:
+                continue
+            offenders.setdefault(compose_file.name, []).append(stripped)
+
+    assert not offenders, (
+        "these shipped overlay image lines hardcode a tag instead of resolving "
+        f"OT_IMAGE_TAG: {offenders}"
     )

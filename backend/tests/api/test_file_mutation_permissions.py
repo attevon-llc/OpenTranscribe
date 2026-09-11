@@ -269,7 +269,9 @@ MUTATING_ENDPOINTS: list[tuple[str, int]] = [
     ("summarization.py", 86),
     ("summarization.py", 349),
     ("summarization.py", 415),
-    ("tasks.py", 777),
+    # Re-anchored +30: Lane O's #906 fix (issue #906, release/v0.5.0-blockers) added
+    # inline dispatch logic above this call site in retry_file_processing.
+    ("tasks.py", 807),
     ("topics.py", 79),
     ("topics.py", 241),
     ("topics.py", 385),

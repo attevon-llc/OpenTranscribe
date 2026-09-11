@@ -722,9 +722,17 @@ it hit one plane far harder than the other:
 
 | Kind | Cap | Why |
 |---|---|---|
-| ordinary chunk | `SNIPPET_CHARS` = 240 | Unchanged by #832 — deliberately (see below) |
+| ordinary chunk | `SNIPPET_CHARS` = 10 × `SEARCH_CHUNK_TARGET_WORDS` (2000 today) | Left at a flat 240 by #832 — **raised by #913** (see below); derived from the same indexing target `chunking_service.py` builds a chunk against |
 | digest | `DIGEST_SNIPPET_CHARS` = 10 × `ingest_artifacts.sizing.DIGEST_SECTION_MAX_WORDS` (700 today) | A digest section is bounded at ingest to that many words, always > 240 chars — so the plain 240 cap truncated **100% (113/113)** of digest citations in the measured probe, vs 31% of chunk citations |
 | overview (`build_overview_citations`, #532 arm (a)) | `OVERVIEW_SNIPPET_CHARS` = 3 × `DIGEST_SNIPPET_CHARS` | A `FileSummary.digest` there is several digest sections JOINED, up to `mapreduce.overview.sections_budget()`'s ceiling of 3 per file |
+
+⚠️ **`SNIPPET_CHARS` (2000) is now WIDER than `DIGEST_SNIPPET_CHARS` (700)** — the ordering
+`test_an_ordinary_chunk_citations_snippet_is_unchanged` used to assert (chunk narrower than
+digest) is inverted by design after #913, and that test was rewritten, not deleted, to assert
+the rule that actually holds instead: each kind is capped against its OWN derived constant,
+never a literal and never another kind's cap. Full ordering today:
+`DIGEST_SNIPPET_CHARS` (700) < `SNIPPET_CHARS` (2000) < `OVERVIEW_SNIPPET_CHARS` (2100) <
+`EXPANDED_SNIPPET_CHARS` (2500).
 
 **`build_citation` and `build_overview_citations` are TWO separate call sites and
 must be kept in sync** — each computes its own `snippet_limit` and its own
@@ -753,11 +761,7 @@ independently-decided masking pass.
 
 **Explicitly out of scope for #832, and why:**
 
-- **Raising `SNIPPET_CHARS` for the chunk plane.** Gated on a redaction-policy
-  decision (does a wider excerpt shown to a REMOTE provider's reader change the
-  egress calculus?) that has not been made, and on a UI change — the citation
-  card currently clamps to 2 lines regardless of snippet length, so raising the
-  cap alone has zero reader-visible effect. Tracked in the #832 follow-up issue.
+- ~~Raising `SNIPPET_CHARS` for the chunk plane.~~ **Done — issue #913, see below.**
 - **Quote-aware re-windowing** (choosing the snippet based on what the model
   actually quoted). Would contradict the module's own invariant that a citation
   is never built by parsing model prose beyond the `[n]` marker.
@@ -765,6 +769,47 @@ independently-decided masking pass.
   to this fix and untouched — it is chunk-only by construction
   (`needs_expansion` excludes digests) and unreachable on shipped defaults
   (`context_expansion` is behind a default-off flag).
+
+## The chunk-plane cap was raised, and the "REMOTE provider" framing that gated it was wrong (issue #913)
+
+#832's follow-up issue framed raising `SNIPPET_CHARS` as blocked on a redaction-policy question:
+"does a wider excerpt shown to a REMOTE provider's reader change the egress calculus?" That
+framing is **false on two counts**, and #913 corrected it rather than answering it:
+
+1. **The snippet never reaches any provider.** `chat/prompting.py` never reads
+   `citation["snippet"]` — its only consumers are the SSE `sources` frame, the persisted
+   `citations` JSONB column, `chat/export.py`, `chat/export_redaction.py`, and
+   `citation_takedown.py`. There is no "what a REMOTE provider's reader gets" to change.
+2. **On a remote provider the snippet is masked anyway.** `mask_chunks`/`mask_digests` mask it
+   before it is ever attached to the citation, so a wider cap there shows more MASKED text —
+   zero new PII reaches that reader.
+
+The real precedent — and the one that should have been cited the first time — is #832's own
+`DIGEST_SNIPPET_CHARS` (700, a 2.9× widening over the flat 240) and `OVERVIEW_SNIPPET_CHARS`
+(2100, 8.75×), both of which ship **default-on** through the identical `_snippet(chunk.content,
+…)` call. Raising `SNIPPET_CHARS` to `10 × SEARCH_CHUNK_TARGET_WORDS` (2000 today) is that same
+method's **third** ratified application, not a new decision — see `citations.py`'s module-level
+comment for the full derivation and the widened-UI-change rationale.
+
+The genuine exposure this widens is narrower than the issue's framing: on a **local** provider
+with the admin masking floor off, a citation snippet is raw transcript text (unchanged rule,
+`models/chat.py`'s `ChatMessage` docstring and `citation_takedown.py`'s header) — widening the
+cap increases the volume of that per-citation exposure, at the same order of magnitude #832
+already shipped on the digest/overview planes.
+
+**The UI half of the #832 blocker was real** and is also closed by #913: `ChatSources.svelte`'s
+citation card now has a per-card "Show more"/"Show less" toggle (collapsed clamp stays at 2
+lines below 240 chars — the exact size the card showed in full before this issue, so no
+existing citation gains a toggle that reveals nothing), so a wider snippet is actually
+reachable by a reader rather than silently clipped by CSS.
+
+No RAG-quality measurement was run for this change. `quote_fidelity` needs real model prose
+(the mock LLM would make the score meaningless), `--question-set` is supplied at runtime with
+no set committed, and the only committed traceability artifact predates #832 and carries no
+`content_chars`. The derivation above (cover the same indexing target the other two caps
+already cover) is the justification on record; a future evidence-based re-tune should filter
+offered citations to `kind == "chunk"`, use the `content_chars` distribution, and compare
+against `quote_fidelity_at_240` per the decision rule in `citations.py`'s docstring.
 
 ## Concurrency slots leak if you release them in the wrong place
 

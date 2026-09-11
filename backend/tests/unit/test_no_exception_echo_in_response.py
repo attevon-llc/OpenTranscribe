@@ -40,6 +40,19 @@ strips four literal prefixes on the non-auth-error branch. A name-based escape
 hatch would hide exactly this class of false confidence, so the scanner never looks
 at a callee's name, only at whether an expression's AST subtree references a
 tainted variable.
+
+**The one structural exception is ``type(<anything>).__name__``.** This is not a
+callee-name check (the paragraph above still holds): the scanner recognises one AST
+shape — an ``Attribute`` named ``__name__`` whose value is a ``Call`` to a bare
+``type`` — that is structurally guaranteed to reduce to a class name and never the
+exception's message text, regardless of what expression sits inside ``type(...)``.
+This exists because the scanner used to fire on the repo's own approved remedy for
+this class of finding (``f"... ({type(e).__name__})"``, precedented at
+``llm_context_window.py:249`` and ``fs_events/detection.py:200``) — a gate that
+flags its own prescribed fix is a gate people learn to route around. It is narrow
+on purpose: ``f"failed ({type(e).__name__})"`` alone does not taint, but
+``f"failed ({type(e).__name__}): {e}"`` still does, because the bare ``e`` sitting
+outside the ``type(...).__name__`` shape is walked normally.
 """
 
 from __future__ import annotations
@@ -67,15 +80,44 @@ def _rel_to_app(path: Path) -> str:
     return path.relative_to(_APP_ROOT).as_posix()
 
 
+def _is_class_name_only(node: ast.AST) -> bool:
+    """True for the ``type(<anything>).__name__`` shape — carries no message text.
+
+    Not a name-based sanitizer escape hatch (the module docstring forbids those):
+    this matches one specific AST shape that is structurally guaranteed to reduce
+    to a class name, never the exception's message text, no matter what expression
+    sits inside the ``type(...)`` call. See the module docstring for why this
+    exists (the scanner used to fire on the repo's own approved remedy).
+    """
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "__name__"
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "type"
+    )
+
+
 def _references_tainted(expr: ast.AST | None, tainted: frozenset[str]) -> bool:
     """True if any ``Name`` node inside *expr* is a member of *tainted*.
 
     Deliberately structural and name-blind: no allowance is made for a callee
-    that "looks like" a sanitizer. See the module docstring.
+    that "looks like" a sanitizer. See the module docstring. The single exception
+    is ``_is_class_name_only``: when a subtree matches that shape, its children
+    (including whatever exception variable sits inside ``type(...)``) are never
+    visited, because that shape cannot carry message text regardless of contents.
     """
     if expr is None or not tainted:
         return False
-    return any(isinstance(node, ast.Name) and node.id in tainted for node in ast.walk(expr))
+    stack: list[ast.AST] = [expr]
+    while stack:
+        node = stack.pop()
+        if _is_class_name_only(node):
+            continue
+        if isinstance(node, ast.Name) and node.id in tainted:
+            return True
+        stack.extend(ast.iter_child_nodes(node))
+    return False
 
 
 def _taint_from_except_handler(
@@ -174,13 +216,22 @@ class _TaintWalker(ast.NodeVisitor):
         self._error_subclasses = error_subclasses
         self._func_stack: list[str] = ["<module>"]
         self._taint_stack: list[frozenset[str]] = [frozenset()]
+        # Per-function-scope taint: names assigned FROM a tainted value INSIDE an
+        # except handler, but read AFTER the handler closes (e.g. `r = {"error":
+        # str(e)}` inside the handler, `return r` after it). `_taint_stack` alone
+        # goes empty the moment the handler suite ends, so a return several lines
+        # below the handler saw no taint at all — a real, scanner-invisible finding
+        # (see the module docstring / plan for the #914 residuals this closes).
+        self._fn_taint: list[set[str]] = [set()]
         self.raise_findings: list[tuple[str, int]] = []
         self.return_findings: list[tuple[str, int]] = []
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
         self._func_stack.append(node.name)
+        self._fn_taint.append(set())
         self.generic_visit(node)
         self._func_stack.pop()
+        self._fn_taint.pop()
 
     # noqa reason: dispatched by name from ast.NodeVisitor.generic_visit
     # ("visit_" + node.__class__.__name__); ast.AsyncFunctionDef is itself
@@ -189,6 +240,12 @@ class _TaintWalker(ast.NodeVisitor):
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
         tainted = _taint_from_except_handler(node, self._taint_stack[-1])
+        # Carry every name tainted inside this handler into the enclosing
+        # function's persistent taint set too — EXCEPT the handler's own bound
+        # name (`except ... as e`), which is out of scope the moment the handler
+        # closes anyway (Python 3 deletes it), so keeping it would manufacture a
+        # finding on an `e` that can no longer be referenced.
+        self._fn_taint[-1] |= tainted - ({node.name} if node.name else set())
         self._taint_stack.append(tainted)
         self.generic_visit(node)
         self._taint_stack.pop()
@@ -202,7 +259,7 @@ class _TaintWalker(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Return(self, node: ast.Return) -> None:  # noqa: N802
-        tainted = self._taint_stack[-1]
+        tainted = frozenset(self._taint_stack[-1] | self._fn_taint[-1])
         if node.value is not None and _references_tainted(node.value, tainted):
             self.return_findings.append((self._func_stack[-1], node.lineno))
         self.generic_visit(node)

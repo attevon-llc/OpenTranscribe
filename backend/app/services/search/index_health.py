@@ -119,8 +119,12 @@ def notify_corruption(index_name: str, probe: KnnProbeResult) -> None:
                 True,
                 f"Admins were notified that '{index_name}' has a corrupted vector plane",
             )
-    except Exception as e:  # noqa: BLE001 - alerting must never break the health check
-        logger.error(f"Could not notify admins about {index_name} corruption: {e}")
+    except Exception:  # noqa: BLE001 - alerting must never break the health check
+        # logger.exception, not logger.error: this handler swallows the only signal
+        # that an admin was NOT paged about a corrupt vector plane, so a bare message
+        # with no traceback leaves "nobody was notified" indistinguishable from
+        # "nothing went wrong here".
+        logger.exception(f"Could not notify admins about {index_name} corruption")
 
 
 def clear_corruption_notice(index_name: str) -> None:

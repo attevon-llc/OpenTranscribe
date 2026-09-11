@@ -488,11 +488,17 @@ def recover_all_stuck_tasks(
                 # PER-FILE catch deliberately: one bad config must not abort the sweep
                 # for everyone else. What changes is the outcome now reaches the
                 # caller, not just the log. File is marked ERROR by dispatch itself.
-                logger.error(
-                    f"Failed to re-dispatch transcription for file {file_uuid}: {e}",
-                    exc_info=True,
+                #
+                # retry_failures is returned verbatim in this endpoint's response body
+                # (see below) — never interpolate the raw exception text here, only its
+                # class name (#914). Same sanitization as recover_task's dispatch_error
+                # a few hundred lines down; the original #914 scanner missed this site
+                # because the taint flows into a list .append() rather than an
+                # assignment or a return.
+                logger.exception(f"Failed to re-dispatch transcription for file {file_uuid}")
+                retry_failures.append(
+                    {"file_uuid": file_uuid, "error": f"Re-dispatch failed ({type(e).__name__})"}
                 )
-                retry_failures.append({"file_uuid": file_uuid, "error": str(e)})
 
         return {
             "success": not retry_failures,

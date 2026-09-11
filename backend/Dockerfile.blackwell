@@ -31,7 +31,7 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend (Blackwell)" \
       org.opencontainers.image.description="AI-powered transcription backend for NVIDIA Blackwell/DGX Spark" \
       org.opencontainers.image.vendor="OpenTranscribe" \
       org.opencontainers.image.authors="OpenTranscribe Contributors" \
-      org.opencontainers.image.licenses="AGPL-3.0" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.source="https://github.com/attevon-llc/OpenTranscribe"
 
 WORKDIR /app

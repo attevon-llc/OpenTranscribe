@@ -50,6 +50,22 @@ RUN npm run build
 # bases; when they diverge, only one of them gets looked at. Bump both together.
 FROM nginx:1.31.2-alpine3.23
 
+# OCI annotations for container metadata and compliance.
+#
+# ⚠️ `org.opencontainers.image.licenses` is the ONLY way this image declares its licence
+# (issue #886). Nothing else in it can: the final stage contains zero `package.json` files
+# — only the built static output and nginx.conf are copied — so `docs-site/package.json`'s
+# `license` field never reaches a scan of the image, and syft therefore attributes no
+# licence to the component at all. This block is the same one the other four production
+# Dockerfiles carry; docs was the one that had none.
+LABEL org.opencontainers.image.title="OpenTranscribe Documentation" \
+      org.opencontainers.image.description="Docusaurus documentation site for OpenTranscribe" \
+      org.opencontainers.image.vendor="OpenTranscribe" \
+      org.opencontainers.image.authors="OpenTranscribe Contributors" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.source="https://github.com/attevon-llc/OpenTranscribe" \
+      org.opencontainers.image.documentation="https://github.com/attevon-llc/OpenTranscribe/blob/master/README.md"
+
 # Pull Alpine security patches at build time so this image does not depend on a
 # new nginx base tag being cut every time a CVE lands in libcrypto/libexpat/curl.
 # frontend/Dockerfile.prod has done this for a while; docs did not, which is the

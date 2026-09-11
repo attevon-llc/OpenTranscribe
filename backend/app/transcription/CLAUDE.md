@@ -254,9 +254,26 @@ Docs: `docs-site/docs/features/boundary-correction.md`,
   gpu-diarize worker. The gpu-split path therefore frees the transcriber whether or not overlap
   is on, so #665's co-residency reasoning applies to `_GpuStage`/`_GpuRawStage` only. Re-derive
   with `rg 'release_transcriber' backend/app` rather than trusting the count here.
+- **⚠️ There is ONE stand-down checkpoint and it answers TWO triggers** (#809 + #823).
+  `core/task_cancellation.stand_down_if_requested(where)` is what the seven boundaries in
+  `engine/stages.py` and `transcriber.py`'s decode loop call. It consults, in this order:
+  1. **A user cancel of THIS file** (#823) → `TranscriptionCancelledError` → the task layer's
+     `tasks/transcription/cancellation.finish_cancelled` → file `CANCELLED`, message **acked**,
+     **no requeue**. Signal: a Redis key `transcription_cancel:{task_id}` set by the API,
+     read through a per-thread `ContextVar` scope each task binds around its body. Per-run, so
+     cancelling one file cannot stand down a sibling running on the same `--pool=threads`
+     worker; polled at most every `CANCEL_POLL_INTERVAL_S` (2 s) so the decode loop does not
+     hit the broker per segment.
+  2. **Worker shutdown** (#809) → `TranscriptionAbortedError` → requeue, as below.
+
+  Cancel is checked **first**: honouring the shutdown would requeue a job the user just
+  stopped, and the next worker would only stand it down again. **Do not add a checkpoint to a
+  stage whose task handles neither exception** — an abort through `except Exception` marks the
+  file ERROR and acks (losing the work), and a cancel through it tells the user their file
+  failed for a stop they asked for. `tests/unit/test_user_cancel_cooperative.py` is the gate
+  on both.
 - **A stopping worker stands down between stages, and the chain-level effect is not a failure**
-  (#809). `core/worker_shutdown.raise_if_shutting_down` is called at each stage boundary in
-  `engine/stages.py` and inside `transcriber.py`'s decode loop; the task layer
+  (#809). The checkpoint above raises `TranscriptionAbortedError`; the task layer
   (`tasks/transcription/context.requeue_after_abort`) turns the resulting
   `TranscriptionAbortedError` into `Reject(requeue=True)`. Two consequences worth knowing before
   you debug a "vanished" task: celery's tracer handles `Reject` in its own arm, so **`link_error`

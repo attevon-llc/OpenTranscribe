@@ -78,6 +78,16 @@ should import `app.api` or `app.services` at module scope.
   the probe. Full rationale: `app/services/CLAUDE.md`.
 - `exceptions.py` — the `OpenTranscribeError` hierarchy, handled globally in `main.py`.
   **Service-layer only** — endpoints keep raising `HTTPException` (see its docstring).
+- `task_cancellation.py` — the **per-run** cooperative stand-down (#823), and
+  `worker_shutdown.py`'s **process-wide** one (#809). `stand_down_if_requested(where)` is the
+  single checkpoint every GPU stage boundary calls; it answers both triggers, cancel first.
+  The two signals are deliberately different shapes and must not be merged: a shutdown is one
+  `threading.Event` meaning "this worker is going away", a cancel is a Redis key naming ONE run
+  (`transcription_cancel:{task_id}`) resolved through a per-thread `ContextVar` scope, so
+  cancelling one file cannot stand down a sibling on the same `--pool=threads` worker. The
+  read fails **open** (an unreachable Redis is not a cancellation); the write reports failure
+  so the caller can stop claiming a stop it never armed. Outcomes differ too — see
+  `app/tasks/CLAUDE.md`. Stdlib-plus-lazy-Redis, so it stays importable on a CPU-only worker.
 - `redis.py` — `get_redis()`, the process-wide **sync Redis (db 0) singleton**. Don't call
   `redis.from_url` directly; the documented exceptions (auth rate-limit/lockout, cache db 1,
   async clients) are listed in its docstring.

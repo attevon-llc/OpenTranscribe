@@ -304,24 +304,32 @@ def test_force_delete_admin_cancels_a_live_active_task_200(
     """``/force`` is the documented escape hatch for exactly the case a plain
     DELETE refuses: a file with a genuinely live ``active_task_id`` (see
     ``test_files_crud.py::test_delete_file_with_live_active_task_409``). An admin
-    must still be able to force through it — revoking the task, not leaving it
-    orphaned pointing at a deleted file.
+    must still be able to force through it — telling the task to stand down, not
+    leaving it orphaned pointing at a deleted file.
+
+    Issue #823 changed WHAT that means. This used to assert
+    ``revoke(active_task_id, terminate=True)``, which was dead on every pool type:
+    ``dispatch.py`` never passes ``task_id=`` to ``apply_async``, so ``active_task_id``
+    holds an application uuid4 celery has never seen. The stand-down is now a
+    per-run cooperative flag the running task polls, so the assertion is that the
+    flag was armed — the thing that actually stops the GPU.
     """
+    task_id = "33333333-3333-3333-3333-333333333333"
     media_file = _make_file(
         db_session,
         normal_user,
         file_status="completed",
-        active_task_id="33333333-3333-3333-3333-333333333333",
+        active_task_id=task_id,
     )
     with (
         patch("app.utils.task_utils.AsyncResult") as mock_async_result,
-        patch("app.utils.task_utils.celery_app.control.revoke") as mock_revoke,
+        patch("app.core.task_cancellation.request_cancel", return_value=True) as mock_arm,
     ):
         mock_async_result.return_value.state = "STARTED"
         response = client.delete(f"/api/files/{media_file.uuid}/force", headers=admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["file_uuid"] == str(media_file.uuid)
-    mock_revoke.assert_called_once_with("33333333-3333-3333-3333-333333333333", terminate=True)
+    assert mock_arm.call_args.args[0] == task_id
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +429,7 @@ def test_bulk_delete_force_by_admin_is_honoured(
     )
     with (
         patch("app.utils.task_utils.AsyncResult") as mock_async_result,
-        patch("app.utils.task_utils.celery_app.control.revoke"),
+        patch("app.core.task_cancellation.request_cancel", return_value=True),
     ):
         mock_async_result.return_value.state = "STARTED"
         response = client.post(

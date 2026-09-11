@@ -25,7 +25,11 @@ from typing import Any
 
 import numpy as np
 
-from app.core.worker_shutdown import raise_if_shutting_down
+# The ONE cooperative checkpoint, consulted at every stage boundary below. It answers both
+# stand-down triggers — worker shutdown (#809, requeue) and a user cancel of THIS file (#823,
+# stop for good) — so a checkpoint cannot accidentally honour only one of them. That is why
+# #823 extended these call sites instead of adding a second set beside them.
+from app.core.task_cancellation import stand_down_if_requested
 from app.core.worker_shutdown import shutdown_requested
 
 if TYPE_CHECKING:
@@ -415,7 +419,7 @@ class _GpuStage:
         # Issue #809: stand down BEFORE loading audio or warming Whisper. A worker that is
         # already stopping must not start a multi-minute job it cannot finish — the message is
         # requeued and the next worker runs it from the top, so nothing is lost by refusing here.
-        raise_if_shutting_down("_GpuStage.run entry")
+        stand_down_if_requested("_GpuStage.run entry")
 
         profiler.snapshot("pipeline_start")
 
@@ -505,7 +509,7 @@ class _GpuStage:
                 # deliberately — raised outside it, the `finally` below never runs and the
                 # overlapped diarization thread is left alive holding the WAV (issue #661
                 # phase 1.1, the hazard that try/finally was added for).
-                raise_if_shutting_down("_GpuStage.run before diarization")
+                stand_down_if_requested("_GpuStage.run before diarization")
                 result_dict, diarize_df = self._run_diarization(
                     audio,
                     transcript,
@@ -763,7 +767,7 @@ class _GpuRawStage:
         # Issue #809: stand down before loading the WAV or warming Whisper — see the twin
         # comment in _GpuStage.run. The shared-volume WAV is deliberately NOT cleaned up on an
         # abort (core.py::_finish_failed_or_aborted), so the redelivered attempt still finds it.
-        raise_if_shutting_down("_GpuRawStage.run entry")
+        stand_down_if_requested("_GpuRawStage.run entry")
 
         profiler.snapshot("pipeline_start")
 
@@ -850,7 +854,7 @@ class _GpuRawStage:
                 # Issue #809: INSIDE the try, for the same reason as _GpuStage.run's — an abort
                 # raised outside it skips `finally: async_diarization.close()` and leaks the
                 # overlapped thread under a WAV a caller may unlink.
-                raise_if_shutting_down("_GpuRawStage.run before diarization")
+                stand_down_if_requested("_GpuRawStage.run before diarization")
                 diarize_df, overlap_info, native_embeddings, diar_provider, diar_model = (
                     _collect_diarization(
                         audio,
@@ -1012,7 +1016,7 @@ class _TranscribeOnlyStage:
 
         # Issue #809: stand down before loading the WAV or warming Whisper. This stage runs
         # under transcribe_gpu_task, whose handler requeues the abort (core.py).
-        raise_if_shutting_down("_TranscribeOnlyStage.run entry")
+        stand_down_if_requested("_TranscribeOnlyStage.run entry")
 
         profiler.snapshot("pipeline_start")
 
@@ -1098,8 +1102,10 @@ class _DiarizerOnlyStage:
         # requeues instead of failing the file. Before that, an abort here would have travelled
         # diarize_task's generic `except Exception`, marked the file ERROR and ACKed the message
         # under acks_late -- losing the transcription outright. Do not add a checkpoint to a
-        # stage whose task cannot requeue the abort.
-        raise_if_shutting_down("_DiarizerOnlyStage.run entry")
+        # stage whose task cannot requeue the abort -- nor, since #823, to one that cannot
+        # finish a TranscriptionCancelledError: routed through the generic handler THAT reads
+        # to the user as "your file failed" for a stop they asked for.
+        stand_down_if_requested("_DiarizerOnlyStage.run entry")
 
         profiler.snapshot("pipeline_start")
 
@@ -1122,7 +1128,7 @@ class _DiarizerOnlyStage:
             # Issue #809: the last bounded point before the diarizer load and the opaque
             # diarize() call. There is no try/finally to sit inside here — this stage never
             # constructs an _AsyncDiarization (it IS the diarization leg).
-            raise_if_shutting_down("_DiarizerOnlyStage.run before diarization")
+            stand_down_if_requested("_DiarizerOnlyStage.run before diarization")
 
             if tc.concurrent_requests > 1:
                 _wait_for_vram(2000, "diarization")

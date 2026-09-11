@@ -266,16 +266,22 @@ class Transcriber:
         audio_duration = len(audio) / 16000  # 16kHz sample rate
         segments = []
         total_words = 0
-        # Cooperative-abort checkpoint (issue #809), resolved ONCE rather than per
-        # iteration — this is the decode hot loop. Imported here rather than at module
+        # Cooperative stand-down checkpoint (issues #809 + #823), resolved ONCE rather than
+        # per iteration — this is the decode hot loop. Imported here rather than at module
         # scope because transcriber.py is imported by CPU-only workers too, and this
         # keeps the shutdown machinery off their import path.
-        from app.core.worker_shutdown import raise_if_shutting_down
+        from app.core.task_cancellation import stand_down_if_requested
 
         for seg in segments_gen:
-            # The only unbounded loop in the hot path, so checking here bounds abort
-            # latency to a single decode batch rather than to the whole file.
-            raise_if_shutting_down("transcriber.transcribe segment loop")
+            # The only unbounded loop in the hot path, so checking here bounds stand-down
+            # latency to a single decode batch rather than to the whole file. This is also
+            # the ONLY checkpoint the CPU leg reaches once it is under way
+            # (transcribe_cpu_task runs the legacy TranscriptionPipeline, not the engine
+            # stages), so #823's cancel depends on it for that leg.
+            #
+            # The per-task cancel half polls Redis at most once every
+            # CANCEL_POLL_INTERVAL_S, not once per segment — see that constant's rationale.
+            stand_down_if_requested("transcriber.transcribe segment loop")
 
             seg_start = max(float(seg.start), 0.0)
             seg_end = min(float(seg.end), audio_duration)

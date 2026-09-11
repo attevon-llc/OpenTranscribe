@@ -1164,7 +1164,7 @@
   "userManagement.linkIdentity.identifierOidc": "OIDC subject (sub)",
   "userManagement.linkIdentity.identifierLdap": "LDAP uid",
   "userManagement.linkIdentity.identifierPki": "인증서 주체 DN",
-  "userManagement.linkIdentity.note": "이는 계정의 역할이나 인증 유형을 변경하지 않습니다 — 이는 최초 로그인과 마찬가지로 다음 로그인 시 결정됩니다.",
+  "userManagement.linkIdentity.note": "계정의 역할은 최초 로그인과 마찬가지로 여전히 다음 로그인 시 결정됩니다 — 다만 이 계정이 현재 로컬 비밀번호로 로그인하는 경우, 연동하면 여기서 설정한 공급자로 전환되고 모든 곳에서 로그아웃됩니다.",
   "userManagement.linkIdentity.linkButton": "자격 증명 연결",
   "userManagement.linkIdentity.linking": "연결 중…",
   "userManagement.linkIdentity.success": "{{name}}님에게 외부 자격 증명을 연결했습니다",

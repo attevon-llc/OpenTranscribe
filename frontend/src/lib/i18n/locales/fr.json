@@ -2782,7 +2782,7 @@
   "userManagement.linkIdentity.identifierOidc": "Sujet OIDC (sub)",
   "userManagement.linkIdentity.identifierLdap": "uid LDAP",
   "userManagement.linkIdentity.identifierPki": "DN du sujet du certificat",
-  "userManagement.linkIdentity.note": "Cela ne change ni le rôle ni le type d'authentification du compte — cela reste décidé à la prochaine connexion, comme pour toute première connexion.",
+  "userManagement.linkIdentity.note": "Le rôle du compte reste décidé lors de la prochaine connexion, comme pour toute première connexion — mais si ce compte se connecte actuellement avec un mot de passe local, la liaison le convertit vers le fournisseur défini ici et le déconnecte partout.",
   "userManagement.linkIdentity.linkButton": "Lier l'identité",
   "userManagement.linkIdentity.linking": "Liaison en cours…",
   "userManagement.linkIdentity.success": "Identité externe liée à {{name}}",

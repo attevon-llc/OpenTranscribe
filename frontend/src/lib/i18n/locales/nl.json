@@ -1164,7 +1164,7 @@
   "userManagement.linkIdentity.identifierOidc": "OIDC-subject (sub)",
   "userManagement.linkIdentity.identifierLdap": "LDAP-uid",
   "userManagement.linkIdentity.identifierPki": "Certificaat-subject-DN",
-  "userManagement.linkIdentity.note": "Dit wijzigt niet de rol of het authenticatietype van het account — die worden nog steeds bepaald bij de volgende aanmelding, net als bij elke eerste keer aanmelden.",
+  "userManagement.linkIdentity.note": "De rol van het account wordt nog steeds bepaald bij de volgende aanmelding, net als bij elke eerste keer aanmelden — maar als dit account momenteel met een lokaal wachtwoord aanmeldt, zet het koppelen het om naar de hier ingestelde provider en wordt het overal afgemeld.",
   "userManagement.linkIdentity.linkButton": "Identiteit koppelen",
   "userManagement.linkIdentity.linking": "Bezig met koppelen…",
   "userManagement.linkIdentity.success": "Externe identiteit gekoppeld aan {{name}}",

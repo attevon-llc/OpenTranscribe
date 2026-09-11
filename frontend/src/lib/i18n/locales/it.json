@@ -1164,7 +1164,7 @@
   "userManagement.linkIdentity.identifierOidc": "Subject OIDC (sub)",
   "userManagement.linkIdentity.identifierLdap": "uid LDAP",
   "userManagement.linkIdentity.identifierPki": "DN soggetto del certificato",
-  "userManagement.linkIdentity.note": "Questo non modifica il ruolo o il tipo di autenticazione dell'account — quelli vengono ancora decisi al prossimo accesso, come per qualsiasi primo accesso.",
+  "userManagement.linkIdentity.note": "Il ruolo dell'account viene ancora deciso al prossimo accesso, come per qualsiasi primo accesso — ma se questo account al momento accede con una password locale, il collegamento lo converte al provider impostato qui e ne disconnette tutte le sessioni.",
   "userManagement.linkIdentity.linkButton": "Collega identità",
   "userManagement.linkIdentity.linking": "Collegamento in corso…",
   "userManagement.linkIdentity.success": "Identità esterna collegata a {{name}}",

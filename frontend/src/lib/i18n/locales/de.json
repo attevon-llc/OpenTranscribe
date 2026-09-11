@@ -2782,7 +2782,7 @@
   "userManagement.linkIdentity.identifierOidc": "OIDC-Subject (sub)",
   "userManagement.linkIdentity.identifierLdap": "LDAP-uid",
   "userManagement.linkIdentity.identifierPki": "Zertifikats-Subject-DN",
-  "userManagement.linkIdentity.note": "Dies ändert weder die Rolle noch den Auth-Typ des Kontos — das wird weiterhin bei der nächsten Anmeldung entschieden, wie bei jeder ersten Anmeldung.",
+  "userManagement.linkIdentity.note": "Die Rolle des Kontos wird weiterhin bei der nächsten Anmeldung entschieden, wie bei jeder ersten Anmeldung — aber wenn sich dieses Konto derzeit mit einem lokalen Passwort anmeldet, wandelt die Verknüpfung es in den hier festgelegten Anbieter um und meldet es überall ab.",
   "userManagement.linkIdentity.linkButton": "Identität verknüpfen",
   "userManagement.linkIdentity.linking": "Verknüpfung läuft…",
   "userManagement.linkIdentity.success": "Externe Identität mit {{name}} verknüpft",

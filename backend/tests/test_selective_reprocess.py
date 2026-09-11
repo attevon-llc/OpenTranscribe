@@ -259,14 +259,17 @@ def _wait_for_completed(headers, file_uuid, max_wait=180):
             body = resp.json()
             status = body.get("status")
             if status in _TERMINAL_FAILURE_STATUSES:
-                # `GET /files/{uuid}` carries error_reason, not last_error_message; the
-                # full message lives on /status-detail, so name the reason and point at it
-                # rather than reporting an empty string.
-                detail = body.get("last_error_message") or body.get("error_reason") or "unknown"
+                # `GET /files/{uuid}` carries `error_reason` and a sanitized
+                # `user_message`, never the raw exception text (issue #786) — and
+                # `/status-detail`'s `last_error_message` is sanitized the same way now,
+                # so neither surface carries anything more diagnostic than the other. The
+                # raw message only ever reaches the server-side ERROR log, keyed by this
+                # file's UUID.
+                detail = body.get("user_message") or body.get("error_reason") or "unknown"
                 pytest.fail(
                     f"file {file_uuid} reached terminal status {status!r} after {i}s and "
                     f"cannot become completed (error_reason={detail}). "
-                    f"Full message: GET {BASE_URL}/files/{file_uuid}/status-detail"
+                    f"Check the backend ERROR log for {file_uuid} for the raw message."
                 )
             if status == "completed":
                 consecutive += 1

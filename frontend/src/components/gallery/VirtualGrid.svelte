@@ -319,10 +319,10 @@
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <span
                   class="status-wrap status-{file.status}"
-                  class:clickable-error={file.status === 'error' && file.last_error_message}
-                  on:click|preventDefault|stopPropagation={() => file.status === 'error' && file.last_error_message && handleErrorClick(file)}
+                  class:clickable-error={file.status === 'error' && file.user_message}
+                  on:click|preventDefault|stopPropagation={() => file.status === 'error' && file.user_message && handleErrorClick(file)}
                 >
-                  <span class="status-label">{file.status === 'error' && file.last_error_message ? $t('gallery.errorClickForDetails') : (file.display_status || file.status)}</span>
+                  <span class="status-label">{file.status === 'error' && file.user_message ? $t('gallery.errorClickForDetails') : (file.display_status || file.status)}</span>
                   <span class="status-dot"></span>
                 </span>
               </div>

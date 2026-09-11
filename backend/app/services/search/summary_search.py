@@ -29,6 +29,12 @@ Quarantine (abuse/DMCA takedown) is applied here too, via
 hit list, because a post-filter cannot correct total/offset and a count that includes
 a taken-down file is a content oracle (issue #818, same class as #876's
 ``/search/count``).
+
+The request's metadata filters (date range, tags, collections, speakers, …) are
+applied the same way and for the same reason — see ``summary_filters.py``, which
+owns the predicates and why they mirror the transcript leg rather than the
+gallery. Results are ordered by ``ts_rank`` (issue #831 item 2); before that they
+came back in ``id`` order, i.e. newest-first, with no relevance signal at all.
 """
 
 from __future__ import annotations
@@ -55,6 +61,8 @@ from app.services.permission_service import PermissionService
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.summary_redaction import _UNMASKED_TOP_LEVEL_KEYS
 from app.services.redaction.summary_redaction import mask_summary_leaf
+from app.services.search.summary_filters import SummarySearchFilters
+from app.services.search.summary_filters import summary_filter_predicates
 from app.services.takedown_service import exclude_quarantined
 
 logger = logging.getLogger(__name__)
@@ -180,6 +188,7 @@ def search_summaries(
     page_size: int = 20,
     redaction_cfg: EffectiveRedactionConfig | None = None,
     include_quarantined: bool = False,
+    filters: SummarySearchFilters | None = None,
 ) -> SummarySearchResult:
     """Full-text search over accessible files' AI summaries.
 
@@ -210,10 +219,17 @@ def search_summaries(
             ``files/__init__.py``'s ``include_quarantined=is_admin``). Default
             False: a taken-down file must not appear in, or be COUNTED by, a
             normal user's summary search.
+        filters: The request's metadata filters (date range, tags, collections,
+            speakers, …). Applied as PRE-filters in the same query as the count
+            and the page offset — issue #818's rule, for the same reason: a
+            filter applied after paging leaves ``total`` describing a different
+            set than the page does. ``None`` means "no metadata filters", which
+            is what every non-endpoint caller wants.
 
     Returns:
-        A page of file-level hits, each carrying every matching leaf's
-        key-path and (masked) snippet text.
+        A page of file-level hits ordered by relevance (``ts_rank``,
+        descending), each carrying every matching leaf's key-path and (masked)
+        snippet text.
 
     Raises:
         SummaryMaskingUnavailableError: propagated from ``mask_summary_leaf``
@@ -231,17 +247,39 @@ def search_summaries(
     ts_query = func.websearch_to_tsquery("simple", query)
     predicate = ts_document.op("@@")(ts_query)
 
-    base_filter = (
+    base_filter = [
         MediaFile.id.in_(select(accessible.c[0])),
         MediaFile.summary_data.isnot(None),
         func.jsonb_typeof(MediaFile.summary_data) == "object",
         predicate,
-    )
+    ]
+    # The request's metadata filters join the access-control and quarantine
+    # predicates HERE, in the one query that both counts and pages — never as a
+    # pass over the returned hits (issue #818, and issue #831's own count
+    # consistency requirement).
+    base_filter.extend(summary_filter_predicates(filters or SummarySearchFilters()))
 
     def _scoped(q):
         return exclude_quarantined(q.filter(*base_filter), include_quarantined=include_quarantined)
 
     total = _scoped(db.query(func.count(MediaFile.id))).scalar() or 0
+
+    # Relevance, with `id` as the tie-break (issue #831 item 2). `ts_rank` over
+    # the same `simple`-config document vector the WHERE clause already matches
+    # against: more occurrences of the query's terms in a summary ranks it
+    # higher, and Postgres computes the vector once per row either way.
+    #
+    # NOT `ts_rank_cd`: cover density scores how CLOSE the query's terms sit to
+    # one another, and this document is a serialized JSONB blob whose leaf order
+    # is an artifact of the summary schema (and whose "adjacent" words are often
+    # separated by JSON punctuation), so proximity here measures the container,
+    # not the prose.
+    #
+    # The `id` tie-break is not decoration: `ts_rank` ties are the common case on
+    # short summaries, and an ORDER BY that does not totally order the rows lets
+    # Postgres return them differently per page, which duplicates and drops hits
+    # across a paginated result set.
+    rank = func.ts_rank(ts_document, ts_query)
 
     rows = (
         _scoped(
@@ -253,7 +291,7 @@ def search_summaries(
                 MediaFile.summary_data,
             )
         )
-        .order_by(MediaFile.id.desc())
+        .order_by(rank.desc(), MediaFile.id.desc())
         .offset(max(0, (page - 1) * page_size))
         .limit(page_size)
         .all()

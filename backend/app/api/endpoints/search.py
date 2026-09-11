@@ -37,6 +37,8 @@ from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
 from app.services.search.reindex_cancel import read_fanout
 from app.services.search.reindex_cancel import request_cancel
+from app.services.search.summary_filters import SummarySearchFilters
+from app.services.search.summary_filters import parse_date_bound
 
 logger = logging.getLogger(__name__)
 
@@ -278,19 +280,70 @@ def search_transcripts(
         }
 
     if want_summaries:
-        payload.update(_summary_search_payload(db, ctx, q, page, page_size))
+        # The SPA sends every filter on every tab, so the summary leg has to
+        # honour the same ones the transcript leg above just did — otherwise one
+        # request's two legs disagree about which files the caller asked for
+        # (issue #831). `date_from`/`date_to` reach the transcript leg as raw
+        # strings because OpenSearch parses them itself; Postgres does not, so
+        # they are parsed here and a bad value is a 400 rather than a silently
+        # dropped bound.
+        try:
+            summary_filters = SummarySearchFilters(
+                speakers=speakers,
+                tags=tags,
+                date_from=parse_date_bound(date_from, upper=False),
+                date_to=parse_date_bound(date_to, upper=True),
+                file_type=file_type,
+                collection_id=collection_id,
+                min_duration=min_duration,
+                max_duration=max_duration,
+                min_file_size=min_file_size,
+                max_file_size=max_file_size,
+                language=language,
+                title_filter=title_filter,
+                file_uuid=file_uuid,
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail="date_from and date_to must be ISO 8601 dates or datetimes",
+            ) from e
+        payload.update(_summary_search_payload(db, ctx, q, page, page_size, summary_filters))
 
-    if not want_transcripts:
-        # The transcript leg is what fills `total_pages` above; a `summaries`-only
-        # request never runs it, so the placeholder built earlier left it hardcoded
-        # at 0 regardless of how many summary hits were actually found, and real
-        # pagination never reached the client. `total_results`/`total_files` stay as
-        # built — they describe the (absent) transcript leg, same as `results == []`,
-        # and `summary_total` is that leg's own counter. `result_type` is validated
-        # to a single value earlier in this function, so `want_summaries` is
-        # necessarily true here — page over that leg's own total.
-        total_for_paging = payload.get("summary_total", 0)
-        payload["total_pages"] = math.ceil(total_for_paging / page_size) if total_for_paging else 0
+    if want_summaries:
+        # `total_pages` is the only paging signal the response carries, so it has
+        # to reach the END OF EVERY LEG the request asked for.
+        #
+        # `summaries`-only: the transcript leg is what normally fills it and
+        # never ran, so the placeholder built above left it hardcoded at 0 no
+        # matter how many summary hits were found, and real pagination never
+        # reached the client.
+        #
+        # `all` (issue #831 item 3): it was filled by the TRANSCRIPT leg alone,
+        # from that leg's own `total_files`. Every summary page past the
+        # transcript leg's last one was therefore unreachable — a client walking
+        # 1..total_pages never asked for them, and those hits were silently
+        # dropped. With zero transcript hits the transcript leg still reports
+        # `max(1, …) == 1`, so a three-page summary result lost two thirds of
+        # itself. The reverse direction was already correct and stays that way:
+        # the summary leg's offset simply runs past its end and returns `[]`.
+        #
+        # ⚠️ There is deliberately NO single combined count, and this is not an
+        # omission. `total_results`/`total_files` describe the transcript leg and
+        # `summary_total` the summary leg; the two count different things
+        # (transcript occurrences grouped by file, versus whole summaries), so
+        # one merged number would have to misreport at least one of them. The
+        # invariant that matters — and that the tests pin — is that each leg's
+        # own total matches what that leg's pages actually walk, and that the
+        # page count reaches the end of both. Nothing is interleaved into a
+        # single ranked sequence either: an RRF fusion score and a `ts_rank` are
+        # not on a common scale, so ordering them against each other would be a
+        # fabricated ranking, not a combined one.
+        summary_pages = math.ceil(payload.get("summary_total", 0) / page_size)
+        if want_transcripts:
+            payload["total_pages"] = max(int(payload.get("total_pages") or 0), summary_pages)
+        else:
+            payload["total_pages"] = summary_pages
 
     return payload
 
@@ -408,7 +461,12 @@ def _drop_quarantined_search_hits(db: Session, response: Any) -> Any:
 
 
 def _summary_search_payload(
-    db: Session, ctx: RequestContext, q: str, page: int, page_size: int
+    db: Session,
+    ctx: RequestContext,
+    q: str,
+    page: int,
+    page_size: int,
+    filters: SummarySearchFilters,
 ) -> dict[str, Any]:
     """Build the ``summary_results``/``summary_total`` pair for issue #462.
 
@@ -443,6 +501,12 @@ def _summary_search_payload(
     offsets are consistent with what is returned. This function used to
     post-filter the hit list here; that left the count disclosing a
     taken-down file whose hit fell outside the requested page (#818).
+
+    ``filters`` (the request's date/tag/collection/… filters) goes the same way
+    and for the same reason — into ``search_summaries``' own query, never a pass
+    over the returned hits. Applying them here instead would leave
+    ``summary_total`` counting files the page had just removed, which is the
+    #818 shape exactly. See ``services/search/summary_filters.py``.
     """
     from app.services.redaction.config import resolve_effective_config
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
@@ -459,6 +523,7 @@ def _summary_search_payload(
             page_size=page_size,
             redaction_cfg=cfg,
             include_quarantined=ctx.user.is_admin,
+            filters=filters,
         )
     except SummaryMaskingUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e

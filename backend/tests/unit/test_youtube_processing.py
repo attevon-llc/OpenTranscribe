@@ -210,7 +210,7 @@ def yt_url_seams(monkeypatch, db_session):
 
     monkeypatch.setattr(youtube_processing, "send_youtube_notification_via_redis", _notify)
     monkeypatch.setattr(youtube_processing, "dispatch_transcription_pipeline", lambda **_kw: None)
-    monkeypatch.setattr(youtube_processing, "send_ws_event", lambda *_a, **_kw: None)
+    monkeypatch.setattr(youtube_processing, "send_ws_event_for_file", lambda *_a, **_kw: None)
 
     return SimpleNamespace(notifications=notifications)
 
@@ -455,7 +455,7 @@ def test_handle_playlist_result_dispatches_every_video_with_no_source_url_filter
     identified directly on ``_dispatch_video_task`` also reaches the playlist path
     that is its only production caller.
     """
-    monkeypatch.setattr(youtube_processing, "send_ws_event", lambda *_a, **_kw: None)
+    monkeypatch.setattr(youtube_processing, "send_ws_event_for_file", lambda *_a, **_kw: None)
     monkeypatch.setattr(notification_service, "send_ws_event", lambda *_a, **_kw: None)
 
     good = _make_media_file(db_session, normal_user, source_url="https://youtu.be/good")

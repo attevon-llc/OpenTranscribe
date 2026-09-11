@@ -3,9 +3,26 @@ import logging
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.utils.websocket_notify import send_ws_event
+from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
+
+
+def _invalidate_user_files(user_id: int) -> None:
+    """Tell the gallery/status page to re-fetch this user's files.
+
+    Called on both a successful AND a quarantine-suppressed send: the
+    notification itself is withheld when suppressed, but the SPA's cached
+    file list may still show a file that was just taken down — invalidating
+    lets the next fetch correctly drop it. Skipping this on the suppressed
+    path would leave a stale cached view of a now-hidden file.
+    """
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_user_files(user_id)
+    except Exception as cache_err:
+        logger.debug(f"Cache invalidation after status change failed: {cache_err}")
 
 
 def get_file_metadata(file_id: int) -> dict:
@@ -49,6 +66,18 @@ def send_notification_via_redis(
         True if notification was sent successfully, False otherwise
     """
     try:
+        # Checked BEFORE the metadata load below, so a quarantined file's
+        # filename is never even read off the DB for this purpose (issue #908).
+        from app.services.takedown_service import is_notification_suppressed
+
+        if is_notification_suppressed(file_id, user_id):
+            # The notification itself is withheld, but the gallery/status page
+            # must still learn the file's visibility changed — see
+            # _invalidate_user_files' docstring for why this stays on the
+            # suppressed path.
+            _invalidate_user_files(user_id)
+            return False
+
         # Get file metadata
         file_metadata = get_file_metadata(file_id)
 
@@ -63,15 +92,10 @@ def send_notification_via_redis(
             "file_size": file_metadata["file_size"],
         }
 
-        result = send_ws_event(user_id, "transcription_status", data)
+        result = send_ws_event_for_file(user_id, "transcription_status", data, file_id=file_id)
 
         # Invalidate caches so gallery / status page reflect the new state
-        try:
-            from app.services.redis_cache_service import redis_cache
-
-            redis_cache.invalidate_user_files(user_id)
-        except Exception as cache_err:
-            logger.debug(f"Cache invalidation after status change failed: {cache_err}")
+        _invalidate_user_files(user_id)
 
         return result
 
@@ -110,8 +134,22 @@ def send_notification_with_retry(
                     f"Successfully sent notification for file {file_id} on attempt {retry + 1}"
                 )
                 return True
-            else:
-                logger.warning(f"Failed to send notification (attempt {retry + 1}/{max_retries})")
+
+            # A `False` from send_notification_via_redis is either a genuine
+            # transient failure (worth retrying) or a quarantine suppression
+            # (issue #908) — retrying the latter for 3 attempts with a sleep
+            # between each, then logging an "after 3 attempts" error, fired on
+            # every progress tick of every quarantined file for no reason: the
+            # send was never going to succeed, because it was never meant to.
+            from app.services.takedown_service import is_notification_suppressed
+
+            if is_notification_suppressed(file_id, user_id):
+                logger.debug(
+                    f"Notification for file {file_id} is quarantine-suppressed; not retrying"
+                )
+                return False
+
+            logger.warning(f"Failed to send notification (attempt {retry + 1}/{max_retries})")
         except Exception as e:
             logger.warning(f"Failed to send notification (attempt {retry + 1}/{max_retries}): {e}")
 
@@ -163,14 +201,23 @@ def send_transcript_ready_notification(user_id: int, file_id: int) -> None:
         logger.debug(f"transcript_ready mark failed for file {file_id}: {e}")
 
     try:
+        # Checked before the metadata load, same as send_notification_via_redis —
+        # a quarantined file's filename is never read off the DB for this purpose.
+        from app.services.takedown_service import is_notification_suppressed
+
+        if is_notification_suppressed(file_id, user_id):
+            logger.debug(f"transcript_ready notification suppressed for file {file_id}")
+            return
+
         file_metadata = get_file_metadata(file_id)
-        send_ws_event(
+        send_ws_event_for_file(
             user_id,
             "transcript_ready",
             {
                 "file_id": file_metadata.get("file_uuid"),
                 "filename": file_metadata["filename"],
             },
+            file_id=file_id,
         )
     except Exception as e:
         logger.debug(f"transcript_ready notification failed for file {file_id}: {e}")
@@ -207,6 +254,15 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
 
     # Also send a file_updated notification to refresh the gallery item
     try:
+        # Hoisted above the file_data assembly (issue #908): a quarantined
+        # file's title/author/thumbnail must never be read off the DB for
+        # this purpose, matching the other two notifications in this module.
+        from app.services.takedown_service import is_notification_suppressed
+
+        if is_notification_suppressed(file_id, user_id):
+            logger.debug(f"file_updated notification suppressed for file {file_id}")
+            return
+
         # Get updated file data for gallery
         with session_scope() as db:
             media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
@@ -250,7 +306,7 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
                 }
 
                 # Send file_updated notification
-                send_ws_event(
+                send_ws_event_for_file(
                     user_id,
                     "file_updated",
                     {
@@ -259,6 +315,7 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
                         "status": "completed",
                         "message": "File processing completed",
                     },
+                    file_id=file_id,
                 )
                 logger.info(f"Sent file_updated notification for completed file {file_id}")
 

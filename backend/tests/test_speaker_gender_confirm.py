@@ -13,7 +13,9 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 
 
-def _make_speaker(db_session, user, gender: str | None = None) -> Speaker:
+def _make_speaker(
+    db_session, user, gender: str | None = None, *, quarantined: bool = False
+) -> Speaker:
     media_file = MediaFile(
         uuid=str(uuid_mod.uuid4()),
         user_id=user.id,
@@ -21,6 +23,7 @@ def _make_speaker(db_session, user, gender: str | None = None) -> Speaker:
         storage_path="test/gender-test.mp4",
         content_type="video/mp4",
         file_size=1000,
+        is_quarantined=quarantined,
     )
     db_session.add(media_file)
     db_session.flush()
@@ -83,7 +86,17 @@ class TestConfirmSpeakerGender:
         media_file_uuid = str(speaker.media_file.uuid)
         headers = {"Authorization": user_token_headers["Authorization"]}
 
-        with patch("app.utils.websocket_notify.send_ws_event") as mock_send_ws_event:
+        # send_ws_event_for_file (issue #908) resolves quarantine via its OWN
+        # session_scope() on a real connection, which cannot see this test's
+        # savepoint-isolated MediaFile — stub the check itself rather than
+        # bridge a second session.
+        with (
+            patch(
+                "app.services.takedown_service.is_notification_suppressed_for_uuid",
+                return_value=False,
+            ),
+            patch("app.utils.websocket_notify.send_ws_event") as mock_send_ws_event,
+        ):
             resp = client.post(
                 f"/api/speakers/{speaker.uuid}/confirm-gender?gender=male", headers=headers
             )
@@ -111,3 +124,37 @@ class TestConfirmSpeakerGender:
 
         db_session.refresh(other_speaker)
         assert other_speaker.predicted_gender == "male"
+
+    def test_confirm_404s_on_a_quarantined_file(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        """Issue #908, finding C: a quarantined file 404s everywhere else in the
+        product — without this gate, the owner of a file their own file-list no
+        longer shows (because it 404s there too) could still mutate one of its
+        speakers by posting the speaker's UUID directly, which they may already
+        have saved/bookmarked from before the takedown."""
+        speaker = _make_speaker(db_session, normal_user, gender="female", quarantined=True)
+        headers = {"Authorization": user_token_headers["Authorization"]}
+
+        resp = client.post(
+            f"/api/speakers/{speaker.uuid}/confirm-gender?gender=male", headers=headers
+        )
+
+        assert resp.status_code == 404
+
+        db_session.refresh(speaker)
+        assert speaker.predicted_gender == "female"
+        assert speaker.gender_confirmed_by_user is not True
+
+    def test_confirm_control_a_clean_file_still_works(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        """Control: the new quarantine gate must not affect an ordinary file."""
+        speaker = _make_speaker(db_session, normal_user, gender="female", quarantined=False)
+        headers = {"Authorization": user_token_headers["Authorization"]}
+
+        resp = client.post(
+            f"/api/speakers/{speaker.uuid}/confirm-gender?gender=male", headers=headers
+        )
+
+        assert resp.status_code == 200, resp.text

@@ -23,7 +23,7 @@ from app.db.session_utils import session_scope
 from app.services.audio_segment_utils import extract_audio_segment_np
 from app.services.audio_segment_utils import merge_adjacent_segments
 from app.services.audio_segment_utils import select_top_segments
-from app.utils.websocket_notify import send_ws_event
+from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
 
@@ -499,7 +499,7 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
         )
 
         if updated_count > 0:
-            send_ws_event(
+            send_ws_event_for_file(
                 user_id,
                 "speaker_updated",
                 {
@@ -507,13 +507,15 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
                     "reason": "speaker_attributes_detected",
                     "speakers_updated": updated_count,
                 },
+                file_uuid=file_uuid,
             )
 
         # Notify enrichment tracker that speaker attributes are done
-        send_ws_event(
+        send_ws_event_for_file(
             user_id,
             "enrichment_task_complete",
             {"file_id": file_uuid, "task": "speaker_attributes"},
+            file_uuid=file_uuid,
         )
 
         _update_attr_task(task_id, "completed", progress=1.0)

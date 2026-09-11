@@ -12,9 +12,21 @@ so keep heavy imports lazy.
 - `time_format.py` — **the only home for backend timestamp formatting**
   (`format_timestamp_simple`, `format_srt_timestamp`). Display-level formatting of durations /
   status / sizes belongs to `services/formatting_service.py`.
-- `websocket_notify.py` — `send_ws_event(user_id, type, data)` is **THE** way any synchronous
-  code (endpoint, task, service) pushes a notification. It publishes to Redis; `api/websockets.py`
-  fans out to the connected sockets. Returns bool, never raises.
+- `websocket_notify.py` — `send_ws_event(user_id, type, data)` is the raw, quarantine-blind
+  primitive: it publishes to Redis and `api/websockets.py` fans out to the connected sockets,
+  with no notion of whether the payload names a taken-down file. **Anything that identifies a
+  `MediaFile`** (filename, title, thumbnail, a speaker tied to a recording) must go through
+  `send_ws_event_for_file(user_id, type, data, *, file_id=… | file_uuid=… | file_uuids=…)`
+  instead (issue #908) — it consults `takedown_service.is_notification_suppressed` /
+  `is_notification_suppressed_for_uuid` / `filter_suppressed_file_uuids` before ever calling
+  the raw primitive, so a quarantined file cannot be disclosed over a live WS push even though
+  the same file already 404s on every read surface. Exactly one selector is required — passing
+  zero or more than one raises `TypeError` at the call site rather than silently falling back to
+  an unguarded send. `tests/unit/test_ws_event_quarantine_discipline.py` is the structural gate:
+  it AST-scans `app/` for any direct `send_ws_event` call site not on its written-reason
+  allowlist, plus any raw `.publish("websocket_notifications", …)` bypassing both functions
+  entirely. Both return bool, never raise (`send_ws_event_for_file`'s `TypeError` on a bad
+  selector is a programmer error, not a runtime failure mode).
 - `uuid_helpers.py` — the hybrid-ID + permission chokepoint. `get_*_by_uuid`,
   `get_file_by_uuid_with_permission` (admin bypass → takedown 404 → public → tenant gate → owner
   → shares, in that order), `require_resource_owner`.

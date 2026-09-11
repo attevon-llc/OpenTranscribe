@@ -23,7 +23,7 @@ from app.core.constants import gpu_preferred_queue
 from app.db.session_utils import session_scope
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
-from app.utils.websocket_notify import send_ws_event
+from app.utils.websocket_notify import send_ws_event_for_file
 
 from .notifications import send_completion_notification
 from .notifications import send_progress_notification
@@ -248,13 +248,14 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         )
 
         # Notify frontend that background enrichment tasks are running
-        send_ws_event(
+        send_ws_event_for_file(
             user_id,
             "enrichment_started",
             {
                 "file_id": str(file_uuid),
                 "tasks": enrichment_tasks,
             },
+            file_id=file_id,
         )
 
     except Exception as e:
@@ -438,10 +439,11 @@ def enrich_and_dispatch(
     # Search indexing (invisible to user)
     try:
         _index_transcript(file_id, file_uuid, user_id, pipeline_task_id=pipeline_task_id)
-        send_ws_event(
+        send_ws_event_for_file(
             user_id,
             "enrichment_task_complete",
             {"file_id": str(file_uuid), "task": "search_indexing"},
+            file_id=file_id,
         )
     except Exception as e:
         logger.warning(f"Search indexing failed for file {file_id}: {e}")

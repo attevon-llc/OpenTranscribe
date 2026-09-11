@@ -403,6 +403,11 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   codes.
 - Never touch `websockets.manager` from sync code; publish with
   `app/utils/websocket_notify.py:send_ws_event` (Redis pub/sub) so all API/worker processes reach
-  the connection-owning process.
+  the connection-owning process. **If the event names a `MediaFile`**, use
+  `send_ws_event_for_file(..., file_id=… | file_uuid=… | file_uuids=…)` instead — `send_ws_event`
+  itself has no notion of quarantine, and a taken-down file must not be disclosed over a live WS
+  push (issue #908). Both `speakers.py::verify_speaker_identification` and `::confirm_speaker_gender`
+  also gate on `takedown_service.is_hidden_for` before mutating anything, so a quarantined file
+  404s there exactly like every other resource lookup.
 - Middleware order is load-bearing: `ObservabilityMiddleware` is added **last** in `main.py` so
   it runs outermost.

@@ -179,6 +179,7 @@ def process_speaker_update_background(
     from app.api.endpoints.speakers import _push_speaker_profile_info
     from app.api.endpoints.speakers import _update_opensearch_speaker_name
     from app.utils.websocket_notify import send_ws_event
+    from app.utils.websocket_notify import send_ws_event_for_file
 
     try:
         logger.info(
@@ -273,7 +274,16 @@ def process_speaker_update_background(
             "media_file_id": identifiers["media_file_uuid"],
         }
 
-        send_ws_event(user_id, "speaker_processing_complete", notification_data)
+        if identifiers["media_file_uuid"] is not None:
+            send_ws_event_for_file(
+                user_id,
+                "speaker_processing_complete",
+                notification_data,
+                file_uuid=identifiers["media_file_uuid"],
+            )
+        else:
+            # A speaker with no media file has nothing a quarantine could hide.
+            send_ws_event(user_id, "speaker_processing_complete", notification_data)
 
         logger.info(
             f"Background processing complete for speaker {speaker_uuid}. "

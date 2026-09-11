@@ -19,7 +19,7 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 
 
-def _make_speaker(db_session, user) -> Speaker:
+def _make_speaker(db_session, user, *, quarantined: bool = False) -> Speaker:
     media_file = MediaFile(
         uuid=str(uuid_mod.uuid4()),
         user_id=user.id,
@@ -27,6 +27,7 @@ def _make_speaker(db_session, user) -> Speaker:
         storage_path="test/verify-test.mp4",
         content_type="video/mp4",
         file_size=1000,
+        is_quarantined=quarantined,
     )
     db_session.add(media_file)
     db_session.flush()
@@ -92,3 +93,32 @@ class TestVerifySpeaker:
         db_session.refresh(speaker)
         assert speaker.verified is True
         assert speaker.confidence is None
+
+    def test_verify_404s_on_a_quarantined_file(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        """Issue #908, finding C: a quarantined file 404s everywhere else in the
+        product — without this gate, the owner of a file their own file-list no
+        longer shows (because it 404s there too) could still mutate one of its
+        speakers by posting the speaker's UUID directly, which they may already
+        have saved/bookmarked from before the takedown."""
+        speaker = _make_speaker(db_session, normal_user, quarantined=True)
+        headers = {"Authorization": user_token_headers["Authorization"]}
+
+        resp = client.post(f"/api/speakers/{speaker.uuid}/verify?action=reject", headers=headers)
+
+        assert resp.status_code == 404
+
+        db_session.refresh(speaker)
+        assert speaker.verified is not True
+
+    def test_verify_control_a_clean_file_still_works(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        """Control: the new quarantine gate must not affect an ordinary file."""
+        speaker = _make_speaker(db_session, normal_user, quarantined=False)
+        headers = {"Authorization": user_token_headers["Authorization"]}
+
+        resp = client.post(f"/api/speakers/{speaker.uuid}/verify?action=reject", headers=headers)
+
+        assert resp.status_code == 200, resp.text

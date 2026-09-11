@@ -11,6 +11,7 @@ from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.db.session_utils import session_scope
 from app.utils.websocket_notify import send_ws_event
+from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
 
@@ -44,13 +45,14 @@ def _send_clustering_complete(user_id: int, result: dict):
 
 def _send_clustering_file_complete(user_id: int, file_uuid: str, clusters_assigned: int):
     """Send per-file clustering complete notification via WebSocket."""
-    send_ws_event(
+    send_ws_event_for_file(
         user_id,
         NOTIFICATION_TYPE_CLUSTERING_FILE_COMPLETE,
         {
             "file_uuid": file_uuid,
             "clusters_assigned": clusters_assigned,
         },
+        file_uuid=file_uuid,
     )
 
 
@@ -125,10 +127,11 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
             _send_clustering_file_complete(user_id, file_uuid, len(clusters))
 
             # Notify enrichment tracker that clustering is done
-            send_ws_event(
+            send_ws_event_for_file(
                 user_id,
                 "enrichment_task_complete",
                 {"file_id": file_uuid, "task": "speaker_clustering"},
+                file_uuid=file_uuid,
             )
 
             return result

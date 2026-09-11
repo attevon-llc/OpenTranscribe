@@ -305,6 +305,7 @@ def _handle_outer_exception(
                 update_media_file_status(db, file_id, FileStatus.ERROR)
                 media_file = get_refreshed_object(db, MediaFile, file_id)
                 if media_file:
+                    media_file.last_error_message = error_msg
                     media_file.error_category = categorize_error(error_msg).value
                     db.commit()
             update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)

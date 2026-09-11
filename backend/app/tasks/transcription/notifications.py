@@ -324,11 +324,21 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
 
 
 def send_error_notification(user_id: int, file_id: int, error_message: str) -> None:
-    """Send transcription error notification."""
+    """Send transcription error notification.
+
+    Routes the raw error through `ErrorCategorizationService` so the notification carries
+    a fixed, user-facing sentence rather than the raw exception text (issue #786) — the raw
+    message is logged here at ERROR, with the file id, and stays in
+    `media_file.last_error_message` for anyone who needs it.
+    """
+    from app.services.error_categorization_service import ErrorCategorizationService
+
+    logger.error(f"Transcription failed for file {file_id}: {error_message}")
+    info = ErrorCategorizationService.get_error_info(error_message)
     send_notification_with_retry(
         user_id,
         file_id,
         FileStatus.ERROR,
-        f"Transcription failed: {error_message}",
+        info["user_message"],
         progress=0,
     )

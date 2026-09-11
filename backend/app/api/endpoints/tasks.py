@@ -204,6 +204,14 @@ def _create_task_dict_from_media_file(
         created_at = file.upload_time
         updated_at = file.upload_time
 
+    # Never put the raw exception text on the wire (issue #786) — a client-facing
+    # error_message is a fixed sentence from ErrorCategorizationService, for both the
+    # real-task branch (task.error_message) and the synthesized one above.
+    if error_message:
+        from app.services.error_categorization_service import ErrorCategorizationService
+
+        error_message = ErrorCategorizationService.get_error_info(error_message)["user_message"]
+
     return {
         "id": task_id,
         "user_id": str(current_user.uuid),

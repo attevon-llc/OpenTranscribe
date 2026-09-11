@@ -71,6 +71,16 @@ def resolve_text_field_preset(preset: str, *, has_speaker_filter: bool = False) 
     raise ValueError(f"Unknown text field preset {preset!r}; expected one of {TEXT_FIELD_PRESETS}")
 
 
+#: Dataclass fields deliberately NOT round-tripped through the retrieval cache.
+#: The test: does the default value mean "not yet done on this read" (exclude)
+#: or "we do not know" (include)? ``expanded`` is the former — read-time state,
+#: see its own comment (#526). ``language`` was wrongly here by omission until
+#: #834: it is document data off the OpenSearch ``_source``, and its default ""
+#: reads as an UNKNOWN language to the reranker's three-bucket rule, not as a
+#: neutral reset.
+CACHE_EXCLUDED_FIELDS = frozenset({"expanded"})
+
+
 @dataclass
 class ChunkHit:
     """One retrieved document, with everything a citation needs.
@@ -94,6 +104,11 @@ class ChunkHit:
     #: ISO 639-1 code of the recording this chunk came from, straight off the chunk
     #: document's ``language`` keyword. Empty when the file predates detection.
     #: Read by the chat reranker, which must not reorder text it cannot read.
+    #: Round-tripped through the retrieval cache since #834: it is document data,
+    #: not read-time state, and its default "" is not a neutral reset — it reads
+    #: to the reranker's three-bucket rule as an UNKNOWN language, so dropping it
+    #: on a cache hit could turn an all-Spanish pool into an "all unknown" pool
+    #: and let the English cross-encoder run on text it cannot read.
     language: str = ""
     #: Section number for a digest document; ``None`` for a transcript chunk.
     digest_section: int | None = None
@@ -126,6 +141,7 @@ class ChunkHit:
             "start_time": self.start_time,
             "end_time": self.end_time,
             "score": self.score,
+            "language": self.language,
             "digest_section": self.digest_section,
         }
 
@@ -142,6 +158,10 @@ class ChunkHit:
             start_time=float(raw.get("start_time", 0.0)),
             end_time=raw.get("end_time"),
             score=float(raw.get("score", 0.0)),
+            # `.get` with a default: live Redis holds entries written by the
+            # pre-#834 code with no "language" key (5-min TTL; a deploy does not
+            # bump corpus_version), and the new reader must tolerate them.
+            language=str(raw.get("language", "")),
             digest_section=None if section is None else int(section),
         )
 

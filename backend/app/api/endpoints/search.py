@@ -468,7 +468,7 @@ def _summary_search_payload(
     page_size: int,
     filters: SummarySearchFilters,
 ) -> dict[str, Any]:
-    """Build the ``summary_results``/``summary_total`` pair for issue #462.
+    r"""Build the ``summary_results``/``summary_total`` pair for issue #462.
 
     ⚠️ Deliberately UNCACHED — do not "finish the job" by adding a response
     cache here the way the transcript leg has one (issue #822's plan named this
@@ -482,6 +482,33 @@ def _summary_search_payload(
     cache would need the identical re-check on every read, which is exactly the
     round trip a cache exists to avoid. Not worth it for a corpus this small
     (one JSONB blob per file, per `search_summaries`' own docstring).
+
+    **The same argument covers ACCESS, not only takedown.** Both authorities on
+    this surface — `get_accessible_file_ids_subquery` and `exclude_quarantined`
+    — are PRE-filters inside the query (#818 moved quarantine there so `total`
+    and the page offsets stay honest). A pre-filter's verdict is therefore baked
+    into the page, with no post-filter left downstream to re-apply it: unlike
+    the transcript leg, there is nothing here that a cached page would still be
+    re-checked by. Both authorities are time-varying by design, and neither is a
+    property of the query text a key would be built from.
+
+    ⚠️ **And the obvious key does not close it.** The transcript leg folds
+    `hybrid_search_service._search_corpus_version()` into `_make_cache_key`, so
+    reusing that counter here is the natural move — and it genuinely does cover
+    the takedown case (`takedown_service.quarantine_file`/`release_file` both
+    call `bump_corpus_version`). But it is bumped by exactly three things, and
+    those are all of them: chunk-plane indexing writes
+    (`indexing_service._invalidate_chat_retrieval_cache`, from
+    `index_transcript_chunks` and rename propagation), quarantine, and release.
+    A **collection share grant or revocation** (`endpoints/media_collections.py`)
+    and a **summary regeneration** (`tasks/summarization.py`, which rewrites the
+    very `media_file.summary_data` this leg reads) bump nothing. So a
+    corpus-version-keyed cache would keep serving an ex-recipient the summary
+    snippets of a collection they were just removed from, and keep serving the
+    pre-regeneration summary, for the rest of `SEARCH_CACHE_TTL_SECONDS` —
+    while *reading* as though it were invalidated. Verify that call-site list
+    before reconsidering (`rg 'bump_corpus_version\(\)' backend/app`); a cache
+    here needs an invalidation signal that does not yet exist.
 
     Access control is ``PermissionService.get_accessible_file_ids_subquery`` —
     the same authority every owner-scoped listing uses — applied inside

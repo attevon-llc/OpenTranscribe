@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import pathlib
 import uuid
+from collections import Counter
 
 import pytest
 
@@ -200,23 +201,77 @@ def test_viewer_cannot_auto_label_shared_file(
 
 # ---------------------------------------------------------------------------
 # Anti-drift guard: every ``min_permission="editor"`` call site in the codebase
-# must be represented in ``MUTATING_ENDPOINTS`` below, by file:line. This is an
-# AST scan (not a text grep) so it cannot be fooled by the string appearing in a
-# docstring/comment (``crud.py``'s ``get_media_file_by_uuid`` docstring literally
-# contains the text ``min_permission="editor"`` as documentation).
+# must be represented in ``MUTATING_ENDPOINTS`` below. This is an AST scan (not a
+# text grep) so it cannot be fooled by the string appearing in a docstring/comment
+# (``crud.py``'s ``get_media_file_by_uuid`` docstring literally contains the text
+# ``min_permission="editor"`` as documentation).
+#
+# ⚠️ The table is anchored on ``(module, enclosing function)``, NOT on file:line.
+# It used to be keyed by line number, and that made it a tripwire for code motion
+# rather than for new call sites: ANY edit anywhere above a tracked call — an
+# unrelated exception-echo fix, a new endpoint added earlier in the file, a merge —
+# shifted every row below it and failed the build. It was re-anchored five separate
+# times in this file's history (see the deleted comments in git log), twice in a
+# single day by two different agents, each time restating "a file:line table has to
+# be re-derived". The enclosing function is what actually IDENTIFIES a call site:
+# it survives line motion, and it changes exactly when the call site genuinely moves
+# to a different endpoint. The line numbers are still collected, but only to put a
+# jump target in the failure message — they are never compared.
+#
+# A function may legitimately hold more than one ``min_permission="editor"`` call,
+# so the comparison is a MULTISET (``Counter``), not a set: adding a second call
+# inside an already-tracked function is still a new call site and still fails.
 # ---------------------------------------------------------------------------
 
+# Key identifying one call site: (path relative to app/api/endpoints, enclosing scope).
+SiteKey = tuple[str, str]
+# A located call site: its key plus the line it currently sits on (diagnostics only).
+Site = tuple[SiteKey, int]
 
-def _find_min_permission_editor_sites() -> list[tuple[str, int]]:
+MODULE_SCOPE = "<module>"
+
+
+def _scope_ranges(tree: ast.Module) -> list[tuple[int, int, str]]:
+    """``(first_line, last_line, dotted_name)`` for every def/class in ``tree``.
+
+    Dotted so a call moved into a nested helper reads as the distinct site it is
+    (``recover_file.\\_do_recover``) rather than silently inheriting its parent's key.
+    """
+    ranges: list[tuple[int, int, str]] = []
+
+    def descend(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                name = f"{prefix}.{child.name}" if prefix else child.name
+                ranges.append((child.lineno, child.end_lineno or child.lineno, name))
+                descend(child, name)
+            else:
+                descend(child, prefix)
+
+    descend(tree, "")
+    return ranges
+
+
+def _enclosing_scope(ranges: list[tuple[int, int, str]], lineno: int) -> str:
+    """Innermost def/class containing ``lineno``, or ``<module>`` for a top-level call."""
+    containing = [r for r in ranges if r[0] <= lineno <= r[1]]
+    if not containing:
+        return MODULE_SCOPE
+    return min(containing, key=lambda r: r[1] - r[0])[2]
+
+
+def _find_min_permission_editor_sites() -> list[Site]:
     """AST-scan every module under ``app/api/endpoints`` for a real
     ``min_permission="editor"`` keyword argument (not a docstring mention).
 
-    Returns ``(relative_path, lineno)`` pairs, sorted, so a failure names the
-    exact file:line of any site missing from ``MUTATING_ENDPOINTS``.
+    Returns ``((relative_path, enclosing_scope), lineno)`` pairs, sorted. Only the
+    key half is compared against ``MUTATING_ENDPOINTS``; ``lineno`` rides along so a
+    failure can still name a file:line to jump to.
     """
-    sites: list[tuple[str, int]] = []
+    sites: list[Site] = []
     for path in sorted(API_ENDPOINTS_DIR.rglob("*.py")):
         tree = ast.parse(path.read_text(), filename=str(path))
+        ranges = _scope_ranges(tree)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -226,77 +281,62 @@ def _find_min_permission_editor_sites() -> list[tuple[str, int]]:
                     and isinstance(kw.value, ast.Constant)
                     and kw.value.value == "editor"
                 ):
-                    sites.append((str(path.relative_to(API_ENDPOINTS_DIR)), node.lineno))
+                    key = (
+                        str(path.relative_to(API_ENDPOINTS_DIR)),
+                        _enclosing_scope(ranges, node.lineno),
+                    )
+                    sites.append((key, node.lineno))
     return sorted(sites)
 
 
-# One row per real ``min_permission="editor"`` call site (25 as of issue #588).
-# The 10 in ``files/{crud,management,__init__,waveform}.py`` are the ones this
-# change adds; the rest (``files/reprocess.py``, ``files/summary_status.py``,
-# ``media_collections.py``, ``summarization.py``, ``tasks.py``, ``topics.py``,
-# ``user_files.py``) were fixed by a prior commit (issue #588 part 1) and are
-# listed here only so the guard's count matches the codebase exactly.
-MUTATING_ENDPOINTS: list[tuple[str, int]] = [
-    # Re-anchored (v0.5.0 wave, #859/#891 sweep): the exception-echo fixes in this file
-    # added lines above both call sites. The guard is keyed by file:line, so it is
-    # SUPPOSED to be re-anchored when code moves — that is the cost of it being
-    # able to notice a NEW call site rather than just counting them.
-    ("files/__init__.py", 1158),
-    ("files/__init__.py", 1225),
-    # Re-anchored again, +1: the release/v0.5.0-blockers merge added a line to
-    # files/crud.py above all three. ⚠️ The previous re-anchoring was done against
-    # the lane's own pre-merge tree, so the merge shifted them straight back out
-    # and this guard sat RED on the integration branch — a file:line table has to
-    # be re-derived AFTER the merge, not before it. Re-derive, don't hand-edit:
-    #   python3 -c "import ast,pathlib;[print(p.name,n.lineno) for p in
-    #   [pathlib.Path('backend/app/api/endpoints/files/crud.py')]
-    #   for n in ast.walk(ast.parse(p.read_text())) if isinstance(n,ast.Call)
-    #   and any(k.arg=='min_permission' and getattr(k.value,'value',None)=='editor'
-    #   for k in n.keywords)]"
-    ("files/crud.py", 998),
-    ("files/crud.py", 1089),
-    ("files/crud.py", 1177),
-    # Re-anchored +5 (v0.5.0 integration branch): #786's sanitizing of the four unwired
-    # failure-notification consumers added lines above all four call sites. Re-derived, not
-    # hand-edited, and cross-checked by ENCLOSING FUNCTION rather than by line delta —
-    # cancel_file_processing / retry_file_processing / recover_file /
-    # _process_single_file_action, the same four endpoints this table has always tracked. A
-    # uniform shift is what a pure code-motion drift looks like; a NEW site would show up as
-    # a sixth function name, which is the thing this guard exists to catch.
-    ("files/management.py", 213),
-    ("files/management.py", 265),
-    ("files/management.py", 369),
-    ("files/management.py", 959),
-    ("files/reprocess.py", 445),
-    ("files/summary_status.py", 105),
-    # Re-anchored (v0.5.0 wave): #911's WS-push fix removed lines above this call site.
-    ("files/waveform.py", 359),
-    ("media_collections.py", 703),
-    ("media_collections.py", 800),
-    ("media_collections.py", 886),
-    # Re-anchored (v0.5.0 wave): #885 added the export_summary endpoint (+ its
-    # exception-echo fix, #859/#891) above and between these call sites.
-    ("summarization.py", 91),
-    ("summarization.py", 468),
-    ("summarization.py", 534),
-    # Re-anchored +30 then +8: Lane O's #906 fix added inline dispatch logic above this call
-    # site in retry_file_processing, and the #914 exception-echo sweep (ffd365f6) added eight
-    # more. Still the one call site, still in retry_file_processing.
-    ("tasks.py", 815),
-    ("topics.py", 79),
-    ("topics.py", 241),
-    ("topics.py", 385),
-    ("topics.py", 460),
-    ("topics.py", 519),
-    ("user_files.py", 378),
+# One row per real ``min_permission="editor"`` call site (25 as of issue #588), keyed
+# by the module and the endpoint function the call sits in. The 10 in
+# ``files/{crud,management,__init__,waveform}.py`` are the ones issue #588 part 2 added;
+# the rest (``files/reprocess.py``, ``files/summary_status.py``, ``media_collections.py``,
+# ``summarization.py``, ``tasks.py``, ``topics.py``, ``user_files.py``) came from part 1
+# and are listed here so the guard's inventory matches the codebase exactly.
+#
+# ⚠️ EDIT THIS TABLE ONLY WHEN AN ENDPOINT GAINS OR LOSES A CALL SITE. Moving code around
+# inside a module must NOT require a change here — if it does, the anchoring regressed and
+# that, not the row, is the bug. Re-derive rather than hand-edit:
+#   cd backend && python3 -c "import tests.api.test_file_mutation_permissions as t; \
+#     [print(k) for k, _ in t._find_min_permission_editor_sites()]"
+MUTATING_ENDPOINTS: list[SiteKey] = [
+    ("files/__init__.py", "clear_video_cache"),
+    ("files/__init__.py", "refresh_analytics"),
+    ("files/crud.py", "update_media_file"),
+    ("files/crud.py", "delete_media_file"),
+    ("files/crud.py", "update_single_transcript_segment"),
+    ("files/management.py", "cancel_file_processing"),
+    ("files/management.py", "retry_file_processing"),
+    ("files/management.py", "recover_file"),
+    ("files/management.py", "_process_single_file_action"),
+    ("files/reprocess.py", "process_file_reprocess"),
+    ("files/summary_status.py", "retry_summary"),
+    ("files/waveform.py", "generate_waveform_for_file"),
+    ("media_collections.py", "update_collection"),
+    ("media_collections.py", "add_media_to_collection"),
+    ("media_collections.py", "remove_media_from_collection"),
+    ("summarization.py", "trigger_summarization"),
+    ("summarization.py", "identify_speakers"),
+    ("summarization.py", "delete_summary"),
+    # Distinct from files/management.py's and user_files.py's same-named endpoints —
+    # the module is half the key, so the three never collapse into one row.
+    ("tasks.py", "retry_file_processing"),
+    ("topics.py", "batch_extract_topics"),
+    ("topics.py", "auto_label_single_file"),
+    ("topics.py", "extract_topics"),
+    ("topics.py", "apply_topic_suggestions"),
+    ("topics.py", "dismiss_topic_suggestions"),
+    ("user_files.py", "retry_file_processing"),
 ]
 
 
 def test_min_permission_editor_sites_match_the_codebase():
-    """Fails with the exact file:line of any DRIFT between the code and
-    ``MUTATING_ENDPOINTS`` — a call site that already carries
-    ``min_permission="editor"`` and was never added to the table, or a table row whose
-    call site was removed from the code.
+    """Fails on any DRIFT between the code and ``MUTATING_ENDPOINTS`` — a call site that
+    already carries ``min_permission="editor"`` and was never added to the table, or a
+    table row whose call site was removed from the code. The failure names the current
+    file:line of every offending site even though the comparison ignores line numbers.
 
     ⚠️ Scope boundary, not an unprotected-endpoint detector: ``_find_min_permission_
     editor_sites`` only finds call sites that ALREADY pass ``min_permission="editor"``.
@@ -306,19 +346,37 @@ def test_min_permission_editor_sites_match_the_codebase():
     about whether that endpoint is protected. This is a regression ratchet for sites this
     table already knows about, not a scan for sites it does not (issue #620 item 8e).
     """
-    actual = _find_min_permission_editor_sites()
-    expected = sorted(MUTATING_ENDPOINTS)
+    located = _find_min_permission_editor_sites()
+    assert located, (
+        'The AST scan found NO min_permission="editor" call sites at all. Either every '
+        "mutating endpoint lost its permission gate, or the scanner stopped matching — "
+        "both are failures, and an empty scan must never read as 'no drift'."
+    )
 
-    missing_from_table = sorted(set(actual) - set(expected))
-    missing_from_code = sorted(set(expected) - set(actual))
+    lines_by_key: dict[SiteKey, list[int]] = {}
+    for key, lineno in located:
+        lines_by_key.setdefault(key, []).append(lineno)
+
+    actual = Counter(key for key, _ in located)
+    expected = Counter(MUTATING_ENDPOINTS)
+
+    def _describe(counts: Counter[SiteKey]) -> str:
+        return ", ".join(
+            f"{module}::{scope} (x{n}, line(s) {lines_by_key.get((module, scope), ['?'])})"
+            for (module, scope), n in sorted(counts.items())
+        )
+
+    missing_from_table = actual - expected
+    missing_from_code = expected - actual
 
     assert not missing_from_table, (
-        f'Found min_permission="editor" call site(s) not tracked in '
-        f"MUTATING_ENDPOINTS: {missing_from_table}. Add them to the table above."
+        f'Found min_permission="editor" call site(s) not tracked in MUTATING_ENDPOINTS: '
+        f"{_describe(missing_from_table)}. Add them to the table above — and note the key is "
+        f"(module, enclosing function), so this is a REAL new site, not a line shift."
     )
     assert not missing_from_code, (
         f"MUTATING_ENDPOINTS references site(s) no longer present in the code: "
-        f"{missing_from_code}. Remove the stale row(s)."
+        f"{_describe(missing_from_code)}. Remove the stale row(s)."
     )
     assert actual == expected
 

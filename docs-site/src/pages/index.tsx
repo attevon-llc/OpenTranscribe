@@ -5,6 +5,7 @@ import useBaseUrl from '@docusaurus/useBaseUrl';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
+import CodeBlock from '@theme/CodeBlock';
 
 import styles from './index.module.css';
 
@@ -225,9 +226,12 @@ function Hero() {
         <div className={styles.quickInstall}>
           <div>
             <div className={styles.installLabel}>Install with one command</div>
-            <pre className={styles.installCommand}>
-              <code>curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash</code>
-            </pre>
+            {/* @theme/CodeBlock, not a raw <pre>: it ships Docusaurus's own copy button.
+                This is the homepage's primary call to action and it could not be copied
+                (issue #758) -- a curl|bash line is precisely the thing nobody retypes. */}
+            <CodeBlock language="bash" className={styles.installCommand}>
+              curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
+            </CodeBlock>
           </div>
         </div>
       </div>
@@ -375,7 +379,7 @@ function Comparison() {
     {feature: 'Enterprise auth (LDAP/PKI/OIDC)',values: [C, D, D, D, D, D, D, D, D, D, D]},
     {feature: 'Multi-user / roles',             values: [C, C, D, D, D, D, D, D, C, D, D]},
     {feature: 'Multi-GPU scaling',              values: [C, D, D, D, D, D, D, D, D, D, D]},
-    {feature: 'Cloud ASR providers',            values: [C, D, D, D, D, D, D, D, D, D, D]},
+    {feature: 'Choose your own cloud ASR provider', values: [C, D, D, D, D, D, D, D, D, D, D]},
     {feature: 'URL import (YouTube etc.)',       values: [C, D, D, D, D, D, C, D, D, D, S('Pro')]},
     {feature: 'Docker Compose deploy',          values: [C, D, D, D, D, D, D, C, C, C, D]},
     {feature: 'Desktop app',                    values: [D, D, D, D, D, D, C, D, D, D, C]},
@@ -428,7 +432,7 @@ function Comparison() {
           </table>
         </div>
         <p style={{marginTop: '1.25rem', fontSize: '0.75rem', color: 'var(--ot-text-muted)', textAlign: 'center'}}>
-          Data based on publicly available documentation as of March 2026. Features may vary by plan or version.
+          Compiled from each product's publicly available documentation, last reviewed September 2026. Features change and vary by plan, region and version — check the vendor's own docs before relying on any row. Corrections welcome via a GitHub issue.
         </p>
       </div>
     </section>

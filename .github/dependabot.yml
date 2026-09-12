@@ -1,4 +1,12 @@
 version: 2
+# ⚠️ READ BEFORE CHASING AN ISSUE NUMBER IN THIS FILE (issue #792).
+# The `ignore:` rules below cite **#234** (5 sites) and **#256**. BOTH ARE CLOSED — #234 on
+# 2026-06-05. They are kept as historical provenance for *why* each major was deferred, NOT as
+# live tracking: no open issue owns these deferrals, so nothing will re-raise them on its own.
+# Each rule's reason is therefore written out in full beside it and stands on its own. When you
+# do a coordinated major-upgrade pass, re-evaluate every rule here from its stated reason
+# rather than from the issue link.
+#
 # Low-clutter dependency updates: weekly, but GROUPED so each ecosystem produces a
 # single batched PR (not one-per-package) — i.e. one frontend (npm) PR and one
 # backend (pip) PR per week, plus a grouped GitHub Actions PR. Known-bad versions

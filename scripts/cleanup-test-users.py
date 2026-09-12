@@ -88,6 +88,10 @@ ORPHAN_PATTERNS_UNAMBIGUOUS = [
     'shortname-%@example.com',  # e2e display-name registration test
     'mfa-e2e-%@example.com',  # e2e MFA enrolment user (test_mfa.py session fixture)
     'searchqual-%@example.invalid',  # test_search_quality.py self-seeding corpus owner
+    # integration/test_lite_mode_mocked_providers.py's own owner. It must not use the
+    # shared admin account: the active-ASR provider is a per-USER setting, so a
+    # mock-Gladia config left active there is picked up by every other test's upload.
+    'litemode-%@example.invalid',
     'share-e2e-%@example.com',  # e2e second-user fixture (conftest.SECOND_USER_PREFIX)
 ]
 

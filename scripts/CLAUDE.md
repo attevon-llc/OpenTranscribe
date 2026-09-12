@@ -351,7 +351,13 @@ this file is for.
       not merely its port number.
     - **Each worktree needs its own venv**, so a first parallel run pays a full
       `pip install -r requirements.txt` (CUDA wheels, multi-GB) per lane before a single mutant
-      runs. Budget for it; subsequent runs in the same worktree are much faster.
+      runs. Budget for it; subsequent runs in the same worktree are much faster. Two specifics
+      that cost a lane a wasted cycle: build it with **Python 3.12**, not 3.11 (`scipy==1.18.1`
+      in `requirements.txt` requires >=3.12 and will not resolve), and install
+      **`requirements-dev.txt` as well** — `pytest-cov` lives only there, and without it the
+      coverage pre-flight fails as `could not measure coverage ... NOT a measurement` (exit 4)
+      rather than saying the plugin is missing. That message reads like a finding about the
+      module; it is a finding about the venv.
     - **`./opentr.sh fresh-destroy <name>` has no `--yes` flag** and prompts `Proceed? (y/N)` —
       a backgrounded/non-interactive call to it hangs forever waiting on stdin. Pipe an answer:
       `yes | ./opentr.sh fresh-destroy mutate-lockout`.

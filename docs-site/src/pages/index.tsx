@@ -202,8 +202,10 @@ function Hero() {
           OpenTranscribe
         </Heading>
         <p className={styles.heroTagline}>
-          AI-powered transcription with speaker identification, summarization,
-          and search. Runs on your infrastructure. No per-minute fees.
+          Point it at a recording and get back a transcript with every speaker
+          labeled, searchable, and ready to summarize — installed with one
+          command, running on hardware you already control, with no
+          per-minute fees.
         </p>
 
         <div className={styles.heroDemo}>

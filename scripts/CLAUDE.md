@@ -323,7 +323,35 @@ this file is for.
     that lane owns). Running six lanes of `-n0` on a 48-core host is the parallel design; running
     one lane at `-n auto` against a shared DB is the exact deadlock this was built to avoid.
 
-    Two operational traps found running this recipe, both real and both bit a background run:
+    🔴 **Copy the evidence back into the MAIN checkout, or the whole exercise measures nothing
+    for the gate.** `OUT_DIR` defaults to `$REPO_ROOT/.mutation` — and in a worktree,
+    `REPO_ROOT` is *the worktree*. So each lane's `<module>.{log,meta,testhash}` lands there and
+    the main checkout's `--check-baseline` still reports NOT MEASURED. **Merging the lane's
+    `mutation-baselines.tsv` row does not fix this**: the `.meta` sidecar is what makes a `.log`
+    admissible (see this script's own EVIDENCE header), and the TSV is only the ratchet's
+    threshold. After each lane finishes:
+
+    ```bash
+    cp .claude/worktrees/mutate-$m/.mutation/$m.{log,meta,testhash} .mutation/
+    ./scripts/run-mutation-tests.sh --check-baseline      # must print "✓ holding at N"
+    ```
+
+    Measured 2026-09-12: with the rows merged but the sidecars left behind, the gate still said
+    `⊘ NOT MEASURED (3/6)`; copying them flipped `lockout` and `session` to `✓ holding at 72` /
+    `✓ holding at 46`. `.mutation/` is gitignored (`.gitignore:359`), which is correct — this is
+    per-machine measurement evidence, not something to commit.
+
+    Two further operational traps found running this recipe, both real and both bit a background run:
+    - **Give the throwaway Redis a password (`--requirepass`), and leave the test env
+      unauthenticated.** A *passwordless* throwaway Redis is EASIER to reach than the real dev
+      stack, and that silently changes test semantics: `lockout`'s `_get_store` re-probe branch
+      (`elif _redis_client is None`) genuinely reconnects, so the memory-fallback tests that force
+      `_redis_client = None` stop exercising "Redis is down" and FAIL. Six phantom failures before
+      it was root-caused. The live stack's Redis is password-protected — match its *failure mode*,
+      not merely its port number.
+    - **Each worktree needs its own venv**, so a first parallel run pays a full
+      `pip install -r requirements.txt` (CUDA wheels, multi-GB) per lane before a single mutant
+      runs. Budget for it; subsequent runs in the same worktree are much faster.
     - **`./opentr.sh fresh-destroy <name>` has no `--yes` flag** and prompts `Proceed? (y/N)` —
       a backgrounded/non-interactive call to it hangs forever waiting on stdin. Pipe an answer:
       `yes | ./opentr.sh fresh-destroy mutate-lockout`.

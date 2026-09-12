@@ -2474,9 +2474,19 @@ impact. Everything below is fixed in this release.
   the same index rows — for a deployment that provisions access from an IdP, deprovisioning
   did not deprovision. Both SCIM's group-membership functions and the IdP mapping reconciler now
   dispatch the same reindex every admin-UI path already used, once per affected group, after the
-  membership change is committed. **No operator action needed**; existing stale entries are
-  corrected the next time anything touches that file's index (a share edit, a rename, etc.), or
-  immediately for any group membership change going forward.
+  membership change is committed.
+
+  ⚠️ **Action required if you provision group access via SCIM, OIDC or LDAP: run a full search
+  reindex after upgrading.** The fix wires up *future* membership changes; it does **not**
+  retroactively repair entries that went stale before the upgrade, and those do **not** heal on
+  their own. `search_index_maintenance_task` only re-indexes files **missing** from the index
+  (`search_maintenance_task.py:170`) — it never refreshes `accessible_user_ids` on a file that is
+  already present. So a file that nobody happens to edit, rename or re-share again keeps its
+  pre-upgrade access list **indefinitely**. A full reindex does fix it, because that path
+  recomputes the field from scratch (`reindex_task.py:210`, via
+  `PermissionService.get_users_with_file_access`). Trigger it from Settings → Search, or
+  `POST /api/search/reindex`. Deployments that manage group membership only through the admin UI
+  were never affected and need no action.
 
 ### Documentation
 

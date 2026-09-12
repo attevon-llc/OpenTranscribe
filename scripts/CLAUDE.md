@@ -10,6 +10,14 @@ this file is for.
 
 ## Which script to reach for
 
+- **OpenAPI schema snapshot** (issue #798 step 1) — `generate-openapi.py --write` regenerates
+  `backend/openapi.json`; `--check` (no default — the flag is mutually-exclusive-required)
+  verifies it is current, which is what CI's `backend-tests` job runs as its
+  "OpenAPI snapshot is current" step, right after `Verify app imports`. Any change to a
+  request/response schema needs `backend/venv/bin/python scripts/generate-openapi.py --write`
+  before committing, or CI fails. The venv is 3.12, CI is 3.13 — verified byte-identical output
+  at current pins. `info.version` is normalized to a fixed sentinel so a release version bump
+  alone never causes drift.
 - **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/
   `--e2e-only`/`--frontend-only`). Chains `run-integration-tests.sh` → `e2e/run-e2e.sh` →
   `frontend-check.sh` and prints one consolidated pass/fail report with per-phase logs under a

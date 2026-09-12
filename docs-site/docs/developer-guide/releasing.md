@@ -299,7 +299,7 @@ An upgrade is not only a database check. The scenario asserts:
 | Prior schema | The FROM release's head **measured** off the running stack equals the head **derived** from that release's own migration chain |
 | Data integrity | Row counts, MinIO ETags, per-file transcript prefixes, speakers |
 | **Running version** | `/api/version` equals the version under test, and is not `"unknown"` |
-| **API contract** | No route present before the upgrade is missing after |
+| **API routes** | No `METHOD /path` present before the upgrade is missing after — route existence only, not field, parameter or type compatibility (that is `backend/openapi.json`, diffed per-PR in CI) |
 | Search | The OpenSearch ML model is `DEPLOYED`, not a silent BM25 fallback |
 | **New work** | A file uploaded **after** the upgrade transcribes, produces segments, and becomes searchable |
 
@@ -314,6 +314,16 @@ report as a clean pass.** Phase 11 uploads a file that was deliberately *not*
 seeded before the upgrade and requires it to complete — which is what exercises
 the Celery workers under the new image, the ASR stack, the OpenSearch mapping,
 and the post-migration insert path.
+
+The upgrade rehearsal's API-routes check proves no endpoint vanished between FROM and TO — it
+says nothing about whether an endpoint that still exists still means the same thing. A response
+field changing type, or disappearing, passes this check cleanly: it only ever diffs the set of
+`METHOD /path` pairs, never their request/response shapes. That is what `backend/openapi.json`
+is for — every PR that changes a schema must regenerate it (`backend/venv/bin/python
+scripts/generate-openapi.py --write`), and CI's `OpenAPI snapshot is current` step fails the
+build if a schema-affecting change lands without a matching regeneration. Read the diff on a
+schema PR: it is a **reviewable record of what changed**, not a breaking-change classifier — it
+does not tell you whether a change is safe, only that a human is being shown it.
 
 ### Test media
 

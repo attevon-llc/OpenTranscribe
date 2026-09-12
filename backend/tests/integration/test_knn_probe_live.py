@@ -7,11 +7,14 @@ on a method-less ``knn_vector`` field with a message containing
 an empty ANN index returns. Every one of those was established by measurement here,
 and each is what a version bump could silently change.
 
-This module owns its index. It creates ``knn_probe_live_test``, drives it through
-healthy → empty → closed → reopened, and deletes it in teardown. It never touches
-``transcript_chunks`` or any speaker index: the whole point of the probe is that a
-false ``corrupt`` triggers a destructive rebuild, so the test for it must not be
-capable of provoking one against real data.
+This module owns its index. It creates a ``knn_probe_live_test_<uuid4>`` of its own,
+drives it through healthy → empty → closed → reopened, and deletes it in teardown. It
+never touches ``transcript_chunks`` or any speaker index: the whole point of the probe
+is that a false ``corrupt`` triggers a destructive rebuild, so the test for it must not
+be capable of provoking one against real data.
+
+⚠️ The uuid4 suffix is load-bearing, not cosmetic — see ``_unique_index``. The name was
+fixed until 2026-09-11, which made this module unrunnable under ``-n auto``.
 
     pytest backend/tests/integration/test_knn_probe_live.py -m integration
 """
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from uuid import uuid4
 
 import pytest
 
@@ -30,8 +34,20 @@ pytestmark = pytest.mark.integration
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
-PROBE_INDEX = "knn_probe_live_test"
+PROBE_INDEX_BASE = "knn_probe_live_test"
 DIMENSION = 8
+
+
+def _unique_index(suffix: str = "") -> str:
+    """A per-test index name, because a FIXED one cannot survive ``-n auto``.
+
+    Two xdist workers running this module concurrently each ran
+    ``delete(ignore=[404])`` then ``create`` against one shared name, so whichever
+    lost the race died on ``resource_already_exists_exception`` while a third test
+    read an index a sibling had already torn down and reported ``'absent'``. Same
+    fix shape as ``test_speaker_label_index_drift``'s uuid4 throwaway index.
+    """
+    return f"{PROBE_INDEX_BASE}{suffix}_{uuid4().hex[:10]}"
 
 
 def _ann_index_body() -> dict[str, Any]:
@@ -75,13 +91,13 @@ def client():
 @pytest.fixture
 def ann_index(client):
     """A real ANN index of our own, removed however the test ends."""
-    client.indices.delete(index=PROBE_INDEX, ignore=[404])
-    client.indices.create(index=PROBE_INDEX, body=_ann_index_body())
+    index = _unique_index()
+    client.indices.create(index=index, body=_ann_index_body())
     try:
-        yield PROBE_INDEX
+        yield index
     finally:
-        client.indices.open(index=PROBE_INDEX, ignore=[400, 404])
-        client.indices.delete(index=PROBE_INDEX, ignore=[404])
+        client.indices.open(index=index, ignore=[400, 404])
+        client.indices.delete(index=index, ignore=[404])
 
 
 def test_an_empty_ann_index_reports_empty_not_corrupt(ann_index):
@@ -160,8 +176,7 @@ def test_a_method_less_knn_vector_field_reports_unsupported(client):
     matches. If this ever stopped being classified ``unsupported``, the health check
     would delete and re-embed an intact index on every tick.
     """
-    index = f"{PROBE_INDEX}_non_ann"
-    client.indices.delete(index=index, ignore=[404])
+    index = _unique_index("_non_ann")
     client.indices.create(index=index, body=_non_ann_index_body())
     try:
         client.index(

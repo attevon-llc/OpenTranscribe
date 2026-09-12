@@ -22,62 +22,25 @@ from typing import cast
 from unittest.mock import patch
 
 import pytest
+from fixtures.auth_state_isolation import AUTH_STATE_MODULES as _STATE_MODULES
+from fixtures.auth_state_isolation import AUTH_STATEFUL_GLOBALS as _STATEFUL_GLOBALS
 from starlette.requests import Request
 
 from app.auth import lockout as lockout_module
 from app.auth import rate_limit as rate_limit_module
 from app.auth import session as session_module
 
-#: Module-level names in `session` and `lockout` that hold per-process CACHED STATE — a
-#: Redis handle, the in-memory fallback, whether the store was initialised, when it was
-#: last probed. Every one is a value a test can dirty for whichever test runs next in the
-#: same worker.
-#:
-#: Deliberately NOT `_store_lock`: a Lock is machinery, not state, and replacing one
-#: mid-suite would be a new bug rather than isolation.
-_STATEFUL_GLOBALS = (
-    "_redis_client",
-    "_in_memory_store",
-    "_store_initialized",
-    "_last_redis_probe",
-    "_cas_script",
-    "_cas_script_client",
-)
-
-_STATE_MODULES = (session_module, lockout_module)
-
-
-@pytest.fixture(autouse=True)
-def _isolate_degradation_globals():
-    """Snapshot and restore the cached-state globals around every test in this file.
-
-    Issue #810. These tests reach into module globals and set them directly, and the
-    per-class `_reset()` helpers only put them into a KNOWN state at the start of a test
-    that remembers to call one — they do not protect a test from what a neighbour left,
-    and a test that dies part-way restores nothing at all. `monkeypatch` gets this right
-    by construction (it unwinds even on an exception); a hand-rolled `teardown_method`
-    does not.
-
-    That asymmetry is the most promising lead on #810's flaky
-    `test_it_re_probes_exactly_at_the_interval_boundary`, which asserts on state it does
-    not own. Note it cannot be a CROSS-WORKER effect: pytest-xdist workers are separate
-    processes and module globals are per-process, so any interference is same-process and
-    sequential — which is what makes a leaked global, rather than a race, the candidate.
-
-    This is worth having whether or not it turns out to cure that flake: it removes a
-    whole class of order-dependence from five files that share these globals
-    (`test_lockout_atomicity`, `test_lockout_cleanup_sweep`, `test_lockout_survivor_mutants`,
-    `test_auth_config_behaviour`, and this one).
-    """
-    saved = [
-        (module, name, getattr(module, name))
-        for module in _STATE_MODULES
-        for name in _STATEFUL_GLOBALS
-        if hasattr(module, name)
-    ]
-    yield
-    for module, name, value in saved:
-        setattr(module, name, value)
+#: Issue #810. The snapshot/restore isolation fixture used to live here; it is now shared via
+#: `tests/fixtures/auth_state_isolation.py` so `test_session_survivor_mutants.py` (which shares
+#: these same globals but previously had no protection at all) can opt into the identical
+#: mechanism. See that module's docstring for the honesty note: this removes *a* plausible
+#: mechanism for #810's flake and has NOT been shown to remove the one that fired — the flaky
+#: test resets its own `_last_redis_probe` at the top of its body and derives `frozen` from
+#: that same value two lines later, so no neighbour's leftover global can reach it. The five
+#: files sharing these globals are `test_lockout_atomicity`, `test_lockout_cleanup_sweep`,
+#: `test_lockout_survivor_mutants`, `test_auth_config_behaviour`, `test_session_survivor_mutants`,
+#: and this one.
+pytestmark = pytest.mark.usefixtures("auth_state_globals_restored")
 
 
 def test_the_stateful_globals_list_covers_every_cached_value():
@@ -214,9 +177,6 @@ class TestOidcStoreDegradation:
         session_module._in_memory_store = None
         session_module._store_initialized = False
         session_module._last_redis_probe = 0.0
-
-    def teardown_method(self):
-        self._reset()
 
     def test_falls_back_and_records_the_metric(self):
         self._reset()
@@ -468,9 +428,6 @@ class TestLockoutStoreDegradation:
         lockout_module._in_memory_store = None
         lockout_module._store_initialized = False
         lockout_module._last_redis_probe = 0.0
-
-    def teardown_method(self):
-        self._reset()
 
     def test_the_client_decodes_responses(self):
         """``decode_responses=True`` is not cosmetic.

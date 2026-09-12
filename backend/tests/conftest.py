@@ -309,6 +309,7 @@ pytest_plugins = [
     "fixtures.mock_asr",
     "fixtures.dir_collector_memo",
     "fixtures.search_corpus_stack",
+    "fixtures.auth_state_isolation",
 ]
 
 

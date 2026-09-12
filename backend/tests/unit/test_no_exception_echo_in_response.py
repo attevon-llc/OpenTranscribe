@@ -962,13 +962,6 @@ _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "raise can put caught library text into one. The sibling `except Exception` "
         "branch WAS a real leak and is fixed (type(e).__name__ + logger.exception)",
     ),
-    "services/auto_label_service.py::retroactive_apply": (
-        1,
-        "internal-only: ZERO call sites in app/ -- the only `retroactive_apply` hits "
-        'are the WS-event label `file_id="retroactive_apply"` in tasks/auto_labeling.py '
-        "(:154,179,207,314,335), which is a string, not a call. Nothing consumes the "
-        'returned `result["errors"]` at all',
-    ),
     "services/backup_service.py::s3_bucket_status": (
         1,
         "dial result: reachability of the ADMIN'S OWN S3 backup destination, reached "

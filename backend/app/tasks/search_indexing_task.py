@@ -453,6 +453,17 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
             errors += 1
             logger.error(f"Failed to update access index for file {file_id}: {e}")
 
+    # Unconditional — including when errors > 0. A chat retrieval cache entry is
+    # keyed ACL-blind (see retrieval_cache.cache_key), so an ACL rewrite here is
+    # invisible to it unless the corpus version moves. This must run AFTER the
+    # update_by_query loop above (which passed refresh=True), so a forced cache
+    # miss re-runs against the now-corrected index rather than racing it. A
+    # bump is never incorrect — worst case is an extra cache miss — so it must
+    # fire even on partial failure; fail safe, never fail closed on this.
+    from app.services.chat.retrieval_cache import bump_corpus_version
+
+    bump_corpus_version()
+
     logger.info(
         f"Access index update complete: {updated} chunks updated across "
         f"{len(file_ids)} files, {errors} errors"

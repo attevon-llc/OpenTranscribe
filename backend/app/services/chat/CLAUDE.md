@@ -552,6 +552,20 @@ explicit uuid list to retrieval. The index carries denormalized
 change or a quarantine flag by a reindex. Resolving relationally means an
 unshared or quarantined file cannot reach a prompt through a stale document.
 
+⚠️ **That still leaves the exact-query retrieval cache** (`retrieval_cache.py`)
+as a second surface a revoked share can leak through: its key is scope-aware
+but deliberately ACL-blind (see that module's docstring), so a chat query
+cached while a file was shared would otherwise keep serving it after the share
+was revoked, for up to the cache TTL. `tasks.search_indexing_task
+.update_file_access_index` — the one place that rewrites
+`accessible_user_ids` for a collection-share grant/revocation or group-
+membership change — now calls `bump_corpus_version()` unconditionally after
+its `update_by_query` loop completes, which the cache key already folds in.
+An endpoint-side synchronous bump was considered and rejected: the endpoints
+dispatch that task with `.delay()`, so bumping from the endpoint races the
+in-flight ACL rewrite and can re-cache the still-stale (revoked) result under
+the new version for a fresh TTL.
+
 An empty resolved scope means **match nothing**, not match everything —
 `retrieve_chunks` returns `[]` for `file_uuids == []` and `None` means
 "all accessible". Getting that backwards leaks the whole library.

@@ -127,7 +127,7 @@ nano .env  # or use your preferred editor
 
 ```bash
 # Security (REQUIRED - generate strong secrets)
-SECRET_KEY=your-super-secret-key-here
+JWT_SECRET_KEY=your-super-secret-key-here
 JWT_SECRET_KEY=your-jwt-secret-key
 
 # Generate secrets with

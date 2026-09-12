@@ -106,8 +106,8 @@ docker exec opentranscribe-celery-redaction \
 
 Redaction is multi-threaded at two levels:
 
-- The worker runs `--pool=threads --concurrency=4` (env `REDACTION_CONCURRENCY`), so up to
-  **4 files redact concurrently**, sharing one in-memory copy of the models.
+- The worker runs `--pool=threads --concurrency=2` by default (env `REDACTION_CONCURRENCY`),
+  so up to **2 files redact concurrently**, sharing one in-memory copy of the models.
 - Each ML inference (toxicity, and GLiNER if enabled) uses PyTorch intra-op parallelism —
   on a 48-core host it fans out across **~20–24 cores per inference**. Regex, profanity
   and spaCy are much lighter.

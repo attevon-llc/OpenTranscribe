@@ -24,7 +24,7 @@ OpenTranscribe separates AI instructions into two layers:
 | **Topic Extraction** | Identifies major topics and themes from transcript content |
 | **Auto-Labeling** | Suggests tags and categories for uploaded media |
 
-The system prompt and default summarization prompt are stored in the database and can be edited through **Settings > AI > Prompts**. Per-collection prompts override the default for files within that collection.
+The system prompt and default summarization prompt are stored in the database and can be edited through **Settings > Transcription & AI > AI Summarization Prompts**. Per-collection prompts override the default for files within that collection.
 
 ## BLUF Summary Format
 
@@ -65,7 +65,7 @@ BAD: "We talked about Q4 and everyone shared thoughts..."
 
 ### Customizing the Format
 
-To change the default summary format, edit the summarization prompt in **Settings > AI > Prompts**. You can modify the output schema, add or remove sections, or change the tone. The system validates that the response is valid JSON matching the expected structure.
+To change the default summary format, edit the summarization prompt in **Settings > Transcription & AI > AI Summarization Prompts**. You can modify the output schema, add or remove sections, or change the tone. The system validates that the response is valid JSON matching the expected structure.
 
 ## Writing Custom Prompts
 
@@ -158,7 +158,7 @@ Chain-of-thought improves accuracy significantly but increases token usage and l
 
 Organization context injects domain-specific knowledge into all AI prompts, helping the model correctly interpret jargon, acronyms, and references specific to your organization.
 
-Configure in **Settings > AI > Organization Context**.
+Configure in **Settings > Transcription & AI > Organization Context**.
 
 ### Writing Effective Context
 
@@ -269,7 +269,7 @@ Max tokens controls the maximum length of the model's response. For most transcr
 
 - GPT-4o recommended for best quality-to-cost ratio
 - Supports function/tool calling for guaranteed JSON schema compliance
-- API key required; set in **Settings > AI > LLM Provider**
+- API key required; set in **Settings > Transcription & AI > LLM Provider Configuration**
 
 ### Anthropic (Claude)
 
@@ -489,7 +489,7 @@ OpenTranscribe uses response prefilling to force JSON output. If you still see p
 
 If summaries never appear after triggering them:
 
-1. Verify LLM provider is configured in **Settings > AI > LLM Provider**
+1. Verify LLM provider is configured in **Settings > Transcription & AI > LLM Provider Configuration**
 2. Test the connection using the **Test Connection** button
 3. Check celery worker logs: `./opentr.sh logs celery-nlp-worker`
 4. If using a self-hosted model (vLLM/Ollama), verify network connectivity from Docker containers -- see the [LLM Integration](../features/llm-integration.md) docs for firewall configuration

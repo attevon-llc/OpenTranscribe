@@ -421,11 +421,22 @@ Beyond the Celery broker, Redis holds the **shared state that several security c
 - MFA single-use token (replay) protection
 - authentication rate limiting
 
-That state is *shared across replicas*. If Redis becomes unreachable, each container falls back to its own process memory, which is empty on start and never shared -- so on a multi-replica deployment a session revoked on one replica would still be honoured by every other.
+That state is *shared through Redis, not held in the backend process*. If Redis becomes
+unreachable, the backend falls back to its own process memory, which is empty on start and
+lost on every restart -- so a Redis outage on this deployment's single backend means a
+session revoked just before the outage would still be honoured until Redis (or the fallback
+below) recovers.
 
-OpenTranscribe handles this rather than degrading silently:
+:::note Single backend replica only
+OpenTranscribe does not support running more than one backend replica (no leader election;
+a second replica races `search_index_maintenance` on startup — see
+`operations/performance-tuning.md`). This section is about surviving a **Redis** outage on the
+one backend, not about coordinating multiple backends.
+:::
 
-- **Token revocation falls back to the database.** `refresh_token.revoked_at` is durable and shared by every replica, so revocation keeps working and nobody is logged out during a Redis outage.
+OpenTranscribe handles the Redis-loss case rather than degrading silently:
+
+- **Token revocation falls back to the database.** `refresh_token.revoked_at` is durable, so revocation keeps working and nobody is logged out during a Redis outage.
 - **Where no durable record exists**, the control fails closed or tightens rather than loosening.
 - **Degradation is logged at `CRITICAL`** and increments the Prometheus counter `security_state_degraded_total{control,fallback}`.
 
@@ -523,7 +534,7 @@ opensearch hard memlock unlimited
 
 ### Non-Root Execution
 
-All backend containers run as a non-root user (`appuser`, UID 1000, GID 1000). This follows the principle of least privilege and is enforced in the production Dockerfile.
+All backend containers run as a non-root user (`appuser`, UID 1000, GID 999 — the Dockerfile uses `groupadd -r`). This follows the principle of least privilege and is enforced in the production Dockerfile.
 
 The `appuser` is a member of the `video` group for GPU access.
 
@@ -536,7 +547,7 @@ The model cache directory must be owned by UID 1000 for the container user to re
 ./scripts/fix-model-permissions.sh
 
 # Manual
-sudo chown -R 1000:1000 ${MODEL_CACHE_DIR:-./models}
+sudo chown -R 1000:999 ${MODEL_CACHE_DIR:-./models}
 ```
 
 ### Security Options
@@ -687,7 +698,7 @@ Generate strong, unique values for each of these:
 
 | Secret | `.env` Variable | Generation Command |
 |--------|----------------|-------------------|
-| JWT Secret | `SECRET_KEY` | `openssl rand -hex 32` |
+| JWT Secret | `JWT_SECRET_KEY` | `openssl rand -hex 32` |
 | PostgreSQL Password | `POSTGRES_PASSWORD` | `openssl rand -base64 24` |
 | MinIO Root Password | `MINIO_ROOT_PASSWORD` | `openssl rand -base64 24` |
 | Redis Password | `REDIS_PASSWORD` | `openssl rand -base64 24` |
@@ -725,7 +736,7 @@ Every service in the stack has a Docker health check. These are used for startup
 | Frontend (prod) | `wget --spider -q http://127.0.0.1:8080` | 10s | Verifies static assets are served |
 | Celery Workers | `celery inspect ping -d <hostname>` | 30s | Verifies worker responds to control commands |
 | Celery Beat | Checks `/app/celerybeat-schedule` mtime < 300s | 30s | Verifies scheduler is writing heartbeats |
-| Flower | _(relies on Redis connectivity)_ | -- | Monitored via Redis dependency |
+| Flower | `curl -fs http://127.0.0.1:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck` | 30s | Verifies Flower's own healthcheck endpoint (bypasses basic auth) |
 
 ### Monitoring Health
 
@@ -753,7 +764,7 @@ docker inspect --format='{{.Name}}: {{.State.Health.Status}}' \
 
 ```bash
 # 1. Verify environment file
-cat .env | grep -E "^(POSTGRES_PASSWORD|SECRET_KEY|MINIO_ROOT_PASSWORD|REDIS_PASSWORD|HUGGINGFACE_TOKEN)" \
+cat .env | grep -E "^(POSTGRES_PASSWORD|JWT_SECRET_KEY|MINIO_ROOT_PASSWORD|REDIS_PASSWORD|HUGGINGFACE_TOKEN)" \
   | sed 's/=.*/=***/' # Confirm secrets are set without revealing them
 
 # 2. Fix model cache permissions
@@ -779,7 +790,7 @@ After startup, verify each component:
 
 ```bash
 # Backend API
-curl -k https://transcribe.example.com/api/health
+curl -k https://transcribe.example.com/health
 
 # Frontend
 curl -k -o /dev/null -s -w "%{http_code}" https://transcribe.example.com/
@@ -805,7 +816,7 @@ docker exec opentranscribe-celery-worker nvidia-smi
 
 ```bash
 # === Core Secrets ===
-SECRET_KEY=<openssl rand -hex 32>
+JWT_SECRET_KEY=<openssl rand -hex 32>
 POSTGRES_USER=opentranscribe
 POSTGRES_PASSWORD=<openssl rand -base64 24>
 POSTGRES_DB=opentranscribe

@@ -64,7 +64,7 @@ if placeholder keys are detected.
 - [ ] Set `DEBUG=false` in `.env`
 - [ ] Configure TLS certificates for HTTPS
 - [ ] Review and restrict CORS origins (`CORS_ORIGINS`)
-- [ ] Set `ALLOWED_HOSTS` to your domain(s)
+- [ ] Configure trusted proxies / host validation for your domain(s) (nginx `server_name`; see `configuration/nginx-setup.md`) — there is no `ALLOWED_HOSTS` env var
 - [ ] Remove or restrict API documentation endpoint (`/docs`) in production
 
 ### Authentication
@@ -114,7 +114,7 @@ PASSWORD_REQUIRE_LOWERCASE=true     # Require lowercase letter
 PASSWORD_REQUIRE_DIGIT=true         # Require number
 PASSWORD_REQUIRE_SPECIAL=true       # Require special character
 PASSWORD_HISTORY_COUNT=12           # Prevent reuse of last N passwords
-PASSWORD_EXPIRY_DAYS=90             # Force password change (0 = disabled)
+PASSWORD_MAX_AGE_DAYS=60            # Force password change (0 = disabled; 60 is the coded default)
 ```
 
 Passwords are hashed using bcrypt with SHA-256 pre-hash (overcomes bcrypt's 72-byte limit). For FIPS environments, PBKDF2-SHA256 with 600,000 iterations is used instead.
@@ -125,8 +125,9 @@ Protects against brute-force attacks:
 
 ```bash
 ACCOUNT_LOCKOUT_THRESHOLD=5         # Lock after N failed attempts
-ACCOUNT_LOCKOUT_DURATION=900        # Lockout duration in seconds (15 min)
-ACCOUNT_LOCKOUT_RESET_AFTER=1800    # Reset counter after N seconds (30 min)
+ACCOUNT_LOCKOUT_DURATION_MINUTES=15 # Lockout duration in minutes
+ACCOUNT_LOCKOUT_PROGRESSIVE=true    # Escalate duration on repeated lockouts
+ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES=1440  # Progressive lockout ceiling (24h)
 ```
 
 Lockout events are recorded in the audit log. Administrators can manually unlock accounts through the admin panel.
@@ -346,7 +347,7 @@ OpenTranscribe validates all inputs through Pydantic schemas on the backend. Fil
 
 ### Non-Root Execution
 
-All backend containers run as `appuser` (UID 1000, GID 1000), not root:
+All backend containers run as `appuser` (UID 1000, GID 999 — the Dockerfile uses `groupadd -r`), not root:
 
 - Reduces impact of container escape vulnerabilities
 - Compliant with security scanning tools (Trivy, Snyk)
@@ -508,7 +509,7 @@ Establish a rotation schedule for all credentials:
 
 | Credential | Rotation Frequency | How to Rotate |
 |-----------|-------------------|---------------|
-| `JWT_SECRET` | 90 days | Update in `.env`, restart backend (invalidates all sessions) |
+| `JWT_SECRET_KEY` | 90 days | Update in `.env`, restart backend (invalidates all sessions) |
 | `ENCRYPTION_KEY` | Annually | Update in `.env`, existing data auto-re-encrypted on access |
 | Database password | 90 days | Update in PostgreSQL and `.env`, restart all services |
 | MinIO credentials | 90 days | Update in MinIO and `.env`, restart all services |

@@ -50,7 +50,7 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 
 1. Call the admin recovery endpoint:
    ```bash
-   curl -X POST http://localhost:5174/api/admin/recover-tasks \
+   curl -X POST http://localhost:5174/api/tasks/recover-stuck-tasks \
      -H "Authorization: Bearer <admin-token>"
    ```
 
@@ -73,7 +73,7 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 
 **Prevention**:
 - The `TaskRecoveryService` runs automatically on a schedule and handles most stuck task scenarios
-- Configure `TASK_RECOVERY_TIMEOUT_MINUTES` in `.env` to match your expected maximum processing time
+- Stuck-task thresholds are hardcoded in `backend/app/core/task_config.py`, not an env var
 - Monitor the Flower dashboard regularly for long-running tasks
 
 ---
@@ -112,12 +112,11 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 
 2. For multi-GPU systems, enable GPU scaling:
    ```bash
-   # In .env:
-   GPU_SCALE_ENABLED=true
+   # In .env (GPU_SCALE_ENABLED is not the switch):
    GPU_SCALE_DEVICE_ID=2
    GPU_SCALE_WORKERS=4
 
-   # Restart with scaling
+   # The --gpu-scale flag on the next start is what actually enables scaling
    ./opentr.sh stop
    ./opentr.sh start dev --gpu-scale
    ```
@@ -251,8 +250,8 @@ docker compose restart backend
 
 1. Increase the pool size in `.env`:
    ```bash
-   DATABASE_POOL_SIZE=20       # Default is 5
-   DATABASE_MAX_OVERFLOW=30    # Default is 10
+   DB_POOL_SIZE=20       # Default is 20
+   DB_MAX_OVERFLOW=40    # Default is 40
    ```
 2. Restart the backend:
    ```bash
@@ -276,7 +275,7 @@ docker compose restart backend
 
 **Prevention**:
 - Monitor active connection count
-- Set appropriate `DATABASE_POOL_SIZE` for your workload
+- Set appropriate `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` for your workload
 - Ensure the backend properly closes sessions (SQLAlchemy context managers)
 
 ---
@@ -314,7 +313,7 @@ docker compose restart backend
 
 2. Or via API:
    ```bash
-   curl -X POST http://localhost:5174/api/admin/reindex \
+   curl -X POST http://localhost:5174/api/search/reindex \
      -H "Authorization: Bearer <admin-token>"
    ```
 
@@ -465,8 +464,15 @@ MODEL_CACHE_DIR=/mnt/large-disk/opentranscribe-models
 *If a port is in use:*
 
 ```bash
-# Find and kill the process using the port
-sudo kill $(lsof -t -i:5174)
+# Find what is using the port
+lsof -i:5174
+
+# If it's another OpenTranscribe stack (including a --fresh deployment), stop
+# it properly instead of killing the PID directly:
+./opentr.sh stop
+# (or, for a --fresh deployment: ./opentr.sh stop --fresh <name>)
+# Never `kill`/`kill -9` a container process directly -- a SIGKILL mid-task
+# can wedge a CUDA context and require a machine restart to recover the GPU.
 
 # Or change the port in .env
 BACKEND_PORT=5184
@@ -625,7 +631,7 @@ docker compose restart celery-worker
 Reduce shared buffers:
 ```bash
 # In docker-compose.yml postgres environment:
-POSTGRES_SHARED_BUFFERS=256MB  # Reduce from default
+PG_SHARED_BUFFERS=256MB  # Reduce from default
 ```
 
 *Set container memory limits:*
@@ -689,8 +695,8 @@ services:
    ```
 2. Update `.env`:
    ```bash
-   MINIO_ACCESS_KEY=NEW_ACCESS_KEY
-   MINIO_SECRET_KEY=NEW_SECRET_KEY
+   MINIO_ROOT_USER=NEW_ACCESS_KEY
+   MINIO_ROOT_PASSWORD=NEW_SECRET_KEY
    ```
 3. Restart services:
    ```bash
@@ -832,7 +838,7 @@ bash scripts/download-models.sh models
 
 1. Verify the backend is running and healthy:
    ```bash
-   curl http://localhost:5174/api/health
+   curl http://localhost:5174/health
    ```
 2. Restart the backend:
    ```bash

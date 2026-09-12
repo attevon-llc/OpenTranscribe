@@ -419,7 +419,7 @@ PYANNOTE_API_KEY=
 PYANNOTE_MODEL=parakeet  # or: whisper-large-v3-turbo
 
 # Cloud ASR Options
-CLOUD_ASR_CONCURRENCY=4            # Concurrency for cloud-asr worker
+CLOUD_ASR_CONCURRENCY=16           # Concurrency for cloud-asr worker (default 16)
 ```
 
 ### Deployment Mode
@@ -489,7 +489,7 @@ GPU_SCALE_MAX_TASKS=500       # Restart scaled worker after N tasks (memory safe
 
 ```bash
 # Download worker: parallel video/URL downloads
-DOWNLOAD_CONCURRENCY=3   # Default: 3
+DOWNLOAD_CONCURRENCY=5   # Default: 5
 DOWNLOAD_MAX_TASKS=10     # Restart after N tasks
 
 # NLP worker: LLM summarization, speaker ID
@@ -497,7 +497,7 @@ NLP_CONCURRENCY=4         # Default: 4
 NLP_MAX_TASKS=50           # Restart after N tasks
 
 # Cloud ASR worker
-CLOUD_ASR_CONCURRENCY=4
+CLOUD_ASR_CONCURRENCY=16   # Default: 16
 ```
 
 ## Flower Monitoring Dashboard

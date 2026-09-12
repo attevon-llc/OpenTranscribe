@@ -279,7 +279,7 @@ sudo chown -R 1000:1000 models/
 
 **3. Restart worker**:
 ```bash
-docker restart celery-worker
+./opentr.sh restart-backend
 ```
 
 **4. Check Flower dashboard for task state**:
@@ -502,13 +502,13 @@ ls -lh your-file.mp4
 **2. Check MinIO storage**:
 ```bash
 ./opentr.sh logs minio
-docker exec -it minio df -h
+./opentr.sh shell minio df -h
 ```
 
 **3. Check network**:
 ```bash
 # Test backend connectivity
-curl http://localhost:5174/api/health
+curl http://localhost:5174/health
 ```
 
 **4. Clear browser cache and retry**
@@ -594,12 +594,12 @@ sudo sysctl -p
 
 **2. Restart worker**:
 ```bash
-docker restart celery-worker
+./opentr.sh restart-backend
 ```
 
 **3. Check Redis connection**:
 ```bash
-docker exec -it redis redis-cli ping
+./opentr.sh shell redis redis-cli ping
 # Should return: PONG
 ```
 
@@ -627,7 +627,7 @@ curl http://localhost:5173
 
 **4. Restart frontend**:
 ```bash
-docker restart frontend
+./opentr.sh restart-frontend
 ```
 
 ## Diagnostic Commands
@@ -642,10 +642,11 @@ docker restart frontend
 ./opentr.sh logs [backend|frontend|celery-worker|postgres|redis|minio|opensearch]
 
 # Test backend API
-curl http://localhost:5174/api/health
+curl http://localhost:5174/health
 
-# Test database connection
-./opentr.sh shell postgres psql -U postgres -c "SELECT 1"
+# Test database connection (opens an interactive shell; run the query once inside)
+./opentr.sh shell postgres
+# then: psql -U postgres -c "SELECT 1"
 
 # Test GPU
 nvidia-smi

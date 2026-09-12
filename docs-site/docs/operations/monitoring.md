@@ -205,7 +205,7 @@ Every service in OpenTranscribe has a Docker health check. These are defined in 
 | NLP Worker | `opentranscribe-celery-nlp-worker` | `celery inspect ping -d ai-nlp@$HOSTNAME` | 30s | Worker handles LLM/NLP tasks |
 | Embedding Worker | `opentranscribe-celery-embedding-worker` | `celery inspect ping -d search-indexer@$HOSTNAME` | 30s | Worker handles search embedding tasks |
 | Celery Beat | `opentranscribe-celery-beat` | Checks `/app/celerybeat-schedule` modification time < 300s | 30s | Scheduler is writing schedule file |
-| Flower | `opentranscribe-flower` | Web UI on port 5555 | N/A | Monitoring dashboard is accessible |
+| Flower | `opentranscribe-flower` | `curl -fs http://127.0.0.1:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck` | 30s | Flower's own healthcheck endpoint responds |
 
 Check all health statuses at once:
 

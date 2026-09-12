@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse, type UserLLMConfigurationsList } from '../../lib/api/llmSettings';
+  import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse, type UserLLMConfigurationsList } from '../../lib/api/llmSettings';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import LLMConfigModal from './LLMConfigModal.svelte';
   import { toastStore } from '../../stores/toast';
@@ -493,20 +493,6 @@
     }
   }
 
-  function getProviderDisplayName(provider: string): string {
-    const displayNames: Record<string, string> = {
-      openai: $t('llm.provider.openai'),
-      vllm: $t('llm.provider.vllm'),
-      ollama: $t('llm.provider.ollama'),
-      claude: $t('llm.provider.claude'),
-      anthropic: $t('llm.provider.anthropic'),
-      openrouter: $t('llm.provider.openrouter'),
-      bedrock: $t('llm.provider.bedrock'),
-      custom: $t('llm.provider.custom')
-    };
-    return displayNames[provider] || provider;
-  }
-
   let _llmModalWasOpen = false;
   $: {
     const _anyOpen = showConfigModal || showDeleteConfigModal || showDeleteAllModal;
@@ -585,7 +571,7 @@
                     <span class="share-badge">{$t('settings.llmProvider.shared')}</span>
                   {/if}
                 </div>
-                <div class="config-provider">{getProviderDisplayName(config.provider)} • {config.model_name}</div>
+                <div class="config-provider">{llmProviderDisplayName(config.provider, $t)} • {config.model_name}</div>
                 {#if config.base_url}
                   <div class="config-url">{config.base_url}</div>
                 {/if}
@@ -744,7 +730,7 @@
                     <span class="admin-badge">{$t('settings.sharing.adminBadge')}</span>
                   {/if}
                 </div>
-                <div class="config-provider">{getProviderDisplayName(config.provider)} • {config.model_name}</div>
+                <div class="config-provider">{llmProviderDisplayName(config.provider, $t)} • {config.model_name}</div>
                 {#if config.owner_name}
                   <div class="shared-by">{$t('settings.llmProvider.sharedBy', { name: config.owner_name })}</div>
                 {/if}

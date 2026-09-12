@@ -167,6 +167,31 @@ export interface LLMSettingsStatus {
   using_system_default: boolean;
 }
 
+const LLM_PROVIDER_DISPLAY_KEYS: Record<string, string> = {
+  openai: 'llm.provider.openai',
+  vllm: 'llm.provider.vllm',
+  ollama: 'llm.provider.ollama',
+  claude: 'llm.provider.claude',
+  anthropic: 'llm.provider.anthropic',
+  openrouter: 'llm.provider.openrouter',
+  bedrock: 'llm.provider.bedrock',
+  custom: 'llm.provider.custom',
+};
+
+/**
+ * Get user-friendly provider name for display.
+ *
+ * `translate` must be passed in (e.g. `$t`) rather than read via `get(t)` internally so
+ * Svelte 5 templates track it as a reactive dependency and re-render on language switch.
+ */
+export function llmProviderDisplayName(
+  provider: string,
+  translate: (key: string) => string
+): string {
+  const key = LLM_PROVIDER_DISPLAY_KEYS[provider];
+  return key ? translate(key) : provider;
+}
+
 export class LLMSettingsApi {
   private static readonly BASE_PATH = '/llm-settings';
 
@@ -410,86 +435,6 @@ export class LLMSettingsApi {
       },
     });
     return response.data;
-  }
-
-  /**
-   * Get provider-specific default configuration
-   */
-  static getProviderDefaults(provider: LLMProvider | string): Partial<UserLLMSettingsCreate> {
-    // Normalize legacy 'claude' to 'anthropic'
-    const normalizedProvider = provider === 'claude' ? 'anthropic' : provider;
-
-    const providerDefaults: Record<string, Partial<UserLLMSettingsCreate>> = {
-      openai: {
-        provider: 'openai',
-        model_name: 'gpt-4o-mini',
-        base_url: 'https://api.openai.com/v1',
-        max_tokens: 16000, // Context window for GPT-4o-mini
-        temperature: '0.3',
-      },
-      vllm: {
-        provider: 'vllm',
-        model_name: 'gpt-oss',
-        base_url: 'http://localhost:8012/v1',
-        max_tokens: 32768, // Typical context window for vLLM models
-        temperature: '0.3',
-      },
-      ollama: {
-        provider: 'ollama',
-        model_name: 'llama3.2:latest',
-        base_url: 'http://localhost:11434/v1',
-        max_tokens: 128000, // Modern context window
-        temperature: '0.3',
-      },
-      anthropic: {
-        provider: 'anthropic',
-        model_name: 'claude-opus-4-5-20251101',
-        base_url: 'https://api.anthropic.com/v1',
-        max_tokens: 200000, // Anthropic Claude context window
-        temperature: '0.3',
-      },
-      openrouter: {
-        provider: 'openrouter',
-        model_name: 'anthropic/claude-3-haiku',
-        base_url: 'https://openrouter.ai/api/v1',
-        max_tokens: 128000, // OpenRouter typical context window
-        temperature: '0.3',
-      },
-      bedrock: {
-        provider: 'bedrock',
-        model_name: 'anthropic.claude-haiku-4-5-20251001-v1:0',
-        // No base_url: Bedrock is reached through the AWS SDK, not an HTTP endpoint.
-        max_tokens: 200000, // Typical for the Claude-on-Bedrock family; varies by model
-        temperature: '0.3',
-      },
-      custom: {
-        provider: 'custom',
-        model_name: '',
-        base_url: '',
-        max_tokens: 8192, // Default context window for custom providers
-        temperature: '0.3',
-      },
-    };
-
-    return providerDefaults[normalizedProvider] || {};
-  }
-
-  /**
-   * Get user-friendly provider name
-   */
-  static getProviderDisplayName(provider: LLMProvider | string): string {
-    const displayNames: Record<string, string> = {
-      openai: 'OpenAI',
-      vllm: 'vLLM',
-      ollama: 'Ollama',
-      anthropic: 'Anthropic',
-      claude: 'Anthropic', // Legacy support
-      openrouter: 'OpenRouter',
-      bedrock: 'AWS Bedrock',
-      custom: 'Custom Provider',
-    };
-
-    return displayNames[provider] || provider;
   }
 
   /**

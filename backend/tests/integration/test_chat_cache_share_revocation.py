@@ -48,6 +48,27 @@ _REDIS_ABSENT = not _redis_reachable()
 
 pytestmark = [
     pytest.mark.integration,
+    # ``opt_in_gate`` so the gate DESELECTS this rather than counting it as a skip.
+    #
+    # It is deployment-scoped by construction: the cache under test IS Redis, and the
+    # dev stack's Redis is password-protected and only reachable from inside the
+    # network, so a host-run gate can never satisfy the reachability gates below. That
+    # makes this a PERMANENTLY-skipping test in the default gate -- and a permanently
+    # skipping test does not merely prove nothing itself, it inflates the phase's skip
+    # total toward ``INTEGRATION_SKIP_CEILING`` and buries the skips that DO mean
+    # something. (It did exactly that once: adding this file took the integration phase
+    # from 7 skips to 8, tripping the ceiling and turning the whole phase NOT MEASURED.)
+    #
+    # Raising the ceiling to 8 was the wrong fix and is explicitly ruled out by
+    # ``run-integration-tests.sh``: "never raise it to make a phase pass ... give it a
+    # NAMED marker and deselect it, so it is visibly absent rather than silently
+    # counted". The two skipif gates below remain the authority on whether the work
+    # actually happens; this marker only stops it being counted.
+    #
+    # Run it by hand against an isolated stack (never the shared dev one):
+    #   pytest -o addopts="" -m "integration and opt_in_gate" \
+    #       tests/integration/test_chat_cache_share_revocation.py
+    pytest.mark.opt_in_gate,
     pytest.mark.skipif(
         _OPENSEARCH_ABSENT,
         reason=(

@@ -246,7 +246,9 @@ resets.
 - Token hashing: SHA-512
 - Transparent auto-upgrade of legacy hashes on login, with dual verification during transition
 
-Enable with `FIPS_VERSION=140-3`. Details in `docs/FIPS_140_3_COMPLIANCE.md`.
+Enable with `FIPS_MODE=true` (`FIPS_VERSION` already defaults to `140-3` — setting only that
+does nothing; the code gate is `FIPS_MODE and FIPS_VERSION == "140-3"`). Details in
+`docs/FIPS_140_3_COMPLIANCE.md`.
 
 ## Next steps
 

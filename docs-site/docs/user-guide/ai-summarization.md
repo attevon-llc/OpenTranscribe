@@ -120,7 +120,7 @@ This is useful for organizing different types of content (e.g., interviews vs. m
 Automatic AI summarization can be turned off:
 
 - **Per-upload**: Toggle "Generate AI Summary" off in the upload dialog to skip summarization for that file
-- **User default**: Go to Settings → AI → Auto-Summarize and disable it to skip automatic summarization on all uploads by default
+- **User default**: Go to Settings → Transcription & AI → LLM Provider Configuration → AI Summary Settings and disable it to skip automatic summarization on all uploads by default
 - When disabled, summaries can still be generated manually by clicking "Generate Summary" on any completed transcript
 
 ### Auto-Label Pipeline

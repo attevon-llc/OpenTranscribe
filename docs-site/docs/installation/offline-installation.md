@@ -201,10 +201,10 @@ nano .env
 chmod +x opentranscribe.sh
 
 # Start in offline mode
+# Note: opentranscribe.sh's `start` subcommand does not read an "offline"
+# argument today, so `./opentranscribe.sh start offline` will NOT load this
+# overlay -- use docker compose directly:
 docker compose -f docker-compose.yml -f docker-compose.offline.yml up -d
-
-# Or using the script
-./opentranscribe.sh start offline
 ```
 
 ## Offline Configuration
@@ -241,7 +241,7 @@ ollama pull llama2:70b
 Configure in `.env`:
 ```bash
 LLM_PROVIDER=vllm  # or ollama
-VLLM_API_URL=http://your-server:8000/v1
+VLLM_BASE_URL=http://your-server:8000/v1
 ```
 
 ## Updating Offline Installation

@@ -165,11 +165,9 @@ Then, in the admin UI:
   - **Local folder** — the mounted `/backups` path (set via `BACKUP_HOST_PATH`).
   - **S3-compatible bucket** — any AWS S3 / MinIO / Backblaze-style endpoint. Provide endpoint URL, region, bucket, prefix, and access/secret keys. The secret is encrypted at rest (AES-256-GCM) and never returned by the API; a **Test Connection** button validates it. This lets backups land **off the host machine** entirely.
 - Set **GFS retention** (grandfather-father-son: daily / weekly / monthly counts; default 7 / 4 / 12).
-- Optionally enable **gpg encryption** (provide a passphrase file path). ⚠️ Currently
-  broken on the published production image — `gpg` is not installed
-  (`Dockerfile.prod` installs `postgresql-client` but never `gnupg`), so an encrypted
-  scheduled/S3 backup fails on every run until [issue #604](https://github.com/attevon-llc/OpenTranscribe/issues/604) lands. Unencrypted
-  scheduled backups are unaffected.
+- Optionally enable **gpg encryption** (provide a passphrase file path). `gnupg` is installed
+  in the production image (`Dockerfile.prod`) — this was fixed by
+  [issue #604](https://github.com/attevon-llc/OpenTranscribe/issues/604).
 - Use **Run Now** to take an immediate backup and see the last result.
 
 Under the hood: a lightweight `backup.check_schedule` beat task fires every few

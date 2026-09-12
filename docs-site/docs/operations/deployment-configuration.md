@@ -144,7 +144,7 @@ Run N parallel workers on a dedicated GPU **and** keep the default worker on its
 own GPU, so **both cards do transcription**:
 
 ```bash
-GPU_SCALE_ENABLED=true
+# GPU_SCALE_ENABLED does not enable scaling -- the --gpu-scale CLI flag does (see multi-gpu-scaling.md)
 GPU_DEVICE_ID=0            # default worker runs here
 GPU_SCALE_DEVICE_ID=2     # N parallel scaled workers run here
 GPU_SCALE_WORKERS=4

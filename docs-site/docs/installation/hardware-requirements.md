@@ -255,7 +255,7 @@ Simplest upgrade for dramatic performance improvement:
 
 1. Add NVIDIA GPU (8GB+ VRAM)
 2. Install NVIDIA drivers and CUDA toolkit
-3. Update `.env` with `CUDA_DEVICE_ID`
+3. Update `.env` with `GPU_DEVICE_ID`
 4. Restart OpenTranscribe
 
 **Performance gain**: 50-70x faster transcription

@@ -84,7 +84,8 @@ Run the full pipeline manually:
 
 ```bash
 source backend/venv/bin/activate
-pre-commit run --all-files
+scripts/safe-precommit.sh run --all-files                      # commit-stage tier
+scripts/safe-precommit.sh run --all-files --hook-stage pre-push # push-stage tier (CI runs both)
 ```
 
 ## Testing Requirements
@@ -103,9 +104,9 @@ End-to-end tests use **pytest-playwright** to drive a real Chromium browser agai
 
 | File | Tests | Coverage |
 |------|-------|---------|
-| `test_login.py` | ~50 | Form validation, success/failure, security headers, session persistence, UI state |
-| `test_registration.py` | ~35 | All fields, username/email/password validation, duplicate detection |
-| `test_auth_flow.py` | ~15 | Login, use application features, logout, session expiration |
+| `test_login.py` | 29 | Form validation, success/failure, security headers, session persistence, UI state |
+| `test_registration.py` | 25 | All fields, username/email/password validation, duplicate detection |
+| `test_auth_flow.py` | 19 | Login, use application features, logout, session expiration |
 
 **Key fixtures** (`conftest.py`):
 - `login_page` -- navigates to login page, ready for input
@@ -120,7 +121,7 @@ Tests can run headless (CI) or with a visible browser on an XRDP display for deb
 pytest backend/tests/e2e/ -v
 
 # Visible browser (watch tests execute)
-DISPLAY=:13 pytest backend/tests/e2e/ -v --headed
+DISPLAY=:11 pytest backend/tests/e2e/ -v --headed
 
 # Screenshots on failure only
 pytest backend/tests/e2e/ -v --screenshot only-on-failure

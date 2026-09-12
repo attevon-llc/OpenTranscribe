@@ -179,7 +179,7 @@ by redaction — and the answer was written without it.
 Traces are **live only**: they are not stored, so reopening an old conversation
 shows "not stored" rather than a tree. Ask the question again to see one.
 
-Availability is an administrator setting (**Settings → Chat & RAG → Query
+Availability is an administrator setting (**Settings → Chat → Advanced features → Query
 trace**). It is diagnostic only and never changes the answer.
 
 ## Getting better answers
@@ -347,11 +347,19 @@ them by other means. Every value applies to the next message — no restart, no
 | Candidate excerpts | How many passages are retrieved before reranking. Higher finds more, costs time. |
 | Excerpts per answer | How many reach the model. |
 | Max excerpts per recording | Stops one long recording dominating a multi-file conversation. |
-| Rerank excerpts | A CPU cross-encoder that re-scores passages for relevance. Improves precision; adds latency and about 350–500&nbsp;MB of memory on first use. |
+| Rerank excerpts | A CPU cross-encoder that re-scores passages for relevance. Adds latency and about 350–500&nbsp;MB of memory on first use. |
 | Rewrite follow-up questions | Expands pronouns and references ("what about her?") before searching. |
 | Retrieval cache | Short-lived reuse of identical searches. |
 | Messages per hour / concurrent replies | Per-user abuse controls. |
 | Delete conversations after | Optional retention window (0 keeps them indefinitely). |
+
+:::danger Reranking currently degrades retrieval quality
+Measured evaluation found the shipped cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
+**costs** retrieval quality rather than improving it — 20.6% and 32.7% nDCG@10 regressions
+across the two eval corpora (see `developer-guide/rag-evaluation.md`). The app's own in-app UI
+surfaces a disclosure when this is detected. Leave "Rerank excerpts" disabled unless you've
+verified on your own corpus that it helps.
+:::
 
 The reranker model (`cross-encoder/ms-marco-MiniLM-L-6-v2`, ~90&nbsp;MB) is
 downloaded by `scripts/download-models.py`. If it is absent, reranking disables
@@ -394,4 +402,4 @@ which is what makes speaker attribution in answers reliable. See
 turn becomes an excerpt, and why that shapes the questions chat answers well.
 
 Every number above is an administrator default, tunable per deployment under
-**Settings → Chat & RAG**.
+**Settings → Chat → Advanced features**.

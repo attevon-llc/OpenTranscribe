@@ -48,6 +48,18 @@ per-file management and email notifications, deployments get **fresh/isolated en
 **in-app scheduled backups**, and the docs site, i18n (12 locales, four new this release), and
 release engineering (`scripts/release.sh`) all saw substantial investment.
 
+**Licensing.** OpenTranscribe ships the full **GNU AGPL-3.0** licence text, surfaces it in-app,
+and carries the **§13 network-use source offer** (issue #862) — so a user interacting with a
+hosted instance over a network can find the corresponding source. Every first-party package
+manifest and every production image now declares `AGPL-3.0-only`, and the SBOM reports it
+(#886). **If you redistribute or host this software, read [Upgrade Notes](#upgrade-notes).**
+
+**Release-blocker wave.** The final pass before this release closed 32 milestone issues in one
+merge (PR #921): raw exception text no longer reaches users on a failed upload, `/api/search`
+and the directory endpoints are rate-limited, account enumeration is closed, the summary-search
+leg gained filters/ranking/pagination, and a class of exception-echo leak invisible to the
+existing scanner was swept and gated. Detail in the sections below.
+
 **This release contains breaking changes** — see [Upgrade Notes](#upgrade-notes) before pulling.
 
 ### Added
@@ -362,6 +374,45 @@ A tag was either yours alone or published to the whole deployment, so giving one
   segments).
 
 ### Fixed
+
+- **Summary search ignored every filter, had no ranking, and broke `result_type=all`
+  pagination** (#831). The Summaries tab applied **none** of the ten filter dimensions the
+  Transcripts tab honours, so one request's two legs disagreed about which files the caller had
+  asked for. Results came back in `id` order — newest-first, with no relevance signal — and are
+  now ranked by `ts_rank` with an `id` tie-break. (`ts_rank`, not `ts_rank_cd`: cover density
+  scores how closely query terms sit together, which is meaningful in prose and meaningless
+  across a JSONB blob where adjacency is an artifact of key order.) `total_pages` reached only
+  the transcript leg, so a summaries-only search reported 0 pages however many hits it found.
+
+- **Summary search masked whole documents to return a few lines** (#822). Every matching file's
+  entire summary tree was redacted and then almost all of it discarded, so a detector outage
+  anywhere in a file withheld results the user was never going to see. Masking is now applied
+  per returned leaf.
+
+- **Chat citation snippets were capped far below the indexed chunk, and the card clipped them
+  anyway** (#913, #832). `SNIPPET_CHARS` was a flat 240 and the card clamped to two lines
+  regardless, so a wider cap would have had no reader-visible effect. The cap is now derived
+  from the indexing target (the same method already shipped for digest and overview snippets),
+  and each card gained a keyboard-accessible **Show more / Show less** toggle, rendered only
+  when the snippet exceeds what the card previously showed in full.
+
+- **The file-detail page showed nothing when processing failed** (#841). `FileHeader.svelte`
+  gated its error display on `file.error_message`, a field no schema emits.
+
+- **A cached retrieval pool could be reranked by the wrong model** (#834). `ChunkHit.language`
+  was not round-tripped through the retrieval cache, so a restored pool read as "language
+  unknown" — which the reranker's voting rule treats as a non-vote. A pool of entirely
+  non-English chunks could therefore fail the non-English check and be reordered by the English
+  cross-encoder, destroying a correct retrieval order.
+
+- **Celery queue depth undercounted, and two implementations disagreed** (#892). The metric read
+  a bare `LLEN`, which sees only the default priority sub-list, and ignored reserved
+  (prefetched, unacknowledged) work entirely — so a saturated fleet trended toward zero, the
+  inverse of the truth. Both `/metrics` and `/api/system/stats` now derive from one measurement
+  that sums all 10 priority sub-lists plus reserved work in a single pipelined round trip
+  instead of 120 sequential ones. A second defect went with it: the old reader used the *result
+  backend* client rather than the broker, so a deployment pointing `CELERY_RESULT_BACKEND`
+  elsewhere reported 0 forever.
 
 - **A fresh install could fail permanently on a race with its own database.** `run_migrations()`
   could not distinguish "Postgres is not up yet" from "the migration failed", and `main.py`'s
@@ -1903,6 +1954,46 @@ Also fixed: the E2E API session never sent a CSRF token, so every mutation retur
 
 ### Security
 
+- **Raw exception text no longer reaches users on a failed upload** (#786, #841, #843).
+  `error_categorization_service` interpolated the caught exception into `user_message` in every
+  `_handle_*` branch, and two bare-except fallbacks in `audio_processor` re-embedded `str(e)` —
+  the source of `/tmp` path disclosure on a failed preprocess. Every `user_message` and
+  suggestion is now a fixed sentence; the raw text survives only in the ERROR log and
+  `media_file.last_error_message`. Two misclassifications went with it: a video with no audio
+  track (ffmpeg fails on the *output* side with `does not contain any stream`) and a zero-byte
+  upload were both reported as "corrupted"; each now gets its own honest reason.
+  `MediaFile.error_category` was renamed `error_reason` on the wire — see
+  [Breaking Changes](#breaking-changes).
+
+- **A whole class of exception echo was invisible to the leak scanner, and is now swept and
+  gated** (#914). The AST taint scanner tracked assignments but not
+  `container.append(str(e))` returned later, so those sites could not be found by construction.
+  Six response-bound leaks were closed, disclosing — variously — MinIO/boto3 endpoints, the
+  **broker URL including its password**, host filesystem paths, the OpenSearch cluster URL, and
+  raw SQL with bound parameters. The worst was not a display leak at all: `llm_service`
+  serialized the error text into the *combiner prompt*, making the provider `base_url` an
+  egress event. Each fix keeps the facts a caller needs (which file failed, which object to
+  re-mirror, the erasure subject id) and drops only the interpolation, with a sentinel test
+  asserting that survival so a later "cleanup" cannot quietly remove the capability.
+
+- **`/api/search` and the directory endpoints are rate-limited; account enumeration is closed**
+  (#822, #904). Both routes previously had no limit at all, and any authenticated user could
+  enumerate every account in their tenant. Limits are keyed per user-or-IP.
+
+- **GDPR erasure audit records now agree on who did what to whom** (#828, #443). Four emitters
+  across `gdpr_erasure_service` and `erasure_ledger_service` disagreed about whether `user_id`
+  held the actor or the subject — the pre-#443 defect, reproduced. All four now record
+  `user_id` = ACTOR and `target_user_id` = SUBJECT, and both `/audit-logs` read paths were
+  corrected to match. A second, separate defect surfaced alongside it: `POST
+  /admin/users/{uuid}/unlock` carried its target only in `details.target_user`, a UUID string
+  invisible to `query_audit_logs`.
+
+- **Linking an external identity now converts a local account's `auth_type`** (#912). A local
+  account given an `oidc_subject`/`ldap_uid`/`pki_subject_dn` resolved through the provider-id
+  login branch while `auth_type` still told every other consumer it used a local password. The
+  conversion is guarded so an already-external account is never demoted between two external
+  methods, and the external-email remedy now symmetrically refuses a local target.
+
 - **A quarantined file's identity could still leak over a live WebSocket push** (#908). Read
   surfaces have hidden a taken-down file from non-admins since the takedown/quarantine work
   landed (`exclude_quarantined`/`is_hidden_for`), but the notification funnel had only one
@@ -2518,6 +2609,17 @@ opt-in used by `POST /api/org-admin/gdpr/erase-organization`). A bare `scope=all
 `?scope=all_users&confirm=true`** to preserve prior behaviour.
 
 ### Upgrade Notes
+
+- **⚠️ READ THIS IF YOU HOST OR REDISTRIBUTE OpenTranscribe — the AGPL-3.0 obligations are now
+  stated explicitly** (issue #862). The licence has always been the GNU Affero General Public
+  License v3.0; what changed is that the full text now ships with the software, is surfaced
+  in-app, and carries the **§13 network-use source offer**. AGPL §13 means that if you run a
+  modified version and let users interact with it **over a network**, those users must be
+  offered the corresponding source of your modified version. This is not a licence change and
+  it imposes nothing new — but if you have been running modified code as a hosted service, this
+  is the release that makes the obligation visible to your users. Every first-party manifest and
+  production image now declares `AGPL-3.0-only` (the SPDX id; the previously-used bare
+  `AGPL-3.0` is deprecated), and the generated SBOM reports it (#886).
 
 - **⚠️ ACTION REQUIRED — the backend will REFUSE TO START if your `.env` lacks production
   secrets.** Security enforcement changed from fail-open to fail-closed (issue #284 A0.3):

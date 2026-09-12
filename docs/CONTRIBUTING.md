@@ -90,9 +90,9 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
 
 ### Branch Strategy
 ```bash
-# Create feature branch from main
-git checkout main
-git pull upstream main
+# Create feature branch from master (this repo's default branch is master, not main)
+git checkout master
+git pull upstream master
 git checkout -b feature/your-feature-name
 
 # For bug fixes
@@ -344,7 +344,8 @@ Add screenshots to help explain your changes
 3. **Approval and Merge**
    - All checks pass
    - Approved by maintainer
-   - Squash and merge to main
+   - Merge to `master` with a **merge commit** (`--no-ff`) — this repo never squash-merges;
+     each commit is a documentation artifact
 
 ## 🐛 Issue Guidelines
 
@@ -406,9 +407,15 @@ Any other context, mockups, or examples
 
 ### Reporting Security Issues
 - **DO NOT** create public issues for security vulnerabilities
-- Email security concerns to: [security@opentranscribe.com]
-- Include detailed description and reproduction steps
-- Allow time for fix before public disclosure
+- Use GitHub's **private vulnerability reporting**:
+  [Report a vulnerability](https://github.com/attevon-llc/OpenTranscribe/security/advisories/new)
+- Include a detailed description and reproduction steps
+- Allow time for a fix before public disclosure
+
+`SECURITY.md` at the repository root is the authoritative policy, including the
+acknowledgement and disclosure timelines. **Do not add an email address here** — this section
+previously advertised `security@opentranscribe.com`, which nobody reads, so a real report would
+have gone nowhere.
 
 ### Security Guidelines
 - Never commit secrets or API keys
@@ -480,7 +487,7 @@ Any other context, mockups, or examples
 ## 🏆 Recognition
 
 ### Contributors
-- All contributors are listed in CONTRIBUTORS.md
+- Contributors are credited through the GitHub contributors graph and the commit history
 - Significant contributions are highlighted in release notes
 - Regular contributors may be invited as maintainers
 
@@ -493,14 +500,14 @@ Any other context, mockups, or examples
 ## 📞 Getting Help
 
 ### Community Support
-- **GitHub Discussions**: General questions and discussions
-- **Discord**: Real-time chat with the community
-- **Stack Overflow**: Use tag `opentranscribe`
+- **GitHub Issues**: bug reports and feature requests — see the guidelines above
+- **GitHub Discussions**: general questions, if enabled on the repository
 
 ### Direct Contact
-- **Maintainers**: Tag @maintainers in issues
-- **Email**: [contribute@opentranscribe.com]
-- **Office Hours**: Virtual office hours every Friday 2-4 PM UTC
+- Open an issue, or comment on the one you are interested in. There is no separate mailing
+  list, chat server, or office-hours schedule — earlier versions of this page advertised a
+  Discord, a Stack Overflow tag, an email alias and a weekly office hour, none of which
+  exist.
 
 ### Resources
 - [Development Environment Setup Guide](../backend/README.md)

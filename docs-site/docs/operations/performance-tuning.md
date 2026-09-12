@@ -518,8 +518,24 @@ The native pipeline achieves 95% speaker consistency because word-level timestam
 | LLM tasks slow, vLLM GPU at 100% | LLM GPU is the bottleneck | Add dedicated LLM GPU or use cloud API | Hardware/API cost |
 | Database queries slow | PostgreSQL needs tuning | Increase `shared_buffers`, `work_mem` | Free (config change) |
 | Search queries slow | OpenSearch heap too small | Increase `OPENSEARCH_JAVA_OPTS` heap | RAM |
-| Many concurrent users, API slow | Backend needs scaling | Run multiple backend replicas behind load balancer | CPU/RAM |
+| Many concurrent users, API slow | Backend needs scaling | ⚠️ **Not yet supported — see below.** Scale Celery workers instead (`REDACTION_CONCURRENCY`, `--gpu-scale`) | CPU/RAM |
 | Download queue backing up | Network bandwidth | Increase `DOWNLOAD_CONCURRENCY`, check bandwidth | Free/network |
+
+### ⚠️ Do not run more than one `backend` replica
+
+`backend.replicas` is effectively **capped at 1** today. The backend runs five one-shot startup
+steps with **no leader election**, so every replica runs all of them — and one of those dispatches
+`search_index_maintenance`, where concurrent dispatches have corrupted a reindex. The same risk
+applies to a rolling update, where the old and new pods overlap by design.
+
+Earlier versions of this page recommended running multiple backend replicas behind a load
+balancer. **That advice was wrong and could corrupt your search index.**
+
+Scale the **workers** instead — they are designed for it (`REDACTION_CONCURRENCY`, additional
+Celery worker replicas, `./opentr.sh start dev --gpu-scale`). Leader election for the backend's
+startup steps is tracked in
+[#894](https://github.com/attevon-llc/OpenTranscribe/issues/894), and is a prerequisite for the
+Helm chart ([#864](https://github.com/attevon-llc/OpenTranscribe/issues/864)).
 
 ### When to Scale Vertically vs. Horizontally
 

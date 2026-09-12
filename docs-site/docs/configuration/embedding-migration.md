@@ -61,7 +61,13 @@ POST /_aliases
 }
 ```
 
-This swap is atomic -- there is zero downtime and no window where queries could fail. If issues are discovered after finalization, the alias can be swapped back to `speakers_v3` in the same way, providing instant rollback without data loss.
+This swap is atomic -- there is zero downtime and no window where queries could fail.
+
+⚠️ The reverse swap is **mechanically** possible in the same way, but is **not exposed as an
+operation**: `swap_speaker_alias()` has one production caller (the migration task) and is only
+ever passed the v4 index. There is no endpoint, task, or UI that swaps back, so do not plan
+around "instant rollback" -- see [Rollback](#rollback-if-needed) and issue
+[#659](https://github.com/attevon-llc/OpenTranscribe/issues/659).
 
 Key functions implementing this architecture: `swap_speaker_alias()`, `get_active_versioned_index()`, and `get_write_index()` in the OpenSearch service layer.
 
@@ -280,30 +286,44 @@ Important: No data is lost during migration:
 
 ## Rollback (if needed)
 
-If you need to revert to PyAnnote v3 after migration:
+:::danger There is no supported one-click rollback today — issue #659
 
-### Reverting to v3
+Earlier versions of this page described two ways to revert to v3: an Admin UI control at
+*Settings → Embeddings → "Use PyAnnote v3"*, and a `PYANNOTE_VERSION=v3` environment variable.
+**Neither exists.** No such control is in the embedding-migration settings component, and
+`PYANNOTE_VERSION` is read by nothing — it appears in no `.env.example`, no compose file, and
+no application config. Setting it does nothing at all.
 
-1. **Via Admin UI**:
-   - Settings → Embeddings → "Use PyAnnote v3"
-   - Migration data is preserved; system switches back to v3 embeddings
-   - No data loss occurs
+Because that text was written as an *emergency fallback*, it was at its most dangerous exactly
+when it would be read: mid-incident, by an operator who needs the migration undone now. It is
+removed rather than softened.
 
-2. **Via Environment Variable** (emergency fallback):
-   ```bash
-   # In .env
-   PYANNOTE_VERSION=v3
-   # Restart backend
-   docker restart opentranscribe-backend
-   ```
+**Restoring from a backup taken before the migration is the only supported rollback.** See
+[Data Recovery](#data-recovery) below, and take that backup before you start.
 
-### What Happens During Rollback
+Tracking issue: [#659](https://github.com/attevon-llc/OpenTranscribe/issues/659) — a real
+rollback path is planned for v0.8.0.
+:::
 
-- System reverts to using v3 speaker embeddings
-- v4 data is preserved in the database
-- Speaker overlap detection becomes unavailable
-- Performance returns to v3 baseline (~3 seconds per speaker assignment)
-- Migration can be restarted later
+### Why the alias swap is not a rollback button
+
+The architecture section above notes that the `speakers` alias can point at either versioned
+index, and that swapping it is atomic. That is true of the *mechanism* — but the mechanism is
+not reachable as an operation. `swap_speaker_alias()` has exactly one production caller (the
+migration task itself) and is only ever passed the v4 index. There is no endpoint, no Celery
+task, and no UI that swaps it back.
+
+**You are not forced through a one-way door in this release**: the migration is
+superuser-opt-in (`POST /embedding-migration/start`, then `/finalize`), nothing on the beat
+schedule dispatches it, and an upgrade leaves the alias on v3. If you have not started it, you
+are not exposed to the missing rollback.
+
+### What a restore gets you back
+
+- v3 speaker embeddings, as of the backup
+- Speaker overlap detection becomes unavailable again (it is a v4 capability)
+- Performance returns to the v3 baseline (~3 seconds per speaker assignment)
+- The migration can be restarted later
 
 ### Data Recovery
 

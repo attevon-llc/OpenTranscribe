@@ -139,6 +139,23 @@ jobs:
               - 'requirements*.txt'
               - '.github/workflows/pre-commit.yml'
               - 'alembic.ini'
+              # ⚠️ The four entries below are NOT incidental (issue #793).
+              #
+              # `Backend Tests (pytest)` is a REQUIRED check, and branch protection treats a
+              # SKIPPED required check as SATISFIED. So a PR touching only these files used to
+              # merge with the backend suite never having run — confirmed live on run
+              # 34017549729 (PR #774), where both required checks report `skipped`.
+              #
+              # That is exactly backwards, because ~55 tests under `backend/tests/unit/` exist
+              # specifically to guard these files: `test_opentr_stop_container_scoping.py`,
+              # `test_shell_expansion_guards.py`, `test_opentr_fresh_aux_isolation.py`,
+              # `test_precommit_stage_ci_parity.py`, the compose-validation suites. And
+              # `opentr.sh stop` once destroyed 16 unrelated containers (#693) — it is the last
+              # file that should merge untested.
+              - 'opentr.sh'
+              - 'opentranscribe.sh'
+              - 'scripts/**'
+              - 'docker-compose*.yml'
             frontend:
               - 'frontend/**'
               - '.github/workflows/pre-commit.yml'
@@ -217,7 +234,7 @@ jobs:
         working-directory: backend
         run: python -m alembic upgrade head
 
-      - name: Run unit/API test suite (with coverage, report-only)
+      - name: "Run unit/API test suite (coverage ENFORCED via pyproject fail_under)"
         working-directory: backend
         run: |
           # pipefail is REQUIRED: GitHub's default shell is `bash -e {0}` WITHOUT
@@ -226,7 +243,7 @@ jobs:
           set -o pipefail
           pytest tests/ --cov=app --cov-report=term | tee pytest-output.txt
           {
-            echo "## Backend Test Coverage (report-only)"
+            echo "## Backend Test Coverage (enforced floor: pyproject fail_under)"
             echo '```'
             tail -40 pytest-output.txt
             echo '```'

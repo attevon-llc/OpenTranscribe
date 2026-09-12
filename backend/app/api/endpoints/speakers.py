@@ -1015,8 +1015,14 @@ def _collect_index_debug_documents(user_id: int) -> dict[str, Any]:
     except Exception as e:
         # Diagnostic endpoint: the OpenSearch section is optional, and the
         # error is surfaced in the payload rather than failing the report.
+        # `section` is merged into the endpoint's response body by the caller
+        # (`debug_info.update(_collect_index_debug_documents(...))`), so the raw
+        # opensearch-py exception text would be returned verbatim — and it quotes the
+        # cluster URL (`http://opensearch:9200`), the index name, and on a transport
+        # failure the full request body (#914). The admin only needs to know the
+        # section is unavailable and why in class terms; the detail is in the log.
         logger.exception("OpenSearch section of the speaker debug report failed")
-        section["opensearch_error"] = str(e)
+        section["opensearch_error"] = f"OpenSearch section unavailable ({type(e).__name__})"
 
     return section
 

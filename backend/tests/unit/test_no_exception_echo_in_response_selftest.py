@@ -15,9 +15,11 @@ import textwrap
 
 from tests.unit.test_no_exception_echo_in_response import _APP_ROOT
 from tests.unit.test_no_exception_echo_in_response import _collect_class_bases
+from tests.unit.test_no_exception_echo_in_response import _ContainerTaintWalker
 from tests.unit.test_no_exception_echo_in_response import _derive_error_subclasses
 from tests.unit.test_no_exception_echo_in_response import _open_transcribe_error_subclasses_under
 from tests.unit.test_no_exception_echo_in_response import _scan
+from tests.unit.test_no_exception_echo_in_response import _scan_container_returns
 from tests.unit.test_no_exception_echo_in_response import _TaintWalker
 
 #: A minimal, synthetic OpenTranscribeError-shaped hierarchy for the must-fire cases
@@ -404,6 +406,257 @@ _ASSIGN_IN_HANDLER_RETURN_OUTSIDE_NO_BINDING = """
 
 def test_assign_in_handler_return_outside_no_binding_must_stay_clean() -> None:
     assert _walk(_ASSIGN_IN_HANDLER_RETURN_OUTSIDE_NO_BINDING).return_findings == []
+
+
+# =============================================================================
+# Scanner 4 (container return-path). Every case below is a shape scanners 1-3 are
+# structurally blind to: the taint never reaches the return EXPRESSION, only an
+# object the return expression names.
+# =============================================================================
+
+
+def _walk_container(source: str) -> _ContainerTaintWalker:
+    tree = ast.parse(textwrap.dedent(source))
+    walker = _ContainerTaintWalker()
+    walker.visit(tree)
+    return walker
+
+
+# --- Case 18: MUST FIRE — list.append(), the recover_all_stuck_tasks shape ---
+#
+# The live defect this scanner exists for: api/endpoints/tasks.py's
+# recover_all_stuck_tasks did `retry_failures.append({"error": str(e)})` and returned
+# `retry_failures` verbatim, and the original three scanners saw nothing.
+
+_APPEND_THEN_RETURN = """
+    def handler():
+        failures = []
+        for item in items:
+            try:
+                do_thing(item)
+            except Exception as e:
+                failures.append({"item": item, "error": str(e)})
+        return failures
+"""
+
+
+def test_container_append_then_return_must_fire() -> None:
+    assert _walk_container(_APPEND_THEN_RETURN).container_findings == [("handler", 8)]
+
+
+def test_container_append_then_return_is_invisible_to_the_return_scanner() -> None:
+    """The blind spot, stated as a test rather than as prose in the docstring."""
+    assert _walk(_APPEND_THEN_RETURN).return_findings == []
+
+
+# --- Case 19: MUST FIRE — subscript assignment into a returned dict ---
+#
+# The api/endpoints/speakers.py::_collect_index_debug_documents shape.
+
+_SUBSCRIPT_ASSIGN_THEN_RETURN = """
+    def handler():
+        section = {}
+        try:
+            do_thing()
+        except Exception as e:
+            section["error"] = str(e)
+        return section
+"""
+
+
+def test_container_subscript_assign_must_fire() -> None:
+    assert _walk_container(_SUBSCRIPT_ASSIGN_THEN_RETURN).container_findings == [("handler", 7)]
+
+
+# --- Case 20: MUST FIRE — the mutation is BELOW the return in source order ---
+#
+# gdpr_erasure_service.py::erase_user returns at :457 and appends at :498. A
+# scanner that decided at visit_Return would report nothing here, which is why
+# scanner 4 defers the check to function exit.
+
+_MUTATION_BELOW_RETURN = """
+    def handler():
+        summary = {"errors": []}
+        if early:
+            return summary
+        try:
+            do_thing()
+        except Exception as e:
+            summary["errors"].append({"error": str(e)})
+        return summary
+"""
+
+
+def test_container_mutation_below_the_return_must_fire() -> None:
+    # Reported at the MUTATION (:9), which sits BELOW the first `return summary`
+    # (:5) — a scanner deciding at visit_Return would have found nothing here.
+    findings = _walk_container(_MUTATION_BELOW_RETURN).container_findings
+    assert findings == [("handler", 9)]
+
+
+# --- Case 21: MUST FIRE — nested container via `summary["errors"].append(...)` ---
+#
+# Pins _container_base_name: the mutated object is a subscript OF the returned
+# local, so the finding must be attributed to `summary`, not to nothing.
+
+_NESTED_CONTAINER = """
+    def handler():
+        summary = {"errors": []}
+        try:
+            do_thing()
+        except Exception as e:
+            summary["errors"].append(str(e))
+        return summary
+"""
+
+
+def test_nested_container_attributes_to_the_returned_local_must_fire() -> None:
+    assert _walk_container(_NESTED_CONTAINER).container_findings == [("handler", 7)]
+
+
+# --- Case 22: MUST FIRE — `+=` into a returned accumulator ---
+
+_AUGASSIGN_THEN_RETURN = """
+    def handler():
+        report = ""
+        try:
+            do_thing()
+        except Exception as e:
+            report += str(e)
+        return report
+"""
+
+
+def test_container_augassign_must_fire() -> None:
+    assert _walk_container(_AUGASSIGN_THEN_RETURN).container_findings == [("handler", 7)]
+
+
+# --- Case 23: MUST STAY CLEAN — the prescribed fix ---
+#
+# type(e).__name__ plus logger.exception is what this gate asks for; a gate that
+# still fired here is a gate people learn to route around.
+
+_CONTAINER_SANITIZED = """
+    def handler():
+        failures = []
+        for item in items:
+            try:
+                do_thing(item)
+            except Exception as e:
+                logger.exception("failed on %s", item)
+                failures.append({"item": item, "error": f"failed ({type(e).__name__})"})
+        return failures
+"""
+
+
+def test_container_sanitized_with_type_name_must_stay_clean() -> None:
+    assert _walk_container(_CONTAINER_SANITIZED).container_findings == []
+
+
+# --- Case 24: MUST STAY CLEAN — the container is never returned ---
+#
+# A per-item failure list consumed by control flow or logging only. Without this
+# case the scanner would flag every best-effort loop in the codebase.
+
+_CONTAINER_NOT_RETURNED = """
+    def handler():
+        failures = []
+        for item in items:
+            try:
+                do_thing(item)
+            except Exception as e:
+                failures.append(str(e))
+        if failures:
+            logger.error("%d items failed", len(failures))
+        return {"failed": len(failures)}
+"""
+
+
+def test_container_that_is_never_returned_must_stay_clean() -> None:
+    """Also the must-stay-clean half of the ``len(...)`` prune.
+
+    The return here DOES name ``failures``, but only inside ``len(...)`` — a shape that
+    reduces to an int and cannot carry message text. This case is why the prune exists:
+    it fired before the prune was added, on the very pattern the gate wants people to
+    write instead of returning the container.
+    """
+    assert _walk_container(_CONTAINER_NOT_RETURNED).container_findings == []
+
+
+# --- Case 24b: MUST FIRE — len() BESIDE the container itself ---
+#
+# The sibling that stops the len-prune becoming a bypass, exactly as case 16b does
+# for type(e).__name__: only the `len(...)` subtree is text-free, so a bare
+# reference to the same container elsewhere in the return must still fire.
+
+_LEN_PLUS_RAW_CONTAINER = """
+    def handler():
+        failures = []
+        for item in items:
+            try:
+                do_thing(item)
+            except Exception as e:
+                failures.append(str(e))
+        return {"failed": len(failures), "detail": failures}
+"""
+
+
+def test_len_beside_the_raw_container_must_still_fire() -> None:
+    assert _walk_container(_LEN_PLUS_RAW_CONTAINER).container_findings == [("handler", 8)]
+
+
+# --- Case 25: MUST STAY CLEAN — an ordinary method call is not a mutation ---
+#
+# Pins _CONTAINER_MUTATORS: `logger.error(str(e))` writes into nothing, and a
+# scanner that treated any attribute call as a container write would flag every
+# handler in the tree.
+
+_LOG_CALL_IS_NOT_A_MUTATION = """
+    def handler():
+        logger = get_logger()
+        try:
+            do_thing()
+        except Exception as e:
+            logger.error(str(e))
+        return logger
+"""
+
+
+def test_a_plain_method_call_is_not_a_container_mutation() -> None:
+    assert _walk_container(_LOG_CALL_IS_NOT_A_MUTATION).container_findings == []
+
+
+# --- Case 26: MUST STAY CLEAN — no `as` binding, nothing to taint ---
+
+_CONTAINER_NO_BINDING = """
+    def handler():
+        failures = []
+        try:
+            do_thing()
+        except Exception:
+            failures.append({"error": "failed"})
+        return failures
+"""
+
+
+def test_container_without_an_exception_binding_must_stay_clean() -> None:
+    assert _walk_container(_CONTAINER_NO_BINDING).container_findings == []
+
+
+# --- Case 27: the real scan is rooted at app/api/ + app/services/ only ---
+
+
+def test_the_container_scan_never_touches_tasks() -> None:
+    """Scanner 4's root excludes app/tasks/ — see its module-docstring reason."""
+    container_by_key = _scan_container_returns()
+    assert not any(k.startswith("tasks/") for k in container_by_key), (
+        "the container-return scanner found a tasks/-prefixed key — its root is "
+        "app/api/ + app/services/ only, because a Celery task's return value reaches "
+        "no HTTP response body here (test_a_celery_result_is_never_read_into_a_response)"
+    )
+    assert any(k.startswith("api/") for k in container_by_key) and any(
+        k.startswith("services/") for k in container_by_key
+    ), "the container-return scanner must cover BOTH of its roots, not just one"
 
 
 def test_the_open_transcribe_error_set_is_transitive() -> None:

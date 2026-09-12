@@ -1198,9 +1198,17 @@ class LLMService:
                     section_summaries[result_idx] = section_summary
                     logger.info(f"Section {result_idx + 1} processing completed successfully")
                 except Exception as e:
-                    logger.error(f"Failed to process section {idx + 1}: {type(e).__name__}: {e}")
+                    # `section_summaries` is handed to _combine_sections, which json.dumps
+                    # it straight into the COMBINER PROMPT — so this string is egressed to
+                    # the LLM provider and can be echoed back into the user-visible summary
+                    # (#914). An httpx/openai error here quotes the provider base_url, and
+                    # for a self-hosted vLLM that is an internal host:port. The section
+                    # number and the fact of the failure are what the reader needs.
+                    logger.exception(f"Failed to process section {idx + 1}")
                     section_summaries[idx] = {
-                        "key_points": [f"Section {idx + 1}: Processing failed - {str(e)[:100]}..."],
+                        "key_points": [
+                            f"Section {idx + 1}: Processing failed ({type(e).__name__})"
+                        ],
                         "speakers_in_section": [],
                         "decisions": [],
                         "action_items": [],

@@ -227,8 +227,16 @@ def execute_mirror(
         except Exception as exc:  # noqa: BLE001 - one failed object never aborts the run
             failed += 1
             if len(errors) < MAX_RECORDED_ERRORS:
-                errors.append(f"{obj.key}: {exc}")
-            logger.warning("Media mirror: failed to copy %s: %s", obj.key, exc)
+                # `errors` is returned in this function's counters, folded into the run
+                # result by run_mirror_once, persisted by media_mirror_service.record_result
+                # as `backup.mirror_last_result`, and read straight back out as the
+                # `last_result` field of the mirror settings response — so it IS
+                # response-bound, just asynchronously (#914). A boto3 error here quotes the
+                # destination endpoint URL and, on a signing failure, the canonical request
+                # including headers. The object key is the useful half and is kept: it is
+                # what tells the admin WHICH object to re-mirror.
+                errors.append(f"{obj.key}: {type(exc).__name__}")
+            logger.exception("Media mirror: failed to copy %s", obj.key)
         if throttle_ms > 0:
             time.sleep(throttle_ms / 1000.0)
 

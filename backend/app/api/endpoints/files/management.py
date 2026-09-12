@@ -1053,12 +1053,19 @@ def bulk_file_action(
                     )
                 )
             except Exception as e:
-                logger.exception(f"Error processing bulk action for file {file_uuid}: {e}")
+                # `results` IS this endpoint's response body (`return results`, below), so
+                # the per-file report may carry only facts we authored. The raw exception
+                # text here reaches whatever the action touched — MinIO/boto3 errors quote
+                # the bucket and endpoint URL, Celery dispatch errors quote the broker URL
+                # with its embedded password, OSErrors quote host filesystem paths (#914).
+                # What the caller actually needs from a bulk action is preserved: WHICH
+                # file failed, that it failed, and the machine-readable `error` code.
+                logger.exception(f"Error processing bulk action for file {file_uuid}")
                 results.append(
                     BulkActionResult(
                         file_uuid=file_uuid,
                         success=False,
-                        message=f"Unexpected error: {str(e)}",
+                        message=f"Unexpected error ({type(e).__name__})",
                         error="UNEXPECTED_ERROR",
                         outcome=BulkTagOutcome.FAILED if is_tag_action else None,
                     )

@@ -177,7 +177,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **BLUF Format Summaries**: Bottom Line Up Front structured summaries with action items
 - **Multi-Model Support**: Works with models from 3B to 200B+ parameters
 - **Local & Cloud Processing**: Support for both local (privacy-first) and cloud AI providers
-- **Cloud ASR Providers**: 8 cloud speech-to-text providers (Deepgram, AssemblyAI, OpenAI Whisper API, Google, AWS Transcribe, Azure, Speechmatics, Gladia) as alternatives to local GPU processing — 6 verified end-to-end (Deepgram, AssemblyAI, Gladia, AWS Transcribe, Speechmatics, pyannote.ai)
+- **Cloud ASR Providers**: 9 cloud speech-to-text providers (Deepgram, AssemblyAI, OpenAI Whisper API, Google, AWS Transcribe, Azure, Speechmatics, Gladia, pyannote.ai) as alternatives to local GPU processing — 6 verified end-to-end (Deepgram, AssemblyAI, Gladia, AWS Transcribe, Speechmatics, pyannote.ai)
 - **API-Lite Deployment**: `DEPLOYMENT_MODE=lite` for cloud-ASR-only deployments without requiring a local GPU
 - **Selective Reprocessing**: Re-run only specific pipeline stages (transcription, diarization, summarization) without full reprocessing
 - **Per-Upload Toggles**: Disable diarization or AI summarization on a per-file basis at upload or reprocess time
@@ -1046,7 +1046,8 @@ source backend/venv/bin/activate
 cd backend/
 pytest tests/                    # All tests
 pytest tests/api/                # API tests only
-pytest --cov=app tests/          # With coverage (report-only, no threshold yet)
+pytest --cov=app tests/          # With coverage (ENFORCED: backend/pyproject.toml's
+                                  # `fail_under = 37` is a hard gate, not report-only)
 
 # Frontend tests
 cd frontend/
@@ -1073,7 +1074,7 @@ behind stale environment variables, and an endpoint returning a hardcoded value 
 test referenced.
 
 ```bash
-python3 scripts/audit-tests.py backend/tests   # 16 AST detectors, exits 1 on new offenders
+python3 scripts/audit-tests.py backend/tests   # 21 AST detectors, exits 1 on new offenders
 cd frontend && npm run test:audit              # the vitest sibling, 10 detectors
 npm run test:audit:selftest                    #   ...and ITS self-test — not optional
 python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
@@ -1232,9 +1233,12 @@ docker stats
 #### **Production Scale**
 - 32GB+ RAM
 - 16+ CPU cores
-- Multiple GPUs for parallel processing
+- Multiple GPUs for parallel processing (see Multi-GPU Options below)
 - Fast NVMe storage
-- Load balancer for multiple instances
+
+> ⚠️ A single `backend` instance is the supported topology. There is no leader election
+> around scheduled maintenance tasks (e.g. `search_index_maintenance`), so running multiple
+> backend replicas behind a load balancer is not currently safe (#894).
 
 #### **Low-VRAM Deployments — Hybrid Mode**
 

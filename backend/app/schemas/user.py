@@ -25,11 +25,18 @@ class UserBrief(BaseModel):
 
 
 class UserSearchResult(BaseModel):
-    """Minimal user info returned by user search endpoint."""
+    """Minimal user info returned by the sharing/group-member-add directory search.
+
+    Deliberately carries no full email address (issue #904) — ``masked_email`` is a
+    display-only mask (see ``app.auth.utils.mask_email_for_display``), and the field
+    is named for what it holds so a stale consumer expecting a real address fails
+    loudly (a missing attribute) instead of silently rendering a mask under a field
+    called ``email``.
+    """
 
     uuid: UUID
     full_name: str | None = None
-    email: str
+    masked_email: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -129,7 +136,7 @@ class UserUpdate(BaseModel):
     def validate_auth_type(cls, v: str | None) -> str | None:
         """Reject an auth_type outside the closed set.
 
-        ``user.auth_type`` is CHECK-constrained since v375, so an unknown value
+        ``user.auth_type`` is CHECK-constrained since v377, so an unknown value
         would fail at COMMIT with an IntegrityError (a 500) instead of a 422.
         """
         if v is not None and v not in VALID_AUTH_TYPES:
@@ -171,12 +178,12 @@ class UserInDB(UserBase, UUIDBaseSchema):
     last_login_at: datetime | None = None
     account_expires_at: datetime | None = None
 
-    #: Whether this deployment has proved control of the address (v375). Read by
+    #: Whether this deployment has proved control of the address (v377). Read by
     #: the admin user list so an unverified account is visible as such.
     email_verified: bool = False
     email_verified_at: datetime | None = None
 
-    #: Administrator admission state (v379): ``pending`` / ``approved`` /
+    #: Administrator admission state (v381): ``pending`` / ``approved`` /
     #: ``rejected``. Served on the ordinary user schema so the admin Users table
     #: shows a held account without a second endpoint, and defaulted so an object
     #: built without the column (tests, the ``get_current_user`` stand-in)

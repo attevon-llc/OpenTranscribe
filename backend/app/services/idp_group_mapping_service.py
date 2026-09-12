@@ -16,7 +16,7 @@ Invariants this module owns:
 
 * **``super_admin`` is unreachable from any IdP.** :func:`assert_grantable_role`
   refuses it before anything is persisted, and ``ck_group_mapping_role_capped``
-  (``v376``) refuses it at the database. A super_admin account is also never
+  (``v378``) refuses it at the database. A super_admin account is also never
   demoted here — it is the break-glass account for the directory that might be
   the thing that is broken.
 * **Hand-added and SCIM-written memberships are untouchable.** Only rows whose
@@ -345,7 +345,7 @@ def reconcile_user(
             ``ldap_admin_groups`` for LDAP, ``oidc_admin_role`` (or a PKI admin
             DN) for OIDC, the capped role header for a proxy. OR-ed with the mapped
             grant, so a deployment that has not created any mapping behaves exactly
-            as it did before ``v376``.
+            as it did before ``v378``.
         reason: Actor string recorded in the audit event (``idp_login`` /
             ``directory_sync`` / ``proxy_login``).
         dry_run: Compute the plan and change nothing.

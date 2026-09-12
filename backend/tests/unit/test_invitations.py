@@ -1,4 +1,4 @@
-"""Admin invitations + email verification (v375), pinned with fakes.
+"""Admin invitations + email verification (v377), pinned with fakes.
 
 Two features that only exist because "disable self-registration" was otherwise
 unusable: ``POST /api/admin/users`` could not set ``auth_type``, so every

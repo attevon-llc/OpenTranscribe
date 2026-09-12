@@ -19,7 +19,7 @@ Four rules shape everything here:
 3. **Disable, never delete.** Deleting data because LDAP hiccupped is unrecoverable.
 4. **Bounded and opt-in** — dry-run and ``enabled=False`` by default, plus a per-run cap.
 
-Since ``v376`` the same pass also **reconciles what the account still has**, not
+Since ``v378`` the same pass also **reconciles what the account still has**, not
 only whether it still exists: for every account the directory reports present, it
 applies the configured ``group_mapping`` rows through
 ``services/idp_group_mapping_service.reconcile_user`` — the same implementation
@@ -321,9 +321,17 @@ def _reconcile(
             dry_run=dry_run,
         )
     except Exception as exc:  # noqa: BLE001 - one bad account must not stop the sweep
+        # This entry flows into DirectorySyncResultModel (extra="allow" lets the
+        # dict pass through untouched) and is rendered on the directory-sync
+        # admin settings surface -- never interpolate the raw exception text,
+        # only its class name (#914).
         db.rollback()
-        logger.error("Directory sync could not reconcile %s: %s", user.email, exc)
-        return {"user_uuid": str(user.uuid), "email": str(user.email), "error": str(exc)}
+        logger.exception("Directory sync could not reconcile %s", user.email)
+        return {
+            "user_uuid": str(user.uuid),
+            "email": str(user.email),
+            "error": f"Reconciliation failed ({type(exc).__name__})",
+        }
 
     if not result.changed:
         return None

@@ -438,6 +438,46 @@ class TestOrgAuditLogRead:
         assert response.status_code == 422, response.text
         assert audit_query_recorder == []
 
+    def test_target_user_id_outside_the_org_is_403(
+        self, client, other_user, org_admin_request, audit_query_recorder
+    ):
+        """The SUBJECT-side sibling of ``test_user_id_outside_the_org_is_403``
+        (issue #443/#828): ``target_user_id`` names who an action was done TO,
+        not who did it, but it is exactly as capable of a cross-tenant oracle if
+        left unguarded — an org admin could enumerate "was anything ever done to
+        user N" for a user outside their own org by supplying an id and reading
+        whether any rows came back."""
+        response = client.get(
+            AUDIT_LOGS_PATH, params={"target_user_id": other_user.id}, headers=org_admin_request
+        )
+        assert response.status_code == 403, response.text
+        assert audit_query_recorder == [], "the refused filter must not reach the query"
+
+    def test_target_user_id_of_a_member_is_allowed_and_scoped(
+        self,
+        client,
+        org,
+        normal_user,
+        other_user,
+        org_admin_request,
+        audit_query_recorder,
+        db_session,
+    ):
+        db_session.add(
+            OrganizationMembership(organization_id=org.id, user_id=other_user.id, role="org:member")
+        )
+        db_session.commit()
+
+        response = client.get(
+            AUDIT_LOGS_PATH, params={"target_user_id": other_user.id}, headers=org_admin_request
+        )
+        assert response.status_code == 200, response.text
+        assert len(audit_query_recorder) == 1
+        sent = audit_query_recorder[0]
+        assert sent["target_user_id"] == other_user.id
+        assert sent["scope_org_id"] == org.id
+        assert set(sent["scope_user_ids"]) == {normal_user.id, other_user.id}
+
     def test_negative_offset_is_422(self, client, org_admin_request, audit_query_recorder):
         response = client.get(AUDIT_LOGS_PATH, params={"offset": -1}, headers=org_admin_request)
         assert response.status_code == 422, response.text

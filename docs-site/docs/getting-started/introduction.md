@@ -90,7 +90,7 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 
 ### User Interface
 - **Light and dark mode** - Toggle between themes via the sun/moon icon in the navbar, or let the app follow your system preference automatically
-- **8 UI languages** - Switch the interface language from Settings: English, Spanish, French, German, Portuguese, Chinese, Japanese, and Russian. The app also detects your browser language on first visit
+- **12 UI languages** - Switch the interface language from Settings: English, Spanish, French, German, Italian, Portuguese, Dutch, Chinese, Japanese, Korean, Russian, and Arabic (RTL). The app also detects your browser language on first visit
 - **Grid and list views** - Toggle between card-based grid view (with thumbnails) and compact list view in the file gallery using the view toggle button
 - **Virtual scrolling** - Smooth performance when browsing large libraries with thousands of files, loading only visible items
 - **Progressive Web App (PWA)** - Install OpenTranscribe as a standalone app on desktop or mobile from your browser's "Install" or "Add to Home Screen" option for a native app experience

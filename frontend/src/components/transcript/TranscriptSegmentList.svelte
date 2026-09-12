@@ -8,6 +8,7 @@
   import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { highlightTextWithMatches, type SearchMatch } from '$lib/utils/searchHighlight';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { formatClock } from '$lib/utils/formatting';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
 
@@ -232,12 +233,6 @@
     );
   }
 
-  function formatSimpleTimestamp(seconds: number): string {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  }
-
   function handleSegmentClick(startTime: number) {
     dispatch('segmentClick', { startTime });
   }
@@ -298,7 +293,7 @@
             <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
           </svg>
           <span class="overlap-label">{$t('transcript.overlapIndicator', { count: group.segments.length })}</span>
-          <span class="overlap-time">{formatSimpleTimestamp(group.startTime)} - {formatSimpleTimestamp(group.endTime)}</span>
+          <span class="overlap-time">{formatClock(group.startTime)} - {formatClock(group.endTime)}</span>
         </div>
         <div class="overlap-connector"></div>
         {/if}
@@ -311,7 +306,7 @@
           >
             {#if editingSegmentId === segment.uuid}
               <div class="segment-edit-container">
-                <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
+                <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
                 {#if !diarizationDisabled}
                 {@const speakerMatch = speakerMatchState(segment)}
                 <div
@@ -347,7 +342,7 @@
                   on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
                   title={$t('transcript.jumpToSegment')}
                 >
-                  <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
+                  <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
                   {#if !diarizationDisabled}
                   {@const speakerMatch = speakerMatchState(segment)}
                   <div
@@ -401,7 +396,7 @@
       >
         {#if editingSegmentId === segment.uuid}
           <div class="segment-edit-container">
-            <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
+            <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
             {#if !diarizationDisabled}
             {@const speakerMatch = speakerMatchState(segment)}
             <div
@@ -437,7 +432,7 @@
               on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
               title={$t('transcript.jumpToSegment')}
             >
-              <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
+              <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
               {#if !diarizationDisabled}
               {@const speakerMatch = speakerMatchState(segment)}
               <div

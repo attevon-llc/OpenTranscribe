@@ -1,4 +1,4 @@
-"""Pydantic schemas for IdP group mappings (``v376``).
+"""Pydantic schemas for IdP group mappings (``v378``).
 
 Wire contract for ``/api/admin/group-mappings``. Two rules are enforced here as
 well as in the service and the database, because each layer is reachable without

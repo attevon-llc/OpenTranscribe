@@ -131,7 +131,7 @@ this file is for.
   would otherwise delete the entire screenshot suite from the gate in silence).
 - **Test-suite quality tooling** (issue #431) — four scripts whose job is to stop a test that
   cannot fail from looking like a passing one:
-  - `audit-tests.py <dir>` — **16** AST detectors. The original seven (permissive-status,
+  - `audit-tests.py <dir>` — **21** AST detectors. The original seven (permissive-status,
     conditional-only, conditional-skip, no-assertion, failure-masking, mock-heavy,
     fixture-named-test) missed 17 of 18 known evasion shapes, so seven more landed:
     `negated-status` (`assert r.status_code != 403` — **a 500 passes**), `status-guarded-assert`
@@ -170,6 +170,12 @@ this file is for.
       assignments resolved, so `f"{BASE_URL}/health"` counts); one derived argument means the
       target follows the stack under test, which is why `_reachable("127.0.0.1", port)` against
       an allocated port stays clean. 3 real findings, all `BACKLOG` — see below.
+    **Five more landed since**, past the seven-then-two count above (16): `broad-raises`,
+    `bare-return`, `self-comparison`, `sleep-sync`, `skipped-test` — bringing the total to the
+    21 named at the top of this bullet. Per the repo's "ask the tool, don't transcribe counts"
+    convention, don't trust that number either as it ages: `python3 scripts/audit-tests.py
+    --help` shows the live set via its `--category` flag's `choices=CATEGORIES`
+    (`audit-tests.py:2499`). There is no `--list-detectors` flag.
     **`--selftest` is not optional.** 29 must-fire + 24 must-stay-clean + 1 fires-exactly-once,
     run in-memory; `backend/tests/unit/test_audit_tests_selftest.py` runs the same cases under
     pytest so a dead detector fails the ordinary suite too, and the tree scan refuses to be
@@ -282,7 +288,7 @@ this file is for.
     after any interrupted run.
   - `frontend/scripts/audit-frontend-tests.mjs` (`npm run test:audit`) — the vitest sibling,
     10 detectors, TypeScript compiler API. Run `test:audit:selftest` after ANY detector change:
-    its 21 cases caught two detectors matching **nothing**, which reports 0 findings and reads
+    its 27 cases caught two detectors matching **nothing**, which reports 0 findings and reads
     exactly like a clean suite. Two of its detectors do NOT port to Python as-is:
     `toBeFalsy`-style weakness does not, because `assert not offenders, "<list>"` is this
     repo's standard AST-guard shape and fails on any violation — counting the negated form as
@@ -767,6 +773,37 @@ aux-file record.
   ⚠️ `test-scan-not-a-pass.sh` uses **`bogus`** as its "unknown component" placeholder. It used
   to use `lite` — which stopped being unknown the moment #680 made it real, at which point those
   cases started a REAL Trivy scan and hung. If you ever make `bogus` a component, rename it there.
+- ⚠️ **The SBOM's licence comes from the image's `LABEL`, and NOTHING else can supply it**
+  (issue #886). Three measurements against syft 1.33.0, each a rejected alternative:
+  the final `nginx:*-alpine` stages of `frontend/Dockerfile.prod` and `docs-site/Dockerfile`
+  contain **zero** `package.json` files (`find / -name package.json` → 0 in both published
+  v0.5.0 images), so those manifests' `license` fields never reach a scan; syft catalogues
+  **nothing at all** from a `pyproject.toml` — a control with `[project] name/version/license`
+  produced an empty artifact list as a `dir:` scan *and* inside an image — so the backend/lite/
+  blackwell images cannot be fixed that way even in principle (and `backend/pyproject.toml` is
+  not copied into the image anyway); and `syft config` exposes `source.name`/`version`/
+  `supplier` and **no licence field**, so syft cannot write CycloneDX's own
+  `metadata.component.licenses`. What works is `org.opencontainers.image.licenses` on the
+  **final stage** of each production Dockerfile — a label in a builder stage never reaches the
+  image — which syft records as a `syft:image:labels:*` property, and which
+  `scripts/lib/sbom_license.py` then promotes into `metadata.component.licenses` from inside
+  `generate_sbom()`. The label is the single source of truth; the promoter never invents an
+  identifier, and an image with no label WARNS rather than failing the scan (turning the SBOM
+  step into a licence gate would add a release-blocking surface;
+  `backend/tests/unit/test_first_party_license_declarations.py` already fails the unit suite on
+  any production Dockerfile that drops the label, and derives the expected SPDX id from the
+  repo's own `LICENSE` rather than restating it). **Use the SPDX `-only`/`-or-later` form**:
+  four Dockerfiles carried the deprecated bare `AGPL-3.0` against manifests declaring
+  `AGPL-3.0-only`, and `docs-site/Dockerfile` carried no label at all.
+- ⚠️ **`generate_sbom()`'s stdout IS its return value — keep every message on stderr.** The
+  caller runs it as `generate_sbom ... > "${status_dir}/sbom_path.txt"` and feeds that file to
+  `scan_grype` as a path. With the banners on stdout that file held six lines of ANSI headers
+  with the path last, `[ -f "$sbom_file" ]` was false for the blob, and grype silently took its
+  `else` branch and re-catalogued the whole image — so "Grype scan (uses SBOM for speed)"
+  described a branch that never ran. A/B-measured before fixing it: the `(vuln id, package,
+  version)` match sets from the SBOM and from the image are **identical** on both
+  `opentranscribe-docs:v0.5.0` (37 matches) and `opentranscribe-backend-lite:v0.5.0` (744), so
+  restoring the fast path moves no CVE count the release gate reads.
 - **`BUILD_MODE=local` is the only path that does not push.** Every other path ends in
   `buildx --push`: `:vX.Y.Z` (and `:latest`, unless `PUSH_LATEST=false`) hit Docker Hub the
   instant the build finishes. Capability-bearing components push one **leg** per architecture and

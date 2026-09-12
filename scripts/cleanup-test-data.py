@@ -197,6 +197,11 @@ MEDIA_FILENAME_SPECS: list[MediaFilenameSpec] = [
         r'gpu-scale-smoke-%',
         re.compile(r'^gpu-scale-smoke-\d+-\d+\.wav$'),
     ),
+    # integration/test_lite_mode_mocked_providers.py's per-test upload. It had no
+    # backstop here at all, so an interrupted run leaked one file per test.
+    MediaFilenameSpec(
+        'lite-mode', r'lite-mode-test-%', re.compile(r'^lite-mode-test-[0-9a-f]{8}\.wav$')
+    ),
 ]
 
 #: name/title-prefix + <8hex> shape, one entry per non-media resource type.

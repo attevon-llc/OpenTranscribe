@@ -1015,8 +1015,14 @@ def _collect_index_debug_documents(user_id: int) -> dict[str, Any]:
     except Exception as e:
         # Diagnostic endpoint: the OpenSearch section is optional, and the
         # error is surfaced in the payload rather than failing the report.
+        # `section` is merged into the endpoint's response body by the caller
+        # (`debug_info.update(_collect_index_debug_documents(...))`), so the raw
+        # opensearch-py exception text would be returned verbatim — and it quotes the
+        # cluster URL (`http://opensearch:9200`), the index name, and on a transport
+        # failure the full request body (#914). The admin only needs to know the
+        # section is unavailable and why in class terms; the detail is in the log.
         logger.exception("OpenSearch section of the speaker debug report failed")
-        section["opensearch_error"] = str(e)
+        section["opensearch_error"] = f"OpenSearch section unavailable ({type(e).__name__})"
 
     return section
 
@@ -2135,6 +2141,15 @@ def update_speaker(
     # things: a cleared display name, an edit to `name` alone, and — issue
     # #605 — a confident LLM/embedding suggestion the writer would have
     # indexed instead of the raw name. See `_propagate_speaker_rename_to_chunks`.
+    #
+    # ⚠️ Issue #844: this rewrite is keyword-only — the chunk plane's kNN vector
+    # (`embedding`) is left stale on purpose. A rename doesn't change the audio, but
+    # it DOES change `embedding_text` (which bakes in the speaker roster), so the
+    # vector goes out of sync with what a reindex would produce; re-embedding every
+    # chunk of a long recording for a cosmetic rename was judged not worth the cost.
+    # Full reasoning is in `rename_propagation_task.propagate_speaker_rename`'s
+    # docstring — this is deliberate, not the #666 residue #844 asked to confirm.
+    # `test_speaker_rename_leaves_the_chunk_vector_unchanged` pins it.
     new_chunk_name = canonical_speaker_label_for_row(speaker)
     _propagate_speaker_rename_to_chunks(
         file_uuid=speaker_file_uuid,

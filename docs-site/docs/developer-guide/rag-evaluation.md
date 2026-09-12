@@ -2393,11 +2393,25 @@ just not the mid-quote-cut shape the issue guessed at.
 
 **The fix gives each citation KIND its own cap, derived from an existing constant** —
 `DIGEST_SNIPPET_CHARS` from `ingest_artifacts.sizing.DIGEST_SECTION_MAX_WORDS`, so a digest
-section actually fits inside its own citation. The chunk-level `SNIPPET_CHARS` (240) is
-**deliberately unchanged**: raising it is gated on a redaction-policy decision (a wider excerpt
-shown to a REMOTE provider's reader is a different egress calculus) and a citation-card UI
-redesign (the card clamps to 2 lines regardless of snippet length today, so a wider cap alone has
-no reader-visible effect) — both tracked in a follow-up issue referencing #832.
+section actually fits inside its own citation. The chunk-level `SNIPPET_CHARS` (240 at the time)
+was left unchanged by #832 itself, gated on a stated redaction-policy question and a citation-card
+UI redesign.
+
+**Both of those were resolved by issue #913, and the redaction-policy question turned out to be
+based on a false premise.** The premise — "a wider excerpt shown to a REMOTE provider's reader is
+a different egress calculus" — is false on two counts: a citation's `snippet` reaches no LLM
+provider at all (`chat/prompting.py` never reads it; its only consumers are the SSE `sources`
+frame, the persisted `citations` column, and the export/takedown surfaces), and on a remote
+provider the snippet is masked before it is ever attached, so a wider cap there shows more masked
+text, not more PII. #913 raised `SNIPPET_CHARS` to `10 × SEARCH_CHUNK_TARGET_WORDS` (2000 today) —
+the same derivation method this fix already used twice (digest, overview), applied a third time —
+and shipped the citation-card "show more" toggle the UI redesign needed, so the wider snippet is
+actually reachable rather than clipped by CSS. The real, narrower exposure this widens is a
+per-citation volume increase on a **local** provider with the admin masking floor off (where a
+snippet is raw transcript text, unchanged rule) — the same *kind* of increase #832 already shipped
+default-on for the digest (2.9×) and overview (8.75×) planes, not a new category. No RAG-quality
+measurement accompanied #913 — see its own record in `chat/CLAUDE.md` for why, and for the
+decision rule a future evidence-based re-tune should follow.
 
 ⚠️ **`quote_fidelity` is a function of the snippet cap it was measured at, and must never be
 quoted without naming that cap.** A future run comparing "0.527 before" against "0.71 after" is

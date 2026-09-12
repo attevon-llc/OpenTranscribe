@@ -386,6 +386,7 @@ def test_close_reopen_is_verified_with_a_knn_query_not_match_all(corrupt_chunks)
 def test_the_corruption_notice_is_sent_once_then_cleared_on_recovery(db_session, monkeypatch):
     """A latched flag reports the first outage and swallows every one after it."""
     from app.services import system_settings_service as sss
+    from app.services.opensearch_service.client import KnnProbeResult
     from app.services.search import index_health as health
 
     key = health.corruption_notice_key("transcript_chunks")
@@ -406,11 +407,20 @@ def test_the_corruption_notice_is_sent_once_then_cleared_on_recovery(db_session,
         lambda db, **kw: sent.append(kw["message"]),
     )
 
-    probe = type("P", (), {"detail": "503 search_phase_execution_exception"})()
+    # The REAL verdict object, not a hand-rolled stub. A local fake carrying only the
+    # fields the test happened to think of drifts silently: this one was missing
+    # `status`, and because notify_corruption catches everything (alerting must never
+    # break the health check) the AttributeError surfaced as "no admin was paged"
+    # rather than as the incomplete fake it was.
+    probe = KnnProbeResult("corrupt", detail="503 search_phase_execution_exception")
 
     health.notify_corruption("transcript_chunks", probe)
     assert len(sent) == 1, "the first outage must page admins"
     assert sss.get_setting_bool(db_session, key, False) is True
+    # The notice names the fixed-vocabulary verdict, never the raw probe detail --
+    # probe.detail can carry a caught OpenSearch exception's text (#914 STEP 7).
+    assert "(corrupt)" in sent[0]
+    assert "search_phase_execution_exception" not in sent[0]
 
     health.notify_corruption("transcript_chunks", probe)
     assert len(sent) == 1, "a still-broken index must not re-page every tick"

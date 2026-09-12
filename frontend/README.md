@@ -272,7 +272,7 @@ export const t = derived(locale, ...); // Translation function
 
 ### Overview
 
-OpenTranscribe frontend supports 8 languages with a simple, efficient i18n system.
+OpenTranscribe frontend supports 12 languages with a simple, efficient i18n system.
 
 ### Supported Languages
 
@@ -280,10 +280,14 @@ OpenTranscribe frontend supports 8 languages with a simple, efficient i18n syste
 - **Spanish** (es) - Español
 - **French** (fr) - Français
 - **German** (de) - Deutsch
+- **Italian** (it) - Italiano
 - **Portuguese** (pt) - Português
+- **Dutch** (nl) - Nederlands
 - **Chinese** (zh) - 中文
 - **Japanese** (ja) - 日本語
+- **Korean** (ko) - 한국어
 - **Russian** (ru) - Русский
+- **Arabic** (ar) - العربية (RTL)
 
 ### Usage in Components
 

@@ -195,7 +195,7 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
     Both branches end in ``assert_email_verified_for_local_login``: when the
     deployment sets ``require_email_verification``, an unverified address does
     not get a session. This is the only consumer of that setting — it was a
-    declared auth-config key with no reader anywhere before v375. It is applied
+    declared auth-config key with no reader anywhere before v377. It is applied
     here, on the local-password path, so LDAP/OIDC/PKI logins (whose address is
     asserted by the provider) are untouched.
 

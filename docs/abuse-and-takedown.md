@@ -108,7 +108,11 @@ transcript are **never deleted** by a takedown — hiding is a read-time transfo
 so the row survives for the audit and appeal trail. Admins retain visibility to
 review and release. An export already in flight is re-checked when the worker
 runs, not only when it was requested, so a takedown applied mid-render still
-takes effect.
+takes effect. Enforced by `takedown_service.exclude_quarantined` (list/search
+pre-filters) and `takedown_service.is_hidden_for`, applied centrally in
+`utils/uuid_helpers.get_file_by_uuid_with_permission` and explicitly on the
+thumbnail route; pinned by `backend/tests/test_takedown_quarantine.py` and the
+`*_quarantine.py` suites under `backend/tests/api/`.
 
 ### Owner notice (DMCA §512(g))
 

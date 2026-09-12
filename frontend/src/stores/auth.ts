@@ -47,11 +47,11 @@ interface User {
   // show the forced-change screen without first provoking a refused request.
   must_change_password?: boolean;
   account_expires_at?: string | null;
-  // Email verification (v375). Surfaced in the admin user list.
+  // Email verification (v377). Surfaced in the admin user list.
   email_verified?: boolean;
   email_verified_at?: string | null;
   /**
-   * Administrator admission state (v379): `pending` | `approved` | `rejected`.
+   * Administrator admission state (v381): `pending` | `approved` | `rejected`.
    * Served on the ordinary user schema (`UserInDB`), so the admin Users table can
    * show a held account without a second request. Optional here because an older
    * backend omits it; treat a missing value as `approved`, which is the backend's
@@ -180,7 +180,7 @@ export const token = derived(authStore, ($store) => $store.token);
 // owing more than one clears them one 403 at a time; each remedy re-provokes the
 // next hold rather than trying to predict it.
 //
-// The approval pair (`v379`) has no in-app remedy at all — the decision is
+// The approval pair (`v381`) has no in-app remedy at all — the decision is
 // somebody else's — and no route is exempt from it, so EVERY request answers 403.
 // That is exactly why these render as a blocking screen and never as a toast: a
 // toast would fire once per refused request, forever.
@@ -500,7 +500,7 @@ export async function login(
   mfa_enrollment_required?: boolean;
   mfa_token?: string;
   // The credentials were correct but the address is unverified and this
-  // deployment requires verification (v375). `/auth/login` raises exactly one
+  // deployment requires verification (v377). `/auth/login` raises exactly one
   // 403 — `assert_email_verified_for_local_login` — so the STATUS identifies it
   // and no substring match on the localised message is needed.
   email_not_verified?: boolean;

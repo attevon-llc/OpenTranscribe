@@ -109,7 +109,17 @@ _EXCERPT_CLOSE = "\n</excerpt>\n\n"
 _TRUNCATION_MARK = " […]"
 # Below this there is nothing worth grounding an answer in, so a first excerpt
 # that cannot be trimmed to at least this much is skipped rather than shown as a
-# fragment. Matches the citation snippet length the UI already shows.
+# fragment.
+#
+# This number is INDEPENDENT of citations.py's SNIPPET_CHARS, and must stay
+# that way (issue #913 made them diverge — 240 here vs. a wider, indexing-
+# target-derived cap there). The two answer different questions: this one
+# decides whether a truncated PROMPT excerpt is worth sending to the model at
+# all, citations.py's decides how much of an ALREADY-SENT excerpt the citation
+# CARD shows the reader afterward. "Keep them in sync" is the wrong instinct
+# it invites — that edit would change what reaches the prompt, not just what
+# the UI displays, and 240 stands on its own here regardless of what the card
+# shows.
 _MIN_TRUNCATED_EXCERPT_CHARS = 240
 _MAX_SYSTEM_PROMPT_CHARS = 2000
 # Ceiling on the three user layers combined. Two maxed-out layers are already

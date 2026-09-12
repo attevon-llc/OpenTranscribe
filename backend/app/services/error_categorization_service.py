@@ -10,14 +10,25 @@ The service provides intelligent error classification and user guidance includin
 - Retry eligibility determination based on error category
 - Enhanced notification triggers for critical error types
 
-Error categories include:
+Error reasons include:
 - FILE_QUALITY: Issues with file corruption, format, or encoding
+- NO_AUDIO_TRACK: The file has no audio track at all — nothing to transcribe
 - NO_SPEECH: Audio contains no detectable speech content
 - FORMAT_ISSUE: Codec, container, or technical format problems
 - NETWORK_ERROR: Connectivity, download, or URL access issues
 - PERMISSION_ERROR: Access control, DRM, or authentication failures
 - PROCESSING_ERROR: Generic server-side processing failures
-- UNKNOWN: Unclassified errors with fallback handling
+- UNCLASSIFIED: Unclassified errors with fallback handling
+
+⚠️ No-raw-echo contract: every ``user_message`` and suggestion this service returns is a
+FIXED sentence chosen by category. The raw exception text is NEVER embedded in any value
+this module returns — it is a bug to add an f-string that re-inserts ``error_message`` into
+a handler's output. The raw message stays server-side (``media_file.last_error_message`` and
+the ERROR-level log), which is where `task_detection_service.py` reads it for OOM detection.
+
+``UserErrorReason`` is the USER-FACING vocabulary, distinct from
+``app.utils.error_classification.ErrorCategory`` — that module's enum drives RETRY policy
+(is this worth retrying, and how long to wait) and is never serialized to a client.
 
 All error processing is designed to be non-breaking - if categorization fails,
 the service gracefully falls back to generic error handling.
@@ -25,11 +36,11 @@ the service gracefully falls back to generic error handling.
 Example:
     Basic usage for categorizing an error:
 
-    category, message, suggestions = ErrorCategorizationService.categorize_error(error_msg)
+    reason, message, suggestions = ErrorCategorizationService.categorize_error(error_msg)
     error_info = ErrorCategorizationService.get_error_info(error_msg)
 
 Classes:
-    ErrorCategory: Enum defining all supported error categories.
+    UserErrorReason: Enum defining all supported user-facing error reasons.
     ErrorCategorizationService: Main service class for error processing.
 """
 
@@ -40,22 +51,31 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-class ErrorCategory(StrEnum):
-    """Error categories for user-friendly classification."""
+class UserErrorReason(StrEnum):
+    """User-facing error reasons for classification."""
 
     FILE_QUALITY = "file_quality"
+    NO_AUDIO_TRACK = "no_audio_track"
     NO_SPEECH = "no_speech"
     FORMAT_ISSUE = "format_issue"
     PROCESSING_ERROR = "processing_error"
     NETWORK_ERROR = "network_error"
     PERMISSION_ERROR = "permission_error"
-    UNKNOWN = "unknown"
+    UNCLASSIFIED = "unclassified"
 
 
 class ErrorCategorizationService:
     """Service for categorizing errors and providing user suggestions."""
 
     # Error patterns for categorization
+    NO_AUDIO_TRACK_PATTERNS = [
+        "does not contain any audio",
+        "no audio track",
+        "contains no audio track",
+        "no audio streams found",
+        "does not contain audio",
+    ]
+
     FILE_QUALITY_PATTERNS = [
         "no audio content",
         "corrupted",
@@ -84,6 +104,9 @@ class ErrorCategorizationService:
         "bitrate",
         "sample rate",
         "channels not supported",
+        "format is not supported",
+        "unsupported codec",
+        "convert to a common format",
     ]
 
     NETWORK_PATTERNS = [
@@ -101,14 +124,17 @@ class ErrorCategorizationService:
         "unauthorized",
         "drm",
         "protected content",
+        "password-protected",
+        "password protected",
+        "drm-protected",
     ]
 
     @staticmethod
-    def categorize_error(error_message: str | None) -> tuple[ErrorCategory, str, list[str]]:
+    def categorize_error(error_message: str | None) -> tuple[UserErrorReason, str, list[str]]:
         """Categorize an error and provide user-friendly information.
 
         This method analyzes error messages using pattern matching to classify
-        errors into predefined categories and provide contextual user guidance.
+        errors into predefined reasons and provide contextual user guidance.
 
         Args:
             error_message: The raw error message to categorize. Can be None
@@ -116,23 +142,24 @@ class ErrorCategorizationService:
 
         Returns:
             Tuple containing:
-            - ErrorCategory: The classified error category
-            - str: User-friendly error message for display
+            - UserErrorReason: The classified error reason
+            - str: User-friendly error message for display (a FIXED sentence,
+              never the raw error text)
             - list[str]: List of actionable suggestions for error resolution
 
         Note:
             Pattern matching is case-insensitive and uses substring matching
             for maximum flexibility. If no patterns match, the error is
-            classified as UNKNOWN with generic suggestions.
+            classified as UNCLASSIFIED with generic suggestions.
 
         Example:
-            >>> category, msg, suggestions = categorize_error("corrupted file")
-            >>> print(category)  # ErrorCategory.FILE_QUALITY
+            >>> reason, msg, suggestions = categorize_error("corrupted file")
+            >>> print(reason)  # UserErrorReason.FILE_QUALITY
             >>> print(len(suggestions))  # 5 specific suggestions
         """
         if not error_message:
             return (
-                ErrorCategory.UNKNOWN,
+                UserErrorReason.UNCLASSIFIED,
                 "An unknown error occurred during processing.",
                 ["Try uploading the file again", "Contact support if the problem persists"],
             )
@@ -144,39 +171,48 @@ class ErrorCategorizationService:
 
         error_lower = error_message.lower()
 
+        # Check for a missing audio track before the broader file-quality check —
+        # audio_processor.py's "no audio track" sentences would otherwise fall
+        # through to FILE_QUALITY, which carries the wrong suggestions and retry policy.
+        if any(
+            pattern in error_lower for pattern in ErrorCategorizationService.NO_AUDIO_TRACK_PATTERNS
+        ):
+            return ErrorCategorizationService._handle_no_audio_track_error()
+
         # Check for file quality issues
         if any(
             pattern in error_lower for pattern in ErrorCategorizationService.FILE_QUALITY_PATTERNS
         ):
-            return ErrorCategorizationService._handle_file_quality_error(error_message)
+            return ErrorCategorizationService._handle_file_quality_error()
 
         # Check for speech detection issues
         if any(pattern in error_lower for pattern in ErrorCategorizationService.NO_SPEECH_PATTERNS):
-            return ErrorCategorizationService._handle_no_speech_error(error_message)
+            return ErrorCategorizationService._handle_no_speech_error()
 
         # Check for format issues
         if any(pattern in error_lower for pattern in ErrorCategorizationService.FORMAT_PATTERNS):
-            return ErrorCategorizationService._handle_format_error(error_message)
+            return ErrorCategorizationService._handle_format_error()
 
         # Check for network issues
         if any(pattern in error_lower for pattern in ErrorCategorizationService.NETWORK_PATTERNS):
-            return ErrorCategorizationService._handle_network_error(error_message)
+            return ErrorCategorizationService._handle_network_error()
 
         # Check for permission issues
         if any(
             pattern in error_lower for pattern in ErrorCategorizationService.PERMISSION_PATTERNS
         ):
-            return ErrorCategorizationService._handle_permission_error(error_message)
+            return ErrorCategorizationService._handle_permission_error()
 
         # Generic processing error
-        return ErrorCategorizationService._handle_generic_error(error_message)
+        return ErrorCategorizationService._handle_generic_error()
 
     @staticmethod
-    def _handle_file_quality_error(error_message: str) -> tuple[ErrorCategory, str, list[str]]:
+    def _handle_file_quality_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle file quality/corruption errors."""
         return (
-            ErrorCategory.FILE_QUALITY,
-            f"File Quality Issue: {error_message}",
+            UserErrorReason.FILE_QUALITY,
+            "This file could not be read. It may be corrupted, incomplete, or not a valid "
+            "media file.",
             [
                 "Check if the file plays correctly on your device",
                 "Try converting to MP3, WAV, or MP4 format",
@@ -187,11 +223,24 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
-    def _handle_no_speech_error(error_message: str) -> tuple[ErrorCategory, str, list[str]]:
+    def _handle_no_audio_track_error() -> tuple[UserErrorReason, str, list[str]]:
+        """Handle files that contain no audio track at all."""
+        return (
+            UserErrorReason.NO_AUDIO_TRACK,
+            "This file has no audio track, so there is nothing to transcribe.",
+            [
+                "Upload a file that contains an audio track",
+                "If this is a video, check that audio was included when it was exported",
+                "Try uploading a different file to test",
+            ],
+        )
+
+    @staticmethod
+    def _handle_no_speech_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle no speech detected errors."""
         return (
-            ErrorCategory.NO_SPEECH,
-            f"No Speech Detected: {error_message}",
+            UserErrorReason.NO_SPEECH,
+            "No speech was detected in this recording.",
             [
                 "Ensure the file contains clear, audible speech",
                 "Check if speech is too quiet or unclear",
@@ -202,11 +251,11 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
-    def _handle_format_error(error_message: str) -> tuple[ErrorCategory, str, list[str]]:
+    def _handle_format_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle format/encoding errors."""
         return (
-            ErrorCategory.FORMAT_ISSUE,
-            f"Format Issue: {error_message}",
+            UserErrorReason.FORMAT_ISSUE,
+            "This file's format or codec is not supported.",
             [
                 "Convert to a supported format (MP3, WAV, MP4, M4A)",
                 "Try re-encoding with standard settings",
@@ -217,11 +266,11 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
-    def _handle_network_error(error_message: str) -> tuple[ErrorCategory, str, list[str]]:
+    def _handle_network_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle network/download errors."""
         return (
-            ErrorCategory.NETWORK_ERROR,
-            f"Network Issue: {error_message}",
+            UserErrorReason.NETWORK_ERROR,
+            "The file could not be retrieved. This is usually temporary.",
             [
                 "Check your internet connection",
                 "Verify the URL is accessible and not expired",
@@ -232,11 +281,11 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
-    def _handle_permission_error(error_message: str) -> tuple[ErrorCategory, str, list[str]]:
+    def _handle_permission_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle permission/access errors."""
         return (
-            ErrorCategory.PERMISSION_ERROR,
-            f"Access Issue: {error_message}",
+            UserErrorReason.PERMISSION_ERROR,
+            "Access to this content was refused. It may be protected or require sign-in.",
             [
                 "Ensure you have permission to access this content",
                 "Check if the content is behind a paywall or login",
@@ -247,11 +296,11 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
-    def _handle_generic_error(error_message: str) -> tuple[ErrorCategory, str, list[str]]:
+    def _handle_generic_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle generic processing errors."""
         return (
-            ErrorCategory.PROCESSING_ERROR,
-            f"Processing Failed: {error_message}",
+            UserErrorReason.PROCESSING_ERROR,
+            "Processing failed for this file.",
             [
                 'Use the "Retry" button to try processing again',
                 "Check the file format and quality",
@@ -274,15 +323,16 @@ class ErrorCategorizationService:
 
         Returns:
             Dictionary containing:
-            - category: String representation of the error category
-            - user_message: User-friendly error description
+            - category: String representation of the error reason
+            - user_message: User-friendly error description (never the raw error)
             - suggestions: List of actionable resolution steps
-            - original_error: The original error message (for debugging)
             - is_retryable: Boolean indicating if the error is worth retrying
 
         Note:
             The is_retryable field helps frontends determine whether to show
             retry buttons or encourage users to fix the underlying issue first.
+            The raw error message is deliberately NOT included here — it stays
+            server-side in `media_file.last_error_message` and the ERROR log.
 
         Example:
             >>> info = get_error_info("network timeout")
@@ -297,9 +347,12 @@ class ErrorCategorizationService:
             "category": category.value,
             "user_message": user_message,
             "suggestions": suggestions,
-            "original_error": error_message,
             "is_retryable": category
-            in [ErrorCategory.NETWORK_ERROR, ErrorCategory.PROCESSING_ERROR, ErrorCategory.UNKNOWN],
+            in [
+                UserErrorReason.NETWORK_ERROR,
+                UserErrorReason.PROCESSING_ERROR,
+                UserErrorReason.UNCLASSIFIED,
+            ],
         }
 
     @staticmethod

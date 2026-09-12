@@ -401,17 +401,27 @@ def _send_dispatch_failed_ws_event(media_file: MediaFile, user_id: int, message:
     Shape matches the ``file_updated`` event ``send_completion_notification``
     (``tasks/transcription/notifications.py``) sends on the success path, so the
     SPA's existing gallery handler needs no new branch — same field set, an ERROR
-    status and ``last_error_message`` in place of a completed one.
+    status and the sanitized error fields (``error_reason``/``user_message``/
+    ``error_suggestions``/``is_retryable``) in place of a completed one.
+
+    ⚠️ Never put the raw ``message`` on this payload — it is the only path by which
+    raw error text has ever reached the gallery (issue #786): this event's ``file``
+    is spread wholesale into the gallery's file object client-side.
     """
+    from app.services.error_categorization_service import ErrorCategorizationService
     from app.services.formatting_service import FormattingService
 
+    error_info = ErrorCategorizationService.get_error_info(message)
     file_data = {
         "id": str(media_file.uuid),
         "filename": media_file.filename,
         "status": FileStatus.ERROR.value,
         "content_type": media_file.content_type,
         "file_size": media_file.file_size,
-        "last_error_message": message,
+        "error_reason": error_info["category"],
+        "user_message": error_info["user_message"],
+        "error_suggestions": error_info["suggestions"],
+        "is_retryable": error_info["is_retryable"],
         "formatted_duration": FormattingService.format_duration(media_file.duration),
         "formatted_upload_date": FormattingService.format_upload_date(media_file.upload_time),
         "formatted_file_age": FormattingService.format_file_age(media_file.upload_time),

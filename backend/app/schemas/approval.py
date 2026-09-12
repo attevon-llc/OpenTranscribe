@@ -1,4 +1,4 @@
-"""Wire contract for the account-approval admin surface (``v379``).
+"""Wire contract for the account-approval admin surface (``v381``).
 
 Kept separate from ``schemas/user.py`` because the pending-queue row is a
 different projection from the full user record: it deliberately carries only what

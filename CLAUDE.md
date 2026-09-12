@@ -410,9 +410,9 @@ tests gated off behind stale env vars, and a progress endpoint returning a hardc
 no test referenced.
 
 ```bash
-python3 scripts/audit-tests.py backend/tests        # 16 AST detectors, exits 1 on new offenders
+python3 scripts/audit-tests.py backend/tests        # 21 AST detectors, exits 1 on new offenders
 cd frontend && npm run test:audit                   # the vitest sibling, 10 detectors
-npm run test:audit:selftest                         #   ...and ITS 21-case self-test
+npm run test:audit:selftest                         #   ...and ITS 27-case self-test
 python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
 ./scripts/run-mutation-tests.sh --module spans      # opt-in, never in the gate or CI
 ```
@@ -608,9 +608,17 @@ subsystem, and put new subsystem detail **there**, not in this file.
   it renders, don't assume. Two traps:
   - **`npm run check:i18n` enforces key PARITY, not translation.** A key copied into all 12 files
     with English text passes the gate and ships untranslated. Parity is the floor, not the goal.
-  - **It is a CI-only check** (`.github/workflows/pre-commit.yml`), *not* a pre-commit hook, so a
-    local commit that breaks parity looks clean and fails the PR. Run it yourself:
-    `cd frontend && npm run check:i18n`.
+  - **It runs in three places, and one of them has a gap.** (1) CI runs it explicitly
+    (`.github/workflows/pre-commit.yml:311`, "Check i18n key parity"). (2) It also runs
+    **locally** — `scripts/frontend-check.sh:235` calls `npm run check:i18n`, and that script
+    body **is** the `frontend-check` pre-commit hook (`.pre-commit-config.yaml`, `--check-only`
+    at commit stage), so a local `git commit` touching frontend code does run it. (3) The
+    residual gap: that hook's `files: ^frontend/src/` + `types_or: [svelte, ts, javascript,
+    css, html]` does not match `.json`, and locale files
+    (`frontend/src/lib/i18n/locales/*.json`) are tagged `json` by `identify` — so **a commit
+    that touches only locale JSON files does not fire the hook at all**, and a parity break
+    introduced purely in translation files looks clean locally and fails only in CI. Run it
+    yourself when in doubt: `cd frontend && npm run check:i18n`.
 
   This bites hardest on releases that touch a lot of copy at once, and on any long-lived branch:
   every locale file is a shared edit surface, so a branch that sits unmerged collects conflicts in

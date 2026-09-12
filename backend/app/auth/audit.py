@@ -230,6 +230,7 @@ class AuditLogger:
                                 "event_type": {"type": "keyword"},
                                 "outcome": {"type": "keyword"},
                                 "user_id": {"type": "integer"},
+                                "target_user_id": {"type": "integer"},
                                 "organization_id": {"type": "integer"},
                                 "username": {"type": "keyword"},
                                 "source_ip": {"type": "ip"},
@@ -618,6 +619,7 @@ def query_audit_logs(
     end_date: datetime | None = None,
     event_type: str | None = None,
     user_id: int | None = None,
+    target_user_id: int | None = None,
     outcome: str | None = None,
     scope_user_ids: list[int] | None = None,
     scope_org_id: int | None = None,
@@ -631,7 +633,15 @@ def query_audit_logs(
 
     Args:
         start_date / end_date: timestamp range filters.
-        event_type / user_id / outcome: equality filters.
+        event_type / user_id / outcome: equality filters. ``user_id`` filters on
+            the ACTOR.
+        target_user_id: equality filter on the ERASED/AFFECTED SUBJECT (issue
+            #443/#828) — a distinct field from ``user_id``, added once every
+            administrative emitter agreed on which field means what. "Everything
+            done TO user X" is this filter, not ``user_id``; "everything user X
+            did" is ``user_id``. Applied the same way as ``user_id`` — an
+            additional ``must`` clause — so it can only NARROW whatever
+            ``scope_user_ids``/``scope_org_id`` already admit, never widen it.
         scope_user_ids: when provided (without ``scope_org_id``), restrict
             results to events whose ``user_id`` is in this set. An **empty**
             list returns no results (a removed/empty org sees nothing) rather
@@ -680,6 +690,8 @@ def query_audit_logs(
             must_clauses.append({"term": {"event_type": event_type}})
         if user_id is not None:
             must_clauses.append({"term": {"user_id": user_id}})
+        if target_user_id is not None:
+            must_clauses.append({"term": {"target_user_id": target_user_id}})
         if outcome:
             must_clauses.append({"term": {"outcome": outcome}})
         if scope_org_id is not None:

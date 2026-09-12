@@ -10,7 +10,7 @@ inside `SettingsModal`. Media/transcript search is server-side hybrid keyword+se
 ## Key files
 
 - `settingsSearchIndex.ts` — builds the searchable corpus **from the flat i18n dictionary**
-  (`i18next.getResourceBundle`), not from component source. That is why search works in all 8
+  (`i18next.getResourceBundle`), not from component source. That is why search works in all 12
   locales for free and picks up enumerated option labels built from template-literal keys.
 - `fuzzyMatcher.ts` — thin fuse.js wrapper. The only custom part is NFD case/diacritic folding
   applied to both the indexed values and the query, so "vídeo" ⇄ "video".

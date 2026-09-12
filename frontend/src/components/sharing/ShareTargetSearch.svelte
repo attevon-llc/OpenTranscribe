@@ -3,6 +3,7 @@
   import { t } from '$stores/locale';
   import { GroupsApi } from '$lib/api/groups';
   import { createDebouncedHandler } from '$lib/utils/debounce';
+  import { getErrorStatus } from '$lib/utils/apiError';
   import Spinner from '../ui/Spinner.svelte';
   import type { ShareTargetSearchResult } from '$lib/types/groups';
 
@@ -13,6 +14,8 @@
   let searchQuery = '';
   let results: ShareTargetSearchResult[] = [];
   let loading = false;
+  // Distinct from "no results": a 429 must not read as "no such person" (issue #904).
+  let rateLimited = false;
   const debouncedSearch = createDebouncedHandler(() => doSearch(searchQuery), 300);
 
   // Cache groups to avoid fetching on every keystroke
@@ -41,10 +44,12 @@
   async function doSearch(query: string) {
     if (query.trim().length < 2) {
       results = [];
+      rateLimited = false;
       return;
     }
 
     loading = true;
+    rateLimited = false;
     try {
       // Search users and load cached groups in parallel
       const [users, allGroups] = await Promise.all([
@@ -55,8 +60,8 @@
       const userResults: ShareTargetSearchResult[] = users.map(u => ({
         type: 'user' as const,
         uuid: u.uuid,
-        name: u.full_name || u.email,
-        email: u.email,
+        name: u.full_name || u.masked_email,
+        detail: u.masked_email,
       }));
 
       // Filter cached groups by query
@@ -70,7 +75,11 @@
         r => !existingShareTargets.some(e => e.type === r.type && e.uuid === r.uuid)
       );
     } catch (err) {
-      console.error('Error searching share targets:', err);
+      if (getErrorStatus(err) === 429) {
+        rateLimited = true;
+      } else {
+        console.error('Error searching share targets:', err);
+      }
       results = [];
     } finally {
       loading = false;
@@ -85,6 +94,7 @@
     dispatch('select', target);
     searchQuery = '';
     results = [];
+    rateLimited = false;
   }
 </script>
 
@@ -110,6 +120,8 @@
       <Spinner size="small" />
       {$t('sharing.searching')}
     </div>
+  {:else if rateLimited}
+    <div class="no-results">{$t('common.rateLimited')}</div>
   {:else if results.length > 0}
     <ul class="search-results">
       {#each results as result (result.type + '-' + result.uuid)}
@@ -122,8 +134,8 @@
               </svg>
               <div class="result-info">
                 <span class="result-name">{result.name}</span>
-                {#if result.email && result.email !== result.name}
-                  <span class="result-detail">{result.email}</span>
+                {#if result.detail && result.detail !== result.name}
+                  <span class="result-detail">{result.detail}</span>
                 {/if}
               </div>
             {:else}

@@ -60,19 +60,121 @@ pytestmark = [
             "start with './opentr.sh start dev --with-mock-asr --with-mock-llm'"
         ),
     ),
-    # This module drives the ONE active-ASR-provider setting for the shared
-    # admin user (UserSetting "active_asr_config_id" is per-user, not per-config)
-    # and the pipeline through a single uploaded file at a time. Running two of
-    # its tests concurrently under xdist races both, exactly like the
-    # SystemSettings-key groups documented in backend/tests/CLAUDE.md.
+    # This module drives the ONE active-ASR-provider setting for its user
+    # (UserSetting "active_asr_config_id" is per-user, not per-config) and the
+    # pipeline through a single uploaded file at a time. Running two of its tests
+    # concurrently under xdist races both, exactly like the SystemSettings-key
+    # groups documented in backend/tests/CLAUDE.md.
+    #
+    # ⚠️ The group serialises this module against ITSELF and can do nothing about
+    # the other ~180 tests of the `-m integration` phase running on the other 23
+    # workers. That is why the user below is a throwaway rather than the shared
+    # admin account — see `lite_mode_user`.
     pytest.mark.xdist_group("lite_mode_mocked_providers"),
 ]
 
-# Same fixed dev-stack admin credentials used throughout backend/tests/e2e
-# (see backend/tests/CLAUDE.md's "shared identities" allow-list) — inlined
-# rather than imported since tests/e2e is not an importable package.
-_TEST_ADMIN_EMAIL = "admin@example.com"
-_TEST_ADMIN_PASSWORD = "password"
+# A throwaway per-run owner, NOT the shared `admin@example.com`. The active-ASR
+# provider is a per-USER setting, so while this module held a mock-Gladia config
+# active on the shared account, every *other* integration test that uploaded a
+# file as admin was transcribed through it too — and the GPU worker does not carry
+# `ASR_ALLOW_PRIVATE_ENDPOINTS=true` (only `backend` and `celery-cloud-asr-worker`
+# do, per docker-compose.mock-asr.yml), so the #594 SSRF guard refused the private
+# `mock-asr` hostname and failed the file. Measured 2026-09-11: that took out all
+# **15** of `tests/test_selective_reprocess.py`'s tests in one `-m integration`
+# run, as setup ERRORs reading `The file could not be retrieved` — a failure whose
+# every symptom pointed at a file this module never touches. Owning the account
+# makes the setting private and the blast radius zero.
+#
+# Same shape as `tests/fixtures/search_corpus_stack.py`'s `searchqual-` user; the
+# prefix is registered in `scripts/cleanup-test-users.py`'s
+# ORPHAN_PATTERNS_UNAMBIGUOUS so an interrupted run is swept, not leaked.
+_LITE_MODE_USER_PREFIX = "litemode-"
+_LITE_MODE_USER_DOMAIN = "@example.invalid"
+_LITE_MODE_PASSWORD = "lite-mode-fixture-pw-1"  # noqa: S105 — throwaway test user only
+
+
+@pytest.fixture(scope="module")
+def lite_mode_user():
+    """Create this module's throwaway owning user; delete it on teardown."""
+    import uuid as uuid_pkg
+
+    from app.core.security import get_password_hash
+    from app.db.base import SessionLocal
+    from app.models.user import User
+
+    email = f"{_LITE_MODE_USER_PREFIX}{uuid_pkg.uuid4().hex[:8]}{_LITE_MODE_USER_DOMAIN}"
+    db = SessionLocal()
+    try:
+        user = User(
+            email=email,
+            full_name="Lite Mode Mocked Providers Fixture",
+            hashed_password=get_password_hash(_LITE_MODE_PASSWORD),
+            is_active=True,
+            is_superuser=False,
+            role="user",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        user_id = user.id
+
+        yield {"id": user_id, "email": email, "password": _LITE_MODE_PASSWORD}
+
+        # Backstop only, and deliberately warn-don't-raise: `_delete_file_until_gone`
+        # is where the cleanup contract is enforced (it already warns, naming the
+        # uuid). Raising here would convert a transient cleanup miss into a
+        # module-scope teardown ERROR — trading one intermittent red gate for
+        # another, which is the whole thing this file is being fixed for.
+        #
+        # It purges through the **API**, not by deleting rows. Twelve tables carry an
+        # FK onto `media_file` (task, analytics, comment, file_facts,
+        # file_pipeline_timing, topic_suggestion, usage_event, …) and a hand-written
+        # row-delete order covering four of them raised ForeignKeyViolation on
+        # `task_media_file_id_fkey` the first time this fired — and would go stale
+        # again at the next migration. `DELETE /files/{uuid}/force` is the production
+        # purge and reaches MinIO and the search index too, which no row delete can.
+        import os
+        import warnings
+
+        from app.models.media import MediaFile
+
+        try:
+            leftover = [
+                str(row[0])
+                for row in db.query(MediaFile.uuid).filter(MediaFile.user_id == user_id).all()
+            ]
+            if leftover:
+                warnings.warn(
+                    f"lite-mode fixture user {email} still owned {len(leftover)} media "
+                    f"file(s) at module teardown ({leftover[:5]}) — a test's own cleanup "
+                    "did not complete; purging them now",
+                    stacklevel=2,
+                )
+                cleanup = requests.Session()
+                login = cleanup.post(
+                    f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api/auth/token",
+                    data={"username": email, "password": _LITE_MODE_PASSWORD},
+                    timeout=30,
+                )
+                if login.status_code == 200:
+                    cleanup.headers["X-CSRF-Token"] = cleanup.cookies.get("csrf_token") or ""
+                    base = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}"
+                    for uuid_str in leftover:
+                        _delete_file_until_gone(cleanup, base, uuid_str)
+                db.expire_all()
+            reloaded = db.get(User, user_id)
+            if reloaded is not None:
+                db.delete(reloaded)
+                db.commit()
+        except Exception as exc:  # noqa: BLE001 - a backstop must never fail the module
+            db.rollback()
+            warnings.warn(
+                f"lite-mode fixture user {email} could not be torn down ({exc!r}); "
+                "scripts/cleanup-test-users.py sweeps the `litemode-` prefix",
+                stacklevel=2,
+            )
+    finally:
+        db.close()
 
 
 @pytest.fixture(scope="module")
@@ -92,12 +194,12 @@ def backend_url() -> str:
 
 
 @pytest.fixture(scope="module")
-def api_session(backend_url: str) -> requests.Session:
-    """An authenticated API session, CSRF-armed for mutations."""
+def api_session(backend_url: str, lite_mode_user: dict) -> requests.Session:
+    """An authenticated API session for this module's own user, CSRF-armed."""
     session = requests.Session()
     response = session.post(
         f"{backend_url}/api/auth/token",
-        data={"username": _TEST_ADMIN_EMAIL, "password": _TEST_ADMIN_PASSWORD},
+        data={"username": lite_mode_user["email"], "password": lite_mode_user["password"]},
         timeout=30,
     )
     assert response.status_code == 200, f"Login failed: {response.status_code}"
@@ -114,6 +216,59 @@ def mock_asr_config(
     """Register the mock Gladia config as active, clean up on teardown."""
     config = register_mock_gladia_asr_config(api_session, f"{backend_url}/api")
     yield config
+
+
+# One attempt is not enough, and the miss is invisible. The postprocess fan-out
+# leaves LLM-backed downstream tasks (summarization, topic_extraction) running past
+# the point the test is done with the file, and a delete racing one of those is
+# refused — so the single best-effort attempt this used to make silently leaked a
+# completed media file, its MinIO object and its search-index entries onto the dev
+# stack. Observed once in a full `-m integration` phase (file 571034,
+# `topic_extraction` still `in_progress`); the same delete succeeded by hand
+# seconds later, which is what makes it a retry problem rather than a permissions
+# or state problem. Retries for ~30 s, escalates to /force, then VERIFIES.
+_DELETE_SETTLE_TIMEOUT_SECS = 30
+
+
+def _delete_file_until_gone(
+    api_session: requests.Session,
+    backend_url: str,
+    file_uuid: str,
+    timeout_secs: int = _DELETE_SETTLE_TIMEOUT_SECS,
+) -> None:
+    """Delete an uploaded file and confirm it is actually gone.
+
+    Cleanup must never fail an otherwise-passing test, so this raises nothing — but
+    it also must not pretend: a file that outlives its budget is reported through
+    ``pytest.fail``'s quieter sibling, a warning carrying the uuid, so the leak is
+    attributable instead of being discovered days later as unexplained dev-stack
+    residue (``backend/tests/CLAUDE.md``, "a test that reads whatever happens to be
+    in the dev stack").
+    """
+    import time
+    import warnings
+
+    deadline = time.time() + timeout_secs
+    while time.time() < deadline:
+        with contextlib.suppress(requests.RequestException):
+            resp = api_session.delete(f"{backend_url}/api/files/{file_uuid}", timeout=30)
+            if resp.status_code in (200, 204, 404):
+                check = api_session.get(f"{backend_url}/api/files/{file_uuid}", timeout=30)
+                if check.status_code == 404:
+                    return
+            else:
+                api_session.delete(f"{backend_url}/api/files/{file_uuid}/force", timeout=30)
+        time.sleep(2)
+
+    with contextlib.suppress(requests.RequestException):
+        api_session.delete(f"{backend_url}/api/files/{file_uuid}/force", timeout=30)
+        if api_session.get(f"{backend_url}/api/files/{file_uuid}", timeout=30).status_code == 404:
+            return
+    warnings.warn(
+        f"lite-mode test file {file_uuid} survived {timeout_secs}s of delete attempts and "
+        "is now residue on the dev stack — sweep it with scripts/cleanup-test-data.py",
+        stacklevel=2,
+    )
 
 
 def _last_mock_asr_request() -> dict:
@@ -140,13 +295,7 @@ def uploaded_file(api_session: requests.Session, backend_url: str, mock_asr_conf
     try:
         yield file_uuid
     finally:
-        try:
-            resp = api_session.delete(f"{backend_url}/api/files/{file_uuid}", timeout=30)
-            if resp.status_code not in (200, 204, 404):
-                api_session.delete(f"{backend_url}/api/files/{file_uuid}/force", timeout=30)
-        except requests.RequestException:
-            with contextlib.suppress(requests.RequestException):
-                api_session.delete(f"{backend_url}/api/files/{file_uuid}/force", timeout=30)
+        _delete_file_until_gone(api_session, backend_url, file_uuid)
 
 
 def _wait_for_indexed(
@@ -170,6 +319,60 @@ def _wait_for_indexed(
                 return True
         time.sleep(3)
     return False
+
+
+# Measured on the 2026-09-11 integration gate, from the container logs of the run that
+# failed (file 570602 vs 570603, celery-redaction): the FIRST file of a run pays a cold
+# Presidio/GLiNER/toxicity model load and its detection scan takes **2,467 ms**, against
+# **284 ms** for every later file once the models are warm. 60 s is ~24x that worst case,
+# so this cannot fire on a merely slow scan under gate load — it fires on a redaction row
+# that is genuinely stranded, which is a defect and must be loud rather than quiet.
+REDACTION_SETTLE_TIMEOUT_SECS = 60
+
+
+def _segments_when_redaction_settled(
+    api_session: requests.Session,
+    backend_url: str,
+    file_uuid: str,
+    timeout_secs: int = REDACTION_SETTLE_TIMEOUT_SECS,
+) -> list[dict]:
+    """Read the transcript, waiting out the redaction scan that withholds it.
+
+    ``status == "completed"`` is NOT a sufficient precondition for reading a transcript,
+    and that is the whole of this module's cross-test flakiness. The pipeline marks the
+    file COMPLETED and only **then** dispatches redaction detection, while
+    ``GET /files/{uuid}/segments`` deliberately withholds the transcript for as long as
+    that scan is in flight — answering ``200`` with
+    ``{"transcript_segments": [], "redaction_pending": true}``
+    (``app/api/endpoints/files/segments.py``, "Withhold the transcript until redaction
+    finishes"). A test that polls only the file status therefore races a window it never
+    looks at, and reads an empty list that means "not yet", not "this file has no
+    segments" — which is exactly how the gate produced
+    ``expected 7 canned segments, got 0`` against a file whose 7 segments were already
+    committed.
+
+    Waits on the readiness flag the API already publishes rather than on a fixed sleep,
+    and fails naming the last observed ``redaction_status`` if it never settles.
+    """
+    import time
+
+    deadline = time.time() + timeout_secs
+    last_status_code: int | None = None
+    last_redaction_status: str | None = None
+    while time.time() < deadline:
+        resp = api_session.get(f"{backend_url}/api/files/{file_uuid}/segments", timeout=30)
+        last_status_code = resp.status_code
+        if resp.status_code == 200:
+            payload = dict(resp.json())
+            if not payload.get("redaction_pending"):
+                return list(payload["transcript_segments"])
+            last_redaction_status = payload.get("redaction_status")
+        time.sleep(1)
+    raise AssertionError(
+        f"transcript for {file_uuid} never became readable within {timeout_secs}s "
+        f"(last HTTP status={last_status_code}, redaction_status={last_redaction_status!r}) — "
+        "a redaction scan that never settles strands the transcript on every read surface"
+    )
 
 
 def _poll_status(
@@ -201,9 +404,7 @@ class TestMockedAsrHappyPath:
         status = _poll_status(api_session, backend_url, uploaded_file)
         assert status == "completed", f"file did not complete (status={status})"
 
-        resp = api_session.get(f"{backend_url}/api/files/{uploaded_file}/segments", timeout=30)
-        assert resp.status_code == 200
-        segments = resp.json()["transcript_segments"]
+        segments = _segments_when_redaction_settled(api_session, backend_url, uploaded_file)
         assert len(segments) == CANNED_SEGMENT_COUNT, (
             f"expected {CANNED_SEGMENT_COUNT} canned segments, got {len(segments)}"
         )
@@ -217,9 +418,7 @@ class TestMockedAsrHappyPath:
         status = _poll_status(api_session, backend_url, uploaded_file)
         assert status == "completed", f"file did not complete (status={status})"
 
-        resp = api_session.get(f"{backend_url}/api/files/{uploaded_file}/segments", timeout=30)
-        assert resp.status_code == 200
-        segments = resp.json()["transcript_segments"]
+        segments = _segments_when_redaction_settled(api_session, backend_url, uploaded_file)
         labels = {seg["speaker_label"] for seg in segments if seg.get("speaker_label")}
         assert len(labels) == CANNED_SPEAKER_COUNT, f"expected 2 distinct speakers, got {labels}"
 

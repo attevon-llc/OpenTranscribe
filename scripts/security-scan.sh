@@ -24,6 +24,11 @@ OUTPUT_DIR="${OUTPUT_DIR:-./security-reports}"
 SEVERITY_THRESHOLD="${SEVERITY_THRESHOLD:-MEDIUM}"
 FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-true}"
 
+# This script's own directory, so the helpers under scripts/lib/ resolve regardless of the
+# caller's cwd (the release pipeline invokes it from the repo root, docker-build-push.sh from
+# scripts/, and a developer from anywhere).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Exit codes. THREE outcomes, not two (issue #681).
 #
 #   0  scanned, nothing blocking
@@ -307,6 +312,18 @@ run_dockle() {
 # full catalogue walks of the same image. On the ~13.8 GB backend image the walk is the whole
 # cost of this function.
 #
+# ⚠️ EVERY PROGRESS MESSAGE HERE GOES TO STDERR, AND THAT IS LOAD-BEARING TOO. This
+# function's stdout IS its return value — the caller runs it as
+# `generate_sbom ... > "${status_dir}/sbom_path.txt"` and then feeds that file's contents to
+# scan_grype as a path. With the banners on stdout, `sbom_path.txt` held six lines of ANSI
+# headers with the path last, `[ -f "${sbom_file}" ]` was false for that blob, and grype
+# silently took its `else` branch and re-catalogued the whole image — so the "Grype scan
+# (uses SBOM for speed)" comment at the call site described a branch that never ran.
+# A/B-measured before changing it (syft 1.33.0 + grype, `davidamacey/opentranscribe-docs:v0.5.0`
+# and `-backend-lite:v0.5.0`): the `(vuln id, package, version)` match sets from the SBOM and
+# from the image are IDENTICAL, so this restores the intended fast path without moving any
+# CVE count the release gate reads.
+#
 # Args: $1 image ref to scan · $2 report-filename stem · $3 source name (repo) ·
 #       $4 source version (release tag). $3/$4 are optional so a caller that genuinely has no
 #       repo/tag to name still works — it then gets syft's own reference-derived default.
@@ -316,7 +333,7 @@ generate_sbom() {
     local source_name="${3:-}"
     local source_version="${4:-}"
 
-    print_header "Generating SBOM for ${image}"
+    print_header "Generating SBOM for ${image}" >&2
 
     local sbom_file="${OUTPUT_DIR}/${component}-sbom.json"
     local sbom_txt="${OUTPUT_DIR}/${component}-sbom.txt"
@@ -328,8 +345,34 @@ generate_sbom() {
     syft "${image}" "${identity_args[@]}" \
         -o "cyclonedx-json=${sbom_file}" \
         -o "table=${sbom_txt}"
-    print_success "SBOM generated: ${sbom_file}"
-    print_info "Human-readable SBOM: ${sbom_txt}"
+    print_success "SBOM generated: ${sbom_file}" >&2
+    print_info "Human-readable SBOM: ${sbom_txt}" >&2
+
+    # Issue #886: syft records the image's `org.opencontainers.image.licenses` annotation as a
+    # `syft:image:labels:*` entry under metadata.properties, but has no way to populate
+    # CycloneDX's own `metadata.component.licenses` — the field a generic SBOM consumer reads
+    # to answer "what licence is the thing this document describes". `syft config` offers
+    # source name/version/supplier and no licence. So the promotion happens here, copying the
+    # value out of the document syft just wrote; the image LABEL stays the single source of
+    # truth and this never invents an identifier. See scripts/lib/sbom_license.py for why
+    # shipping package.json/pyproject.toml into the images was measured and rejected instead.
+    #
+    # A missing label WARNS rather than failing the scan: turning the SBOM step into a licence
+    # gate would add a new release-blocking surface, and the declaration is already gated at
+    # commit time by backend/tests/unit/test_first_party_license_declarations.py, which fails
+    # the unit suite on any production Dockerfile that drops it.
+    # The helper's own exit codes keep those two apart (3 = the image said nothing, 1 = we
+    # could not do the job), the same 1-vs-2 split this file already uses for findings vs
+    # could-not-scan. Collapsing them into one message would report a broken rewrite as an
+    # undeclared licence.
+    local promoted_license promote_rc=0
+    promoted_license=$(python3 "${SCRIPT_DIR}/lib/sbom_license.py" promote "${sbom_file}") \
+        || promote_rc=$?
+    case "${promote_rc}" in
+        0) print_info "SBOM licence: ${promoted_license} (from org.opencontainers.image.licenses)" >&2 ;;
+        3) print_warning "${image} declares no org.opencontainers.image.licenses label - the SBOM attributes no licence to it" >&2 ;;
+        *) print_warning "Could not write the licence into ${sbom_file} (sbom_license.py exit ${promote_rc}) - SBOM left as syft wrote it" >&2 ;;
+    esac
 
     echo "${sbom_file}"
 }

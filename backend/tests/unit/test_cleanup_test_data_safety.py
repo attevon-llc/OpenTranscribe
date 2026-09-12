@@ -239,6 +239,16 @@ _NOT_A_DATA_PREFIX = {
     # Docker container-name / compose-project prefix for the benchmark stack
     # (./opentr.sh bench) — infrastructure naming, not a DB row this script sweeps.
     "backend/tests/unit/test_opentr_bench_gates.py::_BENCH_PREFIX": "otbench-",
+    # A USER EMAIL prefix, not a media/collection/tag/etc. name — so it is swept by
+    # the sibling script `scripts/cleanup-test-users.py`, where it IS registered in
+    # `ORPHAN_PATTERNS_UNAMBIGUOUS` as 'litemode-%@example.invalid'. Exempt here
+    # because cleanup-test-data.py deliberately owns no user rows, NOT because the
+    # prefix is unswept: check that entry rather than taking this line's word for it.
+    # Same split as `search_corpus_stack.py`'s `searchqual-` owner, which avoids this
+    # allowlist only by spelling its prefix inline instead of naming a constant.
+    "backend/tests/integration/test_lite_mode_mocked_providers.py::_LITE_MODE_USER_PREFIX": (
+        "litemode-"
+    ),
 }
 
 

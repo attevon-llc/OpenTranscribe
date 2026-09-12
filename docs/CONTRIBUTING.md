@@ -466,7 +466,7 @@ Any other context, mockups, or examples
 
 ### Internationalization
 - Use translation keys instead of hardcoded strings
-- The UI supports 8 languages: English, Spanish, French, German, Portuguese, Chinese, Japanese, Korean
+- The UI supports 12 languages: English, Spanish, French, German, Italian, Portuguese, Dutch, Chinese, Japanese, Korean, Russian, Arabic
 - Translation JSON files live in `frontend/src/lib/i18n/locales/`
 - Support RTL languages
 - Consider cultural differences in UX

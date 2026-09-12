@@ -30,18 +30,18 @@ if TYPE_CHECKING:
 #: group DNs as the server returns them; ``oidc`` values are whatever the configured
 #: roles claim emits (realm roles, Authentik/Okta groups, Entra app roles); ``proxy``
 #: values are the names an authenticating reverse proxy puts in its groups header
-#: (``v380``). They are deliberately separate namespaces — a DN and a role name are
+#: (``v382``). They are deliberately separate namespaces — a DN and a role name are
 #: not interchangeable, and their matching rules differ (see the mapping service).
 MAPPING_SOURCE_LDAP = "ldap"
 MAPPING_SOURCE_OIDC = "oidc"
 MAPPING_SOURCE_PROXY = "proxy"
 MAPPING_SOURCES = (MAPPING_SOURCE_LDAP, MAPPING_SOURCE_OIDC, MAPPING_SOURCE_PROXY)
 
-#: ``user_group_member.source``. Every row that predates ``v376`` is ``manual`` and
+#: ``user_group_member.source``. Every row that predates ``v378`` is ``manual`` and
 #: must stay that way: reconciliation removes only what a directory pass added, so
 #: this value is the difference between "revocation works" and "a sync wipes the
 #: teams somebody built by hand". ``scim`` marks a membership an identity provider
-#: wrote through ``/scim/v2/Groups`` (``v380``) and is protected for the same reason:
+#: wrote through ``/scim/v2/Groups`` (``v382``) and is protected for the same reason:
 #: the provisioning system that created it is the one that gets to take it away.
 MEMBERSHIP_SOURCE_MANUAL = "manual"
 MEMBERSHIP_SOURCE_SCIM = "scim"
@@ -57,7 +57,7 @@ MEMBERSHIP_SOURCES = (
 #: else in :data:`MEMBERSHIP_SOURCES` is claim-derived and owned by the next pass.
 MEMBERSHIP_SOURCES_PROTECTED = (MEMBERSHIP_SOURCE_MANUAL, MEMBERSHIP_SOURCE_SCIM)
 
-#: The CHECK bodies, as SQL. Kept beside the tuples so the model and ``v380``'s
+#: The CHECK bodies, as SQL. Kept beside the tuples so the model and ``v382``'s
 #: constraint swap cannot drift — the consistency test compares the live constraint
 #: against these strings.
 MEMBERSHIP_SOURCES_SQL = ", ".join(f"'{s}'" for s in MEMBERSHIP_SOURCES)

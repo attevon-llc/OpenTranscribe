@@ -2,6 +2,7 @@
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
+  import { formatClock } from '$lib/utils/formatting';
   import SpeakerMerge from '$components/SpeakerMerge.svelte';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
@@ -84,11 +85,6 @@
     return placeholder;
   }
 
-  function formatSimpleTimestamp(seconds: number): string {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  }
 
   function handleSpeakerTimestampClick(startTime: number, segmentUuid: string, segmentIndex: number) {
     // Seek the media player to this timestamp
@@ -257,10 +253,10 @@
               {#each speaker.segment_timestamps as ts}
                 <button
                   class="timestamp-link"
-                  title={$t('transcript.jumpToTimestampTitle', { time: formatSimpleTimestamp(ts.start_time) })}
+                  title={$t('transcript.jumpToTimestampTitle', { time: formatClock(ts.start_time) })}
                   on:click={() => handleSpeakerTimestampClick(ts.start_time, ts.uuid, ts.segment_index)}
                 >
-                  {formatSimpleTimestamp(ts.start_time)}
+                  {formatClock(ts.start_time)}
                 </button>
               {/each}
               {#if speaker.segment_count > speaker.segment_timestamps.length}

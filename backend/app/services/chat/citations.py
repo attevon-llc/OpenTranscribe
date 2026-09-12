@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import re
 
+from app.core.config import settings
 from app.services.chat.redactor import MaskedChunk
 from app.services.ingest_artifacts.sizing import DIGEST_SECTION_MAX_WORDS
 
@@ -21,19 +22,52 @@ _CITATION_RE = re.compile(r"\[(\d{1,3})\]")
 #: Ceiling for an ORDINARY (unexpanded, non-digest) chunk citation. A PREFIX
 #: window, not centered or quote-aware — the first ``SNIPPET_CHARS`` characters
 #: of the excerpt, cut on a word boundary, so a positional sample of the
-#: excerpt is shown, not necessarily a quote-bearing one. Measured against a
-#: committed eval baseline (issue #832): 31% of chunk citations exceed this
-#: cap, and `quote_fidelity` (does a citation's displayed snippet actually
-#: contain the quote the model claims to cite) scores 0.328 on the truncated
-#: subset vs 0.671 on the complete one in the same run — truncation is a real,
-#: measured cost, not a theoretical one. Raising this further is explicitly
-#: DEFERRED (see the #832 follow-up issue): it needs a redaction-policy
-#: decision (a local model already receives this text unmasked, but a wider
-#: chunk-cap changes what a REMOTE provider or the on-screen card gets, and the
-#: citation card currently clamps to 2 lines regardless of snippet length, so
-#: raising this alone would have no reader-visible effect without a UI change
-#: too).
-SNIPPET_CHARS = 240
+#: excerpt is shown, not necessarily a quote-bearing one.
+#:
+#: **Derivation (issue #913).** 10 chars/word against
+#: :data:`~app.core.config.Settings.SEARCH_CHUNK_TARGET_WORDS` — the same
+#: per-chunk target :func:`~app.services.search.chunking_service` builds a
+#: chunk against (``chunking_service.py``'s accumulate-until-target loop), and
+#: the same 10-chars/word estimate :data:`DIGEST_SNIPPET_CHARS` and
+#: :data:`OVERVIEW_SNIPPET_CHARS` below already use. This is that method's
+#: THIRD ratified application, not a new one — #832 applied it twice
+#: (digest, overview) and #526 once (``EXPANDED_SNIPPET_CHARS``); "cover the
+#: whole chunk" replaces what used to be a flat, unexplained 240. Baked in at
+#: import time: changing ``SEARCH_CHUNK_TARGET_WORDS`` after the process has
+#: started does not move this constant.
+#:
+#: **A TARGET, not a hard ceiling.** ``chunking_service.py`` finalises a chunk
+#: when the NEXT sentence would exceed the target (a one-sentence overshoot is
+#: normal) and separately merges short same-speaker turns below it — so a real
+#: chunk can land on either side of this cap. ``…`` and ``content_chars``
+#: remain the honest signal for whatever residue that leaves; this constant is
+#: not a claim that truncation is now impossible.
+#:
+#: **What this does NOT change, corrected from an earlier (wrong) version of
+#: this comment.** A citation's ``snippet`` reaches no LLM provider at all —
+#: `chat/prompting.py` never reads it, and its only consumers are the SSE
+#: ``sources`` frame, the persisted ``citations`` JSONB column,
+#: ``chat/export.py``, ``chat/export_redaction.py`` and
+#: ``citation_takedown.py``. On a REMOTE provider the snippet is masked
+#: (``redactor.mask_chunks``), so widening this cap shows more MASKED text —
+#: zero new PII reaches that reader. The real exposure this widens is on a
+#: LOCAL provider with the admin masking floor off, where the snippet is raw
+#: transcript text (see :func:`build_citation`'s docstring and
+#: ``models/chat.py``'s ``ChatMessage`` docstring) — a per-citation volume
+#: increase of the same *kind* #832 already shipped default-on, 2.9x for
+#: :data:`DIGEST_SNIPPET_CHARS` and 8.75x for :data:`OVERVIEW_SNIPPET_CHARS`,
+#: not a new category of exposure.
+#:
+#: **Re-tuning this later needs evidence, not another guess.** Filter offered
+#: citations to ``kind == "chunk"``, take the ``content_chars`` distribution,
+#: and pick the smallest cap where ``snippet_truncation_rate`` < 5% AND
+#: ``quote_fidelity_truncated`` is no longer materially below
+#: ``quote_fidelity_complete`` — with ``quote_fidelity_at_240`` (see
+#: ``rag-evaluation.md``) as the paired control, since every historical
+#: ``quote_fidelity`` number on record (0.527 pooled, 0.328/0.671
+#: truncated/complete) was measured at the old 240 cap and is not comparable
+#: to a number measured at this one without it.
+SNIPPET_CHARS = 10 * settings.SEARCH_CHUNK_TARGET_WORDS
 
 #: Snippet ceiling for an EXPANDED citation (issue #526). ``context_expansion``
 #: already bounds a widened chunk to ``MAX_EXPANDED_WORDS`` (250) words before
@@ -76,10 +110,10 @@ OVERVIEW_SNIPPET_CHARS = 3 * DIGEST_SNIPPET_CHARS
 def _snippet(text: str, limit: int = SNIPPET_CHARS) -> str:
     """First ``limit`` chars of masked text, cut on a word boundary.
 
-    ``limit`` defaults to :data:`SNIPPET_CHARS` for an ordinary chunk —
-    unchanged from before issue #526, so an unexpanded citation's snippet is
-    byte-identical to today's. :func:`build_citation` passes
-    :data:`EXPANDED_SNIPPET_CHARS` for a chunk ``context_expansion`` widened,
+    ``limit`` defaults to :data:`SNIPPET_CHARS` for an ordinary chunk — the
+    indexing-target-derived cap (issue #913), not the flat 240 it replaced.
+    :func:`build_citation` passes :data:`EXPANDED_SNIPPET_CHARS` for a chunk
+    ``context_expansion`` widened,
     so the snippet can show the reader everything the model actually read
     instead of silently truncating a widened excerpt back down to the size of
     an ordinary one — the #526 defect (a citation naming a shorter span than
@@ -103,7 +137,17 @@ KIND_DIGEST = "digest"
 
 
 def build_citation(index: int, chunk: MaskedChunk) -> dict:
-    """Serialize one retrieved document as a citation payload (snippet masked).
+    """Serialize one retrieved document as a citation payload.
+
+    ``snippet`` is masked only insofar as the **egress** policy masked the
+    chunk it was sliced from (:func:`~app.services.chat.redactor.mask_chunks`)
+    — and on a deployment running a genuinely local provider with the admin
+    masking floor off, that policy deliberately masks nothing. So a snippet
+    here can be raw transcript text. Any surface that hands this payload to a
+    user must mask it for itself; ``chat/export_redaction.py`` is the one that
+    does, and ``api/endpoints/chat/citation_takedown.py`` re-checks quarantine
+    against it at read time. See ``models/chat.py``'s ``ChatMessage``
+    docstring, which states this same rule for the persisted column.
 
     A digest citation differs in three ways, each of which is a wrong answer if
     omitted (addendum **G7**):

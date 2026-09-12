@@ -128,11 +128,12 @@ repos:
         stages: [pre-push]
         verbose: true
 
-  # docs-site has no build hook at either stage today (issue #780), so a broken Docusaurus
-  # build is caught only in CI, and only by release-validate.yml's `docs` job — which fires on
-  # TAG PUSH, i.e. after the tag already exists. This hook is the same idea as frontend-build
-  # above: push-stage, not commit-stage, because a full Docusaurus build is a push-time cost,
-  # not an edit-loop one.
+  # The docs-site build runs at PUSH stage, both locally and in CI — same idea as
+  # frontend-build above, and the same reason: a full Docusaurus build is a push-time cost,
+  # not an edit-loop one. Locally that means this hook, below, at `stages: [pre-push]`; in CI,
+  # `.github/workflows/pre-commit.yml` runs `--hook-stage pre-push --all-files` on
+  # `pull_request` (see that file's `on:` block), so a PR exercises it too — it is not
+  # gated behind a tag push.
   #
   # `[ -d node_modules ] || npm ci` is required, not defensive: CI's pre-push setup-node step
   # (.github/workflows/pre-commit.yml) caches on frontend/package-lock.json and never installs

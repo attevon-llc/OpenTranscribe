@@ -10,12 +10,17 @@ from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
+from fastapi import Response
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.auth.rate_limit import get_search_rate_limit
+from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.core.config import settings
 from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
@@ -32,6 +37,8 @@ from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
 from app.services.search.reindex_cancel import read_fanout
 from app.services.search.reindex_cancel import request_cancel
+from app.services.search.summary_filters import SummarySearchFilters
+from app.services.search.summary_filters import parse_date_bound
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +115,10 @@ def _search_response_to_schema(response) -> dict[str, Any]:
 
 
 @router.get("")
+@limiter.limit(get_search_rate_limit(), key_func=user_or_ip_key)
 def search_transcripts(
+    *,
+    request: Request,
     q: str = Query(..., min_length=1, description="Search query"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(
@@ -151,6 +161,7 @@ def search_transcripts(
             "Defaults to transcripts for byte-identical behavior against existing callers."
         ),
     ),
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
@@ -180,6 +191,13 @@ def search_transcripts(
           already combine both keyword and semantic signals.
         - Sorting by 'completed_at' uses upload_time as a fallback since the completion
           timestamp is not indexed in the search layer.
+        - **Rate-limited** (issue #904), keyed per-user: ``RATE_LIMIT_SEARCH_PER_MINUTE``
+          (default 30/minute) — this route can burn ~2s of Presidio snippet masking
+          per call. ``/count`` and ``/suggestions`` are deliberately NOT limited: they
+          are per-keystroke polls by design (``TranscriptSearch.svelte``,
+          ``SearchAutocomplete.svelte``), built to be cheap
+          (see ``search_match_count``'s docstring), already quarantine-hardened by
+          issue #817. A 30/min cap on either would break the find bar.
     """
     valid_sort_fields = (
         "relevance",
@@ -213,7 +231,7 @@ def search_transcripts(
         from app.services.search.hybrid_search_service import HybridSearchService
 
         search_service = HybridSearchService()
-        response = search_service.search(
+        search_response = search_service.search(
             query=q,
             user_id=ctx.user.id,
             page=page,
@@ -241,9 +259,9 @@ def search_transcripts(
         # drop any taken-down files from the result page against the DB (page-sized,
         # one IN query). Admins keep visibility for review.
         if not ctx.user.is_admin:
-            response = _drop_quarantined_search_hits(db, response)
+            search_response = _drop_quarantined_search_hits(db, search_response)
 
-        payload = _search_response_to_schema(response)
+        payload = _search_response_to_schema(search_response)
     else:
         # Same shape a transcript-search response carries, with nothing found —
         # so a `summaries`-only caller still gets a well-formed SearchResponseSchema
@@ -262,19 +280,70 @@ def search_transcripts(
         }
 
     if want_summaries:
-        payload.update(_summary_search_payload(db, ctx, q, page, page_size))
+        # The SPA sends every filter on every tab, so the summary leg has to
+        # honour the same ones the transcript leg above just did — otherwise one
+        # request's two legs disagree about which files the caller asked for
+        # (issue #831). `date_from`/`date_to` reach the transcript leg as raw
+        # strings because OpenSearch parses them itself; Postgres does not, so
+        # they are parsed here and a bad value is a 400 rather than a silently
+        # dropped bound.
+        try:
+            summary_filters = SummarySearchFilters(
+                speakers=speakers,
+                tags=tags,
+                date_from=parse_date_bound(date_from, upper=False),
+                date_to=parse_date_bound(date_to, upper=True),
+                file_type=file_type,
+                collection_id=collection_id,
+                min_duration=min_duration,
+                max_duration=max_duration,
+                min_file_size=min_file_size,
+                max_file_size=max_file_size,
+                language=language,
+                title_filter=title_filter,
+                file_uuid=file_uuid,
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail="date_from and date_to must be ISO 8601 dates or datetimes",
+            ) from e
+        payload.update(_summary_search_payload(db, ctx, q, page, page_size, summary_filters))
 
-    if not want_transcripts:
-        # The transcript leg is what fills `total_pages` above; a `summaries`-only
-        # request never runs it, so the placeholder built earlier left it hardcoded
-        # at 0 regardless of how many summary hits were actually found, and real
-        # pagination never reached the client. `total_results`/`total_files` stay as
-        # built — they describe the (absent) transcript leg, same as `results == []`,
-        # and `summary_total` is that leg's own counter. `result_type` is validated
-        # to a single value earlier in this function, so `want_summaries` is
-        # necessarily true here — page over that leg's own total.
-        total_for_paging = payload.get("summary_total", 0)
-        payload["total_pages"] = math.ceil(total_for_paging / page_size) if total_for_paging else 0
+    if want_summaries:
+        # `total_pages` is the only paging signal the response carries, so it has
+        # to reach the END OF EVERY LEG the request asked for.
+        #
+        # `summaries`-only: the transcript leg is what normally fills it and
+        # never ran, so the placeholder built above left it hardcoded at 0 no
+        # matter how many summary hits were found, and real pagination never
+        # reached the client.
+        #
+        # `all` (issue #831 item 3): it was filled by the TRANSCRIPT leg alone,
+        # from that leg's own `total_files`. Every summary page past the
+        # transcript leg's last one was therefore unreachable — a client walking
+        # 1..total_pages never asked for them, and those hits were silently
+        # dropped. With zero transcript hits the transcript leg still reports
+        # `max(1, …) == 1`, so a three-page summary result lost two thirds of
+        # itself. The reverse direction was already correct and stays that way:
+        # the summary leg's offset simply runs past its end and returns `[]`.
+        #
+        # ⚠️ There is deliberately NO single combined count, and this is not an
+        # omission. `total_results`/`total_files` describe the transcript leg and
+        # `summary_total` the summary leg; the two count different things
+        # (transcript occurrences grouped by file, versus whole summaries), so
+        # one merged number would have to misreport at least one of them. The
+        # invariant that matters — and that the tests pin — is that each leg's
+        # own total matches what that leg's pages actually walk, and that the
+        # page count reaches the end of both. Nothing is interleaved into a
+        # single ranked sequence either: an RRF fusion score and a `ts_rank` are
+        # not on a common scale, so ordering them against each other would be a
+        # fabricated ranking, not a combined one.
+        summary_pages = math.ceil(payload.get("summary_total", 0) / page_size)
+        if want_transcripts:
+            payload["total_pages"] = max(int(payload.get("total_pages") or 0), summary_pages)
+        else:
+            payload["total_pages"] = summary_pages
 
     return payload
 
@@ -392,9 +461,54 @@ def _drop_quarantined_search_hits(db: Session, response: Any) -> Any:
 
 
 def _summary_search_payload(
-    db: Session, ctx: RequestContext, q: str, page: int, page_size: int
+    db: Session,
+    ctx: RequestContext,
+    q: str,
+    page: int,
+    page_size: int,
+    filters: SummarySearchFilters,
 ) -> dict[str, Any]:
-    """Build the ``summary_results``/``summary_total`` pair for issue #462.
+    r"""Build the ``summary_results``/``summary_total`` pair for issue #462.
+
+    ⚠️ Deliberately UNCACHED — do not "finish the job" by adding a response
+    cache here the way the transcript leg has one (issue #822's plan named this
+    as a possible follow-up and it was rejected). A cached page is a cached
+    verdict: this payload's shape already depends on the caller's redaction
+    policy AND on quarantine state, and re-serving a page for
+    `SEARCH_CACHE_TTL_SECONDS` after a file is quarantined would reopen #818 —
+    a taken-down summary still readable, from cache, for the whole TTL. The
+    transcript-search cache can afford this because that leg re-checks
+    quarantine per request too (`_drop_quarantined_search_hits`); a summary
+    cache would need the identical re-check on every read, which is exactly the
+    round trip a cache exists to avoid. Not worth it for a corpus this small
+    (one JSONB blob per file, per `search_summaries`' own docstring).
+
+    **The same argument covers ACCESS, not only takedown.** Both authorities on
+    this surface — `get_accessible_file_ids_subquery` and `exclude_quarantined`
+    — are PRE-filters inside the query (#818 moved quarantine there so `total`
+    and the page offsets stay honest). A pre-filter's verdict is therefore baked
+    into the page, with no post-filter left downstream to re-apply it: unlike
+    the transcript leg, there is nothing here that a cached page would still be
+    re-checked by. Both authorities are time-varying by design, and neither is a
+    property of the query text a key would be built from.
+
+    ⚠️ **And the obvious key does not close it.** The transcript leg folds
+    `hybrid_search_service._search_corpus_version()` into `_make_cache_key`, so
+    reusing that counter here is the natural move — and it genuinely does cover
+    the takedown case (`takedown_service.quarantine_file`/`release_file` both
+    call `bump_corpus_version`). But it is bumped by exactly three things, and
+    those are all of them: chunk-plane indexing writes
+    (`indexing_service._invalidate_chat_retrieval_cache`, from
+    `index_transcript_chunks` and rename propagation), quarantine, and release.
+    A **collection share grant or revocation** (`endpoints/media_collections.py`)
+    and a **summary regeneration** (`tasks/summarization.py`, which rewrites the
+    very `media_file.summary_data` this leg reads) bump nothing. So a
+    corpus-version-keyed cache would keep serving an ex-recipient the summary
+    snippets of a collection they were just removed from, and keep serving the
+    pre-regeneration summary, for the rest of `SEARCH_CACHE_TTL_SECONDS` —
+    while *reading* as though it were invalidated. Verify that call-site list
+    before reconsidering (`rg 'bump_corpus_version\(\)' backend/app`); a cache
+    here needs an invalidation signal that does not yet exist.
 
     Access control is ``PermissionService.get_accessible_file_ids_subquery`` —
     the same authority every owner-scoped listing uses — applied inside
@@ -404,15 +518,22 @@ def _summary_search_payload(
     the same subject the summary-detail endpoint already resolves) and fails
     CLOSED: a detector outage feeding one of the caller's enabled categories
     withholds these results with a 503 rather than serving an unmasked
-    summary. Masking runs per-leaf, before any snippet is extracted — see
-    ``services/search/summary_search.py`` and ``redaction/summary_redaction.py``
-    for why batching leaks repeated names.
+    summary. Masking runs per-leaf, on each leaf actually RETURNED, before any
+    snippet is extracted — see ``services/search/summary_search.py`` and
+    ``redaction/summary_redaction.py`` for why batching leaks repeated names,
+    and for why only the returned leaves are examined (issue #822).
 
     Quarantine is applied INSIDE ``search_summaries`` via
     ``exclude_quarantined`` — a pre-filter, so ``summary_total`` and the page
     offsets are consistent with what is returned. This function used to
     post-filter the hit list here; that left the count disclosing a
     taken-down file whose hit fell outside the requested page (#818).
+
+    ``filters`` (the request's date/tag/collection/… filters) goes the same way
+    and for the same reason — into ``search_summaries``' own query, never a pass
+    over the returned hits. Applying them here instead would leave
+    ``summary_total`` counting files the page had just removed, which is the
+    #818 shape exactly. See ``services/search/summary_filters.py``.
     """
     from app.services.redaction.config import resolve_effective_config
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
@@ -429,6 +550,7 @@ def _summary_search_payload(
             page_size=page_size,
             redaction_cfg=cfg,
             include_quarantined=ctx.user.is_admin,
+            filters=filters,
         )
     except SummaryMaskingUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e

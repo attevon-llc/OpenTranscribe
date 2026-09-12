@@ -36,6 +36,7 @@ from app.auth import pki_auth
 from app.auth.oidc import provisioning as oidc_provisioning
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.saml import provisioning as saml_provisioning
+from app.core.exceptions import ExternalIdentityLinkRefusedError
 
 
 class _FakeUser:
@@ -427,7 +428,7 @@ class TestExternalSyncProviderIdGuard:
         user = _FakeUser(email="victim@example.com", auth_type="cloudidp")
         db = cast("Any", _FakeProviderIdSession(user))
 
-        with pytest.raises(PermissionError):
+        with pytest.raises(ExternalIdentityLinkRefusedError):
             external_sync.sync_external_user_to_db(db, self._identity("attacker@example.com"))
 
         assert user.email == "victim@example.com", "the account row must be left untouched"
@@ -444,7 +445,7 @@ class TestExternalSyncProviderIdGuard:
         user = _FakeUser(email="victim@example.com", role="super_admin", auth_type="cloudidp")
         db = cast("Any", _FakeProviderIdSession(user))
 
-        with pytest.raises(PermissionError):
+        with pytest.raises(ExternalIdentityLinkRefusedError):
             external_sync.sync_external_user_to_db(db, self._identity("victim@example.com"))
 
 

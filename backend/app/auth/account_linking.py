@@ -56,7 +56,16 @@ so the *next* login matches by that identifier and never reaches this branch at
 all. That is a decision an administrator makes, not one an external directory
 makes on its own — and it is also the fix for a source that can never assert
 ``email_verified`` in the first place (Authentik hardcodes it ``false`` for every
-account; see the endpoint's docstring).
+account; see the endpoint's docstring). **It also converts the account's
+``auth_type``** (issue #912): before that fix the identifier was stamped without
+touching ``auth_type``, so a ``local`` account could end up carrying an
+``ldap_uid``/``oidc_subject``/``pki_subject_dn`` while every other reader of
+``auth_type`` still believed it authenticated with a local password — precisely
+the contradictory state this module's provider-ID branch has to resolve for. The
+conversion only ever fires from ``local``; an already-external ``auth_type`` (a
+``pki`` account with ``allow_local_fallback``, or a downstream registry provider)
+is left alone, so this is a one-way door out of ``local``, never a demotion
+between two external methods.
 
 Two refusals, two remedies (issue #867)
 ---------------------------------------
@@ -78,7 +87,12 @@ Both are super_admin, both audited, both refuse a ``super_admin`` target, and bo
 exist because the alternative — trusting whatever the source asserts — is the
 takeover this module was written to refuse. The second is deliberately narrow: it
 refuses an account carrying no external identifier at all, so it is a remedy for a
-linked identity and not a general "rewrite anyone's login email" power.
+linked identity and not a general "rewrite anyone's login email" power. **Since
+#912 it is narrower still**: it also refuses an ``auth_type == local`` account
+even when one of those identifier columns happens to be set — the state
+``link-identity`` can no longer produce, but that ``scim_service.create_user``
+still legitimately does (a SCIM-provisioned account is ``local`` + ``external_id``
+by design, and that pairing is not touched by either narrowing).
 """
 
 import logging

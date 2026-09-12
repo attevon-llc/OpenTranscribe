@@ -221,17 +221,24 @@ def apply_tag_to_file(
     except Exception as exc:
         # ROLLBACK TO SAVEPOINT: undoes only this file and clears the aborted
         # transaction state, so the files after it are still processable.
+        # `message` below is rendered verbatim into BulkActionResult.message
+        # (api/endpoints/files/management.py) -- never interpolate the raw
+        # exception text, only its class name.
         savepoint.rollback()
-        logger.warning("Bulk tag change failed for file %s: %s", file_id, exc)
-        return BulkTagResult(BulkTagOutcome.FAILED, f"Tag change failed: {exc}", MUTATION_ERROR)
+        logger.exception("Bulk tag change failed for file %s", file_id)
+        return BulkTagResult(
+            BulkTagOutcome.FAILED, f"Tag change failed ({type(exc).__name__})", MUTATION_ERROR
+        )
 
     try:
         savepoint.commit()
         db.commit()
     except Exception as exc:
         db.rollback()
-        logger.warning("Bulk tag commit failed for file %s: %s", file_id, exc)
-        return BulkTagResult(BulkTagOutcome.FAILED, f"Tag change failed: {exc}", MUTATION_ERROR)
+        logger.exception("Bulk tag commit failed for file %s", file_id)
+        return BulkTagResult(
+            BulkTagOutcome.FAILED, f"Tag change failed ({type(exc).__name__})", MUTATION_ERROR
+        )
 
     return BulkTagResult(outcome, message)
 

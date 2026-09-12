@@ -78,7 +78,7 @@ class _EmptyQuery:
 class FakeSession:
     """A Session stand-in.
 
-    The sweep commits through it, and since v376 also reads the account's existing
+    The sweep commits through it, and since v378 also reads the account's existing
     group memberships (there are none here, which is the point — a deployment with
     no ``group_mapping`` rows must reconcile to no changes at all).
     """

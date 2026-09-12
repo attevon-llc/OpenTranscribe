@@ -32,6 +32,7 @@ Key metric names (stable; dashboards are built against these):
 | `db_queries_per_request` | Histogram | `method`, `route` |
 | `cache_operations_total` | Counter | `cache` (`redis`/`settings`), `result` (`hit`/`miss`) |
 | `celery_queue_depth` | Gauge | `queue` |
+| `celery_queue_reserved` | Gauge | `queue` |
 | `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`external`) |
 | `files_uploaded_total` | Counter | `source` (`upload`/`url`/`watch`) |
 
@@ -77,7 +78,12 @@ Two dashboards are auto-provisioned into the **OpenTranscribe** folder:
 - **Requests in flight** — a stat panel off `http_requests_in_flight`; watch this near the DB pool ceiling.
 - **DB queries per request — p95 by route** — the duplicate-call radar. A route whose p95 jumps to dozens of queries is doing N+1 or repeated identical lookups within one request.
 - **DB query latency p99 / p95** and **cache hit ratio by cache** (split by the `redis` / `settings` cache label).
-- **Celery queue depth by queue** (summed across priority sub-keys).
+- **Celery queue depth by queue** (summed across priority sub-keys). `celery_queue_depth`
+  stays pending-only for this panel's existing meaning; the newer `celery_queue_reserved`
+  (tasks a worker has picked up and not yet acknowledged — prefetched, or RUNNING under
+  `acks_late=True`) is exposed on `/metrics` but has no panel of its own yet. Autoscale on
+  `celery_queue_depth + celery_queue_reserved` — depth alone trends to zero as the fleet
+  saturates.
 - **Signups / uploads rate** product counters (API-process events).
 
 **OpenTranscribe — Product & Usage** (`product.json`, mixed datasources):
@@ -481,7 +487,7 @@ to the heap. Young-gen pressure is not exhaustion.
 | Disk space | `df -h` | Under 10% free | Clean old transcriptions, expand storage |
 | GPU VRAM | `nvidia-smi` | >90% sustained | Reduce `BATCH_SIZE`, lower concurrency |
 | GPU temperature | `nvidia-smi` | >85 C | Improve cooling, reduce workload |
-| `gpu` queue depth | Flower dashboard | >20 pending | Add GPU workers or upgrade GPU |
+| `gpu` queue depth + reserved | Flower dashboard, or `celery_queue_depth{queue="gpu"} + celery_queue_reserved{queue="gpu"}` | >20 pending+reserved | Add GPU workers or upgrade GPU |
 | PostgreSQL connections | `pg_stat_activity` | >80% of max_connections | Increase `PG_MAX_CONNECTIONS` |
 | OpenSearch heap | `_nodes/stats/jvm` | >85% of heap | Increase `OPENSEARCH_JAVA_OPTS` |
 | Redis memory | `redis-cli info memory` | >80% of maxmemory | Increase limit or tune eviction |

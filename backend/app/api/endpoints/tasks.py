@@ -204,6 +204,14 @@ def _create_task_dict_from_media_file(
         created_at = file.upload_time
         updated_at = file.upload_time
 
+    # Never put the raw exception text on the wire (issue #786) — a client-facing
+    # error_message is a fixed sentence from ErrorCategorizationService, for both the
+    # real-task branch (task.error_message) and the synthesized one above.
+    if error_message:
+        from app.services.error_categorization_service import ErrorCategorizationService
+
+        error_message = ErrorCategorizationService.get_error_info(error_message)["user_message"]
+
     return {
         "id": task_id,
         "user_id": str(current_user.uuid),
@@ -480,11 +488,17 @@ def recover_all_stuck_tasks(
                 # PER-FILE catch deliberately: one bad config must not abort the sweep
                 # for everyone else. What changes is the outcome now reaches the
                 # caller, not just the log. File is marked ERROR by dispatch itself.
-                logger.error(
-                    f"Failed to re-dispatch transcription for file {file_uuid}: {e}",
-                    exc_info=True,
+                #
+                # retry_failures is returned verbatim in this endpoint's response body
+                # (see below) — never interpolate the raw exception text here, only its
+                # class name (#914). Same sanitization as recover_task's dispatch_error
+                # a few hundred lines down; the original #914 scanner missed this site
+                # because the taint flows into a list .append() rather than an
+                # assignment or a return.
+                logger.exception(f"Failed to re-dispatch transcription for file {file_uuid}")
+                retry_failures.append(
+                    {"file_uuid": file_uuid, "error": f"Re-dispatch failed ({type(e).__name__})"}
                 )
-                retry_failures.append({"file_uuid": file_uuid, "error": str(e)})
 
         return {
             "success": not retry_failures,
@@ -676,11 +690,11 @@ def recover_task(
                 except ASRConfigurationError:
                     raise  # let it reach main.py's 503 handler
                 except Exception as e:
-                    logger.error(
-                        f"Failed to re-dispatch transcription for file {file_uuid}: {e}",
-                        exc_info=True,
-                    )
-                    dispatch_error = str(e)
+                    # dispatch_error is returned verbatim in this endpoint's response
+                    # body (see below) — never interpolate the raw exception text
+                    # here, only its class name (#914).
+                    logger.exception(f"Failed to re-dispatch transcription for file {file_uuid}")
+                    dispatch_error = f"Re-dispatch failed ({type(e).__name__})"
 
         return {
             "success": success and dispatch_error is None,

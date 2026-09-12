@@ -1,6 +1,11 @@
 # Spec — summary search, display, and redaction
 
-**Status:** designed, not built. Tracked as tasks #89 (search) and #90 (redaction).
+**Status:** shipped. Postgres FTS over `summary_data`, exposed as `result_type` on
+`/api/search` (`services/search/summary_search.py`, frontend legs in
+`routes/search/+page.svelte` + `stores/search.ts`). Tracked as #462 (search, open) and #465
+(redaction, CLOSED) — **not** #89/#90, which are unrelated MERGED PRs from October 2025;
+citing them here would resolve to the wrong issue, the same "citation that resolves and
+misleads" defect as #875. Multi-select UI: #760. Uncached-redaction residual: #822.
 **Decided:** 2026-08-14, with the owner.
 **Supersedes:** the "add `doc_type: summary` to the v6 index" idea, rejected below.
 
@@ -75,21 +80,23 @@ BLUF/decisions/action-items.
   Already present: `SearchableMultiSelect.svelte`, `CollectionsFilter.svelte`,
   `FilterSidebar.svelte`; chat's `FilePickerModal` composes `BaseModal` + `Tabs`.
 - Advanced-search affordance when scoped to a collection or group.
-- Light/dark parity; i18n keys across all 8 locales (`npm run check:i18n` enforces exact parity).
+- Light/dark parity; i18n keys across all 12 locales (`npm run check:i18n` enforces exact parity).
 
-## 4. Redaction (task #90) — deferred, deliberately
+## 4. Redaction (#465) — shipped
 
-**Summaries are displayed completely unmasked today.** A user whose policy masks PII sees a masked
-transcript and an unmasked summary *of that same transcript* — and because the summary is
-abstractive, it can restate the same PII in the model's own words. That is the class
-`output_redactor.py` was built for on the chat side (#66).
+`redaction/summary_redaction.py`'s `mask_summary` masks summary text at read time and is wired
+through every surface that serves one: `summarization.py`, `search.py`, `summary_search.py`,
+`summary_export_service.py`, `chat/export_redaction.py`, `aggregation_service.py`. The gap this
+section originally described — a masked transcript sitting beside a completely unmasked summary
+*of that same transcript*, which an abstractive model could restate the same PII into in its own
+words — is closed.
 
 **Why the cached spans do not help:** `redactions` is a column on `TranscriptSegment`, holding
 char offsets into *segment* text. A summary is different, LLM-authored text; those offsets address
 nothing in it. Masking a summary requires **detecting over it**, not applying stored spans. This is
 what made it look expensive.
 
-**It is no longer expensive.** Three things landed that change the cost:
+**What made it affordable:**
 
 - `services/search/snippet_redaction.py` (`f02b3640`) already does this exact job: detect over
   arbitrary read-time text, gate on the user's enabled categories, fail closed.
@@ -100,9 +107,8 @@ what made it look expensive.
   after the first *while labelling the page as masked*. Measured on the snippet path: the batched
   version leaked in 31 of 32 snippets.
 
-**Owner decision:** deferred. Summary search *surfaces* this gap rather than creating it, so
-shipping the search without it is not a regression. **Close it before summary search reaches
-users.**
+**Residual, tracked separately:** #822 — repeated per-read detection cost (not a correctness gap;
+detection is not cached across reads of the same summary).
 
 Display and search must not diverge — that divergence is precisely what made subtitle export a
 separate defect from transcript display (#85 vs `0eecd839`).
@@ -111,8 +117,11 @@ separate defect from transcript display (#85 vs `0eecd839`).
 
 1. Does the summary result link to a section anchor in the modal, or does the modal open and
    scroll? The former needs stable section ids, which conflicts with §3's "sections are not a
-   fixed schema".
-2. Should summary search respect collection/group sharing the same way transcript search does?
-   (Almost certainly yes — it reads the same `media_file` rows — but state it and test it.)
-3. Ranking between the two sub-sections when the toggle is on "all": interleaved by score, or
-   grouped with transcripts first? Grouped is simpler and matches the "different jobs" rationale.
+   fixed schema". **Open.**
+2. ~~Should summary search respect collection/group sharing the same way transcript search does?~~
+   **Answered: yes.** `summary_search.py:20-22` reuses
+   `PermissionService.get_accessible_file_ids_subquery` — the same sharing/tenant gate transcript
+   search uses.
+3. ~~Ranking between the two sub-sections when the toggle is on "all": interleaved by score, or
+   grouped with transcripts first?~~ **Answered: grouped, not interleaved.** The `result_type`
+   toggle at `search.py:147,204-210` decides which group is shown rather than fusing their scores.

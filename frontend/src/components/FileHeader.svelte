@@ -176,9 +176,17 @@
   </div>
 
   <!-- Processing Status Display -->
-  {#if file?.status === 'error' && file?.error_message}
-    <div class="status-message error">
-      <p><strong>{$t('fileDetail.processingStatus')}:</strong> {file.error_message}</p>
+  {#if file?.status === 'error'}
+    <div class="status-message error" role="alert">
+      <p class="error-heading"><strong>{$t('fileDetail.errorTitle')}</strong></p>
+      <p>{file.user_message || $t('fileDetail.errorGeneric')}</p>
+      {#if file.error_suggestions?.length}
+        <p class="error-suggestions-title">{$t('fileDetail.errorSuggestionsTitle')}</p>
+        <ul class="error-suggestions">
+          {#each file.error_suggestions as suggestion}<li>{suggestion}</li>{/each}
+        </ul>
+      {/if}
+      {#if file.is_retryable}<p class="error-retryable">{$t('fileDetail.errorRetryable')}</p>{/if}
     </div>
   {/if}
 
@@ -289,7 +297,7 @@
     margin: 16px 0;
     padding: 12px 16px;
     border-radius: 8px;
-    border-left: 4px solid;
+    border-inline-start: 4px solid;
   }
 
   .status-message.error {
@@ -302,6 +310,32 @@
     margin: 0;
     font-size: 14px;
     font-weight: 500;
+  }
+
+  .status-message .error-heading {
+    margin-bottom: 4px;
+  }
+
+  .status-message .error-suggestions-title {
+    margin-top: 8px;
+    font-weight: 600;
+  }
+
+  .status-message .error-suggestions {
+    margin: 4px 0 0;
+    padding-inline-start: 20px;
+    font-size: 14px;
+    font-weight: 400;
+  }
+
+  .status-message .error-suggestions li {
+    margin: 2px 0;
+  }
+
+  .status-message .error-retryable {
+    margin-top: 8px;
+    font-weight: 400;
+    font-style: italic;
   }
 
   .processing-info {

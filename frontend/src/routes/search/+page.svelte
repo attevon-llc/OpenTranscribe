@@ -4,7 +4,7 @@
   import { goto, beforeNavigate } from '$app/navigation';
   import axiosInstance, { isRequestCancelled } from '$lib/axios';
   import { t } from '$stores/locale';
-  import { getErrorMessage } from '$lib/utils/apiError';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { searchStore, type SearchResponse, type SearchOccurrence, type SearchResultType } from '$stores/search';
   import SearchResultCard from '$components/search/SearchResultCard.svelte';
   import SearchTranscriptModal from '$components/search/SearchTranscriptModal.svelte';
@@ -17,7 +17,6 @@
   import FloatingPreviewPlayer from '$components/FloatingPreviewPlayer.svelte';
   import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
-  import { prefetchNextSearchPage } from '$lib/prefetch';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
 
   const searchSortOptions: SortOption[] = [
@@ -290,18 +289,18 @@
       searchStore.setResults(searchData);
       // D3: Store params that produced these results
       searchStore.setLastSearchParams(buildSearchParamsString(query, pageNum));
-
-      // Prefetch next page of results
-      const totalPages = Math.ceil((searchData.total_results || 0) / $searchStore.pageSize);
-      if (totalPages > pageNum) {
-        prefetchNextSearchPage(query, pageNum, totalPages, apiParams);
-      }
     } catch (e: unknown) {
       // A superseded search is not a failure: a newer request owns the results
       // and the loading flag, so leave both alone.
       if (isRequestCancelled(e)) return;
-      console.error('Search failed:', e);
-      searchStore.setError(getErrorMessage(e, $t('search.searchFailed')));
+      if (getErrorStatus(e) === 429) {
+        // Localized throttle copy, not the English string
+        // rate_limit_exceeded_handler puts in the response detail (issue #904).
+        searchStore.setError($t('common.rateLimited'));
+      } else {
+        console.error('Search failed:', e);
+        searchStore.setError(getErrorMessage(e, $t('search.searchFailed')));
+      }
       searchStore.setLoading(false);
     } finally {
       if (searchController === controller) searchController = null;

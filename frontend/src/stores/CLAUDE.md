@@ -24,7 +24,7 @@ caches of API responses.
 - `transcriptStore.ts` — transcript segments + processed cache (used by transcript views/analytics).
 - `notificationsPanel.ts`, `downloads.ts`, `uploads.ts`, `recording.ts`, `gallery.ts`, `search.ts`,
   `sharing.ts`, `groups.ts`, `llmStatus.ts`, `network.ts`, `locale.ts`, `theme.js`,
-  `speakerColors.ts`, `audioPlaybackStore.ts`, `settingsModalStore.ts`.
+  `audioPlaybackStore.ts`, `settingsModalStore.ts`.
 
 ## Conventions / patterns
 

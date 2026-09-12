@@ -1,4 +1,4 @@
-"""Admin API for IdP group mappings (``v376``) — super_admin tier.
+"""Admin API for IdP group mappings (``v378``) — super_admin tier.
 
 Mappings decide who is put into which sharing group and who is handed ``admin``
 from a directory claim, so they configure how the deployment authorizes, not who

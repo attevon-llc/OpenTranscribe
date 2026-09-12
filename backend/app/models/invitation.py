@@ -1,4 +1,4 @@
-"""Admin invitations and email-verification tokens (migration ``v375``).
+"""Admin invitations and email-verification tokens (migration ``v377``).
 
 Both models follow :mod:`app.models.password_reset`: only a SHA-256 hash of the
 token is stored, ``expires_at`` bounds its life, and ``used_at`` makes it

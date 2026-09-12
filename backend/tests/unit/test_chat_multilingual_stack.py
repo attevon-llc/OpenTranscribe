@@ -28,6 +28,7 @@ failure it exists to surface.
 
 from __future__ import annotations
 
+import dataclasses
 from types import SimpleNamespace
 from typing import cast
 
@@ -38,6 +39,7 @@ from app.services.chat import language as lang_mod
 from app.services.chat.language import SUPPORTED_RAG_LANGUAGES
 from app.services.chat.language import _classify
 from app.services.chat.language import supported_rag_languages
+from app.services.search.chunk_retrieval import ChunkHit
 
 
 class _StubSession:
@@ -210,6 +212,81 @@ def test_the_share_is_measured_over_voting_hits_only(monkeypatch: pytest.MonkeyP
     hits = [_hit("es"), _hit("es"), _hit("en"), _hit(""), _hit(""), _hit("")]
 
     assert reranker.rerank("presupuesto", hits) is hits
+
+
+def _chunk_hit(language: str) -> ChunkHit:
+    return ChunkHit(
+        file_uuid="f",
+        file_id=1,
+        chunk_index=0,
+        content="algo sobre el presupuesto",
+        language=language,
+    )
+
+
+def test_language_survives_the_retrieval_cache_round_trip() -> None:
+    """#834: ``language`` is document data, not read-time state — it must round-trip."""
+    original = _chunk_hit("es")
+
+    restored = ChunkHit.from_cache_dict(original.to_cache_dict())
+
+    assert restored.language == "es"
+
+
+def test_a_cached_non_english_pool_still_skips_the_english_reranker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bug this closes: a cache hit reset ``language`` to "", which the reranker's
+    three-bucket rule reads as UNKNOWN — an all-Spanish pool voted "all unknown" and the
+    English cross-encoder ran on text it cannot read, overwriting a correct order.
+    """
+    from app.services.chat import reranker
+
+    monkeypatch.setattr(
+        reranker,
+        "get_reranker",
+        lambda *_a, **_kw: pytest.fail("the English reranker was invoked"),
+    )
+    hits = [_chunk_hit("es"), _chunk_hit("es"), _chunk_hit("es")]
+    restored = [ChunkHit.from_cache_dict(h.to_cache_dict()) for h in hits]
+
+    assert reranker.rerank("presupuesto", restored) is restored
+
+
+def test_every_chunkhit_field_is_either_cached_or_documented_as_excluded() -> None:
+    """The durable guard: the exclusion list can never silently grow.
+
+    ``CACHE_EXCLUDED_FIELDS`` is asserted non-empty FIRST so this cannot pass
+    vacuously against an accidentally-emptied set.
+    """
+    from app.services.search.chunk_retrieval import CACHE_EXCLUDED_FIELDS
+
+    assert CACHE_EXCLUDED_FIELDS, "the exclusion list must name at least `expanded`"
+
+    minimal = ChunkHit(file_uuid="f", file_id=1, chunk_index=0, content="x")
+    cached = set(minimal.to_cache_dict())
+    declared = {f.name for f in dataclasses.fields(ChunkHit)}
+
+    assert declared - cached == set(CACHE_EXCLUDED_FIELDS)
+
+    populated = ChunkHit(
+        file_uuid="f",
+        file_id=7,
+        chunk_index=3,
+        content="hello world",
+        title="a title",
+        speaker="Dana",
+        start_time=1.5,
+        end_time=9.5,
+        score=0.75,
+        language="es",
+        digest_section=2,
+    )
+    restored = ChunkHit.from_cache_dict(populated.to_cache_dict())
+    for field_name in cached:
+        assert getattr(restored, field_name) == getattr(populated, field_name), (
+            f"field {field_name!r} did not survive the cache round trip"
+        )
 
 
 # ---------------------------------------------------------------------------

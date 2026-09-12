@@ -216,7 +216,7 @@ class FormattingService:
                 if media_file.last_error_message is not None
                 else None
             )
-            updates["error_category"] = error_info["category"]
+            updates["error_reason"] = error_info["category"]
             updates["error_suggestions"] = error_info["suggestions"]
             updates["user_message"] = error_info["user_message"]
             updates["is_retryable"] = error_info["is_retryable"]

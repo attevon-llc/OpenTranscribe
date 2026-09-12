@@ -211,12 +211,15 @@ def perform_snapshot(cfg: dict[str, Any], ts: str | None = None) -> dict[str, An
     try:
         ensure_repository(client)
     except Exception as exc:  # noqa: BLE001 - most often path.repo not allow-listed
+        # "error" is rendered on GET /admin/backup and /admin/backup/status --
+        # never interpolate the raw exception text, only its class name (#914).
         msg = (
-            "OpenSearch snapshot repository could not be registered "
-            f"({exc}). Start the stack with --with-backup so the OpenSearch container "
-            "gets path.repo + the snapshot bind-mount, or disable 'Include OpenSearch'."
+            f"OpenSearch snapshot repository could not be registered "
+            f"({type(exc).__name__}). Start the stack with --with-backup so the "
+            "OpenSearch container gets path.repo + the snapshot bind-mount, or "
+            "disable 'Include OpenSearch'."
         ) + _at_risk_suffix(client)
-        logger.warning(msg)
+        logger.exception("OpenSearch snapshot repository could not be registered")
         return {"status": "unsupported", "error": msg}
 
     name = _snapshot_name(ts)
@@ -250,10 +253,10 @@ def perform_snapshot(cfg: dict[str, Any], ts: str | None = None) -> dict[str, An
         }
     except Exception as exc:  # noqa: BLE001 - snapshot failure is recorded, never raised
         duration = round(time.monotonic() - started, 2)
-        logger.error("OpenSearch snapshot failed: %s", exc)
+        logger.exception("OpenSearch snapshot failed")
         return {
             "status": "error",
-            "error": str(exc) + _at_risk_suffix(client),
+            "error": f"OpenSearch snapshot failed ({type(exc).__name__})" + _at_risk_suffix(client),
             "duration_s": duration,
         }
 

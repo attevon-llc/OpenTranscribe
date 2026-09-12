@@ -1,4 +1,4 @@
-"""Wire contract for admin invitations and email verification (v375).
+"""Wire contract for admin invitations and email verification (v377).
 
 Kept out of ``schemas/user.py`` only to stay under the ~300-line file rule.
 Naming follows the newer peripheral convention (``XResponse``).

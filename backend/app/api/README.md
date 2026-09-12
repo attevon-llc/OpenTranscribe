@@ -188,7 +188,7 @@ POST   /files/management/cleanup-orphaned # Recover stuck files in bulk (admin o
 **Status Detail Response Example:**
 ```json
 {
-  "file_id": 123,
+  "file_uuid": "019ec90a-3f41-7aaa-8000-0000000000a1",
   "filename": "interview.mp3",
   "status": "error",
   "can_delete": true,
@@ -197,7 +197,7 @@ POST   /files/management/cleanup-orphaned # Recover stuck files in bulk (admin o
   "is_stuck": false,
   "retry_count": 1,
   "max_retries": 3,
-  "last_error_message": "No speech detected in audio file",
+  "last_error_message": "No speech was detected in this recording.",
   "actions_available": ["delete", "retry"],
   "recommendations": [
     "This file can be retried for processing.",
@@ -205,6 +205,10 @@ POST   /files/management/cleanup-orphaned # Recover stuck files in bulk (admin o
   ]
 }
 ```
+
+`last_error_message` here is a fixed, user-facing sentence from
+`ErrorCategorizationService` (issue #786), never the raw exception text — the raw
+message is logged server-side at ERROR with the file's UUID.
 
 ### Users (`users.py`)
 ```

@@ -11,7 +11,7 @@ realm-shaped providers such as Keycloak serve.
 > The historical `KEYCLOAK_*` environment-variable names **keep working permanently**
 > and take precedence when both spellings are set, so no deployment has to edit its
 > `.env` on upgrade. The backend logs one line at startup naming any retired variables
-> it found. Database config keys were migrated automatically by revision `v377`, and
+> it found. Database config keys were migrated automatically by revision `v379`, and
 > the stored client secret is carried across as ciphertext without being decrypted.
 
 > **Provider-specific traps** are collected at the end of this document. The two that

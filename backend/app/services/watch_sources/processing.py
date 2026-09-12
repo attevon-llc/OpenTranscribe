@@ -490,10 +490,14 @@ def _dispatch_pipeline(media_file: MediaFile, user_id: int, source: WatchSource)
         )
         return None
     except Exception as e:  # noqa: BLE001 - one file's failure must not abort the scan
-        logger.error(
-            "Pipeline dispatch failed for watch import %s: %s", media_file.id, e, exc_info=True
-        )
-        return str(e)
+        # This return value is persisted verbatim onto the tracking row's
+        # error_message and rendered in the watch-source file listing
+        # (api/endpoints/watch_sources.py) — never interpolate the raw exception
+        # text, which can carry the #891 Redis broker URL with an embedded
+        # credential. Only the class of failure survives; the real cause is
+        # still diagnosable via the log below.
+        logger.exception("Pipeline dispatch failed for watch import %s", media_file.id)
+        return f"Pipeline dispatch failed ({type(e).__name__})"
 
 
 def _record_error(source_id: int, remote_path: str, message: str) -> None:

@@ -32,6 +32,9 @@ so keep heavy imports lazy.
   → shares, in that order), `require_resource_owner`.
 - `db_helpers.py` — `apply_tenant_scope` (SQL-plane default-deny tenant filter mirroring
   `api/deps_context.scope_to_context`), user file/tag/speaker query builders, tag-cache busting.
+- `stats_helpers.py`'s `get_queue_depths()` (the admin Statistics API) is a thin caller of
+  `app.core.celery_metrics.queue_snapshot` — the single source for Celery queue measurement
+  (issue #892). Do not re-add a local `LLEN`/pipeline here; call that function instead.
 - **There are no authorization decorators here, and reintroducing one is the mistake to avoid.**
   `auth_decorators.py` was deleted in issue #450: zero call sites for its four gates, and its only
   importer (`services/transcription_service.py`, a whole parallel copy of the transcription
@@ -40,8 +43,10 @@ so keep heavy imports lazy.
   skipped the check; and `require_verified_user` gated on `is_active` while both its name and its
   403 detail said "verification". Authorization is a FastAPI `Depends`
   (`api/endpoints/auth/dependencies.py` for privilege, `uuid_helpers` for resource access).
-- `error_handlers.py` — `handle_database_errors` (rolls back the session in `kwargs["db"]`) and
-  `ErrorHandler` builders for opaque 5xx. `pagination.py` — `paginate()` replaces the
+- `error_handlers.py` — `handle_not_found` and `ErrorHandler` builders for opaque 5xx.
+  `handle_database_errors` was deleted (#914 STEP 6): zero call sites under `app/`, and
+  it caught a plain `except Exception` that reclassified any `HTTPException` the wrapped
+  function raised into an opaque 500. `pagination.py` — `paginate()` replaces the
   count+offset+limit boilerplate (counts with `order_by(None)`).
 - `encryption.py` — AES-256-GCM (v3) with legacy Fernet auto-detect. Every stored secret (ASR/LLM
   keys, S3/SMB creds, OIDC refresh/ID tokens) goes through it.

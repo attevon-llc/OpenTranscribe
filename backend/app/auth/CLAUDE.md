@@ -4,7 +4,7 @@
 
 Multiple auth methods run **simultaneously**, selected per-user by `User.auth_type`
 (`local`, `ldap`, `oidc`, `pki`, `proxy`, `saml` — `constants.py:VALID_AUTH_TYPES`, enforced by a
-DB CHECK, `v375`, value set swapped by `v378`, widened by `v381`). Configure in the Admin UI
+DB CHECK, `v377`, value set swapped by `v380`, widened by `v383`). Configure in the Admin UI
 (Settings → Authentication): **DB `auth_config` wins over `.env`, which wins over the coded
 default** (`services/auth_config_service.py`). Endpoints live in the `api/endpoints/auth/`
 package + `auth_config.py`, not here.
@@ -44,7 +44,7 @@ with a password / still self-register?":
   the admin UI wrote the DB key, and `ALLOW_OPEN_REGISTRATION` was missing from
   `ENV_TO_CONFIG_MAPPING` — which is exactly why the toggle did nothing.
 
-## Admission control — who gets an account at all (`v379`)
+## Admission control — who gets an account at all (`v381`)
 
 Authentication answers "are you who you say you are". Admission answers "does this deployment
 want you". They were the same question for OIDC, which is how JIT provisioning ended up
@@ -116,7 +116,7 @@ functions; there is no second copy, and `test_proxy_header_auth.py` fails if one
 ## SCIM 2.0 provisioning (`/scim/v2`, RFC 7643/7644)
 
 Mounted at **root**, not under `/api`: RFC 7644 §3.1 fixes the base path and every connector
-appends `/Users` to it. Bearer-token authenticated against a hashed `scim_token` row (`v380`)
+appends `/Users` to it. Bearer-token authenticated against a hashed `scim_token` row (`v382`)
 that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
 
 - Writes go through `services/scim_service.py` → `account_security_service` /
@@ -209,6 +209,21 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
   `account_linking.emails_agree` (case- and whitespace-insensitive, the same rule
   `dependencies._enforce_proxy_identity_consistency` already applied): it was a byte-exact
   compare, so an IdP that merely re-cased an address locked the account out.
+  ⚠️ **Both remedies now also refuse an `auth_type == local` target (issue #912).**
+  `link-identity` used to set the provider column without touching `auth_type`, so a `local`
+  account could end up carrying an `ldap_uid`/`oidc_subject`/`pki_subject_dn` while every other
+  reader of `auth_type` still believed it authenticated with a local password — the account
+  resolved through the provider-ID login branch above while its own row said otherwise.
+  `link-identity` now **converts** `auth_type` to the provider being linked (and revokes
+  sessions) whenever the account's `auth_type` is exactly `local` at call time; an
+  already-external `auth_type` (a `pki` account with `allow_local_fallback`, or a downstream
+  registry provider) is left untouched, so this is a one-way door out of `local`, never a
+  demotion between two external methods. `external-email` symmetrically **refuses** an
+  `auth_type == local` target outright — even one carrying an identifier column, which is a
+  legitimate SCIM-provisioned state (`scim_service.create_user` deliberately stamps
+  `external_id` onto a `local` row without guessing an `auth_type`) that neither endpoint
+  touches. The check is a plain equality against `AUTH_TYPE_LOCAL`, never a membership test
+  against the valid-auth-type set — issue #866's allow-list problem gets no second instance here.
 - `approval.py` — the `approval_status` state machine and `initial_approval_status`, the one
   function every account-creation path asks "does this start pending?".
 - `roles.py` — the authorization contract (read this first, it's 35 lines).
@@ -234,7 +249,7 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
 - Short-lived JWT access token + long-lived refresh token with **rotation on every use**
   (OAuth 2.1); the old JTI is revoked in the same call.
 - **A session IS a `refresh_token` row.** Concurrent-session limits, rotation, revocation,
-  the #324 fail-closed fallback and (since `v375`) idle/absolute timeouts all key off those
+  the #324 fail-closed fallback and (since `v377`) idle/absolute timeouts all key off those
   rows. `session.py` used to carry a Redis `SessionManager` doing the timeout half with zero
   call sites; it was **deleted**, not wired up — two owners would enforce against different
   session sets the moment Redis and Postgres diverged, and #324 already established that
@@ -245,8 +260,11 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
 - Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table.
 - **`user_id` is the ACTOR; the subject goes in `target_user_id` / `target_username`**
   (issue #443). This is an access-control invariant, not a style rule: `query_audit_logs`
-  filters on `user_id` and `build_org_scope_clause` attributes un-stamped events to an org by
-  member user-id, so keying it on the subject changes **who can see the record**. Five emitters
+  filters on both `user_id` (actor) and `target_user_id` (subject, issue #828 — the write-side
+  fix was shipped first and briefly had no read path; both `/audit-logs` endpoints now expose
+  it, org-scoped identically to `user_id`) and `build_org_scope_clause` attributes un-stamped
+  events to an org by member user-id, so keying it on the subject changes **who can see the
+  record**. Five emitters
   of `auth.account.disabled` disagreed three ways and `admin.role.change` two, which meant
   "actions Bob performed" returned Bob's own privilege escalation while filtering by the acting
   admin missed every IdP-driven promotion. For a **system** actor — the directory-sync sweep,
@@ -268,7 +286,7 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
 ## The OIDC surface is named `oidc_*`, and a test enforces it
 
 A user in the field reported that "Keycloak" support looked hardcoded to Keycloak.
-Discovery (#353) made a generic provider work; the rename (`v377`/`v378`) made that
+Discovery (#353) made a generic provider work; the rename (`v379`/`v380`) made that
 *visible*, because every field an Authentik admin typed into was still named for
 someone else's product.
 
@@ -283,7 +301,7 @@ someone else's product.
 - `tests/unit/test_oidc_naming_invariant.py` fails the build if the retired noun
   appears in any Python file under `backend/app/` outside a three-entry allow-list,
   each carrying a written reason: the env adapter, `db/migrations.py` (historical
-  schema fingerprints for pre-`v378` databases), and the deprecated
+  schema fingerprints for pre-`v380` databases), and the deprecated
   `AuthMethodsResponse.keycloak_enabled` computed field, which is emitted for one
   minor release so a cached SPA bundle keeps rendering the SSO button.
 
@@ -352,7 +370,7 @@ someone else's product.
   could match, so **every save of the PKI tab was rejected**, and no backend code branched
   on it either way. `mutual_tls` refuses a DN-header-only assertion even from a trusted
   proxy: the certificate itself must be forwarded so this process validates it.
-  `pki_support_cac` / `pki_support_piv` were deleted (v375 also drops their rows) — the CAC
+  `pki_support_cac` / `pki_support_piv` were deleted (v377 also drops their rows) — the CAC
   and PIV CN formats are parsed unconditionally for every certificate.
 - **The login banner is enforced, not just displayed** (AC-8). `get_current_active_user`
   refuses with `detail.code == "banner_acknowledgment_required"` while
@@ -371,7 +389,7 @@ someone else's product.
   The access token is still used — as a **bearer credential** against `userinfo`, which
   is what it is for.
 - **The OIDC ID token lives on the session row, never in a cookie**
-  (`refresh_token.oidc_id_token`, `v378`, encrypted at rest). RP-Initiated Logout needs
+  (`refresh_token.oidc_id_token`, `v380`, encrypted at rest). RP-Initiated Logout needs
   it as `id_token_hint`, so it has to outlive the callback; a cookie would expose the
   full identity claim set to anything that reaches the cookie jar and outlive the
   session that justified it. On the session row, rotation/revocation/the concurrent
@@ -380,12 +398,12 @@ someone else's product.
   sound only while exactly one provider is configured; multi-provider means keying on
   `(iss, sub)`. The old column name asserted a global identifier, which is why it was
   renamed rather than left alone.
-- **`user.auth_type` had TWO CHECK constraints** — `ck_user_auth_type_valid` (v375) and
+- **`user.auth_type` had TWO CHECK constraints** — `ck_user_auth_type_valid` (v377) and
   a legacy `users_auth_type_check` (v200, re-asserted by v367/v371, still in
   `database/init_db.sql`). Swapping only the first would not have failed the migration;
   it would have failed every OIDC login afterwards with a CheckViolation on JIT
-  provisioning. `v378` drops the duplicate — one rule, one owner — and
-  `test_v378_migration_consistency.py` pins that exactly one remains.
+  provisioning. `v380` drops the duplicate — one rule, one owner — and
+  `test_v380_migration_consistency.py` pins that exactly one remains.
 - **Secrets never leave the auth-config API.** `config_value` is `None` for a sensitive key and
   `is_set` carries the signal. Do not reintroduce a placeholder: returning `***REDACTED***`
   meant the admin panel bound it into the password field and the next Save encrypted it over

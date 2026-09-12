@@ -302,6 +302,11 @@ class LinkExternalIdentityRequest(BaseModel):
     alternative — an administrator sets the provider's own identifier on the
     account, so the *next* login matches by that identifier first and never
     reaches the email-match branch at all.
+
+    Applying this to a ``local``-password account also converts its ``auth_type``
+    to ``provider`` and revokes its sessions (issue #912) — see the endpoint's
+    docstring for why, and for the one case (an already-external ``auth_type``)
+    where that conversion deliberately does not happen.
     """
 
     provider: str = Field(..., description="'oidc', 'ldap', or 'pki'")
@@ -329,11 +334,18 @@ class LinkExternalIdentityRequest(BaseModel):
 
 
 class LinkExternalIdentityResponse(BaseModel):
-    """Result of linking an external identity to an account."""
+    """Result of linking an external identity to an account.
+
+    ``auth_type`` is the account's ``auth_type`` AFTER this call — added because
+    linking now has a second, non-obvious effect on a `local` account (issue
+    #912: it converts `auth_type` to `provider` and revokes sessions). An API
+    client needs to see that from the response, not a re-fetch.
+    """
 
     success: bool
     provider: str
     identifier: str
+    auth_type: str
 
 
 class UpdateExternalEmailRequest(BaseModel):
@@ -350,6 +362,11 @@ class UpdateExternalEmailRequest(BaseModel):
     There is deliberately no ``provider`` field. The account is already linked; which
     column carries the identifier does not change what this writes, and asking for it
     would only create a way to get it wrong.
+
+    The endpoint additionally refuses an ``auth_type == local`` account outright
+    (issue #912) — even one that happens to carry an external identifier column, which
+    is a legitimate SCIM-provisioned state (``scim_service.create_user``) and
+    not something this request should be able to touch.
     """
 
     email: EmailStr = Field(..., description="The address the IdP now asserts for this account")

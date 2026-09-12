@@ -89,7 +89,7 @@ pass, is never removed, and is never converted — a mapping that would duplicat
 manual. If an admin put someone in a group by hand, that decision outlives the directory.
 
 `user_group_member.source` defaults to `manual`, so the default *is* the backfill: every
-membership that existed before `v376` stays hand-managed.
+membership that existed before `v378` stays hand-managed.
 
 ### Upgrading changes nothing on its own
 

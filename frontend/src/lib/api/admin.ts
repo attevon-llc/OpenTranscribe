@@ -154,12 +154,17 @@ export class AdminApi {
    * `auth/account_linking.py`. Sets the provider's own identifier on the
    * account so the *next* login by that identity matches directly, rather
    * than falling into (and being refused by) the automatic email-match path.
+   *
+   * Applying this to a `local`-password account also converts its `auth_type`
+   * to `provider` and revokes its sessions (issue #912) — the returned
+   * `auth_type` reflects that without a re-fetch. An account whose `auth_type`
+   * is already non-local is left alone.
    */
   static async linkExternalIdentity(
     userUuid: string,
     provider: 'oidc' | 'ldap' | 'pki',
     identifier: string
-  ): Promise<{ success: boolean; provider: string; identifier: string }> {
+  ): Promise<{ success: boolean; provider: string; identifier: string; auth_type: string }> {
     const response = await axiosInstance.put(`/admin/users/${userUuid}/link-identity`, {
       provider,
       identifier,
@@ -177,7 +182,9 @@ export class AdminApi {
    * the new address so the next ordinary login succeeds.
    *
    * Refused for an account carrying no external identifier: it is a remedy for a linked
-   * identity, not a general email change.
+   * identity, not a general email change. **Also refused for an `auth_type == local`
+   * account** (issue #912), even one that happens to carry an identifier column — that
+   * is a legitimate SCIM-provisioned state, not something this endpoint should rewrite.
    */
   static async updateExternalEmail(
     userUuid: string,

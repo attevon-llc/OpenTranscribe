@@ -8,6 +8,12 @@ invisible at the API layer no matter what happened underneath. All three
 file drives a real (unmocked) ``dispatch_transcription_pipeline`` through a stubbed
 Celery ``chain`` and asserts the failure actually reaches the HTTP response and the
 DB row — not just the log.
+
+As amended by #914: what must reach the response is that the dispatch FAILED, plus the
+class of failure — never the caught exception's raw text, which on the broker path can
+name the transport URL and its credentials. The raw text is asserted to be present in
+the log and on the ``MediaFile`` row instead, so these tests still prove the failure is
+diagnosable; they just pin where each half of it is allowed to appear.
 """
 
 from __future__ import annotations
@@ -140,11 +146,15 @@ def test_recover_stuck_tasks_reports_a_failed_requeue(
     assert body["success"] is False
     assert body["retried"] == 0  # every dispatch in this test uses the failing stub
     failures_by_uuid = {f["file_uuid"]: f["error"] for f in body["retry_failures"]}
+    # The FAILURE is reported per-file (that is what #906 fixed) -- but as the class of
+    # failure, not the broker's raw text (#914). See the sibling recover-task test.
     assert str(media_file.uuid) in failures_by_uuid
-    assert "broker down" in failures_by_uuid[str(media_file.uuid)]
+    assert failures_by_uuid[str(media_file.uuid)] == "Re-dispatch failed (OperationalError)"
+    assert "broker down" not in response.text
 
     db_session.refresh(media_file)
     assert media_file.status == FileStatus.ERROR
+    # The DB row is a different plane from the HTTP response and still holds the cause.
     assert "broker down" in (media_file.last_error_message or "")
 
 
@@ -170,19 +180,35 @@ def test_recover_stuck_tasks_still_reports_success_when_the_requeue_works(
 # ---------------------------------------------------------------------------
 # POST /tasks/system/recover-task/{task_id}
 # ---------------------------------------------------------------------------
-def test_recover_task_reports_the_dispatch_error(
-    client, db_session, admin_token_headers, normal_user, failing_dispatch
+def test_recover_task_reports_that_dispatch_failed_without_echoing_the_error(
+    client, db_session, admin_token_headers, normal_user, failing_dispatch, caplog
 ):
+    """Renamed from ``..._reports_the_dispatch_error``: the endpoint deliberately no
+    longer reports the dispatch *error text* (#914), and a name asserting the old
+    contract is misleading even with an updated body.
+
+    What #906 bought is still pinned here and is the point of the test: the failure is
+    visible AT THE API LAYER at all — ``retry_scheduled`` False and a non-null
+    ``dispatch_error`` — rather than a 200 that says nothing because the dispatch ran in
+    a background task after the response was sent. What #914 changed is only that the
+    reported string is the class of failure; the broker's raw text stays in the log and
+    on the DB row.
+    """
     media_file = _make_media_file(db_session, normal_user, file_status="processing")
     task = _stuck_transcription_task(db_session, normal_user, media_file)
 
-    response = client.post(f"{RECOVER_TASK}/{task.id}", headers=admin_token_headers)
+    with caplog.at_level("ERROR", logger="app.api.endpoints.tasks"):
+        response = client.post(f"{RECOVER_TASK}/{task.id}", headers=admin_token_headers)
 
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
+    assert body["success"] is False
     assert body["retry_scheduled"] is False
-    assert body["dispatch_error"] is not None
-    assert "broker down" in body["dispatch_error"]
+    assert body["dispatch_error"] == "Re-dispatch failed (OperationalError)"
+    # Nowhere in the response body, not just not in dispatch_error.
+    assert "broker down" not in response.text
+    # ...but the admin can still diagnose it: logger.exception leaves a traceback.
+    assert "broker down" in caplog.text
 
     db_session.refresh(media_file)
     assert media_file.status == FileStatus.ERROR

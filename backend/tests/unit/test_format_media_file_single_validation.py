@@ -50,7 +50,7 @@ def _reference_two_pass(media_file, speakers=None) -> MediaFileSchema:
             if media_file.last_error_message is not None
             else None
         )
-        file_dict["error_category"] = error_info["category"]
+        file_dict["error_reason"] = error_info["category"]
         file_dict["error_suggestions"] = error_info["suggestions"]
         file_dict["user_message"] = error_info["user_message"]
         file_dict["is_retryable"] = error_info["is_retryable"]

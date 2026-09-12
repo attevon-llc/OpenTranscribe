@@ -227,8 +227,16 @@ def execute_mirror(
         except Exception as exc:  # noqa: BLE001 - one failed object never aborts the run
             failed += 1
             if len(errors) < MAX_RECORDED_ERRORS:
-                errors.append(f"{obj.key}: {exc}")
-            logger.warning("Media mirror: failed to copy %s: %s", obj.key, exc)
+                # `errors` is returned in this function's counters, folded into the run
+                # result by run_mirror_once, persisted by media_mirror_service.record_result
+                # as `backup.mirror_last_result`, and read straight back out as the
+                # `last_result` field of the mirror settings response — so it IS
+                # response-bound, just asynchronously (#914). A boto3 error here quotes the
+                # destination endpoint URL and, on a signing failure, the canonical request
+                # including headers. The object key is the useful half and is kept: it is
+                # what tells the admin WHICH object to re-mirror.
+                errors.append(f"{obj.key}: {type(exc).__name__}")
+            logger.exception("Media mirror: failed to copy %s", obj.key)
         if throttle_ms > 0:
             time.sleep(throttle_ms / 1000.0)
 
@@ -282,8 +290,16 @@ def perform_mirror(db: Session | None = None, max_objects: int | None = None) ->
     try:
         destination = _build_destination(cfg, db)
     except ValueError as exc:
-        logger.warning("Media mirror skipped: %s", exc)
-        result = {"ok": False, "status": "no_destination", "error": str(exc), "started_at": now_iso}
+        # "error" is rendered on the media-mirror admin settings surface
+        # (media_mirror_settings.py) via MirrorResultModel.error -- never
+        # interpolate the raw exception text, only its class name (#914).
+        logger.exception("Media mirror skipped")
+        result = {
+            "ok": False,
+            "status": "no_destination",
+            "error": f"Media mirror skipped ({type(exc).__name__})",
+            "started_at": now_iso,
+        }
         mm.record_result(db, now_iso, result)
         return result
 
@@ -312,14 +328,16 @@ def perform_mirror(db: Session | None = None, max_objects: int | None = None) ->
             result["duration_s"],
         )
     except Exception as exc:  # noqa: BLE001 - listing/network errors → recorded, never raised
+        # A boto3 ClientError can quote the endpoint_url/bucket/region -- same
+        # rendering path as above, only the class of failure is returned.
         result = {
             "ok": False,
             "status": "error",
-            "error": str(exc),
+            "error": f"Media mirror failed ({type(exc).__name__})",
             "duration_s": round(time.monotonic() - started, 2),
             "started_at": now_iso,
         }
-        logger.error("Media mirror failed: %s", exc)
+        logger.exception("Media mirror failed")
 
     mm.record_result(db, now_iso, result)
     return result

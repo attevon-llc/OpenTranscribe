@@ -155,13 +155,22 @@ def write_companion(dest_dir: Path, passphrase: str) -> dict[str, Any]:
         logger.info("Recovery key companion written: %s", out_path.name)
         return {"status": STATUS_KEYS_INCLUDED, "filename": COMPANION_NAME}
     except subprocess.CalledProcessError as exc:
+        # "error" is rendered on GET /admin/backup and /admin/backup/status --
+        # never interpolate gpg's stderr (can quote host filesystem paths) or
+        # raw exception text, only the exit code / class name (#914).
         stderr = (exc.stderr or b"").decode("utf-8", "replace")[-500:] if exc.stderr else ""
-        msg = f"gpg failed (exit {exc.returncode}): {stderr}"
-        logger.warning("Could not write recovery key companion: %s", msg)
-        return {"status": STATUS_ERROR, "error": msg}
+        logger.exception(
+            "Could not write recovery key companion: gpg failed (exit %s): %s",
+            exc.returncode,
+            stderr,
+        )
+        return {"status": STATUS_ERROR, "error": f"gpg failed (exit {exc.returncode})"}
     except OSError as exc:
-        logger.warning("Could not write recovery key companion: %s", exc)
-        return {"status": STATUS_ERROR, "error": str(exc)}
+        logger.exception("Could not write recovery key companion")
+        return {
+            "status": STATUS_ERROR,
+            "error": f"Could not write recovery key companion ({type(exc).__name__})",
+        }
     finally:
         with contextlib.suppress(OSError):
             tmp_path.unlink(missing_ok=True)
@@ -174,5 +183,8 @@ def write_readme(dest_dir: Path) -> dict[str, Any]:
         out_path.write_text(build_readme_text(), encoding="utf-8")
         return {"status": STATUS_README_WRITTEN, "filename": README_NAME}
     except OSError as exc:
-        logger.warning("Could not write %s: %s", README_NAME, exc)
-        return {"status": STATUS_ERROR, "error": str(exc)}
+        logger.exception("Could not write %s", README_NAME)
+        return {
+            "status": STATUS_ERROR,
+            "error": f"Could not write {README_NAME} ({type(exc).__name__})",
+        }

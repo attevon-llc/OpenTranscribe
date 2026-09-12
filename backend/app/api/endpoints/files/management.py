@@ -26,6 +26,7 @@ from app.models.media import FileStatus
 from app.models.media import Tag
 from app.models.user import User
 from app.services import system_settings_service
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.tag_bulk import CHANGED_OUTCOMES
 from app.services.tag_bulk import TAG_ACTIONS
 from app.services.tag_bulk import BulkTagOutcome
@@ -176,7 +177,11 @@ def get_file_status_detail(
             task_last_update=db_file.task_last_update.isoformat()
             if db_file.task_last_update
             else None,
-            last_error_message=str(db_file.last_error_message)
+            # Never put the raw exception text on the wire (issue #786) — a fixed,
+            # user-facing sentence from ErrorCategorizationService, not the raw message.
+            last_error_message=ErrorCategorizationService.get_error_info(
+                str(db_file.last_error_message)
+            )["user_message"]
             if db_file.last_error_message
             else None,
             recovery_attempts=int(db_file.recovery_attempts or 0),
@@ -1048,12 +1053,19 @@ def bulk_file_action(
                     )
                 )
             except Exception as e:
-                logger.exception(f"Error processing bulk action for file {file_uuid}: {e}")
+                # `results` IS this endpoint's response body (`return results`, below), so
+                # the per-file report may carry only facts we authored. The raw exception
+                # text here reaches whatever the action touched — MinIO/boto3 errors quote
+                # the bucket and endpoint URL, Celery dispatch errors quote the broker URL
+                # with its embedded password, OSErrors quote host filesystem paths (#914).
+                # What the caller actually needs from a bulk action is preserved: WHICH
+                # file failed, that it failed, and the machine-readable `error` code.
+                logger.exception(f"Error processing bulk action for file {file_uuid}")
                 results.append(
                     BulkActionResult(
                         file_uuid=file_uuid,
                         success=False,
-                        message=f"Unexpected error: {str(e)}",
+                        message=f"Unexpected error ({type(e).__name__})",
                         error="UNEXPECTED_ERROR",
                         outcome=BulkTagOutcome.FAILED if is_tag_action else None,
                     )

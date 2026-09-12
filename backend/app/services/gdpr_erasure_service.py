@@ -495,8 +495,17 @@ def erase_user(
             summary["users_deleted"] = 1
         except Exception as e:  # noqa: BLE001 — record, don't raise
             db.rollback()
-            summary["errors"].append({"user_id": user_id, "error": str(e)})
-            logger.error(f"erase_user: failed to delete user row {user_id}: {e}")
+            # `summary` is returned straight out of this function and becomes the
+            # response body of POST /admin/gdpr/erase-user/{uuid} (admin.py:2527), so
+            # only authored facts may go in it. A SQLAlchemy error here quotes the whole
+            # failing statement, the bound parameters, and the constraint/table names
+            # (`Key (user_id)=(42) is still referenced from table "media_file"`) — SQL
+            # fragments are exactly the class #914 exists to keep out of a response. The
+            # subject id, which is what makes the failure actionable, is kept.
+            summary["errors"].append(
+                {"user_id": user_id, "error": f"user row delete failed ({type(e).__name__})"}
+            )
+            logger.exception(f"erase_user: failed to delete user row {user_id}")
             # db.rollback() expires every object the session was tracking, including
             # `ledger_entry` — opened and COMMITTED independently by record_request
             # before anything was destroyed, so this rollback cannot have undone it,
@@ -516,20 +525,29 @@ def erase_user(
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
         outcome=_resolve_outcome(summary),
-        user_id=user_id,
-        username=email,
+        # issue #443, closed by the decision recorded on #828: ``user_id``/
+        # ``username`` are ALWAYS the ACTOR and ``target_user_id``/
+        # ``target_username`` are ALWAYS the ERASED SUBJECT, top-level and typed,
+        # across every ``ADMIN_USER_DELETE`` emitter — this one, its two siblings
+        # below, and the ledger's bracketing pair. This record used to key
+        # ``user_id``/``username`` on the TARGET specifically because it survives
+        # the account, which gave one event type two opposite meanings for one
+        # field across a single three-record sequence (the ledger's two records
+        # kept the subject there too, so within THIS sequence the fields agreed —
+        # but ``erase_org_member_data``'s sequence disagreed, because its own
+        # record already put the actor there). ``user_id`` is ``None`` for the
+        # data-controller webhook path, which genuinely has no human actor; it is
+        # never backfilled with the subject or a placeholder.
+        user_id=actor_user_id,
+        username=actor_email,
+        target_user_id=user_id,
+        target_username=email,
         details={
             "action": "gdpr_erasure",
-            # Both sides named explicitly. The top-level ``user_id``/``username``
-            # are the TARGET here (this record survives the account, so it has to
-            # carry who was erased) while the org-scoped twin below keys them on
-            # the ACTOR — so a reader cannot infer either side from position
-            # alone. ``actor_email`` falls back to "data-subject-webhook" ONLY for
-            # the genuine self-service path; a caller that omits it for a
-            # staff-initiated erasure misattributes the act to the data subject.
-            "target_user_id": user_id,
-            "target_email": email,
-            "actor_user_id": actor_user_id,
+            # A NARRATIVE marker, not an attribution field — the attribution is the
+            # top-level fields above. This distinguishes "no operator, the data
+            # subject deleted their own IdP account" from a staff action that
+            # merely omitted its actor.
             "actor_email": actor_email or "data-subject-webhook",
             **{
                 k: summary[k]
@@ -665,16 +683,20 @@ def erase_org_member_data(
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
         # Audit as the ACTING org admin (a member — visible in the org's audit
-        # read); the erased member is carried in details. Org-stamped (#262a).
+        # read); the erased member is the top-level ``target_user_id``/
+        # ``target_username``, not buried in ``details`` — issue #443/#828's
+        # convention, which this call already got half right (the actor was
+        # always here) but the subject was not queryable on its own until now.
+        # Org-stamped (#262a).
         user_id=actor_user_id,
         username=actor_email,
+        target_user_id=user_id,
+        target_username=email,
         organization_id=org_id,
         outcome=_resolve_outcome(summary),
         details={
             "action": "gdpr_erasure_org_member",
             "organization_id": org_id,
-            "target_user_id": user_id,
-            "target_email": email,
             **{
                 k: summary[k]
                 for k in (
@@ -778,8 +800,14 @@ def erase_organization(
         db.commit()
     except Exception as e:  # noqa: BLE001
         db.rollback()
-        summary["errors"].append({"org_id": org_id, "error": str(e)})
-        logger.error(f"erase_organization: failed to delete org row {org_id}: {e}")
+        # Same contract as erase_user's twin above: `summary` is returned verbatim as the
+        # body of POST /org-admin/gdpr/erase-organization (org_admin.py:186), and the raw
+        # SQLAlchemy text would carry the failing statement, its bound parameters and the
+        # referencing table/constraint names (#914). The org id is kept.
+        summary["errors"].append(
+            {"org_id": org_id, "error": f"organization row delete failed ({type(e).__name__})"}
+        )
+        logger.exception(f"erase_organization: failed to delete org row {org_id}")
         # See the identical comment in erase_user: db.rollback() expires every object
         # in the session, including ledger_entry — committed independently by
         # record_request before anything was destroyed, so this rollback cannot have
@@ -800,9 +828,14 @@ def erase_organization(
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
         # Audit as the ACTING admin when invoked from the org-admin endpoint
-        # (a member user-id — visible in the org-scoped audit read); None for
-        # the data-controller webhook path. Org-stamped (#262a) — the org row
-        # is gone but the event stays attributed to the erased tenant's id.
+        # (a member user-id — visible in the org-scoped audit read); ``None``
+        # for the data-controller webhook path — that is now correct and
+        # intentional, not a gap: the webhook genuinely has no human actor, and
+        # issue #443/#828's convention is to leave ``user_id`` unset rather than
+        # invent one. There is no ``target_user_id`` here on purpose — the
+        # erased SUBJECT of this event is the organization, not a person, and
+        # ``organization_id`` already names it. Org-stamped (#262a) — the org
+        # row is gone but the event stays attributed to the erased tenant's id.
         user_id=actor_user_id,
         username=actor_email,
         organization_id=org_id,
@@ -812,7 +845,6 @@ def erase_organization(
             "organization_id": org_id,
             "organization_name": org_name,
             "memberships_removed": member_count,
-            "actor_user_id": actor_user_id,
             **{
                 k: summary[k]
                 for k in (

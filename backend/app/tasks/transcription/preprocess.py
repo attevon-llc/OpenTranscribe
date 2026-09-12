@@ -252,7 +252,7 @@ def preprocess_for_transcription(
         }
 
     except Exception as e:
-        logger.error(f"Preprocess failed for file {file_uuid}: {e}")
+        logger.exception(f"Preprocess failed for file {file_uuid}")
         _mark_pipeline_error(file_uuid, task_id, f"Audio preprocessing failed: {e}")
         raise
 

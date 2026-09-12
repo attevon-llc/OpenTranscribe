@@ -63,7 +63,6 @@ export interface MediaFile {
   summary?: string;
   file_hash?: string;
   thumbnail_url?: string;
-  last_error_message?: string;
 
   // Formatted fields from backend
   formatted_duration?: string;
@@ -74,7 +73,7 @@ export interface MediaFile {
   status_badge_class?: string;
 
   // Error handling fields from backend
-  error_category?: string;
+  error_reason?: string;
   error_suggestions?: string[];
   user_message?: string;
   is_retryable?: boolean;
@@ -168,7 +167,6 @@ export interface MediaFileDetail extends MediaFile {
 
   // In-flight processing state
   progress?: number;
-  error_message?: string;
 }
 
 /**

@@ -88,6 +88,10 @@ ORPHAN_PATTERNS_UNAMBIGUOUS = [
     'shortname-%@example.com',  # e2e display-name registration test
     'mfa-e2e-%@example.com',  # e2e MFA enrolment user (test_mfa.py session fixture)
     'searchqual-%@example.invalid',  # test_search_quality.py self-seeding corpus owner
+    # integration/test_lite_mode_mocked_providers.py's own owner. It must not use the
+    # shared admin account: the active-ASR provider is a per-USER setting, so a
+    # mock-Gladia config left active there is picked up by every other test's upload.
+    'litemode-%@example.invalid',
     'share-e2e-%@example.com',  # e2e second-user fixture (conftest.SECOND_USER_PREFIX)
 ]
 
@@ -179,11 +183,25 @@ def classify(
     return kept, owners, candidates
 
 
-#: Every FK into "user" the database will not sweep on its own (``confdeltype <>
-#: 'c'``), derived at query time rather than hardcoded — the same lesson
+#: Every FK into "user" that will actually REFUSE a DELETE, derived at query time
+#: rather than hardcoded — the same lesson
 #: backend/tests/unit/test_user_deletion_fk_coverage.py encodes about the app's own
 #: two deletion paths. Hardcoding this list is exactly how it would drift the moment
-#: a migration adds a ninth one.
+#: a migration adds another one.
+#:
+#: ⚠️ The predicate is ``IN ('a', 'r')``, NOT ``<> 'c'``. Postgres has five
+#: ``confdeltype`` values and only two of them block: ``a`` (NO ACTION) and ``r``
+#: (RESTRICT). ``c`` (CASCADE), ``n`` (SET NULL) and ``d`` (SET DEFAULT) all let the
+#: parent row go — the child is rewritten, not defended.
+#:
+#: ``<> 'c'`` was wrong in the direction that FAILS THE GATE, not the direction that
+#: loses data: it counted all 12 of this schema's SET NULL FKs as blockers, so a
+#: candidate was reported ``BLOCKED`` and skipped while Postgres would have deleted
+#: it without complaint, and the script then exited non-zero. Observed 2026-09-12 on
+#: ``usage_event.user_id`` (``confdeltype = 'n'``, SET NULL because metering rows are
+#: financial records that must outlive the account): one leaked ``litemode-`` user
+#: made ``run-integration-tests.sh``'s Tier A sweep fail on every subsequent run,
+#: with every test phase green.
 _BLOCKING_FK_SQL = """
     SELECT c.conrelid::regclass::text AS child, a.attname AS col
     FROM pg_constraint c
@@ -191,7 +209,7 @@ _BLOCKING_FK_SQL = """
     JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
     WHERE c.contype = 'f'
       AND c.confrelid = CAST(:parent AS regclass)
-      AND c.confdeltype <> 'c'
+      AND c.confdeltype IN ('a', 'r')
 """
 
 

@@ -348,6 +348,17 @@ class Settings(BaseSettings):
     # even though the target itself is DNS-pinned against private IPs (see
     # `_assert_safe_llm_endpoint`/`_pin_llm_endpoint` in `app/api/endpoints/llm_settings.py`).
     RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE: int = 10
+    # Rate limit for GET /users/search (the sharing/group-member-add autocomplete). The
+    # binding legitimate flow is adding members to a group: the picker clears its query
+    # after every add, so adding 10 members is roughly 30-40 requests/minute of genuine
+    # traffic. 60 is 1.5x that.
+    RATE_LIMIT_DIRECTORY_PER_MINUTE: int = 60
+    # Rate limit for GET /search (issue #904). Not `get_api_rate_limit()` (100/min, meant
+    # for cheap CRUD reads) — this route can burn ~2s of Presidio masking per call, the same
+    # argument RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE already makes. The heaviest realistic
+    # legitimate minute, once the dead client-side prefetch is removed (issue #904 Unit 6),
+    # is ~20/min of steady result-page paging; 30 is 1.5x that.
+    RATE_LIMIT_SEARCH_PER_MINUTE: int = 30
     # Enable rate limiting (disable for testing)
     RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
     # Trusted proxy IPs for rate limiting (comma-separated)

@@ -56,7 +56,7 @@ ERROR_CODE_PASSWORD_CHANGE_REQUIRED = "password_change_required"  # noqa: S105 #
 ERROR_CODE_ACCOUNT_EXPIRED = "account_expired"
 ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED = "banner_acknowledgment_required"
 #: Account exists and its credential worked, but an administrator has not admitted
-#: it yet (``v379``; see ``app/auth/approval.py``). Its own code rather than a reuse
+#: it yet (``v381``; see ``app/auth/approval.py``). Its own code rather than a reuse
 #: of ``account_expired`` because the remedy is somebody else's action, not the
 #: user's, and the SPA has to say so.
 ERROR_CODE_ACCOUNT_PENDING_APPROVAL = "account_pending_approval"
@@ -510,6 +510,7 @@ def _authenticate_external_token(request: Request, token: str, db: Session) -> U
 
     from app.auth.external_sync import sync_external_user_to_db
     from app.auth.provider_registry import verify_external_token
+    from app.core.exceptions import ExternalIdentityLinkRefusedError
 
     external_identity = verify_external_token(token, request)
     if external_identity is None:
@@ -517,7 +518,12 @@ def _authenticate_external_token(request: Request, token: str, db: Session) -> U
 
     try:
         external_user = sync_external_user_to_db(db, external_identity)
-    except PermissionError as e:
+    except ExternalIdentityLinkRefusedError as e:
+        # Deliberately narrowed from the builtin PermissionError (#914 STEP 6):
+        # a real EACCES anywhere in this call chain is also a PermissionError
+        # (it's an OSError subclass), and this branch renders its `str(e)`
+        # straight into the response. A genuine filesystem-permission failure
+        # now falls through to the generic `except Exception` below instead.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),

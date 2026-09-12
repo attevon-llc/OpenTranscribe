@@ -103,7 +103,13 @@ def notify_corruption(index_name: str, probe: KnnProbeResult) -> None:
                     f"semantic/hybrid query is failing while keyword search still works. "
                     f"AI chat will answer without retrieved context until this is repaired. "
                     f"Rebuild it from Settings → Search, or POST /api/search/reindex. "
-                    f"({probe.detail})"
+                    # probe.detail can carry a caught OpenSearch exception's raw text
+                    # (#914 STEP 7). Not an HTTP response body, so outside this
+                    # gate's stated scope, but still user-visible in the admin
+                    # notification UI -- probe.status is a fixed-vocabulary
+                    # classification, never message text. probe.detail is kept in
+                    # the logger.error below for real diagnosis.
+                    f"({probe.status})"
                 ),
                 event_type=SEARCH_HEALTH_EVENT_TYPE,
             )
@@ -113,8 +119,12 @@ def notify_corruption(index_name: str, probe: KnnProbeResult) -> None:
                 True,
                 f"Admins were notified that '{index_name}' has a corrupted vector plane",
             )
-    except Exception as e:  # noqa: BLE001 - alerting must never break the health check
-        logger.error(f"Could not notify admins about {index_name} corruption: {e}")
+    except Exception:  # noqa: BLE001 - alerting must never break the health check
+        # logger.exception, not logger.error: this handler swallows the only signal
+        # that an admin was NOT paged about a corrupt vector plane, so a bare message
+        # with no traceback leaves "nobody was notified" indistinguishable from
+        # "nothing went wrong here".
+        logger.exception(f"Could not notify admins about {index_name} corruption")
 
 
 def clear_corruption_notice(index_name: str) -> None:

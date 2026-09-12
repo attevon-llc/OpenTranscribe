@@ -611,7 +611,11 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     diarization_disabled: bool = Field(default=False)
 
     # Error handling fields
-    error_category: str | None = None  # Error category for user-friendly handling
+    # `UserErrorReason` (app.services.error_categorization_service) — the user-facing
+    # vocabulary, NOT `media_file.error_category` (app.utils.error_classification.ErrorCategory,
+    # retry policy). The rename off "error_category" is what makes the retry-policy column
+    # physically unable to reach the wire under this field's old name (issue #843).
+    error_reason: str | None = None  # User-friendly error reason for display
     error_suggestions: list[str] | None = None  # User-friendly error suggestions
     user_message: str | None = None  # User-friendly error description (issue #842)
     is_retryable: bool | None = None  # Whether the error is retryable

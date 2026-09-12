@@ -7,7 +7,14 @@
 # Deno JS runtime — required by yt-dlp for YouTube PO-token generation.
 # Using the official Deno binary image so we can COPY it without any
 # shell scripts or network calls in the runtime stage.
-FROM denoland/deno:bin AS deno-bin
+#
+# Pinned (issue #792): `denoland/deno:bin` was the only unpinned base in this file — every
+# other base here is digest- or version-pinned with a written reason, and an unpinned tag
+# is invisible to Dependabot's `FROM`-rewriting entirely. `bin-2.9.6` verified to exist via
+# the Docker Hub registry API (`denoland/deno` tags list) before writing it — the bare
+# `2.9.6` form does not exist, only `bin-2.9.6` (this repo already lost time once to writing
+# a plausible-looking-but-nonexistent tag, see security-scan.yml's trivy-action pin note).
+FROM denoland/deno:bin-2.9.6 AS deno-bin
 
 # diar-native (T1 diarization sidecar) binary + ONNX Runtime provider libs, pinned by
 # DIGEST so a floating `:latest` on the standalone image can never silently change what

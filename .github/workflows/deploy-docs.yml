@@ -11,6 +11,28 @@ on:
       # The homepage version badge is read from VERSION at build time, so a release
       # bump has to redeploy the site or the badge stays on the previous version.
       - 'VERSION'
+  # Issue #793: a broken Docusaurus build was only ever caught by a FAILED DEPLOY on
+  # master, after merge — docs-site is built into a published image, so that is a real
+  # pre-merge hole. This PR trigger runs the `build` job only (see the `deploy` job's
+  # `if:`, gated on push+master); it never touches GitHub Pages.
+  #
+  # Path-filtered at the TRIGGER, not deliberately NOT wired as a required check
+  # (see the concurrency comment below for why that pairing matters here): issue #793
+  # itself records run 34017549729 / PR #774, where a path-filtered required check that
+  # simply didn't run for an unrelated PR was reported `skipped`, and branch protection
+  # counted `skipped` as satisfied. This workflow's `deploy-docs / build` is NOT added to
+  # branch protection's required-checks list for that reason — a path filter and a
+  # required check are safe together only via the job-level `changes`-detection pattern
+  # (see `.github/workflows/pre-commit.yml`'s `changes` job), which this workflow does not
+  # need because it is advisory, not required.
+  pull_request:
+    branches:
+      - master
+      - main
+    paths:
+      - 'docs-site/**'
+      - '.github/workflows/deploy-docs.yml'
+      - 'VERSION'
   # The roadmap page is DERIVED from the issue tracker and regenerated in the build
   # below, so the published page goes stale whenever issues move without anything
   # under `paths:` changing — which is most days. A daily redeploy keeps it at most a
@@ -32,8 +54,14 @@ permissions:
   issues: read
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  # A PR build must never queue behind (or block) the shared "pages" deploy lane, and
+  # must never share it: a PR run and a push-triggered deploy racing for the same group
+  # is how a legitimate deploy gets stuck waiting on a PR's build. PR runs get their own
+  # per-PR group and may cancel-in-progress on a new push; the push/schedule/dispatch
+  # deploy lane keeps its original group and never cancels (a deploy is not something to
+  # interrupt mid-flight).
+  group: ${{ github.event_name == 'pull_request' && format('docs-pr-{0}', github.event.pull_request.number) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -93,6 +121,11 @@ jobs:
           path: docs-site/build
 
   deploy:
+    # Issue #793: this job must NEVER run for a pull_request — it is the only job that
+    # publishes anything (GitHub Pages), and a PR's job is `build` only. Gated on the
+    # event AND the ref rather than just excluding `pull_request`, so a push to a
+    # non-master branch (or a workflow_dispatch off one) also cannot deploy.
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

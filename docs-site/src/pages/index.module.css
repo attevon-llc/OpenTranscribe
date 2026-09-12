@@ -461,13 +461,20 @@
   background: var(--ot-surface-alt);
 }
 
+/* Wash stays the primary "this is the focus" signal; the border is a subtle second cue
+   (light alpha, matches --ifm-color-primary per theme) so the column reads as highlighted
+   without a heavy outline — issue #758 asked for "reads as the focus without shouting". */
 .highlightCol {
   background: rgba(37, 99, 235, 0.05) !important;
   font-weight: 600;
+  border-left: 1px solid rgba(37, 99, 235, 0.25) !important;
+  border-right: 1px solid rgba(37, 99, 235, 0.25) !important;
 }
 
 [data-theme='dark'] .highlightCol {
   background: rgba(96, 165, 250, 0.07) !important;
+  border-left: 1px solid rgba(96, 165, 250, 0.3) !important;
+  border-right: 1px solid rgba(96, 165, 250, 0.3) !important;
 }
 
 .comparisonTable thead .highlightCol {

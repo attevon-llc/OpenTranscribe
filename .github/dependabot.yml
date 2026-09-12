@@ -132,11 +132,40 @@ updates:
         patterns:
           - "*"
     ignore:
-      # nvidia/pytorch 26.x is not a drop-in for Dockerfile.blackwell: the NGC
-      # image dropped torchaudio and the pin capture/restore breaks (#274).
-      # Upgrade deliberately with a torchaudio strategy + Blackwell hardware
-      # validation, then remove this ignore.
+      # Rewritten 2026-09-12 (issue #792) — the previous reason was OBSOLETE. It claimed
+      # "nvidia/pytorch 26.x is not a drop-in for Dockerfile.blackwell: the NGC image dropped
+      # torchaudio and the pin capture/restore breaks (#274)". Neither half is true today:
+      # `backend/Dockerfile.blackwell` is ALREADY `FROM nvcr.io/nvidia/pytorch:26.07-py3`
+      # (verified via `git show`), and `backend/requirements.txt` pins `torchaudio==2.11.0`
+      # (also verified) — the capture/restore step a few lines below this ignore's target
+      # (`pip freeze | grep -iE '^(torch|torchaudio|torchvision)=='` then a forced
+      # reinstall) still finds and restores a torchaudio from the base image, so 26.x has
+      # not dropped it.
+      #
+      # The ignore stays, with the real reason: nvcr.io/nvidia/pytorch major/minor bumps
+      # change the bundled CUDA toolkit and the exact torch/torchaudio/torchvision build the
+      # capture/restore step preserves, which this repo can only validate on real Blackwell
+      # (SM_121/GB10) hardware — not something a CI runner can do. Bump by hand, alongside a
+      # hardware validation pass, then let this ignore's own comment go stale in turn.
       - dependency-name: "nvidia/pytorch"
+
+  # Root compose files (issue #792): the `docker` ecosystem only rewrites `FROM` lines in
+  # Dockerfiles, so nothing above watched the images pinned directly in the root
+  # docker-compose*.yml files — postgres, minio, redis, opensearch, prometheus/grafana. Those
+  # first four hold every byte of user data in this app and were watched by nothing.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      root-docker:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      root-docker-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "docker"
     directory: "/frontend"

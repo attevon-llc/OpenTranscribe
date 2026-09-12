@@ -212,6 +212,15 @@ from app.auth.session import InMemoryStore
 from app.auth.session import OIDCStateStore
 from app.core import metrics as metrics_module
 
+#: Issue #810 order-dependence hygiene. This file previously restored the cached-state
+#: globals it dirties only via `teardown_method` on one class (`TestGetStoreColdBoot`), which
+#: (a) overwrote with hardcoded defaults rather than the entry snapshot, clobbering whatever a
+#: legitimate earlier test had left, and (b) never ran at all for a test that raised during
+#: setup, or for any of the module-level tests outside that one class. See
+#: `tests/fixtures/auth_state_isolation.py` for the honesty note on what this does and does not
+#: prove about #810's actual flake.
+pytestmark = pytest.mark.usefixtures("auth_state_globals_restored")
+
 STATE = "d4c1a9e2-mutant-state"
 STATE_DATA = {"code_verifier": "mutant-verifier-value", "next": "/gallery"}
 
@@ -246,9 +255,6 @@ def _reset_store_module_state():
 
 @pytest.mark.unit
 class TestGetStoreColdBoot:
-    def teardown_method(self):
-        _reset_store_module_state()
-
     def test_the_very_first_call_probes_redis_even_within_the_reprobe_window(self):
         """``if not _store_initialized`` must run unconditionally on the FIRST
         call -- it is not, and must not become, gated by the reprobe interval.

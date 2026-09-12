@@ -191,6 +191,12 @@ run_phase() {
 #:                    ~150 s + gated weights). `--export-capability` selects it back in.
 #:   1  opt_in_gate — test_speaker_label_index_drift (RUN_INDEX_AUDIT): an audit of a
 #:                    DEPLOYMENT's accumulated data, not a regression test of this code.
+#:   1  opt_in_gate — test_chat_cache_share_revocation: the cache under test IS Redis, and
+#:                    the dev stack's Redis is password-protected and in-network only, so a
+#:                    host-run gate can NEVER satisfy its reachability gates. It needs an
+#:                    isolated stack. Marked rather than ceiling-raised — adding this file
+#:                    took the phase 7 -> 8 skips and turned it NOT MEASURED, which is the
+#:                    ceiling doing its job, not a number that wanted incrementing.
 #:
 #: That leaves SEVEN honest skips, all one class — this deployment's corpus does not hold the
 #: data the assertions need, which is issue #403 / the plan's P2-2 "seed it" work, not a gate

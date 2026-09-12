@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * `LLMSettingsApi` is mostly thin CRUD, so this file targets the three
- * methods with real logic: `getProviderDefaults` and `getProviderDisplayName`
- * both normalize a legacy `'claude'` alias before a map lookup, and
- * `getStatusDisplay` switches on a connection status to build an i18n'd
- * display object. A couple of representative CRUD calls are covered for
- * request-shape only.
+ * `LLMSettingsApi` is mostly thin CRUD, so this file targets the one method with
+ * real logic: `getStatusDisplay`, which switches on a connection status to build
+ * an i18n'd display object. `llmProviderDisplayName` (a top-level exported
+ * function, not a class method) is covered separately below. A couple of
+ * representative CRUD calls are covered for request-shape only.
  */
 const mockInstance = vi.hoisted(() => ({
   get: vi.fn(),
@@ -26,7 +25,7 @@ vi.mock('$stores/locale', () => ({
   t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
 }));
 
-import { LLMSettingsApi } from './llmSettings';
+import { LLMSettingsApi, llmProviderDisplayName } from './llmSettings';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -36,48 +35,27 @@ beforeEach(() => {
   mockInstance.delete.mockResolvedValue({ data: {} });
 });
 
-describe('getProviderDefaults', () => {
-  it('returns the anthropic defaults for the current provider value', () => {
-    const defaults = LLMSettingsApi.getProviderDefaults('anthropic');
-    expect(defaults.provider).toBe('anthropic');
-    expect(defaults.model_name).toBe('claude-opus-4-5-20251101');
+describe('llmProviderDisplayName', () => {
+  // Identity translator: assert on the i18n key itself rather than locale copy.
+  const identity = (k: string) => k;
+
+  it('maps a known provider to its i18n key', () => {
+    expect(llmProviderDisplayName('openai', identity)).toBe('llm.provider.openai');
   });
 
-  it('normalizes the legacy "claude" alias to anthropic before the lookup', () => {
-    // Older saved configs / URLs may still carry the pre-rename provider value.
-    const defaults = LLMSettingsApi.getProviderDefaults('claude');
-    expect(defaults).toEqual(LLMSettingsApi.getProviderDefaults('anthropic'));
-    expect(defaults.provider).toBe('anthropic');
-  });
-
-  it('falls back to an empty object for an unknown provider', () => {
-    expect(LLMSettingsApi.getProviderDefaults('not-a-real-provider')).toEqual({});
-  });
-
-  it('returns bedrock defaults with no base_url (SDK call, not an HTTP endpoint)', () => {
-    const defaults = LLMSettingsApi.getProviderDefaults('bedrock');
-    expect(defaults.provider).toBe('bedrock');
-    expect(defaults.model_name).toBeTruthy();
-    expect(defaults.base_url).toBeUndefined();
-  });
-});
-
-describe('getProviderDisplayName', () => {
-  it('maps known providers to their display name', () => {
-    expect(LLMSettingsApi.getProviderDisplayName('openai')).toBe('OpenAI');
-    expect(LLMSettingsApi.getProviderDisplayName('anthropic')).toBe('Anthropic');
-  });
-
-  it('maps the legacy "claude" alias to the Anthropic display name', () => {
-    expect(LLMSettingsApi.getProviderDisplayName('claude')).toBe('Anthropic');
+  it('maps the legacy "claude" alias to its OWN key, distinct from anthropic', () => {
+    // The live map intentionally does NOT collapse 'claude' into 'anthropic' —
+    // a pre-rename stored config renders "Claude (Anthropic)", not "Anthropic".
+    expect(llmProviderDisplayName('claude', identity)).toBe('llm.provider.claude');
+    expect(llmProviderDisplayName('claude', identity)).not.toBe('llm.provider.anthropic');
   });
 
   it('falls back to echoing the raw provider string when unrecognized', () => {
-    expect(LLMSettingsApi.getProviderDisplayName('mystery-provider')).toBe('mystery-provider');
+    expect(llmProviderDisplayName('mystery-provider', identity)).toBe('mystery-provider');
   });
 
-  it('maps bedrock to its display name', () => {
-    expect(LLMSettingsApi.getProviderDisplayName('bedrock')).toBe('AWS Bedrock');
+  it('maps bedrock to its i18n key', () => {
+    expect(llmProviderDisplayName('bedrock', identity)).toBe('llm.provider.bedrock');
   });
 });
 

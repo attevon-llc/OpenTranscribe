@@ -173,7 +173,9 @@ pytest tests/
 # Run specific test file
 pytest tests/api/endpoints/test_files.py
 
-# Run with coverage (report-only — no enforced threshold yet)
+# Run with coverage (ENFORCED: backend/pyproject.toml's `fail_under = 37` is a hard
+# pytest-cov gate — a run below the floor exits non-zero. It is a ratchet floor set
+# just below the measured value, so it fails on a regression, not on failing to improve.)
 pytest --cov=app tests/
 
 # Run the integration-marked tests (live stack required)
@@ -188,7 +190,7 @@ pytest -m integration tests/
 cd frontend/
 npm run test              # vitest, single pass
 npm run test:watch        # watch mode
-npm run test:coverage     # with coverage (report-only)
+npm run test:coverage     # with coverage (genuinely report-only — CI never runs this)
 ```
 
 #### Browser E2E Tests (Playwright, against the live stack)

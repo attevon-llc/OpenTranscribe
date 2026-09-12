@@ -744,6 +744,11 @@ bump and one reindex.
 - **The ACL and tenant rewrites must REACH digests** (addendum G5) — `update_file_access_index`
   keys on `file_id`, the tenant backfill on `file_uuid`, and `build_digest_documents` puts
   **both** on every digest. Excluding them there is a permission leak, not a relevance bug.
+  `update_file_access_index` also now calls `chat.retrieval_cache.bump_corpus_version()`
+  unconditionally after its `update_by_query` loop — the ACL rewrite reaching the index is not
+  enough by itself, because chat's exact-query retrieval cache is ACL-blind and would otherwise
+  keep serving an already-cached, now-revoked result for the rest of its TTL. See that module's
+  CLAUDE.md for the endpoint-side-bump alternative that was rejected and why.
 - **The digest plane is written by `index_transcript_chunks`, not by the coordinator**
   (addendum G1). `delete_transcript_chunks` is unqualified and every rebuild trigger routes
   through it, so a rebuild that regenerated only chunks would destroy the digest tier

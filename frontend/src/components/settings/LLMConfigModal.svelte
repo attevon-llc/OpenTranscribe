@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults } from '../../lib/api/llmSettings';
+  import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -498,19 +498,6 @@
     if (_llmConfigModalWasOpen) unlockScroll();
   });
 
-  function getProviderDisplayName(provider: string): string {
-    const displayNames: Record<string, string> = {
-      openai: $t('llm.provider.openai'),
-      vllm: $t('llm.provider.vllm'),
-      ollama: $t('llm.provider.ollama'),
-      claude: $t('llm.provider.claude'),
-      anthropic: $t('llm.provider.anthropic'),
-      openrouter: $t('llm.provider.openrouter'),
-      bedrock: $t('llm.provider.bedrock'),
-      custom: $t('llm.provider.custom')
-    };
-    return displayNames[provider] || provider;
-  }
 </script>
 
 <BaseModal isOpen={show} onClose={() => closeModal()} maxWidth="600px">
@@ -547,8 +534,8 @@
             required
           >
             <option value="">{$t('llm.selectProvider')}</option>
-            {#each supportedProviders.sort((a, b) => getProviderDisplayName(a.provider).localeCompare(getProviderDisplayName(b.provider))) as provider}
-              <option value={provider.provider}>{getProviderDisplayName(provider.provider)}</option>
+            {#each [...supportedProviders].sort((a, b) => llmProviderDisplayName(a.provider, $t).localeCompare(llmProviderDisplayName(b.provider, $t))) as provider}
+              <option value={provider.provider}>{llmProviderDisplayName(provider.provider, $t)}</option>
             {/each}
           </select>
         </div>

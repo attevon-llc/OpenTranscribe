@@ -394,3 +394,162 @@ class TestScimGroupServiceMembership:
         }
         assert remaining == {int(present.id)}
         assert audit_capture.calls == []
+
+
+class TestScimGroupServiceReindexesAffectedFiles:
+    """SCIM membership changes must dispatch the same search-index reindex the
+    groups-UI endpoints already trigger (``reindex_group_shared_files``) — without
+    it, a file shared with a group survives a SCIM-driven removal in the index
+    INDEFINITELY, since nothing else ever re-touches those OpenSearch rows.
+
+    Uses the real ``db_session`` (Postgres), like the sibling class above, but
+    only ever exercises ``scim_group_service``'s own commit + reindex-dispatch
+    ordering — no OpenSearch or Celery broker involved, since
+    ``reindex_group_shared_files`` itself is monkeypatched to a recorder.
+    """
+
+    @pytest.fixture
+    def owner(self, db_session) -> User:
+        return _make_user(db_session, role="admin")
+
+    @pytest.fixture
+    def group(self, db_session, owner) -> UserGroup:
+        row = UserGroup(name=f"svc-group-{uuid_pkg.uuid4().hex[:8]}", owner_id=int(owner.id))
+        db_session.add(row)
+        db_session.commit()
+        db_session.refresh(row)
+        return row
+
+    @pytest.fixture
+    def reindex_calls(self, monkeypatch):
+        calls: list[tuple[int, int]] = []
+
+        def _record(_db, group_id):
+            # Recording the group's OWN commit count at call time is how the
+            # ordering test below proves the dispatch happens after the commit.
+            calls.append(group_id)
+
+        monkeypatch.setattr(scim_group_service, "reindex_group_shared_files", _record)
+        return calls
+
+    def test_add_group_members_reindexes_when_something_was_added(
+        self, db_session, group, reindex_calls
+    ):
+        new_member = _make_user(db_session)
+        scim_group_service.add_group_members(db_session, group, {int(new_member.id)}, actor="idp")
+        assert reindex_calls == [int(group.id)]
+
+    def test_add_group_members_with_nothing_new_does_not_reindex(
+        self, db_session, group, reindex_calls
+    ):
+        """Must-fire control: re-adding an already-present member changes nothing,
+        so a helper that reindexed unconditionally would still pass every
+        positive-direction test above."""
+        already = _make_user(db_session)
+        db_session.add(
+            UserGroupMember(
+                group_id=int(group.id),
+                user_id=int(already.id),
+                role="member",
+                source=MEMBERSHIP_SOURCE_SCIM,
+            )
+        )
+        db_session.commit()
+
+        scim_group_service.add_group_members(db_session, group, {int(already.id)}, actor="idp")
+        assert reindex_calls == []
+
+    def test_remove_group_members_reindexes_when_something_was_removed(
+        self, db_session, group, reindex_calls
+    ):
+        """The security-relevant direction: a file shared only via this group must
+        stop being searchable by the removed member."""
+        target = _make_user(db_session)
+        db_session.add(
+            UserGroupMember(
+                group_id=int(group.id),
+                user_id=int(target.id),
+                role="member",
+                source=MEMBERSHIP_SOURCE_SCIM,
+            )
+        )
+        db_session.commit()
+
+        scim_group_service.remove_group_members(db_session, group, {int(target.id)}, actor="idp")
+        assert reindex_calls == [int(group.id)]
+
+    def test_remove_group_members_with_an_empty_set_does_not_reindex(
+        self, db_session, group, reindex_calls
+    ):
+        scim_group_service.remove_group_members(db_session, group, set(), actor="idp")
+        assert reindex_calls == []
+
+    def test_set_group_members_reindexes_on_a_net_change(self, db_session, group, reindex_calls):
+        keep = _make_user(db_session)
+        drop = _make_user(db_session)
+        db_session.add(
+            UserGroupMember(
+                group_id=int(group.id),
+                user_id=int(drop.id),
+                role="member",
+                source=MEMBERSHIP_SOURCE_SCIM,
+            )
+        )
+        db_session.commit()
+
+        scim_group_service.set_group_members(db_session, group, {int(keep.id)}, actor="idp")
+        assert reindex_calls == [int(group.id)]
+
+    def test_set_group_members_with_no_net_change_does_not_reindex(
+        self, db_session, group, reindex_calls
+    ):
+        """Must-fire control for the ``set`` verb: replacing the SCIM membership
+        with the exact same set is a no-op and must not reindex."""
+        same = _make_user(db_session)
+        db_session.add(
+            UserGroupMember(
+                group_id=int(group.id),
+                user_id=int(same.id),
+                role="member",
+                source=MEMBERSHIP_SOURCE_SCIM,
+            )
+        )
+        db_session.commit()
+
+        scim_group_service.set_group_members(db_session, group, {int(same.id)}, actor="idp")
+        assert reindex_calls == []
+
+    def test_reindex_is_dispatched_after_the_commit(self, db_session, group, monkeypatch):
+        """Ordering is load-bearing (see group_file_index_service's docstring): a
+        pre-commit dispatch would have the reindex worker observe the OLD
+        membership. Assert the row is already gone from a fresh query at the
+        moment the reindex helper runs."""
+        target = _make_user(db_session)
+        db_session.add(
+            UserGroupMember(
+                group_id=int(group.id),
+                user_id=int(target.id),
+                role="member",
+                source=MEMBERSHIP_SOURCE_SCIM,
+            )
+        )
+        db_session.commit()
+
+        observed_at_dispatch = {}
+
+        def _record(db, _group_id):
+            remaining = (
+                db.query(UserGroupMember)
+                .filter(
+                    UserGroupMember.group_id == group.id,
+                    UserGroupMember.user_id == target.id,
+                )
+                .all()
+            )
+            observed_at_dispatch["remaining"] = remaining
+
+        monkeypatch.setattr(scim_group_service, "reindex_group_shared_files", _record)
+
+        scim_group_service.remove_group_members(db_session, group, {int(target.id)}, actor="idp")
+
+        assert observed_at_dispatch["remaining"] == []

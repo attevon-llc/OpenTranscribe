@@ -38,6 +38,10 @@ def isolated_lockout_store(monkeypatch):
     monkeypatch.setattr(lockout, "_redis_client", None)
     monkeypatch.setattr(lockout, "_in_memory_store", lockout.InMemoryLockoutStore())
     monkeypatch.setattr(lockout, "_store_initialized", True)
+    # issue #810: this fixture set three cached globals but missed `_last_redis_probe`,
+    # so monkeypatch (which only restores what it itself set) left a live
+    # `time.monotonic()` reading behind for whichever test reaches `_get_store()` next.
+    monkeypatch.setattr(lockout, "_last_redis_probe", 0.0)
 
 
 # ── local ───────────────────────────────────────────────────────────────────────

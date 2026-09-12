@@ -142,6 +142,23 @@ def _no_side_effects(monkeypatch):
     return recorder
 
 
+@pytest.fixture
+def reindex_calls(monkeypatch):
+    """Capture every ``reindex_group_shared_files(db, group_id)`` dispatch.
+
+    A stale ``accessible_user_ids`` on a directory-shared file survives
+    INDEFINITELY without this dispatch (issue: the two directory-driven paths
+    never called it before). This records the group ids reindexed, in order, so a
+    test can assert both directions — a newly-joined group's files must be
+    reindexed too, or a legitimately-shared file goes invisible.
+    """
+    calls: list[int] = []
+    monkeypatch.setattr(
+        svc, "reindex_group_shared_files", lambda _db, group_id: calls.append(group_id)
+    )
+    return calls
+
+
 # =============================================================================
 # The super_admin cap — the load-bearing rule
 # =============================================================================
@@ -307,6 +324,70 @@ class TestMembershipReconciliation:
         assert result.groups_removed == [9]
         assert result.applied is False
         assert db.added == [] and db.deleted == [] and db.commits == 0
+
+
+# =============================================================================
+# The reindex dispatch — closes the "stale accessible_user_ids forever" gap
+# =============================================================================
+class TestMembershipReconciliationReindexesAffectedGroups:
+    def test_a_newly_added_group_is_reindexed(self, reindex_calls):
+        """The ADD direction: a file newly shared via this group must become
+        searchable, or the reconciliation silently hid a legitimate grant."""
+        db = FakeSession([FakeMapping(MAPPING_SOURCE_LDAP, LEGAL_DN, user_group_id=7)])
+        svc.reconcile_user(db, FakeUser(), MAPPING_SOURCE_LDAP, [LEGAL_DN])
+
+        assert reindex_calls == [7]
+
+    def test_a_removed_group_is_reindexed(self, reindex_calls):
+        """The REMOVE direction — the security-relevant one: a file shared only
+        via this group must stop being searchable by the user who lost it."""
+        db = FakeSession(members=[FakeMember(7, source=MAPPING_SOURCE_LDAP)])
+        svc.reconcile_user(db, FakeUser(), MAPPING_SOURCE_LDAP, [])
+
+        assert reindex_calls == [7]
+
+    def test_both_directions_in_one_pass_each_reindex_once(self, reindex_calls):
+        db = FakeSession(
+            mappings=[FakeMapping(MAPPING_SOURCE_LDAP, LEGAL_DN, user_group_id=7)],
+            members=[FakeMember(9, source=MAPPING_SOURCE_LDAP)],
+        )
+        svc.reconcile_user(db, FakeUser(), MAPPING_SOURCE_LDAP, [LEGAL_DN])
+
+        assert sorted(reindex_calls) == [7, 9]
+
+    def test_reindex_runs_after_the_commit_not_before(self, monkeypatch):
+        """Ordering is the whole point (see group_file_index_service's docstring):
+        dispatching before the commit would have the worker read the PRE-change
+        membership. Assert the commit count is already 1 at the moment the
+        reindex helper is invoked."""
+        commits_at_dispatch = []
+        db = FakeSession([FakeMapping(MAPPING_SOURCE_LDAP, LEGAL_DN, user_group_id=7)])
+        monkeypatch.setattr(
+            svc,
+            "reindex_group_shared_files",
+            lambda _db, _group_id: commits_at_dispatch.append(db.commits),
+        )
+
+        svc.reconcile_user(db, FakeUser(), MAPPING_SOURCE_LDAP, [LEGAL_DN])
+
+        assert commits_at_dispatch == [1]
+
+    def test_a_steady_state_pass_reindexes_nothing(self, reindex_calls):
+        """Must-fire control: nothing changed, so nothing may be dispatched — a
+        helper that reindexed unconditionally would still pass every test above."""
+        db = FakeSession(
+            mappings=[FakeMapping(MAPPING_SOURCE_LDAP, LEGAL_DN, user_group_id=7)],
+            members=[FakeMember(7, source=MAPPING_SOURCE_LDAP)],
+        )
+        svc.reconcile_user(db, FakeUser(), MAPPING_SOURCE_LDAP, [LEGAL_DN])
+
+        assert reindex_calls == []
+
+    def test_dry_run_reindexes_nothing(self, reindex_calls):
+        db = FakeSession(mappings=[FakeMapping(MAPPING_SOURCE_LDAP, LEGAL_DN, user_group_id=7)])
+        svc.reconcile_user(db, FakeUser(), MAPPING_SOURCE_LDAP, [LEGAL_DN], dry_run=True)
+
+        assert reindex_calls == []
 
 
 # =============================================================================

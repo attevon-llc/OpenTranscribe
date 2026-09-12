@@ -57,6 +57,7 @@ from app.models.group import MEMBERSHIP_SOURCES_PROTECTED
 from app.models.group import GroupMapping
 from app.models.group import UserGroupMember
 from app.services.account_security_service import revoke_all_sessions
+from app.services.group_file_index_service import reindex_group_shared_files
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -251,6 +252,15 @@ def _reconcile_memberships(
     for group_id in to_remove:
         db.delete(derived[group_id])
     db.commit()
+    # Dispatched AFTER the commit above, one task per affected group, matching the
+    # granularity `groups.py`'s admin-UI membership endpoints already use — never
+    # before the commit, or the reindex would read this user's PRE-change membership
+    # and rewrite `accessible_user_ids` from stale data (see
+    # group_file_index_service's module docstring). Both directions matter: an
+    # add that never reindexes hides a legitimately-shared file just as badly as a
+    # stale removal leaks one.
+    for group_id in {*to_add, *to_remove}:
+        reindex_group_shared_files(db, group_id)
     logger.info(
         "Directory reconciliation for %s (%s): +%d group(s), -%d group(s)",
         user.email,

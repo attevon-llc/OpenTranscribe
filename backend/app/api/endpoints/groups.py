@@ -24,8 +24,6 @@ from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
-from app.models.media import CollectionMember
-from app.models.sharing import CollectionShare
 from app.models.user import User
 from app.schemas.group import Group as GroupSchema
 from app.schemas.group import GroupCreate
@@ -35,7 +33,7 @@ from app.schemas.group import GroupMemberAdd
 from app.schemas.group import GroupMemberUpdate
 from app.schemas.group import GroupUpdate
 from app.schemas.user import UserBrief
-from app.tasks.search_indexing_task import update_file_access_index
+from app.services.group_file_index_service import reindex_group_shared_files
 from app.utils.uuid_helpers import get_by_uuid
 from app.utils.uuid_helpers import require_resource_owner
 from app.utils.websocket_notify import send_ws_event
@@ -137,24 +135,14 @@ def _require_group_admin(db: Session, group: UserGroup, user_id: int) -> UserGro
 
 
 def _reindex_group_shared_files(db: Session, group_id: int) -> None:
-    """Reindex files in collections shared with this group."""
-    shared_collection_ids = [
-        cs.collection_id
-        for cs in db.query(CollectionShare.collection_id)
-        .filter(CollectionShare.target_group_id == group_id)
-        .all()
-    ]
-    if not shared_collection_ids:
-        return
-    file_ids = [
-        cm.media_file_id
-        for cm in db.query(CollectionMember.media_file_id)
-        .filter(CollectionMember.collection_id.in_(shared_collection_ids))
-        .distinct()
-        .all()
-    ]
-    if file_ids:
-        update_file_access_index.delay(file_ids)
+    """Reindex files in collections shared with this group.
+
+    Thin wrapper kept so existing call sites in this module don't churn; the actual
+    file-set derivation lives in ``group_file_index_service`` so SCIM- and
+    directory-driven membership changes can dispatch the same reindex without
+    duplicating this query (see that module's docstring).
+    """
+    reindex_group_shared_files(db, group_id)
 
 
 def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -> GroupSchema:

@@ -123,6 +123,26 @@ what it appears to. A green one from the wrong schema is worse.
     (`RUN_EXPORT_CAPABILITY_TEST`, `RUN_INDEX_AUDIT`). The env gate inside the test is still the
     authority on whether the work happens; the marker only stops an opt-in-by-design test from
     being counted. `--export-capability` selects the first back in.
+
+    ⚠️ **Worked example (2026-09-12): adding ONE new integration test tripped this.**
+    `test_chat_cache_share_revocation` needs a real, password-protected, in-network-only Redis
+    (the cache under test IS Redis) — unsatisfiable from a bare host run of the gate. Adding it
+    took the Unit/API phase's skip count from 7 to 8, past `INTEGRATION_SKIP_CEILING` (see
+    `run-integration-tests.sh`), and the whole phase reported `NOT MEASURED` — not "one more
+    skip", the entire phase's result became unusable. The fix was `pytest.mark.opt_in_gate`
+    (visibly deselected, not silently skipped), **not raising the ceiling**. The reason this
+    matters beyond the one test: a permanently-skipping test doesn't just fail to prove anything
+    itself — it consumes ceiling headroom, so it buries whatever OTHER skips in that phase would
+    have meant something. Raising the ceiling to "make room" reopens exactly that hole for the
+    next unrelated skip.
+
+    **Why the ceiling is 7, and not an arbitrary number**: `run-integration-tests.sh` names all
+    seven — 4 in `test_fusion_strategy_switch.py` (7 matching chunks, needs >=10) and 3 in
+    `test_rag_eval_harness.py` (the QMSum manifest's files landed in a different cluster) — and
+    they are one class: this deployment's corpus lacks the data those assertions need, tracked as
+    issue #403 / plan item P2-2 ("seed it"), not a gate misconfiguration. When #403/P2-2 seeds the
+    corpus, the ceiling drops to **zero**, not to 8 — 8 would be quietly re-legitimizing the room
+    this worked example just used.
 - Registered (pyproject): `slow`, `unit`, `pki`, `e2e`, `integration`, `gpu`, `models`,
   `multi_gpu`, `opt_in_gate`. `addopts` =
   `-n auto --dist loadgroup --tb=short -q --strict-markers -m 'not integration and not gpu'`;

@@ -22,6 +22,7 @@ from app.auth.audit import AuditEventType
 from app.models.group import MEMBERSHIP_SOURCE_SCIM
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
+from app.services.group_file_index_service import reindex_group_shared_files
 from app.services.scim_service import SCIMConflictError
 from app.services.scim_service import _audit
 
@@ -70,7 +71,8 @@ def set_group_members(db: Session, group: UserGroup, user_ids: set[int], *, acto
     scim_rows = {int(m.user_id): m for m in existing if str(m.source) == MEMBERSHIP_SOURCE_SCIM}
     already = {int(m.user_id) for m in existing}
 
-    for user_id in sorted(user_ids - already):
+    to_add = sorted(user_ids - already)
+    for user_id in to_add:
         db.add(
             UserGroupMember(
                 group_id=group.id,
@@ -79,9 +81,15 @@ def set_group_members(db: Session, group: UserGroup, user_ids: set[int], *, acto
                 source=MEMBERSHIP_SOURCE_SCIM,
             )
         )
-    for user_id in sorted(set(scim_rows) - user_ids):
+    to_remove = sorted(set(scim_rows) - user_ids)
+    for user_id in to_remove:
         db.delete(scim_rows[user_id])
     db.commit()
+    # Dispatched AFTER the commit above: the reindex reads UserGroupMember rows, and
+    # must observe this change rather than whatever membership existed before it
+    # (see group_file_index_service's module docstring for why the ordering matters).
+    if to_add or to_remove:
+        reindex_group_shared_files(db, group.id)
     _audit(
         AuditEventType.ADMIN_SETTINGS_CHANGE,
         actor=actor,
@@ -110,6 +118,8 @@ def add_group_members(db: Session, group: UserGroup, user_ids: set[int], *, acto
         )
     db.commit()
     if added:
+        # After the commit: see the ordering note in set_group_members above.
+        reindex_group_shared_files(db, group.id)
         _audit(
             AuditEventType.ADMIN_SETTINGS_CHANGE,
             actor=actor,
@@ -139,6 +149,8 @@ def remove_group_members(db: Session, group: UserGroup, user_ids: set[int], *, a
     )
     db.commit()
     if removed:
+        # After the commit: see the ordering note in set_group_members above.
+        reindex_group_shared_files(db, group.id)
         _audit(
             AuditEventType.ADMIN_SETTINGS_CHANGE,
             actor=actor,

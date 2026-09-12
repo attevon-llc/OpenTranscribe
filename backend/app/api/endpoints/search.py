@@ -496,19 +496,22 @@ def _summary_search_payload(
     `hybrid_search_service._search_corpus_version()` into `_make_cache_key`, so
     reusing that counter here is the natural move — and it genuinely does cover
     the takedown case (`takedown_service.quarantine_file`/`release_file` both
-    call `bump_corpus_version`). But it is bumped by exactly three things, and
+    call `bump_corpus_version`). It is now bumped by exactly FOUR things, and
     those are all of them: chunk-plane indexing writes
     (`indexing_service._invalidate_chat_retrieval_cache`, from
-    `index_transcript_chunks` and rename propagation), quarantine, and release.
-    A **collection share grant or revocation** (`endpoints/media_collections.py`)
-    and a **summary regeneration** (`tasks/summarization.py`, which rewrites the
-    very `media_file.summary_data` this leg reads) bump nothing. So a
-    corpus-version-keyed cache would keep serving an ex-recipient the summary
-    snippets of a collection they were just removed from, and keep serving the
-    pre-regeneration summary, for the rest of `SEARCH_CACHE_TTL_SECONDS` —
-    while *reading* as though it were invalidated. Verify that call-site list
-    before reconsidering (`rg 'bump_corpus_version\(\)' backend/app`); a cache
-    here needs an invalidation signal that does not yet exist.
+    `index_transcript_chunks` and rename propagation), quarantine, release, and
+    — as of the share-revocation cache-invalidation fix — an ACL rewrite via
+    `tasks.search_indexing_task.update_file_access_index` (the single call site
+    every collection-share grant/revocation and group-membership change
+    dispatches through). A **summary regeneration** (`tasks/summarization.py`,
+    which rewrites the very `media_file.summary_data` this leg reads) still
+    bumps nothing. So a corpus-version-keyed cache would still keep serving the
+    pre-regeneration summary for the rest of `SEARCH_CACHE_TTL_SECONDS` — while
+    *reading* as though it were invalidated — even though the share-revocation
+    half of this concern is now closed. Verify that call-site list before
+    reconsidering (`rg 'bump_corpus_version\(\)' backend/app`); a cache here
+    still needs a summary-regeneration invalidation signal that does not yet
+    exist.
 
     Access control is ``PermissionService.get_accessible_file_ids_subquery`` —
     the same authority every owner-scoped listing uses — applied inside

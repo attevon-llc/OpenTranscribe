@@ -11,6 +11,16 @@ therefore misses rather than serving stale shape. Cached entries are
 **post-retrieval, pre-masking**: masking is per-user policy applied downstream,
 so a cache hit never bypasses redaction.
 
+⚠️ **The key is deliberately ACL-blind — it does NOT bind who currently has
+access to the cached file(s).** A share revocation is invisible to the key
+itself; it only invalidates via ``bump_corpus_version()``, which
+``update_file_access_index`` (the one place that rewrites
+``accessible_user_ids``) now calls unconditionally after its
+``update_by_query`` loop completes. Widening the key to include ACL state was
+rejected: ACL membership is per-caller and per-file, so it would fragment the
+cache into one entry per accessible-set rather than one per query/scope, for a
+property that already has a working invalidation path.
+
 Every failure degrades to a miss — the cache can never be the reason a chat fails.
 """
 
@@ -65,10 +75,21 @@ def corpus_version() -> str:
 def bump_corpus_version() -> None:
     """Invalidate every cached retrieval, because indexed content changed.
 
-    Called from the chunk indexing and deletion paths. Never raises — indexing
-    must not fail because a chat cache marker could not be written (the cost of
-    that failure is a stale cache entry for at most the TTL, not a broken
-    pipeline).
+    Called from the chunk indexing and deletion paths, and from
+    ``tasks.search_indexing_task.update_file_access_index`` — the ACL rewrite a
+    collection share grant/revocation or group-membership change triggers —
+    unconditionally, after its ``update_by_query`` loop completes (including
+    when it reports errors: a bump is never incorrect, only occasionally
+    unnecessary, and the case that matters most is exactly the one where the
+    index write may be incomplete). That call site was chosen over bumping
+    synchronously from the endpoints that dispatch it: those dispatch
+    ``.delay()``, so a bump made there races the in-flight ACL rewrite —
+    the next query would miss, run against the still-stale index, get the
+    revoked chunks anyway, and re-cache them under the new version for a fresh
+    TTL. Bumping only after the write is visible closes that window instead of
+    widening it. Never raises — indexing must not fail because a chat cache
+    marker could not be written (the cost of that failure is a stale cache
+    entry for at most the TTL, not a broken pipeline).
     """
     try:
         from app.core.redis import get_redis

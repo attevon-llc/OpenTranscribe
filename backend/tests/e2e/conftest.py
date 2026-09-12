@@ -68,6 +68,7 @@ if _backend_dir not in sys.path:
 # same env vars this dev stack exposes) — imported here for its **module-level side effects
 # only** (setting `os.environ` before any `app.*` import happens), not registered as a plugin,
 # so its own fixtures / its own `pytest_plugins` entries don't leak into this rootdir.
+from frontend_warm import find_entry_modules
 from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
@@ -341,16 +342,16 @@ def _warm_frontend_module_graph(base_url: str) -> None:
             if shell.status_code != 200:
                 last = f"shell HTTP {shell.status_code}"
             else:
-                mods = re.findall(
-                    r'["\'](/(?:@fs|@vite|src|node_modules)/[^"\']+\.js)["\']', shell.text
-                )
+                # Detection lives in frontend_warm.py because `run-dev-tests.sh`'s
+                # quiesce step needs the identical rule — it used to carry its own
+                # copy, with the `<script src type=module>` bug this docstring warns
+                # about, and reported NOT WARM on every run as a result.
+                # It already returns widest-graph-first.
+                mods = find_entry_modules(shell.text)
                 if not mods:
                     # Not the Vite dev server (prod/nginx overlay serves hashed bundles that
                     # need no warming). Nothing to do, and not a problem.
                     return
-                # The generated client app imports the real route modules, so it pulls the
-                # widest graph of anything referenced by the shell.
-                mods.sort(key=lambda u: (0 if "generated/client/app.js" in u else 1, len(u)))
                 probe_started = time.monotonic()
                 mod = requests.get(base_url.rstrip("/") + mods[0], timeout=90)
                 took = time.monotonic() - probe_started

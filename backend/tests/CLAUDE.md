@@ -127,8 +127,9 @@ what it appears to. A green one from the wrong schema is worse.
     ⚠️ **Worked example (2026-09-12): adding ONE new integration test tripped this.**
     `test_chat_cache_share_revocation` needs a real, password-protected, in-network-only Redis
     (the cache under test IS Redis) — unsatisfiable from a bare host run of the gate. Adding it
-    took the Unit/API phase's skip count from 7 to 8, past `INTEGRATION_SKIP_CEILING` (see
-    `run-integration-tests.sh`), and the whole phase reported `NOT MEASURED` — not "one more
+    took the **Integration-marked tests** phase's skip count from 7 to 8, past
+    `INTEGRATION_SKIP_CEILING` (see `run-integration-tests.sh`), and the whole phase reported
+    `NOT MEASURED` — not "one more
     skip", the entire phase's result became unusable. The fix was `pytest.mark.opt_in_gate`
     (visibly deselected, not silently skipped), **not raising the ceiling**. The reason this
     matters beyond the one test: a permanently-skipping test doesn't just fail to prove anything

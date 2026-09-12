@@ -408,3 +408,41 @@ def test_keep_list_is_currently_unreachable_by_the_shipped_patterns() -> None:
         f"a shipped ORPHAN_PATTERNS entry now matches a keep-listed value: {sorted(matched)} "
         "— Observation D no longer holds, verify this is intentional before merging"
     )
+
+
+@pytest.mark.unit
+def test_only_no_action_and_restrict_are_treated_as_blocking_fks() -> None:
+    """``_BLOCKING_FK_SQL`` must select ``confdeltype IN ('a','r')``, never ``<> 'c'``.
+
+    Postgres has five ``confdeltype`` values and only two of them refuse a DELETE:
+    ``a`` (NO ACTION) and ``r`` (RESTRICT). ``c`` (CASCADE), ``n`` (SET NULL) and
+    ``d`` (SET DEFAULT) all let the parent row go — the child row is rewritten, not
+    defended.
+
+    The predicate was ``<> 'c'``, which swept SET NULL and SET DEFAULT in with the
+    real blockers. This schema has **12** SET NULL FKs into ``"user"``, so a
+    candidate carrying any of them was reported ``BLOCKED`` and skipped while
+    Postgres would have deleted it without complaint — and the script then exited
+    non-zero.
+
+    That is not hypothetical: on 2026-09-12 a single leaked ``litemode-`` user with
+    one ``usage_event`` row (``confdeltype = 'n'``) failed
+    ``run-integration-tests.sh``'s Tier A sweep with every test phase green, and
+    would have done so on every later run. Deleting it left the metering row in
+    place with a NULL ``user_id`` — 1019 rows before and after — which is exactly
+    what ``usage_event.user_id``'s SET NULL is for: financial records outlive the
+    account.
+
+    This asserts on the SQL text rather than a live database so it runs in the fast
+    unit suite and in CI, where no dev stack exists.
+    """
+    sql = cleanup._BLOCKING_FK_SQL
+    normalized = " ".join(sql.split())
+
+    assert "confdeltype IN ('a', 'r')" in normalized or "confdeltype IN ('a','r')" in normalized, (
+        "blocking-FK detection must enumerate the two delete actions that actually "
+        f"refuse a DELETE, not exclude CASCADE alone. Got: {normalized}"
+    )
+    assert "confdeltype <> 'c'" not in normalized, (
+        "'<> c' counts SET NULL and SET DEFAULT as blockers; both permit the delete"
+    )

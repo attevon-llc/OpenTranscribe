@@ -7,7 +7,7 @@ embedded credentials, SQL fragments — to any caller who triggers the error. #8
 originally flagged the API/endpoint layer; #891 is the identical defect one layer
 down in the SERVICE layer, which #859's own remediation explicitly excluded.
 
-Three independent, AST-based scanners live here, all allowlist-gated with a mandatory
+Four independent, AST-based scanners live here, all allowlist-gated with a mandatory
 written reason, matching this repo's ``test_ws_event_quarantine_discipline.py`` /
 ``test_ddl_marker_discipline.py`` pattern.
 
@@ -54,6 +54,42 @@ hatch would hide exactly this class of false confidence, so the scanner never lo
 at a callee's name, only at whether an expression's AST subtree references a
 tainted variable.
 
+**Scanner 4 (CONTAINER return-path) closes the blind spot the first three share.**
+Scanners 1-3 track taint through *assignment* and check it at ``visit_Return``, so they
+see ``return {"error": str(e)}`` and are blind to ``failures.append({"error": str(e)})``
+followed by ``return failures`` several lines later. That is not hypothetical: it is how
+``api/endpoints/tasks.py::recover_all_stuck_tasks`` returned the raw Celery re-dispatch
+exception — which on the broker path names the transport URL and its embedded password —
+past a gate written to stop exactly that. Scanner 4 tracks a tainted value into a
+CONTAINER (``.append``/``.extend``/``.add``/``.update``/``.insert``/``.setdefault``, a
+subscript or attribute assignment, or ``+=``) whose container is later returned, and
+reports **the mutation's** line — the leak, not the return. Two consequences, both
+deliberate:
+
+* It collects returns and checks them when the function CLOSES rather than at
+  ``visit_Return``, because the mutation is frequently BELOW the return in source order
+  (``gdpr_erasure_service.py::erase_user`` returns at :457 and mutates at :498).
+* The finding count is per WRITE, not per return statement. Keying on the return would
+  collapse every leak in one function into a single finding, so a new leak added beside
+  an already-allowlisted one could never exceed its allowlisted count — which is exactly
+  what ``test_a_container_return_site_may_not_exceed_its_allowlisted_count`` exists to
+  catch. ``bulk_file_action`` is the live example: two tainted writes into one returned
+  list, one legitimate and one a real leak, behind a single ``return results``.
+
+Two scoping decisions, both measured rather than assumed:
+
+* **No transitive propagation.** An earlier draft also treated ``y = f(container)`` as
+  container-tainted. That produced three false-positive keys in ``app/tasks/`` where an
+  ordinary ``file_id = int(media_file.id)`` inherited taint through an unrelated chain
+  (``rediarize_task``, ``process_youtube_url_task``, ``dispatch_batch_transcription``).
+  Direct mutation only: measured **zero** false positives across the whole tree.
+* **Rooted at ``app/api/`` + ``app/services/``, not ``app/tasks/``.** A Celery task's
+  return value goes to the result backend, and this application reads it back in exactly
+  two places — ``app/utils/task_utils.py:461`` and ``:670`` — both of which read
+  ``.state`` and never ``.result``. So a task return is not a response body here.
+  ``test_a_celery_result_is_never_read_into_a_response`` pins that premise mechanically,
+  so the scope stays honest if someone ever wires a task result into an endpoint.
+
 **The one structural exception is ``type(<anything>).__name__``.** This is not a
 callee-name check (the paragraph above still holds): the scanner recognises one AST
 shape — an ``Attribute`` named ``__name__`` whose value is a ``Call`` to a bare
@@ -66,12 +102,21 @@ flags its own prescribed fix is a gate people learn to route around. It is narro
 on purpose: ``f"failed ({type(e).__name__})"`` alone does not taint, but
 ``f"failed ({type(e).__name__}): {e}"`` still does, because the bare ``e`` sitting
 outside the ``type(...).__name__`` shape is walked normally.
+
+**Scanner 4 adds a second such shape, ``len(<anything>)``**, for the same reason and
+under the same rule (a structural shape, never a callee name). Reporting a per-item
+failure COUNT — ``return {"failed": len(failures)}`` — is the textbook safe way to
+consume a container the handler filled with exception text, and a gate that flagged it
+would fire on its own prescribed alternative. It is applied to scanner 4 only, via
+``_references_tainted``'s ``prune`` parameter, so scanners 1-3's measured finding counts
+and their allowlists are untouched.
 """
 
 from __future__ import annotations
 
 import ast
 import functools
+from collections.abc import Callable
 from pathlib import Path
 
 _TESTS_ROOT = Path(__file__).resolve().parents[1]
@@ -112,26 +157,54 @@ def _is_class_name_only(node: ast.AST) -> bool:
     )
 
 
-def _references_tainted(expr: ast.AST | None, tainted: frozenset[str]) -> bool:
+def _is_length_only(node: ast.AST) -> bool:
+    """True for a bare ``len(<anything>)`` call — reduces to an int, never text.
+
+    The scanner-4 counterpart of ``_is_class_name_only``, and justified the same way:
+    one AST shape that is structurally guaranteed to carry no message text no matter
+    what sits inside it. It exists because reporting a per-item failure COUNT
+    (``return {"failed": len(failures)}``) is the textbook safe consumption of a
+    container the handler filled with exception text — flagging it would make the
+    gate fire on the very thing it wants people to do instead. Narrow on purpose:
+    ``len(failures)`` alone does not taint, but ``{"n": len(failures), "detail":
+    failures}`` still does, because the bare reference outside the ``len(...)``
+    subtree is walked normally.
+    """
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "len"
+
+
+def _references_tainted(
+    expr: ast.AST | None,
+    tainted: frozenset[str],
+    prune: Callable[[ast.AST], bool] = _is_class_name_only,
+) -> bool:
     """True if any ``Name`` node inside *expr* is a member of *tainted*.
 
     Deliberately structural and name-blind: no allowance is made for a callee
     that "looks like" a sanitizer. See the module docstring. The single exception
-    is ``_is_class_name_only``: when a subtree matches that shape, its children
-    (including whatever exception variable sits inside ``type(...)``) are never
-    visited, because that shape cannot carry message text regardless of contents.
+    is *prune*: when a subtree matches it, its children (including whatever
+    exception variable sits inside) are never visited, because that shape cannot
+    carry message text regardless of contents. It defaults to
+    ``_is_class_name_only``; scanner 4 passes a predicate that also prunes
+    ``len(...)``. A *name*-based escape hatch remains forbidden — every prune here
+    is a structural shape, never a callee identity.
     """
     if expr is None or not tainted:
         return False
     stack: list[ast.AST] = [expr]
     while stack:
         node = stack.pop()
-        if _is_class_name_only(node):
+        if prune(node):
             continue
         if isinstance(node, ast.Name) and node.id in tainted:
             return True
         stack.extend(ast.iter_child_nodes(node))
     return False
+
+
+def _is_class_name_or_length_only(node: ast.AST) -> bool:
+    """Scanner 4's prune: both structurally text-free shapes."""
+    return _is_class_name_only(node) or _is_length_only(node)
 
 
 def _taint_from_except_handler(
@@ -279,6 +352,140 @@ class _TaintWalker(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+#: Method names that write a value INTO the object they are called on. A tainted value
+#: passed to one of these makes the receiver container-tainted (scanner 4). Chosen from
+#: the mutating APIs of the builtin containers this codebase actually returns — list,
+#: dict, set, deque — not from a general "any method call could mutate" premise, which
+#: would flag every ``logger.error(str(e))`` in the tree.
+_CONTAINER_MUTATORS = frozenset(
+    {"append", "appendleft", "add", "extend", "insert", "update", "setdefault"}
+)
+
+
+def _container_base_name(node: ast.AST) -> str | None:
+    """The root ``Name`` of an attribute/subscript chain, or None.
+
+    ``summary["errors"].append(...)`` and ``result.detail["x"] = ...`` both resolve to
+    the local the caller will later return (``summary`` / ``result``).
+    """
+    while isinstance(node, (ast.Attribute, ast.Subscript)):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else None
+
+
+class _ContainerTaintWalker(ast.NodeVisitor):
+    """Scanner 4: a tainted value written into a container that is later returned.
+
+    Mirrors ``_TaintWalker``'s scope handling (function stack, handler-local taint,
+    function-persistent taint) but records CONTAINER names rather than checking the
+    return expression directly, and defers the check to function exit so a mutation
+    below the return statement is still seen.
+    """
+
+    def __init__(self) -> None:
+        self._func_stack: list[str] = ["<module>"]
+        self._taint_stack: list[frozenset[str]] = [frozenset()]
+        self._fn_taint: list[set[str]] = [set()]
+        #: per function scope: ``{container_name: [every tainting mutation's lineno]}``
+        self._containers: list[dict[str, list[int]]] = [{}]
+        #: per function scope: every ``return <expr>`` seen, checked at function exit
+        self._returns: list[list[tuple[int, ast.expr]]] = [[]]
+        #: ``(function, MUTATION lineno)`` — deliberately the write, not the return.
+        #: Keying on the return would collapse every leak in one function to a single
+        #: finding, so a second leak added beside an allowlisted one could never
+        #: exceed its count. It also points the failure message at the line to fix.
+        self.container_findings: list[tuple[str, int]] = []
+
+    def _live_taint(self) -> frozenset[str]:
+        return frozenset(self._taint_stack[-1] | self._fn_taint[-1])
+
+    def _note_container(self, target: ast.AST, lineno: int) -> None:
+        name = _container_base_name(target)
+        if name is not None:
+            self._containers[-1].setdefault(name, []).append(lineno)
+
+    def _close_scope(self) -> None:
+        containers = self._containers[-1]
+        if not containers:
+            return
+        leaked: set[int] = set()
+        for name, mutations in containers.items():
+            if any(
+                _references_tainted(value, frozenset({name}), _is_class_name_or_length_only)
+                for _, value in self._returns[-1]
+            ):
+                leaked.update(mutations)
+        self.container_findings.extend((self._func_stack[-1], lineno) for lineno in sorted(leaked))
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        self._func_stack.append(node.name)
+        self._fn_taint.append(set())
+        self._containers.append({})
+        self._returns.append([])
+        self.generic_visit(node)
+        self._close_scope()
+        self._func_stack.pop()
+        self._fn_taint.pop()
+        self._containers.pop()
+        self._returns.pop()
+
+    # noqa reason: dispatched by name from ast.NodeVisitor.generic_visit, exactly as in
+    # _TaintWalker above — a snake_case alias would never be called.
+    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
+        tainted = _taint_from_except_handler(node, self._taint_stack[-1])
+        self._fn_taint[-1] |= tainted - ({node.name} if node.name else set())
+        self._taint_stack.append(tainted)
+        self.generic_visit(node)
+        self._taint_stack.pop()
+
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+        tainted = self._live_taint()
+        if (
+            tainted
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _CONTAINER_MUTATORS
+            and (
+                any(
+                    _references_tainted(a, tainted, _is_class_name_or_length_only)
+                    for a in node.args
+                )
+                or any(
+                    _references_tainted(kw.value, tainted, _is_class_name_or_length_only)
+                    for kw in node.keywords
+                )
+            )
+        ):
+            self._note_container(node.func.value, node.lineno)
+        self.generic_visit(node)
+
+    def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
+        tainted = self._live_taint()
+        if (
+            tainted
+            and len(node.targets) == 1
+            and _references_tainted(node.value, tainted, _is_class_name_or_length_only)
+        ):
+            target = node.targets[0]
+            # A plain `x = str(e)` is scanner 2/3's job (it taints the NAME). Only an
+            # assignment THROUGH a subscript or attribute writes into a container.
+            if isinstance(target, (ast.Subscript, ast.Attribute)):
+                self._note_container(target, node.lineno)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+        tainted = self._live_taint()
+        if tainted and _references_tainted(node.value, tainted, _is_class_name_or_length_only):
+            self._note_container(node.target, node.lineno)
+        self.generic_visit(node)
+
+    def visit_Return(self, node: ast.Return) -> None:  # noqa: N802
+        if node.value is not None:
+            self._returns[-1].append((node.lineno, node.value))
+        self.generic_visit(node)
+
+
 def _collect_class_bases(tree: ast.Module) -> dict[str, set[str]]:
     """``{class_name: {base_name, ...}}`` for every ``ClassDef`` in *tree*."""
     bases: dict[str, set[str]] = {}
@@ -394,6 +601,31 @@ def _scan_service_returns() -> dict[str, list[int]]:
             service_return_by_key.setdefault(f"{rel}::{fn}", []).append(lineno)
 
     return service_return_by_key
+
+
+@functools.cache
+def _scan_container_returns() -> dict[str, list[int]]:
+    """Scanner 4: tainted value -> container -> ``return`` of that container.
+
+    Rooted at ``app/api/`` + ``app/services/``; see the module docstring for why
+    ``app/tasks/`` is excluded and which test pins that premise.
+    """
+    container_by_key: dict[str, list[int]] = {}
+    for root in (_API_ROOT, _SERVICES_ROOT):
+        for path in _iter_py_files(root):
+            rel = _rel_to_app(path)
+            source = path.read_text()
+            if "except" not in source or "return" not in source:
+                continue
+            try:
+                tree = ast.parse(source)
+            except SyntaxError:  # pragma: no cover
+                continue
+            walker = _ContainerTaintWalker()
+            walker.visit(tree)
+            for fn, lineno in walker.container_findings:
+                container_by_key.setdefault(f"{rel}::{fn}", []).append(lineno)
+    return container_by_key
 
 
 #: (expected_count, written reason) per ``"<path relative to app/>::<function>"`` key.
@@ -701,6 +933,96 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
 }
 
 
+#: (expected_count, written reason) per ``"<path>::<function>"`` key, CONTAINER
+#: return-path (scanner 4). Same two families as ``_SERVICE_RETURN_ALLOWLIST``:
+#:
+#: §4b — the caller is entitled to the value. Either a dial result the admin asked
+#: for against their own configured destination, or an ``HTTPException.detail`` we
+#: authored ourselves.
+#:
+#: §4c — internal-only. The container never reaches an HTTP response body; every
+#: entry names the real consumer(s), traced by hand to a terminating read.
+_CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "api/endpoints/asr_settings.py::test_saved_asr_config": (
+        1,
+        "dial result, and the SAME finding _RETURN_ALLOWLIST already carries for this "
+        "function -- scanner 4 re-surfaces it through the `config.test_message = "
+        "_sanitize_message(message, api_key)` attribute write rather than the returned "
+        "`message`. Already sanitized on both paths; note the returned expression only "
+        "references `config` via str(config.uuid), never the tainted attribute",
+    ),
+    "api/endpoints/files/management.py::bulk_file_action": (
+        1,
+        "our own HTTPException detail: the surviving tainted branch is `except "
+        "HTTPException as e: message=str(e.detail)`, the same re-surfacing of a detail "
+        "WE raised that _RETURN_ALLOWLIST allows for files/__init__.py::_ready_frame. "
+        "That those details are ours is not an assertion here but a mechanical "
+        "consequence of scanner 1: it scans the whole app/ tree for a tainted "
+        "HTTPException detail and has zero unallowlisted findings, so no reachable "
+        "raise can put caught library text into one. The sibling `except Exception` "
+        "branch WAS a real leak and is fixed (type(e).__name__ + logger.exception)",
+    ),
+    "services/auto_label_service.py::retroactive_apply": (
+        1,
+        "internal-only: ZERO call sites in app/ -- the only `retroactive_apply` hits "
+        'are the WS-event label `file_id="retroactive_apply"` in tasks/auto_labeling.py '
+        "(:154,179,207,314,335), which is a string, not a call. Nothing consumes the "
+        'returned `result["errors"]` at all',
+    ),
+    "services/backup_service.py::s3_bucket_status": (
+        1,
+        "dial result: reachability of the ADMIN'S OWN S3 backup destination, reached "
+        "via backup_settings.py::_s3_status (:192) -> S3Status(error=raw.get('error')) "
+        "on GET /admin/backup/settings. Same §2b family as this module's "
+        "test_s3_connection entry above, and the two facts a botocore message adds -- "
+        "the bucket and the endpoint URL -- are already explicit sibling FIELDS of the "
+        "same S3Status response. The secret key is never interpolated by botocore",
+    ),
+    "services/media_mirror_service.py::s3_bucket_status": (
+        1,
+        "dial result, the media-mirror twin of backup_service.py::s3_bucket_status: "
+        "media_mirror_settings.py::_s3_status (:124) -> MirrorS3Status(**...), whose "
+        "s3_endpoint_url/s3_bucket are likewise already fields of the same settings "
+        "response (and s3_secret_key_set is a bool, never the secret)",
+    ),
+    "services/file_cleanup_service.py::_load_purge_plan": (
+        1,
+        "internal-only: `plan['speaker_read_error']` is read at :465 by "
+        "_purge_external_copies, folded into `residual` (:467), and residual's only "
+        "consumers are purge_account_external_copies' -- see that entry below",
+    ),
+    "services/file_cleanup_service.py::purge_account_external_copies": (
+        2,
+        "internal-only: the two call sites are admin.py:1022 and users.py:872, and "
+        "BOTH pass it only to audit_user_deleted(..., residual_errors), which "
+        "deliberately records counters and stage NAMES and never the error strings "
+        "(account_security_service.py:302-308, with the no-free-text rule written into "
+        "its own docstring at :297-300). The HTTP responses carry "
+        "len(residual_errors) (admin.py:1034) and None (users.py:877)",
+    ),
+    "services/file_cleanup_service.py::force_cleanup_orphaned_files": (
+        2,
+        "internal-only: one call site, tasks/cleanup.py:88 inside the "
+        "`cleanup.deep_cleanup` Celery task, which logs the errors (:98) and returns "
+        "them as the TASK result -- never read back (see "
+        "test_a_celery_result_is_never_read_into_a_response)",
+    ),
+    "services/file_cleanup_service.py::run_cleanup_cycle": (
+        2,
+        "internal-only: one call site, tasks/cleanup.py:49 inside the "
+        "`cleanup.periodic` Celery task; same log-and-return-as-task-result shape as "
+        "force_cleanup_orphaned_files above",
+    ),
+    "services/media_download_service.py::_process_playlist_videos": (
+        1,
+        "internal-only: `skipped_videos` is returned to process_youtube_playlist_sync "
+        "(:1812), which puts it on its result dict (:1843); the one consumer of that "
+        "dict, tasks/youtube_processing.py::_handle_playlist_result (via :764), reads "
+        "`result.get('skipped_count', 0)` (:810) and never the per-video reasons",
+    ),
+}
+
+
 def test_the_scanner_actually_finds_call_sites() -> None:
     """A scanner that matches nothing is indistinguishable from a clean tree."""
     raise_by_key, return_by_key = _scan()
@@ -722,6 +1044,16 @@ def test_the_scanner_actually_finds_call_sites() -> None:
         f"app/services/, found {len(service_return_by_key)} — either the "
         "scanner regressed or the codebase genuinely eliminated most of them "
         "(update this floor deliberately if so)"
+    )
+    # Measured post-fix (scanner 4's own remediation wave): 10 distinct container-return
+    # keys across app/api/ + app/services/, from 14 before six response-bound sites were
+    # sanitized. Set ONE below deliberately, same convention as the floor above.
+    container_by_key = _scan_container_returns()
+    assert len(container_by_key) >= 9, (
+        f"expected at least 9 distinct container-return-path findings under app/api/ + "
+        f"app/services/, found {len(container_by_key)} — either the scanner regressed "
+        "or the codebase genuinely eliminated most of them (update this floor "
+        "deliberately if so)"
     )
 
 
@@ -852,6 +1184,111 @@ def test_the_service_return_allowlist_is_honest() -> None:
     assert not stale, f"allowlist entries point at functions with no finding at all: {stale}"
     assert not inflated, f"allowlist entries claim more findings than exist: {inflated}"
     assert not unexplained, f"allowlist entries need a written reason: {unexplained}"
+
+
+def test_no_unallowlisted_container_return_path_exception_echo() -> None:
+    """Scanner 4: taint into a container that is later returned."""
+    container_by_key = _scan_container_returns()
+    unallowlisted = sorted(set(container_by_key) - set(_CONTAINER_RETURN_ALLOWLIST))
+    assert not unallowlisted, (
+        "These sites write caught exception text into a CONTAINER that is later "
+        "returned -- invisible to scanners 2 and 3, which check the return expression "
+        "itself. Keep the per-item identity and an app-level reason, drop the "
+        "interpolation, and logger.exception the detail (see the #914 fix commits); or "
+        "add a reasoned _CONTAINER_RETURN_ALLOWLIST entry naming the traced "
+        "consumer:\n  " + "\n  ".join(unallowlisted)
+    )
+
+
+def test_a_container_return_site_may_not_exceed_its_allowlisted_count() -> None:
+    container_by_key = _scan_container_returns()
+    over: list[str] = []
+    for key, findings in container_by_key.items():
+        expected = _CONTAINER_RETURN_ALLOWLIST.get(key)
+        if expected is not None and len(findings) > expected[0]:
+            over.append(f"{key} (found {len(findings)}, allowlisted {expected[0]})")
+    assert not over, (
+        "These functions have MORE tainted container-return sites than their allowlist "
+        "entry accounts for -- a new leak was added beside an already-allowlisted "
+        "one:\n  " + "\n  ".join(over)
+    )
+
+
+def test_the_container_return_allowlist_is_honest() -> None:
+    container_by_key = _scan_container_returns()
+    stale: list[str] = []
+    inflated: list[str] = []
+    unexplained: list[str] = []
+    for key, (expected_count, reason) in sorted(_CONTAINER_RETURN_ALLOWLIST.items()):
+        actual = len(container_by_key.get(key, []))
+        if actual == 0:
+            stale.append(key)
+        elif actual < expected_count:
+            inflated.append(f"{key} (allowlisted {expected_count}, found {actual})")
+        if not reason.strip():
+            unexplained.append(key)
+    assert not stale, f"allowlist entries point at functions with no finding at all: {stale}"
+    assert not inflated, f"allowlist entries claim more findings than exist: {inflated}"
+    assert not unexplained, f"allowlist entries need a written reason: {unexplained}"
+
+
+def test_a_celery_result_is_never_read_into_a_response() -> None:
+    """The premise scanner 4's ``app/tasks/`` exclusion rests on.
+
+    A Celery task's return value lands in the result backend, so it is response-bound
+    only if something reads it back. This application reads ``AsyncResult`` in exactly
+    two places and touches only ``.state`` — never ``.result``/``.get()``/``.wait()``.
+    If that ever changes, the scan root is wrong and this is what says so, rather than
+    the exclusion quietly becoming a hole.
+    """
+    bindings: list[tuple[str, int, str]] = []  # (rel, lineno, attribute read)
+    binding_count = 0
+    safe_attributes = {"state"}
+    for path in _iter_py_files(_APP_ROOT):
+        source = path.read_text()
+        if "AsyncResult" not in source:
+            continue
+        # Deliberately NOT guarded with `except SyntaxError: continue` the way the
+        # module-level scanners are: this is a test body, and a file under app/ that
+        # does not parse is a failure worth seeing, not one to skip past.
+        tree = ast.parse(source)
+        rel = _rel_to_app(path)
+        names: set[str] = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Call)
+                and _call_target_name(node.value) == "AsyncResult"
+            ):
+                names.add(node.targets[0].id)
+                binding_count += 1
+        if not names:
+            continue
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id in names
+                and node.attr not in safe_attributes
+            ):
+                bindings.append((rel, node.lineno, node.attr))
+
+    # Non-vacuity: a scan that found no AsyncResult binding at all would pass the
+    # assertion below while proving nothing.
+    assert binding_count >= 2, (
+        f"expected at least 2 AsyncResult bindings under app/ (they live in "
+        f"utils/task_utils.py), found {binding_count} — either they moved or this "
+        "guard stopped matching, and scanner 4's app/tasks/ exclusion is unproven"
+    )
+    assert not bindings, (
+        "A Celery result is now read beyond .state:\n  "
+        + "\n  ".join(f"{rel}:{lineno} reads .{attr}" for rel, lineno, attr in bindings)
+        + "\nScanner 4 excludes app/tasks/ BECAUSE a task's return value reaches no "
+        "HTTP response body. Reading .result/.get()/.wait() makes it response-bound, "
+        "so either revert that read or add app/tasks/ to _scan_container_returns()."
+    )
 
 
 def test_the_scan_root_includes_the_service_layer() -> None:

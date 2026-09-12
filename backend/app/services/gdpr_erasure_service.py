@@ -495,8 +495,17 @@ def erase_user(
             summary["users_deleted"] = 1
         except Exception as e:  # noqa: BLE001 — record, don't raise
             db.rollback()
-            summary["errors"].append({"user_id": user_id, "error": str(e)})
-            logger.error(f"erase_user: failed to delete user row {user_id}: {e}")
+            # `summary` is returned straight out of this function and becomes the
+            # response body of POST /admin/gdpr/erase-user/{uuid} (admin.py:2527), so
+            # only authored facts may go in it. A SQLAlchemy error here quotes the whole
+            # failing statement, the bound parameters, and the constraint/table names
+            # (`Key (user_id)=(42) is still referenced from table "media_file"`) — SQL
+            # fragments are exactly the class #914 exists to keep out of a response. The
+            # subject id, which is what makes the failure actionable, is kept.
+            summary["errors"].append(
+                {"user_id": user_id, "error": f"user row delete failed ({type(e).__name__})"}
+            )
+            logger.exception(f"erase_user: failed to delete user row {user_id}")
             # db.rollback() expires every object the session was tracking, including
             # `ledger_entry` — opened and COMMITTED independently by record_request
             # before anything was destroyed, so this rollback cannot have undone it,
@@ -791,8 +800,14 @@ def erase_organization(
         db.commit()
     except Exception as e:  # noqa: BLE001
         db.rollback()
-        summary["errors"].append({"org_id": org_id, "error": str(e)})
-        logger.error(f"erase_organization: failed to delete org row {org_id}: {e}")
+        # Same contract as erase_user's twin above: `summary` is returned verbatim as the
+        # body of POST /org-admin/gdpr/erase-organization (org_admin.py:186), and the raw
+        # SQLAlchemy text would carry the failing statement, its bound parameters and the
+        # referencing table/constraint names (#914). The org id is kept.
+        summary["errors"].append(
+            {"org_id": org_id, "error": f"organization row delete failed ({type(e).__name__})"}
+        )
+        logger.exception(f"erase_organization: failed to delete org row {org_id}")
         # See the identical comment in erase_user: db.rollback() expires every object
         # in the session, including ledger_entry — committed independently by
         # record_request before anything was destroyed, so this rollback cannot have

@@ -433,15 +433,18 @@ python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
   measurement cycles on the Redis-retry bug; `python -m cProfile -o out.prof -m pytest <test>`
   found it in one.
 
-Current (measured 2026-09-05, load average 9→56 on 48 cores — quote the command, not the
-number, if you are unsure, and note this was measured under load, not a clean run): backend
-**12,882 passed / 148 skipped / 154-182 s** wall.
+Current (measured 2026-09-12 via `./scripts/run-integration-tests.sh`'s unit/API phase, under
+load — quote the command, not the number, if you are unsure): backend
+**14,746 passed / 79 skipped** in that phase. A prior entry here read 12,882/148 (2026-09-05);
+that is not this run under-reporting, it is the same rot this section warns about — re-derive,
+don't diff against a remembered number.
 
 **These numbers rot — re-derive rather than trust them.** Prior values in this file have been
 wrong by over a thousand tests when checked. `./scripts/run-backend-tests.sh --summary` and
-`cd frontend && npm run test` answer in seconds. The root `baseline.xml` is a stale
-**5,473-test artifact from Aug 11** — regenerate or delete it before trusting any
-`--baseline` comparison against it today.
+`cd frontend && npm run test` answer in seconds. The root `baseline.xml` referenced by
+`analyze-test-timing.py --baseline` **no longer exists in this checkout** (the stale
+5,473-test/Aug-11 artifact this section used to warn about is simply gone) — regenerate it
+before trusting any `--baseline` comparison; don't assume one is sitting there.
 
 **The DDL/`ddl_exclusive` barrier claim in earlier versions of this file was measured and
 refuted (2026-09-05).** Actual cost: DDL modules were **262 s of 2,031 s (12.9%)** and

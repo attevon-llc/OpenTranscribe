@@ -128,9 +128,10 @@ Four rules shape it:
 
 ### Settings
 
-There are **no directory-sync environment variables** and no admin-panel screen yet. The sweep
-reads six `SystemSettings` rows; the directory connection itself reuses the LDAP auth config
-above.
+There are **no directory-sync environment variables** — all of it is `SystemSettings`,
+configurable in the admin panel's Directory Sync screen (`Settings → Authentication →
+Directory Sync`; `GET/PUT /admin/directory-sync`, `/status`, `POST /run`). The sweep reads six
+`SystemSettings` rows; the directory connection itself reuses the LDAP auth config above.
 
 | Key | Default | Meaning |
 |---|---|---|

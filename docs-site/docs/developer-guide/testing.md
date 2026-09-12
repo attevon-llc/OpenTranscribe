@@ -43,8 +43,8 @@ backend/tests/
 ├── api/endpoints/           # API endpoint tests
 ├── e2e/                     # End-to-end browser tests
 │   ├── conftest.py          # E2E fixtures
-│   ├── test_login.py        # Login tests (~50 tests)
-│   ├── test_registration.py # Registration tests (~35 tests)
+│   ├── test_login.py        # Login tests (29 tests)
+│   ├── test_registration.py # Registration tests (25 tests)
 │   └── test_auth_flow.py    # Combined auth flow tests
 └── test_*.py                # Other unit tests
 ```
@@ -190,7 +190,7 @@ End-to-end tests require the dev environment running:
 pytest backend/tests/e2e/ -v
 
 # Run with visible browser (for debugging)
-DISPLAY=:13 pytest backend/tests/e2e/ -v --headed
+DISPLAY=:11 pytest backend/tests/e2e/ -v --headed
 
 # Run specific test
 pytest backend/tests/e2e/test_login.py::TestLoginSuccess -v

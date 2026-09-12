@@ -261,12 +261,11 @@ GPU_DEVICE_ID=1
 For high-throughput systems with multiple GPUs, enable parallel GPU workers:
 
 ```bash
-# .env configuration
-GPU_SCALE_ENABLED=true      # Enable multi-GPU scaling
+# .env configuration (GPU_SCALE_ENABLED is not the switch -- see note below)
 GPU_SCALE_DEVICE_ID=2       # Which GPU to use for scaled workers
 GPU_SCALE_WORKERS=4         # Number of parallel workers
 
-# Start with GPU scaling
+# The --gpu-scale flag is what enables scaling, not an env var
 ./opentr.sh start dev --gpu-scale
 ```
 

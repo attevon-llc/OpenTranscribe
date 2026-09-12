@@ -294,6 +294,79 @@ this file is for.
     capture the mutation. Nothing survives a SIGKILL of the process group — a stopped batch left
     `now <` mutated to `now <=` in `app/auth/lockout.py`, so check `git diff backend/app/auth/`
     after any interrupted run.
+
+    **Parallel mutation testing, across modules only (2026-09-12) — the serial-only framing above
+    is about ONE database, not about modules.** `backend/tests/CLAUDE.md`'s objection to
+    cosmic-ray-style distributed execution is specifically that "every mutant's tests share the
+    one live Postgres, and cross-worker concurrency on it is exactly what must not happen here"
+    (the #389/#431 deadlock shapes) — that is a statement about many workers contending on one
+    shared DB, and it does not forbid running the six `MODULE_TESTS` modules in parallel *lanes*
+    each pointed at its **own** throwaway stack. Serial `--all` is hours (`lockout` ~30-90 min,
+    `dependencies` ~20-60 min, `session` ~15-45 min); this host is 48 cores and mostly idle, so
+    running the slow modules concurrently — each isolated, never sharing a DB — collapses the
+    wall clock without reintroducing the #389/#431 hazard:
+
+    ```bash
+    # one worktree + one --fresh stack per module, unique ports, run --module inside each
+    for m in lockout dependencies session security password_policy spans; do
+      git worktree add ".claude/worktrees/mutate-$m" -b "mutate/$m" HEAD
+    done
+    # in each worktree: its OWN --fresh deployment (own Postgres/Redis, own ports) —
+    ./opentr.sh start dev --fresh "mutate-$m" --port-offset <unique-per-lane>
+    # then, inside that worktree, against ITS OWN stack:
+    POSTGRES_PORT=<lane-port> REDIS_PORT=<lane-port> ./scripts/run-mutation-tests.sh --module "$m"
+    ```
+
+    ⚠️ **`-n0` still applies WITHIN each lane — the parallelism is ACROSS lanes, never inside
+    one.** `run-mutation-tests.sh` already forces `-n0` via `PYTEST_ADDOPTS` (the trap two
+    paragraphs up: without it, every mutant forks one xdist worker per core against whatever DB
+    that lane owns). Running six lanes of `-n0` on a 48-core host is the parallel design; running
+    one lane at `-n auto` against a shared DB is the exact deadlock this was built to avoid.
+
+    🔴 **Copy the evidence back into the MAIN checkout, or the whole exercise measures nothing
+    for the gate.** `OUT_DIR` defaults to `$REPO_ROOT/.mutation` — and in a worktree,
+    `REPO_ROOT` is *the worktree*. So each lane's `<module>.{log,meta,testhash}` lands there and
+    the main checkout's `--check-baseline` still reports NOT MEASURED. **Merging the lane's
+    `mutation-baselines.tsv` row does not fix this**: the `.meta` sidecar is what makes a `.log`
+    admissible (see this script's own EVIDENCE header), and the TSV is only the ratchet's
+    threshold. After each lane finishes:
+
+    ```bash
+    cp .claude/worktrees/mutate-$m/.mutation/$m.{log,meta,testhash} .mutation/
+    ./scripts/run-mutation-tests.sh --check-baseline      # must print "✓ holding at N"
+    ```
+
+    Measured 2026-09-12: with the rows merged but the sidecars left behind, the gate still said
+    `⊘ NOT MEASURED (3/6)`; copying them flipped `lockout` and `session` to `✓ holding at 72` /
+    `✓ holding at 46`. `.mutation/` is gitignored (`.gitignore:359`), which is correct — this is
+    per-machine measurement evidence, not something to commit.
+
+    Two further operational traps found running this recipe, both real and both bit a background run:
+    - **Give the throwaway Redis a password (`--requirepass`), and leave the test env
+      unauthenticated.** A *passwordless* throwaway Redis is EASIER to reach than the real dev
+      stack, and that silently changes test semantics: `lockout`'s `_get_store` re-probe branch
+      (`elif _redis_client is None`) genuinely reconnects, so the memory-fallback tests that force
+      `_redis_client = None` stop exercising "Redis is down" and FAIL. Six phantom failures before
+      it was root-caused. The live stack's Redis is password-protected — match its *failure mode*,
+      not merely its port number.
+    - **Each worktree needs its own venv**, so a first parallel run pays a full
+      `pip install -r requirements.txt` (CUDA wheels, multi-GB) per lane before a single mutant
+      runs. Budget for it; subsequent runs in the same worktree are much faster. Two specifics
+      that cost a lane a wasted cycle: build it with **Python 3.12**, not 3.11 (`scipy==1.18.1`
+      in `requirements.txt` requires >=3.12 and will not resolve), and install
+      **`requirements-dev.txt` as well** — `pytest-cov` lives only there, and without it the
+      coverage pre-flight fails as `could not measure coverage ... NOT a measurement` (exit 4)
+      rather than saying the plugin is missing. That message reads like a finding about the
+      module; it is a finding about the venv.
+    - **`./opentr.sh fresh-destroy <name>` has no `--yes` flag** and prompts `Proceed? (y/N)` —
+      a backgrounded/non-interactive call to it hangs forever waiting on stdin. Pipe an answer:
+      `yes | ./opentr.sh fresh-destroy mutate-lockout`.
+    - **The ratchet fingerprints each module's *test file* content, not just the source.**
+      `run-mutation-tests.sh`'s cache-staleness guard (item 3, above) fires on a changed
+      `MODULE_TESTS` entry — so editing any test file belonging to a module mid-wave sends that
+      module's next run to NOT MEASURED (stale fingerprint) rather than silently reusing old
+      verdicts; it needs a fresh `--module` run (and often `--clean`) before its numbers count
+      again, exactly like any other lane's baseline after a test edit.
   - `frontend/scripts/audit-frontend-tests.mjs` (`npm run test:audit`) — the vitest sibling,
     10 detectors, TypeScript compiler API. Run `test:audit:selftest` after ANY detector change:
     its 27 cases caught two detectors matching **nothing**, which reports 0 findings and reads

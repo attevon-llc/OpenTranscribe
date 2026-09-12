@@ -535,7 +535,7 @@ curl -s http://localhost:5180/_cluster/health | python3 -m json.tool
 
 # If indices need rebuilding, use the Admin UI "Reindex All" function
 # Or via API:
-curl -X POST http://localhost:5174/api/admin/reindex -H "Authorization: Bearer <token>"
+curl -X POST http://localhost:5174/api/search/reindex -H "Authorization: Bearer <token>"
 ```
 
 ### Permission Errors on Model Cache

@@ -607,6 +607,15 @@ else:
 # 30 s fixture. Requiring two consecutive FAST responses distinguishes "compiled and cached"
 # from "answered once, slowly, while still compiling".
 frontend = "http://localhost:" + os.environ.get("FRONTEND_PORT", "5173")
+# Shared with conftest.py's session preflight -- ONE detector, deliberately. `sys.path`
+# already carries backend/tests/e2e from the `_await_stable_backend` load above; import it
+# defensively anyway, because that load is in a try/except and may not have run. A failure
+# here degrades this one probe instead of aborting the whole quiesce.
+try:
+    from frontend_warm import find_entry_modules
+except Exception as exc:  # noqa: BLE001
+    find_entry_modules = None
+    _warm_import_error = f"{type(exc).__name__}: {exc}"
 t0 = time.monotonic()
 last = "no probe completed"
 warm = False
@@ -618,16 +627,30 @@ while first or time.monotonic() < deadline:
         shell = requests.get(frontend, timeout=30)
         # The entry is whatever the shell declares; never hardcode /src/main.ts, which is a
         # SvelteKit layout detail that has moved before.
-        entry = re.search(r'<script[^>]+src="([^"]+)"[^>]*type="module"', shell.text) or \
-                re.search(r'<script[^>]+type="module"[^>]*src="([^"]+)"', shell.text)
+        #
+        # ⚠️ Detection is IMPORTED, not re-implemented here. This block used to carry its own
+        # regex matching `<script src="..." type="module">`, which SvelteKit never emits (it
+        # references the client entry from an INLINE script). That draft had already been
+        # written, rejected and documented over in conftest.py -- and then shipped here
+        # anyway. It matched nothing on a perfectly healthy dev server, so this step burned
+        # 170s of its 180s budget, printed "frontend: NOT WARM", and let the browser suite
+        # start against an uncompiled module graph. Vite's on-demand transform then landed on
+        # whichever test ran first: 3 failed + 3 errors on 2026-09-12, every one a
+        # wait_for_selector timeout on `.gallery-action-buttons`, every one passing in
+        # isolation seconds later.
+        if find_entry_modules is None:
+            last = f"detector unavailable ({_warm_import_error})"
+            break
+        entries = find_entry_modules(shell.text)
         if shell.status_code != 200:
             last = f"shell HTTP {shell.status_code}"
-        elif entry is None:
-            # A shell with no module script is a served-but-not-a-SPA answer (an nginx error
-            # page, or the prod overlay). Report it rather than calling it warm.
-            last = "shell has no <script type=module> — not the Vite dev server?"
+        elif not entries:
+            # No module refs is a served-but-not-a-SPA answer (an nginx error page) OR the
+            # prod overlay, whose hashed bundles need no warming at all. Report it rather
+            # than calling it warm; it is not necessarily a fault.
+            last = "shell references no Vite modules — prod overlay, or not the dev server?"
         else:
-            url = entry.group(1)
+            url = entries[0]
             if url.startswith("/"):
                 url = frontend + url
             probe_started = time.monotonic()

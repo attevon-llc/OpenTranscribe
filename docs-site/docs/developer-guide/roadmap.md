@@ -166,6 +166,42 @@ is not a credentials problem — `docker push` creates the repository on first p
 
 ---
 
+## v0.5.1: Dependency maintenance
+
+**Theme:** take the accumulated dependency updates, on their own, right after v0.5.0 ships.
+
+**Why it is a separate release rather than part of v0.5.0.** A release rehearsal is expensive —
+three scenarios, a fresh install, two upgrade hops and a lite deployment, against locally built
+images pinned to a specific commit. **Every dependency PR accepted after that run invalidates the
+evidence it produced.** Merging a batch of bumps into an already-rehearsed release means either
+re-running the whole rehearsal or shipping on evidence that describes different software. Neither
+is a good trade for updates that are not urgent, so they get their own number.
+
+**How this is validated, and why it is not another rehearsal.** The rehearsal exists to prove the
+*install and upgrade surface* — the one-liner, the image pulls, the migration chain. Dependency
+bumps mostly do not touch that surface, so they are covered far more cheaply, by risk class:
+
+| Class | Ships to a user? | Sufficient evidence |
+|---|---|---|
+| GitHub Actions | ❌ CI-only | the PR's own CI run |
+| `docs-site` npm | docs image only | the `Docs build` check |
+| Build-time dev deps | ❌ not in the image | frontend build |
+| `frontend` npm | ✅ | vitest + `svelte-check` + `vite build` + an e2e smoke |
+| `backend` pip | ✅ | **the full local gate** — the only class with real blast radius |
+
+Batch the low-risk classes into **one** branch and run the gate **once**; that is the whole
+efficiency argument. **Re-rehearse only if a bump changes a compose image, a migration, or the
+installer** — because those are exactly the things the rehearsal is the only check for.
+
+⚠️ **Two updates are deliberately not routine.** `emscripten/emsdk` (#677) is a *five-major*
+toolchain jump and `frontend/Dockerfile.prod` uses it to build the FFmpeg WASM artifact that ships
+in the frontend image — it gets its own PR and a real production frontend build, not CI alone.
+And `transformers`/`huggingface-hub` majors stay **ignored** in `.github/dependabot.yml`: they
+break WhisperX and pyannote, must be bumped *together* with ASR validation, and the standing
+deferral is recorded on #775 rather than in a PR description.
+
+---
+
 ## v0.6.0: Interface polish, and chat measured
 
 **Theme:** stabilize and polish what v0.5.0 shipped. No new subsystems.

@@ -639,11 +639,67 @@ gr_check_stale_stock_volumes() {
         fi
     done
     for vol in "${found[@]}"; do
-        if docker volume rm "$vol" >/dev/null 2>&1; then
+        # `docker ps -a`, not `docker ps`. A STOPPED container still holds its
+        # volume, and this is an ORDERING bug in gr_preflight, not just a missing
+        # `-a`: gr_check_container_names runs two lines earlier, finds the stopped
+        # colliding containers, and deliberately only WARNS — "the test driver will
+        # 'docker rm' them in phase 0". So by contract they are still present right
+        # here, holding exactly the volumes this function is about to delete.
+        # Observed on the v0.5.0 rehearsal (2026-09-13):
+        # Scenario A died with the guessed "(still in use?)" below while the
+        # scenario's OWN cleanup removed the very same volume seconds later,
+        # because that path removes containers first. The holder is knowable —
+        # ask, don't guess.
+        local holders
+        holders="$(gr_volume_holders "$vol")"
+        if [[ -n "$holders" ]]; then
+            gr_reclaim_aborted_run_holders "$vol" "$holders"
+            holders="$(gr_volume_holders "$vol")"
+        fi
+
+        # Captured, never discarded: docker's own message names the blocker, and
+        # throwing it away is what left the operator with a parenthesised guess.
+        local rm_err
+        if rm_err="$(docker volume rm "$vol" 2>&1)"; then
             gr_ok "removed stale volume $vol"
         else
-            gr_die "could not remove $vol (still in use?)"
+            gr_die "could not remove $vol — docker said: ${rm_err}
+           still referenced by: ${holders:-(no container reported by docker)}
+           Any container above that is NOT from a previous release test is yours
+           to deal with: stop it (./opentr.sh stop for the dev stack), then re-run.
+           A release test never removes a container it cannot prove it owns."
         fi
+    done
+}
+
+# Containers — running OR stopped — that reference VOL. One space-separated line.
+gr_volume_holders() {
+    local vol="$1" out
+    out="$(docker ps -a --filter "volume=$vol" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')"
+    printf '%s' "${out% }"
+}
+
+# Remove the holders that are provably a PREVIOUS RELEASE TEST's leftovers, and
+# only those. The proof is the com.opentranscribe.release-test label, which this
+# harness puts on every container it creates (lib/compose-patch.sh) and which
+# nothing else on the host wears. A holder without that label is left strictly
+# alone and reported by the caller — "it has a stock name" is precisely the
+# reasoning that must never authorise a removal here.
+#
+# `docker stop` then `docker rm`, never `rm -f`: -f is SIGKILL, and a SIGKILLed
+# CUDA context has wedged this host's GPU twice (root CLAUDE.md).
+gr_reclaim_aborted_run_holders() {
+    local vol="$1" holders="$2" c label
+    for c in $holders; do
+        label="$(docker inspect "$c" \
+                   --format '{{index .Config.Labels "com.opentranscribe.release-test"}}' \
+                   2>/dev/null || echo "")"
+        if [[ -z "$label" || "$label" == "<no value>" ]]; then
+            continue
+        fi
+        gr_log "reclaiming $c — a previous release test's container (label=$label) holding $vol"
+        docker stop "$c" >/dev/null 2>&1 || true
+        docker rm "$c" >/dev/null 2>&1 || true
     done
 }
 
@@ -928,12 +984,24 @@ gr_cleanup_owned_stock_resources() {
 
     local vol net users proj="" line marker_rc
     local preexisting=()
-    while IFS= read -r line; do
+
+    # Read the stamp ONCE, up front. It used to be opened twice — once here and
+    # again for the recorded-resource pass below — and on the 2026-09-13 rehearsal
+    # the second open failed with a bare
+    # `.owned-stock-resources: No such file or directory` from bash itself, after
+    # the first pass had already removed two volumes. That surfaced as "cleanup
+    # reported a problem" with no indication of what the problem was. Whatever
+    # unlinked it between the two opens (this function ends by rm -f'ing it), a
+    # single read cannot be raced by it.
+    local stamp_lines=()
+    mapfile -t stamp_lines < "$GR_OWNED_STAMP"
+
+    for line in ${stamp_lines[@]+"${stamp_lines[@]}"}; do
         case "$line" in
             project=*)     proj="${line#project=}" ;;
             preexisting=*) preexisting+=("${line#preexisting=}") ;;
         esac
-    done < "$GR_OWNED_STAMP"
+    done
 
     # Everything under the stock project that was not here before the run.
     if [[ -n "$proj" ]]; then
@@ -968,7 +1036,7 @@ gr_cleanup_owned_stock_resources() {
         done
     fi
 
-    while IFS= read -r line; do
+    for line in ${stamp_lines[@]+"${stamp_lines[@]}"}; do
         case "$line" in
             volume=*)
                 vol="${line#volume=}"
@@ -1003,7 +1071,7 @@ gr_cleanup_owned_stock_resources() {
                 fi
                 ;;
         esac
-    done < "$GR_OWNED_STAMP"
+    done
 
     rm -f "$GR_OWNED_STAMP"
 }

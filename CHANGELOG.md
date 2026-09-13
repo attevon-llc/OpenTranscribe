@@ -375,6 +375,25 @@ A tag was either yours alone or published to the whole deployment, so giving one
 
 ### Fixed
 
+- **Fresh installs could not start: MinIO deleted its Docker Hub images.** `minio/minio`
+  and `minio/mc` no longer exist on Docker Hub — the registry API returns `object not
+  found` for the repository and for the exact tag we pin, while anonymous pull tokens are
+  still issued normally, so this is a removal rather than a rate limit. Any host without a
+  warm image cache — i.e. **every new install** — failed with `pull access denied`.
+  Existing deployments kept working only until someone pruned their images, which is why
+  nothing surfaced it until the release rehearsal's fresh-install scenario ran on a clean
+  host. The object store now pulls from **`quay.io/minio/minio`**, at the same pinned tag
+  and the same digest
+  (`sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e`) — the
+  identical artifact, not a substitute, verified by pulling both and comparing. The
+  offline-install bundle and its uninstaller were repointed too; a bundle that pre-pulls a
+  deleted image produces a tarball silently missing the object store.
+  ⚠️ **No action needed on upgrade** — compose pulls the new reference on the next
+  `./opentr.sh start`, and existing data is untouched. Note for planning: the tag we pin,
+  `RELEASE.2025-09-07T16-13-09Z`, appears to be the **final community release** — every
+  newer tag upstream is a `.hotfix.*` build — so this pin will not receive further upstream
+  updates, and an S3-compatible replacement is being evaluated for a future release.
+
 - **Summary search ignored every filter, had no ranking, and broke `result_type=all`
   pagination** (#831). The Summaries tab applied **none** of the ten filter dimensions the
   Transcripts tab honours, so one request's two legs disagreed about which files the caller had

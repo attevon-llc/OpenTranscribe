@@ -48,7 +48,18 @@ services:
 
   minio:
     container_name: opentranscribe-minio
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # ⚠️ quay.io, NOT docker.io. MinIO REMOVED `minio/minio` from Docker Hub — the Hub API
+    # returns `object not found` for the repository AND for this exact tag, while an
+    # anonymous pull token is still issued normally, so it is a removal and not a rate
+    # limit. `minio/mc` is gone the same way. Anyone without a warm image cache — i.e.
+    # every NEW user running the install one-liner — got `pull access denied` and a failed
+    # install. Caught by the v0.5.0 release rehearsal; nothing else in the pipeline looks.
+    #
+    # Same artifact, not a substitute: this tag on quay.io resolves to digest
+    # sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e, byte-identical
+    # to the docker.io copy already cached on the build host, as a 3-child multi-arch list.
+    # Verified by pulling both and comparing, not by assuming the registries agree.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
     env_file:
       - path: .env

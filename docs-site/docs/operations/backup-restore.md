@@ -454,7 +454,7 @@ MinIO stores all uploaded media files. Back up using the MinIO Client (`mc`):
 
 ```bash
 # Install mc (if not already available)
-docker run --rm -it --entrypoint /bin/sh minio/mc
+docker run --rm -it --entrypoint /bin/sh quay.io/minio/mc
 
 # Or use mc from within the MinIO container
 docker compose exec minio mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD

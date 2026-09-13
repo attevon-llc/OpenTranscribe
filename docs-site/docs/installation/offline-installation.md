@@ -43,7 +43,7 @@ docker pull davidamacey/opentranscribe-backend:latest
 docker pull davidamacey/opentranscribe-frontend:latest
 docker pull postgres:17.5-alpine
 docker pull redis:8.2.2-alpine3.22
-docker pull minio/minio:RELEASE.2025-09-07T16-13-09Z
+docker pull quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
 docker pull opensearchproject/opensearch:3.4.0
 
 # Save images to tarball
@@ -52,7 +52,7 @@ docker save -o opentranscribe-images.tar \
   davidamacey/opentranscribe-frontend:latest \
   postgres:17.5-alpine \
   redis:8.2.2-alpine3.22 \
-  minio/minio:RELEASE.2025-09-07T16-13-09Z \
+  quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
   opensearchproject/opensearch:3.4.0
 ```
 

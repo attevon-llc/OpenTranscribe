@@ -179,7 +179,7 @@ export HUGGINGFACE_TOKEN=your_token_here
    - `davidamacey/opentranscribe-frontend:latest` (~51MB)
    - `postgres:14-alpine` (~220MB)
    - `redis:7-alpine` (~30MB)
-   - `minio/minio:latest` (~175MB)
+   - `quay.io/minio/minio` (~175MB)
    - `opensearchproject/opensearch:3.4.0` (~800MB)
 3. **Downloads** AI models (~38GB):
    - WhisperX models (~1.5GB)

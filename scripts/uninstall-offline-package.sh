@@ -266,7 +266,7 @@ remove_images() {
     echo "  - davidamacey/opentranscribe-frontend:latest (~100MB)"
     echo "  - postgres:17.5-alpine"
     echo "  - redis:8.2.2-alpine3.22"
-    echo "  - minio/minio:RELEASE.2025-09-07T16-13-09Z"
+    echo "  - quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
     echo "  - opensearchproject/opensearch:3.4.0"
     echo ""
     echo "Note: Removing images will require re-loading them if you reinstall"
@@ -288,7 +288,7 @@ remove_images() {
         "davidamacey/opentranscribe-docs:latest"
         "postgres:17.5-alpine"
         "redis:8.2.2-alpine3.22"
-        "minio/minio:RELEASE.2025-09-07T16-13-09Z"
+        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
         "opensearchproject/opensearch:3.4.0"
     )
 

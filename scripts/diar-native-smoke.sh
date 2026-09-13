@@ -139,7 +139,16 @@ read -r RESTARTING RESTART_COUNT PID < <(
 
 # Which GPU the project told it to use. The overlay's own precedence is
 # DIAR_NATIVE_GPU -> GPU_DEVICE_ID -> 0; mirror it exactly rather than guessing.
-ENV_FILE="$REPO_ROOT/.env"
+# OVERRIDABLE, and that is load-bearing: this script is run by
+# release-tests/test-fresh-install.sh against a FRESHLY INSTALLED deployment whose
+# own `.env` lives under TEST_ROOT, not against this checkout. Hardcoded to the repo
+# copy, the residency assertion compared the TEST stack's sidecar against the DEV
+# stack's configured GPU — it passed only when the two happened to agree, and on the
+# v0.5.0 rehearsal (2026-09-13) it reported `diar-server is on GPU <2> but the project
+# configured index 1` about a sidecar that was on exactly the card the scenario asked
+# for. That is this repo's own `readiness-probe-target` anti-pattern: a probe whose
+# target is derived from a stack other than the one under test.
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env}"
 # Real dotenv parsing (issue #590) via python-dotenv, not a hand-rolled grep/cut/tr
 # pipeline — see gpu-scale-smoke.sh's read_env for the exact corruption this used to
 # cause (a trailing `  # comment` glued onto the value).

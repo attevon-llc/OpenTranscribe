@@ -668,7 +668,14 @@ phase_06_api_smoke() {
                 # call here would silently truncate every phase after it (issues
                 # #617/#618; see scripts/CLAUDE.md's "bare helper call" gotcha).
                 local diar_smoke_rc=0 diar_smoke_out=""
-                if diar_smoke_out=$("$REPO_ROOT/scripts/diar-native-smoke.sh" --json 2>&1); then
+                # ENV_FILE must name THIS run's installed deployment, not the repo's
+                # own .env — the sidecar under test was configured from the former.
+                # Without it the assertion compares the test stack's GPU against the
+                # developer's dev-stack setting and fails whenever they differ.
+                local diar_env_file="$TEST_ROOT/install/opentranscribe/.env"
+                [[ -f "$diar_env_file" ]] || diar_env_file="$TEST_ROOT/install/.env"
+                if diar_smoke_out=$(ENV_FILE="$diar_env_file" \
+                        "$REPO_ROOT/scripts/diar-native-smoke.sh" --json 2>&1); then
                     diar_smoke_rc=0
                 else
                     diar_smoke_rc=$?
@@ -737,12 +744,27 @@ phase_06_api_smoke() {
 
             # Hybrid search — query for a common English stop word that any
             # transcribed audiobook will contain.
-            local hits
-            hits=$(ac_search "the" | python3 -c '
+            #
+            # POLLED, not single-shot. `status=completed` means the TRANSCRIPT is
+            # written; indexing into OpenSearch is a separate async Celery task, so a
+            # search fired the instant the file completes is racing the indexer.
+            # Measured on the v0.5.0 rehearsal (2026-09-13): this assertion saw 0 hits
+            # while `transcript_chunks` held 18 documents by the time the failure was
+            # investigated minutes later — i.e. it failed against a working system.
+            # Same class as test-lite-mode.sh's speaker-embedding poll.
+            #
+            # A genuinely empty index still FAILS — it just takes 60s to say so
+            # instead of reporting a race as a defect.
+            local hits=0
+            for _search_attempt in $(seq 1 20); do
+                hits=$(ac_search "the" | python3 -c '
 import sys, json
 d = json.load(sys.stdin)
 print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
 ' 2>/dev/null || echo 0)
+                [[ "${hits:-0}" -ge 1 ]] && break
+                sleep 3
+            done
             as_assert_ge "hybrid search returns hits" "$hits" 1
 
             # Stricter neural-search assertion: confirm that the OpenSearch

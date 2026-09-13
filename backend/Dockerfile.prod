@@ -213,7 +213,22 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
 # it, `pg_dump` succeeds and the `gpg` step then fails with FileNotFoundError, so an
 # encrypted backup silently never completes. postgresql-client (above) does NOT pull
 # gnupg in as a dependency — they are unrelated packages.
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+#
+# ⚠️ "on every image build" above was NOT true, and that is how CVEs accumulated.
+# Docker caches this RUN by its command string, so once the layer existed it was
+# reused verbatim and `apt-get upgrade` never ran again — the image kept shipping
+# whatever Debian had published the day the layer was FIRST built. Measured on the
+# v0.5.0 scan (2026-09-13): 16 CRITICAL / 264 HIGH in backend-amd64, 15 of the 16
+# fixable and every one of them an OS package (perl, libxml2, libglib2.0,
+# libmbedcrypto) — none from our own dependency tree.
+#
+# APT_SECURITY_REFRESH is the cache key. Changing it invalidates THIS layer and
+# nothing above it, so today's security patches come in without `--no-cache`
+# re-running the multi-GB pip/CUDA install. scripts/docker-build-push.sh passes the
+# build date; the default keeps a bare `docker build` reproducible.
+ARG APT_SECURITY_REFRESH=unset
+RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
+    && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     libsndfile1 \

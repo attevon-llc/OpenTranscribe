@@ -144,7 +144,24 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend Lite" \
       org.opencontainers.image.documentation="https://github.com/attevon-llc/OpenTranscribe/blob/master/README.md"
 
 # Install only runtime dependencies (no build tools, no CUDA libraries)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#
+# ⚠️ `apt-get upgrade -y` was MISSING here entirely — Dockerfile.prod has carried it
+# since it was written, this file never did. So the lite image had no mechanism to
+# receive Debian security patches at all: it shipped exactly what
+# python:3.13-slim-trixie contained at the pinned tag, forever. Measured on the
+# v0.5.0 scan (2026-09-13): 16 CRITICAL / 254 HIGH on lite-amd64 and 19 / 257 on
+# lite-arm64, against 0 CRITICAL for frontend and docs.
+#
+# That matters more here than anywhere else: `opentranscribe.sh` defaults arm64 hosts
+# to DEPLOYMENT_MODE=lite, so lite-arm64 — the worst of the three — is the ONLY
+# backend an arm64 user can install.
+#
+# APT_SECURITY_REFRESH is the cache key; see Dockerfile.prod's copy for why a plain
+# RUN is not enough (Docker caches by command string, so the upgrade would run once
+# and never again).
+ARG APT_SECURITY_REFRESH=unset
+RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
+    && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     libsndfile1 \

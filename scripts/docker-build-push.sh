@@ -607,11 +607,24 @@ build_identity_labels() {
 # ARGs at all, so the --build-arg APP_VERSION this script used to pass it was a
 # silent no-op. The frontend takes its version from frontend/package.json at
 # build time via vite's __APP_VERSION__ define.
+# APT_SECURITY_REFRESH is NOT build identity — it is a deliberate cache key for the
+# runtime `apt-get upgrade` layer in Dockerfile.prod/.lite. Docker caches a RUN by its
+# command string, so without a changing ARG that layer is built once and reused
+# forever, and the image keeps shipping whatever Debian had published that day. The
+# v0.5.0 scan measured the cost: 16 CRITICAL in backend-amd64 and 19 in lite-arm64,
+# 15 of 16 fixable and every one an OS package.
+#
+# Keyed to the DATE, not the commit or the second: a per-commit value would re-run
+# apt on every build (slow, and pointlessly non-reproducible within a day), while a
+# date gives at most one refresh per day and makes two builds on the same day
+# byte-comparable. OT_APT_SECURITY_REFRESH overrides it when a specific day's package
+# set needs reproducing.
 build_backend_identity_args() {
     printf '%s\n' \
         "--build-arg" "APP_VERSION=${VERSION_FULL}" \
         "--build-arg" "GIT_SHA=${COMMIT_SHA}" \
-        "--build-arg" "BUILD_TIME=${BUILD_TIME}"
+        "--build-arg" "BUILD_TIME=${BUILD_TIME}" \
+        "--build-arg" "APT_SECURITY_REFRESH=${OT_APT_SECURITY_REFRESH:-$(date -u +%Y-%m-%d)}"
 }
 
 # Announce what a build is about to do, and short-circuit under DRY_RUN.

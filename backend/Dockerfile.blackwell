@@ -58,7 +58,14 @@ ENV CUDA_FORCE_PTX_JIT=1 \
 # ---------------------------------------------------------------------------
 # System dependencies (runtime only)
 # ---------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# `apt-get upgrade -y` + APT_SECURITY_REFRESH for the same reason as
+# Dockerfile.prod/.lite — see Dockerfile.lite's copy of this comment. This image is
+# built only on request and never published, so it was not part of the v0.5.0 scan
+# finding; it is fixed here so the three backend Dockerfiles do not drift again,
+# which is exactly how .lite ended up as the only one with no upgrade at all.
+ARG APT_SECURITY_REFRESH=unset
+RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
+    && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     libsndfile1 \

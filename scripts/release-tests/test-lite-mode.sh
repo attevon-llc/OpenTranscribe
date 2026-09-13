@@ -704,14 +704,32 @@ print(len(labels))
             # Issue #660: the speaker rows this lite pipeline just produced must carry
             # 256-dim (v4) vectors — proof the CPU-EP sidecar, not an absent in-process
             # PyAnnote model, actually served the embedding.
-            local embedding_dim
-            embedding_dim=$(docker exec opentranscribe-opensearch curl -s \
-                'http://localhost:9200/speakers/_search' \
-                -H 'Content-Type: application/json' \
-                -d '{"size":1,"sort":[{"created_at":{"order":"desc"}}],"_source":["embedding"]}' \
-                2>/dev/null \
-                | python3 -c 'import sys,json; hits=json.load(sys.stdin).get("hits",{}).get("hits",[]); print(len((hits[0]["_source"].get("embedding") or [])) if hits else 0)' \
-                2>/dev/null || echo 0)
+            #
+            # POLLED, for the same reason the search assertion below polls: speaker
+            # indexing is a FOLLOW-ON task, not part of reaching status=completed.
+            # Asserting immediately raced it — every miss (index absent, doc absent,
+            # embedding not yet written) collapses through the `|| echo 0` fallbacks to
+            # the same "0", which is indistinguishable from "the sidecar served nothing".
+            # That is the failure this assertion exists to detect, so a race here does not
+            # merely flake: it reports the #660 regression it is guarding against.
+            # Measured 2026-09-13: passed on two runs, failed on the third with actual=0,
+            # while transcription had completed and both speakers were correctly detected.
+            #
+            # Polling does NOT weaken it — the assertion is still exactly 256, and a
+            # genuinely absent embedding still fails, just after the wait instead of
+            # before it.
+            local embedding_dim=0
+            for _emb_attempt in $(seq 1 20); do
+                embedding_dim=$(docker exec opentranscribe-opensearch curl -s \
+                    'http://localhost:9200/speakers/_search' \
+                    -H 'Content-Type: application/json' \
+                    -d '{"size":1,"sort":[{"created_at":{"order":"desc"}}],"_source":["embedding"]}' \
+                    2>/dev/null \
+                    | python3 -c 'import sys,json; hits=json.load(sys.stdin).get("hits",{}).get("hits",[]); print(len((hits[0]["_source"].get("embedding") or [])) if hits else 0)' \
+                    2>/dev/null || echo 0)
+                [[ "$embedding_dim" == "256" ]] && break
+                sleep 3
+            done
             as_assert_eq "speaker embedding is 256-dim (v4, via the diar-native sidecar)" "256" "$embedding_dim"
         else
             as_record FAIL "transcription for file $file_uuid"

@@ -133,6 +133,150 @@ def test_the_kill_detector_can_actually_fire():
     )
 
 
+def _extract_function(name: str) -> str:
+    """Lift a function out of the shipped script, brace-matched from its `name() {` line.
+
+    Extracting rather than re-typing is the point: a copy in this file would keep passing
+    after the real one changed, which is the failure mode this whole file exists to avoid.
+    """
+    lines = REHEARSE.read_text(encoding="utf-8").splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith(f"{name}() {{"))
+    end = next(i for i in range(start, len(lines)) if lines[i] == "}")
+    return "\n".join(lines[start : end + 1])
+
+
+#: A `docker` that records every invocation and answers the two queries the teardown makes.
+#: `$FAKE_LOG` collects argv one line per call; container queries return ids, so the stop/rm
+#: path is actually taken rather than short-circuiting on an empty list.
+FAKE_DOCKER = """#!/bin/bash
+printf '%s\\n' "$*" >> "$FAKE_LOG"
+case "$1 $2" in
+    "ps -q"|"ps -aq") printf 'cid1\\ncid2\\n' ;;
+    "volume ls")      printf '%s\\n' "${FAKE_VOLUMES:-}" ;;
+esac
+exit 0
+"""
+
+
+def _run_teardown(tmp_path: Path, fake_volumes: str = "") -> tuple[list[str], str]:
+    """Execute the REAL teardown function with a fake docker on PATH.
+
+    Returns (docker invocations, stderr).
+    """
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "docker").write_text(FAKE_DOCKER, encoding="utf-8")
+    (bindir / "docker").chmod(0o755)
+    log = tmp_path / "docker.log"
+    log.touch()
+
+    script = f'YELLOW=""; NC=""\n{_extract_function("teardown_scenario_stack_on_interrupt")}\nteardown_scenario_stack_on_interrupt\n'
+    result = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        env={
+            "PATH": f"{bindir}:/usr/bin:/bin",
+            "FAKE_LOG": str(log),
+            "FAKE_VOLUMES": fake_volumes,
+        },
+        check=True,
+    )
+    return log.read_text(encoding="utf-8").splitlines(), result.stderr
+
+
+def test_the_teardown_is_scoped_by_label_and_never_by_name(tmp_path: Path):
+    """THE property. A bare name grep once destroyed an unrelated container here (#693).
+
+    Every query the teardown issues must carry the release-test label filter, so a
+    container the rehearsal did not create cannot be in the set it stops.
+    """
+    calls, _ = _run_teardown(tmp_path)
+
+    queries = [c for c in calls if c.startswith("ps ")]
+    assert queries, "the teardown issued no container query at all"
+    for query in queries:
+        assert "--filter label=com.opentranscribe.release-test" in query, (
+            f"{query!r} selects containers without the release-test label — that set can "
+            "include the live dev stack, or an unrelated container on this host"
+        )
+
+
+def test_it_stops_and_removes_the_containers_it_found(tmp_path: Path):
+    """MUST FIRE: a teardown that queries and then does nothing leaves the next run blocked."""
+    calls, _ = _run_teardown(tmp_path)
+
+    assert "stop cid1 cid2" in calls, f"containers were never stopped: {calls}"
+    assert "rm cid1 cid2" in calls, f"stopped containers were never removed: {calls}"
+
+
+def test_it_never_deletes_a_volume(tmp_path: Path):
+    """Deleting volumes under interrupt would bypass the live-data marker check.
+
+    `lib/guardrails.sh` re-checks every volume for `.opentranscribe-live-data` before
+    removing it. Reimplementing that inside a trap handler is how a rehearsal deletes
+    someone's real data; naming the volumes is enough.
+    """
+    calls, stderr = _run_teardown(tmp_path, fake_volumes="opentranscribe_postgres_data")
+
+    assert not [c for c in calls if c.startswith("volume rm")], (
+        f"the teardown removed a volume: {calls}"
+    )
+    assert "opentranscribe_postgres_data" in stderr, (
+        "leftover volumes must be NAMED for the operator"
+    )
+    assert "OT_RELEASE_TEST_RESET_VOLUMES=1" in stderr, "and the remedy printed alongside them"
+
+
+def test_a_clean_exit_touches_nothing(tmp_path: Path):
+    """CONTROL: the trap fires on EVERY exit, including a successful rehearsal.
+
+    Each scenario cleans up after itself, so on the normal path the query comes back
+    empty and the function must return before stopping anything. Without this, a green
+    run's EXIT trap would issue docker writes against whatever else was running.
+    """
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "docker").write_text(
+        '#!/bin/bash\nprintf \'%s\\n\' "$*" >> "$FAKE_LOG"\nexit 0\n', encoding="utf-8"
+    )
+    (bindir / "docker").chmod(0o755)
+    log = tmp_path / "docker.log"
+    log.touch()
+
+    script = f'YELLOW=""; NC=""\n{_extract_function("teardown_scenario_stack_on_interrupt")}\nteardown_scenario_stack_on_interrupt\n'
+    subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        env={"PATH": f"{bindir}:/usr/bin:/bin", "FAKE_LOG": str(log)},
+        check=True,
+    )
+
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert not [c for c in calls if c.startswith(("stop", "rm", "volume rm"))], (
+        f"nothing was running, yet the teardown issued write operations: {calls}"
+    )
+
+
+def test_the_teardown_runs_before_the_dev_stack_restart():
+    """Ordering matters: the scenario stack binds the SAME stock ports the dev stack wants.
+
+    Structural — the race needs Docker to observe. What it pins is that the call sits
+    above the `./opentr.sh start dev` line inside `restore_live_stack`.
+    """
+    restore = _extract_function("restore_live_stack")
+
+    teardown_at = restore.index("teardown_scenario_stack_on_interrupt")
+    restart_at = restore.index("./opentr.sh start dev")
+    assert teardown_at < restart_at, (
+        "the dev stack is restarted before the scenario containers are stopped — they "
+        "hold 5173-5180, so the restart races them for the ports"
+    )
+
+
 def test_the_decision_here_matches_the_shipped_one():
     """Guard against this file's copy of the decision drifting from the real one."""
     source = REHEARSE.read_text(encoding="utf-8")

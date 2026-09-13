@@ -6,8 +6,12 @@
 # stack STOPPED — the scenarios run under the installer's stock container names
 # and ports 5173-5180 by design, so they exercise what a real user gets.
 #
-# It never stops the stack for you. Taking someone's deployment down is their
-# call, so this refuses and prints the command.
+# Taking someone's deployment down stays a HUMAN call — but it is no longer a manual
+# two-step. Given approval it stops the stack, rehearses, and restarts it to the state it
+# found. Approval is `--yes`, `RELEASE_AUTO_STOP_STACK=true`, or an interactive prompt;
+# with none of those and no tty it still refuses and prints the command, so an unattended
+# caller can never silently stop a stack. The restart runs from an EXIT/INT/TERM trap, so
+# a failed scenario or a Ctrl-C still puts the host back rather than leaving it down.
 #
 # Scenario C exists because `docker-build-push.sh all` BUILDS the lite image and a
 # release would PUBLISH it, while nothing under scripts/release/ ever ran it — so
@@ -71,15 +75,81 @@ live_stack_names="$( {
     docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}'
     docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}'
 } | sort -u)"
+# Set when THIS run stopped the stack, so the trap below puts it back exactly as found.
+# Never set when the stack was already down: restoring a stack the operator had
+# deliberately stopped is its own surprise.
+STACK_STOPPED_BY_US=false
+
+restore_live_stack() {
+    [[ "$STACK_STOPPED_BY_US" == "true" ]] || return 0
+    STACK_STOPPED_BY_US=false   # idempotent: EXIT fires after an explicit call
+    echo -e "${BLUE}Restarting the dev stack this run stopped...${NC}" >&2
+    if (cd "$REPO_ROOT" && ./opentr.sh start dev >/dev/null 2>&1); then
+        echo -e "${GREEN}dev stack restarted${NC}" >&2
+    else
+        # Never fail the rehearsal over this. The scenarios' verdict is a fact about the
+        # RELEASE; whether this host came back up is a fact about the HOST, and conflating
+        # them would report a bad release for a local restart hiccup.
+        echo -e "${YELLOW}could not restart the dev stack — run: ./opentr.sh start dev${NC}" >&2
+    fi
+}
+# On EXIT so an aborted or failed scenario still puts the host back. INT/TERM too: a
+# Ctrl-C mid-rehearsal used to leave the operator's stack down with no hint why.
+trap restore_live_stack EXIT INT TERM
+
 if [[ -n "$live_stack_names" ]]; then
-    record live-stack-stopped fail "the live stack is running" "./opentr.sh stop"
-    echo -e "${RED}The live stack is running; the scenarios cannot run beside it.${NC}" >&2
-    echo -e "${YELLOW}  ./opentr.sh stop     # preserves all data${NC}" >&2
-    echo -e "${YELLOW}  (restart afterwards with ./opentr.sh start dev)${NC}" >&2
-    # Exit 3 (precondition unmet) as before. Deliberately BEFORE
-    # criteria_assert_all_checked: nothing ran, so the scenario criteria are genuinely
-    # unchecked, and reporting that as wiring drift would bury the real reason.
-    exit 3
+    # Automating the stop/restart dance, but NOT the decision. Taking someone's deployment
+    # down stays a human call -- it is just no longer a manual two-step. Approval comes from
+    # `--yes` (the pipeline's existing "I mean it" signal), an explicit
+    # RELEASE_AUTO_STOP_STACK=true, or an interactive prompt. With none of those and no tty,
+    # the original refusal stands, so an unattended caller can never silently stop a stack.
+    auto_stop=false
+    if [[ "${ASSUME_YES:-false}" == "true" || "${RELEASE_AUTO_STOP_STACK:-false}" == "true" ]]; then
+        auto_stop=true
+    elif [[ -t 0 ]]; then
+        echo -e "${YELLOW}The live stack is running; the scenarios cannot run beside it.${NC}" >&2
+        echo -e "${YELLOW}  $(echo "$live_stack_names" | wc -l) container(s). Stopping PRESERVES all data,${NC}" >&2
+        echo -e "${YELLOW}  and this run will restart it when the scenarios finish.${NC}" >&2
+        echo -e "${RED}  ⚠ Any transcription in flight will be interrupted.${NC}" >&2
+        read -r -p "Stop the stack, rehearse, then restart it? [y/N] " reply
+        [[ "$reply" == "y" || "$reply" == "Y" ]] && auto_stop=true
+    fi
+
+    if [[ "$auto_stop" != "true" ]]; then
+        record live-stack-stopped fail "the live stack is running" "./opentr.sh stop"
+        echo -e "${RED}The live stack is running; the scenarios cannot run beside it.${NC}" >&2
+        echo -e "${YELLOW}  ./opentr.sh stop     # preserves all data${NC}" >&2
+        echo -e "${YELLOW}  (restart afterwards with ./opentr.sh start dev)${NC}" >&2
+        echo -e "${YELLOW}  or re-run with --yes / RELEASE_AUTO_STOP_STACK=true to do both automatically${NC}" >&2
+        # Exit 3 (precondition unmet) as before. Deliberately BEFORE
+        # criteria_assert_all_checked: nothing ran, so the scenario criteria are genuinely
+        # unchecked, and reporting that as wiring drift would bury the real reason.
+        exit 3
+    fi
+
+    echo -e "${BLUE}Stopping the live stack (data preserved), will restart afterwards...${NC}" >&2
+    # ./opentr.sh stop, never docker kill/pkill: a SIGKILLed CUDA context does not always
+    # release the device, and that has required a full machine restart here twice.
+    if ! (cd "$REPO_ROOT" && ./opentr.sh stop >/dev/null 2>&1); then
+        record live-stack-stopped fail "./opentr.sh stop failed" "stop it by hand, then re-run"
+        echo -e "${RED}./opentr.sh stop failed; not proceeding.${NC}" >&2
+        exit 3
+    fi
+    STACK_STOPPED_BY_US=true
+
+    # Verify rather than trust: `stop` returning 0 is not the same as the ports being free,
+    # and the whole reason this precondition exists is that a survivor collides with the
+    # scenarios' stock names/ports minutes later, reported as a confusing port error.
+    still_up="$( {
+        docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}'
+        docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}'
+    } | sort -u)"
+    if [[ -n "$still_up" ]]; then
+        record live-stack-stopped fail "containers survived ./opentr.sh stop" "investigate: $still_up"
+        echo -e "${RED}Still running after stop: ${still_up}${NC}" >&2
+        exit 3
+    fi
+    echo -e "${GREEN}live stack stopped${NC}" >&2
 fi
 record live-stack-stopped pass
 

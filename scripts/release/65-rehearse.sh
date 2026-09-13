@@ -80,7 +80,52 @@ live_stack_names="$( {
 # deliberately stopped is its own surprise.
 STACK_STOPPED_BY_US=false
 
+#: Tear down whatever scenario stack was mid-flight. Only reached on an INTERRUPTED run —
+#: each scenario cleans up after itself on its own normal and failing paths.
+#:
+#: Without this, a Ctrl-C (or any TERM) leaves the scenario's containers AND its stock-named
+#: volumes behind, and the next rehearsal does not merely inherit clutter -- it FAILS, twice
+#: over. The containers hold ports 5173-5180, so it dies in gr_check_ports_free with a port
+#: message rather than the real cause; and `opentranscribe_*_data` volumes make the guardrail
+#: refuse outright, correctly, because "a fresh-install test against these is NOT a fresh
+#: install: the database still holds the previous run's credentials". Observed 2026-09-13:
+#: one interrupted run cost the NEXT run its entire fresh-install scenario.
+#:
+#: Scoped BY LABEL, never by name grep -- a bare name grep destroyed an unrelated container
+#: on this host once (issue #693). `docker stop`, never kill: same reason the stack stop uses
+#: opentr.sh.
+#:
+#: Volumes are deliberately NOT removed here. The scenarios' own guardrails re-check each one
+#: for the `.opentranscribe-live-data` marker before deleting, and that check is not worth
+#: reimplementing in a trap handler running under interrupt. Naming them is enough -- the
+#: next run's guardrail already refuses and prints the exact remedy.
+teardown_scenario_stack_on_interrupt() {
+    local stragglers
+    stragglers="$(docker ps -q --filter "label=com.opentranscribe.release-test" 2>/dev/null || true)"
+    [[ -n "$stragglers" ]] || return 0
+
+    echo -e "${YELLOW}Interrupted mid-scenario — stopping its containers so the next run is not blocked${NC}" >&2
+    # xargs rather than an unquoted expansion: the id lists are newline-separated, and
+    # splatting a command substitution is fragile (SC2046). `-r` makes an empty list a
+    # no-op instead of invoking docker with no arguments.
+    printf '%s\n' "$stragglers" | xargs -r docker stop >/dev/null 2>&1 || true
+    docker ps -aq --filter "label=com.opentranscribe.release-test" 2>/dev/null \
+        | xargs -r docker rm >/dev/null 2>&1 || true
+
+    local leftover_vols
+    leftover_vols="$(docker volume ls -q --filter "name=^opentranscribe_" 2>/dev/null || true)"
+    if [[ -n "$leftover_vols" ]]; then
+        echo -e "${YELLOW}Scenario volumes remain; the next fresh-install run will refuse until they go:${NC}" >&2
+        echo "$leftover_vols" | sed 's/^/           /' >&2
+        echo -e "${YELLOW}  re-run with OT_RELEASE_TEST_RESET_VOLUMES=1 (it re-checks each for the live-data marker)${NC}" >&2
+    fi
+}
+
 restore_live_stack() {
+    # Runs before the dev-stack restart on purpose: the scenario stack binds the SAME stock
+    # ports the dev stack wants, so starting dev first would race it.
+    teardown_scenario_stack_on_interrupt
+
     [[ "$STACK_STOPPED_BY_US" == "true" ]] || return 0
     STACK_STOPPED_BY_US=false   # idempotent: EXIT fires after an explicit call
     echo -e "${BLUE}Restarting the dev stack this run stopped...${NC}" >&2

@@ -675,7 +675,13 @@ gr_check_stale_stock_volumes() {
 # Containers — running OR stopped — that reference VOL. One space-separated line.
 gr_volume_holders() {
     local vol="$1" out
-    out="$(docker ps -a --filter "volume=$vol" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')"
+    # `|| out=""`, not bare: this file runs under `set -euo pipefail`, so an assignment
+    # that discards stderr and lets the failure reach `set -e` aborts the whole phase
+    # with no error line and no FAIL -- just a missing rest-of-phase (#617/#618).
+    # An unanswerable docker query must read as "no holders known", which the caller
+    # already handles: it falls through to `docker volume rm` and reports whatever the
+    # daemon says, rather than dying here with nothing printed.
+    out="$(docker ps -a --filter "volume=$vol" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')" || out=""
     printf '%s' "${out% }"
 }
 

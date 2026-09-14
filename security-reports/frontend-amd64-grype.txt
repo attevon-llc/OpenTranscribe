@@ -23,9 +23,9 @@ libexpat       2.8.3-r0    2.8.4-r0   apk   CVE-2026-76641  High      0.4% (28th
 libcrypto3     3.5.7-r0    3.5.8-r0   apk   CVE-2026-63074  Medium    0.5% (40th)   0.3    
 libssl3        3.5.7-r0    3.5.8-r0   apk   CVE-2026-63074  Medium    0.5% (40th)   0.3    
 libexpat       2.8.3-r0    2.8.4-r0   apk   CVE-2026-76956  High      0.3% (21st)   0.2    
+libcrypto3     3.5.7-r0    3.5.8-r0   apk   CVE-2026-75803  Critical  0.2% (12th)   0.2    
+libssl3        3.5.7-r0    3.5.8-r0   apk   CVE-2026-75803  Critical  0.2% (12th)   0.2    
 tiff           4.7.1-r0               apk   CVE-2023-6228   Medium    0.4% (33rd)   0.2    
-libcrypto3     3.5.7-r0    3.5.8-r0   apk   CVE-2026-75803  Critical  0.2% (10th)   0.2    
-libssl3        3.5.7-r0    3.5.8-r0   apk   CVE-2026-75803  Critical  0.2% (10th)   0.2    
 busybox        1.37.0-r30             apk   CVE-2025-60876  Medium    0.3% (21st)   0.2    
 busybox-binsh  1.37.0-r30             apk   CVE-2025-60876  Medium    0.3% (21st)   0.2    
 ssl_client     1.37.0-r30             apk   CVE-2025-60876  Medium    0.3% (21st)   0.2    

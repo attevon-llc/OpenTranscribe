@@ -2241,17 +2241,50 @@ Two independent defects meant **no OpenTranscribe release had ever actually been
 
 #### Known CVEs in v0.5.0 — accepted, with reasons
 
-With the gate repaired, the real numbers for these images are visible for the first time:
+With the gate repaired, the real numbers for these images became visible for the first
+time — and an earlier draft of this section drew the **wrong conclusion from them**,
+which is worth recording because the wrong conclusion is the more plausible one:
 
-| Image | CRITICAL | HIGH |
+> *"Every one of the 20 backend criticals is unfixed upstream... `Dockerfile.prod`
+> already runs `apt-get upgrade -y` on every build, and the image is fully patched
+> against its repositories."*
+
+**Both halves of that were false.** 15 of the 16 carried a `FixedVersion`, and the
+upgrade was not running on every build at all. Two independent defects produced it:
+
+- **`Dockerfile.lite` had no `apt-get upgrade` whatsoever.** `Dockerfile.prod` had
+  carried one since it was written; the lite file never did, so the lite image had no
+  mechanism to receive a Debian security patch — it shipped what
+  `python:3.13-slim-trixie` contained at the pinned tag, indefinitely. That is the
+  worst place for it: `opentranscribe.sh` defaults arm64 hosts to
+  `DEPLOYMENT_MODE=lite`, so `lite-arm64` is the only backend an arm64 user can
+  install. `Dockerfile.blackwell` had the same gap.
+- **`Dockerfile.prod`'s upgrade was frozen by the Docker layer cache.** A `RUN` is
+  cached by its literal command string, so once that layer existed it was reused
+  verbatim and apt never executed again. The image kept shipping whatever Debian had
+  published the day that layer was *first* built — while the comment above it, and
+  this changelog, both claimed it refreshed on every build.
+
+Fixed by adding the missing upgrades and gating all three on a date-keyed
+`ARG APT_SECURITY_REFRESH` (passed by `docker-build-push.sh`), so the layer genuinely
+re-runs. Measured before and after on the same commit:
+
+| Image leg | CRITICAL before | CRITICAL after |
 |---|---|---|
-| backend | 20 | 171 |
-| frontend | **0** | **0** |
-| docs | 2 | 33 |
+| backend-amd64 | 16 | **1** |
+| lite-amd64 | 16 | **1** |
+| lite-arm64 | 19 | **4** |
+| frontend (both arches) | 0 | 0 |
+| docs (both arches) | 0 | 0 |
 
-**Every one of the 20 backend criticals is unfixed upstream** — there is no patched version to move to. 16 are the perl stack (`libperl5.40`, `perl`, `perl-base`, `perl-modules-5.40`), present solely because `libimage-exiftool-perl` provides the media-metadata parsing the pipeline depends on; the remaining four (`libmbedcrypto16` ×2, `libglib2.0-0t64`, `libxml2`) are likewise unfixed in Debian trixie. `Dockerfile.prod` already runs `apt-get upgrade -y` on every build, and the image is fully patched against its repositories (installed == candidate for every package checked).
-
-The risk is therefore **accepted and recorded** for this release rather than silently carried: the release ledger holds the operator and the full justification. Tracked in **#415** for re-check when Debian publishes fixes — a rebuild is all that will be needed.
+What remains genuinely has no upstream fix: `libxml2` CVE-2026-6653 is `fix=NONE` in
+Debian 13, the three residual `pcre2` findings on arm64 likewise, and grype's separate
+`curl`/`libcurl4t64` criticals are all marked **`wont-fix` by Debian**. That risk is
+**accepted and recorded** rather than silently carried — the release ledger holds the
+operator and the full justification. Tracked in **#415** for re-check when Debian
+publishes fixes; a rebuild is all that will be needed, and it will now actually pick
+them up. `backend/tests/unit/test_image_security_patching.py` fails the build if any
+production image loses its upgrade or its cache-busting ARG again.
 
 #### Authentication audit (issues #353, #354, #355)
 

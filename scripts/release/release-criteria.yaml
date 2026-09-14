@@ -525,6 +525,21 @@ stages:
         description: CHANGELOG.md has a section for this version to use as the release notes
         severity: blocking
 
+      - id: changelog-body-within-github-limit
+        description: >-
+          The release body actually sent to GitHub is within the API's ~125,000-character
+          cap, and says so when it had to be trimmed. v0.5.0's section is 2,917 lines
+          (~350 KB) and broke TWO different limits: the body was passed as `--notes
+          "$notes"`, and Linux caps a single argv entry at MAX_ARG_STRLEN (128 KiB), so
+          `gh` exited "Argument list too long" without ever reaching GitHub. Switching to
+          `--notes-file` fixes only the shell half — the server's own limit would then
+          have rejected the same 350 KB. So an over-long section is published as its
+          `### Overview` plus a link to the full CHANGELOG entry, and the substitution is
+          ANNOUNCED and recorded here. A body silently cut mid-sentence at the cap is
+          worse than either the whole text or an honest excerpt, which is why this is a
+          criterion rather than a quiet `head -c`.
+        severity: blocking
+
       - id: github-latest-policy
         description: >-
           Whether this release is marked GitHub "Latest" is DERIVED, never assumed.

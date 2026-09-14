@@ -144,6 +144,52 @@ if [[ -z "$notes" ]]; then
 fi
 record changelog-section pass
 
+# ⚠️ TWO separate size limits, and v0.5.0 blew through both (2,917 lines / ~350 KB).
+#
+#   1. argv.   The body used to be passed as `--notes "$notes"`. Linux caps a SINGLE argv
+#              entry at MAX_ARG_STRLEN (128 KiB, not tunable), so `gh` died with
+#              "Argument list too long" before making a request. That is why this now goes
+#              through a FILE — correct at any size, so the write is unconditional.
+#   2. GitHub. The API rejects a release body over ~125,000 characters. `--notes-file` does
+#              not help with that one: it is the server's limit, not the shell's.
+#
+# So an over-long section is trimmed to its `### Overview` — which is the readable summary a
+# release page should carry anyway — plus a link to the full entry. The trim is ANNOUNCED and
+# recorded, never silent: a body quietly cut mid-sentence at 125,000 bytes is worse than
+# either the full text or an honest excerpt.
+GH_RELEASE_BODY_MAX="${GH_RELEASE_BODY_MAX:-120000}"
+notes_file="$(mktemp)"
+trap 'rm -f "$notes_file"' EXIT
+if (( ${#notes} > GH_RELEASE_BODY_MAX )); then
+    overview=$(printf '%s\n' "$notes" | awk '
+        /^### Overview/ {p=1}
+        p && /^### / && !/^### Overview/ {exit}
+        p {print}
+    ')
+    # Fall back to a head-trim only if there is no ### Overview to lift. Losing the tail of a
+    # list is survivable; shipping a body the API refuses is not.
+    if [[ -z "$overview" ]]; then
+        overview=$(printf '%s\n' "$notes" | head -c "$GH_RELEASE_BODY_MAX")
+        trim_kind="first ${GH_RELEASE_BODY_MAX} bytes (no '### Overview' heading to lift)"
+    else
+        trim_kind="'### Overview' section"
+    fi
+    changelog_url="https://github.com/attevon-llc/OpenTranscribe/blob/${VERSION}/CHANGELOG.md"
+    {
+        printf '%s\n' "$overview"
+        printf '\n---\n\n'
+        printf '📄 **This release has a large changelog.** The full entry for %s — every\n' "$VERSION"
+        printf 'Added / Fixed / Changed item — is in [CHANGELOG.md](%s).\n' "$changelog_url"
+    } > "$notes_file"
+    echo -e "${YELLOW}CHANGELOG section is ${#notes} bytes, over the ${GH_RELEASE_BODY_MAX} limit${NC}" >&2
+    echo -e "${YELLOW}  release body trimmed to the ${trim_kind} + a link to the full entry${NC}" >&2
+    record changelog-body-within-github-limit pass \
+        "section ${#notes} B > ${GH_RELEASE_BODY_MAX} B — body is the ${trim_kind} plus a CHANGELOG link"
+else
+    printf '%s\n' "$notes" > "$notes_file"
+    record changelog-body-within-github-limit pass "section ${#notes} B fits in ${GH_RELEASE_BODY_MAX} B"
+fi
+
 # --- BEGIN release-assets (issue #781) ---
 # Release assets: an SBOM per published leg, each with a published checksum. Derived and
 # gated, never a bare existence glob (issue #781) — see release-assets.sh's header for the
@@ -302,7 +348,7 @@ echo -e "${YELLOW}Creating the GitHub Release for $VERSION (published, not draft
 if ! gh release create "$VERSION" \
     --title "$VERSION" \
     "$latest_flag" \
-    --notes "$notes" \
+    --notes-file "$notes_file" \
     "${assets[@]}"; then
     record github-release-created fail "gh release create failed" \
         "gh release view $VERSION   # it may exist already"

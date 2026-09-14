@@ -1,7 +1,7 @@
 
-davidamacey/opentranscribe-backend-lite:v0.5.0-scanleg-amd64 (debian 13.6)
+davidamacey/opentranscribe-backend-lite:v0.5.0-scanleg-amd64 (debian 13.7)
 ==========================================================================
-Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
+Total: 454 (UNKNOWN: 0, LOW: 0, MEDIUM: 233, HIGH: 220, CRITICAL: 1)
 
 ┌─────────────────────────┬────────────────┬──────────┬──────────────┬──────────────────────────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
 │         Library         │ Vulnerability  │ Severity │    Status    │          Installed Version           │ Fixed Version │                            Title                             │
@@ -26,7 +26,7 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │                │          │              │                                      │               │ improper hostname canonicalization                           │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-3184                    │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ curl                    │ CVE-2026-12064 │ HIGH     │              │ 8.14.1-2+deb13u4                     │               │ curl: curl: SSH host verification bypass when using          │
+│ curl                    │ CVE-2026-12064 │ HIGH     │              │ 8.14.1-2+deb13u5                     │               │ curl: curl: SSH host verification bypass when using          │
 │                         │                │          │              │                                      │               │ schemeless URLs with SFTP/SCP...                             │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-12064                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -49,6 +49,34 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-11856 │          │              │                                      │               │ curl: curl: Information disclosure via incorrect Digest      │
 │                         │                │          │              │                                      │               │ authentication header reuse                                  │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-11856                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-13608 │          │              │                                      │               │ A flaw in the libcurl SASL negotiation for LDAP              │
+│                         │                │          │              │                                      │               │ authentication allows ...                                    │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-13608                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-18924 │          │              │                                      │               │ A flaw in libcurl's handling of HTTP/2 Server Push streams,  │
+│                         │                │          │              │                                      │               │ when the...                                                  │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-18924                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-19931 │          │              │                                      │               │ A flaw in libcurl makes it wrongly reuse an HTTP connection  │
+│                         │                │          │              │                                      │               │ setup...                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-19931                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-80229 │          │              │                                      │               │ When performing transfers via libcurl\u2019s multi           │
+│                         │                │          │              │                                      │               │ interface, pooled T ...                                      │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80229                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-80230 │          │              │                                      │               │ When `CURLOPT_PINNEDPUBLICKEY` is configured alongside       │
+│                         │                │          │              │                                      │               │ options that di ...                                          │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80230                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-80255 │          │              │                                      │               │ A `Set-Cookie:` header using tab (horizontal tab, ASCII code │
+│                         │                │          │              │                                      │               │ 9) instea ......                                             │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80255                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-82209 │          │              │                                      │               │ When libpsl support is enabled, libcurl fails to enforce the │
+│                         │                │          │              │                                      │               │ Public Su...                                                 │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-82209                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-8924  │          │              │                                      │               │ curl: curl: Cookie injection via malicious HTTP server using │
 │                         │                │          │              │                                      │               │ super cookies                                                │
@@ -193,28 +221,12 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
 ├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ gzip                    │ CVE-2026-41992 │ HIGH     │ affected     │ 1.13-1                               │               │ gzip: gzip: Information disclosure via global buffer         │
-│                         │                │          │              │                                      │               │ overflow in LZH decompression                                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-41992                   │
-│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-41991 │ MEDIUM   │              │                                      │               │ gzip: gzip: Arbitrary file overwrite via insecure temporary  │
-│                         │                │          │              │                                      │               │ file handling in gzexe...                                    │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-41991                   │
-├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libacl1                 │ CVE-2026-54369 │ HIGH     │              │ 2.3.2-2+b1                           │               │ acl: Symlink traversal privilege escalation via libacl       │
+│ libacl1                 │ CVE-2026-54369 │ HIGH     │ affected     │ 2.3.2-2+b1                           │               │ acl: Symlink traversal privilege escalation via libacl       │
 │                         │                │          │              │                                      │               │ functions                                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-54369                   │
 │                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-54370 │ MEDIUM   │              │                                      │               │ acl: TOCTOU Symlink Traversal via getfacl/setfacl            │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-54370                   │
-├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libasound2-data         │ CVE-2026-25068 │          │              │ 1.2.14-1                             │               │ alsa-lib: alsa-lib Topology Decoder Heap-based Buffer        │
-│                         │                │          │              │                                      │               │ Overflow                                                     │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-25068                   │
-├─────────────────────────┤                │          │              │                                      ├───────────────┤                                                              │
-│ libasound2t64           │                │          │              │                                      │               │                                                              │
-│                         │                │          │              │                                      │               │                                                              │
-│                         │                │          │              │                                      │               │                                                              │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libattr1                │ CVE-2026-54371 │          │              │ 1:2.5.2-3                            │               │ attr: attr: Symlink Traversal Privilege Escalation via       │
 │                         │                │          │              │                                      │               │ getfattr and setfattr                                        │
@@ -839,7 +851,7 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │                │          │              │                                      │               │ specially crafted file...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-42250                   │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libc-bin                │ CVE-2026-18374 │          │              │ 2.41-12+deb13u3                      │               │ glibc: glibc: Heap buffer overflow via attacker-controlled   │
+│ libc-bin                │ CVE-2026-18374 │          │              │ 2.41-12+deb13u4                      │               │ glibc: glibc: Heap buffer overflow via attacker-controlled   │
 │                         │                │          │              │                                      │               │ fopen mode string                                            │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-18374                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -852,14 +864,6 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-5435  │          │              │                                      │               │ glibc: glibc: Out-of-bounds write via TSIG record processing │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-5435                    │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-5450  │          │              │                                      │               │ glibc: glibc: Heap Buffer Overflow in `scanf` with `%mc`     │
-│                         │                │          │              │                                      │               │ format specifier and...                                      │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-5450                    │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-5928  │          │              │                                      │               │ glibc: glibc: Information disclosure or denial of service    │
-│                         │                │          │              │                                      │               │ via ungetwc function with...                                 │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-5928                    │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-6238  │          │              │                                      │               │ glibc: glibc: Application crash or uninitialized memory read │
 │                         │                │          │              │                                      │               │ via crafted DNS response...                                  │
@@ -878,6 +882,10 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-80489 │          │              │                                      │               │ glibc: Non-progress DoS in EUC_JISX0213 -> UCS-4 conversion  │
 │                         │                │          │              │                                      │               │ state                                                        │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80489                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-89092 │          │              │                                      │               │ glibc: glibc: nscd stack overflow leads to degraded DNS      │
+│                         │                │          │              │                                      │               │ resolution                                                   │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-89092                   │
 ├─────────────────────────┼────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │ libc6                   │ CVE-2026-18374 │          │              │                                      │               │ glibc: glibc: Heap buffer overflow via attacker-controlled   │
 │                         │                │          │              │                                      │               │ fopen mode string                                            │
@@ -893,14 +901,6 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-5435  │          │              │                                      │               │ glibc: glibc: Out-of-bounds write via TSIG record processing │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-5435                    │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-5450  │          │              │                                      │               │ glibc: glibc: Heap Buffer Overflow in `scanf` with `%mc`     │
-│                         │                │          │              │                                      │               │ format specifier and...                                      │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-5450                    │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-5928  │          │              │                                      │               │ glibc: glibc: Information disclosure or denial of service    │
-│                         │                │          │              │                                      │               │ via ungetwc function with...                                 │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-5928                    │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-6238  │          │              │                                      │               │ glibc: glibc: Application crash or uninitialized memory read │
 │                         │                │          │              │                                      │               │ via crafted DNS response...                                  │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-6238                    │
@@ -918,6 +918,10 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-80489 │          │              │                                      │               │ glibc: Non-progress DoS in EUC_JISX0213 -> UCS-4 conversion  │
 │                         │                │          │              │                                      │               │ state                                                        │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80489                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-89092 │          │              │                                      │               │ glibc: glibc: nscd stack overflow leads to degraded DNS      │
+│                         │                │          │              │                                      │               │ resolution                                                   │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-89092                   │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libcjson1               │ CVE-2026-16554 │ HIGH     │              │ 1.7.18-3.1+deb13u1                   │               │ cJSON: cJSON: Remote code execution due to integer overflow  │
 │                         │                │          │              │                                      │               │ via crafted JSON...                                          │
@@ -934,12 +938,16 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-67216 │          │              │                                      │               │ cJSON: Denial of Service due to inefficient JSON object      │
 │                         │                │          │              │                                      │               │ comparison                                                   │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-67216                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-87933 │          │              │                                      │               │ cJSON: cJSON: Memory corruption via use after free in        │
+│                         │                │          │              │                                      │               │ cJSONUtils_MergePatch                                        │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-87933                   │
 │                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-67217 │ MEDIUM   │              │                                      │               │ cJSON: cJSON: Data destruction due to non-atomic JSON Patch  │
 │                         │                │          │              │                                      │               │ application                                                  │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-67217                   │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libcurl4t64             │ CVE-2026-12064 │ HIGH     │              │ 8.14.1-2+deb13u4                     │               │ curl: curl: SSH host verification bypass when using          │
+│ libcurl4t64             │ CVE-2026-12064 │ HIGH     │              │ 8.14.1-2+deb13u5                     │               │ curl: curl: SSH host verification bypass when using          │
 │                         │                │          │              │                                      │               │ schemeless URLs with SFTP/SCP...                             │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-12064                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -962,6 +970,34 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-11856 │          │              │                                      │               │ curl: curl: Information disclosure via incorrect Digest      │
 │                         │                │          │              │                                      │               │ authentication header reuse                                  │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-11856                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-13608 │          │              │                                      │               │ A flaw in the libcurl SASL negotiation for LDAP              │
+│                         │                │          │              │                                      │               │ authentication allows ...                                    │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-13608                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-18924 │          │              │                                      │               │ A flaw in libcurl's handling of HTTP/2 Server Push streams,  │
+│                         │                │          │              │                                      │               │ when the...                                                  │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-18924                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-19931 │          │              │                                      │               │ A flaw in libcurl makes it wrongly reuse an HTTP connection  │
+│                         │                │          │              │                                      │               │ setup...                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-19931                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-80229 │          │              │                                      │               │ When performing transfers via libcurl\u2019s multi           │
+│                         │                │          │              │                                      │               │ interface, pooled T ...                                      │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80229                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-80230 │          │              │                                      │               │ When `CURLOPT_PINNEDPUBLICKEY` is configured alongside       │
+│                         │                │          │              │                                      │               │ options that di ...                                          │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80230                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-80255 │          │              │                                      │               │ A `Set-Cookie:` header using tab (horizontal tab, ASCII code │
+│                         │                │          │              │                                      │               │ 9) instea ......                                             │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80255                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-82209 │          │              │                                      │               │ When libpsl support is enabled, libcurl fails to enforce the │
+│                         │                │          │              │                                      │               │ Public Su...                                                 │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-82209                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-8924  │          │              │                                      │               │ curl: curl: Cookie injection via malicious HTTP server using │
 │                         │                │          │              │                                      │               │ super cookies                                                │
@@ -1016,44 +1052,8 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-81893 │          │              │                                      │               │ gdk-pixbuf: gdk-pixbuf: invalid write in JPEG ICC profile    │
 │                         │                │          │              │                                      │               │ parser on error recovery...                                  │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-81893                   │
-├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libglib2.0-0t64         │ CVE-2026-58016 │ CRITICAL │              │ 2.84.4-3~deb13u3                     │               │ glib: integer underflow in gio/gdbusintrospection.c via      │
-│                         │                │          │              │                                      │               │ "g_dbus_node_info_new_for_xml"                               │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58016                   │
-│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-58010 │ HIGH     │              │                                      │               │ glib: buffer over-read in glib/gvariant-serialiser.c via     │
-│                         │                │          │              │                                      │               │ gvs_tuple_is_normal()                                        │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58010                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-58011 │          │              │                                      │               │ glib: out-of-bounds read in                                  │
-│                         │                │          │              │                                      │               │ glib/gdatetime.c:g_date_time_get_ymd via invalid GDateTime   │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58011                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-58012 │          │              │                                      │               │ glib: buffer over-read in g_regex_replace() via              │
-│                         │                │          │              │                                      │               │ glib/gregex.c:string_append() and g_utf8_next_char()         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58012                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-58013 │          │              │                                      │               │ glib: buffer over-read in glib/giochannel.c via              │
-│                         │                │          │              │                                      │               │ "g_io_channel_read_line_backend"                             │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58013                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-58014 │          │              │                                      │               │ glib: off-by-one error in glib/gkeyfile.c via                │
-│                         │                │          │              │                                      │               │ "g_key_file_get_locale_string_list"                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58014                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-58015 │          │              │                                      │               │ glib: path traversal in glib/gio/gdbusauthmechanismsha1.c    │
-│                         │                │          │              │                                      │               │ via keyring_lookup_entry and mechanism_client_data_receive   │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58015                   │
-│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-15588 │ MEDIUM   │              │                                      │               │ GDBusServer: glib2: GDBusServer pre-authentication DoS via   │
-│                         │                │          │              │                                      │               │ unbounded SASL line buffering                                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-15588                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-16118 │          │              │                                      │               │ xdgmime: heap-based buffer overflow in                       │
-│                         │                │          │              │                                      │               │ _xdg_mime_magic_parse_magic_line() in xdgmimemagic.c         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-16118                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-86469 │          │              │                                      │               │ glib2: TOCTOU Symlink Race in                                │
+├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libglib2.0-0t64         │ CVE-2026-86469 │          │              │ 2.84.4-3~deb13u5                     │               │ glib2: TOCTOU Symlink Race in                                │
 │                         │                │          │              │                                      │               │ `G_FILE_CREATE_REPLACE_DESTINATION` Fallback Path            │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86469                   │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
@@ -1080,27 +1080,8 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-3184  │ MEDIUM   │              │                                      │               │ util-linux: util-linux: Access control bypass due to         │
 │                         │                │          │              │                                      │               │ improper hostname canonicalization                           │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-3184                    │
-├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libmbedcrypto16         │ CVE-2026-34873 │ CRITICAL │              │ 3.6.5-0.1~deb13u1                    │               │ mbedtls: Mbed TLS: Client impersonation during TLS 1.3       │
-│                         │                │          │              │                                      │               │ session resumption                                           │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-34873                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-34875 │          │              │                                      │               │ mbedtls: Mbed TLS and TF-PSA-Crypto: Arbitrary code          │
-│                         │                │          │              │                                      │               │ execution due to buffer overflow...                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-34875                   │
-│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-25835 │ HIGH     │              │                                      │               │ Mbed TLS before 3.6.6 and TF-PSA-Crypto before 1.1.0 misuse  │
-│                         │                │          │              │                                      │               │ seeds in a...                                                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-25835                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-34872 │          │              │                                      │               │ mbedtls: Mbed TLS and TF-PSA-Crypto: Shared secret           │
-│                         │                │          │              │                                      │               │ manipulation via improper FFDH input...                      │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-34872                   │
-│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-25834 │ MEDIUM   │              │                                      │               │ mbedtls: Mbed TLS: Algorithm downgrade vulnerability         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-25834                   │
-├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libmount1               │ CVE-2026-76642 │ HIGH     │              │ 2.41.5-0+deb13u1                     │               │ util-linux: util-linux: failed external mount helper still   │
+├─────────────────────────┼────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libmount1               │ CVE-2026-76642 │ HIGH     │              │                                      │               │ util-linux: util-linux: failed external mount helper still   │
 │                         │                │          │              │                                      │               │ runs privileged X-mount post-hooks                           │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-76642                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -1158,70 +1139,18 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │ libpam0g                │                │          │              │                                      │               │                                                              │
 │                         │                │          │              │                                      │               │                                                              │
 │                         │                │          │              │                                      │               │                                                              │
-├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libperl5.40             │ CVE-2026-13221 │ CRITICAL │              │ 5.40.1-6                             │               │ perl: Perl: Incorrect regular expression processing via      │
-│                         │                │          │              │                                      │               │ large regular expressions                                    │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-13221                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-42496 │          │ fix_deferred │                                      │               │ perl-archive-tar: perl-archive-tar: Path traversal via       │
-│                         │                │          │              │                                      │               │ crafted symlinks allows arbitrary file access                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-42496                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-8376  │          │ affected     │                                      │               │ perl: Perl: Heap buffer overflow when compiling regular      │
-│                         │                │          │              │                                      │               │ expressions on 32-bit builds...                              │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-8376                    │
-│                         ├────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-42497 │ HIGH     │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Arbitrary file           │
-│                         │                │          │              │                                      │               │ modification via crafted hardlinks during archive extraction │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-42497                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48962 │          │ affected     │                                      │               │ perl-IO-Compress: perl-IO-Compress: Arbitrary code execution │
-│                         │                │          │              │                                      │               │ via attacker-controlled output glob                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48962                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-57432 │          │              │                                      │               │ perl: Perl: Information disclosure via integer overflow in   │
-│                         │                │          │              │                                      │               │ pack/unpack operations                                       │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-57432                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-57433 │          │              │                                      │               │ Storable: Storable: Denial of Service via signed integer     │
-│                         │                │          │              │                                      │               │ overflow in deserialization                                  │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-57433                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-9538  │          │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Denial of Service via    │
+├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libperl5.40             │ CVE-2026-9538  │ HIGH     │ fix_deferred │ 5.40.1-6+deb13u1                     │               │ perl-Archive-Tar: perl-Archive-Tar: Denial of Service via    │
 │                         │                │          │              │                                      │               │ crafted tar header with large entry...                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-9538                    │
-│                         ├────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-15649 │ MEDIUM   │ affected     │                                      │               │ perl-IO-Compress: perl-IO-Compress: Denial of Service via    │
-│                         │                │          │              │                                      │               │ malformed DOS date in zip header...                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-15649                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-12087 │          │              │                                      │               │ perl-Socket: perl-Socket: Information Disclosure due to      │
-│                         │                │          │              │                                      │               │ Out-of-Bounds Read                                           │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-12087                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-15534 │          │ fix_deferred │                                      │               │ perl: Perl: Arbitrary code execution via out-of-bounds       │
+│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-15534 │ MEDIUM   │              │                                      │               │ perl: Perl: Arbitrary code execution via out-of-bounds       │
 │                         │                │          │              │                                      │               │ memory access in regular expression...                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-15534                   │
 │                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-19487 │          │ affected     │                                      │               │ perl: Perl: Incorrect regular expression matching can lead   │
 │                         │                │          │              │                                      │               │ to wrong access or...                                        │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-19487                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48959 │          │              │                                      │               │ perl-IO-Compress: perl-IO-Compress: CPU exhaustion via       │
-│                         │                │          │              │                                      │               │ per-byte read loop in fastForward                            │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48959                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48961 │          │              │                                      │               │ perl-IO-Compress: IO::Compress: Denial of Service in         │
-│                         │                │          │              │                                      │               │ zipdetails CLI tool via malformed Info-ZIP...                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48961                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-7010  │          │              │                                      │               │ HTTP::Tiny versions before 0.093 for Perl do not validate    │
-│                         │                │          │              │                                      │               │ CRLF in HTTP...                                              │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-7010                    │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-7017  │          │              │                                      │               │ HTTP::Tiny versions before 0.095 for Perl forward credential │
-│                         │                │          │              │                                      │               │ headers t ...                                                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-7017                    │
 ├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libpostproc58           │ CVE-2026-58049 │ HIGH     │ fix_deferred │ 7:7.1.5-0+deb13u1                    │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
 │                         │                │          │              │                                      │               │ stream                                                       │
@@ -1367,16 +1296,8 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         ├────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2024-50613 │ MEDIUM   │ fix_deferred │                                      │               │ libsndfile: Reachable assertion in mpeg_l3_encoder_close     │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2024-50613                   │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libsqlite3-0            │ CVE-2026-11822 │ HIGH     │ affected     │ 3.46.1-7+deb13u1                     │               │ sqlite: SQLite: Arbitrary code execution via crafted FTS5    │
-│                         │                │          │              │                                      │               │ full-text search data                                        │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-11822                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-11824 │          │              │                                      │               │ sqlite: SQLite: Arbitrary code execution and crash via       │
-│                         │                │          │              │                                      │               │ heap-based buffer overflow in...                             │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-11824                   │
-│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-39113 │ MEDIUM   │              │                                      │               │ Buffer Overflow vulnerability in SQLite affected version     │
+├─────────────────────────┼────────────────┤          ├──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libsqlite3-0            │ CVE-2026-39113 │          │ affected     │ 3.46.1-7+deb13u2                     │               │ Buffer Overflow vulnerability in SQLite affected version     │
 │                         │                │          │              │                                      │               │ source snapsh ...                                            │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-39113                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -1387,30 +1308,6 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-50813 │          │              │                                      │               │ sqlite: SQLite: Information disclosure via Session Extension │
 │                         │                │          │              │                                      │               │ changeset merge path                                         │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-50813                   │
-├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libssh2-1t64            │ CVE-2026-58050 │ HIGH     │              │ 1.11.1-1+deb13u1                     │               │ libssh2: libssh2: Heap buffer overflow via integer overflow  │
-│                         │                │          │              │                                      │               │ in publickey attribute allocation...                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58050                   │
-│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-58051 │ MEDIUM   │              │                                      │               │ libssh2: libssh2: Denial of service or information           │
-│                         │                │          │              │                                      │               │ disclosure via malformed SSH publickey...                    │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58051                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-66032 │          │              │                                      │               │ libssh2: libssh2: Arbitrary code execution via double-free   │
-│                         │                │          │              │                                      │               │ in SFTP session                                              │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-66032                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-66033 │          │              │                                      │               │ libssh2: libssh2: Denial of Service via integer underflow in │
-│                         │                │          │              │                                      │               │ AES-GCM cipher negotiation...                                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-66033                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-66034 │          │              │                                      │               │ libssh2: libssh2: Information disclosure and potential       │
-│                         │                │          │              │                                      │               │ arbitrary code execution via heap out-of-bounds...           │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-66034                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-66035 │          │              │                                      │               │ libssh2: libssh2: Arbitrary code execution via heap buffer   │
-│                         │                │          │              │                                      │               │ overflow during SSH negotiation...                           │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-66035                   │
 ├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libswresample5          │ CVE-2026-58049 │ HIGH     │ fix_deferred │ 7:7.1.5-0+deb13u1                    │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
 │                         │                │          │              │                                      │               │ stream                                                       │
@@ -1664,8 +1561,12 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │ CVE-2026-52490 │          │ affected     │                                      │               │ libtiff: libtiff: Arbitrary code execution via               │
 │                         │                │          │              │                                      │               │ process_command_opts() function                              │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-52490                   │
-├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libtinfo6               │ CVE-2025-69720 │          │              │ 6.5+20250216-2                       │               │ ncurses: ncurses: Buffer overflow vulnerability may lead to  │
+│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-18495 │ MEDIUM   │              │                                      │               │ libtiff: libtiff: heap-buffer overflow via numeric           │
+│                         │                │          │              │                                      │               │ truncation in the JPEG raw passthrough...                    │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-18495                   │
+├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libtinfo6               │ CVE-2025-69720 │ HIGH     │              │ 6.5+20250216-2                       │               │ ncurses: ncurses: Buffer overflow vulnerability may lead to  │
 │                         │                │          │              │                                      │               │ arbitrary code execution.                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-69720                   │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
@@ -1709,7 +1610,10 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │                         │                │          │              │                                      │               │ crafted XML input due to...                                  │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-6653                    │
 │                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-86140 │ HIGH     │              │                                      │               │ libxml2: libxml2: Arbitrary code execution via stack-based   │
+│                         │ CVE-2026-74860 │ HIGH     │              │                                      │               │ libxml2: double-free/UAF in libxml2 Python bindings          │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-74860                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-86140 │          │              │                                      │               │ libxml2: libxml2: Arbitrary code execution via stack-based   │
 │                         │                │          │              │                                      │               │ buffer overflow in xmlSnprintfElements                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86140                   │
 │                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -1780,198 +1684,42 @@ Total: 517 (UNKNOWN: 0, LOW: 0, MEDIUM: 255, HIGH: 246, CRITICAL: 16)
 │ ncurses-bin             │                │          │              │                                      │               │                                                              │
 │                         │                │          │              │                                      │               │                                                              │
 │                         │                │          │              │                                      │               │                                                              │
-├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ perl                    │ CVE-2026-13221 │ CRITICAL │              │ 5.40.1-6                             │               │ perl: Perl: Incorrect regular expression processing via      │
-│                         │                │          │              │                                      │               │ large regular expressions                                    │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-13221                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-42496 │          │ fix_deferred │                                      │               │ perl-archive-tar: perl-archive-tar: Path traversal via       │
-│                         │                │          │              │                                      │               │ crafted symlinks allows arbitrary file access                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-42496                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-8376  │          │ affected     │                                      │               │ perl: Perl: Heap buffer overflow when compiling regular      │
-│                         │                │          │              │                                      │               │ expressions on 32-bit builds...                              │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-8376                    │
-│                         ├────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-42497 │ HIGH     │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Arbitrary file           │
-│                         │                │          │              │                                      │               │ modification via crafted hardlinks during archive extraction │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-42497                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48962 │          │ affected     │                                      │               │ perl-IO-Compress: perl-IO-Compress: Arbitrary code execution │
-│                         │                │          │              │                                      │               │ via attacker-controlled output glob                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48962                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-57432 │          │              │                                      │               │ perl: Perl: Information disclosure via integer overflow in   │
-│                         │                │          │              │                                      │               │ pack/unpack operations                                       │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-57432                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-57433 │          │              │                                      │               │ Storable: Storable: Denial of Service via signed integer     │
-│                         │                │          │              │                                      │               │ overflow in deserialization                                  │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-57433                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-9538  │          │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Denial of Service via    │
+├─────────────────────────┼────────────────┤          ├──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ perl                    │ CVE-2026-9538  │          │ fix_deferred │ 5.40.1-6+deb13u1                     │               │ perl-Archive-Tar: perl-Archive-Tar: Denial of Service via    │
 │                         │                │          │              │                                      │               │ crafted tar header with large entry...                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-9538                    │
-│                         ├────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-15649 │ MEDIUM   │ affected     │                                      │               │ perl-IO-Compress: perl-IO-Compress: Denial of Service via    │
-│                         │                │          │              │                                      │               │ malformed DOS date in zip header...                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-15649                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-12087 │          │              │                                      │               │ perl-Socket: perl-Socket: Information Disclosure due to      │
-│                         │                │          │              │                                      │               │ Out-of-Bounds Read                                           │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-12087                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-15534 │          │ fix_deferred │                                      │               │ perl: Perl: Arbitrary code execution via out-of-bounds       │
+│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-15534 │ MEDIUM   │              │                                      │               │ perl: Perl: Arbitrary code execution via out-of-bounds       │
 │                         │                │          │              │                                      │               │ memory access in regular expression...                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-15534                   │
 │                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-19487 │          │ affected     │                                      │               │ perl: Perl: Incorrect regular expression matching can lead   │
 │                         │                │          │              │                                      │               │ to wrong access or...                                        │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-19487                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48959 │          │              │                                      │               │ perl-IO-Compress: perl-IO-Compress: CPU exhaustion via       │
-│                         │                │          │              │                                      │               │ per-byte read loop in fastForward                            │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48959                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48961 │          │              │                                      │               │ perl-IO-Compress: IO::Compress: Denial of Service in         │
-│                         │                │          │              │                                      │               │ zipdetails CLI tool via malformed Info-ZIP...                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48961                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-7010  │          │              │                                      │               │ HTTP::Tiny versions before 0.093 for Perl do not validate    │
-│                         │                │          │              │                                      │               │ CRLF in HTTP...                                              │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-7010                    │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-7017  │          │              │                                      │               │ HTTP::Tiny versions before 0.095 for Perl forward credential │
-│                         │                │          │              │                                      │               │ headers t ...                                                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-7017                    │
-├─────────────────────────┼────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ perl-base               │ CVE-2026-13221 │ CRITICAL │              │                                      │               │ perl: Perl: Incorrect regular expression processing via      │
-│                         │                │          │              │                                      │               │ large regular expressions                                    │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-13221                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-42496 │          │ fix_deferred │                                      │               │ perl-archive-tar: perl-archive-tar: Path traversal via       │
-│                         │                │          │              │                                      │               │ crafted symlinks allows arbitrary file access                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-42496                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-8376  │          │ affected     │                                      │               │ perl: Perl: Heap buffer overflow when compiling regular      │
-│                         │                │          │              │                                      │               │ expressions on 32-bit builds...                              │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-8376                    │
-│                         ├────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-42497 │ HIGH     │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Arbitrary file           │
-│                         │                │          │              │                                      │               │ modification via crafted hardlinks during archive extraction │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-42497                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48962 │          │ affected     │                                      │               │ perl-IO-Compress: perl-IO-Compress: Arbitrary code execution │
-│                         │                │          │              │                                      │               │ via attacker-controlled output glob                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48962                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-57432 │          │              │                                      │               │ perl: Perl: Information disclosure via integer overflow in   │
-│                         │                │          │              │                                      │               │ pack/unpack operations                                       │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-57432                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-57433 │          │              │                                      │               │ Storable: Storable: Denial of Service via signed integer     │
-│                         │                │          │              │                                      │               │ overflow in deserialization                                  │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-57433                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-9538  │          │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Denial of Service via    │
+├─────────────────────────┼────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ perl-base               │ CVE-2026-9538  │ HIGH     │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Denial of Service via    │
 │                         │                │          │              │                                      │               │ crafted tar header with large entry...                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-9538                    │
-│                         ├────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-15649 │ MEDIUM   │ affected     │                                      │               │ perl-IO-Compress: perl-IO-Compress: Denial of Service via    │
-│                         │                │          │              │                                      │               │ malformed DOS date in zip header...                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-15649                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-12087 │          │              │                                      │               │ perl-Socket: perl-Socket: Information Disclosure due to      │
-│                         │                │          │              │                                      │               │ Out-of-Bounds Read                                           │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-12087                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-15534 │          │ fix_deferred │                                      │               │ perl: Perl: Arbitrary code execution via out-of-bounds       │
+│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-15534 │ MEDIUM   │              │                                      │               │ perl: Perl: Arbitrary code execution via out-of-bounds       │
 │                         │                │          │              │                                      │               │ memory access in regular expression...                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-15534                   │
 │                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-19487 │          │ affected     │                                      │               │ perl: Perl: Incorrect regular expression matching can lead   │
 │                         │                │          │              │                                      │               │ to wrong access or...                                        │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-19487                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48959 │          │              │                                      │               │ perl-IO-Compress: perl-IO-Compress: CPU exhaustion via       │
-│                         │                │          │              │                                      │               │ per-byte read loop in fastForward                            │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48959                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48961 │          │              │                                      │               │ perl-IO-Compress: IO::Compress: Denial of Service in         │
-│                         │                │          │              │                                      │               │ zipdetails CLI tool via malformed Info-ZIP...                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48961                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-7010  │          │              │                                      │               │ HTTP::Tiny versions before 0.093 for Perl do not validate    │
-│                         │                │          │              │                                      │               │ CRLF in HTTP...                                              │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-7010                    │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-7017  │          │              │                                      │               │ HTTP::Tiny versions before 0.095 for Perl forward credential │
-│                         │                │          │              │                                      │               │ headers t ...                                                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-7017                    │
-├─────────────────────────┼────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ perl-modules-5.40       │ CVE-2026-13221 │ CRITICAL │              │                                      │               │ perl: Perl: Incorrect regular expression processing via      │
-│                         │                │          │              │                                      │               │ large regular expressions                                    │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-13221                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-42496 │          │ fix_deferred │                                      │               │ perl-archive-tar: perl-archive-tar: Path traversal via       │
-│                         │                │          │              │                                      │               │ crafted symlinks allows arbitrary file access                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-42496                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-8376  │          │ affected     │                                      │               │ perl: Perl: Heap buffer overflow when compiling regular      │
-│                         │                │          │              │                                      │               │ expressions on 32-bit builds...                              │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-8376                    │
-│                         ├────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-42497 │ HIGH     │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Arbitrary file           │
-│                         │                │          │              │                                      │               │ modification via crafted hardlinks during archive extraction │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-42497                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48962 │          │ affected     │                                      │               │ perl-IO-Compress: perl-IO-Compress: Arbitrary code execution │
-│                         │                │          │              │                                      │               │ via attacker-controlled output glob                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48962                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-57432 │          │              │                                      │               │ perl: Perl: Information disclosure via integer overflow in   │
-│                         │                │          │              │                                      │               │ pack/unpack operations                                       │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-57432                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-57433 │          │              │                                      │               │ Storable: Storable: Denial of Service via signed integer     │
-│                         │                │          │              │                                      │               │ overflow in deserialization                                  │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-57433                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-9538  │          │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Denial of Service via    │
+├─────────────────────────┼────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ perl-modules-5.40       │ CVE-2026-9538  │ HIGH     │ fix_deferred │                                      │               │ perl-Archive-Tar: perl-Archive-Tar: Denial of Service via    │
 │                         │                │          │              │                                      │               │ crafted tar header with large entry...                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-9538                    │
-│                         ├────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-15649 │ MEDIUM   │ affected     │                                      │               │ perl-IO-Compress: perl-IO-Compress: Denial of Service via    │
-│                         │                │          │              │                                      │               │ malformed DOS date in zip header...                          │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-15649                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-12087 │          │              │                                      │               │ perl-Socket: perl-Socket: Information Disclosure due to      │
-│                         │                │          │              │                                      │               │ Out-of-Bounds Read                                           │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-12087                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-15534 │          │ fix_deferred │                                      │               │ perl: Perl: Arbitrary code execution via out-of-bounds       │
+│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-15534 │ MEDIUM   │              │                                      │               │ perl: Perl: Arbitrary code execution via out-of-bounds       │
 │                         │                │          │              │                                      │               │ memory access in regular expression...                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-15534                   │
 │                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-19487 │          │ affected     │                                      │               │ perl: Perl: Incorrect regular expression matching can lead   │
 │                         │                │          │              │                                      │               │ to wrong access or...                                        │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-19487                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48959 │          │              │                                      │               │ perl-IO-Compress: perl-IO-Compress: CPU exhaustion via       │
-│                         │                │          │              │                                      │               │ per-byte read loop in fastForward                            │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48959                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-48961 │          │              │                                      │               │ perl-IO-Compress: IO::Compress: Denial of Service in         │
-│                         │                │          │              │                                      │               │ zipdetails CLI tool via malformed Info-ZIP...                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-48961                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-7010  │          │              │                                      │               │ HTTP::Tiny versions before 0.093 for Perl do not validate    │
-│                         │                │          │              │                                      │               │ CRLF in HTTP...                                              │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-7010                    │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-7017  │          │              │                                      │               │ HTTP::Tiny versions before 0.095 for Perl forward credential │
-│                         │                │          │              │                                      │               │ headers t ...                                                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-7017                    │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ tar                     │ CVE-2026-18477 │          │              │ 1.35+dfsg-3.1                        │               │ tar: tar: TOCTOU in incremental dumpdir 'X' rename handling  │
 │                         │                │          │              │                                      │               │ allows restore path...                                       │
@@ -2020,7 +1768,7 @@ Total: 6 (UNKNOWN: 0, LOW: 0, MEDIUM: 2, HIGH: 4, CRITICAL: 0)
 ┌───────────────────────┬─────────────────────┬──────────┬──────────┬───────────────────┬───────────────┬─────────────────────────────────────────────────────────────┐
 │        Library        │    Vulnerability    │ Severity │  Status  │ Installed Version │ Fixed Version │                            Title                            │
 ├───────────────────────┼─────────────────────┼──────────┼──────────┼───────────────────┼───────────────┼─────────────────────────────────────────────────────────────┤
-│ lightning (METADATA)  │ CVE-2026-58659      │ HIGH     │ fixed    │ 2.6.5             │ 2022.6.15     │ pytorch-lightning: PyTorch Lightning: Remote code execution │
+│ lightning (METADATA)  │ CVE-2026-58659      │ HIGH     │ fixed    │ 2.6.6             │ 2022.6.15     │ pytorch-lightning: PyTorch Lightning: Remote code execution │
 │                       │                     │          │          │                   │               │ via malicious checkpoint files                              │
 │                       │                     │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2026-58659                  │
 ├───────────────────────┼─────────────────────┤          │          ├───────────────────┼───────────────┼─────────────────────────────────────────────────────────────┤

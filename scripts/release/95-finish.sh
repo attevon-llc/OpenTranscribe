@@ -159,35 +159,48 @@ record changelog-section pass
 # either the full text or an honest excerpt.
 GH_RELEASE_BODY_MAX="${GH_RELEASE_BODY_MAX:-120000}"
 notes_file="$(mktemp)"
-trap 'rm -f "$notes_file"' EXIT
-if (( ${#notes} > GH_RELEASE_BODY_MAX )); then
-    overview=$(printf '%s\n' "$notes" | awk '
-        /^### Overview/ {p=1}
-        p && /^### / && !/^### Overview/ {exit}
-        p {print}
-    ')
-    # Fall back to a head-trim only if there is no ### Overview to lift. Losing the tail of a
-    # list is survivable; shipping a body the API refuses is not.
-    if [[ -z "$overview" ]]; then
-        overview=$(printf '%s\n' "$notes" | head -c "$GH_RELEASE_BODY_MAX")
-        trim_kind="first ${GH_RELEASE_BODY_MAX} bytes (no '### Overview' heading to lift)"
-    else
-        trim_kind="'### Overview' section"
-    fi
-    changelog_url="https://github.com/attevon-llc/OpenTranscribe/blob/${VERSION}/CHANGELOG.md"
-    {
-        printf '%s\n' "$overview"
-        printf '\n---\n\n'
-        printf '📄 **This release has a large changelog.** The full entry for %s — every\n' "$VERSION"
-        printf 'Added / Fixed / Changed item — is in [CHANGELOG.md](%s).\n' "$changelog_url"
-    } > "$notes_file"
-    echo -e "${YELLOW}CHANGELOG section is ${#notes} bytes, over the ${GH_RELEASE_BODY_MAX} limit${NC}" >&2
-    echo -e "${YELLOW}  release body trimmed to the ${trim_kind} + a link to the full entry${NC}" >&2
+section_file="$(mktemp)"
+trap 'rm -f "$notes_file" "$section_file"' EXIT
+printf '%s\n' "$notes" > "$section_file"
+
+changelog_url="https://github.com/attevon-llc/OpenTranscribe/blob/${VERSION}/CHANGELOG.md"
+
+# The body is BUILT by scripts/lib/release_notes_body.py, not assembled here. Two reasons,
+# and the second is why the logic left this file:
+#
+#   * Size. GitHub rejects a body over ~125,000 characters, and v0.5.0's section is ~350 KB.
+#   * ANCHORS. The first version of this trim kept `### Overview` alone — and that Overview
+#     links to `[Upgrade Notes](#upgrade-notes)` TWICE, for the AGPL §13 obligations and the
+#     breaking-change list. With the Upgrade Notes section gone from the body, GitHub
+#     generates no such anchor and both links resolve to nothing. That shipped on the real
+#     v0.5.0 release: the published body had one heading and one dead anchor.
+#
+# So the module keeps `Upgrade Notes` as well as `Overview`, and rewrites any anchor that is
+# still referenced with no surviving heading into an absolute CHANGELOG link. A dead link
+# looks live until it is clicked, which makes it worse than no link at all — the reason this
+# is a checked criterion and not a best-effort `head -c`.
+body_notes=""
+if ! body_notes="$(python3 "$SCRIPT_DIR/../lib/release_notes_body.py" \
+        --section-file "$section_file" \
+        --out "$notes_file" \
+        --cap "$GH_RELEASE_BODY_MAX" \
+        --changelog-url "$changelog_url" 2>&1)"; then
+    record changelog-body-within-github-limit fail \
+        "release_notes_body.py could not build the body: ${body_notes}" \
+        "python3 scripts/lib/release_notes_body.py --help"
+    echo -e "${RED}could not build the release body${NC}" >&2
+    echo "${body_notes}" >&2
+    fail_out 1 '"fix the CHANGELOG section for this version"'
+fi
+[[ -n "$body_notes" ]] && echo -e "${YELLOW}${body_notes}${NC}" >&2
+
+body_bytes=$(wc -c < "$notes_file")
+if [[ -n "$body_notes" ]]; then
     record changelog-body-within-github-limit pass \
-        "section ${#notes} B > ${GH_RELEASE_BODY_MAX} B — body is the ${trim_kind} plus a CHANGELOG link"
+        "section ${#notes} B -> body ${body_bytes} B (cap ${GH_RELEASE_BODY_MAX}); $(printf '%s' "$body_notes" | tr '\n' ';')"
 else
-    printf '%s\n' "$notes" > "$notes_file"
-    record changelog-body-within-github-limit pass "section ${#notes} B fits in ${GH_RELEASE_BODY_MAX} B"
+    record changelog-body-within-github-limit pass \
+        "section ${#notes} B published verbatim, within ${GH_RELEASE_BODY_MAX} B"
 fi
 
 # --- BEGIN release-assets (issue #781) ---

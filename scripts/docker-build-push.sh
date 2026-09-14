@@ -344,8 +344,19 @@ run_security_scan() {
     #
     # scripts/release/50-scan.sh already passes IMAGE_TAG="$VERSION" explicitly, which is
     # why the release pipeline was unaffected and this stayed hidden.
+    # ⚠️ PUSH MODE MUST SCAN THE TAG IT JUST PUSHED, not `latest` (issue #414's family).
+    # `scripts/release/80-publish.sh` runs this with `PUSH_LATEST=false`, because `:latest`
+    # is moved later by the promote stage — so in push mode `:latest` is NOT this release.
+    # It is either the PREVIOUS release (backend/frontend/docs, which carry a `:latest`
+    # from v0.4.1) or absent entirely (lite, published here for the first time).
+    #
+    # Both outcomes are wrong and they fail differently, which is why this hid for so long:
+    # the absent tag is loud ("could not scan", refused correctly), while the stale tag is
+    # SILENT — it scans the previous release and files the report under this version.
+    # Observed on the v0.5.0 publish 2026-09-14: lite's arm64 leg reported
+    # `manifest for ...-lite:latest not found`, which is the only reason anyone looked.
     local scan_tag="latest"
-    if [ "${SCAN_SOURCE:-registry}" = "local" ]; then
+    if [ "${SCAN_SOURCE:-registry}" = "local" ] || [ "${BUILD_MODE}" = "push" ]; then
         scan_tag="${VERSION_FULL}"
     fi
 

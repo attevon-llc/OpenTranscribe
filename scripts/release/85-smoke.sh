@@ -73,19 +73,64 @@ assert_cuda_capability() {
     # below reads as "torch.version.cuda is empty, CPU-only confirmed" and PASSES.
     # "could not check" must never look like "checked and correct" (issue #681's
     # rule, applied here). So: capture rc, keep stderr, and fail on a bad run.
-    local run_out run_rc=0
-    run_out=$(docker "${ctx_args[@]}" run --rm --pull always "$img" \
-        python3 -c 'import torch; print(torch.version.cuda or "")' 2>&1) || run_rc=$?
+    #
+    # ⚠️ PULL SEPARATELY, and never merge docker's own chatter into the probe's answer.
+    # This previously ran `docker run --pull always ... 2>&1`, which puts docker's
+    # "Status: Downloaded newer image for <img>" into the SAME capture as the container's
+    # stdout. The CPU image prints an EMPTY torch.version.cuda, `$( )` strips the trailing
+    # newline, and `tail -n 1` then returns docker's status line AS THE VERSION. Two
+    # consequences, and the second is the dangerous one:
+    #   * lite  — a correct CPU-only image reports a non-empty "version" and FAILS. Noisy,
+    #             but safe, and it is what exposed this.
+    #   * full  — an image that shipped WITHOUT CUDA prints nothing, the status line
+    #             survives as the last line, `-n "$cuda_ver"` is TRUE, and the stage reports
+    #             "full/CUDA capability confirmed". That is issue #680's failure mode with a
+    #             green tick, in the function written to prevent exactly it.
+    # Caught on the real v0.5.0 publish: `lite` ships for the first time in v0.5.0, so this
+    # arm had never once run against a published image.
+    local pull_out pull_rc=0
+    pull_out=$(docker "${ctx_args[@]}" pull -q "$img" 2>&1) || pull_rc=$?
+    if [[ $pull_rc -ne 0 ]]; then
+        echo -e "${RED}FAIL  ${label}: could NOT pull ${img} (docker rc=${pull_rc}) — this is 'not verified', not 'CPU-only'${NC}" >&2
+        echo "      ${pull_out}" >&2
+        probe_unrunnable+=("$label")
+        fail=1
+        return 1
+    fi
+
+    # stdout ONLY (stderr captured separately, for diagnostics), plus a SENTINEL prefix so
+    # that "torch.version.cuda is empty" and "the probe printed nothing at all" are different
+    # strings. Without the sentinel those two are identical, and the lite branch reads the
+    # second as a pass — the same collapse of "could not check" into "checked and correct"
+    # the paragraph above is about.
+    local run_out run_rc=0 run_err err_file
+    err_file=$(mktemp)
+    run_out=$(docker "${ctx_args[@]}" run --rm "$img" \
+        python3 -c 'import torch; print("CUDAVER:" + (torch.version.cuda or ""))' \
+        2>"$err_file") || run_rc=$?
+    run_err=$(cat "$err_file"); rm -f "$err_file"
     if [[ $run_rc -ne 0 ]]; then
         echo -e "${RED}FAIL  ${label}: could NOT run the capability probe (docker rc=${run_rc}) — this is 'not verified', not 'CPU-only'${NC}" >&2
-        echo "      ${run_out}" >&2
+        echo "      ${run_err}" >&2
+        probe_unrunnable+=("$label")
+        fail=1
+        return 1
+    fi
+
+    # `tail` reads to EOF, so this pipeline cannot SIGPIPE its producer (scripts/CLAUDE.md's
+    # pipefail rule). `grep` exiting 1 on no match is handled by the emptiness check below.
+    local cuda_line
+    cuda_line=$(printf '%s\n' "$run_out" | tr -d '\r' | grep '^CUDAVER:' | tail -n 1) || true
+    if [[ -z "$cuda_line" ]]; then
+        echo -e "${RED}FAIL  ${label}: probe exited 0 but printed no CUDAVER: line — 'not verified', not 'CPU-only'${NC}" >&2
+        echo "      stdout: ${run_out}" >&2
+        echo "      stderr: ${run_err}" >&2
         probe_unrunnable+=("$label")
         fail=1
         return 1
     fi
     probe_ran=$((probe_ran + 1))
-    local cuda_ver
-    cuda_ver=$(printf '%s' "$run_out" | tr -d '\r' | tail -n 1)
+    local cuda_ver="${cuda_line#CUDAVER:}"
 
     cap_checked=$((cap_checked + 1))
     if [[ "$expect_nonempty" == "true" ]]; then

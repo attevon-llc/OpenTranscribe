@@ -166,16 +166,32 @@ is not a credentials problem — `docker push` creates the repository on first p
 
 ---
 
-## v0.5.1: Dependency maintenance
+## v0.5.1: Security and dependency maintenance
 
-**Theme:** take the accumulated dependency updates, on their own, right after v0.5.0 ships.
+**Theme:** take the accumulated dependency updates, on their own, right after v0.5.0 ships —
+and close the open security alerts that come with them.
+
+**This is a security release, not only housekeeping.** Measured on the default branch on
+2026-09-14, the day v0.5.0 shipped: **77 open Dependabot alerts — 2 critical, 36 high, 27
+moderate, 12 low**, across seven open grouped PRs. Those two criticals are what sets this
+release's schedule; the rest of the batch simply travels with them. ⚠️ Re-derive that count
+before acting on it (`gh api repos/attevon-llc/OpenTranscribe/dependabot/alerts`) — a number
+written into prose is a measurement that rots, and this file has carried stale ones before.
 
 **Why it is a separate release rather than part of v0.5.0.** A release rehearsal is expensive —
 three scenarios, a fresh install, two upgrade hops and a lite deployment, against locally built
 images pinned to a specific commit. **Every dependency PR accepted after that run invalidates the
 evidence it produced.** Merging a batch of bumps into an already-rehearsed release means either
-re-running the whole rehearsal or shipping on evidence that describes different software. Neither
-is a good trade for updates that are not urgent, so they get their own number.
+re-running the whole rehearsal or shipping on evidence that describes different software. So the
+bumps get their own number — not because they are unimportant, but because attaching them to
+v0.5.0 would have meant shipping v0.5.0 on evidence that described different software.
+
+**Also in scope: the release-pipeline defects v0.5.0 itself exposed.** Cutting v0.5.0 was the
+first time several stages had ever run against a real published artifact, and three of them were
+wrong — each now an issue on this milestone. They belong here because they cost *operator* time
+on every future release: the publish stage re-scans legs the scan stage already scanned and
+rebuilds legs the build stage already built (no shared state between the two), and the smoke
+stage leaves its own install running so it can only be run once.
 
 **How this is validated, and why it is not another rehearsal.** The rehearsal exists to prove the
 *install and upgrade surface* — the one-liner, the image pulls, the migration chain. Dependency
@@ -192,6 +208,13 @@ bumps mostly do not touch that surface, so they are covered far more cheaply, by
 Batch the low-risk classes into **one** branch and run the gate **once**; that is the whole
 efficiency argument. **Re-rehearse only if a bump changes a compose image, a migration, or the
 installer** — because those are exactly the things the rehearsal is the only check for.
+
+⚠️ **"The group is merged" is not the same claim as "the alert is closed."** Name the two
+critical alerts explicitly and show each closed by a specific merged change, rather than
+inferring it from a green batch. This is the same distinction the release pipeline draws
+everywhere else — could-not-scan is not no-findings (#681), not-measured is not a pass — and it
+is the one that matters most here, because a security release whose evidence is "we merged the
+bumps" has not actually established anything about the alerts it was cut for.
 
 ⚠️ **Two updates are deliberately not routine.** `emscripten/emsdk` (#677) is a *five-major*
 toolchain jump and `frontend/Dockerfile.prod` uses it to build the FFmpeg WASM artifact that ships

@@ -2,15 +2,14 @@
   import { locale, SUPPORTED_LANGUAGES, t } from "$stores/locale";
   import { toastStore } from "$stores/toast";
 
-  // Current language selection
-  let selectedLanguage = $locale;
-
-  // Update selection when locale changes externally
-  $: selectedLanguage = $locale;
-
-  function handleLanguageChange() {
-    if (selectedLanguage !== $locale) {
-      locale.set(selectedLanguage);
+  // The <select> renders the store directly rather than mirroring it into a
+  // second `bind:value` variable. The mirror was a reset-race: `bind:value` wrote
+  // the user's pick while `$: selectedLanguage = $locale` wrote it back from the
+  // store, so which one won depended on update ordering.
+  function handleLanguageChange(event: Event) {
+    const next = (event.currentTarget as HTMLSelectElement).value;
+    if (next !== $locale) {
+      locale.set(next);
       toastStore.success($t("settings.language.changed"));
     }
   }
@@ -27,7 +26,7 @@
     <select
       id="ui-language"
       class="form-select"
-      bind:value={selectedLanguage}
+      value={$locale}
       on:change={handleLanguageChange}
     >
       {#each SUPPORTED_LANGUAGES as lang}

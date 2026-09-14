@@ -10,4 +10,5 @@ exec "$SCRIPT_DIR/run-e2e.sh" \
     backend/tests/e2e/test_a11y.py \
     backend/tests/e2e/test_file_detail_transcript.py \
     backend/tests/e2e/test_media_download.py \
+    backend/tests/e2e/test_language_switch.py \
     "$@"

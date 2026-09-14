@@ -50,6 +50,26 @@ const applyLanguage = async (newLocale: string): Promise<void> => {
   await i18next.changeLanguage(newLocale);
 };
 
+/**
+ * Bumped every time i18next has FINISHED switching language.
+ *
+ * `t` derives from this as well as from `locale`, and it has to, because the two do
+ * not change together: `locale.set()` updates the store synchronously (so the
+ * `<select>`, `document.lang` and `dir` react immediately) while `applyLanguage()`
+ * fetches the locale chunk and calls `i18next.changeLanguage()` asynchronously.
+ *
+ * Without this counter the app renders the PREVIOUS language after every switch:
+ * `t` recomputes on the synchronous store write, when i18next is still serving the
+ * old strings, and the later `languageChanged` handler writes a value the store
+ * already holds — which svelte's `safe_not_equal` does not notify for. No
+ * subscriber runs again, so every `$t(...)` stays stale until something unrelated
+ * invalidates it. Reported 2026-09-13 as "pick the third language, get the second".
+ *
+ * A monotonic counter rather than re-setting `locale`: the notification must not
+ * depend on the value having changed, which is the exact property that failed.
+ */
+const i18nGeneration = writable(0);
+
 const createLocaleStore = () => {
   const { subscribe, set, update } = writable<string>(getInitialLocale());
   let initialized = false;
@@ -96,6 +116,10 @@ const createLocaleStore = () => {
       // Set up listener for i18next language changes
       i18next.on('languageChanged', (lng) => {
         update(() => lng);
+        // Always bump, even when `lng` equals the value the store already holds —
+        // that is the normal case for a user-initiated switch, and it is what makes
+        // every `$t(...)` re-render now that i18next really has the new strings.
+        i18nGeneration.update((n) => n + 1);
       });
 
       initialized = true;
@@ -107,7 +131,7 @@ export const locale = createLocaleStore();
 
 // Derived store for translation function
 // Usage: $t('key') or $t('key', { name: 'value' })
-export const t = derived(locale, () => {
+export const t = derived([locale, i18nGeneration], () => {
   return (key: string, options?: Record<string, unknown>): string => {
     if (!i18next.isInitialized) {
       return key;

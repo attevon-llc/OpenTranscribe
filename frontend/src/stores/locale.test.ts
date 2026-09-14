@@ -32,7 +32,11 @@ const { mockI18next, mockInitI18n, mockEnsureLocaleLoaded } = vi.hoisted(() => {
     t: vi.fn((key: string) => key),
     on: vi.fn(),
     isInitialized: false,
-    changeLanguage: vi.fn(async () => undefined),
+    // Mirrors the real i18next surface. The switch-re-render regression test below
+    // reads and writes this to stamp translations with the ACTIVE language, which is
+    // how a stale render becomes visible in the asserted value.
+    language: 'en',
+    changeLanguage: vi.fn(async (_lng: string): Promise<undefined> => undefined),
   };
   return {
     mockI18next: i18nextMock,
@@ -276,5 +280,83 @@ describe('locale store', () => {
       expect(document.documentElement.lang).toBe('de');
       expect(mockEnsureLocaleLoaded).toHaveBeenCalledWith('de');
     });
+  });
+});
+
+/**
+ * The language switch renders the PREVIOUS language (reported 2026-09-13).
+ *
+ * Observed by hand in the running UI: pick a language and it applies; pick a
+ * second and the UI only partly changes; pick a third and the UI shows the
+ * SECOND. The rendered language trails the selected one by exactly one change.
+ *
+ * Mechanism, and why it is a notification bug rather than a value bug:
+ *
+ *   set: (newLocale) => {
+ *     set(newLocale);                  // store updates SYNCHRONOUSLY
+ *     void applyLanguage(newLocale);   // i18next.changeLanguage is ASYNC
+ *   }
+ *   i18next.on('languageChanged', (lng) => update(() => lng));
+ *
+ * `t` is `derived(locale, ...)`, so it recomputes the instant the store changes —
+ * while i18next is still serving the OLD language, because `applyLanguage` has
+ * only been kicked off. When it finally resolves, `languageChanged` fires and
+ * `update(() => lng)` writes a value the store ALREADY HOLDS; svelte's `writable`
+ * uses `safe_not_equal`, which does not notify for an unchanged primitive. So no
+ * subscriber ever runs again after the real switch, and every `$t(...)` in the
+ * app keeps rendering whatever i18next had at the previous recompute.
+ *
+ * ⚠️ This must be asserted on SUBSCRIBER NOTIFICATIONS, not on `get(t)('key')`.
+ * Pulling the value calls the closure fresh, by which time i18next HAS switched —
+ * so a `get()`-based assertion passes against the broken store while the UI is
+ * visibly stale. That is precisely the trap this comment exists to stop the next
+ * person falling into.
+ */
+describe('switching language re-renders (regression: UI trailed by one change)', () => {
+  it('notifies subscribers again once i18next has actually changed language', async () => {
+    let languageChangedHandler: ((lng: string) => void) | undefined;
+    mockI18next.isInitialized = true;
+    mockI18next.language = 'en';
+    // Translations are language-stamped so a stale render is visible in the value.
+    mockI18next.t.mockImplementation((key: string) => `${mockI18next.language}:${key}`);
+    mockI18next.on.mockImplementation((event: string, handler: (lng: string) => void) => {
+      if (event === 'languageChanged') {
+        languageChangedHandler = handler;
+      }
+    });
+    // The real changeLanguage flips the language and THEN emits, asynchronously.
+    mockI18next.changeLanguage.mockImplementation(async (lng: string) => {
+      mockI18next.language = lng;
+      languageChangedHandler?.(lng);
+      return undefined;
+    });
+
+    const { locale, t } = await loadLocaleStore();
+    await locale.initialize();
+
+    const renders: string[] = [];
+    const unsubscribe = t.subscribe((translate) => renders.push(translate('greeting')));
+
+    expect(renders.at(-1)).toBe('en:greeting');
+
+    locale.set('fr');
+    // Let applyLanguage's dynamic import + awaits settle, as a browser would.
+    await vi.waitFor(() => expect(mockI18next.language).toBe('fr'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    unsubscribe();
+
+    expect(renders.at(-1)).toBe('fr:greeting');
+  });
+
+  it('GUARD THE GUARD: a stale render is actually observable through this harness', () => {
+    // If the stamped-translation fixture were broken, the test above could pass
+    // against any store at all. Prove the stamp changes with the language.
+    mockI18next.language = 'en';
+    mockI18next.t.mockImplementation((key: string) => `${mockI18next.language}:${key}`);
+    expect(mockI18next.t('greeting')).toBe('en:greeting');
+    mockI18next.language = 'de';
+    expect(mockI18next.t('greeting')).toBe('de:greeting');
   });
 });

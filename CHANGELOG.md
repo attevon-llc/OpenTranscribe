@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The publish-time security scan examined `:latest`, not the tag it had just pushed.**
+  `80-publish.sh` sets `PUSH_LATEST=false` (`:latest` moves later, in `promote`), so `:latest`
+  was never the release being published — it was either absent (`lite`, published for the first
+  time in v0.5.0, which is the only reason anyone noticed) or **the previous release**, whose
+  report was then filed under the new version. `docker-build-push.sh` now scans the version tag
+  in push mode.
+- **The smoke stage's capability probe read docker's pull chatter as `torch.version.cuda`.**
+  `docker run --pull always … 2>&1` folded docker's `Status: Downloaded newer image for …`
+  into the same capture as the container's stdout; a CPU-only image prints an empty version, so
+  `tail -n 1` returned the status line. The visible effect was a correct `lite` image failing,
+  but the same bug made the **CUDA check unfalsifiable** — a backend shipping without CUDA would
+  have been reported as "capability confirmed" (issue #680's failure mode with a green tick).
+  The probe now pulls separately, reads stdout only, and prefixes the value with a sentinel so
+  "empty version" and "printed nothing" are distinguishable.
+- **The GitHub Release could not be created for a large changelog.** The body was passed as
+  `--notes "$notes"`, and Linux caps a single argv entry at `MAX_ARG_STRLEN` (128 KiB), so `gh`
+  exited `Argument list too long`. It now goes through `--notes-file`, and — since GitHub
+  independently rejects a body over ~125,000 characters — an oversized section is published as
+  its `Overview` plus `Upgrade Notes` with a link to the full entry.
+- **A trimmed release body shipped dead anchor links.** The first version of that trim kept
+  `Overview` alone, while the Overview links to `[Upgrade Notes](#upgrade-notes)` twice — for
+  the AGPL-3.0 §13 redistribution obligations and the breaking-change list — so both resolved to
+  nothing. `Upgrade Notes` is now kept too, and any anchor left without a heading is rewritten to
+  an absolute CHANGELOG link.
+- **CHANGELOG housekeeping**: `0.3.3` was dated `2025-01-13` (tagged `2026-01-14`), which placed
+  it before `0.2.0`; and every version heading except `0.1.0` lacked the link-reference
+  definition its `[x.y.z]` bracket implies, so they rendered as literal text rather than links.
+  The one definition that existed still pointed at the pre-rename `davidamacey/OpenTranscribe`.
+
 ## [0.5.0] - 2026-09-13
 
 ### Overview
@@ -3245,7 +3276,7 @@ Special thanks to the community members whose code contributions and issue repor
 
 ---
 
-## [0.3.3] - 2025-01-13
+## [0.3.3] - 2026-01-14
 
 ### Overview
 Community contributions release featuring Russian language support, protected media authentication for corporate video portals, and various bug fixes and improvements.
@@ -3817,4 +3848,14 @@ Looking ahead to v1.0.0, we plan to add:
 
 We welcome community feedback and contributions as we work towards the v1.0.0 release!
 
-[0.1.0]: https://github.com/davidamacey/OpenTranscribe/releases/tag/v0.1.0
+[Unreleased]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.3.3...v0.4.0
+[0.3.3]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/attevon-llc/OpenTranscribe/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/attevon-llc/OpenTranscribe/releases/tag/v0.1.0

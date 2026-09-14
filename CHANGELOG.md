@@ -377,6 +377,30 @@ A tag was either yours alone or published to the whole deployment, so giving one
 
 ### Fixed
 
+- **Switching the UI language rendered the PREVIOUS language.** Pick a language and it
+  applied; pick a second and the UI only partly changed; pick a third and it showed the
+  second. The rendered language trailed the selection by exactly one change, which made
+  the 12-locale support effectively unusable past the first switch.
+
+  `locale.set()` updates the store **synchronously** while `i18next.changeLanguage()`
+  runs **asynchronously** (the locale strings are code-split, so the chunk is fetched
+  first). `t` is `derived(locale, …)`, so every `$t(…)` recomputed the instant the store
+  changed — while i18next was still serving the old strings. When the switch finally
+  completed, the `languageChanged` handler wrote a value the store **already held**, and
+  svelte's `writable` uses `safe_not_equal`, which does not notify for an unchanged
+  primitive. No subscriber ever ran again, so the UI kept whatever i18next had at the
+  previous recompute. A monotonic `i18nGeneration` counter, bumped on `languageChanged`
+  and derived from by `t`, makes the re-render independent of the locale *value* having
+  changed — the exact property that failed. `LanguageSettings.svelte` separately mirrored
+  the store into a `bind:value` variable that a reactive statement wrote back to, so which
+  of the two won depended on update ordering; the `<select>` renders `$locale` directly now.
+
+  ⚠️ Neither regression test asserts on `document.documentElement.lang` or the `<select>`
+  value: both are written synchronously and were **correct throughout the bug**, so a test
+  checking them passes against the broken build while the UI is visibly stale. The unit
+  test asserts on subscriber *notifications*; the e2e test asserts the rendered label
+  equals that locale's real translation, read from the shipped locale JSON.
+
 - **Fresh installs could not start: MinIO deleted its Docker Hub images.** `minio/minio`
   and `minio/mc` no longer exist on Docker Hub — the registry API returns `object not
   found` for the repository and for the exact tag we pin, while anonymous pull tokens are

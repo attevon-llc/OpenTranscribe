@@ -45,6 +45,31 @@ OPENAI_REASONING_MODEL_PREFIXES = (
 )
 
 
+SECTION_SCOPE_RULES = (
+    " The transcript below is one slice of a longer recording; its boundaries were "
+    "produced by an automatic splitter, not by the meeting itself. Report only what "
+    "this slice contains and never draw a conclusion about the recording as a whole: "
+    "an absence of decisions here means this slice holds none, not that the meeting "
+    "reached none. Do not label the summary as a fragment or an incomplete exchange "
+    "because the slice starts or ends mid-sentence; only the first slice (abrupt "
+    "start) or the last slice (abrupt end) can observe a genuinely truncated "
+    "recording."
+)
+
+SECTION_MERGE_RULES = (
+    " You are merging slices of one recording that were summarized independently and "
+    "are given in chronological order. Take the union of their facts: every topic, "
+    "decision, action item and follow-up present in any slice must appear in the "
+    "final summary, deduplicated, never dropped. A slice that reports nothing "
+    "describes only its own span; it can never cancel, weaken or reframe the content "
+    "of another slice, whatever wording it uses. Build the summary from the "
+    "substantive slices, and describe the recording as truncated only if a slice "
+    "explicitly says so, never because slice boundaries are abrupt. A slice carrying "
+    '"_error": true could not be processed for technical reasons: say so plainly and '
+    "never read it as evidence that nothing happened during that span."
+)
+
+
 class LLMProvider(StrEnum):
     OPENAI = "openai"
     VLLM = "vllm"
@@ -1166,7 +1191,11 @@ class LLMService:
         }
         # Pre-fill with error placeholders; every slot is overwritten on success.
         section_summaries: list[dict[str, Any]] = [
-            {**_error_placeholder, "key_points": [f"Section {i + 1}: Not processed"]}
+            {
+                **_error_placeholder,
+                "_error": True,
+                "key_points": [f"Section {i + 1}: Not processed"],
+            }
             for i in range(num_chunks)
         ]
 
@@ -1253,7 +1282,12 @@ class LLMService:
         messages = [
             {
                 "role": "system",
-                "content": f"You are analyzing section {section_num} of {total_sections}. Provide a structured summary of this section.{language_instruction}{org_context_block}",
+                "content": (
+                    f"You are analyzing section {section_num} of {total_sections}. "
+                    "Provide a structured summary of this section."
+                    f"{SECTION_SCOPE_RULES}"
+                    f"{language_instruction}{org_context_block}"
+                ),
             },
             {"role": "user", "content": formatted_prompt},
         ]
@@ -1294,6 +1328,7 @@ class LLMService:
 
             logger.error(f"Section {section_num} JSON repair also failed")
             return {
+                "_error": True,
                 "key_points": [f"Section {section_num}: Failed to parse structured summary"],
                 "speakers_in_section": [],
                 "decisions": [],
@@ -1311,7 +1346,16 @@ class LLMService:
         organization_context: str = "",
     ) -> dict[str, Any]:
         """Combine multiple section summaries into final summary"""
-        combined_content = f"SECTION SUMMARIES TO COMBINE:\n{json.dumps(sections, indent=2)}"
+        # Numbering the slices explicitly is what lets the model tell "nothing in
+        # this span" apart from "nothing in the whole recording".
+        labelled_sections = [
+            {"section": i + 1, "of": len(sections), "summary": section}
+            for i, section in enumerate(sections)
+        ]
+        combined_content = (
+            "SECTION SUMMARIES TO COMBINE — independent slices of ONE recording, "
+            f"in chronological order:\n{json.dumps(labelled_sections, indent=2)}"
+        )
 
         formatted_prompt = prompt_template.format(
             transcript=combined_content,
@@ -1329,7 +1373,12 @@ class LLMService:
         messages = [
             {
                 "role": "system",
-                "content": f"You are combining multiple section summaries into a comprehensive BLUF format summary.{language_instruction}{org_context_block}",
+                "content": (
+                    "You are combining multiple section summaries into a "
+                    "comprehensive BLUF format summary."
+                    f"{SECTION_MERGE_RULES}"
+                    f"{language_instruction}{org_context_block}"
+                ),
             },
             {"role": "user", "content": formatted_prompt},
         ]

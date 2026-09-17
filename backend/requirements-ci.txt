@@ -18,7 +18,7 @@
 
 # fastapi capped <0.137: 0.137+ stops flattening include_router prefixes into
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
-fastapi==0.141.1
+fastapi==0.136.3
 uvicorn[standard]==0.52.4
 websockets==17.1
 sqlalchemy==2.0.52

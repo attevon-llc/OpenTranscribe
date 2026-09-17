@@ -80,6 +80,15 @@ updates:
       # variants (#257). Managed by hand alongside the CUDA base image.
       - dependency-name: "torch"
       - dependency-name: "torchaudio"
+      # fastapi 0.137+ stops flattening include_router prefixes into
+      # scope["route"].path -- breaks route-templated metrics labels AND route
+      # mounting/introspection broadly (confirmed via a real full-gate run,
+      # #940 / v0.5.1: ~25 route-contract test failures, E2E login timeouts,
+      # /api/openapi.json paths collapsed to ~3). Cap documented beside the
+      # pin in requirements.txt; lift together once the observability
+      # middleware adapts to the new routing.
+      - dependency-name: "fastapi"
+        versions: [">=0.137.0"]
       # bcrypt 5 removed the __about__ attribute passlib introspects (#234).
       - dependency-name: "bcrypt"
         update-types: ["version-update:semver-major"]

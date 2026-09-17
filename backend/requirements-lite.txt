@@ -53,7 +53,7 @@ qrcode[pil]==8.2
 # NumPy 2.x compatible
 numpy==2.5.3
 
-# PyTorch CPU-only. NOT dropped by issue #660: sentence-transformers==6.0.1 below
+# PyTorch CPU-only. NOT dropped by issue #660: sentence-transformers==5.7.0 below
 # declares `torch>=1.11.0` in its own installed metadata (used at
 # opensearch_service/client.py and chat/reranker.py for semantic search), so torch
 # is a hard transitive dependency of this file even with pyannote.audio gone.
@@ -139,7 +139,7 @@ pyexiftool==0.5.6
 yt-dlp==2026.8.19
 
 # Semantic search and NLP
-sentence-transformers==6.0.1  # For semantic search embeddings (all-MiniLM-L6-v2)
+sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2)
 # Note: nltk is installed as transitive dependency from transformers
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 

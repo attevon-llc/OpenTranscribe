@@ -53,6 +53,11 @@ updates:
       # node 22 -> 26 upgrade (#234), not ahead of it.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # typescript 7 breaks svelte-check@4.7.6's peer range (^5.0.0 || ^6.0.0) —
+      # confirmed via a real npm ERESOLVE, not just theory (#940 / v0.5.1). Bump
+      # together once svelte-check supports TS 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # Backend — one grouped PR
   - package-ecosystem: "pip"
@@ -83,6 +88,12 @@ updates:
       - dependency-name: "transformers"
         update-types: ["version-update:semver-major"]
       - dependency-name: "huggingface-hub"
+        update-types: ["version-update:semver-major"]
+      # sentence-transformers 6.x requires transformers>=5.0.0, which is capped
+      # above (#940 / v0.5.1). Confirmed via a real pip resolve, not just theory:
+      # ResolutionImpossible on "sentence-transformers 6.0.1 depends on
+      # transformers<6.0.0 and >=5.0.0". Bump together with transformers.
+      - dependency-name: "sentence-transformers"
         update-types: ["version-update:semver-major"]
       # websockets 11 -> 16 is a five-major jump touching uvicorn/provider SDK
       # paths; take it deliberately with its own validation, not in a batch.

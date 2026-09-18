@@ -4115,11 +4115,20 @@ case "$1" in
     # loaded: it runs a Rust binary out of the same image, so a Python-side change
     # cannot affect it, and recreating it costs a fresh ~2.2 GB ORT warm-up on the
     # GPU. Restart it explicitly when the image's diar-server binary itself changed.
+    # No `set -e` in this script (see header) -- `docker compose up` failing
+    # (e.g. a pip/npm resolver conflict in the image build) would otherwise
+    # fall straight through to the "rebuilt successfully" message below with
+    # nothing having checked its exit code. Confirmed live during v0.5.1
+    # dependency maintenance (#940): a broken requirements.txt pin failed the
+    # build every time, and this reported success every time anyway.
     # shellcheck disable=SC2086
-    docker compose $COMPOSE_FILES up -d --build --no-deps \
+    if ! docker compose $COMPOSE_FILES up -d --build --no-deps \
       backend celery-worker celery-download-worker celery-cpu-worker \
       celery-redaction celery-cloud-asr-worker celery-nlp-worker \
-      celery-embedding-worker celery-beat flower
+      celery-embedding-worker celery-beat flower; then
+      echo "❌ Backend rebuild failed (docker compose build/up exited non-zero) -- see the output above."
+      exit 1
+    fi
 
     # celery-worker-gpu-scaled (profile gpu-scale) and celery-worker-gpu-transcribe/
     # -diarize (profile gpu-split) share the same image too, but are scale:0 /
@@ -4151,7 +4160,11 @@ case "$1" in
     # so the two never drift apart the way they did before this was added —
     # a rebuilt frontend with a stale docs image looks fine until someone
     # reads a stale changelog/auth-setup page for a feature that already shipped.
-    docker compose up -d --build --no-deps frontend docs
+    # Same exit-code gap as rebuild-backend above -- check it explicitly.
+    if ! docker compose up -d --build --no-deps frontend docs; then
+      echo "❌ Frontend/docs rebuild failed (docker compose build/up exited non-zero) -- see the output above."
+      exit 1
+    fi
     echo "✅ Frontend + docs services rebuilt successfully."
     ;;
 

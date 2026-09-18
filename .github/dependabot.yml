@@ -53,6 +53,11 @@ updates:
       # node 22 -> 26 upgrade (#234), not ahead of it.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # typescript 7 breaks svelte-check@4.7.6's peer range (^5.0.0 || ^6.0.0) —
+      # confirmed via a real npm ERESOLVE, not just theory (#940 / v0.5.1). Bump
+      # together once svelte-check supports TS 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # Backend — one grouped PR
   - package-ecosystem: "pip"
@@ -75,6 +80,15 @@ updates:
       # variants (#257). Managed by hand alongside the CUDA base image.
       - dependency-name: "torch"
       - dependency-name: "torchaudio"
+      # fastapi 0.137+ stops flattening include_router prefixes into
+      # scope["route"].path -- breaks route-templated metrics labels AND route
+      # mounting/introspection broadly (confirmed via a real full-gate run,
+      # #940 / v0.5.1: ~25 route-contract test failures, E2E login timeouts,
+      # /api/openapi.json paths collapsed to ~3). Cap documented beside the
+      # pin in requirements.txt; lift together once the observability
+      # middleware adapts to the new routing.
+      - dependency-name: "fastapi"
+        versions: [">=0.137.0"]
       # bcrypt 5 removed the __about__ attribute passlib introspects (#234).
       - dependency-name: "bcrypt"
         update-types: ["version-update:semver-major"]
@@ -83,6 +97,12 @@ updates:
       - dependency-name: "transformers"
         update-types: ["version-update:semver-major"]
       - dependency-name: "huggingface-hub"
+        update-types: ["version-update:semver-major"]
+      # sentence-transformers 6.x requires transformers>=5.0.0, which is capped
+      # above (#940 / v0.5.1). Confirmed via a real pip resolve, not just theory:
+      # ResolutionImpossible on "sentence-transformers 6.0.1 depends on
+      # transformers<6.0.0 and >=5.0.0". Bump together with transformers.
+      - dependency-name: "sentence-transformers"
         update-types: ["version-update:semver-major"]
       # websockets 11 -> 16 is a five-major jump touching uvicorn/provider SDK
       # paths; take it deliberately with its own validation, not in a batch.

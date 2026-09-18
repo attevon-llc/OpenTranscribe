@@ -352,6 +352,21 @@ _OWNED_SCRIPTS = (
     REPO_ROOT / "setup-opentranscribe.sh",
     REPO_ROOT / "scripts" / "diar-native-smoke.sh",
     REPO_ROOT / "scripts" / "lib" / "dev-test-overlays.sh",
+    # `gh_api "$url" | grep -m1 ... | sed ...` -- real, MEASURED instance of this exact
+    # shape (v0.5.1 dependency maintenance, #940): grep -m1 matches GitHub's "tag_name"
+    # field very early in the response, closes the pipe while curl is still writing, and
+    # curl reports exit 23 on every retry. Failed 100% of the time, locally and in CI,
+    # until fixed by capturing gh_api's output to a variable before filtering it.
+    #
+    # ⚠️ Added here for coverage of any FUTURE raw-producer instance in this file, but
+    # `_CHATTY_PRODUCER` below is a fixed list of external binary names and cannot see
+    # that `gh_api` is a local function wrapping `curl` -- confirmed by reverting the fix
+    # and re-running this test: it still passed. This scanner is therefore BLIND to the
+    # exact bug that motivated adding this file. The runtime proof for this bug is
+    # `./scripts/verify-install-paths.sh` itself (curl exit 23 before the fix, 7/7 checks
+    # passing after) -- do not treat this test's greenness as evidence about this class of
+    # bug in THIS file, only in a future one that pipes a raw external command directly.
+    REPO_ROOT / "scripts" / "verify-install-paths.sh",
     # release + rehearsal
     REPO_ROOT / "scripts" / "build-all.sh",
     REPO_ROOT / "scripts" / "check-dependency-parity.sh",

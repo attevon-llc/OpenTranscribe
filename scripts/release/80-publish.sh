@@ -61,7 +61,21 @@ record remote-builder-available pass "$BUILDER"
 
 echo -e "${YELLOW}PUBLISHING ${VERSION} to Docker Hub (:${VERSION} only, not :latest)${NC}" >&2
 rc=0
+# BUILD_CACHE_REGISTRY passed through (default OFF) -- same knob as 40-build.sh, same
+# reason (issue #938): without it this rebuilds every amd64 leg 40-build.sh already
+# produced, from the same tree, on a different BuildKit builder. For backend/lite (the
+# capability-bearing, CUDA-heavy components this issue is about) the scope matches
+# exactly -- both stages build one architecture leg at a time through the same
+# build_one_leg()/build_cache_args() path, so a leg built locally and a leg published
+# from an unchanged tree hit the SAME `:buildcache-<arch>` ref. frontend/docs build as
+# one combined multi-platform push here rather than per-leg, so their cache scope
+# will not match 40-build.sh's per-leg local builds -- a cache MISS there, not an
+# error, and a smaller loss since those builds are far cheaper than backend's
+# multi-GB CUDA layers. Unmeasured, explicit opt-in
+# (`BUILD_CACHE_REGISTRY=true ./scripts/release.sh build ... publish ...`) -- see
+# test_build_registry_cache_optin.py's docstring for why that bar exists.
 USE_REMOTE_BUILDER=true BUILD_MODE=push PUSH_LATEST=false VERSION="$VERSION" \
+    BUILD_CACHE_REGISTRY="${BUILD_CACHE_REGISTRY:-false}" \
     ./scripts/docker-build-push.sh all || rc=$?
 if [[ $rc -ne 0 ]]; then
     record images-pushed fail "docker-build-push.sh all exited $rc"

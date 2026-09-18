@@ -29,6 +29,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PUSH_SH = REPO_ROOT / "scripts" / "docker-build-push.sh"
+BUILD_STAGE_SH = REPO_ROOT / "scripts" / "release" / "40-build.sh"
+PUBLISH_STAGE_SH = REPO_ROOT / "scripts" / "release" / "80-publish.sh"
 
 pytestmark = pytest.mark.skipif(
     not PUSH_SH.exists(), reason="scripts/docker-build-push.sh not present in this checkout"
@@ -121,4 +123,41 @@ def test_every_release_built_component_passes_cache_args_to_buildx() -> None:
         )
     assert 'BUILD_CACHE_REGISTRY="${BUILD_CACHE_REGISTRY:-false}"' in text, (
         "the opt-in must default to false at the one place it is declared"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("path", "invocation_marker"),
+    [
+        (BUILD_STAGE_SH, './scripts/docker-build-push.sh "$component"'),
+        (PUBLISH_STAGE_SH, "./scripts/docker-build-push.sh all"),
+    ],
+)
+def test_the_release_pipeline_threads_the_cache_opt_in_through(
+    path: Path, invocation_marker: str
+) -> None:
+    """A function nothing calls is dead; an env var no CALLER threads through is the same bug
+    one layer up (issue #938).
+
+    `build_cache_args` (docker-build-push.sh) is proven correct in isolation above, but
+    40-build.sh and 80-publish.sh are the only two places that actually invoke
+    docker-build-push.sh during a real release, and neither named BUILD_CACHE_REGISTRY in its
+    env-var prefix before this test existed. An operator opting in
+    (`BUILD_CACHE_REGISTRY=true ./scripts/release.sh build ...`) would set the variable, it
+    would do nothing, and nothing would say so -- the cache would just silently never hit,
+    indistinguishable from "not measured yet".
+    """
+    text = path.read_text(encoding="utf-8")
+    assert invocation_marker in text, (
+        f"{path.name}'s docker-build-push.sh invocation shape changed -- update this test's marker"
+    )
+    idx = text.index(invocation_marker)
+    # The env-var prefix immediately precedes the invocation on the preceding lines; a window
+    # rather than the exact preceding token list, so line-wrapping/reordering upstream of the
+    # marker does not make this test fragile to unrelated formatting.
+    window = text[max(0, idx - 700) : idx]
+    assert "BUILD_CACHE_REGISTRY=" in window, (
+        f"{path.name} does not thread BUILD_CACHE_REGISTRY through to docker-build-push.sh -- "
+        "an operator opting in via env var gets no cache reuse, silently (issue #938)"
     )

@@ -210,12 +210,32 @@ fi
 # on its first match and `docker ps` can die with SIGPIPE, so the pipeline reports failure and
 # a stack that IS up reads as an all-clear — the guard inverts exactly when it matters. Same
 # fix as 65-rehearse.sh's live-stack check.
-if [[ -n "$(docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}')" ]]; then
-    record live-stack-stopped fail "the live stack is running" "./opentr.sh stop"
-    echo -e "${RED}live stack running — the Hub install smoke needs it stopped${NC}" >&2
+blocking_names="$(docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}')"
+if [[ -n "$blocking_names" ]]; then
+    # `${var%%$'\n'*}` instead of `| head -n1` — no pipe, so nothing here can SIGPIPE
+    # (scripts/CLAUDE.md's rule; $blocking_names is already a fully-captured string).
+    blocking_container="${blocking_names%%$'\n'*}"
+    # Resolve the ACTUAL blocking stack's directory rather than assuming it is this
+    # dev checkout (issue #939): `./opentr.sh stop` only stops the stack started from
+    # $REPO_ROOT. A leftover from scripts/release-tests/test-fresh-install.sh (or any
+    # other opentranscribe.sh install) carries the SAME compose project label
+    # ("opentranscribe") but lives elsewhere and is started/stopped through its own
+    # copy of opentranscribe.sh, not opentr.sh.
+    blocking_dir="$(docker inspect "$blocking_container" \
+        --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null || true)"
+    if [[ -n "$blocking_dir" && "$blocking_dir" != "$REPO_ROOT" ]]; then
+        hint="cd ${blocking_dir} && ./opentranscribe.sh stop"
+    else
+        # Either this IS the dev checkout, or the label could not be read (older
+        # docker/compose, or the container predates the working_dir label) --
+        # fall back to the one hint that is always safe to print.
+        hint="./opentr.sh stop"
+    fi
+    record live-stack-stopped fail "the live stack is running (blocking container: ${blocking_container}, dir: ${blocking_dir:-unknown})" "$hint"
+    echo -e "${RED}live stack running (${blocking_container}, dir: ${blocking_dir:-unknown}) — the Hub install smoke needs it stopped: ${hint}${NC}" >&2
     if [[ "$JSON_OUT" == "true" ]]; then
-        printf '{"stage":"smoke","version":"%s","status":"fail","criteria":[%s],"next":["./opentr.sh stop"]}\n' \
-            "$VERSION" "$(criteria_json)"
+        printf '{"stage":"smoke","version":"%s","status":"fail","criteria":[%s],"next":["%s"]}\n' \
+            "$VERSION" "$(criteria_json)" "$hint"
     fi
     # Exit 3 (precondition unmet) as before, and deliberately NOT through
     # criteria_assert_all_checked: the install smoke never ran, so its criteria are genuinely
@@ -224,7 +244,35 @@ if [[ -n "$(docker ps --filter 'label=com.docker.compose.project=opentranscribe'
 fi
 record live-stack-stopped pass
 
+# Tear down the install-smoke stack + everything it created -- on the happy path,
+# on a hard install failure, AND on interruption (Ctrl-C / a CI job timeout killing
+# this script mid phase). Without this, every smoke run left both the installed
+# stack and its named volumes behind (issue #939): a re-run failed
+# live-stack-stopped against the previous run's still-running containers, and
+# after stopping those by hand, failed the stale-volume guardrail against the
+# previous run's opentranscribe_{postgres,minio,redis,opensearch,flower}_data --
+# one smoke defect costing three cycles, two of them pure harness residue.
+#
+# `--cleanup` reuses `gr_cleanup`'s existing, already-tested ownership-stamp
+# mechanism (scripts/release-tests/lib/guardrails.sh): `test-fresh-install.sh`'s
+# own phase 00 preflight (`gr_stamp_owned_resources`) already records exactly
+# which stock-named volumes existed BEFORE this run, so `--cleanup` removes only
+# what THIS run created and leaves anything pre-existing alone -- the same
+# distinction issue #939 asks for, already built, just never invoked from here.
+# Same trap shape as 65-rehearse.sh's `teardown_scenario_stack_on_interrupt`.
+install_smoke_started=false
+cleanup_install_smoke() {
+    [[ "$install_smoke_started" == "true" ]] || return 0
+    install_smoke_started=false   # idempotent: the EXIT trap fires after an explicit call too
+    echo -e "${BLUE}tearing down the install-smoke stack...${NC}" >&2
+    if ! ./scripts/release-tests/test-fresh-install.sh --cleanup >&2; then
+        echo -e "${YELLOW}install-smoke cleanup reported a problem -- check for leftover ot-reltest-fresh resources${NC}" >&2
+    fi
+}
+trap cleanup_install_smoke EXIT INT TERM
+
 echo -e "${BLUE}amd64: fresh install pulling :${VERSION} from Docker Hub${NC}" >&2
+install_smoke_started=true
 install_rc=0
 USE_HUB_IMAGES=true LOCAL_IMAGE_TAG="$VERSION" \
     ./scripts/release-tests/test-fresh-install.sh --yes --force || install_rc=$?
@@ -235,6 +283,7 @@ else
         "read the REPORT.md under its TEST_ROOT"
     fail=1
 fi
+cleanup_install_smoke
 
 # The three per-image properties, each its own criterion. `capability-probe-ran` is separate
 # from `declared-capability-matches` on purpose: an image that cannot execute at all prints an

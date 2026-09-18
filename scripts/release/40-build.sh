@@ -70,9 +70,23 @@ while IFS=$'\t' read -r component _capability platforms; do
         echo -e "${BLUE}  building ${component} for ${platform}${NC}" >&2
         use_remote="${USE_REMOTE_BUILDER:-false}"
         [[ "$platform" != "$HOST_PLATFORM" ]] && use_remote=true
+        # BUILD_CACHE_REGISTRY passed through (default remains OFF, set by
+        # docker-build-push.sh's build_cache_args -- deliberately not defaulted to true
+        # here). This stage and 80-publish.sh's `docker-build-push.sh all` otherwise build
+        # the same amd64 legs from the same tree on two separate BuildKit builders (this one
+        # local, publish's the remote multi-arch one), so publish repeats this stage's work
+        # from scratch every release (issue #938). `build_cache_args` already scopes this
+        # correctly for BUILD_MODE=local when opted in -- read-only (`--cache-from`), never
+        # `--cache-to` (a registry cache WRITE, which local mode's "publishes nothing"
+        # contract forbids) -- and stores it as a `:buildcache-*` tag in the component's OWN
+        # repo, never touching `:vX.Y.Z`/`:latest`. It stays an unmeasured, explicit opt-in
+        # (`BUILD_CACHE_REGISTRY=true ./scripts/release.sh build ...`) until someone times a
+        # second build of an unchanged tree against a warm cache -- see
+        # test_build_registry_cache_optin.py's docstring for why that bar exists.
         if ! PLATFORMS="$platform" BUILD_MODE=local PUSH_LATEST=false \
              SKIP_SECURITY_SCAN=true VERSION="$VERSION" \
              USE_REMOTE_BUILDER="$use_remote" \
+             BUILD_CACHE_REGISTRY="${BUILD_CACHE_REGISTRY:-false}" \
                 ./scripts/docker-build-push.sh "$component"; then
             echo -e "${RED}build failed: ${component} ${platform}${NC}" >&2
             record platform-table-readable pass "$legs_declared leg(s) declared"

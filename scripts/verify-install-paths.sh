@@ -352,23 +352,32 @@ main() {
 
     require_functions
 
-    # `gh_api` is captured to a variable FIRST, then filtered -- never piped straight into
-    # `grep -m1`. `grep -m1` exits the instant it finds its one match (very early in a
-    # multi-KB GitHub API response), closing the pipe while curl is still mid-write; curl
-    # gets SIGPIPE/EPIPE and reports exit 23 on EVERY retry attempt, even though the match
-    # `grep` needed was already delivered. Measured: this made `gh_api` fail 100% of the
-    # time, locally and in CI, for as long as this shape existed (scripts/CLAUDE.md's
-    # documented "never pipe a producer into an early-exiting reader" rule).
+    # `gh_api` is captured to a variable FIRST, then filtered via a HERESTRING (`<<<`),
+    # never piped straight into `grep -m1`. `grep -m1` exits the instant it finds its one
+    # match (very early in a multi-KB GitHub API response), closing the pipe while the
+    # writer is still mid-write; the writer gets SIGPIPE/EPIPE, even though the match
+    # `grep` needed was already delivered.
+    #
+    # A first attempt at this fix used `printf '%s' "$json" | grep -m1 ...`, which moves
+    # the SAME bug one level down rather than removing it: scripts/CLAUDE.md's own measured
+    # table shows a shell BUILTIN emitting a large in-memory string is not safe either --
+    # `printf | head -1` aborted 4/100 at 16 KiB and 100/100 at 60 KiB, and GitHub's
+    # `/repos/{repo}` response is comfortably in that range. It failed exactly this way in
+    # CI ("line 368: printf: write error: Broken pipe") even though it passed locally
+    # against the smaller `/releases/latest` response.
+    #
+    # `<<<` is not a pipe: bash backs a herestring with a temp file, so there is no live
+    # process upstream of `grep` for an early exit to SIGPIPE. This is the only fully safe
+    # shape, not merely a smaller one.
     local latest_json latest default_branch_json default_branch
     if ! latest_json=$(gh_api "https://api.github.com/repos/${REPO}/releases/latest"); then
         echo "${RED}✗ Could not reach the GitHub API (rate limited? set GITHUB_TOKEN)${NC}" >&2
         exit 2
     fi
-    latest=$(printf '%s' "$latest_json" |
-        grep -m1 '"tag_name"' | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
+    latest=$(grep -m1 '"tag_name"' <<<"$latest_json" | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
     default_branch_json=$(gh_api "https://api.github.com/repos/${REPO}")
-    default_branch=$(printf '%s' "$default_branch_json" |
-        grep -m1 '"default_branch"' | sed -E 's/.*"default_branch"[^"]*"([^"]+)".*/\1/')
+    default_branch=$(grep -m1 '"default_branch"' <<<"$default_branch_json" |
+        sed -E 's/.*"default_branch"[^"]*"([^"]+)".*/\1/')
 
     echo "  latest published release: ${YELLOW}${latest}${NC}"
     echo "  default branch (installer is served from here): ${YELLOW}${default_branch}${NC}"

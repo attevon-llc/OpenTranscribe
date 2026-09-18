@@ -352,13 +352,22 @@ main() {
 
     require_functions
 
-    local latest default_branch
-    if ! latest=$(gh_api "https://api.github.com/repos/${REPO}/releases/latest" |
-        grep -m1 '"tag_name"' | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/'); then
+    # `gh_api` is captured to a variable FIRST, then filtered -- never piped straight into
+    # `grep -m1`. `grep -m1` exits the instant it finds its one match (very early in a
+    # multi-KB GitHub API response), closing the pipe while curl is still mid-write; curl
+    # gets SIGPIPE/EPIPE and reports exit 23 on EVERY retry attempt, even though the match
+    # `grep` needed was already delivered. Measured: this made `gh_api` fail 100% of the
+    # time, locally and in CI, for as long as this shape existed (scripts/CLAUDE.md's
+    # documented "never pipe a producer into an early-exiting reader" rule).
+    local latest_json latest default_branch_json default_branch
+    if ! latest_json=$(gh_api "https://api.github.com/repos/${REPO}/releases/latest"); then
         echo "${RED}✗ Could not reach the GitHub API (rate limited? set GITHUB_TOKEN)${NC}" >&2
         exit 2
     fi
-    default_branch=$(gh_api "https://api.github.com/repos/${REPO}" |
+    latest=$(printf '%s' "$latest_json" |
+        grep -m1 '"tag_name"' | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
+    default_branch_json=$(gh_api "https://api.github.com/repos/${REPO}")
+    default_branch=$(printf '%s' "$default_branch_json" |
         grep -m1 '"default_branch"' | sed -E 's/.*"default_branch"[^"]*"([^"]+)".*/\1/')
 
     echo "  latest published release: ${YELLOW}${latest}${NC}"

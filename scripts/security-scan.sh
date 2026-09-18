@@ -649,6 +649,90 @@ scan_target_component() {
     fi
 }
 
+# Digest-equality scan reuse (issue #937).
+#
+# THE PROBLEM: 50-scan.sh scans every declared leg BEFORE publish and writes
+# ${label}-trivy.json. docker-build-push.sh's post-push run_security_scan then scans
+# AGAIN, unconditionally, against the tag it just pushed -- roughly 25 minutes of the
+# v0.5.0 publish spent re-measuring content already measured 07:10-07:18 the same
+# morning.
+#
+# THE FIX IS NOT "skip if unchanged" as a heuristic -- it is a digest equality check,
+# which is a STRONGER claim than a second scan, not a weaker one: nothing before this
+# proved the image that got PUSHED is the image that got SCANNED (both stages merely
+# said "v0.5.0"). Comparing Metadata.ImageID (Trivy already records the local image's
+# config digest there) to the digest of the image about to be scanned now closes that
+# gap.
+#
+# Reads two files:
+#   ${label}-trivy.json         -- already written by every scan_component() run;
+#                                   Metadata.ImageID is the digest to compare
+#   ${label}-scan-verdict.json  -- written by scan_component() below; carries the
+#                                   VERDICT (exit code) and the POLICY (severity
+#                                   threshold, fail-on-critical) that produced it, so a
+#                                   caller who changed FAIL_ON_CRITICAL between the two
+#                                   invocations gets a fresh scan rather than a stale
+#                                   verdict computed under a different policy
+#
+# Echoes the verdict's exit code and returns 0 when reuse is valid. Returns 1 (nothing
+# echoed) whenever it is not -- missing report, missing verdict, unreadable JSON,
+# unresolvable local digest, a digest MISMATCH (logged loudly: that means the build was
+# not reproducible between stages, which is itself a finding), or a changed scan
+# policy. Absence is never equality.
+scan_try_reuse_report() {
+    local label="$1" image="$2"
+    local trivy_json="${OUTPUT_DIR}/${label}-trivy.json"
+    local verdict_json="${OUTPUT_DIR}/${label}-scan-verdict.json"
+
+    # Every print_* below is redirected to stderr, deliberately: the caller captures
+    # this function's STDOUT via `$(...)` to get the echoed exit code on a reuse, and
+    # print_info/print_warning/print_success all write to stdout by design (every other
+    # call site in this file wants that). Without the redirect, a diagnostic message
+    # would land IN the captured exit code string.
+    if [ ! -f "${trivy_json}" ]; then
+        print_info "${label}: no prior trivy report to compare against -- scanning" >&2
+        return 1
+    fi
+    if [ ! -f "${verdict_json}" ]; then
+        print_info "${label}: no prior scan verdict recorded -- scanning" >&2
+        return 1
+    fi
+
+    local local_digest
+    local_digest=$(docker image inspect "${image}" --format '{{.Id}}' 2>/dev/null) || true
+    if [ -z "${local_digest}" ]; then
+        print_warning "${label}: could not resolve the local image digest -- scanning" >&2
+        return 1
+    fi
+
+    local report_digest verdict_severity verdict_fail_crit verdict_exit
+    report_digest=$(jq -r '.Metadata.ImageID // empty' "${trivy_json}" 2>/dev/null) || report_digest=""
+    verdict_severity=$(jq -r '.severity_threshold // empty' "${verdict_json}" 2>/dev/null) || verdict_severity=""
+    verdict_fail_crit=$(jq -r '.fail_on_critical // empty' "${verdict_json}" 2>/dev/null) || verdict_fail_crit=""
+    verdict_exit=$(jq -r '.exit_code // empty' "${verdict_json}" 2>/dev/null) || verdict_exit=""
+
+    if [ -z "${report_digest}" ]; then
+        print_warning "${label}: existing trivy report has no Metadata.ImageID -- scanning" >&2
+        return 1
+    fi
+    if [ -z "${verdict_exit}" ]; then
+        print_warning "${label}: existing verdict has no recorded exit_code -- scanning" >&2
+        return 1
+    fi
+    if [ "${local_digest}" != "${report_digest}" ]; then
+        print_warning "${label}: image digest changed since the last scan (${report_digest} -> ${local_digest}) -- the build was NOT reproducible between stages -- scanning" >&2
+        return 1
+    fi
+    if [ "${verdict_severity}" != "${SEVERITY_THRESHOLD}" ] || [ "${verdict_fail_crit}" != "${FAIL_ON_CRITICAL}" ]; then
+        print_warning "${label}: scan policy changed since the last scan (severity ${verdict_severity} -> ${SEVERITY_THRESHOLD}, fail-on-critical ${verdict_fail_crit} -> ${FAIL_ON_CRITICAL}) -- scanning" >&2
+        return 1
+    fi
+
+    print_success "${label}: digest unchanged (${local_digest}) and scan policy unchanged -- reusing the existing report instead of re-scanning" >&2
+    echo "${verdict_exit}"
+    return 0
+}
+
 # Function to scan a component (backend or frontend) - PARALLEL EXECUTION
 #
 # $2 is the platform to scan. When given, the image is obtained and VERIFIED for that
@@ -697,6 +781,14 @@ scan_component() {
                 return "${EXIT_COULD_NOT_SCAN}"
             fi
         fi
+    fi
+
+    # Digest-equality reuse (issue #937): if this exact image was already scanned under
+    # the same policy, don't re-measure it. See scan_try_reuse_report()'s header for the
+    # full reasoning; this is the only call site.
+    local reuse_exit_code
+    if reuse_exit_code="$(scan_try_reuse_report "${label}" "${image}")"; then
+        return "${reuse_exit_code}"
     fi
 
     print_header "Security Scanning: ${label}"
@@ -824,6 +916,23 @@ scan_component() {
         print_error "Security scan could NOT be completed for ${label}"
     else
         print_warning "Security scan completed with issues for ${label}"
+    fi
+
+    # Record the verdict for scan_try_reuse_report() to find on a future call -- but
+    # ONLY when this was a real, meaningful result (0 clean / 1 findings). Never for
+    # EXIT_COULD_NOT_SCAN: that is not a claim about the artifact (a dead tool, a
+    # transient failure), and recording it would make a future digest-identical call
+    # reuse "could not scan" forever, even after whatever caused it is fixed. If trivy
+    # itself is what failed, trivy.json will be missing/stale anyway and
+    # scan_try_reuse_report()'s own check refuses to reuse without it -- this guard
+    # covers the case where a DIFFERENT tool failed while trivy succeeded.
+    if [ "${exit_code}" -lt "${EXIT_COULD_NOT_SCAN}" ]; then
+        jq -n --arg exit_code "${exit_code}" \
+              --arg severity_threshold "${SEVERITY_THRESHOLD}" \
+              --arg fail_on_critical "${FAIL_ON_CRITICAL}" \
+            '{exit_code: $exit_code, severity_threshold: $severity_threshold, fail_on_critical: $fail_on_critical}' \
+            > "${OUTPUT_DIR}/${label}-scan-verdict.json" 2>/dev/null || \
+            print_warning "${label}: could not write scan-verdict.json -- a future run will re-scan rather than reuse"
     fi
 
     return "${exit_code}"

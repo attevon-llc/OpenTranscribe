@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-19
+
 ### Fixed
 
 - **The publish-time security scan examined `:latest`, not the tag it had just pushed.**

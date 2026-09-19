@@ -848,6 +848,17 @@ MINIO_ROOT_PASSWORD=$(openssl rand -hex 16)
 MINIO_BUCKET=opentranscribe
 JWT_SECRET_KEY=$(openssl rand -hex 32)
 ENCRYPTION_KEY=upgrade-test-$(openssl rand -hex 16)
+# Required for phase 05's login to succeed at all (issue #284 A0.9). With ENVIRONMENT
+# unset (fail-closed default "production", same reasoning as the REDIS_PASSWORD comment
+# below), is_hardened is true, and the seeder NEVER creates the well-known
+# admin@example.com / "password" super_admin -- it generates a random password instead
+# and only logs it once at container startup, which this harness has no way to capture.
+# Setting INITIAL_ADMIN_PASSWORD explicitly forces the known credential while leaving
+# every other hardened-mode control (Secure cookies, rate limits, DEBUG off) untouched,
+# which is what "a real user's install" is supposed to mean here -- ENVIRONMENT=development
+# would relax those too and stop representing one.
+INITIAL_ADMIN_PASSWORD=$TEST_ADMIN_PASSWORD
+INITIAL_ADMIN_EMAIL=$TEST_ADMIN_EMAIL
 HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
 WHISPER_MODEL=large-v3-turbo
 MODEL_CACHE_DIR=$model_cache

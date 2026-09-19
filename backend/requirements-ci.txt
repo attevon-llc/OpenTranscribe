@@ -76,7 +76,7 @@ numpy==2.4.6
 # the same green-vacuum that let the pandas 3.0 breakage reach production in the first place.
 # Pinned to the version the image resolves so CI reproduces the real condition, not a
 # friendlier one.
-pandas==3.0.5
+pandas==3.0.6
 # See requirements.txt for why 2.11.0 (not a newer torch) is the pinned pair.
 torch==2.11.0
 torchaudio==2.11.0

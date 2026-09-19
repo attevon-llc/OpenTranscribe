@@ -55,6 +55,9 @@ cachetools==7.1.8                # 7.1.4 current; TTLCache still NOT thread-safe
 
 # Asynchronous Tasks
 celery==5.6.3
+# Transitive (celery -> kombu) — pinned after the dependency-parity gate caught the venv
+# and the image resolving different patch releases (issue #492's exact failure mode).
+amqp==5.4.0
 redis==8.1.0
 flower==2.1.0
 psycopg2-binary==2.9.13
@@ -121,8 +124,16 @@ huggingface-hub==0.36.2
 # virtualenv) — pinned after the dependency-parity gate caught the venv and the
 # image resolving different patch releases (issue #492's exact failure mode).
 filelock==3.32.6
-# pandas removed: only used by diarizer/speaker_assigner/reprocess, replaced with
-# DiarizeResult numpy dataclass. Saves ~72 MB. See app/transcription/diarize_result.py.
+# Transitive (huggingface_hub, lightning, pytorch-lightning, torch) — same #492
+# failure mode as filelock above.
+fsspec==2026.9.0
+# Transitive (aiohttp, yarl) — same #492 failure mode as filelock above.
+multidict==6.9.0
+# pandas is back as a transitive dep of the pyannote fork (pyannote-core,
+# pyannote-database, pyannote-metrics) and whisperx — pinned for the same #492
+# reason as the others above, not a reintroduction of the diarizer's own pandas use
+# (still removed, see app/transcription/diarize_result.py).
+pandas==3.0.6
 # triton removed: openai/triton only needed for torch.compile(backend="inductor") JIT,
 # which is opt-in and not on the production path (Phase 6.1). Saves ~540 MB.
 

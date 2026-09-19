@@ -1550,7 +1550,18 @@ phase_10_assert_and_report() {
     # v375-v381 renumbered), and a 4-digit id or a second head would have made it
     # silently assert the wrong revision.
     expected_head=$(ver_alembic_head "$REPO_ROOT/backend")
-    as_assert_ne "alembic head advanced" "$pre_head" "$post_head"
+    # Only a claim when the TO release's own migration chain actually differs from
+    # the FROM release's (expected_head vs pre_head, both derived, never assumed) --
+    # a patch/dependency-only release can legitimately ship zero new migrations (this
+    # v0.5.0 -> v0.5.1 hop does), in which case the head correctly does NOT advance
+    # and asserting otherwise would fail a healthy upgrade. "alembic head matches
+    # current head" below is the assertion that holds unconditionally either way.
+    if [[ "$expected_head" != "$pre_head" ]]; then
+        as_assert_ne "alembic head advanced" "$pre_head" "$post_head"
+    else
+        as_record SKIP "alembic head advanced" \
+            "${FROM_VERSION:-FROM} and the current checkout share the same derived head ($expected_head) -- this hop adds no migrations, so there is nothing to advance to"
+    fi
     as_assert_eq "alembic head matches current head" "$expected_head" "$post_head"
 
     # The FROM release's head, MEASURED off the running stack vs DERIVED from

@@ -1,7 +1,7 @@
 
-davidamacey/opentranscribe-backend:v0.5.0-scanleg-amd64 (debian 13.7)
+davidamacey/opentranscribe-backend:v0.5.1-scanleg-amd64 (debian 13.7)
 =====================================================================
-Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
+Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 243, HIGH: 224, CRITICAL: 1)
 
 ┌─────────────────────────┬────────────────┬──────────┬──────────────┬──────────────────────────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
 │         Library         │ Vulnerability  │ Severity │    Status    │          Installed Version           │ Fixed Version │                            Title                             │
@@ -54,12 +54,8 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ authentication allows ...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-13608                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-18924 │          │              │                                      │               │ A flaw in libcurl's handling of HTTP/2 Server Push streams,  │
-│                         │                │          │              │                                      │               │ when the...                                                  │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-18924                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-19931 │          │              │                                      │               │ A flaw in libcurl makes it wrongly reuse an HTTP connection  │
-│                         │                │          │              │                                      │               │ setup...                                                     │
+│                         │ CVE-2026-19931 │          │              │                                      │               │ curl: libcurl: Information disclosure via incorrect          │
+│                         │                │          │              │                                      │               │ connection reuse with Negotiate authentication               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-19931                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-80229 │          │              │                                      │               │ When performing transfers via libcurl\u2019s multi           │
@@ -73,10 +69,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-80255 │          │              │                                      │               │ A `Set-Cookie:` header using tab (horizontal tab, ASCII code │
 │                         │                │          │              │                                      │               │ 9) instea ......                                             │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80255                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-82209 │          │              │                                      │               │ When libpsl support is enabled, libcurl fails to enforce the │
-│                         │                │          │              │                                      │               │ Public Su...                                                 │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-82209                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-8924  │          │              │                                      │               │ curl: curl: Cookie injection via malicious HTTP server using │
 │                         │                │          │              │                                      │               │ super cookies                                                │
@@ -117,10 +109,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-64830 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via heap buffer     │
 │                         │                │          │              │                                      │               │ overflow in VobSub subtitle...                               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64830                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-64831 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted         │
-│                         │                │          │              │                                      │               │ HEVC/H.265 bitstream                                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64831                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-64832 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted video   │
 │                         │                │          │              │                                      │               │ file in NVDEC hardware...                                    │
@@ -228,6 +216,10 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-75141 │          │              │                                      │               │ FFmpeg before commit acf5d7c contains a heap buffer overflow │
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
+│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-90816 │          │ will_not_fix │                                      │               │ ffmpeg: CPU exhaustion when processing a crafted HLS         │
+│                         │                │          │              │                                      │               │ playlist                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90816                   │
 ├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ gnupg                   │ CVE-2026-24882 │ HIGH     │ affected     │ 2.4.7-21+deb13u1                     │               │ GnuPG: GnuPG: Stack-based buffer overflow in tpm2daemon      │
 │                         │                │          │              │                                      │               │ allows arbitrary code execution                              │
@@ -284,6 +276,14 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-54370 │ MEDIUM   │              │                                      │               │ acl: TOCTOU Symlink Traversal via getfacl/setfacl            │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-54370                   │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libasound2-data         │ CVE-2026-90781 │          │              │ 1.2.14-1+deb13u1                     │               │ alsa-lib: alsa-lib: Denial of Service via off-by-one stack   │
+│                         │                │          │              │                                      │               │ buffer overflow                                              │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90781                   │
+├─────────────────────────┤                │          │              │                                      ├───────────────┤                                                              │
+│ libasound2t64           │                │          │              │                                      │               │                                                              │
+│                         │                │          │              │                                      │               │                                                              │
+│                         │                │          │              │                                      │               │                                                              │
+├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libattr1                │ CVE-2026-54371 │          │              │ 1:2.5.2-3                            │               │ attr: attr: Symlink Traversal Privilege Escalation via       │
 │                         │                │          │              │                                      │               │ getfattr and setfattr                                        │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-54371                   │
@@ -296,10 +296,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ overflow in VobSub subtitle...                               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64830                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-64831 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted         │
-│                         │                │          │              │                                      │               │ HEVC/H.265 bitstream                                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64831                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-64832 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted video   │
 │                         │                │          │              │                                      │               │ file in NVDEC hardware...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64832                   │
@@ -406,8 +402,12 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-75141 │          │              │                                      │               │ FFmpeg before commit acf5d7c contains a heap buffer overflow │
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
-├─────────────────────────┼────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libavdevice61           │ CVE-2026-58049 │ HIGH     │              │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
+│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-90816 │          │ will_not_fix │                                      │               │ ffmpeg: CPU exhaustion when processing a crafted HLS         │
+│                         │                │          │              │                                      │               │ playlist                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90816                   │
+├─────────────────────────┼────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libavdevice61           │ CVE-2026-58049 │ HIGH     │ fix_deferred │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
 │                         │                │          │              │                                      │               │ stream                                                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58049                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -415,10 +415,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ overflow in VobSub subtitle...                               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64830                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-64831 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted         │
-│                         │                │          │              │                                      │               │ HEVC/H.265 bitstream                                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64831                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-64832 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted video   │
 │                         │                │          │              │                                      │               │ file in NVDEC hardware...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64832                   │
@@ -525,8 +521,12 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-75141 │          │              │                                      │               │ FFmpeg before commit acf5d7c contains a heap buffer overflow │
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
-├─────────────────────────┼────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libavfilter10           │ CVE-2026-58049 │ HIGH     │              │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
+│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-90816 │          │ will_not_fix │                                      │               │ ffmpeg: CPU exhaustion when processing a crafted HLS         │
+│                         │                │          │              │                                      │               │ playlist                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90816                   │
+├─────────────────────────┼────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libavfilter10           │ CVE-2026-58049 │ HIGH     │ fix_deferred │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
 │                         │                │          │              │                                      │               │ stream                                                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58049                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -534,10 +534,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ overflow in VobSub subtitle...                               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64830                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-64831 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted         │
-│                         │                │          │              │                                      │               │ HEVC/H.265 bitstream                                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64831                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-64832 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted video   │
 │                         │                │          │              │                                      │               │ file in NVDEC hardware...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64832                   │
@@ -644,8 +640,12 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-75141 │          │              │                                      │               │ FFmpeg before commit acf5d7c contains a heap buffer overflow │
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
-├─────────────────────────┼────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libavformat61           │ CVE-2026-58049 │ HIGH     │              │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
+│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-90816 │          │ will_not_fix │                                      │               │ ffmpeg: CPU exhaustion when processing a crafted HLS         │
+│                         │                │          │              │                                      │               │ playlist                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90816                   │
+├─────────────────────────┼────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libavformat61           │ CVE-2026-58049 │ HIGH     │ fix_deferred │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
 │                         │                │          │              │                                      │               │ stream                                                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58049                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -653,10 +653,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ overflow in VobSub subtitle...                               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64830                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-64831 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted         │
-│                         │                │          │              │                                      │               │ HEVC/H.265 bitstream                                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64831                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-64832 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted video   │
 │                         │                │          │              │                                      │               │ file in NVDEC hardware...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64832                   │
@@ -763,8 +759,12 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-75141 │          │              │                                      │               │ FFmpeg before commit acf5d7c contains a heap buffer overflow │
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
-├─────────────────────────┼────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libavutil59             │ CVE-2026-58049 │ HIGH     │              │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
+│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-90816 │          │ will_not_fix │                                      │               │ ffmpeg: CPU exhaustion when processing a crafted HLS         │
+│                         │                │          │              │                                      │               │ playlist                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90816                   │
+├─────────────────────────┼────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libavutil59             │ CVE-2026-58049 │ HIGH     │ fix_deferred │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
 │                         │                │          │              │                                      │               │ stream                                                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58049                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -772,10 +772,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ overflow in VobSub subtitle...                               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64830                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-64831 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted         │
-│                         │                │          │              │                                      │               │ HEVC/H.265 bitstream                                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64831                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-64832 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted video   │
 │                         │                │          │              │                                      │               │ file in NVDEC hardware...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64832                   │
@@ -882,6 +878,10 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-75141 │          │              │                                      │               │ FFmpeg before commit acf5d7c contains a heap buffer overflow │
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
+│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-90816 │          │ will_not_fix │                                      │               │ ffmpeg: CPU exhaustion when processing a crafted HLS         │
+│                         │                │          │              │                                      │               │ playlist                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90816                   │
 ├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libblkid1               │ CVE-2026-76642 │ HIGH     │ affected     │ 2.41.5-0+deb13u1                     │               │ util-linux: util-linux: failed external mount helper still   │
 │                         │                │          │              │                                      │               │ runs privileged X-mount post-hooks                           │
@@ -939,8 +939,11 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ state                                                        │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80489                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-89092 │          │              │                                      │               │ glibc: glibc: nscd stack overflow leads to degraded DNS      │
-│                         │                │          │              │                                      │               │ resolution                                                   │
+│                         │ CVE-2026-8674  │          │              │                                      │               │ glibc: glibc DNS stub resolver: Denial of Service via long   │
+│                         │                │          │              │                                      │               │ search domain...                                             │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-8674                    │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-89092 │          │              │                                      │               │ glibc: nscd stack overflow leads to degraded DNS resolution  │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-89092                   │
 ├─────────────────────────┼────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │ libc6                   │ CVE-2026-18374 │          │              │                                      │               │ glibc: glibc: Heap buffer overflow via attacker-controlled   │
@@ -975,8 +978,11 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ state                                                        │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80489                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-89092 │          │              │                                      │               │ glibc: glibc: nscd stack overflow leads to degraded DNS      │
-│                         │                │          │              │                                      │               │ resolution                                                   │
+│                         │ CVE-2026-8674  │          │              │                                      │               │ glibc: glibc DNS stub resolver: Denial of Service via long   │
+│                         │                │          │              │                                      │               │ search domain...                                             │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-8674                    │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-89092 │          │              │                                      │               │ glibc: nscd stack overflow leads to degraded DNS resolution  │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-89092                   │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libcjson1               │ CVE-2026-16554 │ HIGH     │              │ 1.7.18-3.1+deb13u1                   │               │ cJSON: cJSON: Remote code execution due to integer overflow  │
@@ -1031,12 +1037,8 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ authentication allows ...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-13608                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-18924 │          │              │                                      │               │ A flaw in libcurl's handling of HTTP/2 Server Push streams,  │
-│                         │                │          │              │                                      │               │ when the...                                                  │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-18924                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-19931 │          │              │                                      │               │ A flaw in libcurl makes it wrongly reuse an HTTP connection  │
-│                         │                │          │              │                                      │               │ setup...                                                     │
+│                         │ CVE-2026-19931 │          │              │                                      │               │ curl: libcurl: Information disclosure via incorrect          │
+│                         │                │          │              │                                      │               │ connection reuse with Negotiate authentication               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-19931                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-80229 │          │              │                                      │               │ When performing transfers via libcurl\u2019s multi           │
@@ -1050,10 +1052,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-80255 │          │              │                                      │               │ A `Set-Cookie:` header using tab (horizontal tab, ASCII code │
 │                         │                │          │              │                                      │               │ 9) instea ......                                             │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-80255                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-82209 │          │              │                                      │               │ When libpsl support is enabled, libcurl fails to enforce the │
-│                         │                │          │              │                                      │               │ Public Su...                                                 │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-82209                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-8924  │          │              │                                      │               │ curl: curl: Cookie injection via malicious HTTP server using │
 │                         │                │          │              │                                      │               │ super cookies                                                │
@@ -1079,7 +1077,11 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ session and early data                                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-9545                    │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libexpat1               │ CVE-2026-76956 │ HIGH     │              │ 2.8.3-1~deb13u1                      │               │ libexpat: libexpat: Denial of Service via hash flooding      │
+│ libexpat1               │ CVE-2026-66046 │ HIGH     │              │ 2.8.3-1~deb13u1                      │               │ expat: Expat: Denial of Service via quadratic complexity in  │
+│                         │                │          │              │                                      │               │ attribute processing                                         │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-66046                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-76956 │          │              │                                      │               │ libexpat: libexpat: Denial of Service via hash flooding      │
 │                         │                │          │              │                                      │               │ attack with crafted XML...                                   │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-76956                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -1090,10 +1092,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2025-66382 │ MEDIUM   │ fix_deferred │                                      │               │ libexpat: libexpat: Denial of service via crafted file       │
 │                         │                │          │              │                                      │               │ processing                                                   │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-66382                   │
-│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-66046 │          │ affected     │                                      │               │ Expat through 2.8.3 contains a denial of service             │
-│                         │                │          │              │                                      │               │ vulnerability caused ......                                  │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-66046                   │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libgdk-pixbuf-2.0-0     │ CVE-2026-16768 │          │              │ 2.42.12+dfsg-4+deb13u1               │               │ gdk-pixbuf: out-of-bounds read in ICO parser                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-16768                   │
@@ -1108,8 +1106,8 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-81893 │          │              │                                      │               │ gdk-pixbuf: gdk-pixbuf: invalid write in JPEG ICC profile    │
 │                         │                │          │              │                                      │               │ parser on error recovery...                                  │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-81893                   │
-├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libglib2.0-0t64         │ CVE-2026-86469 │          │              │ 2.84.4-3~deb13u5                     │               │ glib2: TOCTOU Symlink Race in                                │
+├─────────────────────────┼────────────────┤          ├──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libglib2.0-0t64         │ CVE-2026-86469 │          │ affected     │ 2.84.4-3~deb13u5                     │               │ glib2: TOCTOU Symlink Race in                                │
 │                         │                │          │              │                                      │               │ `G_FILE_CREATE_REPLACE_DESTINATION` Fallback Path            │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86469                   │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
@@ -1216,10 +1214,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ overflow in VobSub subtitle...                               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64830                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-64831 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted         │
-│                         │                │          │              │                                      │               │ HEVC/H.265 bitstream                                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64831                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-64832 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted video   │
 │                         │                │          │              │                                      │               │ file in NVDEC hardware...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64832                   │
@@ -1326,6 +1320,10 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-75141 │          │              │                                      │               │ FFmpeg before commit acf5d7c contains a heap buffer overflow │
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
+│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-90816 │          │ will_not_fix │                                      │               │ ffmpeg: CPU exhaustion when processing a crafted HLS         │
+│                         │                │          │              │                                      │               │ playlist                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90816                   │
 ├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libsmartcols1           │ CVE-2026-76642 │ HIGH     │ affected     │ 2.41.5-0+deb13u1                     │               │ util-linux: util-linux: failed external mount helper still   │
 │                         │                │          │              │                                      │               │ runs privileged X-mount post-hooks                           │
@@ -1353,11 +1351,7 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2024-50613 │ MEDIUM   │ fix_deferred │                                      │               │ libsndfile: Reachable assertion in mpeg_l3_encoder_close     │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2024-50613                   │
 ├─────────────────────────┼────────────────┤          ├──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libsqlite3-0            │ CVE-2026-39113 │          │ affected     │ 3.46.1-7+deb13u2                     │               │ Buffer Overflow vulnerability in SQLite affected version     │
-│                         │                │          │              │                                      │               │ source snapsh ...                                            │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-39113                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-50812 │          │              │                                      │               │ sqlite: SQLite: Denial of Service via malformed changeset in │
+│ libsqlite3-0            │ CVE-2026-50812 │          │ affected     │ 3.46.1-7+deb13u2                     │               │ sqlite: SQLite: Denial of Service via malformed changeset in │
 │                         │                │          │              │                                      │               │ Session Extension                                            │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-50812                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -1373,10 +1367,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ overflow in VobSub subtitle...                               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64830                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-64831 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted         │
-│                         │                │          │              │                                      │               │ HEVC/H.265 bitstream                                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64831                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-64832 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted video   │
 │                         │                │          │              │                                      │               │ file in NVDEC hardware...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64832                   │
@@ -1483,8 +1473,12 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-75141 │          │              │                                      │               │ FFmpeg before commit acf5d7c contains a heap buffer overflow │
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
-├─────────────────────────┼────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libswscale8             │ CVE-2026-58049 │ HIGH     │              │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
+│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-90816 │          │ will_not_fix │                                      │               │ ffmpeg: CPU exhaustion when processing a crafted HLS         │
+│                         │                │          │              │                                      │               │ playlist                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90816                   │
+├─────────────────────────┼────────────────┼──────────┼──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libswscale8             │ CVE-2026-58049 │ HIGH     │ fix_deferred │                                      │               │ FFmpeg: FFmpeg: Memory corruption via crafted RASC video     │
 │                         │                │          │              │                                      │               │ stream                                                       │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-58049                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
@@ -1492,10 +1486,6 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ overflow in VobSub subtitle...                               │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64830                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-64831 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted         │
-│                         │                │          │              │                                      │               │ HEVC/H.265 bitstream                                         │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64831                   │
-│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-64832 │          │              │                                      │               │ ffmpeg: FFmpeg: Arbitrary code execution via crafted video   │
 │                         │                │          │              │                                      │               │ file in NVDEC hardware...                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-64832                   │
@@ -1602,6 +1592,10 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-75141 │          │              │                                      │               │ FFmpeg before commit acf5d7c contains a heap buffer overflow │
 │                         │                │          │              │                                      │               │ in the hv...                                                 │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-75141                   │
+│                         ├────────────────┤          ├──────────────┤                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-90816 │          │ will_not_fix │                                      │               │ ffmpeg: CPU exhaustion when processing a crafted HLS         │
+│                         │                │          │              │                                      │               │ playlist                                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-90816                   │
 ├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libsystemd0             │ CVE-2026-16742 │ HIGH     │ affected     │ 257.13-1~deb13u1                     │               │ systemd: systemd-homed: Local privilege escalation via       │
 │                         │                │          │              │                                      │               │ missing home-record signature verification                   │
@@ -1669,17 +1663,17 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-74860 │ HIGH     │              │                                      │               │ libxml2: double-free/UAF in libxml2 Python bindings          │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-74860                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-86140 │          │              │                                      │               │ libxml2: libxml2: Arbitrary code execution via stack-based   │
-│                         │                │          │              │                                      │               │ buffer overflow in xmlSnprintfElements                       │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86140                   │
-│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-86138 │ MEDIUM   │              │                                      │               │ libxml2: libxml2: Arbitrary code execution via heap-based    │
+│                         │ CVE-2026-86138 │          │              │                                      │               │ libxml2: libxml2: Arbitrary code execution via heap-based    │
 │                         │                │          │              │                                      │               │ buffer overflow                                              │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86138                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-86139 │          │              │                                      │               │ libxml2: libxml2: Integer overflow in xmlURIEscapeStr may    │
 │                         │                │          │              │                                      │               │ lead to arbitrary code execution...                          │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86139                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-86140 │          │              │                                      │               │ libxml2: libxml2: Arbitrary code execution via stack-based   │
+│                         │                │          │              │                                      │               │ buffer overflow in xmlSnprintfElements                       │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86140                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-86142 │          │              │                                      │               │ libxml2: libxml2: Heap-based buffer overflow in xmlXPtrEval  │
 │                         │                │          │              │                                      │               │ due to xpointer length saturation...                         │
@@ -1692,6 +1686,10 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 240, HIGH: 227, CRITICAL: 1)
 │                         │ CVE-2026-86144 │          │              │                                      │               │ libxml2: libxml2: Information disclosure, SSRF, or denial of │
 │                         │                │          │              │                                      │               │ service due to improper...                                   │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86144                   │
+│                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-86137 │ MEDIUM   │              │                                      │               │ libxml2: libxml2: Denial of Service via out-of-bounds read   │
+│                         │                │          │              │                                      │               │ in xmlFAParsePosCharGroup                                    │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86137                   │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ login                   │ CVE-2026-76642 │ HIGH     │              │ 1:4.16.0-2+really2.41.5-0+deb13u1    │               │ util-linux: util-linux: failed external mount helper still   │
 │                         │                │          │              │                                      │               │ runs privileged X-mount post-hooks                           │
@@ -1824,7 +1822,7 @@ Total: 10 (UNKNOWN: 0, LOW: 0, MEDIUM: 3, HIGH: 7, CRITICAL: 0)
 ┌─────────────────────────┬─────────────────────┬──────────┬──────────┬───────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
 │         Library         │    Vulnerability    │ Severity │  Status  │ Installed Version │ Fixed Version │                            Title                             │
 ├─────────────────────────┼─────────────────────┼──────────┼──────────┼───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ lightning (METADATA)    │ CVE-2026-58659      │ HIGH     │ fixed    │ 2.6.5             │ 2022.6.15     │ pytorch-lightning: PyTorch Lightning: Remote code execution  │
+│ lightning (METADATA)    │ CVE-2026-58659      │ HIGH     │ fixed    │ 2.6.6             │ 2022.6.15     │ pytorch-lightning: PyTorch Lightning: Remote code execution  │
 │                         │                     │          │          │                   │               │ via malicious checkpoint files                               │
 │                         │                     │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2026-58659                   │
 ├─────────────────────────┼─────────────────────┤          │          ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤

@@ -9,8 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.1] - 2026-09-19
 
+### Changed
+
+- **Dependency maintenance pass across all seven grouped Dependabot updates.** Consolidated onto
+  one branch, merged progressively with individually-tested merge commits rather than seven
+  separate PR merges, so a conflict in one group never masked or was masked by another. Two of
+  the reverted pins now have a permanent `ignore:` entry in `.github/dependabot.yml`
+  (`sentence-transformers`, `typescript`: both semver-major) so Dependabot stops re-proposing a
+  bump already known to break the build, plus a third scoped by version range (`fastapi`, capped
+  below `0.137.0` — see Fixed).
+- Added `backend/tests/unit/test_dependabot_yml_validity.py`: `.github/dependabot.yml` itself had
+  no test coverage despite having previously broken silently — it now validates as YAML, every
+  required update-entry field is present, and every pip `ignore[].versions[]` entry is a valid
+  PEP 440 specifier.
+
 ### Fixed
 
+- **`fastapi` 0.141.1 broke route mounting**: a grouped Dependabot bump exceeded a cap already
+  documented in the pin's own comment (`<0.137`), and `/api/openapi.json` dropped from 395 paths
+  to 3 — every route handler silently failed to mount. Reverted to `0.136.3` and capped via
+  `dependabot.yml`'s `ignore:`.
+- Four more dependency-resolver conflicts hidden inside the same grouped bumps, none caught by
+  CI alone (only a real Docker build / `npm install` / full test gate surfaced them):
+  `tokenizers` (reverted to 0.22.2), `sentence-transformers` (reverted to 5.7.0 across all four
+  requirements files), `numpy` (reverted to 2.4.6), `presidio-anonymizer` (reverted to 2.2.362),
+  and frontend `typescript` (reverted to `^5.9.3` — an `npm install` ERESOLVE conflict against
+  `svelte-check@4.7.6`).
+- **`./opentr.sh rebuild-backend`/`rebuild-frontend` reported success on a failed rebuild.**
+  `docker compose up --build`'s exit code was never checked (the script deliberately runs under
+  `set -uo pipefail`, not `set -e`); a broken dependency pin would rebuild the container, fail
+  silently, and leave the previous (stale) container running while the script printed success.
+  Both commands now check the exit code explicitly.
+- **`scripts/verify-install-paths.sh`'s GitHub API helper could fail on a real response with no
+  malformed data at all** — `gh_api()` piped `curl`'s output through `grep -m1` to pull
+  `tag_name`/`default_branch` out of the JSON. `grep -m1` exits at its first match while `curl`
+  may still be writing, so `curl` can receive SIGPIPE and report a spurious failure once GitHub's
+  response is large enough to hit the race (measured: the repo API response is large enough in
+  CI, though not always locally). Fixed with a bash herestring (`<<<`), which is backed by a temp
+  file rather than a live process, so there is nothing to SIGPIPE.
+- **The publish stage's security scan re-scanned an image already scanned before publish**
+  (issue #937). `50-scan.sh` scans every declared leg before publish; `docker-build-push.sh`'s
+  post-push `run_security_scan` scanned again, unconditionally, against the tag it just pushed
+  — roughly 25 minutes of the v0.5.0 publish stage spent re-measuring content already measured
+  earlier the same morning. `security-scan.sh` now reuses the prior report when the local
+  image's digest (`docker image inspect --format '{{.Id}}'`) matches Trivy's own recorded
+  `Metadata.ImageID` **and** the scan policy (severity threshold, fail-on-critical) is unchanged
+  — a stronger claim than a second scan, not a weaker one, since nothing before this proved the
+  image that got *pushed* is the image that got *scanned*.
+- **The build stage never reused the local builder's cache when rebuilding the same legs on the
+  remote multi-arch builder** (issue #938). `docker-build-push.sh` already had a registry
+  build-cache mechanism (`--cache-from`/`--cache-to`, opt-in via `BUILD_CACHE_REGISTRY`), but
+  `40-build.sh` and `80-publish.sh` never named that variable in their invocations, so an
+  operator opting in got no cache reuse with no indication why. Both stage scripts now thread
+  it through explicitly; the default stays off (unmeasured optimization).
+- **The smoke stage's fresh-install rehearsal left a running stack behind, which then blocked
+  its own next invocation** (issue #939). `85-smoke.sh` now tears the fresh-install rehearsal
+  down on exit (reusing `test-fresh-install.sh --cleanup`'s existing ownership-stamp mechanism),
+  and its `live-stack-stopped` precondition now names the actual blocking container's compose
+  project and gives a context-appropriate hint instead of a blanket one.
 - **The publish-time security scan examined `:latest`, not the tag it had just pushed.**
   `80-publish.sh` sets `PUSH_LATEST=false` (`:latest` moves later, in `promote`), so `:latest`
   was never the release being published — it was either absent (`lite`, published for the first

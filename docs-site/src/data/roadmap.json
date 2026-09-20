@@ -2696,11 +2696,11 @@
       "version": "v0.5.1",
       "headline": "",
       "summary": "",
-      "stage": "",
+      "stage": "complete",
       "released": false,
       "scheduled": false,
       "total": 4,
-      "closed": 0,
+      "closed": 4,
       "areas": [
         {
           "key": "docs-release-ops",
@@ -2708,22 +2708,22 @@
           "scope": "Docs site, release pipeline, repo tooling",
           "known": true,
           "total": 3,
-          "closed": 0,
+          "closed": 3,
           "issues": [
             {
               "number": 937,
               "title": "Publish should verify the pushed digest matches the scanned one, not re-scan blindly",
-              "done": false
+              "done": true
             },
             {
               "number": 938,
               "title": "Publish rebuilds amd64 legs the local build already made (separate buildx caches)",
-              "done": false
+              "done": true
             },
             {
               "number": 939,
               "title": "Smoke's fresh install stays running and blocks smoke's own re-run",
-              "done": false
+              "done": true
             }
           ]
         },
@@ -2733,12 +2733,12 @@
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
           "total": 1,
-          "closed": 0,
+          "closed": 1,
           "issues": [
             {
               "number": 940,
               "title": "v0.5.1 dependency maintenance: triage the 7 Dependabot PRs and close the 2 critical alerts",
-              "done": false
+              "done": true
             }
           ]
         }

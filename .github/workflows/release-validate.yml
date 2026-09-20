@@ -209,6 +209,9 @@ jobs:
       - name: Install CPU-only deps
         run: |
           # requirements-ci.txt, never requirements-dev: CI is CPU-only.
+          # libpq-dev: requirements-ci.txt pins psycopg2 (source build), not the
+          # psycopg2-binary wheel, which vendors a stale bundled pcre2 (issue #951).
+          sudo apt-get update -qq && sudo apt-get install -y -qq libpq-dev
           python -m pip install --upgrade pip
           pip install -r backend/requirements-ci.txt
 

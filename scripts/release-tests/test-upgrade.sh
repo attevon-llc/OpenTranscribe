@@ -848,6 +848,17 @@ MINIO_ROOT_PASSWORD=$(openssl rand -hex 16)
 MINIO_BUCKET=opentranscribe
 JWT_SECRET_KEY=$(openssl rand -hex 32)
 ENCRYPTION_KEY=upgrade-test-$(openssl rand -hex 16)
+# Required for phase 05's login to succeed at all (issue #284 A0.9). With ENVIRONMENT
+# unset (fail-closed default "production", same reasoning as the REDIS_PASSWORD comment
+# below), is_hardened is true, and the seeder NEVER creates the well-known
+# admin@example.com / "password" super_admin -- it generates a random password instead
+# and only logs it once at container startup, which this harness has no way to capture.
+# Setting INITIAL_ADMIN_PASSWORD explicitly forces the known credential while leaving
+# every other hardened-mode control (Secure cookies, rate limits, DEBUG off) untouched,
+# which is what "a real user's install" is supposed to mean here -- ENVIRONMENT=development
+# would relax those too and stop representing one.
+INITIAL_ADMIN_PASSWORD=$TEST_ADMIN_PASSWORD
+INITIAL_ADMIN_EMAIL=$TEST_ADMIN_EMAIL
 HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
 WHISPER_MODEL=large-v3-turbo
 MODEL_CACHE_DIR=$model_cache
@@ -1539,7 +1550,18 @@ phase_10_assert_and_report() {
     # v375-v381 renumbered), and a 4-digit id or a second head would have made it
     # silently assert the wrong revision.
     expected_head=$(ver_alembic_head "$REPO_ROOT/backend")
-    as_assert_ne "alembic head advanced" "$pre_head" "$post_head"
+    # Only a claim when the TO release's own migration chain actually differs from
+    # the FROM release's (expected_head vs pre_head, both derived, never assumed) --
+    # a patch/dependency-only release can legitimately ship zero new migrations (this
+    # v0.5.0 -> v0.5.1 hop does), in which case the head correctly does NOT advance
+    # and asserting otherwise would fail a healthy upgrade. "alembic head matches
+    # current head" below is the assertion that holds unconditionally either way.
+    if [[ "$expected_head" != "$pre_head" ]]; then
+        as_assert_ne "alembic head advanced" "$pre_head" "$post_head"
+    else
+        as_record SKIP "alembic head advanced" \
+            "${FROM_VERSION:-FROM} and the current checkout share the same derived head ($expected_head) -- this hop adds no migrations, so there is nothing to advance to"
+    fi
     as_assert_eq "alembic head matches current head" "$expected_head" "$post_head"
 
     # The FROM release's head, MEASURED off the running stack vs DERIVED from
@@ -2217,21 +2239,33 @@ phase_15_restore_and_assert() {
     # 0 too. The corruption is caught below, by content (R-2/R-8), not here.
     as_assert_eq "R-1: restore command exits 0 on success" "0" "$restore_rc"
 
-    # R-13 (issue #610): the restore must NOT have restarted the application. This is
-    # THE direct regression assertion for #610 — a running backend here would
-    # immediately run `alembic upgrade head` over the dump we just installed, silently
-    # migrating the FROM-release backup forward before anyone (operator or this test)
-    # ever gets to see it in its original restored form. `restore --yes` against a
-    # schema-head mismatch (the FROM backup vs. the still-running TO image, exactly
-    # this scenario) now leaves services stopped by design — see
-    # scripts/common.sh's pg_restore_restart_decision.
+    # R-13 (issue #610): the restore must leave the application in whatever state
+    # pg_restore_restart_decision itself would choose — restart on a head MATCH,
+    # hold on a head MISMATCH — never a hardcoded "always stopped". A TO release that
+    # ships zero new migrations (this exact v0.5.0 -> v0.5.1 hop: R-6 above already
+    # found no post-FROM tables) restores a backup whose alembic head is IDENTICAL to
+    # the running image's, which is the function's documented "same" -> restart branch,
+    # not a schema mismatch. Asserting "always stopped" here was never actually testing
+    # #610's regression (a running backend silently re-migrating a genuinely OLDER
+    # schema forward) — it was asserting a fact that only holds when FROM and TO heads
+    # differ, and no prior rehearsal had hit a same-head hop to notice.
+    local restore_from_worktree="$TEST_ROOT/worktree-${FROM_VERSION}"
+    local restore_from_head restore_to_head restore_expect_running
+    restore_from_head="$(ver_alembic_head "$restore_from_worktree/backend" 2>/dev/null)" || restore_from_head=""
+    restore_to_head="$(ver_alembic_head 2>/dev/null)" || restore_to_head=""
+    if [[ -n "$restore_from_head" && -n "$restore_to_head" && "$restore_from_head" == "$restore_to_head" ]]; then
+        restore_expect_running="opentranscribe-backend"
+    else
+        restore_expect_running=""
+    fi
     # Captured whole, then trimmed to the first line. The filter is anchored, so `head -1`
     # was already a no-op — but under `set -euo pipefail` it is a no-op that can abort the
     # script on SIGPIPE, and R-13 is the direct regression assertion for #610.
     local backend_running
     backend_running="$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-backend$')"
     backend_running="${backend_running%%$'\n'*}"
-    as_assert_eq "R-13: restore left the application stopped (no auto-migration window)" "" "${backend_running:-}"
+    as_assert_eq "R-13: restore left the application in the state pg_restore_restart_decision should have chosen" \
+        "$restore_expect_running" "${backend_running:-}"
 
     as_record SKIP "R-12: no live writer at the moment of the drop" \
         "enforced inside scripts/common.sh's restore_database via DROP DATABASE ... WITH (FORCE) and its own client-stop sequence (#599) — not independently observable from outside that function without instrumenting it"
@@ -2276,7 +2310,13 @@ phase_15_restore_and_assert() {
     # R-6: no table introduced by a post-FROM migration survives the restore —
     # derived from the table-list snapshots (after MINUS before), never a
     # hardcoded name.
-    local new_tables leaked snap missing_snaps=()
+    # `leaked=""`, not a bare `local leaked`: the SKIP branch below (no new tables to
+    # check) never assigns it, and the later `[[ -n "$leaked" ]]` read under
+    # `set -euo pipefail` treats a merely-declared-but-unassigned local as unbound —
+    # exactly the #617/#618 family this file otherwise guards against, just via `set -u`
+    # instead of a pipeline. Reproduced live: v0.5.0 -> v0.5.1 adds no tables, R-6 SKIPs,
+    # and the script died here instead of reaching phases 16-18.
+    local new_tables leaked="" snap missing_snaps=()
     for snap in before after restored; do
         [[ -s "$TEST_ROOT/snapshots/$snap/tables.txt" ]] || missing_snaps+=("$snap")
     done

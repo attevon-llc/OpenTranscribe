@@ -5,11 +5,11 @@ imohash==1.1.0
 mmh3==5.3.0  # via imohash — see requirements.txt for the version-drift note (issue #492)
 # fastapi capped <0.137: 0.137+ stops flattening include_router prefixes into
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
-fastapi==0.141.1
-uvicorn[standard]==0.52.4
+fastapi==0.136.3
+uvicorn[standard]==0.53.0
 websockets==17.1
-sqlalchemy==2.0.52
-alembic==1.19.2
+sqlalchemy==2.0.53
+alembic==1.20.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
 # joserfc — see requirements.txt for why (#33, #34: replaces python-jose everywhere)
@@ -30,7 +30,10 @@ nltk==3.10.3
 celery==5.6.3
 redis==8.1.0
 flower==2.1.0
-psycopg2-binary==2.9.13
+# psycopg2 (source build), not psycopg2-binary -- see requirements.txt's comment
+# for the full reason (issue #951: the binary wheel's vendored arm64 pcre2 carries
+# unpatched CRITICAL CVEs). Needs libpq-dev at build time in Dockerfile.lite.
+psycopg2==2.9.13
 minio==7.2.20
 opensearch-py==3.2.0
 httpx==0.28.1
@@ -51,7 +54,7 @@ qrcode[pil]==8.2
 
 # AI/ML Stack - CPU-only (no CUDA, no GPU required)
 # NumPy 2.x compatible
-numpy==2.5.3
+numpy==2.4.6
 
 # PyTorch CPU-only. NOT dropped by issue #660: sentence-transformers==5.7.0 below
 # declares `torch>=1.11.0` in its own installed metadata (used at
@@ -128,7 +131,7 @@ onnxconverter-common==1.16.0
 # fold step and the gender export), neither guarded by try/except, and
 # native_provision.py passes no --skip-gender, so its absence is a hard failure of
 # provisioning rather than a degraded export.
-onnxruntime==1.29.0
+onnxruntime==1.30.0
 
 # Supporting libraries
 omegaconf==2.3.1
@@ -146,17 +149,17 @@ sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see backend/requirements.txt for the
 # full explanation. Caught by tests/unit/test_provider_sdk_compat.py.
-deepgram-sdk==7.8.1
-assemblyai==1.3.0
+deepgram-sdk==7.9.0
+assemblyai==1.5.4
 google-cloud-speech==2.40.0
 azure-cognitiveservices-speech==1.51.2
 # speechmatics-python is deprecated and drops speaker labels — the app uses
 # the async speechmatics-batch client (matches requirements.txt)
 speechmatics-batch==0.5.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3==1.43.91
+boto3==1.43.94
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai==3.11.0
+openai==3.14.0
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
 requests==2.34.2
 # See requirements.txt for why — LLM summary JSON repair (llm_service.py)

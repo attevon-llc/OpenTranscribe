@@ -20,10 +20,10 @@ starlette==1.6.0
 # the host suite stayed green. Pinned FORWARD to the image's version, never backward to
 # the venv's, per backend/CLAUDE.md's versions-move-forward rule.
 anyio==4.15.1
-uvicorn[standard]==0.52.4
+uvicorn[standard]==0.53.0
 websockets==17.1
-sqlalchemy==2.0.52
-alembic==1.19.2
+sqlalchemy==2.0.53
+alembic==1.20.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
 # joserfc replaces python-jose everywhere (#33, #34) — the OIDC ID-token
@@ -55,9 +55,22 @@ cachetools==7.1.8                # 7.1.4 current; TTLCache still NOT thread-safe
 
 # Asynchronous Tasks
 celery==5.6.3
+# Transitive (celery -> kombu) — pinned after the dependency-parity gate caught the venv
+# and the image resolving different patch releases (issue #492's exact failure mode).
+amqp==5.4.0
 redis==8.1.0
 flower==2.1.0
-psycopg2-binary==2.9.13
+# psycopg2 (source build), NOT psycopg2-binary (issue #951): the binary wheel vendors
+# its own bundled libpq + transitive deps via auditwheel, and the arm64 wheel's bundle
+# carries a stale libpcre2 (AlmaLinux 8, 10.32-3.el8_6) with multiple unpatched CRITICAL
+# CVEs -- confirmed via `strings` on the actual wheel's .libs/ directory, not a scanner
+# guess. The system libpq5/libpq-dev Debian ships is current and gets Debian's own
+# security patches through the existing apt-get upgrade step; psycopg2-binary's vendored
+# copy gets neither that upgrade nor a new PyPI release on its own schedule. Needs
+# libpq-dev at BUILD time in every Dockerfile that installs this file (Dockerfile.prod,
+# Dockerfile.lite, Dockerfile.blackwell) and in CI (release-validate.yml, pre-commit.yml);
+# the runtime libpq5 is already pulled in transitively by postgresql-client.
+psycopg2==2.9.13
 minio==7.2.20
 imohash==1.1.0  # Fast constant-time file fingerprint (murmur3 over sampled first/middle/last windows + size) for server-side dedup + artifact caching
 
@@ -79,6 +92,11 @@ qrcode[pil]==8.2
 
 # AI/ML Stack - All cuDNN 9 compatible for CUDA 12.8
 # NumPy 2.x - required by whisperx>=3.7.6
+# Capped <2.5.0: presidio-anonymizer/presidio-analyzer declare numpy<2.5.0 in their own
+# metadata. `pip install numpy==2.5.3 presidio-analyzer==2.2.364` is a real
+# ResolutionImpossible, verified directly, not a resolver preference. Dependabot PR #949
+# proposed 2.5.3; caught by pip refusing the install outright before this ever reached a
+# built image. Capped via dependabot.yml's ignore: -- lift together with presidio's floor.
 numpy==2.4.6
 
 # PyTorch with CUDA 12.8 support (CVE-2025-32434 fixed in 2.6.0+)
@@ -104,9 +122,16 @@ ctranslate2==4.8.2
 # requirements-nodeps.txt): av>=11, tokenizers<1,>=0.13, tqdm (no version
 # constraint upstream). ctranslate2 and huggingface-hub above/below already
 # satisfy its other needs.
+#
+# tokenizers capped by transformers==4.57.6 below, which declares
+# tokenizers<=0.23.0,>=0.22.0 in its own metadata -- `pip install
+# tokenizers==0.23.2 transformers==4.57.6` is a real ResolutionImpossible,
+# verified directly via a full `pip install -r requirements.txt` run.
+# Dependabot PR #949 proposed 0.23.2; caught before it reached a built image.
+# Lift together with transformers' own major-version cap (dependabot.yml).
 av==18.1.0
 tokenizers==0.22.2
-tqdm==4.70.0
+tqdm==4.70.1
 
 # ML/Data processing
 # transformers>=5.0.0 needs huggingface-hub>=1.0.0, but whisperx (3.8.1 and current
@@ -121,8 +146,16 @@ huggingface-hub==0.36.2
 # virtualenv) — pinned after the dependency-parity gate caught the venv and the
 # image resolving different patch releases (issue #492's exact failure mode).
 filelock==3.32.6
-# pandas removed: only used by diarizer/speaker_assigner/reprocess, replaced with
-# DiarizeResult numpy dataclass. Saves ~72 MB. See app/transcription/diarize_result.py.
+# Transitive (huggingface_hub, lightning, pytorch-lightning, torch) — same #492
+# failure mode as filelock above.
+fsspec==2026.9.0
+# Transitive (aiohttp, yarl) — same #492 failure mode as filelock above.
+multidict==6.9.0
+# pandas is back as a transitive dep of the pyannote fork (pyannote-core,
+# pyannote-database, pyannote-metrics) and whisperx — pinned for the same #492
+# reason as the others above, not a reintroduction of the diarizer's own pandas use
+# (still removed, see app/transcription/diarize_result.py).
+pandas==3.0.6
 # triton removed: openai/triton only needed for torch.compile(backend="inductor") JIT,
 # which is opt-in and not on the production path (Phase 6.1). Saves ~540 MB.
 
@@ -142,8 +175,8 @@ onnx==1.22.0
 # — silently dropping CUDAExecutionProvider). faster-whisper and gliner both have
 # an unconditional `onnxruntime` dependency upstream, which is exactly why both
 # are installed with --no-deps from requirements-nodeps.txt instead of from this file.
-onnxruntime-gpu==1.29.0; sys_platform == 'linux' and platform_machine == 'x86_64'
-onnxruntime==1.29.0; sys_platform != 'linux' or platform_machine != 'x86_64'
+onnxruntime-gpu==1.30.0; sys_platform == 'linux' and platform_machine == 'x86_64'
+onnxruntime==1.30.0; sys_platform != 'linux' or platform_machine != 'x86_64'
 
 # diar-native model export (issue #654). `diar-server provision-models` embeds its own
 # export scripts in the binary, but not the packages those scripts import — these are
@@ -224,15 +257,15 @@ nltk==3.10.3
 # tests/unit/test_provider_sdk_compat.py::TestDeepgramSdkContract. 7.6.0 fixes it upstream
 # (same websockets>=12.0 floor, so it's the SDK's own import chain that changed, not a
 # websockets pin) — verified via a real import + client.listen.v1.media.transcribe_file check.
-deepgram-sdk==7.8.1
-assemblyai==1.3.0
+deepgram-sdk==7.9.0
+assemblyai==1.5.4
 google-cloud-speech==2.40.0
 azure-cognitiveservices-speech==1.51.2
 speechmatics-batch==0.5.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3==1.43.91
+boto3==1.43.94
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai==3.11.0
+openai==3.14.0
 # requests is pulled in by many packages but listed explicitly for Gladia REST calls
 requests==2.34.2
 # Recovers structurally-malformed JSON from LLM summary responses
@@ -255,6 +288,12 @@ meeteval==0.4.3
 # Loaded only by the celery-redaction worker (PRELOAD_REDACTION_MODELS=true).
 # Presidio = PII detection orchestration (built-in regex recognizers + NER).
 presidio-analyzer==2.2.364
+# anonymizer capped at 2.2.362, one behind analyzer: 2.2.364 declares
+# cryptography>=48.0.1,<49.0.0 in its own metadata (verified via wheel METADATA
+# inspection), conflicting with cryptography==50.0.1 above -- a real
+# ResolutionImpossible, not a resolver preference. Dependabot PR #949 proposed
+# 2.2.364; caught before it reached a built image. Lift together with
+# cryptography once anonymizer raises its own cap.
 presidio-anonymizer==2.2.362
 # The spaCy pipeline Presidio tokenizes with. DECLARED HERE, not installed by a
 # Dockerfile step (issue #492).
@@ -316,7 +355,7 @@ msal==1.38.0
 # drifted. A package that starts drifting later belongs here too; the check that
 # finds it is a `pip freeze` diff of a fresh venv against a fresh image.
 cuda-pathfinder==1.8.1     # via cuda-bindings
-botocore==1.43.91          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
+botocore==1.43.94          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
 # The four below all predate documents and remain pulled in by packages that have
 # nothing to do with them (see each line). They are here because #551 removed
 # docling-slim, whose own constraints had been holding them at fixed versions as a
@@ -328,9 +367,9 @@ cloudpathlib==0.25.0       # via weasel — drifted 0.24.0 (venv) vs 0.25.0 (ima
 cython==3.3.0              # via meeteval — drifted 3.2.9 (venv) vs 3.3.0 (image), 2026-08-23
 lxml==6.1.3                # via python3-saml, xmlsec — drifted 6.1.1 (venv) vs 6.1.2 (image), 2026-08-23
 typer==0.27.2              # via spacy, weasel — drifted 0.26.8 (venv) vs 0.27.1 (image), 2026-08-23
-httpcore2==2.12.0          # via httpx2
-httpx2==2.12.0             # via openai
-google-api-core==2.36.0    # via google-cloud-speech — drifted 2.34.0 (venv) vs 2.35.0 (image), 2026-08-25
+httpcore2==2.13.0          # via httpx2
+httpx2==2.13.0             # via openai
+google-api-core==2.37.0    # via google-cloud-speech — drifted 2.34.0 (venv) vs 2.35.0 (image), 2026-08-25
 google-auth==2.58.0        # via google-api-core, google-cloud-speech — drifted 2.56.3 (venv) vs 2.57.0 (image), 2026-08-25
 spacy==3.8.16              # via presidio_analyzer — drifted 3.8.15 (venv) vs 3.8.16 (image), 2026-08-25
 googleapis-common-protos==1.75.3  # via google-api-core — drifted 1.75.1 (venv) vs 1.75.2 (image), 2026-08-26
@@ -343,13 +382,13 @@ protobuf==7.36.1           # via grpcio-status, onnx, opensearch-protobufs — d
 narwhals==2.26.0           # via altair/plotly family — drifted 2.24.0 (venv) vs 2.25.0 (image), 2026-08-21
 scipy==1.18.1              # via scikit-learn, librosa — drifted 1.18.0 (venv) vs 1.18.1 (image), 2026-08-21
 click==8.5.0                # via uvicorn/celery — drifted 8.4.2 (venv) vs 8.5.0 (image), 2026-08-27
-grpcio==1.83.1             # via google-cloud-speech, opensearch-protobufs, opentelemetry-exporter-otlp-proto-grpc — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
-grpcio-status==1.83.1      # via google-api-core[grpc] — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
+grpcio==1.84.0             # via google-cloud-speech, opensearch-protobufs, opentelemetry-exporter-otlp-proto-grpc — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
+grpcio-status==1.84.0      # via google-api-core[grpc] — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
 kiwisolver==1.5.1          # via matplotlib — drifted 1.5.0 (venv) vs 1.5.1 (image), 2026-08-31
-phonenumbers==9.0.38       # via presidio-analyzer — drifted 9.0.37 (venv) vs 9.0.38 (image), 2026-08-31
+phonenumbers==9.0.39       # via presidio-analyzer — drifted 9.0.37 (venv) vs 9.0.38 (image), 2026-08-31
 regex==2026.9.10           # via nltk, presidio-analyzer, transformers — drifted 2026.7.19 (venv) vs 2026.8.31 (image), 2026-08-31
 wcwidth==0.8.3             # via prompt-toolkit — drifted 0.8.2 (venv) vs 0.8.3 (image), 2026-08-31
-wrapt==2.4.0               # via Deprecated, smart-open — drifted 2.3.0 (venv) vs 2.4.0 (image), 2026-08-31
+wrapt==2.4.1               # via Deprecated, smart-open — drifted 2.3.0 (venv) vs 2.4.0 (image), 2026-08-31
 # joblib 1.6.0 added cloudpickle as a hard dependency; 1.5.3 had none. So this pair
 # drifted in BOTH ways at once — a version mismatch on joblib, and a package the image
 # had that the venv had never heard of. cloudpickle is pinned in its own right rather

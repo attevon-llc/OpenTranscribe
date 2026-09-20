@@ -1,5 +1,5 @@
 {
-  "image": "davidamacey/opentranscribe-docs:v0.5.0-scanleg-arm64",
+  "image": "davidamacey/opentranscribe-docs:v0.5.1-scanleg-arm64",
   "summary": {
     "fatal": 0,
     "warn": 0,

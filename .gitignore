@@ -105,6 +105,10 @@ env/
 ENV/
 env.bak/
 venv.bak/
+# Timestamped scratch venvs (e.g. `mv venv venv.broken-<epoch>` before a rebuild) — the bare
+# `venv` pattern above only matches a directory named exactly that, not one with a suffix.
+venv.broken-*/
+venv.old-*/
 .python-version
 
 # Eval-only judge venv (#463) — ragas's dependency chain (instructor -> openai<3.0.0)

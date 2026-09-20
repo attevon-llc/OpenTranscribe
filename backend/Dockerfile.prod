@@ -14,7 +14,7 @@
 # the Docker Hub registry API (`denoland/deno` tags list) before writing it — the bare
 # `2.9.6` form does not exist, only `bin-2.9.6` (this repo already lost time once to writing
 # a plausible-looking-but-nonexistent tag, see security-scan.yml's trivy-action pin note).
-FROM denoland/deno:bin-2.9.6 AS deno-bin
+FROM denoland/deno:bin-2.9.7 AS deno-bin
 
 # diar-native (T1 diarization sidecar) binary + ONNX Runtime provider libs, pinned by
 # DIGEST so a floating `:latest` on the standalone image can never silently change what
@@ -131,11 +131,15 @@ FROM python:3.13-slim-trixie AS builder
 WORKDIR /build
 
 # Install build dependencies (only in this stage)
+# libpq-dev: requirements.txt pins psycopg2 (source build), not psycopg2-binary
+# (issue #951) -- compiles against this, links the runtime image's libpq5
+# (pulled in transitively by postgresql-client below).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     g++ \
     git \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for better layer caching

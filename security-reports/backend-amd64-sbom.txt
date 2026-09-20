@@ -5,7 +5,7 @@ aiofiles                                  25.1.0                                
 aiohappyeyeballs                          2.7.1                                 python                   
 aiohttp                                   3.14.3                                python                   
 aiosignal                                 1.4.0                                 python                   
-alembic                                   1.19.2                                python                   
+alembic                                   1.20.0                                python                   
 amqp                                      5.4.0                                 python                   
 annotated-doc                             0.0.5                                 python                   
 annotated-types                           0.8.0                                 python                   
@@ -14,7 +14,7 @@ anyio                                     4.15.1                                
 apt                                       3.0.3                                 deb                      
 argon2-cffi                               25.1.0                                python                   
 argon2-cffi-bindings                      26.1.0                                python                   
-assemblyai                                1.3.0                                 python                   
+assemblyai                                1.5.4                                 python                   
 asteroid-filterbanks                      0.4.0                                 python                   
 attrs                                     26.1.0                                python                   
 autocommand                               2.2.2                                 python                   
@@ -28,8 +28,8 @@ bash                                      5.2.37-2+b10                          
 bcrypt                                    4.3.0                                 python                   
 billiard                                  4.3.0                                 python                   
 blis                                      1.3.3                                 python                   
-boto3                                     1.43.91                               python                   
-botocore                                  1.43.91                               python                   
+boto3                                     1.43.94                               python                   
+botocore                                  1.43.94                               python                   
 brotli                                    1.2.0                                 python                   
 bsdutils                                  1:2.41.5-0+deb13u1                    deb                      
 ca-certificates                           20250419                              deb                      
@@ -67,7 +67,7 @@ dash                                      0.5.12-12                             
 debconf                                   1.5.91                                deb                      
 debian-archive-keyring                    2025.1                                deb                      
 debianutils                               5.23.2                                deb                      
-deepgram-sdk                              7.8.1                                 python                   
+deepgram-sdk                              7.9.0                                 python                   
 defusedxml                                0.7.1                                 python                   
 deprecated                                1.3.1                                 python                   
 detoxify                                  0.5.2                                 python                   
@@ -100,7 +100,7 @@ gliner                                    0.2.29                                
 global-gender-predictor                   0.0.5                                 python                   
 gnupg                                     2.4.7-21+deb13u1                      deb                      
 gnupg-l10n                                2.4.7-21+deb13u1                      deb                      
-google-api-core                           2.36.0                                python                   
+google-api-core                           2.37.0                                python                   
 google-auth                               2.58.0                                python                   
 google-cloud-speech                       2.40.0                                python                   
 googleapis-common-protos                  1.75.3                                python                   
@@ -110,8 +110,8 @@ gpgconf                                   2.4.7-21+deb13u1+b5                   
 gpgsm                                     2.4.7-21+deb13u1+b5                   deb                      
 greenlet                                  3.5.6                                 python                   
 grep                                      3.11-4                                deb                      
-grpcio                                    1.83.1                                python                   
-grpcio-status                             1.83.1                                python                   
+grpcio                                    1.84.0                                python                   
+grpcio-status                             1.84.0                                python                   
 gui                                       UNKNOWN                               binary                   
 gui-32                                    UNKNOWN                               binary                   
 gui-64                                    UNKNOWN                               binary                   
@@ -121,10 +121,10 @@ h11                                       0.16.0                                
 hf-xet                                    1.6.0                                 python                   
 hostname                                  3.25                                  deb                      
 httpcore                                  1.0.9                                 python                   
-httpcore2                                 2.12.0                                python                   
+httpcore2                                 2.13.0                                python                   
 httptools                                 0.8.0                                 python                   
 httpx                                     0.28.1                                python                   
-httpx2                                    2.12.0                                python                   
+httpx2                                    2.13.0                                python                   
 huggingface-hub                           0.36.2                                python                   
 humanize                                  4.16.0                                python                   
 idna                                      3.19                                  python                   
@@ -461,10 +461,10 @@ omegaconf                                 2.3.1                                 
 onnx                                      1.22.0                                python                   
 onnx-ir                                   1.0.0                                 python                   
 onnxconverter-common                      1.16.0                                python                   
-onnxruntime-gpu                           1.29.0                                python                   
+onnxruntime-gpu                           1.30.0                                python                   
 onnxscript                                0.7.2                                 python                   
 onnxslim                                  0.1.96                                python                   
-openai                                    3.11.0                                python                   
+openai                                    3.14.0                                python                   
 opensearch-protobufs                      1.2.0                                 python                   
 opensearch-py                             3.2.0                                 python                   
 openssl                                   3.5.7-1~deb13u2                       deb                      
@@ -486,7 +486,7 @@ passwd                                    1:4.17.4-2                            
 perl                                      5.40.1-6+deb13u1                      deb                      
 perl-base                                 5.40.1-6+deb13u1                      deb                      
 perl-modules-5.40                         5.40.1-6+deb13u1                      deb                      
-phonenumbers                              9.0.38                                python                   
+phonenumbers                              9.0.39                                python                   
 pillow                                    12.3.0                                python                   
 pinentry-curses                           1.3.1-2                               deb                      
 pip                                       26.2.1                                python                   
@@ -504,7 +504,7 @@ propcache                                 0.5.4                                 
 proto-plus                                1.28.4                                python                   
 protobuf                                  7.36.1                                python                   
 psutil                                    7.2.2                                 python                   
-psycopg2-binary                           2.9.13                                python                   
+psycopg2                                  2.9.13                                python                   
 pyannote-audio                            4.0.5.dev16+ga3f38afb8                python                   
 pyannote-core                             6.0.1                                 python                   
 pyannote-database                         6.1.1                                 python                   
@@ -563,7 +563,7 @@ spacy                                     3.8.16                                
 spacy-legacy                              3.0.12                                python                   
 spacy-loggers                             1.0.5                                 python                   
 speechmatics-batch                        0.5.0                                 python                   
-sqlalchemy                                2.0.52                                python                   
+sqlalchemy                                2.0.53                                python                   
 sqv                                       1.3.0-3+b2                            deb                      
 srsly                                     2.5.3                                 python                   
 starlette                                 1.6.0                                 python                   
@@ -582,7 +582,7 @@ torchaudio                                2.11.0+cu128                          
 torchcodec                                0.16.0                                python                   
 torchmetrics                              1.9.0                                 python                   
 tornado                                   6.5.10                                python                   
-tqdm                                      4.70.0                                python                   
+tqdm                                      4.70.1                                python                   
 transformers                              4.57.6                                python                   
 truststore                                0.10.4                                python                   
 typer                                     0.27.2                                python                   
@@ -593,7 +593,7 @@ tzdata                                    2026c-0+deb13u1                       
 tzlocal                                   5.4.4                                 python                   
 urllib3                                   2.8.0                                 python                   
 util-linux                                2.41.5-0+deb13u1                      deb                      
-uvicorn                                   0.52.4                                python                   
+uvicorn                                   0.53.0                                python                   
 uvloop                                    0.22.1                                python                   
 varint                                    1.0.2                                 python                   
 vine                                      5.1.0                                 python                   
@@ -605,7 +605,7 @@ weasel                                    1.0.0                                 
 websockets                                17.1                                  python                   
 wheel                                     0.46.3                                python                   
 whisperx                                  3.8.6                                 python                   
-wrapt                                     2.4.0                                 python                   
+wrapt                                     2.4.1                                 python                   
 x11-common                                1:7.7+24+deb13u1                      deb                      
 xkb-data                                  2.42-1                                deb                      
 xmlsec                                    1.3.17                                python                   

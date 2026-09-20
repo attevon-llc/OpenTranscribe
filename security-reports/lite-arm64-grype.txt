@@ -19,9 +19,9 @@ libcairo2                1.18.4-1+b1                           (won't fix)  deb 
 libopenjp2-7             2.5.3-2.1~deb13u2                     (won't fix)  deb     CVE-2019-6988        Low         1.7% (76th)   0.5    
 curl                     8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-80255       High        0.7% (51st)   0.5    
 libcurl4t64              8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-80255       High        0.7% (51st)   0.5    
+libexpat1                2.8.3-1~deb13u1                       (won't fix)  deb     CVE-2026-66046       High        0.6% (47th)   0.5    
 curl                     8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-13608       High        0.6% (49th)   0.5    
 libcurl4t64              8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-13608       High        0.6% (49th)   0.5    
-libexpat1                2.8.3-1~deb13u1                       (won't fix)  deb     CVE-2026-66046       High        0.6% (46th)   0.5    
 curl                     8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-8927        Critical    0.5% (41st)   0.5    
 libcurl4t64              8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-8927        Critical    0.5% (41st)   0.5    
 curl                     8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-80230       High        0.6% (45th)   0.4    
@@ -46,15 +46,15 @@ libavutil59              7:7.1.5-0+deb13u1                     (won't fix)  deb 
 libpostproc58            7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-66041       High        0.5% (44th)   0.4    
 libswresample5           7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-66041       High        0.5% (44th)   0.4    
 libswscale8              7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-66041       High        0.5% (44th)   0.4    
-ffmpeg                   7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (41st)   0.4    
-libavcodec61             7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (41st)   0.4    
-libavdevice61            7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (41st)   0.4    
-libavfilter10            7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (41st)   0.4    
-libavformat61            7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (41st)   0.4    
-libavutil59              7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (41st)   0.4    
-libpostproc58            7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (41st)   0.4    
-libswresample5           7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (41st)   0.4    
-libswscale8              7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (41st)   0.4    
+ffmpeg                   7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (42nd)   0.4    
+libavcodec61             7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (42nd)   0.4    
+libavdevice61            7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (42nd)   0.4    
+libavfilter10            7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (42nd)   0.4    
+libavformat61            7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (42nd)   0.4    
+libavutil59              7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (42nd)   0.4    
+libpostproc58            7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (42nd)   0.4    
+libswresample5           7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (42nd)   0.4    
+libswscale8              7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-64834       High        0.5% (42nd)   0.4    
 curl                     8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-8926        Critical    0.4% (37th)   0.4    
 libcurl4t64              8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-8926        Critical    0.4% (37th)   0.4    
 libsndfile1              1.2.2-2+deb13u1                       (won't fix)  deb     CVE-2026-37555       High        0.5% (42nd)   0.4    
@@ -92,8 +92,8 @@ libswresample5           7:7.1.5-0+deb13u1                     (won't fix)  deb 
 libswscale8              7:7.1.5-0+deb13u1                     (won't fix)  deb     CVE-2026-66036       High        0.4% (34th)   0.3    
 libopenjp2-7             2.5.3-2.1~deb13u2                     (won't fix)  deb     CVE-2023-39329       Medium      0.6% (45th)   0.3    
 libcjson1                1.7.18-3.1+deb13u1                                 deb     CVE-2026-67216       High        0.4% (36th)   0.3    
-curl                     8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-12064       High        0.4% (33rd)   0.3    
-libcurl4t64              8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-12064       High        0.4% (33rd)   0.3    
+curl                     8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-12064       High        0.4% (34th)   0.3    
+libcurl4t64              8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-12064       High        0.4% (34th)   0.3    
 curl                     8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-8932        High        0.4% (33rd)   0.3    
 libcurl4t64              8.14.1-2+deb13u5                      (won't fix)  deb     CVE-2026-8932        High        0.4% (33rd)   0.3    
 libsndfile1              1.2.2-2+deb13u1                       (won't fix)  deb     CVE-2024-50613       Medium      0.5% (42nd)   0.3    
@@ -321,8 +321,8 @@ libc-bin                 2.41-12+deb13u4                                    deb 
 libc6                    2.41-12+deb13u4                                    deb     CVE-2010-4756        Negligible  2.6% (84th)   0.1    
 libopenjp2-7             2.5.3-2.1~deb13u2                     (won't fix)  deb     CVE-2023-39328       Medium      0.2% (15th)   0.1    
 libldap2                 2.6.10+dfsg-1                                      deb     CVE-2020-15719       Negligible  2.5% (84th)   0.1    
-libgdk-pixbuf-2.0-0      2.42.12+dfsg-4+deb13u1                (won't fix)  deb     CVE-2026-16768       Medium      0.2% (15th)   0.1    
-libgdk-pixbuf2.0-common  2.42.12+dfsg-4+deb13u1                (won't fix)  deb     CVE-2026-16768       Medium      0.2% (15th)   0.1    
+libgdk-pixbuf-2.0-0      2.42.12+dfsg-4+deb13u1                (won't fix)  deb     CVE-2026-16768       Medium      0.2% (14th)   0.1    
+libgdk-pixbuf2.0-common  2.42.12+dfsg-4+deb13u1                (won't fix)  deb     CVE-2026-16768       Medium      0.2% (14th)   0.1    
 libc-bin                 2.41-12+deb13u4                                    deb     CVE-2019-9192        Negligible  2.4% (83rd)   0.1    
 libc6                    2.41-12+deb13u4                                    deb     CVE-2019-9192        Negligible  2.4% (83rd)   0.1    
 libc-bin                 2.41-12+deb13u4                       (won't fix)  deb     CVE-2026-6791        Medium      0.2% (11th)   0.1    
@@ -459,6 +459,7 @@ mount                    2.41.5-0+deb13u1                      (won't fix)  deb 
 util-linux               2.41.5-0+deb13u1                      (won't fix)  deb     CVE-2026-78408       High        0.1% (1st)    < 0.1  
 libxml2                  2.12.7+dfsg+really2.9.14-2.1+deb13u3               deb     CVE-2026-86139       High        0.1% (1st)    < 0.1  
 libsqlite3-0             3.46.1-7+deb13u2                      (won't fix)  deb     CVE-2026-50812       Medium      0.2% (5th)    < 0.1  
+libxml2                  2.12.7+dfsg+really2.9.14-2.1+deb13u3               deb     CVE-2026-76781       Medium      0.2% (5th)    < 0.1  
 libsqlite3-0             3.46.1-7+deb13u2                      (won't fix)  deb     CVE-2026-50813       Medium      0.2% (5th)    < 0.1  
 libp11-kit0              0.25.5-3                              (won't fix)  deb     CVE-2026-13757       Medium      0.1% (4th)    < 0.1  
 libattr1                 1:2.5.2-3                             (won't fix)  deb     CVE-2026-54371       Medium      0.1% (4th)    < 0.1  
@@ -508,7 +509,7 @@ libmbedcrypto16          3.6.6-0.1~deb13u1                     (won't fix)  deb 
 libxml2                  2.12.7+dfsg+really2.9.14-2.1+deb13u3               deb     CVE-2026-86137       Medium      0.1% (3rd)    < 0.1  
 libusb-1.0-0             2:1.0.28-1                            (won't fix)  deb     CVE-2026-47104       Medium      0.1% (3rd)    < 0.1  
 tar                      1.35+dfsg-3.1                         (won't fix)  deb     CVE-2026-18508       Medium      0.1% (3rd)    < 0.1  
-torch                    2.11.0+cpu                            2.13.0       python  GHSA-rrmf-rvhw-rf47  Low         0.2% (10th)   < 0.1  
+torch                    2.11.0+cpu                            2.13.0       python  GHSA-rrmf-rvhw-rf47  Low         0.2% (9th)    < 0.1  
 libtiff6                 4.7.0-3+deb13u3                                    deb     CVE-2026-18495       Medium      0.1% (1st)    < 0.1  
 libacl1                  2.3.2-2+b1                            (won't fix)  deb     CVE-2026-54370       High        < 0.1% (0th)  < 0.1  
 libcairo-gobject2        1.18.4-1+b1                           (won't fix)  deb     CVE-2025-50422       Low         0.2% (11th)   < 0.1  
@@ -634,8 +635,8 @@ libmbedcrypto16          3.6.6-0.1~deb13u1                     (won't fix)  deb 
 libtiff6                 4.7.0-3+deb13u3                                    deb     CVE-2025-8534        Negligible  0.2% (8th)    < 0.1  
 libtheoradec1            1.2.0~alpha1+dfsg-6                                deb     CVE-2026-5673        Negligible  0.2% (7th)    < 0.1  
 libtheoraenc1            1.2.0~alpha1+dfsg-6                                deb     CVE-2026-5673        Negligible  0.2% (7th)    < 0.1  
-libllvm19                1:19.1.7-3+b1                                      deb     CVE-2026-13574       Negligible  0.2% (7th)    < 0.1  
 libllvm19                1:19.1.7-3+b1                                      deb     CVE-2026-13573       Negligible  0.2% (7th)    < 0.1  
+libllvm19                1:19.1.7-3+b1                                      deb     CVE-2026-13574       Negligible  0.2% (7th)    < 0.1  
 libxml2                  2.12.7+dfsg+really2.9.14-2.1+deb13u3               deb     CVE-2026-11979       Negligible  0.1% (4th)    < 0.1  
 libldap2                 2.6.10+dfsg-1                                      deb     CVE-2026-22185       Negligible  0.1% (4th)    < 0.1  
 coreutils                9.7-3                                              deb     CVE-2026-56392       Negligible  0.1% (4th)    < 0.1  
@@ -664,4 +665,8 @@ libmbedcrypto16          3.6.6-0.1~deb13u1                     (won't fix)  deb 
 libmbedcrypto16          3.6.6-0.1~deb13u1                     (won't fix)  deb     CVE-2026-50713       Unknown     N/A           N/A    
 libmbedcrypto16          3.6.6-0.1~deb13u1                     (won't fix)  deb     CVE-2026-54435       Unknown     N/A           N/A    
 libmbedcrypto16          3.6.6-0.1~deb13u1                     (won't fix)  deb     CVE-2026-54441       Unknown     N/A           N/A    
-libtiff6                 4.7.0-3+deb13u3                       (won't fix)  deb     CVE-2026-36849       Unknown     N/A           N/A
+libperl5.40              5.40.1-6+deb13u1                                   deb     CVE-2026-82560       Unknown     N/A           N/A    
+libtiff6                 4.7.0-3+deb13u3                       (won't fix)  deb     CVE-2026-36849       Unknown     N/A           N/A    
+perl                     5.40.1-6+deb13u1                                   deb     CVE-2026-82560       Unknown     N/A           N/A    
+perl-base                5.40.1-6+deb13u1                                   deb     CVE-2026-82560       Unknown     N/A           N/A    
+perl-modules-5.40        5.40.1-6+deb13u1                                   deb     CVE-2026-82560       Unknown     N/A           N/A

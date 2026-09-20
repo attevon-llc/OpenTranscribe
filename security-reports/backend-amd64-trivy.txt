@@ -1,7 +1,7 @@
 
 davidamacey/opentranscribe-backend:v0.5.1-scanleg-amd64 (debian 13.7)
 =====================================================================
-Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 243, HIGH: 224, CRITICAL: 1)
+Total: 469 (UNKNOWN: 0, LOW: 0, MEDIUM: 244, HIGH: 224, CRITICAL: 1)
 
 ┌─────────────────────────┬────────────────┬──────────┬──────────────┬──────────────────────────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
 │         Library         │ Vulnerability  │ Severity │    Status    │          Installed Version           │ Fixed Version │                            Title                             │
@@ -1687,7 +1687,11 @@ Total: 468 (UNKNOWN: 0, LOW: 0, MEDIUM: 243, HIGH: 224, CRITICAL: 1)
 │                         │                │          │              │                                      │               │ service due to improper...                                   │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86144                   │
 │                         ├────────────────┼──────────┤              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-86137 │ MEDIUM   │              │                                      │               │ libxml2: libxml2: Denial of Service via out-of-bounds read   │
+│                         │ CVE-2026-76781 │ MEDIUM   │              │                                      │               │ libxml2: libxml2: NULL pointer dereference parsing           │
+│                         │                │          │              │                                      │               │ nextCatalog without catalog attribute                        │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-76781                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-86137 │          │              │                                      │               │ libxml2: libxml2: Denial of Service via out-of-bounds read   │
 │                         │                │          │              │                                      │               │ in xmlFAParsePosCharGroup                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-86137                   │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤

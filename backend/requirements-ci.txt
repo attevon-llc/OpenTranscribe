@@ -53,7 +53,10 @@ redis==8.1.0
 # actually runs in CI instead of importorskip-ing silently, which is the exact "240 security
 # tests gated off behind stale env vars" failure mode scripts/audit-tests.py exists to prevent.
 flower==2.1.0
-psycopg2-binary==2.9.13
+# psycopg2 (source build), not psycopg2-binary -- see requirements.txt's comment for
+# the full reason (issue #951). Needs libpq-dev installed before this file's pip
+# install; both CI workflows that use this file do so.
+psycopg2==2.9.13
 minio==7.2.20
 imohash==1.1.0
 

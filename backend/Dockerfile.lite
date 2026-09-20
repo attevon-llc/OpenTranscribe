@@ -104,10 +104,15 @@ FROM python:3.13-slim-trixie AS builder
 WORKDIR /build
 
 # Install build dependencies (only in this stage)
+# libpq-dev: requirements-lite.txt pins psycopg2 (source build), not psycopg2-binary
+# (issue #951) -- compiles against this, links the runtime image's libpq5 (added
+# explicitly below; unlike Dockerfile.prod, this image installs no
+# postgresql-client to pull it in transitively).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     g++ \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for better layer caching
@@ -167,6 +172,7 @@ RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
     libsndfile1 \
     libimage-exiftool-perl \
     libgomp1 \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

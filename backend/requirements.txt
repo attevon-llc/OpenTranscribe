@@ -60,7 +60,17 @@ celery==5.6.3
 amqp==5.4.0
 redis==8.1.0
 flower==2.1.0
-psycopg2-binary==2.9.13
+# psycopg2 (source build), NOT psycopg2-binary (issue #951): the binary wheel vendors
+# its own bundled libpq + transitive deps via auditwheel, and the arm64 wheel's bundle
+# carries a stale libpcre2 (AlmaLinux 8, 10.32-3.el8_6) with multiple unpatched CRITICAL
+# CVEs -- confirmed via `strings` on the actual wheel's .libs/ directory, not a scanner
+# guess. The system libpq5/libpq-dev Debian ships is current and gets Debian's own
+# security patches through the existing apt-get upgrade step; psycopg2-binary's vendored
+# copy gets neither that upgrade nor a new PyPI release on its own schedule. Needs
+# libpq-dev at BUILD time in every Dockerfile that installs this file (Dockerfile.prod,
+# Dockerfile.lite, Dockerfile.blackwell) and in CI (release-validate.yml, pre-commit.yml);
+# the runtime libpq5 is already pulled in transitively by postgresql-client.
+psycopg2==2.9.13
 minio==7.2.20
 imohash==1.1.0  # Fast constant-time file fingerprint (murmur3 over sampled first/middle/last windows + size) for server-side dedup + artifact caching
 

@@ -216,8 +216,13 @@ jobs:
       - name: Install system dependencies
         # Bounded separately from the job: a mirror that stops answering should fail this
         # step in minutes, not consume the whole job budget retrying (issue #493).
+        # libpq-dev: requirements-ci.txt pins psycopg2 (source build), not
+        # psycopg2-binary -- the binary wheel vendors its own bundled libpq/pcre2
+        # via auditwheel, which is how a stale, CVE-flagged pcre2 ended up baked
+        # into the arm64 lite image (issue #951). Building against the system
+        # libpq here means CI actually exercises the same driver the images ship.
         timeout-minutes: 10
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libpq-dev
 
       - name: Install Python dependencies (CPU wheels)
         run: |

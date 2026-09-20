@@ -63,6 +63,10 @@ ENV CUDA_FORCE_PTX_JIT=1 \
 # built only on request and never published, so it was not part of the v0.5.0 scan
 # finding; it is fixed here so the three backend Dockerfiles do not drift again,
 # which is exactly how .lite ended up as the only one with no upgrade at all.
+#
+# libpq-dev: requirements.txt pins psycopg2 (source build), not psycopg2-binary
+# (issue #951) -- this single-stage image needs both the build-time headers and
+# the runtime libpq5 .so, both of which libpq-dev provides.
 ARG APT_SECURITY_REFRESH=unset
 RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
     && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
@@ -71,6 +75,7 @@ RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
     libsndfile1 \
     libimage-exiftool-perl \
     libgomp1 \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

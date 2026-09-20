@@ -30,7 +30,10 @@ nltk==3.10.3
 celery==5.6.3
 redis==8.1.0
 flower==2.1.0
-psycopg2-binary==2.9.13
+# psycopg2 (source build), not psycopg2-binary -- see requirements.txt's comment
+# for the full reason (issue #951: the binary wheel's vendored arm64 pcre2 carries
+# unpatched CRITICAL CVEs). Needs libpq-dev at build time in Dockerfile.lite.
+psycopg2==2.9.13
 minio==7.2.20
 opensearch-py==3.2.0
 httpx==0.28.1

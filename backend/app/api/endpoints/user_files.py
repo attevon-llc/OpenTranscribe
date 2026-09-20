@@ -395,20 +395,43 @@ def retry_file_processing(
                 detail=f"Cannot retry file in {current_status} status. Only error or stuck processing files can be retried.",
             )
 
-        # Check rate limiting (prevent spam retries)
-        recent_tasks = (
+        # Check rate limiting (prevent spam retries). Fetch the most recent
+        # attempt (not just a count) so a 429 can carry a real Retry-After —
+        # derived from the SAME row, not a separate query.
+        retry_window = timedelta(minutes=5)
+        most_recent_task = (
             db.query(TaskModel)
             .filter(
                 TaskModel.media_file_id == file_id,
-                TaskModel.created_at > datetime.now(UTC) - timedelta(minutes=5),
+                TaskModel.created_at > datetime.now(UTC) - retry_window,
             )
-            .count()
+            .order_by(TaskModel.created_at.desc())
+            .first()
         )
 
-        if recent_tasks > 0:
+        # `created_at` is a nullable column, but the `>` filter above cannot be
+        # satisfied by SQL NULL, so a row reaching here always has one — the
+        # `is not None` narrows for mypy, not a runtime possibility this
+        # query's own predicate already rules out.
+        if most_recent_task is not None and most_recent_task.created_at is not None:
+            seconds_remaining = max(
+                1,
+                int(
+                    (most_recent_task.created_at + retry_window - datetime.now(UTC)).total_seconds()
+                ),
+            )
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Please wait at least 5 minutes between retry attempts",
+                headers={"Retry-After": str(seconds_remaining)},
+            )
+        elif most_recent_task is not None:
+            # Defensive fallback for the type-narrowing branch above — should
+            # be unreachable given the query's own `created_at > ...` filter.
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Please wait at least 5 minutes between retry attempts",
+                headers={"Retry-After": str(int(retry_window.total_seconds()))},
             )
 
         # Check retry limits against the same admin-tunable ceiling

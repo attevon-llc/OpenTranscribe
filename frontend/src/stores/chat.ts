@@ -400,6 +400,8 @@ function createChatStore() {
               ...m,
               status: 'error',
               error: event.message,
+              errorCode: event.code,
+              retryAfter: event.retryAfter ?? null,
               pending: false,
               reasoningStreaming: false,
               reasoningDurationMs,

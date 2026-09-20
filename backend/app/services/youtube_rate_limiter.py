@@ -93,21 +93,26 @@ class YouTubeRateLimiter:
                 self._redis = None
         return self._redis
 
-    def check_rate_limit(self, user_id: int) -> tuple[bool, str]:
+    def check_rate_limit(self, user_id: int) -> tuple[bool, str, int | None]:
         """Check if user can queue another download.
 
         Returns:
-            (allowed: bool, reason: str)
+            (allowed, reason, retry_after_seconds). ``retry_after_seconds`` is
+            derived from the oldest still-counted entry in the tripped window
+            (when it expires the count drops below the limit again) — never a
+            guess or the configured window length. ``None`` when allowed, or
+            when it could not be determined (e.g. the zset raced empty between
+            the count and this lookup).
         """
         if not settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
-            return (True, "")
+            return (True, "", None)
 
         try:
             client = self.redis
             if client is None:
                 # Graceful degradation: allow if Redis unavailable
                 logger.warning("Rate limiter check failed: Redis unavailable. Allowing request.")
-                return (True, "")
+                return (True, "", None)
 
             now = datetime.now(UTC).timestamp()
 
@@ -126,6 +131,7 @@ class YouTubeRateLimiter:
                     False,
                     f"Hourly limit exceeded ({settings.YOUTUBE_USER_RATE_LIMIT_PER_HOUR}/hour). "
                     f"Try again in a few minutes.",
+                    self._seconds_until_oldest_expires(client, hour_key, 3600, now),
                 )
 
             # Check daily limit
@@ -140,14 +146,42 @@ class YouTubeRateLimiter:
                     False,
                     f"Daily limit exceeded ({settings.YOUTUBE_USER_RATE_LIMIT_PER_DAY}/day). "
                     f"Try again tomorrow.",
+                    self._seconds_until_oldest_expires(client, day_key, 86400, now),
                 )
 
-            return (True, "")
+            return (True, "", None)
 
         except Exception as e:
             # Graceful degradation: allow if Redis check fails
             logger.warning(f"Rate limiter check failed: {e}. Allowing request.")
-            return (True, "")
+            return (True, "", None)
+
+    @staticmethod
+    def _seconds_until_oldest_expires(
+        client, key: str, window_seconds: int, now: float
+    ) -> int | None:
+        """Seconds until the OLDEST entry still counted in ``key`` ages out of
+        the window — the moment the count drops back under the limit.
+
+        Args:
+            client: The already-resolved Redis client.
+            key: The zset key for this window.
+            window_seconds: The window's length (3600 or 86400).
+            now: The same ``time.time()``-equivalent timestamp used to count.
+
+        Returns:
+            Seconds to wait (floored at 1), or ``None`` if the zset raced
+            empty between the count and this read.
+        """
+        try:
+            oldest = client.zrange(key, 0, 0, withscores=True)
+            if not oldest:
+                return None
+            _member, oldest_ts = oldest[0]
+            return max(1, int(float(oldest_ts) + window_seconds - now))
+        except Exception as e:
+            logger.warning(f"Failed to compute retry-after for {key}: {e}")
+            return None
 
     def record_download(self, user_id: int) -> None:
         """Record a download attempt with timestamp."""

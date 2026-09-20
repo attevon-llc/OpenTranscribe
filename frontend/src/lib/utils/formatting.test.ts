@@ -7,6 +7,7 @@ import {
   formatSrtTimestamp,
   formatVttTimestamp,
   formatLanguageNames,
+  retryWaitLabel,
 } from './formatting';
 
 /**
@@ -127,5 +128,37 @@ describe('formatLanguageNames', () => {
 
   it('returns an empty string for no languages', () => {
     expect(formatLanguageNames([], 'en')).toBe('');
+  });
+});
+
+describe('retryWaitLabel (issue #788 — rate-limit wait hint)', () => {
+  it('uses the seconds key and count under a minute', () => {
+    expect(retryWaitLabel(3)).toEqual({ key: 'common.retryAfterSeconds', count: 3 });
+  });
+
+  it('rounds fractional seconds to the nearest whole second', () => {
+    expect(retryWaitLabel(3.6)).toEqual({ key: 'common.retryAfterSeconds', count: 4 });
+  });
+
+  it('switches to the minutes key at 60 seconds', () => {
+    expect(retryWaitLabel(60)).toEqual({ key: 'common.retryAfterMinutes', count: 1 });
+  });
+
+  it('rounds to the nearest whole minute, floored at 1', () => {
+    expect(retryWaitLabel(90)).toEqual({ key: 'common.retryAfterMinutes', count: 2 });
+    expect(retryWaitLabel(65)).toEqual({ key: 'common.retryAfterMinutes', count: 1 });
+  });
+
+  it('clamps zero, negative, and non-finite input to "1 second" rather than nonsense', () => {
+    // A UI showing "in -3 seconds" or "in NaN seconds" is worse than a slightly
+    // wrong "in a moment" -- this is the same "never show NaN" rule the header
+    // parser itself is held to.
+    expect(retryWaitLabel(0)).toEqual({ key: 'common.retryAfterSeconds', count: 1 });
+    expect(retryWaitLabel(-5)).toEqual({ key: 'common.retryAfterSeconds', count: 1 });
+    expect(retryWaitLabel(Number.NaN)).toEqual({ key: 'common.retryAfterSeconds', count: 1 });
+    expect(retryWaitLabel(Number.POSITIVE_INFINITY)).toEqual({
+      key: 'common.retryAfterSeconds',
+      count: 1,
+    });
   });
 });

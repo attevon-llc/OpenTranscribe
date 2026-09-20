@@ -16,6 +16,8 @@ interface AuthRequestError {
   };
   request?: unknown;
   message?: string;
+  /** Issue #788: parsed off `Retry-After` by `$lib/axios`'s response interceptor. */
+  retryAfterSeconds?: number;
 }
 
 function asAuthError(error: unknown): AuthRequestError {
@@ -507,6 +509,12 @@ export async function login(
   // The account carries `must_change_password`. The session is real, but every
   // route except `PUT /users/me` and logout will answer 403 until it clears.
   must_change_password?: boolean;
+  // Issue #788: seconds until a 429 may be retried, carried SEPARATELY from
+  // `message` rather than baked into its text — the caller's toast renders
+  // this in its own line via `retryWaitLabel`, and `.toast-message` truncates
+  // long single-line text with an ellipsis, which would have silently eaten
+  // a hint appended to an already-long generic message.
+  retryAfterSeconds?: number;
 }> {
   try {
     const params = new URLSearchParams();
@@ -601,7 +609,10 @@ export async function login(
             (err.response.data?.detail as string) || get(t)('auth.error.invalidRequest');
           break;
         case 429:
-          errorMessage = get(t)('auth.error.tooManyLoginAttempts');
+          // Was: discarded `err.response.data.detail` unconditionally, unlike
+          // every other arm here (issue #788).
+          errorMessage =
+            (err.response.data?.detail as string) || get(t)('auth.error.tooManyLoginAttempts');
           break;
         case 500:
         case 502:
@@ -627,6 +638,9 @@ export async function login(
       message: errorMessage,
       status: err.response?.status,
       email_not_verified: err.response?.status === 403,
+      // Issue #788: only meaningful alongside a 429; `$lib/axios`'s response
+      // interceptor already parsed it off `Retry-After`.
+      retryAfterSeconds: err.response?.status === 429 ? err.retryAfterSeconds : undefined,
     };
   }
 }
@@ -1000,7 +1014,7 @@ export async function verifyMFA(
   mfaToken: string,
   code: string,
   isBackupCode: boolean = false
-): Promise<{ success: boolean; message?: string }> {
+): Promise<{ success: boolean; message?: string; retryAfterSeconds?: number }> {
   try {
     const response = await axiosInstance.post('/auth/mfa/verify', {
       mfa_token: mfaToken,
@@ -1031,15 +1045,17 @@ export async function verifyMFA(
     console.error('MFA verification error:', rawError);
 
     let message = get(t)('auth.error.mfaFailed');
+    let retryAfterSeconds: number | undefined;
     if (error.response?.status === 401) {
       message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidCode');
     } else if (error.response?.status === 400) {
       message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidToken');
     } else if (error.response?.status === 429) {
       message = get(t)('auth.error.mfaTooManyAttempts');
+      retryAfterSeconds = error.retryAfterSeconds;
     }
 
-    return { success: false, message };
+    return { success: false, message, retryAfterSeconds };
   }
 }
 

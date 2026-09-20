@@ -679,9 +679,16 @@ def process_media_url(
         from app.services.youtube_rate_limiter import youtube_rate_limiter
 
         if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
-            allowed, reason = youtube_rate_limiter.check_rate_limit(current_user.id)
+            allowed, reason, retry_after_seconds = youtube_rate_limiter.check_rate_limit(
+                current_user.id
+            )
             if not allowed:
-                raise HTTPException(status_code=429, detail=reason)
+                headers = (
+                    {"Retry-After": str(retry_after_seconds)}
+                    if retry_after_seconds is not None
+                    else None
+                )
+                raise HTTPException(status_code=429, detail=reason, headers=headers)
 
         # Validate and normalize URL
         normalized_url, media_service = _validate_media_url(request_data.url)

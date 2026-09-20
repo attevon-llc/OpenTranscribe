@@ -5260,5 +5260,9 @@
   "settings.emailNotifications.links.warnNoRecipients": "Esta configuração não tem destinatários predefinidos e nenhum é adicionado aqui, por isso nada será enviado.",
   "settings.emailNotifications.links.deleteConfigTitle": "Eliminar esta configuração de e-mail?",
   "settings.emailNotifications.links.deleteConfigMessage": "Eliminar \"{{name}}\" também a desassocia de {{count}} fonte(s) monitorizada(s), que deixarão de ser notificadas.",
-  "a11y.skipToContent": "Pular para o conteúdo principal"
+  "a11y.skipToContent": "Pular para o conteúdo principal",
+  "common.retryAfterSeconds_one": "Tente novamente em {{count}} segundo",
+  "common.retryAfterSeconds_other": "Tente novamente em {{count}} segundos",
+  "common.retryAfterMinutes_one": "Tente novamente em {{count}} minuto",
+  "common.retryAfterMinutes_other": "Tente novamente em {{count}} minutos"
 }

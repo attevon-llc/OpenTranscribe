@@ -1026,6 +1026,11 @@ app.add_middleware(
         "X-Request-ID",
         "X-CSRF-Token",
     ],
+    # Defence in depth (issue #788): the SPA is same-origin in dev (Vite proxy)
+    # and prod (nginx), so a browser can already read these response headers
+    # without this — but exposing them removes a trap for any future
+    # split-host or third-party client that isn't.
+    expose_headers=["Retry-After", "X-RateLimit-Limit"],
 )
 
 # Configure maximum upload size (50GB)

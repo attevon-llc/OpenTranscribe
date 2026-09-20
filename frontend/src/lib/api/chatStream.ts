@@ -12,6 +12,7 @@
  */
 
 import axiosInstance, { getCsrfToken } from '$lib/axios';
+import { parseRetryAfter } from '$lib/utils/retryAfter';
 import type { ChatStreamEvent, SendMessageRequest } from '$lib/types/chat';
 
 /** Watchdog: no bytes at all for this long means the stream is wedged. */
@@ -176,7 +177,10 @@ async function errorFromResponse(response: Response): Promise<ChatStreamEvent> {
   }
 
   if (response.status === 402) return { type: 'error', code: 'quota_exceeded', message };
-  if (response.status === 429) return { type: 'error', code: 'rate_limited', message };
+  if (response.status === 429) {
+    const retryAfter = parseRetryAfter(response.headers.get('Retry-After')) ?? undefined;
+    return { type: 'error', code: 'rate_limited', message, retryAfter };
+  }
   if (response.status === 400 && /llm/i.test(message)) {
     return { type: 'error', code: 'llm_unconfigured', message };
   }

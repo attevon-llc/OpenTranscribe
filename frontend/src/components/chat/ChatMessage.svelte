@@ -14,7 +14,7 @@
   import ChatMessageMeta from './ChatMessageMeta.svelte';
   import ChatReasoning from './ChatReasoning.svelte';
   import ChatSources from './ChatSources.svelte';
-  import { formatLanguageNames } from '$lib/utils/formatting';
+  import { formatLanguageNames, retryWaitLabel } from '$lib/utils/formatting';
   import type { ChatMessage } from '$lib/types/chat';
 
   export let message: ChatMessage;
@@ -159,6 +159,13 @@
         <p class="error-text" data-testid="chat-message-error">
           {message.error || $t('chat.message.errorGeneric')}
         </p>
+        {#if message.errorCode === 'rate_limited' && message.retryAfter}
+          <p class="error-retry-hint" data-testid="chat-message-retry-after">
+            {$t(retryWaitLabel(message.retryAfter).key, {
+              count: retryWaitLabel(message.retryAfter).count,
+            })}
+          </p>
+        {/if}
       {/if}
 
       {#if wasCancelled}
@@ -310,6 +317,12 @@
     border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.25);
     color: var(--error-color, #dc3545);
     font-size: 0.85rem;
+  }
+
+  .error-retry-hint {
+    margin: 0.25rem 0 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
   }
 
   .context-warning {

@@ -149,6 +149,31 @@ export function taskProgressPercent(progress: unknown): number {
 }
 
 /**
+ * Translation key + plural count for a rate-limit "try again in..." hint
+ * (issue #788). Returns a key rather than a rendered string so the caller
+ * supplies the actual translation via `$t(key, { count })` — this file stays
+ * i18n-agnostic like every other formatter here, and i18next's `_one`/`_other`
+ * plural suffixes need the real `count` value at call time, not baked in here.
+ *
+ * Deliberately STATIC, not a live countdown (issue #788 J7): a ticking label
+ * would re-announce on every assistive-tech pass since the toast/error region
+ * is `role="alert"`/`role="status"`. One number, chosen once, is both simpler
+ * and more accessible than a per-second re-render.
+ *
+ * @param seconds Seconds to wait, as parsed from a `Retry-After` header.
+ *   Non-finite or non-positive input is clamped to 1 second — "try again in a
+ *   moment" is safer than a nonsensical "in -3 seconds" or "in NaN seconds".
+ */
+export function retryWaitLabel(seconds: number): { key: string; count: number } {
+  const clamped = Number.isFinite(seconds) ? Math.max(1, Math.round(seconds)) : 1;
+  if (clamped < 60) {
+    return { key: 'common.retryAfterSeconds', count: clamped };
+  }
+  const minutes = Math.max(1, Math.round(clamped / 60));
+  return { key: 'common.retryAfterMinutes', count: minutes };
+}
+
+/**
  * Render ISO language codes as names in the reader's own language.
  *
  * Purely presentational, and one of the approved client-side transforms: it is

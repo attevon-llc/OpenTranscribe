@@ -5260,5 +5260,9 @@
   "settings.emailNotifications.links.warnNoRecipients": "لا يحتوي هذا الإعداد على مستلمين افتراضيين ولم يُضف أي مستلم هنا، لذا لن يُرسل شيء.",
   "settings.emailNotifications.links.deleteConfigTitle": "حذف إعداد البريد هذا؟",
   "settings.emailNotifications.links.deleteConfigMessage": "حذف «{{name}}» يلغي ربطه أيضًا بـ {{count}} من مصادر المراقبة، والتي ستتوقف عن تلقي الإشعارات.",
-  "a11y.skipToContent": "التخطي إلى المحتوى الرئيسي"
+  "a11y.skipToContent": "التخطي إلى المحتوى الرئيسي",
+  "common.retryAfterSeconds_one": "أعد المحاولة بعد {{count}} ثانية",
+  "common.retryAfterSeconds_other": "أعد المحاولة بعد {{count}} ثوانٍ",
+  "common.retryAfterMinutes_one": "أعد المحاولة بعد {{count}} دقيقة",
+  "common.retryAfterMinutes_other": "أعد المحاولة بعد {{count}} دقائق"
 }

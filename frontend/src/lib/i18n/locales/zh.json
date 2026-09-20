@@ -5260,5 +5260,9 @@
   "settings.emailNotifications.links.warnNoRecipients": "此配置没有默认收件人，此处也未添加任何收件人，因此不会发送任何内容。",
   "settings.emailNotifications.links.deleteConfigTitle": "删除此邮件配置？",
   "settings.emailNotifications.links.deleteConfigMessage": "删除“{{name}}”同时会取消它与 {{count}} 个监视来源的关联，这些来源将不再收到通知。",
-  "a11y.skipToContent": "跳转到主要内容"
+  "a11y.skipToContent": "跳转到主要内容",
+  "common.retryAfterSeconds_one": "{{count}} 秒后重试",
+  "common.retryAfterSeconds_other": "{{count}} 秒后重试",
+  "common.retryAfterMinutes_one": "{{count}} 分钟后重试",
+  "common.retryAfterMinutes_other": "{{count}} 分钟后重试"
 }

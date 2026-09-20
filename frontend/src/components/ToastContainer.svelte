@@ -10,6 +10,8 @@
         message={toast.message}
         type={toast.type}
         duration={0}
+        retryAfterSeconds={toast.retryAfterSeconds}
+        action={toast.action}
         on:dismiss={() => toastStore.dismiss(toast.id)}
       />
     {/each}

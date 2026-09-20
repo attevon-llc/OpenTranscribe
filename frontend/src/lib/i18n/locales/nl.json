@@ -5260,5 +5260,9 @@
   "settings.emailNotifications.links.warnNoRecipients": "Deze configuratie heeft geen standaardontvangers en hier zijn er geen toegevoegd, dus er wordt niets verzonden.",
   "settings.emailNotifications.links.deleteConfigTitle": "Deze e-mailconfiguratie verwijderen?",
   "settings.emailNotifications.links.deleteConfigMessage": "Het verwijderen van \"{{name}}\" ontkoppelt het ook van {{count}} bewaakte bron(nen), die dan geen meldingen meer krijgen.",
-  "a11y.skipToContent": "Naar hoofdinhoud gaan"
+  "a11y.skipToContent": "Naar hoofdinhoud gaan",
+  "common.retryAfterSeconds_one": "Probeer het over {{count}} seconde opnieuw",
+  "common.retryAfterSeconds_other": "Probeer het over {{count}} seconden opnieuw",
+  "common.retryAfterMinutes_one": "Probeer het over {{count}} minuut opnieuw",
+  "common.retryAfterMinutes_other": "Probeer het over {{count}} minuten opnieuw"
 }

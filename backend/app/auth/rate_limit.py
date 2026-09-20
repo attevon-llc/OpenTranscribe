@@ -16,6 +16,7 @@ Configuration is managed via settings:
 """
 
 import logging
+import time
 from collections.abc import Callable
 
 from fastapi import Request
@@ -288,6 +289,13 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Res
     )
 
     # Return a structured error response
+    retry_seconds = _retry_after_from_window_stats(request, exc)
+    if retry_seconds is None:
+        # Fallback only: the configured window LENGTH, not time-to-reset. See
+        # that function's docstring for why this is a worse number and only
+        # reached if slowapi's own per-request state is unexpectedly absent.
+        retry_seconds = _extract_retry_seconds(exc.detail)
+
     return JSONResponse(
         status_code=429,
         content={
@@ -295,21 +303,68 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Res
             "retry_after": exc.detail,
         },
         headers={
-            "Retry-After": str(_extract_retry_seconds(exc.detail)),
+            "Retry-After": str(retry_seconds),
             "X-RateLimit-Limit": exc.detail,
         },
     )
 
 
+def _retry_after_from_window_stats(request: Request, exc: RateLimitExceeded) -> int | None:
+    """Seconds until THIS specific bucket resets, read from the limiter's storage.
+
+    ``Retry-After`` must express time-to-reset for the caller's own bucket, not the
+    configured window length — a client that trips a 10/minute limit at second 57
+    of the window should be told ~3 seconds, not 60. ``_extract_retry_seconds``
+    (the previous and now-fallback-only implementation) string-matched the window
+    *unit* out of the limit's description and returned a fixed constant per unit —
+    always 60 for any "N per minute" limit, regardless of when in the window the
+    request landed. That is wrong in both directions: it can tell a caller "60"
+    when the true answer is 3 (trains users to give up), or "1" for a "per second"
+    limit whose window is actually longer.
+
+    slowapi's own ``__evaluate_limits`` sets ``request.state.view_rate_limit`` to
+    ``(limit_item, [limit_key, limit_scope])`` immediately before raising
+    ``RateLimitExceeded`` — exactly the ``(item, *identifiers)`` pair
+    ``limiter.limiter.get_window_stats`` needs to look up the SAME bucket that was
+    just hit, from the same storage (Redis or the in-memory fallback) already
+    driving the rest of rate limiting.
+
+    Args:
+        request: The current request, carrying slowapi's per-request state.
+        exc: The RateLimitExceeded exception being handled.
+
+    Returns:
+        Seconds to wait, floored at 1, or ``None`` if the state slowapi normally
+        sets is unexpectedly absent or the storage lookup fails — should not
+        happen in practice, since ``__evaluate_limits`` always sets it before
+        raising.
+    """
+    view_rate_limit = getattr(request.state, "view_rate_limit", None)
+    if not view_rate_limit:
+        return None
+
+    limit_item, identifiers = view_rate_limit
+    try:
+        reset_at, _remaining = limiter.limiter.get_window_stats(limit_item, *identifiers)
+        return max(1, int(reset_at - time.time()))
+    except Exception:
+        logger.debug("Could not query rate limit window stats", exc_info=True)
+        return None
+
+
 def _extract_retry_seconds(limit_detail: str) -> int:
     """
-    Extract retry seconds from rate limit detail string.
+    Fallback ONLY — see ``_retry_after_from_window_stats``, which is preferred
+    whenever slowapi's per-request state is available. This returns the
+    configured window LENGTH parsed out of the limit description string, not
+    time until this specific bucket resets, and is wrong for any request that
+    doesn't land at the very start of a fresh window.
 
     Args:
         limit_detail: Rate limit detail string (e.g., "10 per 1 minute").
 
     Returns:
-        Number of seconds to wait before retrying.
+        Number of seconds in the limit's configured window.
     """
     # Default retry time based on limit window
     if "minute" in limit_detail.lower():

@@ -280,6 +280,40 @@ describe('streamChatMessage', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
+      headers: new Headers({ 'Retry-After': '12' }),
+      json: async () => ({ detail: 'Hourly chat limit reached.' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const events: ChatStreamEvent[] = [];
+    await streamChatMessage(
+      'conv-1',
+      { content: 'hi' },
+      (e) => events.push(e),
+      new AbortController().signal
+    );
+
+    // Issue #788: a 429's Retry-After header rides along on the error event so
+    // the UI can show a wait time instead of a generic message.
+    expect(events).toEqual([
+      {
+        type: 'error',
+        code: 'rate_limited',
+        message: 'Hourly chat limit reached.',
+        retryAfter: 12,
+      },
+    ]);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('degrades to no retryAfter when the 429 carries no Retry-After header', async () => {
+    const { streamChatMessage } = await import('./chatStream');
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers(),
       json: async () => ({ detail: 'Hourly chat limit reached.' }),
     });
     vi.stubGlobal('fetch', fetchMock);

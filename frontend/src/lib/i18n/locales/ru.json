@@ -5260,5 +5260,9 @@
   "settings.emailNotifications.links.warnNoRecipients": "У этой конфигурации нет получателей по умолчанию, и здесь они не добавлены, поэтому ничего не отправится.",
   "settings.emailNotifications.links.deleteConfigTitle": "Удалить эту конфигурацию эл. почты?",
   "settings.emailNotifications.links.deleteConfigMessage": "Удаление «{{name}}» также отвяжет её от источников наблюдения ({{count}}), которые перестанут получать уведомления.",
-  "a11y.skipToContent": "Перейти к основному содержимому"
+  "a11y.skipToContent": "Перейти к основному содержимому",
+  "common.retryAfterSeconds_one": "Повторите попытку через {{count}} секунду",
+  "common.retryAfterSeconds_other": "Повторите попытку через {{count}} секунд",
+  "common.retryAfterMinutes_one": "Повторите попытку через {{count}} минуту",
+  "common.retryAfterMinutes_other": "Повторите попытку через {{count}} минут"
 }

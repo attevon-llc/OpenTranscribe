@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { isCloudEdition } from '$lib/edition';
+import { parseRetryAfter } from '$lib/utils/retryAfter';
 
 // Create axios instance with consistent base URL for all environments
 // This ensures the same behavior in development and production with nginx
@@ -147,6 +148,22 @@ axiosInstance.interceptors.response.use(
     // and should not trigger 401 refresh or error logging.
     if (isRequestCancelled(error)) {
       return Promise.reject(error);
+    }
+
+    // Rate limited (issue #788): parse Retry-After ONCE, here, and attach it to
+    // the error rather than popping UI ourselves. Axios lower-cases header
+    // keys (unlike `fetch`'s case-insensitive `Headers.get`), hence the
+    // literal 'retry-after'. Attaching rather than toasting avoids a double
+    // toast when a caller ALSO calls `handleApiError` (`$lib/utils/apiError`,
+    // which reads `retryAfterSeconds` off the error to render the wait hint)
+    // or renders its own inline message (e.g. `stores/auth.ts`'s login/MFA
+    // 429 arms) — this module has no way to know which a given call site does,
+    // so it must not assume neither.
+    if (error.response?.status === 429) {
+      const retryAfterSeconds = parseRetryAfter(error.response.headers?.['retry-after']);
+      if (retryAfterSeconds !== null) {
+        error.retryAfterSeconds = retryAfterSeconds;
+      }
     }
 
     // Quota exceeded (cloud edition): the backend returns HTTP 402 when an upload

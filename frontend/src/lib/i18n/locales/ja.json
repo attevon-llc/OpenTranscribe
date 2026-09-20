@@ -5260,5 +5260,9 @@
   "settings.emailNotifications.links.warnNoRecipients": "この設定には既定の宛先がなく、ここにも追加されていないため、何も送信されません。",
   "settings.emailNotifications.links.deleteConfigTitle": "このメール設定を削除しますか？",
   "settings.emailNotifications.links.deleteConfigMessage": "「{{name}}」を削除すると、{{count}} 件の監視ソースとの関連付けも解除され、それらへの通知が停止します。",
-  "a11y.skipToContent": "メインコンテンツへスキップ"
+  "a11y.skipToContent": "メインコンテンツへスキップ",
+  "common.retryAfterSeconds_one": "{{count}}秒後にもう一度お試しください",
+  "common.retryAfterSeconds_other": "{{count}}秒後にもう一度お試しください",
+  "common.retryAfterMinutes_one": "{{count}}分後にもう一度お試しください",
+  "common.retryAfterMinutes_other": "{{count}}分後にもう一度お試しください"
 }

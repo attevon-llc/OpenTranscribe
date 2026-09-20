@@ -2,12 +2,23 @@
   import { fly } from 'svelte/transition';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import { retryWaitLabel } from '$lib/utils/formatting';
+  import type { ToastAction } from '$stores/toast';
 
   export let message: string = '';
   export let type: 'success' | 'error' | 'info' | 'warning' = 'success';
   export let duration: number = 3000;
+  /** Issue #788: seconds until a rate-limited action can be retried. */
+  export let retryAfterSeconds: number | undefined = undefined;
+  /** Issue #788: an optional clickable action, e.g. a "Retry" button. */
+  export let action: ToastAction | undefined = undefined;
 
   const dispatch = createEventDispatcher();
+
+  // Non-error toasts are advisory, not alarming -- `role="status"` announces
+  // politely instead of interrupting like `role="alert"` (issue #788 / #785).
+  $: toastRole = type === 'error' || type === 'warning' ? 'alert' : 'status';
+  $: retryLabel = retryAfterSeconds != null ? retryWaitLabel(retryAfterSeconds) : null;
 
   const icons = {
     success: '✓',
@@ -39,10 +50,18 @@
   class="toast toast-{type}"
   style="--toast-color: {colors[type]}"
   transition:fly={{ y: 50, duration: 300 }}
-  role="alert"
+  role={toastRole}
 >
   <span class="toast-icon">{@html icons[type]}</span>
-  <span class="toast-message">{message}</span>
+  <span class="toast-message">
+    {message}
+    {#if retryLabel}
+      <span class="toast-retry-hint">{$t(retryLabel.key, { count: retryLabel.count })}</span>
+    {/if}
+  </span>
+  {#if action}
+    <button class="toast-action" on:click={action.onClick}>{action.label}</button>
+  {/if}
   <button class="toast-close" on:click={dismiss} aria-label={$t('toast.dismiss')}>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -100,6 +119,36 @@
 
   :global([data-theme='dark']) .toast-message {
     color: var(--text-primary);
+  }
+
+  .toast-retry-hint {
+    display: block;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    white-space: normal;
+  }
+
+  .toast-action {
+    background: none;
+    border: 1px solid var(--toast-color);
+    color: var(--toast-color);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+
+  .toast-action:hover {
+    background: var(--toast-color);
+    color: white;
+  }
+
+  :global([data-theme='dark']) .toast-action:hover {
+    color: var(--background-color);
   }
 
   .toast-close {

@@ -460,7 +460,9 @@
         setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
         console.error('Login.svelte: Login failed:', result.message);
-        toastStore.error(result.message || $t('auth.loginFailed'));
+        toastStore.error(result.message || $t('auth.loginFailed'), undefined, {
+          retryAfterSeconds: result.retryAfterSeconds,
+        });
 
         // Steer focus from the HTTP status, never from the message text: the
         // message is localised, so matching English substrings ('email',
@@ -630,7 +632,9 @@
         loginSuccess = true;
         setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
-        toastStore.error(result.message || $t('auth.mfaVerificationFailed'));
+        toastStore.error(result.message || $t('auth.mfaVerificationFailed'), undefined, {
+          retryAfterSeconds: result.retryAfterSeconds,
+        });
         mfaCode = "";
       }
     } catch (err) {

@@ -2010,6 +2010,7 @@
   "gallery.cancelButton": "إلغاء",
   "gallery.loadingCount": "جارٍ التحميل...",
   "gallery.noFilesMatch": "لا توجد ملفات مطابقة",
+  "gallery.noFilesMatchDescription": "حاول تعديل عوامل التصفية أو مسحها.",
   "gallery.showingAllCount": "عرض جميع العناصر البالغ عددها {{count}}",
   "gallery.showingPartialCount": "عرض {{loaded}} من {{total}} عنصرًا",
   "gallery.loadingMore": "جارٍ تحميل المزيد...",

@@ -68,6 +68,7 @@
     <div class="filter-content">
       <FilterSidebar
         bind:this={filterSidebarRef}
+        showSearchField={false}
         searchQuery={searchQuery}
         selectedTags={selectedTags}
         selectedSpeakers={selectedSpeakers}

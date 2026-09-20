@@ -20,6 +20,13 @@
   export let pendingNewFiles: Set<string>;
   export let pendingDeletions: Set<string>;
   export let scrollContainer: HTMLElement | null = null;
+  /**
+   * Whether any filter (search, tags, dates, …) is currently narrowing the
+   * list. An empty `files` array with a filter active means "no matches", not
+   * "your library is empty" — issue #747 §4.1 defect 3: this used to always
+   * say the library was empty, even with 500 files in it and one active filter.
+   */
+  export let filtersActive = false;
 
   const dispatch = createEventDispatcher();
 
@@ -51,33 +58,46 @@
   </div>
 {:else if files.length === 0}
   <EmptyState
-    title={selectedCollectionId ? $t('gallery.noFilesInCollection') : $t('gallery.libraryEmpty')}
-    description={$t('gallery.uploadFirstFile')}
+    title={selectedCollectionId
+      ? $t('gallery.noFilesInCollection')
+      : filtersActive
+        ? $t('gallery.noFilesMatch')
+        : $t('gallery.libraryEmpty')}
+    description={!selectedCollectionId && filtersActive
+      ? $t('gallery.noFilesMatchDescription')
+      : $t('gallery.uploadFirstFile')}
   />
 {:else}
-  {#if $galleryViewMode === 'list'}
-    <!-- List View (Virtual Scrolling) -->
-    <VirtualList
-      items={files}
-      {scrollContainer}
-      {isSelecting}
-      {selectedFiles}
-      {pendingNewFiles}
-      {pendingDeletions}
-      on:errorclick
-    />
-  {:else}
-    <!-- Grid View (Virtual Scrolling) -->
-    <VirtualGrid
-      items={files}
-      {scrollContainer}
-      {isSelecting}
-      {selectedFiles}
-      {pendingNewFiles}
-      {pendingDeletions}
-      on:errorclick
-    />
-  {/if}
+  <!-- E2E readiness oracle (issue #747 §4.5): real content has rendered — not
+       skeleton, not empty, not error. Replaces the old `.gallery-header-right`
+       wait, which was gated on `files.length > 0` and disappeared entirely once
+       that gate was removed from GalleryHeader. See gallery/CLAUDE.md and
+       backend/tests/e2e/conftest.py's `gallery_page` fixture. -->
+  <div data-testid="gallery-files-loaded">
+    {#if $galleryViewMode === 'list'}
+      <!-- List View (Virtual Scrolling) -->
+      <VirtualList
+        items={files}
+        {scrollContainer}
+        {isSelecting}
+        {selectedFiles}
+        {pendingNewFiles}
+        {pendingDeletions}
+        on:errorclick
+      />
+    {:else}
+      <!-- Grid View (Virtual Scrolling) -->
+      <VirtualGrid
+        items={files}
+        {scrollContainer}
+        {isSelecting}
+        {selectedFiles}
+        {pendingNewFiles}
+        {pendingDeletions}
+        on:errorclick
+      />
+    {/if}
+  </div>
 
   <!-- Infinite scroll sentinel -->
   <div bind:this={infiniteScrollSentinel} class="scroll-sentinel"></div>

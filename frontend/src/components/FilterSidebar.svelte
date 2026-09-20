@@ -53,6 +53,25 @@
   /** @type {string} */
   export let searchQuery = '';
 
+  /**
+   * Show the "Search Files" section in this sidebar.
+   *
+   * Issue #747 moved the gallery's filename/title search into the toolbar
+   * (`GalleryHeader`), so `GalleryFilterPanel` renders this component with
+   * `showSearchField={false}` — the search UI simply doesn't belong in the
+   * sidebar there any more.
+   *
+   * `/search` (`routes/search/+page.svelte`) is a DIFFERENT consumer of this
+   * same component: it binds `searchQuery` as its own "filter results by
+   * title" facet, independent of the page's main search query, and keeps this
+   * section visible (`showSearchField` defaults to `true`). The `searchQuery`
+   * prop, its debounce watcher, and the `search` field in the `filter` event
+   * payload are NOT removed — only the sidebar section that lets the GALLERY
+   * user type into it is hidden, and `searchQuery` there is now driven by the
+   * toolbar's own state instead of a bound local input.
+   */
+  export let showSearchField = true;
+
   /** @type {string[]} */
   export let selectedTags: string[] = [];
 
@@ -210,8 +229,15 @@
     debouncedApply.cleanup();
   });
 
-  // Reactive watchers for text inputs (debounced)
-  $: if (isInitialized && searchQuery !== prevSearchQuery) {
+  // Reactive watchers for text inputs (debounced).
+  //
+  // Gated on `showSearchField` too: when it's false (the gallery — issue #747),
+  // `searchQuery` is driven entirely by the toolbar's own SearchBar and its own
+  // debounce/fetch, one level up in routes/+page.svelte. Without this gate,
+  // every toolbar keystroke would ALSO retrigger this component's independent
+  // 400ms debounce and dispatch a second, redundant `filter` event — a
+  // duplicate fetch for a value that was already applied.
+  $: if (isInitialized && showSearchField && searchQuery !== prevSearchQuery) {
     prevSearchQuery = searchQuery;
     triggerFiltersDebounced();
   }
@@ -678,18 +704,20 @@
     </div>
   </div>
 
-  <div class="filter-section">
-    <h3>{$t('filter.searchFiles')}</h3>
-    <input
-      type="text"
-      bind:value={searchQuery}
-      on:keydown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
-      placeholder={$t('filter.searchPlaceholder')}
-      class="filter-input"
-      title={$t('filter.searchTooltip')}
-    />
-    <small class="input-help">{$t('filter.searchHelp')}</small>
-  </div>
+  {#if showSearchField}
+    <div class="filter-section">
+      <h3>{$t('filter.searchFiles')}</h3>
+      <input
+        type="text"
+        bind:value={searchQuery}
+        on:keydown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+        placeholder={$t('filter.searchPlaceholder')}
+        class="filter-input"
+        title={$t('filter.searchTooltip')}
+      />
+      <small class="input-help">{$t('filter.searchHelp')}</small>
+    </div>
+  {/if}
 
   <div class="filter-section">
     <h3>{$t('filter.tags')}</h3>

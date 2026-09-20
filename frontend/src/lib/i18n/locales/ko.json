@@ -2010,6 +2010,7 @@
   "gallery.cancelButton": "취소",
   "gallery.loadingCount": "불러오는 중...",
   "gallery.noFilesMatch": "일치하는 파일이 없습니다",
+  "gallery.noFilesMatchDescription": "필터를 조정하거나 지워 보세요.",
   "gallery.showingAllCount": "전체 {{count}}개 항목 표시 중",
   "gallery.showingPartialCount": "{{total}}개 중 {{loaded}}개 표시 중",
   "gallery.loadingMore": "더 불러오는 중...",

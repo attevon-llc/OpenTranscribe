@@ -2010,6 +2010,7 @@
   "gallery.cancelButton": "Annuleren",
   "gallery.loadingCount": "Laden...",
   "gallery.noFilesMatch": "Geen bestanden komen overeen",
+  "gallery.noFilesMatchDescription": "Probeer uw filters aan te passen of te wissen.",
   "gallery.showingAllCount": "Alle {{count}} items worden weergegeven",
   "gallery.showingPartialCount": "{{loaded}} van {{total}} items worden weergegeven",
   "gallery.loadingMore": "Meer laden...",

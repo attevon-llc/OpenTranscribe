@@ -305,7 +305,14 @@ class TestNormalModeButtons:
         expect(gallery_page.locator(".process-btn")).to_be_visible(timeout=5000)
         expect(gallery_page.locator(".organize-btn")).to_be_visible(timeout=5000)
         expect(gallery_page.locator(".delete-btn")).to_be_visible(timeout=5000)
-        expect(gallery_page.locator(".cancel-btn")).to_be_visible(timeout=5000)
+        # Scoped to `.gallery-action-buttons`, not a bare `.cancel-btn` — issue #752's
+        # upload tray (`UploadProgress.svelte`) declares its own unscoped `.cancel-btn`
+        # too (see gallery/CLAUDE.md §13.17-equivalent note), and an unscoped locator
+        # here would become a Playwright strict-mode violation the moment that tray is
+        # visible on the page (e.g. an in-flight upload left over from another test).
+        expect(gallery_page.locator(".gallery-action-buttons .cancel-btn")).to_be_visible(
+            timeout=5000
+        )
 
     def test_normal_buttons_not_visible_when_selecting(self, gallery_page: Page) -> None:
         """Normal mode buttons should disappear when entering selection mode."""
@@ -315,7 +322,13 @@ class TestNormalModeButtons:
         expect(gallery_page.locator(".collections-btn")).not_to_be_visible(timeout=3000)
 
     def test_sort_and_view_controls_visible(self, gallery_page: Page) -> None:
-        """Sort dropdown, view toggle, and count chip should be on the right.
+        """Sort dropdown, view toggle, and count chip should be visible, unconditionally.
+
+        Issue #747 restructured the toolbar into two rows: sort/view-toggle live in row 2's
+        right-hand group, count chip + select/selection tools in row 2's left-hand group —
+        `.gallery-header-right` no longer exists (it was row 1's normal-mode group in the old
+        single-row layout, gated on `files.length > 0`; the new row 2 is deliberately NEVER
+        gated on file count — see gallery/CLAUDE.md).
 
         Budget is the shared app-shell one even though `gallery_page` has already waited on
         `.gallery-action-buttons`, so the shell is provably up by the time this runs and 5 s
@@ -326,9 +339,11 @@ class TestNormalModeButtons:
         one backend) a sub-30 s wait on a shell landmark measures machine load rather than
         the page. See tests/e2e/timeouts.py.
         """
-        expect(gallery_page.locator(".gallery-header-right")).to_be_visible(
+        expect(gallery_page.locator(".toolbar-row-bottom .toolbar-row-right")).to_be_visible(
             timeout=APP_SHELL_READY_MS
         )
+        expect(gallery_page.locator(".sort-dropdown")).to_be_visible(timeout=5000)
+        expect(gallery_page.locator(".count-chip")).to_be_visible(timeout=5000)
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +512,11 @@ class TestSelectionModeButtons:
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         expect(self.page.locator(".dropdown-menu")).to_be_visible()
 
-        self.page.locator(".gallery-header").click(position={"x": 5, "y": 5})
+        # Top-left corner of the toolbar's own padding — issue #747 put a search
+        # input at the start of row 1, but it starts flush after the container's
+        # padding, so (5, 5) still lands in dead padding space rather than the
+        # input itself.
+        self.page.locator(".gallery-toolbar").click(position={"x": 5, "y": 5})
         # Same here — to_have_count(0) polls until the menu is gone (issue #431).
         expect(self.page.locator(".dropdown-menu")).to_have_count(0, timeout=3000)
 
@@ -515,38 +534,51 @@ class TestSelectionModeButtons:
         expect(menu.locator(".dropdown-item").first).to_contain_text("Collection")
 
     def test_toolbar_does_not_overflow_header(self) -> None:
-        """Selection toolbar should not extend past the gallery header right controls."""
-        # `.gallery-header-right` (GalleryHeader.svelte) is gated on `files.length > 0`.
-        # That's not just a load-time race: `fetchFiles()` (+page.svelte) calls
-        # `resetPagination()` — which clears `files` to `[]` — on every refetch, and a
-        # refetch can be triggered mid-test by another concurrent client's upload/
-        # delete (websocket-driven refresh) on this shared dev stack, not only by this
-        # page's own initial load. So a single read can land in that empty window at
-        # ANY point, not just at the start. Read both boxes together (never split
-        # across two `.bounding_box()` calls straddling different renders) and retry
-        # a few times rather than treating one `None` reading as the final answer.
-        left_box = right_box = None
+        """Neither toolbar row's left group should extend past its own right group.
+
+        Issue #747 restructured the toolbar into two independent rows — row 1
+        (search / primary actions) and row 2 (count chip + selection tools / sort +
+        view toggle) — so there is no longer a single `.gallery-header-left` /
+        `.gallery-header-right` pair to compare; each row can independently overflow.
+        Neither row is gated on `files.length` any more (that was the old
+        `.gallery-header-right` gate — see gallery/CLAUDE.md), but a refetch can still
+        transiently clear `files` to `[]` mid-test (`fetchFiles()` calls
+        `resetPagination()`, and a refetch can be triggered by another concurrent
+        client's upload/delete on this shared dev stack). Read all four boxes
+        together (never split across separate `.bounding_box()` calls straddling
+        different renders) and retry a few times rather than treating one `None`
+        reading as the final answer.
+        """
+        boxes = None
         for _ in range(10):
             boxes = self.page.evaluate(
                 """() => {
-                    const left = document.querySelector('.gallery-header-left');
-                    const right = document.querySelector('.gallery-header-right');
-                    return {
-                        left: left ? left.getBoundingClientRect() : null,
-                        right: right ? right.getBoundingClientRect() : null,
-                    };
+                    const rows = ['toolbar-row-top', 'toolbar-row-bottom'].map((cls) => {
+                        const row = document.querySelector('.' + cls);
+                        const left = row ? row.querySelector('.toolbar-row-left') : null;
+                        const right = row ? row.querySelector('.toolbar-row-right') : null;
+                        return {
+                            left: left ? left.getBoundingClientRect() : null,
+                            right: right ? right.getBoundingClientRect() : null,
+                        };
+                    });
+                    return { top: rows[0], bottom: rows[1] };
                 }"""
             )
-            left_box, right_box = boxes["left"], boxes["right"]
-            if left_box and right_box:
+            if all(boxes[row]["left"] and boxes[row]["right"] for row in ("top", "bottom")):
                 break
             self.page.wait_for_timeout(300)
-        assert left_box and right_box, (
-            "gallery header left/right sections not found (or not rendered) to check overflow on"
-        )
-        assert left_box["x"] + left_box["width"] <= right_box["x"] + 5, (
-            "Action buttons overflow into sort/view controls"
-        )
+        assert boxes is not None
+        for row_name in ("top", "bottom"):
+            left_box = boxes[row_name]["left"]
+            right_box = boxes[row_name]["right"]
+            assert left_box and right_box, (
+                f"toolbar-row-{row_name}'s left/right sections not found (or not "
+                "rendered) to check overflow on"
+            )
+            assert left_box["x"] + left_box["width"] <= right_box["x"] + 5, (
+                f"toolbar-row-{row_name}: left group overflows into the right group"
+            )
 
 
 # ---------------------------------------------------------------------------

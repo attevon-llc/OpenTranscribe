@@ -2009,6 +2009,7 @@
   "gallery.cancelButton": "取消",
   "gallery.loadingCount": "加载中...",
   "gallery.noFilesMatch": "没有匹配的文件",
+  "gallery.noFilesMatchDescription": "请尝试调整或清除筛选条件。",
   "gallery.showingAllCount": "显示全部 {{count}} 项",
   "gallery.showingPartialCount": "显示 {{loaded}} / {{total}} 项",
   "gallery.loadingMore": "加载更多...",

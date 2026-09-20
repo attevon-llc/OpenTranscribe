@@ -20,7 +20,8 @@
    * toolbar was applying two different rules. Add to collection and Add or
    * Edit Tags are gated the same way for the same reason — with nothing
    * selected they invited the user to add to, or edit, nothing. The toolbar's
-   * own Collections and Tags buttons remain ungated and open the managers. */
+   * own Collections and Tags buttons (GalleryPrimaryActions) remain ungated
+   * and open the managers. */
   $: selectedFileObjects = files.filter(f => $galleryState.selectedFiles.has(f.uuid));
   $: hasCompletedSelected = selectedFileObjects.some(f => f.status === 'completed');
   $: hasFailedSelected = selectedFileObjects.some(f => f.status === 'error');
@@ -63,21 +64,14 @@
   });
 
   // Event handlers
-  function handleUploadClick() { galleryStore.triggerUpload(); }
-  function handleCollectionsClick() { galleryStore.triggerCollections(); }
-  // Tags sit beside Collections because they are the same kind of thing: metadata
-  // over the library, not a place to navigate to. The gallery decides which mode
-  // to open from the current selection, exactly as Collections does.
-  // The single door to tagging, in both modes. The Organize menu used to carry
-  // separate "Add tag" and "Remove tag" entries, but the modal now does both —
-  // three doors to one dialog is three things to explain.
-  function handleTagsClick() { galleryStore.triggerTags(); }
-  // Same destination from inside the Organize menu, which has to close itself.
-  function handleTagsFromMenu() { galleryStore.triggerTags(); closeAllMenus(); }
   function handleSelectFilesClick() { galleryStore.setSelecting(true); }
   function handleSelectAllFiles() { galleryStore.selectAllFiles(); }
   function handleDeleteSelected() { galleryStore.triggerDeleteSelected(); }
   function handleCancelSelection() { galleryStore.clearSelection(); }
+  // Tags sit beside Collections because they are the same kind of thing: metadata
+  // over the library, not a place to navigate to. Same destination from inside
+  // the Organize menu, which has to close itself.
+  function handleTagsFromMenu() { galleryStore.triggerTags(); closeAllMenus(); }
   function handleAddToCollection() { galleryStore.triggerAddToCollection(); closeAllMenus(); }
   function handleReprocess() { galleryStore.triggerReprocess(); closeAllMenus(); }
   function handleSummarize() { galleryStore.triggerSummarize(); closeAllMenus(); }
@@ -115,6 +109,12 @@
   }
 </script>
 
+<!-- `.gallery-action-buttons` is the single most load-bearing selector in the
+     e2e suite (see gallery/CLAUDE.md) — it must render unconditionally, on
+     first paint, independent of whether the file list has loaded. It stays on
+     THIS wrapper (not GalleryPrimaryActions) because this is the group that is
+     always present: a lone "Select items" button in normal mode, expanding in
+     place into the full selection toolbar. -->
 <div class="gallery-action-buttons">
   {#if $galleryState.isSelecting}
     <!-- Selection mode: consolidated into dropdown groups -->
@@ -250,7 +250,6 @@
         {/if}
       </div>
 
-
       <!-- Organize dropdown -->
       <div class="dropdown-container">
         <button
@@ -283,14 +282,6 @@
               </svg>
               {$t('gallery.bulk.addToCollection')}
             </button>
-            <!-- Tags sits with collections: both attach metadata to a file,
-                 which is what Organize means. One entry, not add/remove — the
-                 modal does both, and for a single selected file it is the full
-                 chip editor. The label says so, because a bare "Tags" beside
-                 "Add to Collection" did not say what it would do.
-                 Both are gated on the selection they act on; the toolbar's own
-                 Collections and Tags buttons still open the managers, so
-                 nothing here is the only route to them. -->
             <button
               class="dropdown-item"
               on:click={handleTagsFromMenu}
@@ -361,42 +352,13 @@
       </button>
     </div>
   {:else}
-    <!-- Normal mode -->
-    <div class="normal-actions">
-      <button
-        class="action-btn upload-btn"
-        on:click={handleUploadClick}
-        title={$t('gallery.bulk.addMediaTooltip')}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="17 8 12 3 7 8"></polyline>
-          <line x1="12" y1="3" x2="12" y2="15"></line>
-        </svg>
-        <span>{$t('nav.addMedia')}</span>
-      </button>
-      <button
-        class="action-btn collections-btn"
-        on:click={handleCollectionsClick}
-        title={$t('gallery.bulk.collectionsTooltip')}
-      >
-        <span>{$t('nav.collections')}</span>
-      </button>
-      <button
-        class="action-btn tags-btn"
-        on:click={handleTagsClick}
-        title={$t('gallery.bulk.tagsTooltip')}
-      >
-        <span>{$t('nav.tags')}</span>
-      </button>
-      <button
-        class="action-btn select-btn"
-        on:click={handleSelectFilesClick}
-        title={$t('gallery.bulk.selectFilesTooltip')}
-      >
-        <span>{$t('nav.selectFiles')}</span>
-      </button>
-    </div>
+    <button
+      class="action-btn select-btn"
+      on:click={handleSelectFilesClick}
+      title={$t('gallery.bulk.selectFilesTooltip')}
+    >
+      <span>{$t('nav.selectFiles')}</span>
+    </button>
   {/if}
 </div>
 
@@ -406,7 +368,6 @@
     align-items: center;
   }
 
-  .normal-actions,
   .selection-actions {
     display: flex;
     align-items: center;
@@ -468,35 +429,42 @@
 
   /*
    * Button color system — 2-color toolbar (Apple HIG / Material Design):
-   *   PRIMARY (blue)    — one main action per view (Upload, Select All, Process)
+   *   PRIMARY (blue)    — one main action per view (Select All, Process)
    *   SECONDARY (surface/border) — all other toolbar actions
    *   DANGER (red)      — destructive actions only (Delete)
    *   CANCEL (gray)     — dismiss / exit mode
-   *
-   * Purple, green, and amber were previously used but created a rainbow toolbar
-   * that looked arbitrary. Semantic colors should only appear when the meaning
-   * is clear (red = destructive, amber = warning, green = success confirmation).
    */
 
+  .select-btn {
+    background-color: var(--surface-color);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  }
+
+  .select-btn:hover:not(:disabled) {
+    background-color: var(--button-hover, #f1f5f9);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  }
+
+  :global([data-theme='dark']) .select-btn:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
   /* Primary actions — solid blue */
-  .upload-btn,
   .select-all-btn,
   .process-btn {
     background-color: var(--primary-color, var(--primary-color));
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
-  .upload-btn:hover:not(:disabled),
   .select-all-btn:hover:not(:disabled),
   .process-btn:hover:not(:disabled) {
     background-color: var(--primary-hover, #2563eb);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
-  /* Secondary actions — surface with border (not colored) */
-  .collections-btn,
-  .tags-btn,
-  .select-btn,
+  /* Secondary — surface with border */
   .organize-btn {
     background-color: var(--surface-color);
     color: var(--text-primary);
@@ -504,17 +472,11 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   }
 
-  .collections-btn:hover:not(:disabled),
-  .tags-btn:hover:not(:disabled),
-  .select-btn:hover:not(:disabled),
   .organize-btn:hover:not(:disabled) {
     background-color: var(--button-hover, #f1f5f9);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   }
 
-  :global([data-theme='dark']) .collections-btn:hover:not(:disabled),
-  :global([data-theme='dark']) .tags-btn:hover:not(:disabled),
-  :global([data-theme='dark']) .select-btn:hover:not(:disabled),
   :global([data-theme='dark']) .organize-btn:hover:not(:disabled) {
     background-color: rgba(255, 255, 255, 0.08);
   }
@@ -598,10 +560,8 @@
     margin: 0.25rem 0;
   }
 
-
   /* Tablet: allow action buttons to wrap */
   @media (max-width: 1200px) {
-    .normal-actions,
     .selection-actions {
       flex-wrap: wrap;
       gap: 0.375rem;

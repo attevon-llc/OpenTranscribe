@@ -32,11 +32,16 @@
 
 gallery::aria-input-field-name::4       # BACKLOG #785 — filter/sort controls without an accessible name, tracked for #747-#757
 gallery::label::1                       # BACKLOG #785 — one form control missing an associated <label>
-gallery::label-title-only::1            # BACKLOG #785 — a control's only accessible name comes from a title attribute
+# gallery::label-title-only — REMOVED by #747: the finding was the gallery's old
+# "Search Files" sidebar input (title-only accessible name, no <label>), which #747 moved
+# out of FilterSidebar into GalleryHeader's toolbar (a SearchBar with a real aria-label).
+# Observed 0 nodes on the gallery surface after that change.
 
 settings-modal::aria-input-field-name::4  # BACKLOG #785 — same filter/sort controls rendered inside the modal
 settings-modal::label::1                  # BACKLOG #785 — one form control missing an associated <label>
-settings-modal::label-title-only::1       # BACKLOG #785 — a control's only accessible name comes from a title attribute
+# settings-modal::label-title-only — REMOVED by #747, same root cause as gallery above:
+# this surface's modal capture leaks the gallery page underneath it (see the settings/gallery
+# note on `.count-chip` in test_visual_regression.py), so it inherited the same input.
 
 speakers::label::1                      # BACKLOG #785 — one form control missing an associated <label>
 
@@ -58,4 +63,6 @@ file-status::select-name::2             # BACKLOG #785 — two <select> elements
 
 upload::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered behind the upload modal
 upload::label::1                        # BACKLOG #785 — one form control missing an associated <label>
-upload::label-title-only::1             # BACKLOG #785 — a control's only accessible name comes from a title attribute
+# upload::label-title-only — REMOVED by #747, same root cause as gallery above: this
+# surface's scan is the upload modal open OVER the gallery page, which inherited the same
+# input before #747 moved it out of FilterSidebar.

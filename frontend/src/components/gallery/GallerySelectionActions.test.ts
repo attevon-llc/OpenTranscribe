@@ -67,7 +67,7 @@ vi.mock('$stores/gallery', async () => {
 
 const { selectedCount, galleryState } = await stores;
 
-import GalleryActionButtons from './GalleryActionButtons.svelte';
+import GallerySelectionActions from './GallerySelectionActions.svelte';
 
 function select(uuids: string[]) {
   selectedCount.set(uuids.length);
@@ -85,9 +85,9 @@ beforeEach(() => {
   select([]);
 });
 
-describe('GalleryActionButtons — bulk tag entries', () => {
+describe('GallerySelectionActions — bulk tag entries', () => {
   it('offers one Tags entry in Organize, not separate add and remove', async () => {
-    render(GalleryActionButtons, { props: { files: [] } });
+    render(GallerySelectionActions, { props: { files: [] } });
     await openOrganizeMenu();
 
     // The modal does both add and remove (and, for a single file, the full chip
@@ -101,7 +101,7 @@ describe('GalleryActionButtons — bulk tag entries', () => {
     // A bare "Tags" beside "Add to Collection" did not say whether it added,
     // removed, or opened a manager. Both entries now describe the action they
     // perform on the selected files.
-    render(GalleryActionButtons, { props: { files: [] } });
+    render(GallerySelectionActions, { props: { files: [] } });
     await openOrganizeMenu();
 
     expect(screen.getByRole('button', { name: 'Add or Edit Tags' })).toBeInTheDocument();
@@ -110,7 +110,7 @@ describe('GalleryActionButtons — bulk tag entries', () => {
 
   it('applies tags to the selection and closes the menu', async () => {
     select(['a']);
-    render(GalleryActionButtons, {
+    render(GallerySelectionActions, {
       props: { files: [{ uuid: 'a', status: 'completed' }] as never },
     });
     await openOrganizeMenu();
@@ -126,7 +126,7 @@ describe('GalleryActionButtons — bulk tag entries', () => {
     // They act on the selection, so offering them with none invites the user to
     // "add to" or "edit" nothing. The toolbar's own Collections and Tags
     // buttons still open the managers, so nothing becomes unreachable.
-    render(GalleryActionButtons, { props: { files: [] } });
+    render(GallerySelectionActions, { props: { files: [] } });
     await openOrganizeMenu();
 
     expect(screen.getByRole('button', { name: 'Add to Collection' })).toBeDisabled();
@@ -135,7 +135,7 @@ describe('GalleryActionButtons — bulk tag entries', () => {
 
   it('enables them once a file is selected', async () => {
     select(['a']);
-    render(GalleryActionButtons, {
+    render(GallerySelectionActions, {
       props: { files: [{ uuid: 'a', status: 'completed' }] as never },
     });
     await openOrganizeMenu();
@@ -145,11 +145,11 @@ describe('GalleryActionButtons — bulk tag entries', () => {
   });
 });
 
-describe('GalleryActionButtons — actions that need a selection are disabled without one', () => {
+describe('GallerySelectionActions — actions that need a selection are disabled without one', () => {
   const completed = [{ uuid: 'a', status: 'completed' }] as never;
 
   it('disables every Organize export entry when nothing is selected', async () => {
-    render(GalleryActionButtons, { props: { files: [] } });
+    render(GallerySelectionActions, { props: { files: [] } });
     await openOrganizeMenu();
 
     // Export writes a transcript for each selected file. With none selected it
@@ -165,7 +165,7 @@ describe('GalleryActionButtons — actions that need a selection are disabled wi
     // selection — so the assertion above cannot be passing on a permanently
     // disabled button.
     select(['a']);
-    render(GalleryActionButtons, { props: { files: completed } });
+    render(GallerySelectionActions, { props: { files: completed } });
     await openOrganizeMenu();
 
     for (const name of ['Export SRT', 'Export WebVTT', 'Export Text']) {
@@ -175,7 +175,7 @@ describe('GalleryActionButtons — actions that need a selection are disabled wi
 
   it('leaves export disabled when the selected file has no transcript yet', async () => {
     select(['b']);
-    render(GalleryActionButtons, {
+    render(GallerySelectionActions, {
       props: { files: [{ uuid: 'b', status: 'processing' }] as never },
     });
     await openOrganizeMenu();
@@ -184,12 +184,12 @@ describe('GalleryActionButtons — actions that need a selection are disabled wi
   });
 
   it('disables Delete with no selection and enables it with one', async () => {
-    const { unmount } = render(GalleryActionButtons, { props: { files: [] } });
+    const { unmount } = render(GallerySelectionActions, { props: { files: [] } });
     expect(screen.getByTitle('Permanently delete the selected files')).toBeDisabled();
     unmount();
 
     select(['a']);
-    render(GalleryActionButtons, { props: { files: completed } });
+    render(GallerySelectionActions, { props: { files: completed } });
     expect(screen.getByTitle('Permanently delete the selected files')).not.toBeDisabled();
   });
 });

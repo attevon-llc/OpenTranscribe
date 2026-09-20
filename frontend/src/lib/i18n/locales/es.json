@@ -655,6 +655,7 @@
   "gallery.cancelButton": "Cancelar",
   "gallery.loadingCount": "Cargando...",
   "gallery.noFilesMatch": "No hay archivos coincidentes",
+  "gallery.noFilesMatchDescription": "Intenta ajustar o borrar tus filtros.",
   "gallery.showingAllCount": "Mostrando todos los {{count}} elementos",
   "gallery.showingPartialCount": "Mostrando {{loaded}} de {{total}} elementos",
   "gallery.loadingMore": "Cargando más...",

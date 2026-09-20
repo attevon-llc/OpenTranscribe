@@ -29,12 +29,16 @@ from __future__ import annotations
 #: failures in ``test_auth_buttons.py`` on 2026-09-06 that had nothing to do with auth.
 #:
 #: 30 s matches the sibling app-shell waits already in ``conftest.py``
-#: (``.gallery-action-buttons``, ``.gallery-header-right``) and ``test_search.py``'s
-#: ``.search-page``. Reaching it still means a real failure, and one worth 30 s of evidence.
+#: (``.gallery-action-buttons``, ``[data-testid="gallery-files-loaded"]``) and
+#: ``test_search.py``'s ``.search-page``. Reaching it still means a real failure, and one
+#: worth 30 s of evidence.
 LOGIN_FORM_READY_MS = 30_000
 
 #: How long to wait for the authenticated app shell to paint — ``.gallery-action-buttons``,
-#: ``.gallery-header-right``, ``.search-page`` and the other post-login landmarks.
+#: ``[data-testid="gallery-files-loaded"]``, ``.search-page`` and the other post-login
+#: landmarks. (``.gallery-header-right`` was the old file-list-landed oracle; issue #747
+#: deleted both the selector and the `{#if files.length > 0}` gate it depended on — see
+#: gallery/CLAUDE.md and conftest.py's `gallery_page` fixture.)
 #:
 #: **The drift this file was created to stop had already recurred by the time it landed.**
 #: ``#email`` was centralised above, but the two other app-shell selectors stayed raw literals

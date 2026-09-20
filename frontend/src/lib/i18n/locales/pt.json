@@ -2009,6 +2009,7 @@
   "gallery.cancelButton": "Cancelar",
   "gallery.loadingCount": "Carregando...",
   "gallery.noFilesMatch": "Nenhum arquivo correspondente",
+  "gallery.noFilesMatchDescription": "Tente ajustar ou limpar os filtros.",
   "gallery.showingAllCount": "Mostrando todos os {{count}} itens",
   "gallery.showingPartialCount": "Mostrando {{loaded}} de {{total}} itens",
   "gallery.loadingMore": "Carregando mais...",

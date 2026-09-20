@@ -2010,6 +2010,7 @@
   "gallery.cancelButton": "Annulla",
   "gallery.loadingCount": "Caricamento in corso...",
   "gallery.noFilesMatch": "Nessun file corrisponde",
+  "gallery.noFilesMatchDescription": "Prova a modificare o cancellare i filtri.",
   "gallery.showingAllCount": "Visualizzazione di tutti i {{count}} elementi",
   "gallery.showingPartialCount": "Visualizzazione di {{loaded}} di {{total}} elementi",
   "gallery.loadingMore": "Caricamento di altri elementi in corso...",

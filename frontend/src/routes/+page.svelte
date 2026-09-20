@@ -141,6 +141,21 @@
   let ownershipFilter: 'all' | 'mine' | 'shared' = $galleryState.filterOwnershipFilter;
   $: showFilters = $galleryState.showFilters;
 
+  // Whether any filter is currently narrowing the list — including the toolbar
+  // search box (issue #747). Drives GalleryGrid's empty-state copy: an empty
+  // result set with a filter active means "no matches", not "your library is
+  // empty" (§4.1 defect 3).
+  $: filtersActive =
+    searchQuery !== '' ||
+    selectedTags.length > 0 ||
+    selectedSpeakers.length > 0 ||
+    selectedFileTypes.length > 0 ||
+    selectedStatuses.length > 0 ||
+    dateRange.from !== null || dateRange.to !== null ||
+    durationRange.min !== null || durationRange.max !== null ||
+    fileSizeRange.min !== null || fileSizeRange.max !== null ||
+    ownershipFilter !== 'all';
+
   // Sort state — restore from gallery store
   let sortBy: string = $galleryState.filterSortBy;
   let sortOrder: 'asc' | 'desc' = $galleryState.filterSortOrder;
@@ -578,6 +593,14 @@
     if (statuses !== undefined) selectedStatuses = statuses;
     if (ownership !== undefined) ownershipFilter = ownership;
 
+    fetchFiles();
+  }
+
+  // Handle the toolbar's filename/title search (issue #747 — moved out of the
+  // filter sidebar into GalleryHeader). Debouncing is owned by the shared
+  // `SearchBar` primitive GalleryHeader renders, not duplicated here.
+  function handleToolbarSearch(event: CustomEvent<{ value: string }>) {
+    searchQuery = event.detail.value;
     fetchFiles();
   }
 
@@ -1470,8 +1493,10 @@
             {sortOrder}
             {loading}
             {showFilters}
+            {searchQuery}
             on:togglefilters={toggleFilters}
             on:change={handleSortChange}
+            on:search={handleToolbarSearch}
           />
 
           <GalleryGrid
@@ -1483,6 +1508,7 @@
             {selectedFiles}
             {pendingNewFiles}
             {pendingDeletions}
+            {filtersActive}
             scrollContainer={scrollableContentEl}
             on:sentinel={(e) => (infiniteScrollSentinel = e.detail)}
             on:retry={() => fetchFiles()}

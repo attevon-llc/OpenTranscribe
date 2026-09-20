@@ -1999,6 +1999,7 @@
   "gallery.cancelButton": "Отмена",
   "gallery.loadingCount": "Загрузка...",
   "gallery.noFilesMatch": "Нет подходящих файлов",
+  "gallery.noFilesMatchDescription": "Попробуйте изменить или очистить фильтры.",
   "gallery.showingAllCount": "Показаны все {{count}} элементов",
   "gallery.showingPartialCount": "Показано {{loaded}} из {{total}} элементов",
   "gallery.loadingMore": "Загрузка ещё...",

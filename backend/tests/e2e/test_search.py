@@ -60,8 +60,8 @@ def known_query(owned_search_term: str) -> str:
 def search_page(gallery_page: Page, base_url: str) -> Page:
     """Navigate the pre-authenticated session to /search."""
     gallery_page.goto(f"{base_url}/search")
-    # 30s, matching the `.gallery-action-buttons` / `.gallery-header-right` waits in
-    # conftest — not 15s, which is what this carried and what errored once in the
+    # 30s, matching the `.gallery-action-buttons` / `[data-testid="gallery-files-loaded"]`
+    # waits in conftest — not 15s, which is what this carried and what errored once in the
     # 2026-09-06 full run.
     #
     # `.search-page` is the page's ROOT div and sits behind no `{#if}` of its own, so its

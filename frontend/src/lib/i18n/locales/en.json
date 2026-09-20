@@ -2010,6 +2010,7 @@
   "gallery.cancelButton": "Cancel",
   "gallery.loadingCount": "Loading...",
   "gallery.noFilesMatch": "No files match",
+  "gallery.noFilesMatchDescription": "Try adjusting or clearing your filters.",
   "gallery.showingAllCount": "Showing all {{count}} items",
   "gallery.showingPartialCount": "Showing {{loaded}} of {{total}} items",
   "gallery.loadingMore": "Loading more...",

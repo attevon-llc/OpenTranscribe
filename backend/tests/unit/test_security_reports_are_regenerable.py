@@ -57,18 +57,23 @@ ARCHES = {"amd64", "arm64"}
 
 #: Tool stems and the extensions each may be PUBLISHED under.
 #:
-#: The scanner writes eight files per leg; five are tracked. ``*-trivy.json`` /
+#: The scanner writes eight files per leg; six are tracked. ``*-trivy.json`` /
 #: ``*-grype.json`` / ``*-sbom.json`` are gitignored — 30.8 MB per scan against 2.1 MB for
 #: these, kept forever in a public repo, regenerable in minutes — and Trivy's JSON additionally
 #: embeds the scanned image's ENV block, so every ``python:*``-derived report carries
 #: ``GPG_KEY=7169605F…`` (the PUBLIC CPython signing fingerprint), which gitleaks blocks as a
 #: generic-api-key. ``dockle`` is json-only because it has no text form, and is small.
+#: ``scan-verdict`` (the two-word tool name is why the matcher below splits on the first TWO
+#: hyphens, not all of them) is the pass/fail + policy-threshold record `scan_try_reuse_report`
+#: reads to decide whether a rescan is needed — tiny (under 100 bytes) and worth publishing for
+#: the same transparency reason as the others.
 TOOL_EXTENSIONS = {
     "trivy": {"txt"},
     "grype": {"txt"},
     "dockle": {"json"},
     "sbom": {"txt"},
     "hadolint": {"txt"},
+    "scan-verdict": {"json"},
 }
 
 #: Suffixes that must never be committed, with the reason each is excluded.
@@ -113,11 +118,16 @@ def _tracked_report_files() -> list[str]:
 
 
 def _is_a_name_the_scanner_could_write(name: str, components: set[str]) -> bool:
-    """``<component>-<arch>-<tool>.<ext>`` against the scanner's own vocabulary."""
+    """``<component>-<arch>-<tool>.<ext>`` against the scanner's own vocabulary.
+
+    Split on the first TWO hyphens only: ``tool`` itself may contain a hyphen (e.g.
+    ``scan-verdict``), and an unbounded split would break that name into 4 parts instead of 3
+    and reject it as an orphan even though the scanner genuinely still writes it.
+    """
     stem, _, ext = name.rpartition(".")
     if not stem or ext not in {"json", "txt"}:
         return False
-    parts = stem.split("-")
+    parts = stem.split("-", 2)
     if len(parts) != 3:
         return False
     component, arch, tool = parts
@@ -200,9 +210,14 @@ def test_a_never_published_component_is_not_committed():
         ("docs-amd64-dockle.json", True),
         ("frontend-arm64-hadolint.txt", True),
         ("lite-amd64-sbom.txt", True),
+        # a hyphenated tool name — the reason the split is maxsplit=2, not unbounded
+        ("backend-amd64-scan-verdict.json", True),
         # the exact shape that was orphaned — no arch segment
         ("backend-trivy.txt", False),
         ("frontend-sbom.txt", False),
+        ("backend-scan-verdict.json", False),
+        # tool/extension mismatch: scan-verdict only writes json
+        ("backend-amd64-scan-verdict.txt", False),
         # the machine artifacts: correctly named, but deliberately not published
         ("backend-amd64-trivy.json", False),
         ("lite-arm64-sbom.json", False),

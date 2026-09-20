@@ -122,8 +122,15 @@ ctranslate2==4.8.2
 # requirements-nodeps.txt): av>=11, tokenizers<1,>=0.13, tqdm (no version
 # constraint upstream). ctranslate2 and huggingface-hub above/below already
 # satisfy its other needs.
+#
+# tokenizers capped by transformers==4.57.6 below, which declares
+# tokenizers<=0.23.0,>=0.22.0 in its own metadata -- `pip install
+# tokenizers==0.23.2 transformers==4.57.6` is a real ResolutionImpossible,
+# verified directly via a full `pip install -r requirements.txt` run.
+# Dependabot PR #949 proposed 0.23.2; caught before it reached a built image.
+# Lift together with transformers' own major-version cap (dependabot.yml).
 av==18.1.0
-tokenizers==0.23.2
+tokenizers==0.22.2
 tqdm==4.70.1
 
 # ML/Data processing
@@ -281,7 +288,13 @@ meeteval==0.4.3
 # Loaded only by the celery-redaction worker (PRELOAD_REDACTION_MODELS=true).
 # Presidio = PII detection orchestration (built-in regex recognizers + NER).
 presidio-analyzer==2.2.364
-presidio-anonymizer==2.2.364
+# anonymizer capped at 2.2.362, one behind analyzer: 2.2.364 declares
+# cryptography>=48.0.1,<49.0.0 in its own metadata (verified via wheel METADATA
+# inspection), conflicting with cryptography==50.0.1 above -- a real
+# ResolutionImpossible, not a resolver preference. Dependabot PR #949 proposed
+# 2.2.364; caught before it reached a built image. Lift together with
+# cryptography once anonymizer raises its own cap.
+presidio-anonymizer==2.2.362
 # The spaCy pipeline Presidio tokenizes with. DECLARED HERE, not installed by a
 # Dockerfile step (issue #492).
 #

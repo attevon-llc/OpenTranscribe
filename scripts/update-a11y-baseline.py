@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Regenerate the a11y regression baseline (backend/tests/e2e/a11y_baseline.json).
+"""Generate paste-ready lines for the a11y allowlist (backend/tests/e2e/a11y-allowlist.txt).
 
-Standalone replacement for the old ``UPDATE_A11Y_BASELINE=1 pytest backend/tests/e2e/test_a11y.py``
-invocation. That flow ran through ``test_baseline_is_current``, which was not a test at all: it
-called ``pytest.skip(...)`` unless the env var was set, and in that mode overwrote the exact
-baseline file it claimed to verify — a no-assertion finding under ``scripts/audit-tests.py``.
-``test_baseline_is_current`` is now a real assertion (it checks the committed baseline matches
-what the E2E scans just observed); this script owns the write path exclusively.
+Issue #785 replaced the old flat, rule-ID-only baseline (``a11y_baseline.json``) with a
+per-surface, count-aware, reason-carrying allowlist. This script used to OWN writing that
+baseline directly (see the git history of ``a11y_lib.py``'s module docstring for why the write
+path was pulled out of a pytest test in the first place — a "test" that skipped unless an env
+var was set, and in that mode silently overwrote the exact record it claimed to verify). That
+class of defect — a regeneration script that silently rewrites the accepted-findings record —
+must not come back through the side door now that the record carries WRITTEN REASONS: a script
+that "regenerates" the file can only ever invent a placeholder reason, and an unedited paste
+of a placeholder is indistinguishable from a real, reviewed one once it is on disk.
 
-Scans the same pages ``test_a11y.py::TestAccessibility`` scans (gallery/home, the Settings
-modal, /speakers) with axe-core via the shared helpers in ``backend/tests/e2e/a11y_lib.py``, and
-overwrites the committed baseline with every serious/critical rule id observed.
+So this script now **never writes**. It scans every surface ``test_a11y.py`` scans, prints
+paste-ready ``<surface>::<rule id>::<count>  # reason`` lines to stdout with a reason that is
+visibly wrong if pasted unedited (``BACKLOG — REPLACE THIS REASON``), and leaves editing +
+committing the allowlist to a human.
 
 Usage::
 
@@ -19,6 +23,12 @@ Usage::
 
 Requirements: dev stack running (``./opentr.sh start dev``), and ``backend/venv`` activated with
 playwright + axe-playwright-python installed (``backend/requirements-dev.txt``).
+
+Chat, file-detail and upload are scanned too (unlike the old 3-surface script) so this tool
+never drifts from what ``test_a11y.py`` actually covers. Chat and file-detail need real data
+this standalone script does not create for itself (an LLM provider; a completed recording) —
+when unavailable, it prints a note and skips just that surface rather than failing the whole
+run.
 """
 
 from __future__ import annotations
@@ -26,6 +36,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
+import uuid
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -33,18 +45,91 @@ E2E_DIR = REPO_ROOT / 'backend' / 'tests' / 'e2e'
 sys.path.insert(0, str(E2E_DIR))
 
 from a11y_lib import (  # noqa: E402
-    BASELINE_PATH,
+    BACKLOG_PREFIX,
+    evaluate_surface,
     form_login_with_retry,
-    gated_violations,
     run_axe,
-    write_baseline,
 )
 from playwright.sync_api import sync_playwright  # noqa: E402
 
+#: Placeholder reason. Visibly wrong if pasted into the allowlist unedited — the point is
+#: that a reviewer (or `scripts/audit-tests.py`-style CI check on the a11y allowlist parser)
+#: can never mistake this for a considered decision.
+_PLACEHOLDER_REASON = f'{BACKLOG_PREFIX} — REPLACE THIS REASON'
 
-def _scan(page: object, discovered: set[str]) -> None:
+_SAMPLE_MEDIA = E2E_DIR.parent / 'fixtures' / 'media' / 'sample_short.wav'
+
+
+def _print_surface(surface: str, page: object) -> None:
+    page.wait_for_timeout(500)  # let the entry transition settle before axe reads styles
     results = run_axe(page)  # type: ignore[arg-type]
-    discovered.update(v['id'] for v in gated_violations(results))
+    outcome = evaluate_surface(surface, results, {})  # empty allowlist: report EVERYTHING found
+    if not outcome.observed:
+        print(f'# {surface}: clean, no serious/critical violations observed')
+        return
+    for rule_id, count in sorted(outcome.observed.items()):
+        print(f'{surface}::{rule_id}::{count}  # {_PLACEHOLDER_REASON}')
+
+
+def _upload_sample(base_url: str, token: str) -> str | None:
+    """Upload the committed sample clip and wait for completion; return its uuid or None."""
+    import requests
+
+    if not _SAMPLE_MEDIA.exists():
+        print(f'# file-detail: skipped — missing fixture {_SAMPLE_MEDIA}')
+        return None
+    headers = {'Authorization': f'Bearer {token}'}
+    name = f'a11y-baseline-scan-{uuid.uuid4().hex[:8]}{_SAMPLE_MEDIA.suffix}'
+    with _SAMPLE_MEDIA.open('rb') as fh:
+        resp = requests.post(
+            f'{base_url}/api/files',
+            headers=headers,
+            files={'file': (name, fh, 'audio/wav')},
+            timeout=300,
+        )
+    if resp.status_code != 200:
+        print(f'# file-detail: skipped — upload failed ({resp.status_code})')
+        return None
+    file_uuid = str(resp.json()['uuid'])
+    deadline = time.time() + 300
+    consecutive = 0
+    status = 'unknown'
+    while time.time() < deadline:
+        detail = requests.get(f'{base_url}/api/files/{file_uuid}', headers=headers, timeout=30)
+        status = detail.json().get('status', 'unknown') if detail.status_code == 200 else 'unknown'
+        if status in ('error', 'cancelled'):
+            break
+        consecutive = consecutive + 1 if status == 'completed' else 0
+        if consecutive >= 2:
+            return file_uuid
+        time.sleep(3)
+    print(f'# file-detail: skipped — upload never completed (status={status})')
+    requests.delete(f'{base_url}/api/files/{file_uuid}', headers=headers, timeout=30)
+    return None
+
+
+def _delete_sample(base_url: str, token: str, file_uuid: str) -> None:
+    import requests
+
+    requests.delete(
+        f'{base_url}/api/files/{file_uuid}',
+        headers={'Authorization': f'Bearer {token}'},
+        timeout=30,
+    )
+
+
+def _admin_token(backend_url: str) -> str | None:
+    import requests
+
+    resp = requests.post(
+        f'{backend_url}/api/auth/token',
+        data={'username': 'admin@example.com', 'password': 'password'},
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        return None
+    return str(resp.json()['access_token'])
 
 
 def main() -> int:
@@ -56,9 +141,16 @@ def main() -> int:
         default=os.environ.get('E2E_FRONTEND_URL', 'http://localhost:5173'),
         help='Frontend base URL (default: E2E_FRONTEND_URL env var or http://localhost:5173)',
     )
+    parser.add_argument(
+        '--backend-url',
+        default=os.environ.get('E2E_BACKEND_URL', 'http://localhost:5174'),
+        help='Backend base URL, for the file-detail scan only '
+        '(default: E2E_BACKEND_URL env var or http://localhost:5174)',
+    )
     args = parser.parse_args()
 
-    discovered: set[str] = set()
+    print('# Paste-ready a11y-allowlist.txt lines — review EVERY reason before committing.')
+    print(f'# Generated against {args.base_url}\n')
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -71,7 +163,7 @@ def main() -> int:
         # Gallery / home
         page.wait_for_selector('.user-button', timeout=30000)
         page.wait_for_load_state('networkidle')
-        _scan(page, discovered)
+        _print_surface('gallery', page)
 
         # Settings modal
         user_button = page.locator('.user-button')
@@ -79,27 +171,64 @@ def main() -> int:
         settings_item = page.locator('.dropdown-menu .dropdown-item', has_text='Settings')
         settings_item.first.click()
         page.wait_for_selector('.settings-modal', timeout=10000)
-        # Let the modal's open transition finish before axe reads computed styles —
-        # scanning mid-animation reports contrast/visibility findings that do not exist
-        # once it settles (matches test_a11y.py's same wait).
-        page.wait_for_timeout(500)
-        _scan(page, discovered)
+        _print_surface('settings-modal', page)
         page.keyboard.press('Escape')
 
         # /speakers
         page.goto(f'{args.base_url}/speakers')
         page.wait_for_load_state('networkidle')
         page.wait_for_selector('main, .speakers-page, .page-container', timeout=15000)
-        page.wait_for_timeout(500)
-        _scan(page, discovered)
+        _print_surface('speakers', page)
+
+        # /search
+        page.goto(f'{args.base_url}/search')
+        page.wait_for_load_state('networkidle')
+        _print_surface('search', page)
+
+        # /file-status
+        page.goto(f'{args.base_url}/file-status')
+        page.wait_for_load_state('networkidle')
+        _print_surface('file-status', page)
+
+        # Upload modal — opens only, never submits, so nothing to clean up.
+        page.goto(args.base_url)
+        page.wait_for_selector('.upload-btn', timeout=15000)
+        page.click('.upload-btn')
+        page.wait_for_selector('.tab-button', timeout=5000)
+        _print_surface('upload', page)
+        page.keyboard.press('Escape')
+
+        # /chat — the shell renders with no LLM provider; scan it regardless.
+        page.goto(f'{args.base_url}/chat')
+        try:
+            page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=15000)
+            _print_surface('chat', page)
+        except Exception:  # noqa: BLE001 - report and move on, this tool must not crash
+            print('# chat: skipped — composer never rendered (no LLM provider configured?)')
+
+        # /files/{uuid} — needs a real completed recording, which this standalone script
+        # uploads and deletes itself (never the ambient dev library — issue #785 §4.5).
+        token = _admin_token(args.backend_url)
+        if token is None:
+            print('# file-detail: skipped — could not obtain an admin token')
+        else:
+            file_uuid = _upload_sample(args.backend_url, token)
+            if file_uuid is not None:
+                try:
+                    page.goto(f'{args.base_url}/files/{file_uuid}')
+                    page.wait_for_load_state('networkidle')
+                    _print_surface('file-detail', page)
+                finally:
+                    _delete_sample(args.backend_url, token, file_uuid)
 
         context.close()
         browser.close()
 
-    write_baseline(discovered)
-    print(f'Wrote {len(discovered)} rule id(s) to {BASELINE_PATH}')
-    for rule_id in sorted(discovered):
-        print(f'  - {rule_id}')
+    print(
+        '\n# Every line above has a placeholder reason. Replace each with a real, written\n'
+        '# reason before pasting into backend/tests/e2e/a11y-allowlist.txt — an unedited\n'
+        f"# '{_PLACEHOLDER_REASON}' must never be committed."
+    )
     return 0
 
 

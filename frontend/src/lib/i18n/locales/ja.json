@@ -5259,5 +5259,6 @@
   "settings.emailNotifications.links.warnConfigDisabled": "このメール設定は無効になっているため、これを通じて何も送信されません。",
   "settings.emailNotifications.links.warnNoRecipients": "この設定には既定の宛先がなく、ここにも追加されていないため、何も送信されません。",
   "settings.emailNotifications.links.deleteConfigTitle": "このメール設定を削除しますか？",
-  "settings.emailNotifications.links.deleteConfigMessage": "「{{name}}」を削除すると、{{count}} 件の監視ソースとの関連付けも解除され、それらへの通知が停止します。"
+  "settings.emailNotifications.links.deleteConfigMessage": "「{{name}}」を削除すると、{{count}} 件の監視ソースとの関連付けも解除され、それらへの通知が停止します。",
+  "a11y.skipToContent": "メインコンテンツへスキップ"
 }

@@ -5259,5 +5259,6 @@
   "settings.emailNotifications.links.warnConfigDisabled": "إعداد البريد هذا معطّل، لذا لا يُرسل شيء عبره.",
   "settings.emailNotifications.links.warnNoRecipients": "لا يحتوي هذا الإعداد على مستلمين افتراضيين ولم يُضف أي مستلم هنا، لذا لن يُرسل شيء.",
   "settings.emailNotifications.links.deleteConfigTitle": "حذف إعداد البريد هذا؟",
-  "settings.emailNotifications.links.deleteConfigMessage": "حذف «{{name}}» يلغي ربطه أيضًا بـ {{count}} من مصادر المراقبة، والتي ستتوقف عن تلقي الإشعارات."
+  "settings.emailNotifications.links.deleteConfigMessage": "حذف «{{name}}» يلغي ربطه أيضًا بـ {{count}} من مصادر المراقبة، والتي ستتوقف عن تلقي الإشعارات.",
+  "a11y.skipToContent": "التخطي إلى المحتوى الرئيسي"
 }

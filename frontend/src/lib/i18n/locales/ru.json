@@ -5259,5 +5259,6 @@
   "settings.emailNotifications.links.warnConfigDisabled": "Эта конфигурация эл. почты отключена, поэтому через неё ничего не отправляется.",
   "settings.emailNotifications.links.warnNoRecipients": "У этой конфигурации нет получателей по умолчанию, и здесь они не добавлены, поэтому ничего не отправится.",
   "settings.emailNotifications.links.deleteConfigTitle": "Удалить эту конфигурацию эл. почты?",
-  "settings.emailNotifications.links.deleteConfigMessage": "Удаление «{{name}}» также отвяжет её от источников наблюдения ({{count}}), которые перестанут получать уведомления."
+  "settings.emailNotifications.links.deleteConfigMessage": "Удаление «{{name}}» также отвяжет её от источников наблюдения ({{count}}), которые перестанут получать уведомления.",
+  "a11y.skipToContent": "Перейти к основному содержимому"
 }

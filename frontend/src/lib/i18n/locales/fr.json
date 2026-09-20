@@ -5259,5 +5259,6 @@
   "settings.emailNotifications.links.warnConfigDisabled": "Cette configuration e-mail est désactivée : rien n'est envoyé par son intermédiaire.",
   "settings.emailNotifications.links.warnNoRecipients": "Cette configuration n'a pas de destinataires par défaut et aucun n'est ajouté ici : rien ne sera envoyé.",
   "settings.emailNotifications.links.deleteConfigTitle": "Supprimer cette configuration e-mail ?",
-  "settings.emailNotifications.links.deleteConfigMessage": "La suppression de « {{name}} » la dissocie aussi de {{count}} source(s) surveillée(s), qui ne seront plus notifiées."
+  "settings.emailNotifications.links.deleteConfigMessage": "La suppression de « {{name}} » la dissocie aussi de {{count}} source(s) surveillée(s), qui ne seront plus notifiées.",
+  "a11y.skipToContent": "Passer au contenu principal"
 }

@@ -1,19 +1,39 @@
 """Shared a11y-scan helpers for ``test_a11y.py`` and ``scripts/update-a11y-baseline.py``.
 
-Deliberately a plain module with no ``pytest`` import, so the standalone baseline-update
-script can reuse the exact same scan/baseline logic the E2E test uses without pulling in
-pytest fixture machinery. Splitting this out replaced ``test_a11y.py::test_baseline_is_current``,
-which used to be the ONLY place ``_write_baseline`` was called — from inside a "test" that
-called ``pytest.skip`` unless ``UPDATE_A11Y_BASELINE=1``, in which case it overwrote the very
-baseline it claimed to verify. See ``scripts/update-a11y-baseline.py`` for the regeneration
-entry point and ``test_a11y.py::TestAccessibility::test_baseline_is_current`` for the real
-"is it current" assertion.
+Deliberately a plain module with no ``pytest`` import, so the standalone regeneration
+script can reuse the exact same scan/allowlist logic the E2E test uses without pulling in
+pytest fixture machinery.
+
+Issue #785 replaced the old flat, rule-ID-only ``a11y_baseline.json`` with a per-surface,
+count-aware, reason-carrying allowlist (``a11y-allowlist.txt``), modelled on the design
+``scripts/audit-tests.py`` and ``frontend/test-audit-allowlist.txt`` already ship: a required
+written reason, a ``BACKLOG`` prefix for deferred work (counted and printed separately so a
+green gate is never read as a clean tree), and a stale entry that fails the run. The old
+baseline's one real ratchet property — failing when a rule id everywhere accepted turns out to
+be fixed — is preserved, now scoped per surface+rule rather than globally.
+
+``scripts/audit-tests.py``'s ``load_allowlist``/``apply_allowlist`` (~:1860-1925) is the design
+this reuses, and its reason-validation primitives (``_NOT_A_REAL_REASON``/``_is_real_reason``/
+``_BACKLOG_PREFIX``) are imported from there directly (via :func:`importlib`, the same
+technique ``backend/tests/unit/test_audit_tests_selftest.py`` already uses to load that
+hyphenated-named script) rather than copied — one vocabulary of "what counts as a real,
+written reason", never two that can drift apart. What is genuinely NOT reused is the finding
+container itself: ``audit-tests.py``'s allowlist counts occurrences by REPEATING a key (one
+line per occurrence), because its findings have no natural numeric count. An axe violation
+does — ``len(violation["nodes"])`` — so this allowlist encodes the count as a third field in
+the key instead (``<surface>::<rule id>::<count>``), which is different enough that forcing one
+parser to serve both shapes would produce exactly the "handles both awkwardly" third design
+"reuse the parser shape" was written to prevent.
 """
 
 from __future__ import annotations
 
-import json
+import importlib.util
+import sys
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from axe_playwright_python.sync_playwright import Axe
@@ -23,30 +43,142 @@ from timeouts import LOGIN_FORM_READY_MS
 # Impacts we gate on. "minor"/"moderate" are tolerated (legacy debt, low value).
 GATED_IMPACTS = frozenset({"serious", "critical"})
 
-# Baseline of currently-known serious/critical rule IDs. Committed to git so the
-# test is a regression guard, not a snapshot of today's debt.
-BASELINE_PATH = Path(__file__).parent / "a11y_baseline.json"
+# The per-surface, count-aware allowlist. Committed to git so the test is a regression guard,
+# not a snapshot of today's debt.
+ALLOWLIST_PATH = Path(__file__).parent / "a11y-allowlist.txt"
 
-
-def load_baseline() -> set[str]:
-    """Load the set of accepted serious/critical axe rule IDs from disk."""
-    if not BASELINE_PATH.exists():
-        return set()
-    data = json.loads(BASELINE_PATH.read_text())
-    return set(data.get("serious_critical_rule_ids", []))
-
-
-def write_baseline(rule_ids: set[str]) -> None:
-    """Persist the accepted serious/critical rule IDs as the new baseline."""
-    payload = {
-        "_comment": (
-            "Accepted (pre-existing) serious/critical axe-core rule IDs. Regenerate with "
-            "python3 scripts/update-a11y-baseline.py. The a11y test fails only on rule "
-            "IDs NOT listed here."
-        ),
-        "serious_critical_rule_ids": sorted(rule_ids),
+#: Every surface ``test_a11y.py`` scans (or deliberately deselects by marker). An allowlist
+#: entry naming any other string is a typo, not a new exemption — reject it outright rather
+#: than let it sit in the file matching nothing forever.
+KNOWN_SURFACES = frozenset(
+    {
+        "gallery",
+        "settings-modal",
+        "speakers",
+        "search",
+        "chat",
+        "file-detail",
+        "file-status",
+        "upload",
     }
-    BASELINE_PATH.write_text(json.dumps(payload, indent=2) + "\n")
+)
+
+
+def _load_audit_tests_module() -> ModuleType:
+    """Import ``scripts/audit-tests.py`` for its reason-validation primitives.
+
+    Its name is hyphenated, which blocks a normal ``import`` — the same problem
+    ``test_audit_tests_selftest.py`` solves with ``importlib.util.spec_from_file_location``.
+    Reused here rather than reinvented so both allowlists reject the exact same placeholder
+    reasons under the exact same rule, forever, with one change site.
+    """
+    path = Path(__file__).resolve().parents[3] / "scripts" / "audit-tests.py"
+    spec = importlib.util.spec_from_file_location("_a11y_audit_tests_reuse", path)
+    assert spec is not None and spec.loader is not None, f"cannot load {path}"
+    module = importlib.util.module_from_spec(spec)
+    # Register BEFORE exec_module: audit-tests.py's `@dataclass` classes resolve their
+    # `from __future__ import annotations` string types through `sys.modules[cls.__module__]`,
+    # which is None for an unregistered module — an AttributeError deep inside dataclasses.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_audit_tests = _load_audit_tests_module()
+
+#: Reason prefix marking an entry as DEFERRED WORK rather than an accepted pattern. Counted and
+#: reported separately on every run.
+BACKLOG_PREFIX: str = _audit_tests._BACKLOG_PREFIX
+
+#: Reasons that read as "no justification" rather than a real, written one.
+_is_real_reason = _audit_tests._is_real_reason
+
+
+class AllowlistFormatError(ValueError):
+    """An ``a11y-allowlist.txt`` entry is malformed.
+
+    Raised (never silently defaulted) for: a key that isn't exactly
+    ``<surface>::<rule id>::<count>``, a surface not in :data:`KNOWN_SURFACES`, a non-positive
+    or non-integer count, a duplicate ``surface::rule_id`` key, or a reason ``_is_real_reason``
+    (imported from ``scripts/audit-tests.py``) rejects. Same philosophy as that module's
+    ``AllowlistReasonError``: a bad entry must fail the run rather than sit in the allowlist
+    looking reviewed.
+    """
+
+
+@dataclass(frozen=True)
+class AllowlistEntry:
+    """One accepted (or deferred) ``<surface>, <rule id>`` pair and its accepted node count."""
+
+    surface: str
+    rule_id: str
+    count: int
+    reason: str
+    lineno: int
+
+    @property
+    def is_backlog(self) -> bool:
+        """True when this entry marks deferred work rather than an accepted pattern."""
+        return self.reason.startswith(BACKLOG_PREFIX)
+
+
+def parse_allowlist_text(
+    text: str, *, source: object = "<text>"
+) -> dict[tuple[str, str], AllowlistEntry]:
+    """Parse allowlist lines, REJECTING any malformed or reason-less entry.
+
+    Split out from :func:`load_allowlist` so both the CLI (given a file on disk) and a
+    ``--selftest``-style caller (given an in-memory string) exercise the identical rejection
+    path. Returns a map of ``(surface, rule_id)`` to the single :class:`AllowlistEntry` for
+    that pair — unlike ``audit-tests.py``'s allowlist, a duplicate key here is a formatting
+    error (one line already carries the count), not a second, independent occurrence.
+    """
+    entries: dict[tuple[str, str], AllowlistEntry] = {}
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key_part, _, reason = line.partition("#")
+        reason = reason.strip()
+        parts = [p.strip() for p in key_part.strip().split("::")]
+        if len(parts) != 3:
+            raise AllowlistFormatError(
+                f"{source}:{lineno}: expected `<surface>::<rule id>::<count>`, "
+                f"got {key_part.strip()!r}"
+            )
+        surface, rule_id, count_str = parts
+        if surface not in KNOWN_SURFACES:
+            raise AllowlistFormatError(
+                f"{source}:{lineno}: unknown surface {surface!r} — must be one of "
+                f"{sorted(KNOWN_SURFACES)}"
+            )
+        if not rule_id:
+            raise AllowlistFormatError(f"{source}:{lineno}: empty axe rule id")
+        if not count_str.isdigit() or int(count_str) < 1:
+            raise AllowlistFormatError(
+                f"{source}:{lineno}: count must be a positive integer, got {count_str!r}"
+            )
+        if not _is_real_reason(reason):
+            raise AllowlistFormatError(
+                f"{source}:{lineno}: entry for `{surface}::{rule_id}` has no real reason "
+                f"(got {reason!r}). A written reason is mandatory."
+            )
+        key = (surface, rule_id)
+        if key in entries:
+            raise AllowlistFormatError(
+                f"{source}:{lineno}: duplicate entry for `{surface}::{rule_id}` (already "
+                f"defined at line {entries[key].lineno}) — one line per surface+rule; raise "
+                "the count instead of adding a second line."
+            )
+        entries[key] = AllowlistEntry(surface, rule_id, int(count_str), reason, lineno)
+    return entries
+
+
+def load_allowlist(path: Path = ALLOWLIST_PATH) -> dict[tuple[str, str], AllowlistEntry]:
+    """Load and parse the a11y allowlist, or ``{}`` if it does not exist."""
+    if not path.exists():
+        return {}
+    return parse_allowlist_text(path.read_text(), source=path)
 
 
 def gated_violations(results: Any) -> list[dict[str, Any]]:
@@ -82,3 +214,52 @@ def form_login_with_retry(page: Page, base_url: str, attempts: int = 4) -> None:
             # something a locator could poll for (issue #431).
             page.wait_for_timeout(5000 * (attempt + 1))
     raise AssertionError(f"Could not log in via form after {attempts} attempts: {last_error}")
+
+
+@dataclass
+class SurfaceResult:
+    """One page's axe results, evaluated against the allowlist for that surface."""
+
+    surface: str
+    #: rule_id -> total node count observed on this surface, this run.
+    observed: dict[str, int] = field(default_factory=dict)
+    #: Human-readable lines for rule ids axe found that the allowlist does not cover at all.
+    new_violations: list[str] = field(default_factory=list)
+    #: Human-readable lines for rule ids whose observed node count exceeds the allowlisted one.
+    exceeded: list[str] = field(default_factory=list)
+
+    @property
+    def failures(self) -> list[str]:
+        """All failure lines for this surface, new violations first."""
+        return [*self.new_violations, *self.exceeded]
+
+
+def evaluate_surface(
+    surface: str, results: Any, allowlist: dict[tuple[str, str], AllowlistEntry]
+) -> SurfaceResult:
+    """Check one page's axe results against the allowlist: per-surface and count-aware.
+
+    A rule id absent from the allowlist for this surface is a regression, exactly like the old
+    baseline. Unlike the old baseline, a rule id THAT IS allowlisted but whose observed node
+    count exceeds the accepted count is *also* a regression — the ratchet's "one line buys N
+    nodes, not a blanket" property (issue #785 §4.2).
+    """
+    observed: dict[str, int] = {}
+    for violation in gated_violations(results):
+        rule_id = violation["id"]
+        observed[rule_id] = observed.get(rule_id, 0) + len(violation.get("nodes", []))
+
+    new_violations: list[str] = []
+    exceeded: list[str] = []
+    for rule_id, count in sorted(observed.items()):
+        entry = allowlist.get((surface, rule_id))
+        if entry is None:
+            new_violations.append(
+                f"  - {rule_id}: {count} node(s) — not allowlisted for surface {surface!r}"
+            )
+        elif count > entry.count:
+            exceeded.append(
+                f"  - {rule_id}: {count} node(s) exceeds the allowlisted {entry.count} "
+                f"for surface {surface!r} (line {entry.lineno})"
+            )
+    return SurfaceResult(surface, observed, new_violations, exceeded)

@@ -1,0 +1,61 @@
+# Accepted / deferred axe-core findings for backend/tests/e2e/test_a11y.py.
+#
+# Format: <surface>::<axe rule id>::<node count>  # reason
+#
+# THE SURFACE IS PART OF THE KEY. A rule accepted on the gallery is NOT accepted on chat —
+# each surface must earn its own entry, even for a rule that also appears elsewhere.
+#
+# THE COUNT IS PART OF THE KEY. One line buys exactly N nodes for that surface+rule; N+1
+# fails the run. Fixing one of the N offending nodes means LOWERING the count here, not
+# leaving it as headroom for a different node to grow into.
+#
+# A REASON IS REQUIRED. An entry is a deliberate, reviewed decision — never a parking space.
+#
+# TWO KINDS OF ENTRY, and the difference is load-bearing:
+#
+#   ACCEPTED — the pattern is correct here, and the reason says why. No prefix.
+#   BACKLOG  — the finding is real and is DEFERRED WORK. The reason starts with `BACKLOG`,
+#              and the test run counts and prints these separately every time, so a green
+#              gate is never mistaken for a clean tree.
+#
+# A STALE ENTRY FAILS THE RUN. Fix a node (or all of them), lower or delete the line. This
+# file can only shrink — an entry with no matching finding left is a blanket nobody is
+# reviewing any more.
+#
+# Regenerate paste-ready lines (never a silent overwrite) with:
+#     python3 scripts/update-a11y-baseline.py
+#
+# Every finding below was measured 2026-09-20 against the live dev stack, on the surfaces
+# test_a11y.py scans today. All are pre-existing debt, not something #785 fixes — see its
+# plan's §4.3: ratchet first at today's counts, then let the components' own rewrites
+# (#747-#757) lower each number as they land.
+
+gallery::aria-input-field-name::4       # BACKLOG #785 — filter/sort controls without an accessible name, tracked for #747-#757
+gallery::label::1                       # BACKLOG #785 — one form control missing an associated <label>
+gallery::label-title-only::1            # BACKLOG #785 — a control's only accessible name comes from a title attribute
+
+settings-modal::aria-input-field-name::4  # BACKLOG #785 — same filter/sort controls rendered inside the modal
+settings-modal::label::1                  # BACKLOG #785 — one form control missing an associated <label>
+settings-modal::label-title-only::1       # BACKLOG #785 — a control's only accessible name comes from a title attribute
+
+speakers::label::1                      # BACKLOG #785 — one form control missing an associated <label>
+
+search::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered on /search
+search::color-contrast::1               # BACKLOG #785 — theme-token work (frontend/src/styles/theme.css), tracked for #747-#757
+search::label::1                        # BACKLOG #785 — one form control missing an associated <label>
+search::label-title-only::1             # BACKLOG #785 — a control's only accessible name comes from a title attribute
+
+chat::label::1                          # BACKLOG #785 — one form control missing an associated <label>
+
+file-detail::color-contrast::1          # BACKLOG #785 — theme-token work (frontend/src/styles/theme.css), tracked for #747-#757
+file-detail::label::1                   # BACKLOG #785 — one form control missing an associated <label>
+file-detail::label-title-only::1        # BACKLOG #785 — a control's only accessible name comes from a title attribute
+file-detail::nested-interactive::2      # BACKLOG #785 — an interactive control nested inside another, tracked for #747-#757
+
+file-status::color-contrast::1          # BACKLOG #785 — theme-token work (frontend/src/styles/theme.css), tracked for #747-#757
+file-status::label::1                   # BACKLOG #785 — one form control missing an associated <label>
+file-status::select-name::2             # BACKLOG #785 — two <select> elements without an accessible name
+
+upload::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered behind the upload modal
+upload::label::1                        # BACKLOG #785 — one form control missing an associated <label>
+upload::label-title-only::1             # BACKLOG #785 — a control's only accessible name comes from a title attribute

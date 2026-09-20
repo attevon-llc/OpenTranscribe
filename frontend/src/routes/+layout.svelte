@@ -16,7 +16,7 @@
   import { loadCapabilities } from "$stores/capabilities";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
-  import { locale } from "../stores/locale";
+  import { locale, t } from "../stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
   import { networkStore } from "../stores/network";
   import { unregisterServiceWorkers } from "$lib/serviceWorkerCleanup";
@@ -208,6 +208,10 @@
   {/if}
 
   <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
+    <!-- First focusable element in the app. Visually hidden until :focus-visible so it
+         doesn't disturb sighted layout, but never display:none/visibility:hidden — that
+         would remove it from the focus order and defeat the point (issue #785). -->
+    <a href="#main-content" class="skip-link">{$t('a11y.skipToContent')}</a>
     <ToastContainer />
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
@@ -226,7 +230,7 @@
            remedy, so render /login bare — chrome would only offer dead links.
            `password_change_required` keeps the session; `account_expired` has
            already torn it down. -->
-      <main class="content no-navbar">
+      <main id="main-content" tabindex="-1" class="content no-navbar">
         <slot />
       </main>
     {:else if $isAuthenticated && !isPublicPath}
@@ -236,7 +240,7 @@
       </AppContent>
     {:else if !$isAuthenticated && isPublicPath}
       <!-- Unauthenticated user on a public page (login/register/forgot-password) — render it -->
-      <main class="content no-navbar">
+      <main id="main-content" tabindex="-1" class="content no-navbar">
         <slot />
       </main>
     {:else}
@@ -271,6 +275,32 @@
     flex-direction: column;
     min-height: 100vh;
     min-height: 100dvh;
+  }
+
+  /* Clipped off-screen rather than display:none/visibility:hidden, which would remove it
+     from the focus order and defeat the point (issue #785). Revealed on :focus-visible. */
+  .skip-link {
+    position: absolute;
+    top: -9999px;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    padding: 0;
+    background: var(--color-primary);
+    color: white;
+    z-index: var(--z-critical, 10000);
+  }
+
+  .skip-link:focus-visible {
+    top: 0.5rem;
+    left: 0.5rem;
+    width: auto;
+    height: auto;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    font-weight: 600;
+    text-decoration: none;
   }
 
   /* Offset for classification banner (approx 28px) */

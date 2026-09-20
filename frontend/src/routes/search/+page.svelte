@@ -696,8 +696,10 @@
         {/if}
       </header>
 
-      <!-- Results -->
-      <main class="results">
+      <!-- Results. `<div>`, not `<main>`: this nests inside AppContent.svelte's
+           `<main id="main-content">` landmark, and two nested `main` landmarks is itself an
+           axe finding (issue #785). -->
+      <div class="results">
         {#if $searchStore.isLoading}
           <CardGridSkeleton variant="search" count={6} />
         {:else if $searchStore.error}
@@ -792,7 +794,7 @@
             />
           {/if}
         {/if}
-      </main>
+      </div>
     </div>
   </div>
 

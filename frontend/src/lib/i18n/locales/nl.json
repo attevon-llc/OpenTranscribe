@@ -5259,5 +5259,6 @@
   "settings.emailNotifications.links.warnConfigDisabled": "Deze e-mailconfiguratie is uitgeschakeld, dus er wordt niets via verzonden.",
   "settings.emailNotifications.links.warnNoRecipients": "Deze configuratie heeft geen standaardontvangers en hier zijn er geen toegevoegd, dus er wordt niets verzonden.",
   "settings.emailNotifications.links.deleteConfigTitle": "Deze e-mailconfiguratie verwijderen?",
-  "settings.emailNotifications.links.deleteConfigMessage": "Het verwijderen van \"{{name}}\" ontkoppelt het ook van {{count}} bewaakte bron(nen), die dan geen meldingen meer krijgen."
+  "settings.emailNotifications.links.deleteConfigMessage": "Het verwijderen van \"{{name}}\" ontkoppelt het ook van {{count}} bewaakte bron(nen), die dan geen meldingen meer krijgen.",
+  "a11y.skipToContent": "Naar hoofdinhoud gaan"
 }

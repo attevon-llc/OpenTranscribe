@@ -5259,5 +5259,6 @@
   "settings.emailNotifications.links.warnConfigDisabled": "Diese E-Mail-Konfiguration ist deaktiviert, daher wird darüber nichts gesendet.",
   "settings.emailNotifications.links.warnNoRecipients": "Diese Konfiguration hat keine Standardempfänger und hier sind keine hinzugefügt, daher wird nichts gesendet.",
   "settings.emailNotifications.links.deleteConfigTitle": "Diese E-Mail-Konfiguration löschen?",
-  "settings.emailNotifications.links.deleteConfigMessage": "Das Löschen von „{{name}}“ trennt sie auch von {{count}} Überwachungsquelle(n), die dann nicht mehr benachrichtigt werden."
+  "settings.emailNotifications.links.deleteConfigMessage": "Das Löschen von „{{name}}“ trennt sie auch von {{count}} Überwachungsquelle(n), die dann nicht mehr benachrichtigt werden.",
+  "a11y.skipToContent": "Zum Hauptinhalt springen"
 }

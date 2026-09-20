@@ -5259,5 +5259,6 @@
   "settings.emailNotifications.links.warnConfigDisabled": "이 이메일 구성이 비활성화되어 있어 이를 통해 아무것도 발송되지 않습니다.",
   "settings.emailNotifications.links.warnNoRecipients": "이 구성에는 기본 수신자가 없고 여기에도 추가되지 않아 아무것도 발송되지 않습니다.",
   "settings.emailNotifications.links.deleteConfigTitle": "이 이메일 구성을 삭제할까요?",
-  "settings.emailNotifications.links.deleteConfigMessage": "\"{{name}}\"을(를) 삭제하면 감시 소스 {{count}}개와의 연결도 해제되어 해당 소스는 알림을 받지 못합니다."
+  "settings.emailNotifications.links.deleteConfigMessage": "\"{{name}}\"을(를) 삭제하면 감시 소스 {{count}}개와의 연결도 해제되어 해당 소스는 알림을 받지 못합니다.",
+  "a11y.skipToContent": "본문으로 건너뛰기"
 }

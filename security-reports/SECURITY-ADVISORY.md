@@ -59,6 +59,10 @@ recur in a future weekly batch.
 **Package**: `libxml2` 2.12.7+dfsg+really2.9.14-2.1+deb13u3
 **Present on**: `backend-amd64`, `lite-amd64`, `lite-arm64` (not `frontend`/`docs` — those are nginx-based)
 **Status**: **ACCEPTED RISK — no upstream patch exists anywhere**
+**Tracked**: issue [#775](https://github.com/attevon-llc/OpenTranscribe/issues/775) — this
+repo's standing "unfixed OS-level CRITICAL" record (also covers `libimage-exiftool-perl`'s
+perl-stack findings, kept for metadata-extraction fidelity; re-measured for v0.5.1 there:
+16 → 1 CRITICAL total on `backend-amd64`, this finding being the 1 remaining)
 
 **Verified directly, not assumed stale**: ran `apt-cache policy libxml2` against a *fresh*
 `debian:trixie-slim` container on 2026-09-20. The installed version IS the latest candidate

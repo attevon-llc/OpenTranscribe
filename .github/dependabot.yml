@@ -89,6 +89,14 @@ updates:
       # middleware adapts to the new routing.
       - dependency-name: "fastapi"
         versions: [">=0.137.0"]
+      # numpy 2.5.x conflicts with presidio-anonymizer/presidio-analyzer's own
+      # numpy<2.5.0 declared metadata -- `pip install numpy==2.5.3
+      # presidio-analyzer==2.2.364` is a real ResolutionImpossible, verified directly.
+      # Dependabot PR #949 proposed 2.5.3; caught before it reached a built image.
+      # Cap documented beside the pin in requirements.txt; lift together with
+      # presidio's own floor once it raises it.
+      - dependency-name: "numpy"
+        versions: [">=2.5.0"]
       # bcrypt 5 removed the __about__ attribute passlib introspects (#234).
       - dependency-name: "bcrypt"
         update-types: ["version-update:semver-major"]

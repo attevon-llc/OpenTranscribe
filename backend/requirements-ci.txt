@@ -70,7 +70,7 @@ pyotp==2.10.0
 qrcode[pil]==8.2
 
 # AI/ML stack (CPU wheels via the extra index above)
-numpy==2.5.3
+numpy==2.4.6
 # pandas is TRANSITIVE in the real image (pyannote-core/database/metrics and whisperx each
 # declare a bare `pandas>=2.2.3` floor), and CI installs none of those. But the diarize
 # result handed to speaker_assigner IS a pandas DataFrame in production, and

@@ -92,7 +92,12 @@ qrcode[pil]==8.2
 
 # AI/ML Stack - All cuDNN 9 compatible for CUDA 12.8
 # NumPy 2.x - required by whisperx>=3.7.6
-numpy==2.5.3
+# Capped <2.5.0: presidio-anonymizer/presidio-analyzer declare numpy<2.5.0 in their own
+# metadata. `pip install numpy==2.5.3 presidio-analyzer==2.2.364` is a real
+# ResolutionImpossible, verified directly, not a resolver preference. Dependabot PR #949
+# proposed 2.5.3; caught by pip refusing the install outright before this ever reached a
+# built image. Capped via dependabot.yml's ignore: -- lift together with presidio's floor.
+numpy==2.4.6
 
 # PyTorch with CUDA 12.8 support (CVE-2025-32434 fixed in 2.6.0+)
 # 2.11.0 is the newest matched torch/torchaudio pair on the cu128 index (torch has

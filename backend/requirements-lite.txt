@@ -5,7 +5,7 @@ imohash==1.1.0
 mmh3==5.3.0  # via imohash — see requirements.txt for the version-drift note (issue #492)
 # fastapi capped <0.137: 0.137+ stops flattening include_router prefixes into
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
-fastapi==0.141.1
+fastapi==0.136.3
 uvicorn[standard]==0.53.0
 websockets==17.1
 sqlalchemy==2.0.53
@@ -54,7 +54,7 @@ qrcode[pil]==8.2
 
 # AI/ML Stack - CPU-only (no CUDA, no GPU required)
 # NumPy 2.x compatible
-numpy==2.5.3
+numpy==2.4.6
 
 # PyTorch CPU-only. NOT dropped by issue #660: sentence-transformers==5.7.0 below
 # declares `torch>=1.11.0` in its own installed metadata (used at

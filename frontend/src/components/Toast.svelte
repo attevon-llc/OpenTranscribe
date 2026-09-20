@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { retryWaitLabel } from '$lib/utils/formatting';
   import type { ToastAction } from '$stores/toast';
@@ -19,6 +19,36 @@
   // politely instead of interrupting like `role="alert"` (issue #788 / #785).
   $: toastRole = type === 'error' || type === 'warning' ? 'alert' : 'status';
   $: retryLabel = retryAfterSeconds != null ? retryWaitLabel(retryAfterSeconds) : null;
+
+  // Issue #788 (last AC): the `action` slot is disabled until `retryAfterSeconds`
+  // elapses, then silently re-enables. Deliberately drives the BUTTON's `disabled`
+  // attribute on a timer rather than re-rendering the toast's text -- the toast is
+  // `role="alert"`/`role="status"`, so a ticking or changing text node would
+  // re-announce to a screen reader every tick (J7 in the #788 plan; see
+  // `retryWaitLabel`'s doc comment for the same reasoning on the hint text). A
+  // `disabled` attribute flip on an element with unchanged text content is not an
+  // accessibility-tree text mutation and does not trigger a live-region
+  // announcement, so the wait produces exactly one state change and zero
+  // re-announcements.
+  //
+  // No `retryAfterSeconds` (header absent/unparseable) means there is nothing to
+  // count down -- the action starts enabled immediately rather than staying
+  // permanently disabled or showing a NaN-derived wait.
+  let actionDisabled = false;
+  let reenableTimer: ReturnType<typeof setTimeout> | undefined;
+
+  onMount(() => {
+    if (action && typeof retryAfterSeconds === 'number' && retryAfterSeconds > 0) {
+      actionDisabled = true;
+      reenableTimer = setTimeout(() => {
+        actionDisabled = false;
+      }, retryAfterSeconds * 1000);
+    }
+  });
+
+  onDestroy(() => {
+    if (reenableTimer) clearTimeout(reenableTimer);
+  });
 
   const icons = {
     success: '✓',
@@ -60,7 +90,16 @@
     {/if}
   </span>
   {#if action}
-    <button class="toast-action" on:click={action.onClick}>{action.label}</button>
+    <button
+      class="toast-action"
+      on:click={() => {
+        if (!actionDisabled) action.onClick();
+      }}
+      disabled={actionDisabled}
+      aria-disabled={actionDisabled}
+    >
+      {action.label}
+    </button>
   {/if}
   <button class="toast-close" on:click={dismiss} aria-label={$t('toast.dismiss')}>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -142,13 +181,18 @@
     transition: all 0.2s;
   }
 
-  .toast-action:hover {
+  .toast-action:hover:not(:disabled) {
     background: var(--toast-color);
     color: white;
   }
 
-  :global([data-theme='dark']) .toast-action:hover {
+  :global([data-theme='dark']) .toast-action:hover:not(:disabled) {
     color: var(--background-color);
+  }
+
+  .toast-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .toast-close {

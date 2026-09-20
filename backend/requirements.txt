@@ -22,7 +22,7 @@ starlette==1.6.0
 anyio==4.15.1
 uvicorn[standard]==0.53.0
 websockets==17.1
-sqlalchemy==2.0.53
+sqlalchemy==2.0.54
 alembic==1.20.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
@@ -51,7 +51,7 @@ email-validator==2.3.0
 prometheus-client==0.26.0   # 0.25.0 current; NEVER 0.23.0 (yanked)
 python-json-logger==4.2.0         # v4.x current, same PyPI name (nhairs maintains);
                                 # import from pythonjsonlogger.json (legacy .jsonlogger is a shim)
-cachetools==7.1.8                # 7.1.4 current; TTLCache still NOT thread-safe (we lock)
+cachetools==7.2.0                # 7.1.4 current; TTLCache still NOT thread-safe (we lock)
 
 # Asynchronous Tasks
 celery==5.6.3
@@ -145,7 +145,7 @@ huggingface-hub==0.36.2
 # Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
 # virtualenv) — pinned after the dependency-parity gate caught the venv and the
 # image resolving different patch releases (issue #492's exact failure mode).
-filelock==3.32.6
+filelock==4.0.0
 # Transitive (huggingface_hub, lightning, pytorch-lightning, torch) — same #492
 # failure mode as filelock above.
 fsspec==2026.9.0
@@ -258,14 +258,14 @@ nltk==3.10.3
 # (same websockets>=12.0 floor, so it's the SDK's own import chain that changed, not a
 # websockets pin) — verified via a real import + client.listen.v1.media.transcribe_file check.
 deepgram-sdk==7.9.0
-assemblyai==1.5.4
+assemblyai==1.5.5
 google-cloud-speech==2.40.0
 azure-cognitiveservices-speech==1.51.2
 speechmatics-batch==0.5.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3==1.43.94
+boto3==1.43.96
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai==3.14.0
+openai==3.14.1
 # requests is pulled in by many packages but listed explicitly for Gladia REST calls
 requests==2.34.2
 # Recovers structurally-malformed JSON from LLM summary responses
@@ -355,7 +355,7 @@ msal==1.38.0
 # drifted. A package that starts drifting later belongs here too; the check that
 # finds it is a `pip freeze` diff of a fresh venv against a fresh image.
 cuda-pathfinder==1.8.1     # via cuda-bindings
-botocore==1.43.94          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
+botocore==1.43.96          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
 # The four below all predate documents and remain pulled in by packages that have
 # nothing to do with them (see each line). They are here because #551 removed
 # docling-slim, whose own constraints had been holding them at fixed versions as a
@@ -376,7 +376,7 @@ googleapis-common-protos==1.75.3  # via google-api-core — drifted 1.75.1 (venv
 proto-plus==1.28.4         # via google-cloud-speech — drifted 1.28.3 (venv) vs 1.28.4 (image), 2026-08-26
 mmh3==5.3.0                # via imohash — drifted 5.2.1 (venv) vs 5.3.0 (image), 2026-08-26
 pyspnego==0.12.2           # via smbprotocol — drifted 0.12.1 (venv) vs 0.12.2 (image), 2026-08-26
-idna==3.19                 # via requests, httpx, anyio, yarl, tldextract
+idna==3.20                 # via requests, httpx, anyio, yarl, tldextract
 argon2-cffi-bindings==26.1.0  # via argon2-cffi — drifted 25.1.0 (venv) vs 26.1.0 (image), 2026-08-21
 protobuf==7.36.1           # via grpcio-status, onnx, opensearch-protobufs — drifted 7.35.1 (venv) vs 7.36.0 (image), 2026-08-21
 narwhals==2.26.0           # via altair/plotly family — drifted 2.24.0 (venv) vs 2.25.0 (image), 2026-08-21

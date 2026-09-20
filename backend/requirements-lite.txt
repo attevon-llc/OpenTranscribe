@@ -8,7 +8,7 @@ mmh3==5.3.0  # via imohash — see requirements.txt for the version-drift note (
 fastapi==0.136.3
 uvicorn[standard]==0.53.0
 websockets==17.1
-sqlalchemy==2.0.53
+sqlalchemy==2.0.54
 alembic==1.20.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
@@ -22,7 +22,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.3.0
 email-validator==2.3.0
 # OIDC JWKS caching (app/auth/oidc/discovery.py) — see requirements.txt for why this version.
-cachetools==7.1.8
+cachetools==7.2.0
 # Sentence tokenization for hybrid search (app/services/search/hybrid_search_service.py) —
 # see requirements.txt for the pathsec-hardening pin rationale (issue #491).
 nltk==3.10.3
@@ -150,16 +150,16 @@ sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see backend/requirements.txt for the
 # full explanation. Caught by tests/unit/test_provider_sdk_compat.py.
 deepgram-sdk==7.9.0
-assemblyai==1.5.4
+assemblyai==1.5.5
 google-cloud-speech==2.40.0
 azure-cognitiveservices-speech==1.51.2
 # speechmatics-python is deprecated and drops speaker labels — the app uses
 # the async speechmatics-batch client (matches requirements.txt)
 speechmatics-batch==0.5.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3==1.43.94
+boto3==1.43.96
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai==3.14.0
+openai==3.14.1
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
 requests==2.34.2
 # See requirements.txt for why — LLM summary JSON repair (llm_service.py)

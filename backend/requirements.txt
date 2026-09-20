@@ -123,9 +123,9 @@ ctranslate2==4.8.2
 # constraint upstream). ctranslate2 and huggingface-hub above/below already
 # satisfy its other needs.
 #
-# tokenizers capped by transformers==4.57.6 below, which declares
+# tokenizers capped by transformers==5.10.1 below, which declares
 # tokenizers<=0.23.0,>=0.22.0 in its own metadata -- `pip install
-# tokenizers==0.23.2 transformers==4.57.6` is a real ResolutionImpossible,
+# tokenizers==0.23.2 transformers==5.10.1` is a real ResolutionImpossible,
 # verified directly via a full `pip install -r requirements.txt` run.
 # Dependabot PR #949 proposed 0.23.2; caught before it reached a built image.
 # Lift together with transformers' own major-version cap (dependabot.yml).
@@ -140,7 +140,7 @@ tqdm==4.70.1
 # whisperx ships a huggingface-hub>=1.0 compatible release.
 # Floor raised to 4.51.3 (gliner's actual "requires_dist" floor) now that gliner
 # is also --no-deps below and no longer has pip enforcing that constraint for us.
-transformers==4.57.6
+transformers==5.10.1
 huggingface-hub==0.36.2
 # Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
 # virtualenv) — pinned after the dependency-parity gate caught the venv and the

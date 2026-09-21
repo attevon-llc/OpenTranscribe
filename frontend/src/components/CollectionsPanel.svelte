@@ -661,7 +661,7 @@
 
   .search-icon {
     position: absolute;
-    left: 10px;
+    left: 12px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-secondary);
@@ -671,19 +671,21 @@
   .search-input {
     width: 100%;
     padding: 0.5rem 2rem 0.5rem 2.25rem;
-    border: 1px solid var(--border-color);
+    /* The app's input tokens, not --surface-color/--border-color: matches
+       form-elements.css and TagManagerModal, which this panel's search bar
+       is converging on (issue #757). */
+    background-color: var(--input-background);
+    border: 1px solid var(--input-border);
     border-radius: 6px;
-    background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 0.875rem;
     transition: border-color 0.15s, box-shadow 0.15s;
     box-sizing: border-box;
   }
 
-  .search-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--primary-light, rgba(59, 130, 246, 0.1));
+  .search-input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
   }
 
   .search-input::placeholder {

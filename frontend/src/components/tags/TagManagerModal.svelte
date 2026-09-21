@@ -705,6 +705,8 @@
   .search-icon {
     position: absolute;
     left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
     color: var(--text-secondary);
     pointer-events: none;
   }
@@ -714,16 +716,26 @@
     outline-offset: 1px;
   }
 
+  .search-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.7;
+  }
+
   .search-clear {
     position: absolute;
     right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 4px;
     border: none;
     border-radius: 4px;
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
+    transition: color 0.15s;
   }
 
   .search-clear:hover {
@@ -876,149 +888,7 @@
   }
 
   @media (max-width: 768px) {
-    .create-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding-bottom: 0.25rem;
-  }
-
-  .create-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .create-icon {
-    position: absolute;
-    left: 12px;
-    color: var(--text-secondary);
-    pointer-events: none;
-  }
-
-  /* Matches .search-input exactly — the two sit one above the other and were
-     visibly different controls. */
-  .create-input,
-  .search-input {
-    width: 100%;
-    padding: 0.5rem 2rem 0.5rem 2.25rem;
-    /* The app's input tokens, not --surface-color: the modal body is already
-       surface-coloured, so a surface-coloured input read as a grey smear
-       rather than a field. Matches form-elements.css and CollectionsPanel. */
-    background-color: var(--input-background);
-    border: 1px solid var(--input-border);
-    border-radius: 6px;
-    color: var(--text-color);
-    font-size: 0.875rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
-    box-sizing: border-box;
-  }
-
-  .create-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
-  }
-
-  /* The controls beside the inputs came in at three different heights and three
-     different radii — input 37.4/6px, the Add button 36/8px, the selects
-     32.2/4px — which is what made the two rows look misaligned. Pin them all to
-     the input's metrics. */
-  .sort-select {
-    height: 37.4px;
-    border-radius: 6px;
-    font-size: 0.875rem;
-  }
-
-
-
-
-  @media (max-width: 640px) {
-    .create-row {
-      flex-wrap: wrap;
-    }
-
-    .create-input {
-      flex-basis: 100%;
-      order: 1;
-    }
-  }
-
-  .list-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  /* Copied from CollectionsPanel so the two panels read as one component. */
-  .search-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .search-icon {
-    position: absolute;
-    left: 12px;
-    color: var(--text-secondary);
-    pointer-events: none;
-  }
-
-  .search-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
-  }
-
-  .search-clear {
-    position: absolute;
-    right: 6px;
-    display: flex;
-    padding: 4px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-
-  .search-clear:hover {
-    color: var(--text-color);
-  }
-
-  .sort-picker {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-shrink: 0;
-  }
-
-  .sort-label {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
-
-  .sort-select {
-    width: auto;
-    min-width: 7rem;
-    padding: 0.35rem 0.5rem;
-    font-size: 0.8125rem;
-  }
-
-  @media (max-width: 640px) {
-    .list-controls {
-      flex-wrap: wrap;
-    }
-
-    .search-wrapper {
-      flex-basis: 100%;
-    }
-  }
-
-  .tags-manager {
+    .tags-manager {
       padding: 16px 12px;
     }
 

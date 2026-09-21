@@ -208,6 +208,7 @@ def _send_completion_notification(
     file_id: int,
     summary_data: dict[str, Any],
     message: str,
+    duration_seconds: float | None = None,
 ) -> None:
     """Send completion notification with summary preview."""
     summary_preview = (
@@ -222,6 +223,7 @@ def _send_completion_notification(
         message,
         100,
         summary_data=summary_preview,
+        duration_seconds=duration_seconds,
     )
 
 
@@ -232,6 +234,7 @@ def send_summary_notification(
     message: str,
     progress: int = 0,
     summary_data: dict[str, Any] | str | None = None,
+    duration_seconds: float | None = None,
 ) -> bool:
     """Send summary status notification via WebSocket."""
     from app.services.notification_service import send_task_notification
@@ -239,6 +242,8 @@ def send_summary_notification(
     extra: dict[str, Any] = {}
     if status == "completed" and summary_data:
         extra["summary"] = summary_data
+    if duration_seconds is not None:
+        extra["duration_seconds"] = duration_seconds
 
     return send_task_notification(
         user_id,
@@ -557,10 +562,15 @@ def _persist_summary(
     task_id: str,
     summary_data: dict[str, Any],
     prompt_uuid: str | None,
-) -> None:
+) -> float | None:
     """Phase 3 — write (short session, Postgres only).
 
     ``summary_data`` is the whole summary and the only copy of it (#67).
+
+    Returns the just-finished task's wall-clock duration in seconds (issue
+    #753's duration chip), or ``None`` if unavailable — see
+    ``task_utils.update_task_status``'s docstring for why it must be read
+    here rather than reconstructed later.
     """
     from app.utils.task_utils import update_task_status
 
@@ -586,7 +596,8 @@ def _persist_summary(
         except Exception as usage_err:  # noqa: BLE001
             logger.warning(f"Could not increment prompt usage_count: {usage_err}")
 
-        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+        task = update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+        return getattr(task, "duration_seconds", None)
 
 
 def _handle_task_error(
@@ -694,10 +705,14 @@ def summarize_transcript_task(
             return _handle_no_llm_configured(file_id, user_id, inputs["filename"], task_id)
 
         # Phase 3 — write (DB session reopened, Postgres only).
-        _persist_summary(file_id, user_id, task_id, summary_data, prompt_uuid)
+        duration_seconds = _persist_summary(file_id, user_id, task_id, summary_data, prompt_uuid)
 
         _send_completion_notification(
-            user_id, file_id, summary_data, "AI summary generation completed successfully"
+            user_id,
+            file_id,
+            summary_data,
+            "AI summary generation completed successfully",
+            duration_seconds=duration_seconds,
         )
 
         logger.info("=== Summarization Task Completed Successfully ===")

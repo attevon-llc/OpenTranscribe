@@ -88,7 +88,17 @@ def update_task_status(
     error_message: str | None = None,
     completed: bool = False,
 ) -> Task | None:
-    """Update task status in the database."""
+    """Update task status in the database.
+
+    On a terminal transition, stamps the returned ``Task`` with a transient
+    (non-persisted) ``duration_seconds`` attribute — issue #753's duration
+    chip. It MUST be computed here, not by a later reader of ``MediaFile``:
+    the terminal branch below clears ``media_file.task_started_at`` in this
+    same call, which is the only record of when this task began. Once
+    cleared it is gone — there is no other timestamp to reconstruct it from,
+    and ``MediaFile.duration`` is the length of the RECORDING, a different
+    number that must never be substituted for processing time.
+    """
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         logger.warning(f"Task {task_id} not found")
@@ -109,6 +119,8 @@ def update_task_status(
     # Always update the timestamp for task state changes
     task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
 
+    duration_seconds: float | None = None
+
     # Update media file task tracking
     media_file_id = task.media_file_id
     if media_file_id:
@@ -123,11 +135,16 @@ def update_task_status(
             # the file as still busy to `is_file_safe_to_delete` and friends,
             # even though nothing is running any more (issue #622).
             if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_SKIPPED]:
+                if task.completed_at is not None and media_file.task_started_at is not None:
+                    duration_seconds = (
+                        task.completed_at - media_file.task_started_at
+                    ).total_seconds()
                 media_file.active_task_id = None
                 media_file.task_started_at = None
 
     db.commit()
     db.refresh(task)
+    task.duration_seconds = duration_seconds  # transient — not a mapped column
 
     # Terminal states re-check the media file's aggregate status.
     task_media_file_id = task.media_file_id

@@ -1524,6 +1524,7 @@
   "notifications.minutesAgo": "{{count}}分前",
   "notifications.hoursAgo": "{{count}}時間前",
   "notifications.daysAgo": "{{count}}日前",
+  "notifications.completedIn": "{{duration}} で完了",
   "about.title": "OpenTranscribeについて",
   "about.closeDialog": "ダイアログを閉じる",
   "about.subtitle": "AIを活用した文字起こし & メディア管理プラットフォーム",

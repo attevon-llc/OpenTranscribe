@@ -1524,6 +1524,7 @@
   "notifications.minutesAgo": "há {{count}}m",
   "notifications.hoursAgo": "há {{count}}h",
   "notifications.daysAgo": "há {{count}}d",
+  "notifications.completedIn": "Concluído em {{duration}}",
   "about.title": "Sobre o OpenTranscribe",
   "about.closeDialog": "Fechar diálogo",
   "about.subtitle": "Plataforma de Transcrição e Gerenciamento de Mídia com IA",

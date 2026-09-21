@@ -923,6 +923,7 @@
   "notifications.clearAll": "Borrar todas las notificaciones",
   "notifications.closePanel": "Cerrar panel de notificaciones",
   "notifications.daysAgo": "hace {{count}}d",
+  "notifications.completedIn": "Completado en {{duration}}",
   "notifications.dismiss": "Descartar notificación",
   "notifications.downloadProgress": "Progreso de Descarga",
   "notifications.empty": "Sin notificaciones",

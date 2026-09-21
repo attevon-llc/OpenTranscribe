@@ -923,6 +923,7 @@
   "notifications.clearAll": "Alle Benachrichtigungen löschen",
   "notifications.closePanel": "Benachrichtigungsfeld schließen",
   "notifications.daysAgo": "vor {{count}}T",
+  "notifications.completedIn": "Abgeschlossen in {{duration}}",
   "notifications.dismiss": "Benachrichtigung verwerfen",
   "notifications.downloadProgress": "Download-Fortschritt",
   "notifications.empty": "Keine Benachrichtigungen",

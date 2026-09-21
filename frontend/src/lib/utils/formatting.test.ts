@@ -8,6 +8,7 @@ import {
   formatVttTimestamp,
   formatLanguageNames,
   retryWaitLabel,
+  formatCompactDuration,
 } from './formatting';
 
 /**
@@ -160,5 +161,41 @@ describe('retryWaitLabel (issue #788 — rate-limit wait hint)', () => {
       key: 'common.retryAfterSeconds',
       count: 1,
     });
+  });
+});
+
+describe('formatCompactDuration (Xh Ym / Ym Zs / Zs — issue #753 duration chip)', () => {
+  it('renders sub-minute durations as seconds only', () => {
+    expect(formatCompactDuration(0)).toBe('0s');
+    expect(formatCompactDuration(45)).toBe('45s');
+    expect(formatCompactDuration(59)).toBe('59s');
+  });
+
+  it('renders sub-hour durations as minutes + seconds, omitting a zero seconds unit', () => {
+    expect(formatCompactDuration(60)).toBe('1m');
+    expect(formatCompactDuration(125)).toBe('2m 5s');
+    expect(formatCompactDuration(134)).toBe('2m 14s');
+  });
+
+  it('renders hour-scale durations as hours + minutes, omitting a zero minutes unit', () => {
+    expect(formatCompactDuration(3600)).toBe('1h');
+    expect(formatCompactDuration(3660)).toBe('1h 1m');
+    expect(formatCompactDuration(5400)).toBe('1h 30m');
+  });
+
+  it('rounds to the nearest whole second', () => {
+    expect(formatCompactDuration(44.6)).toBe('45s');
+  });
+
+  it('clamps invalid input to zero rather than throwing or showing negative/NaN', () => {
+    expect(formatCompactDuration(-5)).toBe('0s');
+    expect(formatCompactDuration(Number.NaN)).toBe('0s');
+  });
+
+  it('matches formatEtaSeconds’ arithmetic for the value websocket.test.ts pins (125 -> "2m 5s")', () => {
+    // websocket.test.ts asserts `formatEtaSeconds(125)` renders '2m 5s' via a
+    // live ETA notification; this pins the shared arithmetic it now
+    // delegates to, so the two can't silently diverge again.
+    expect(formatCompactDuration(125)).toBe('2m 5s');
   });
 });

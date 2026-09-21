@@ -12,7 +12,6 @@ export interface DownloadState {
   progress?: number;
   startTime: Date;
   error?: string;
-  notificationId?: string;
 }
 
 function createDownloadStore() {

@@ -1525,6 +1525,7 @@
   "notifications.minutesAgo": "{{count}}m ago",
   "notifications.hoursAgo": "{{count}}h ago",
   "notifications.daysAgo": "{{count}}d ago",
+  "notifications.completedIn": "Completed in {{duration}}",
   "about.title": "About OpenTranscribe",
   "about.closeDialog": "Close about dialog",
   "about.subtitle": "AI-Powered Transcription & Media Management Platform",

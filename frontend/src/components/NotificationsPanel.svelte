@@ -5,6 +5,8 @@
   import { goto } from '$app/navigation';
   import { token } from '../stores/auth';
   import { websocketStore } from '../stores/websocket';
+  import type { NotificationType } from '../stores/websocket';
+  import { formatCompactDuration } from '$lib/utils/formatting';
   import { showNotificationsPanel } from '../stores/notificationsPanel';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
@@ -82,39 +84,77 @@
   }
 
   /**
-   * Get appropriate icon for notification type
-   * @param {string} type - The notification type
-   * @returns {string} - Icon name
+   * One icon registry (issue #753), not a map plus a chain that must
+   * independently agree. Every glyph this component can render has exactly
+   * one name here; the SVG markup below switches on the SAME `IconName`
+   * union, so a glyph returned here with no matching branch is a defect the
+   * `NotificationsPanel.test.ts` icon-coverage test catches (not a compile
+   * error — this file has no `{@html}`/dynamic-component renderer of raw SVG
+   * strings, per `frontend/CLAUDE.md`'s sanitizeHtml rule, so the two sides
+   * are still hand-written markup, just now keyed off one typed name).
+   *
+   * Before this rewrite, `getNotificationIcon` returned `'video'`/`'music'`
+   * for `youtube_processing_status`/`audio_extraction_status` and NEITHER
+   * had a rendering branch — both silently fell through to the generic bell.
+   * That shipped bug is fixed by giving both a real branch below, not by
+   * removing the icon names.
    */
-  function getNotificationIcon(type: string) {
-    switch (type) {
-      case 'transcription_status':
-        return 'file-text';
-      case 'summarization_status':
-        return 'file-text';
-      case 'youtube_processing_status':
-        return 'video';
-      case 'audio_extraction_status':
-        return 'music';
-      case 'analytics_status':
-        return 'bar-chart';
-      case 'reindex_progress':
-      case 'reindex_complete':
-      case 'reindex_stopped':
-        return 'search';
-      case 'migration_progress':
-      case 'migration_complete':
-      case 'migration_finalized':
-        return 'database';
-      case 'clustering_progress':
-      case 'clustering_complete':
-        return 'users';
-      case 'attribute_migration_progress':
-      case 'attribute_migration_complete':
-        return 'users';
-      default:
-        return 'bell';
-    }
+  type IconName =
+    | 'bell'
+    | 'file-text'
+    | 'tag'
+    | 'folder'
+    | 'search'
+    | 'database'
+    | 'users'
+    | 'bar-chart'
+    | 'download'
+    | 'video'
+    | 'music'
+    | 'eye-off'
+    | 'shield';
+
+  const ICON_BY_TYPE: Partial<Record<NotificationType, IconName>> = {
+    transcription_status: 'file-text',
+    summarization_status: 'file-text',
+    // Topics have no incumbent glyph of their own (TopicsList.svelte renders
+    // none), so adopting the tag glyph for both creates the parity the
+    // reviewer asked for at zero cost, rather than colliding with tags.
+    topic_extraction_status: 'tag',
+    auto_label_status: 'tag',
+    redaction_status: 'eye-off',
+    youtube_processing_status: 'video',
+    playlist_processing_status: 'video',
+    audio_extraction_status: 'music',
+    analytics_status: 'bar-chart',
+    reindex_progress: 'search',
+    reindex_complete: 'search',
+    reindex_stopped: 'search',
+    migration_progress: 'database',
+    migration_complete: 'database',
+    migration_finalized: 'database',
+    clustering_progress: 'users',
+    clustering_complete: 'users',
+    attribute_migration_progress: 'users',
+    attribute_migration_complete: 'users',
+    group_member_added: 'users',
+    group_member_removed: 'users',
+    collection_shared: 'folder',
+    collection_share_revoked: 'folder',
+    collection_share_updated: 'folder',
+    file_takedown: 'shield',
+    file_takedown_released: 'shield',
+    download_progress: 'download',
+  };
+
+  /**
+   * @param {string} type - The notification type
+   * @returns {IconName} - Icon name; falls back to the generic bell for any
+   *   type with no entry above (most union members — see `getNotificationTitle`
+   *   for the analogous title coverage gap, tracked separately).
+   */
+  function getNotificationIcon(type: NotificationType): IconName {
+    return ICON_BY_TYPE[type] ?? 'bell';
   }
 
   /**
@@ -189,27 +229,35 @@
    * @param {Object} notification - The notification object
    * @returns {string} - CSS class for status
    */
-  function getNotificationStatus(notification: { data?: { status?: string } }) {
-    const notificationData = notification.data || {};
-    if (notificationData.status) {
-      const status = notificationData.status;
-      switch (status) {
-        case 'completed':
-          return 'success';
-        case 'error':
-        case 'failed':
-          return 'error';
-        case 'processing':
-        case 'in_progress':
-          return 'info';
-        case 'not_configured':
-        case 'warning':
-          return 'warning';
-        default:
-          return 'default';
-      }
+  function getNotificationStatus(notification: {
+    status?: string;
+    data?: { status?: string };
+  }) {
+    // Falls back to the top-level `notification.status` when `data.status`
+    // is absent (issue #753, N2/J3). Every WS-delivered notification sets
+    // BOTH; `addNotification` callers — audio extraction, and now the
+    // download bridge (#569) — set only the top-level field unless the
+    // caller also passes a `data` object. Before this fallback, any such
+    // client-originated row rendered permanently uncoloured (grey chip,
+    // transparent left indicator) regardless of its real outcome; this
+    // retroactively repaints those rows correctly instead of leaving a
+    // second, weaker code path for client-originated notifications.
+    const status = notification.data?.status ?? notification.status;
+    switch (status) {
+      case 'completed':
+        return 'success';
+      case 'error':
+      case 'failed':
+        return 'error';
+      case 'processing':
+      case 'in_progress':
+        return 'info';
+      case 'not_configured':
+      case 'warning':
+        return 'warning';
+      default:
+        return 'default';
     }
-    return 'default';
   }
 
   onMount(() => {
@@ -291,42 +339,78 @@
       {:else}
         <div class="notifications-list">
           {#each $websocketStore.notifications.filter(n => !n.silent) as notification (notification.id)}
+            {@const iconName = getNotificationIcon(notification.type)}
             <div class="notification-item {notification.read ? 'read' : 'unread'} status-{getNotificationStatus(notification)} {notification.status === 'processing' ? 'processing' : ''}">
               <!-- Status indicator -->
               <div class="notification-indicator"></div>
 
               <!-- Icon -->
               <div class="notification-icon">
-                {#if getNotificationIcon(notification.type) === 'file-text'}
+                {#if iconName === 'file-text'}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                     <line x1="16" y1="13" x2="8" y2="13"></line>
                     <line x1="16" y1="17" x2="8" y2="17"></line>
                   </svg>
-                {:else if getNotificationIcon(notification.type) === 'bar-chart'}
+                {:else if iconName === 'tag'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                    <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                  </svg>
+                {:else if iconName === 'folder'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                {:else if iconName === 'eye-off'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                {:else if iconName === 'shield'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                  </svg>
+                {:else if iconName === 'video'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                  </svg>
+                {:else if iconName === 'music'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 18V5l12-2v13"></path>
+                    <circle cx="6" cy="18" r="3"></circle>
+                    <circle cx="18" cy="16" r="3"></circle>
+                  </svg>
+                {:else if iconName === 'bar-chart'}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="20" x2="18" y2="10"></line>
                     <line x1="12" y1="20" x2="12" y2="4"></line>
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                   </svg>
-                {:else if getNotificationIcon(notification.type) === 'search'}
+                {:else if iconName === 'search'}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"></circle>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                   </svg>
-                {:else if getNotificationIcon(notification.type) === 'database'}
+                {:else if iconName === 'database'}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
                     <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
                     <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
                   </svg>
-                {:else if getNotificationIcon(notification.type) === 'users'}
+                {:else if iconName === 'users'}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                     <circle cx="9" cy="7" r="4"></circle>
                     <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
                     <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                {:else if iconName === 'download'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
                   </svg>
                 {:else}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -393,6 +477,13 @@
 
                 <div class="notification-meta">
                   <span class="notification-time">{formatTimestamp(notification.timestamp)}</span>
+                  {#if notification.status === 'completed' && notification.data?.duration_seconds != null}
+                    <span class="duration-chip">
+                      {$t('notifications.completedIn', {
+                        duration: formatCompactDuration(notification.data.duration_seconds)
+                      })}
+                    </span>
+                  {/if}
                 </div>
               </div>
 
@@ -751,6 +842,25 @@
     font-weight: 500;
     color: var(--text-secondary);
     opacity: 0.8;
+  }
+
+  /* Duration chip (issue #753) — same idiom as .enrichment-chip, but neutral
+     rather than success-tinted: how long a job took is a fact, not an
+     outcome, so it shouldn't visually compete with the coloured status
+     indicator/icon that already says "this succeeded". Uses theme tokens
+     that already resolve per-theme in theme.css, so no separate
+     [data-theme='dark'] override is needed here (theme-parity.test.ts). */
+  .duration-chip {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    line-height: 1.4;
+    white-space: nowrap;
   }
 
   /* Dismiss Button */

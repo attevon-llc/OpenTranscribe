@@ -50,6 +50,16 @@ const EXEMPT: Record<string, string> = {
     'inflight / failedCache only hold file UUIDs and timestamps, and every prefetch request ' +
     'goes through axiosInstance without its own signal, so abortAllRequests() cancels them ' +
     'before clearUserState() runs. No response body is retained here.',
+  'lib/services/downloadNotifications':
+    'The only module-level state is `unsubscribe`, a handle to its OWN subscription on ' +
+    '`downloadStore` — never user data (issue #569). `downloadStore.reset()` is already ' +
+    'registered above, so on logout the store this bridge mirrors goes to `{}` and the next ' +
+    'tick has zero entries to push. Tearing the subscription itself down on logout would ' +
+    'require re-establishing it on the next login within the same tab, and nothing currently ' +
+    'calls `initDownloadNotifications()` a second time (it only runs once, from ' +
+    "`+layout.svelte`'s `onMount`) — doing so would silently stop bridging downloads for " +
+    'User B after an in-tab logout/login, which is a real regression the always-empty-anyway ' +
+    'teardown would not be worth risking.',
 
   'lib/chat/revealPacer':
     'RevealPacer is a CLASS with instance state only — there is no module-level ' +

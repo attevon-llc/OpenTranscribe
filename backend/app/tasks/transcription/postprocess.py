@@ -223,8 +223,10 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                 user_id, file_id, 0.90, "Transcription complete, diarizing on GPU..."
             )
             with session_scope() as db:
-                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-            send_completion_notification(user_id, file_id)
+                task = update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            send_completion_notification(
+                user_id, file_id, duration_seconds=getattr(task, "duration_seconds", None)
+            )
         elif is_cloud_asr and not diarization_disabled:
             # Cloud ASR with provider diarization: embedding task runs async on GPU
             send_progress_notification(user_id, file_id, 0.90, "Processing speaker identification")
@@ -238,11 +240,13 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
             # rediarize_task instead, to avoid double-counting the same run).
             send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
             with session_scope() as db:
-                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+                task = update_task_status(db, task_id, "completed", progress=1.0, completed=True)
                 _fire_completion_metering(
                     db, file_id=file_id, run_id=task_id, provider=asr_provider, success=True
                 )
-            send_completion_notification(user_id, file_id)
+            send_completion_notification(
+                user_id, file_id, duration_seconds=getattr(task, "duration_seconds", None)
+            )
 
         completion_elapsed = time.perf_counter() - post_start
         logger.info(

@@ -1525,6 +1525,7 @@
   "notifications.minutesAgo": "{{count}}m geleden",
   "notifications.hoursAgo": "{{count}}u geleden",
   "notifications.daysAgo": "{{count}}d geleden",
+  "notifications.completedIn": "Voltooid in {{duration}}",
   "about.title": "Over OpenTranscribe",
   "about.closeDialog": "Info-dialoogvenster sluiten",
   "about.subtitle": "AI-aangedreven platform voor transcriptie en mediabeheer",

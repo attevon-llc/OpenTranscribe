@@ -22,6 +22,7 @@
   import { unregisterServiceWorkers } from "$lib/serviceWorkerCleanup";
   import { resetScrollLock } from '$lib/scrollLock';
   import { initMonitoring } from '$lib/monitoring';
+  import { initDownloadNotifications } from '$lib/services/downloadNotifications';
 
   // Import components
   import Navbar from "../components/Navbar.svelte";
@@ -118,6 +119,10 @@
     (async () => {
       // Initialize locale/i18n
       await locale.initialize();
+
+      // Bridges downloadStore transitions into the persistent bell (#569).
+      // After locale init so its notification copy isn't built pre-translation.
+      initDownloadNotifications();
 
       // Initialize network connectivity monitoring
       networkStore.initialize();

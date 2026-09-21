@@ -13,6 +13,38 @@ set -uo pipefail
 # shellcheck source=scripts/common.sh
 source ./scripts/common.sh
 
+# .env is gitignored, so a git worktree (e.g. .claude/worktrees/<name>) does not
+# get one automatically -- only the main checkout does. Left alone, every
+# *_PASSWORD/*_PORT var compose interpolates comes out empty and the first
+# symptom is Postgres crash-looping on "superuser password is not specified" --
+# nothing in that output says "you have no .env" (issue #961a).
+#
+# Auto-link (never copy, never read) the MAIN checkout's .env into this
+# worktree when one can be found. `git rev-parse --git-common-dir` resolves to
+# the MAIN checkout's .git regardless of which worktree invoked it; comparing
+# it against `--git-dir` (this worktree's own, private .git file) is git's own
+# documented way to detect "am I a worktree". Only a symlink is created --
+# .env's CONTENTS are never opened by this script, per the project's
+# secrets-file rule. A RELATIVE symlink is used deliberately: it was confirmed
+# to work by hand in a case where an absolute `cp` of the file was refused
+# (source-tree permissions), and it keeps working if the whole repo is moved.
+if [ ! -f ".env" ]; then
+  _ot_common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  _ot_git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+  if [ -n "$_ot_common_dir" ] && [ "$_ot_common_dir" != "$_ot_git_dir" ]; then
+    _ot_main_root="$(cd "$(dirname "$_ot_common_dir")" && pwd)"
+    if [ -f "${_ot_main_root}/.env" ]; then
+      _ot_env_rel="$(realpath --relative-to="$PWD" "${_ot_main_root}/.env" 2>/dev/null || echo "${_ot_main_root}/.env")"
+      if ln -s "$_ot_env_rel" .env 2>/dev/null; then
+        echo "🔗 No .env in this worktree — linked it from the main checkout (${_ot_env_rel})."
+        echo "   Contents are never read by this script; edit ${_ot_main_root}/.env directly."
+      fi
+    fi
+    unset _ot_main_root _ot_env_rel
+  fi
+  unset _ot_common_dir _ot_git_dir
+fi
+
 # Load environment variables from .env if present
 if [ -f ".env" ]; then
   set -a
@@ -20,6 +52,33 @@ if [ -f ".env" ]; then
   source ./.env
   set +a
 fi
+
+# Fail loudly, with a specific diagnosis, when a command that actually needs
+# .env (i.e. is about to run `docker compose`) finds none -- rather than
+# proceeding with every interpolated var empty and letting the first
+# container that reads one (historically Postgres) crash-loop on a symptom
+# that does not mention .env at all (issue #961a). The auto-link block above
+# already resolves the common worktree case; this is what fires when it
+# could not (no main checkout found, or the main checkout has no .env either).
+require_env_file_or_die() {
+  [ -f ".env" ] && return 0
+
+  echo "❌ No .env found in $(pwd)."
+  local common_dir git_dir
+  common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+  if [ -n "$common_dir" ] && [ "$common_dir" != "$git_dir" ]; then
+    local main_root
+    main_root="$(cd "$(dirname "$common_dir")" && pwd)"
+    echo "   This is a git worktree; .env is gitignored so it did not come with it,"
+    echo "   and the main checkout (${main_root}) has none either."
+    echo "   Create one there, then re-run (this script auto-links it into worktrees):"
+    echo "     cp ${main_root}/.env.example ${main_root}/.env"
+  else
+    echo "   Start from the template:  cp .env.example .env"
+  fi
+  exit 1
+}
 
 # Default the optional .env-sourced variables this script reads — directly or
 # through scripts/common.sh — so `set -u` doesn't abort when they're absent from
@@ -1072,7 +1131,8 @@ FRESH_LLM_TEST_SERVICES=(llm-test-vllm llm-test-ollama)
 # re-pin (see FRESH_*_SERVICES above).
 fresh_generate_overlay() {
   local name="$1"
-  shift
+  local offset="$2"
+  shift 2
   local aux_services=("$@")
   local proj
   proj="$(fresh_project_name "$name")"
@@ -1088,6 +1148,36 @@ fresh_generate_overlay() {
     for svc in "${FRESH_NAMED_SERVICES[@]}" ${aux_services[@]+"${aux_services[@]}"}; do
       echo "  ${svc}:"
       echo "    container_name: ${proj}-${svc}"
+      if [ "$svc" = "frontend" ]; then
+        # Two Vite dev servers running side by side (this fresh stack +
+        # the main one) share the host's fs.inotify.max_user_instances
+        # (128 on this host) and the second one dies with EMFILE watching
+        # vite.config.ts (issue #961b). Raising the sysctl needs root;
+        # polling doesn't, and a --fresh stack is BY DEFINITION the second
+        # watcher, so it is the one that switches. CHOKIDAR_INTERVAL is
+        # tunable via the invoking shell's environment before `start`.
+        echo "    environment:"
+        echo "      - CHOKIDAR_USEPOLLING=true"
+        echo "      - CHOKIDAR_INTERVAL=${CHOKIDAR_INTERVAL:-300}"
+      fi
+      if [ "$svc" = "backend" ] && [ -n "$offset" ] && [ "$offset" != "0" ]; then
+        # A --port-offset stack is served from an OFFSET Vite origin
+        # (http://localhost:<5173+offset>), but backend/app/core/config.py's
+        # CORS_ORIGINS default is the two UNOFFSET dev URLs. The WebSocket
+        # handshake's origin check (_origin_is_allowed,
+        # backend/app/api/websockets.py — #903's anti-hijacking fix, kept
+        # exact-match on purpose) then rejects every connection from this
+        # stack with 403 (issue #968). Fix is the allowlist, not the check:
+        # append this stack's own offset origins to the two defaults.
+        #
+        # JSON array, never a comma-separated string: pydantic-settings
+        # JSON-decodes a `list[str]` env var BEFORE the field's
+        # `mode="before"` validator runs, so a comma-separated value raises
+        # `SettingsError` at backend startup (measured while triaging this).
+        local _fe_port="${FRONTEND_PORT:-5173}"
+        echo "    environment:"
+        echo "      - CORS_ORIGINS=[\"http://localhost:5173\",\"http://127.0.0.1:5173\",\"http://localhost:${_fe_port}\",\"http://127.0.0.1:${_fe_port}\"]"
+      fi
     done
   } > "$file"
   # Pre-#343 deployments also generated a <name>-ports.yml overlay that added a
@@ -1555,6 +1645,77 @@ preflight_ports_or_die() {
   echo "   Refusing rather than letting 'compose up' abort part way through and"
   echo "   leave half the services in 'Created' (issue #553)."
   exit 1
+}
+
+# `docker compose up -d --wait` has a known race (moby/compose): a container
+# stuck in a restart loop can be observed "Running" at the instant --wait
+# polls, satisfying the wait condition and returning exit 0 even though the
+# container never actually came up. Observed live (issue #962): `up --wait`
+# reported success while `otfresh-*-postgres` sat in `Restarting (1)`, having
+# never initialized, and on a separate run while the frontend container was
+# crash-looping on EMFILE. Both times the caller (a human, or an automation
+# wrapper like run-dev-tests.sh/test-matrix.sh) had no signal that the stack
+# it just "started" was unusable.
+#
+# This is a SECOND, independent check: after `up` returns — regardless of ITS
+# exit code — re-inspect what actually exists on disk.
+#
+# "Core service" = any container the exact invocation's compose project
+# controls (every ID `docker compose $COMPOSE_FILES ps -a -q` returns, i.e.
+# the full resolved overlay chain for this start). Nothing outside that chain
+# is ever inspected, so an unrelated container sharing this Docker host (e.g.
+# GPU 0's tritonserver) is never touched or even looked at.
+#
+# A service still reporting `health: starting` is NOT a failure: Docker's own
+# healthcheck state machine already refuses to flip a container to
+# "unhealthy" before ITS OWN declared `start_period` elapses (the backend's
+# 600s, Keycloak's 120s, ...) — duplicating that budget with a second, global
+# timeout here is exactly the mistake that once marked a healthy Keycloak
+# unhealthy at 3.5 minutes and aborted a full gate run before a single test
+# ran. This function only ever fails on a status Docker itself has already
+# decided is bad: `restarting`, `exited`, `dead`, or `unhealthy`. A service
+# with no healthcheck at all is judged on container status alone, per the
+# same reasoning.
+verify_stack_health() {
+  local compose_files="$1"
+  local -a broken=()
+  local cid name status health
+
+  # shellcheck disable=SC2086
+  for cid in $(docker compose $compose_files ps -a -q 2>/dev/null); do
+    [ -n "$cid" ] || continue
+    name="$(docker inspect --format '{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##')"
+    [ -n "$name" ] || name="$cid"
+    status="$(docker inspect --format '{{.State.Status}}' "$cid" 2>/dev/null)"
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null)"
+
+    case "$status" in
+      restarting|exited|dead)
+        echo "❌ ${name}: container state is '${status}', not running."
+        broken+=("$name")
+        continue
+        ;;
+    esac
+    if [ "$health" = "unhealthy" ]; then
+      echo "❌ ${name}: reports unhealthy."
+      broken+=("$name")
+    fi
+  done
+
+  [ ${#broken[@]} -eq 0 ] && return 0
+
+  echo ""
+  echo "❌ ./opentr.sh start: 'docker compose up --wait' reported success, but"
+  echo "   ${#broken[@]} core service(s) are not actually up: ${broken[*]}"
+  echo "   (known --wait race — a crash-looping container can be observed"
+  echo "   'Running' at poll time; see issue #962)"
+  echo ""
+  for name in "${broken[@]}"; do
+    echo "📋 Last 30 log lines — ${name}:"
+    docker logs --tail=30 "$name" 2>&1 | sed 's/^/     /'
+    echo ""
+  done
+  return 1
 }
 
 # Compute the resolved live data paths (NAS overlay active or not) and print
@@ -2268,7 +2429,7 @@ start_app() {
 
     fresh_write_offset "$FRESH_NAME" "$_offset"
     fresh_write_aux "$FRESH_NAME" ${_aux_files[@]+"${_aux_files[@]}"}
-    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" ${_aux_services[@]+"${_aux_services[@]}"})"
+    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" "$_offset" ${_aux_services[@]+"${_aux_services[@]}"})"
     export COMPOSE_PROJECT_NAME="$FRESH_PROJECT"
 
     # --fresh isolates the compose PROJECT, named volumes, ports and container_names —
@@ -2398,6 +2559,11 @@ start_app() {
   # docker-compose.gpu.yml (and its Blackwell variant) gets added to COMPOSE_FILES —
   # skipping it would validate a different overlay set than we run.
   if [ -z "$DRY_RUN_FLAG" ]; then
+    # See require_env_file_or_die's own comment: a real (non-dry) start is
+    # exactly the case where a missing .env stops interpolating anything
+    # useful and the first symptom shows up in Postgres, not here.
+    require_env_file_or_die
+
     # Create necessary directories
     create_required_dirs
 
@@ -2862,6 +3028,12 @@ start_app() {
     echo "📋 Recent logs:"
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES logs --tail=50
+    exit 1
+  fi
+
+  # `up --wait` returning 0 is not proof by itself — see verify_stack_health's
+  # header comment for the race this closes (issue #962).
+  if ! verify_stack_health "$COMPOSE_FILES"; then
     exit 1
   fi
 

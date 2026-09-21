@@ -4,8 +4,9 @@ This module turns raw ExifTool/ffprobe output into the fields the API and chat's
 recorded-date feature treat as ground truth (``MediaFile.creation_date``,
 ``AudioFormat``, etc.). Several real defects remain, and the point of most of these
 tests is to pin what it does TODAY — including the wrong parts — so a future fix has
-to touch the test, not silently drift the behaviour underneath the fix. Item 6 below
-is the exception: it pins a FIX (the ``AudioFormat`` call-order bug), not an open defect.
+to touch the test, not silently drift the behaviour underneath the fix. Items 6-8
+below are the exception: they pin FIXES (the ``AudioFormat`` call-order bug, and
+issue #969's group-prefixed-tag / no-container-duration defects), not open defects.
 
 What is pinned here, in order:
 
@@ -50,8 +51,28 @@ What is pinned here, in order:
    call order and asserts the fixed output; the second test in that block is a
    control proving the container long-name fallback still works for audio-less
    containers.
+7. **Fixed defect (issue #969): ``get_important_metadata``'s field mapping is now
+   GROUP-INSENSITIVE for a named allowlist of purely technical fields** (``Duration``,
+   ``AudioChannels``, ``AudioSampleRate``, ``AudioBitsPerSample``, ``FrameCount``,
+   ``VideoFrameRate``). PyExifTool's ``ExifToolHelper`` returns group-prefixed tags
+   (``Composite:Duration``) for any container with no QuickTime atom — every
+   WAV/MP3/Matroska file — and the exact-match pass alone never recognised them, so
+   ``media_file.duration`` was never captured from the container for an audio
+   upload. The fixture is the REAL captured ``metadata_raw`` dict from live dev DB
+   row 292518 (a ``sample_short.wav``), not a guess. ⚠️ Measured against that same
+   fixture: this pass is prefix-insensitive, not name-synonym-aware, so it does
+   **not** repair the RIFF audio-spec fields — ``RIFF:NumChannels`` shares no
+   suffix with the allowlist's ``AudioChannels`` — see
+   ``test_riff_specs_are_not_recognised_by_this_pass``, a deliberate negative
+   control so a future change is not assumed to cover more than it does. The
+   date-field precedence test is the guard that this pass did not perturb
+   ``recorded_date``'s ordering, which depends on the group prefix being significant.
+8. **New: ``probe_media_duration()``, the direct ffprobe guarantee (issue #969).**
+   Independent of exiftool tag naming entirely — it reads the container directly.
 
-These are pure-function/pure-dict tests — no subprocess, no DB session. A lightweight
+These are pure-function/pure-dict tests — no subprocess, no DB session, except item 8
+which shells out to the real ``ffprobe`` binary against a checked-in fixture file (and
+skips cleanly if it is absent). A lightweight
 stand-in object with plain settable attributes stands in for the SQLAlchemy
 ``MediaFile`` in items 4 and 5, since ``update_media_file_metadata`` and
 ``_try_parse_creation_date_from_fields`` only ever read/write attributes on it.
@@ -62,6 +83,8 @@ Following the characterization-test convention of ``tests/unit/test_transcriptio
 from __future__ import annotations
 
 import datetime
+import shutil
+from pathlib import Path
 
 import pytest
 
@@ -71,7 +94,23 @@ from app.tasks.transcription.metadata_extractor import _parse_media_date
 from app.tasks.transcription.metadata_extractor import _parse_quicktime_format
 from app.tasks.transcription.metadata_extractor import _try_parse_creation_date_from_fields
 from app.tasks.transcription.metadata_extractor import get_important_metadata
+from app.tasks.transcription.metadata_extractor import probe_media_duration
 from app.tasks.transcription.metadata_extractor import update_media_file_metadata
+
+#: The real captured ``metadata_raw`` for media_file id 292518 (sample_short.wav) on
+#: the live dev DB, reproduced verbatim from the #969 plan's evidence section — not a
+#: guess. Real container duration per ffprobe: 10.0024375 (RIFF has no QuickTime atom,
+#: so exiftool reports it as ``Composite:Duration``, not ``Duration``).
+_REAL_WAV_METADATA_RAW = {
+    "SourceFile": "/tmp/tmpbb9mk8z8/input.wav",  # noqa: S108 -- inert dict value, no file I/O; reproduced verbatim from the issue's evidence
+    "File:FileName": "input.wav",
+    "RIFF:SampleRate": 16000,
+    "RIFF:NumChannels": 1,
+    "RIFF:BitsPerSample": 16,
+    "Composite:Duration": 10.0024375,
+}
+
+_SAMPLE_WAV = Path(__file__).resolve().parents[1] / "fixtures" / "media" / "sample_short.wav"
 
 
 class _FakeMediaFile:
@@ -287,3 +326,78 @@ def test_map_ffprobe_audio_format_falls_back_to_container_name_without_audio_str
     _map_ffprobe_format(fmt, out)
 
     assert out["AudioFormat"] == "QuickTime / MOV"
+
+
+# --- 7. get_important_metadata group-insensitive matching (issue #969, FIX) -------
+
+
+def test_group_prefixed_duration_is_recognised() -> None:
+    """``Composite:Duration`` must fill the ``Duration`` slot for a RIFF/WAV container.
+
+    Red-first for Defect 2: pre-fix, the exact-match pass only knows
+    ``QuickTime:Duration``/``Duration``/``MediaDuration`` and this key is absent, so
+    ``Duration`` never lands in ``important_fields`` at all.
+    """
+    result = get_important_metadata(_REAL_WAV_METADATA_RAW)
+    assert result["Duration"] == pytest.approx(10.0024375)
+
+
+def test_riff_specs_are_not_recognised_by_this_pass() -> None:
+    """Negative control: group-insensitivity is not name-synonym matching.
+
+    A RIFF/WAV container reports its audio specs under DIFFERENT LITERAL NAMES
+    entirely — ``RIFF:NumChannels``/``RIFF:SampleRate``/``RIFF:BitsPerSample`` — not
+    ``RIFF:AudioChannels`` etc. Stripping the group prefix off ``RIFF:NumChannels``
+    still leaves ``NumChannels``, which shares no suffix with the exact-match list's
+    ``AudioChannels`` candidates, so this pass — unlike ``Duration`` — cannot repair
+    them. Measured against the real exiftool output for issue #969's evidence file;
+    pinned here so a future "fix" is not assumed to cover more than it does.
+    """
+    result = get_important_metadata(_REAL_WAV_METADATA_RAW)
+    assert "AudioChannels" not in result
+    assert "AudioSampleRate" not in result
+    assert "AudioBitsPerSample" not in result
+
+
+def test_date_field_precedence_is_unchanged_by_the_group_insensitive_pass() -> None:
+    """The guard that 1a did not perturb ``recorded_date``'s ordering.
+
+    ``CreateDate`` is deliberately excluded from ``_GROUP_INSENSITIVE_FIELDS`` because
+    its group prefix carries real precedence (YouTube's ``QuickTime:ContentCreateDate``
+    must outrank a generic ``File:FileModifyDate``). A dict holding both must still
+    resolve via the ORIGINAL exact-match ordering, not whichever key the
+    group-insensitive scan happens to see first.
+    """
+    metadata = {
+        "QuickTime:ContentCreateDate": "2020-01-01T00:00:00",
+        "File:FileModifyDate": "2021-02-02T00:00:00",
+    }
+    result = get_important_metadata(metadata)
+    assert result["CreateDate"] == "2020-01-01T00:00:00"
+
+
+# --- 8. probe_media_duration — the direct ffprobe guarantee (issue #969, NEW) -----
+
+
+@pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe not on PATH")
+def test_probe_media_duration_reads_the_container() -> None:
+    """Reads the REAL container duration, independent of exiftool tag naming.
+
+    ``sample_short.wav``'s true length is ~10.0s; its transcript's speech extent
+    (what the pre-#969 pipeline would have stored instead) is 9.02s — the gap this
+    function exists to close.
+    """
+    assert _SAMPLE_WAV.exists(), f"fixture missing: {_SAMPLE_WAV}"
+    duration = probe_media_duration(str(_SAMPLE_WAV))
+    assert duration is not None
+    assert duration == pytest.approx(10.0, abs=0.1)
+
+
+def test_probe_media_duration_returns_none_for_an_empty_source() -> None:
+    """Control: no source at all must not shell out to ffprobe."""
+    assert probe_media_duration("") is None
+
+
+def test_probe_media_duration_returns_none_when_ffprobe_finds_nothing() -> None:
+    """Control: a source ffprobe cannot read produces None, not an exception."""
+    assert probe_media_duration("/nonexistent/path/does-not-exist.wav") is None

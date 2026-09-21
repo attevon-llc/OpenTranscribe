@@ -7,6 +7,8 @@ import subprocess
 import sys
 from typing import Any
 
+from app.core.enums import DurationSource
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -119,6 +121,37 @@ def _parse_media_date(date_str: str) -> datetime.datetime | None:
     raise ValueError(f"Unable to parse date format: {date_str}")
 
 
+#: Fields where the exiftool GROUP prefix carries no meaning, so a group-prefixed
+#: tag may fill the slot. PyExifTool's ExifToolHelper returns prefixed keys
+#: ("Composite:Duration"), and the exact-match pass in ``get_important_metadata``
+#: silently dropped all of them for every non-QuickTime container — issue #969.
+#: Date fields are deliberately EXCLUDED: their group is load-bearing
+#: (QuickTime:ContentCreateDate outranks File:FileModifyDate) and ``recorded_date``
+#: provenance keys on that ordering.
+#:
+#: ⚠️ This is prefix-insensitive, not NAME-synonym-aware: a RIFF/WAV container's
+#: audio specs are reported under different literal field names entirely
+#: ("RIFF:NumChannels"/"RIFF:SampleRate"/"RIFF:BitsPerSample", not
+#: "RIFF:AudioChannels" etc.), so this pass repairs ``Duration`` for a WAV
+#: ("Composite:Duration" shares its suffix with the exact-match list's own
+#: "Duration" candidate) but NOT the RIFF audio-spec fields — measured against a
+#: real exiftool run, see ``test_riff_specs_are_not_recognised_by_this_pass``.
+#: ``AudioChannels``/``AudioSampleRate``/``AudioBitsPerSample`` stay in this
+#: allowlist because they DO help for a container whose exiftool group uses the
+#: exact-match field name under a different prefix (e.g. a future/other group
+#: literally emitting "<Group>:AudioChannels").
+_GROUP_INSENSITIVE_FIELDS = frozenset(
+    {
+        "Duration",
+        "AudioChannels",
+        "AudioSampleRate",
+        "AudioBitsPerSample",
+        "FrameCount",
+        "VideoFrameRate",
+    }
+)
+
+
 def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     """
     Extract important metadata fields from the full metadata.
@@ -217,6 +250,35 @@ def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
                 important_fields[field_name] = metadata[key]
                 break
 
+    # Gap-filling second pass, group-INSENSITIVE (issue #969). PyExifTool's
+    # ExifToolHelper returns group-prefixed tags ("Composite:Duration",
+    # "RIFF:SampleRate", "RIFF:NumChannels") for containers with no QuickTime
+    # atom — every WAV/MP3/Matroska file. The exact-match pass above only knows
+    # "QuickTime:Duration"/"Duration"/"MediaDuration", so it silently dropped
+    # Duration (and the audio specs) for every non-QuickTime container, and
+    # `_set_duration` never fired: the container duration was never written at
+    # all, only the transcript's speech extent survived in the DB. Restricted to
+    # a named allowlist of purely TECHNICAL fields — date fields are excluded on
+    # purpose, because their group prefix is load-bearing precedence
+    # (QuickTime:ContentCreateDate must outrank File:FileModifyDate) and this
+    # pass has no way to preserve that ordering.
+    for field_name in _GROUP_INSENSITIVE_FIELDS:
+        if field_name in important_fields:
+            continue
+        for key in field_mappings.get(field_name, []):
+            candidate_suffix = key.rsplit(":", 1)[-1]
+            match_key = next(
+                (
+                    k
+                    for k in metadata
+                    if metadata[k] is not None and k.rsplit(":", 1)[-1] == candidate_suffix
+                ),
+                None,
+            )
+            if match_key is not None:
+                important_fields[field_name] = metadata[match_key]
+                break
+
     # Look for any additional fields that might be useful
     for key, value in metadata.items():
         if any(term in key.lower() for term in ["creator", "copyright", "language", "genre"]):
@@ -285,6 +347,44 @@ def _run_ffprobe_json(url: str, timeout: int) -> dict[str, Any] | None:
     except json.JSONDecodeError as e:
         logger.debug(f"ffprobe JSON decode failed: {e}")
         return None
+
+
+def probe_media_duration(source: str, timeout: int = 15) -> float | None:
+    """Container duration in seconds via ffprobe, or None.
+
+    The ONE authoritative source for ``MediaFile.duration`` (issue #969).
+    Independent of exiftool tag naming — it does not depend on exiftool being
+    installed, on the container carrying a ``Duration``-shaped tag, or on that
+    tag surviving ``get_important_metadata``'s field mapping. ``source`` may be
+    a local file path or a presigned URL; ffprobe treats both identically.
+
+    Prefers ``format.duration`` (the container's own claim), and falls back to
+    the first stream that declares one — the same preference order
+    ``waveform_generator.py`` already uses for its own ffprobe duration read.
+    """
+    if not source:
+        return None
+    data = _run_ffprobe_json(source, timeout)
+    if not data:
+        return None
+
+    fmt = data.get("format", {}) or {}
+    with contextlib.suppress(TypeError, ValueError):
+        duration = fmt.get("duration")
+        if duration is not None:
+            parsed = float(duration)
+            if parsed > 0:
+                return parsed
+
+    for stream in data.get("streams", []) or []:
+        with contextlib.suppress(TypeError, ValueError):
+            duration = stream.get("duration")
+            if duration is not None:
+                parsed = float(duration)
+                if parsed > 0:
+                    return parsed
+
+    return None
 
 
 def _map_ffprobe_format(fmt: dict[str, Any], out: dict[str, Any]) -> None:
@@ -454,12 +554,13 @@ def _set_audio_metadata(media_file, important_metadata: dict[str, Any]) -> None:
 
 
 def _set_duration(media_file, important_metadata: dict[str, Any]) -> None:
-    """Parse and set duration from metadata."""
+    """Parse and set duration from metadata. The container's claim (issue #969)."""
     duration = important_metadata.get("Duration")
     if not duration:
         return
     try:
         media_file.duration = float(duration)
+        media_file.duration_source = DurationSource.CONTAINER.value
     except (ValueError, TypeError):
         logger.warning(f"Could not parse duration: {duration}")
 
@@ -564,7 +665,3 @@ def update_media_file_metadata(
 
     # Device and content information
     _set_content_info(media_file, important_metadata)
-
-    # Store both important and full metadata
-    media_file.important_metadata = important_metadata
-    media_file.metadata = extracted_metadata

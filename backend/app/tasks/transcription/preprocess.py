@@ -17,6 +17,7 @@ import time
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.core.constants import resolve_engine_shared_volume_path
+from app.core.enums import DurationSource
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -32,6 +33,7 @@ from .audio_processor import get_audio_file_extension
 from .audio_processor import prepare_audio_for_transcription
 from .metadata_extractor import extract_media_metadata
 from .metadata_extractor import extract_media_metadata_from_url
+from .metadata_extractor import probe_media_duration
 from .metadata_extractor import update_media_file_metadata
 from .notifications import send_error_notification
 from .notifications import send_progress_notification
@@ -421,22 +423,36 @@ def _extract_metadata_best_effort(
                 metadata = extract_media_metadata(fallback_local)
                 local_path_for_raw = fallback_local
 
-            if metadata:
-                with session_scope() as db:
-                    mf = get_refreshed_object(db, MediaFile, file_id)
-                    if mf:
+            with session_scope() as db:
+                mf = get_refreshed_object(db, MediaFile, file_id)
+                if mf:
+                    if metadata:
                         update_media_file_metadata(
                             mf, metadata, content_type, local_path_for_raw or ""
                         )
-                        # Persist audio duration into benchmark context when known
-                        duration_val = metadata.get("Duration") or metadata.get("duration")
-                        if duration_val is not None:
-                            with contextlib.suppress(TypeError, ValueError):
-                                benchmark_timing.set_context(
-                                    task_id,
-                                    {"audio_duration_s": float(duration_val)},
-                                )
-                        db.commit()
+
+                    # Direct ffprobe probe — the ONE authoritative guarantee (issue
+                    # #969). Independent of exiftool tag naming, and of whether
+                    # metadata extraction produced anything at all (exiftool may be
+                    # absent entirely, see :424). Only fills a gap; never overwrites
+                    # a duration a source above already set.
+                    if mf.duration is None or mf.duration <= 0:
+                        probed = probe_media_duration(local_path_for_raw or presigned_url or "")
+                        if probed and probed > 0:
+                            mf.duration = probed
+                            mf.duration_source = DurationSource.CONTAINER.value
+
+                    # Persist audio duration into benchmark context when known
+                    duration_val = (
+                        (metadata.get("Duration") or metadata.get("duration")) if metadata else None
+                    ) or mf.duration
+                    if duration_val is not None:
+                        with contextlib.suppress(TypeError, ValueError):
+                            benchmark_timing.set_context(
+                                task_id,
+                                {"audio_duration_s": float(duration_val)},
+                            )
+                    db.commit()
         except Exception as e:
             logger.warning(f"Metadata extraction failed for file {file_id} (non-fatal): {e}")
 

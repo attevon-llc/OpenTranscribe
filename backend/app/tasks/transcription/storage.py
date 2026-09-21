@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
+from app.core.enums import DurationSource
 from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -160,11 +161,26 @@ def update_media_file_transcription_status(
     # `[-1]` also assumed the segments were sorted. Overlap marking, boundary
     # resegmentation and the cloud-ASR adapters can all reorder them, so the
     # stored duration could be SHORTER than the transcript it describes.
-    duration = max((segment["end"] for segment in segments), default=None)
+    #
+    # SPEECH EXTENT — where the last thing anybody SAID ends. This is NOT the
+    # recording's length, and it must never replace a duration the container
+    # already told us (issue #969). A recording that ends on music, applause or
+    # silence is ordinary, and this value is short by exactly that much:
+    # measured at ~11 s on real YouTube content, which is 5x the 2.0 s window
+    # recovery_tasks.youtube_metadata_backfill matches rows in.
+    #
+    # It is still written as a LAST RESORT, because metadata extraction is
+    # best-effort (preprocess.py `_extract_metadata_best_effort`) and can leave
+    # `duration` unset. When that happens this is the only number we have — so
+    # it is recorded WITH its provenance rather than passed off as a measurement.
+    #
+    # `<= 0` counts as unset: no media has zero length, and rows written before
+    # #455 can still carry the 0.0 that bug wrote.
+    speech_extent = max((segment["end"] for segment in segments), default=None)
 
-    # Update media file
-    if duration is not None:
-        media_file.duration = duration
+    if speech_extent is not None and (media_file.duration is None or media_file.duration <= 0):
+        media_file.duration = speech_extent
+        media_file.duration_source = DurationSource.TRANSCRIPT_EXTENT.value
     # The ONE place `media_file.language` is assigned by the pipeline, so it is the last
     # boundary before the column every redaction/chat/search reader keys on (issue #545).
     # `ASRResult` already normalizes the cloud providers' output; this also covers the local

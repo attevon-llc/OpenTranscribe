@@ -2872,6 +2872,7 @@
   "notifications.enrichment.speaker_clustering": "클러스터링됨",
   "notifications.enrichment.other": "기타",
   "nav.search": "검색",
+  "nav.transcriptSearch": "전사 검색",
   "search.title": "전사 검색",
   "searchPage.placeholder": "모든 전사에서 검색...",
   "searchPage.search": "검색",

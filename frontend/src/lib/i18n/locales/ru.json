@@ -2859,6 +2859,7 @@
   "notifications.enrichment.speaker_clustering": "Группировка",
   "notifications.enrichment.other": "Другое",
   "nav.search": "Поиск",
+  "nav.transcriptSearch": "Поиск расшифровок",
   "search.title": "Поиск по транскрипциям",
   "searchPage.placeholder": "Поиск по всем транскрипциям...",
   "searchPage.search": "Поиск",

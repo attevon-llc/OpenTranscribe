@@ -2869,6 +2869,7 @@
   "notifications.enrichment.speaker_clustering": "已聚类",
   "notifications.enrichment.other": "其他",
   "nav.search": "搜索",
+  "nav.transcriptSearch": "转录搜索",
   "search.title": "搜索转录",
   "searchPage.placeholder": "搜索所有转录...",
   "searchPage.search": "搜索",

@@ -2869,6 +2869,7 @@
   "notifications.enrichment.speaker_clustering": "クラスタ済み",
   "notifications.enrichment.other": "その他",
   "nav.search": "検索",
+  "nav.transcriptSearch": "文字起こし検索",
   "search.title": "文字起こしを検索",
   "searchPage.placeholder": "すべての文字起こしを検索...",
   "searchPage.search": "検索",

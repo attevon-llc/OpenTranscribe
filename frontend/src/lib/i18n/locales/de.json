@@ -2865,6 +2865,7 @@
   "waveform.notAvailable": "Wellenformvisualisierung nicht verfügbar",
   "waveform.retry": "Wiederholen",
   "nav.search": "Suchen",
+  "nav.transcriptSearch": "Transkriptsuche",
   "search.title": "Transkriptionen Durchsuchen",
   "searchPage.placeholder": "Alle Transkriptionen durchsuchen...",
   "searchPage.search": "Suchen",

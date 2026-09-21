@@ -2872,6 +2872,7 @@
   "notifications.enrichment.speaker_clustering": "Geclusterd",
   "notifications.enrichment.other": "Overig",
   "nav.search": "Zoeken",
+  "nav.transcriptSearch": "Transcriptie zoeken",
   "search.title": "Transcripten doorzoeken",
   "searchPage.placeholder": "Zoeken in alle transcripten...",
   "searchPage.search": "Zoeken",

@@ -2869,6 +2869,7 @@
   "notifications.enrichment.speaker_clustering": "Agrupado",
   "notifications.enrichment.other": "Outro",
   "nav.search": "Pesquisar",
+  "nav.transcriptSearch": "Buscar transcrição",
   "search.title": "Pesquisar Transcrições",
   "searchPage.placeholder": "Pesquisar em todas as transcrições...",
   "searchPage.search": "Pesquisar",

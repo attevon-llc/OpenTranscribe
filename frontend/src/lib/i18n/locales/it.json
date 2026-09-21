@@ -2872,6 +2872,7 @@
   "notifications.enrichment.speaker_clustering": "Raggruppato",
   "notifications.enrichment.other": "Altro",
   "nav.search": "Cerca",
+  "nav.transcriptSearch": "Cerca trascrizione",
   "search.title": "Cerca nelle trascrizioni",
   "searchPage.placeholder": "Cerca in tutte le trascrizioni...",
   "searchPage.search": "Cerca",

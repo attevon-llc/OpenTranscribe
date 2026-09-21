@@ -355,7 +355,7 @@
       <!-- Search link -->
       <a
         href="/search"
-        title={$t('nav.search')}
+        title={$t('nav.transcriptSearch')}
         class="nav-link"
         class:active={isSearchActive}
         aria-current={isSearchActive ? 'page' : undefined}
@@ -365,7 +365,7 @@
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
-        <span class="nav-label">{$t('nav.search')}</span>
+        <span class="nav-label">{$t('nav.transcriptSearch')}</span>
       </a>
 
       <!-- Chat link -->
@@ -703,6 +703,11 @@
     cursor: pointer;
     position: relative;
     font-weight: 500;
+    /* Load-bearing for issue #754 item 3: "Transcript Search must render horizontally,
+     * not stacked over two lines". `white-space` inherits, so this covers .nav-label
+     * (the span that actually holds the text) without a second declaration. Removing it
+     * would let every two-word label wrap the moment the row is tight — the exact
+     * treatment the reviewer rejected. */
     white-space: nowrap;
   }
 

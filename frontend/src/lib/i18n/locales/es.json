@@ -2865,6 +2865,7 @@
   "waveform.notAvailable": "Forma de onda no disponible",
   "waveform.retry": "Reintentar",
   "nav.search": "Buscar",
+  "nav.transcriptSearch": "Buscar transcripción",
   "search.title": "Buscar Transcripciones",
   "searchPage.placeholder": "Buscar en todas las transcripciones...",
   "searchPage.search": "Buscar",

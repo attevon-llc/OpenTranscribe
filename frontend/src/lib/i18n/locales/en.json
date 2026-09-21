@@ -2872,6 +2872,7 @@
   "notifications.enrichment.speaker_clustering": "Clustered",
   "notifications.enrichment.other": "Other",
   "nav.search": "Search",
+  "nav.transcriptSearch": "Transcript Search",
   "search.title": "Search Transcripts",
   "searchPage.placeholder": "Search across all transcripts...",
   "searchPage.search": "Search",

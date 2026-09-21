@@ -124,6 +124,23 @@ class ChunkHit:
     #: ``expanded`` so a citation naming a widened span can be told apart from
     #: one naming exactly its own indexed chunk.
     expanded: bool = False
+    #: True only for a #464 map-tier hit built from a FRESH ``MediaFile.summary_data``
+    #: (``mapreduce.file_summaries.scope_digest_hits``'s ``use_summaries`` branch) rather
+    #: than an extractive ``FileFacts.digest`` section. Both shapes set ``digest_section``
+    #: (so ``is_digest`` is True for either — the sentence-provenance masker
+    #: (``redactor.mask_digests``) must treat them identically, falling through to its
+    #: inline masking path for both), but they are DIFFERENT TEXT with different
+    #: provenance guarantees: a digest section is extractive (TextRank over transcript
+    #: sentences someone actually said), a summary is abstractive (an LLM's interpretation
+    #: of the recording). ``citations.build_overview_citations`` reads this to choose
+    #: ``KIND_SUMMARY`` vs ``KIND_DIGEST`` — rendering an LLM's own prose with the
+    #: extractive-digest badge would misattribute interpretation as a derived quote.
+    #: Never set at construction by anything except ``scope_digest_hits``'s summary
+    #: branch; excluded from ``to_cache_dict``/``from_cache_dict`` like ``expanded``
+    #: above, because a map-tier hit is never a candidate for the Redis retrieval cache
+    #: (that cache only ever holds ``result.chunks``/``result.digests``, the RANKED
+    #: legs — ``scope_digest_hits`` reads Postgres fresh on every turn).
+    is_llm_summary: bool = False
 
     @property
     def is_digest(self) -> bool:

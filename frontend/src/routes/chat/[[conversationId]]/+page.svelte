@@ -13,6 +13,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { t } from '$stores/locale';
+  import { resolveChatErrorI18nKey } from '$lib/i18n/chatErrors';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { llmStatusStore } from '$stores/llmStatus';
   import { chatStore } from '$stores/chat';
@@ -543,7 +544,7 @@
       <div class="chat-body">
         {#if state.error}
           <div class="chat-error" role="alert" data-testid="chat-error-banner">
-            <span>{$t(`chat.errors.${state.error}`)}</span>
+            <span>{$t(resolveChatErrorI18nKey(state.error))}</span>
             {#if state.error === 'conversationNotFound'}
               <button type="button" class="error-action" on:click={handleNewChat}>
                 {$t('chat.newChat')}

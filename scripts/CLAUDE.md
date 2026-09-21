@@ -686,13 +686,19 @@ so nothing here re-implements a competing global timeout.
 
 - `.fresh/<name>.yml` — the ONLY generated compose overlay. It re-pins every hard-coded
   `container_name` to `otfresh-<name>-*` (`FRESH_NAMED_SERVICES` in `opentr.sh`, plus the aux
-  services below when their flag is passed). It also carries an `environment:` addition
-  (issue #961b), generated — never hand-edit this file:
+  services below when their flag is passed). It also carries two `environment:` additions
+  (issues #961b / #968), both generated — never hand-edit this file:
   - `frontend` always gets `CHOKIDAR_USEPOLLING=true` / `CHOKIDAR_INTERVAL` (default 300,
     tunable via that env var before `start`). Two Vite dev servers side by side (this stack +
     the main one) exhaust `fs.inotify.max_user_instances` (128 on a typical host) and the
     second one dies with `EMFILE` watching `vite.config.ts`. Raising the sysctl needs root; a
     `--fresh` stack is by definition the second watcher, so it's the one that polls instead.
+  - `backend` gets an offset-aware `CORS_ORIGINS` (a JSON array — pydantic-settings JSON-decodes
+    a `list[str]` env var BEFORE its `mode="before"` validator runs, so a comma-separated value
+    raises `SettingsError` at startup) whenever `--port-offset` is non-zero. Without it, the
+    WebSocket origin check (`_origin_is_allowed`, `backend/app/api/websockets.py`, #903's
+    anti-hijacking fix — kept exact-match, never weakened) rejects every handshake from this
+    stack's offset Vite origin with 403, and `/api/ws` silently never connects.
 - `.fresh/<name>.offset` — the recorded `--port-offset` (plain integer, absent = 0). Read on re-up,
   `status --fresh`, and `fresh-list`; deleted by `fresh-destroy` and by `--port-offset 0`.
 - `.fresh/<name>.aux` — the aux overlay files the deployment was started with, one per line.

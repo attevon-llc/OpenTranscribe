@@ -1131,7 +1131,8 @@ FRESH_LLM_TEST_SERVICES=(llm-test-vllm llm-test-ollama)
 # re-pin (see FRESH_*_SERVICES above).
 fresh_generate_overlay() {
   local name="$1"
-  shift
+  local offset="$2"
+  shift 2
   local aux_services=("$@")
   local proj
   proj="$(fresh_project_name "$name")"
@@ -1158,6 +1159,24 @@ fresh_generate_overlay() {
         echo "    environment:"
         echo "      - CHOKIDAR_USEPOLLING=true"
         echo "      - CHOKIDAR_INTERVAL=${CHOKIDAR_INTERVAL:-300}"
+      fi
+      if [ "$svc" = "backend" ] && [ -n "$offset" ] && [ "$offset" != "0" ]; then
+        # A --port-offset stack is served from an OFFSET Vite origin
+        # (http://localhost:<5173+offset>), but backend/app/core/config.py's
+        # CORS_ORIGINS default is the two UNOFFSET dev URLs. The WebSocket
+        # handshake's origin check (_origin_is_allowed,
+        # backend/app/api/websockets.py — #903's anti-hijacking fix, kept
+        # exact-match on purpose) then rejects every connection from this
+        # stack with 403 (issue #968). Fix is the allowlist, not the check:
+        # append this stack's own offset origins to the two defaults.
+        #
+        # JSON array, never a comma-separated string: pydantic-settings
+        # JSON-decodes a `list[str]` env var BEFORE the field's
+        # `mode="before"` validator runs, so a comma-separated value raises
+        # `SettingsError` at backend startup (measured while triaging this).
+        local _fe_port="${FRONTEND_PORT:-5173}"
+        echo "    environment:"
+        echo "      - CORS_ORIGINS=[\"http://localhost:5173\",\"http://127.0.0.1:5173\",\"http://localhost:${_fe_port}\",\"http://127.0.0.1:${_fe_port}\"]"
       fi
     done
   } > "$file"
@@ -2410,7 +2429,7 @@ start_app() {
 
     fresh_write_offset "$FRESH_NAME" "$_offset"
     fresh_write_aux "$FRESH_NAME" ${_aux_files[@]+"${_aux_files[@]}"}
-    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" ${_aux_services[@]+"${_aux_services[@]}"})"
+    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" "$_offset" ${_aux_services[@]+"${_aux_services[@]}"})"
     export COMPOSE_PROJECT_NAME="$FRESH_PROJECT"
 
     # --fresh isolates the compose PROJECT, named volumes, ports and container_names —

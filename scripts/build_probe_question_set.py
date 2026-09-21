@@ -38,6 +38,21 @@ Stratification, and why each stratum earns its place:
     that confidently answers anything scores identically to one that reads
     correctly.
 
+``--corpus-scale`` (issue #829, opt-in — off unless the flag is passed)
+    Every stratum above scopes ``file_uuids`` to the one meeting (or series) a
+    question is actually about — at most 4 files. That structurally cannot catch a
+    RANKING-VS-MAPPING divergence (see ``rag-evaluation.md``'s "AMI distractor
+    haystack": ``build_overview`` once composed itself from the ranked
+    ``retrieve_digests`` leg instead of the mapping ``scope_digest_hits`` leg and
+    returned 50 sections from only 8 of a 25-file scope), because at scope size <=4
+    there is nothing to rank AWAY from. This stratum reuses the SAME question shapes
+    (multi-file series questions, real QMSum needle questions, a scope-wide broad
+    aggregation prompt, a negative control) but scopes every one of them to the full
+    corpus actually injected this run: the QMSum meetings indexed for the strata
+    above, UNION the 34-meeting AMI distractor haystack
+    (``app/scripts/corpus_injection/adapters/ami.py``, injected separately via
+    ``./scripts/inject-eval-corpus.sh --corpus ami``). See :func:`build_corpus_scale`.
+
 Usage::
 
     python3 scripts/build_probe_question_set.py \\
@@ -100,6 +115,47 @@ ABSENT_TOPICS = (
     'the penetration test findings for the payment gateway',
 )
 ABSENT_SPEAKERS = ('the Chief Financial Officer', 'the Legal Counsel', 'the Head of Procurement')
+
+#: Title prefix ``adapters/ami.py`` writes for the 34-meeting distractor haystack (issue
+#: #461 A5) — see that module's docstring. Same corpus injector, same production
+#: indexing path as QMSum's own ``TITLE_PREFIX``; used only to widen a question's
+#: ``file_uuids`` scope, never to source questions of its own (the distractor set ships
+#: no relevance judgements — see ``rag-evaluation.md``'s "AMI distractor haystack").
+AMI_DISTRACTOR_TITLE_PREFIX = 'AMI (distractor) — '
+
+#: Shape templates for a cross-meeting question over a real AMI scenario series, paired
+#: with the AMI abstractive layer that answers it. Hoisted to module scope (was local to
+#: ``build()``) so :func:`build_corpus_scale` can reuse the exact same shapes at full-
+#: corpus scope — the point of that stratum is to ask the SAME question AMI-81 already
+#: asks, just against a much bigger haystack, so any divergence is attributable to scope
+#: alone.
+MULTI_FILE_SHAPES = (
+    ('what were the key decisions made across all {n} {s} meetings?', 'decisions', 'decisions'),
+    (
+        'what action items or follow-ups came out of the {s} meeting series?',
+        'action_items',
+        'actions',
+    ),
+    ('what problems or concerns were raised across the {s} meetings?', 'problems', 'problems'),
+    (
+        'summarise how the design evolved across the {s} meeting series.',
+        'evolution',
+        'abstract',
+    ),
+)
+
+#: Broad, scope-wide prompts with no single-series anchor — the shape that actually
+#: reproduces the ranking-vs-mapping divergence documented in ``rag-evaluation.md``
+#: ("AMI distractor haystack" / the ``build_overview`` ``retrieve_digests`` vs
+#: ``scope_digest_hits`` bug): a summarization request over the WHOLE scope, where the
+#: correct behaviour is to consult every file the scope names, not just the top-ranked
+#: handful. No reference answer exists for these (there is no single human-written
+#: summary of an arbitrary cross-series AMI selection) — they are scored on
+#: ``coverage_ratio``/``files_consulted`` from ``--metrics-out``, not on answer text.
+CORPUS_SCALE_BROAD_PROMPTS = (
+    'what topics were discussed across all the meetings in this scope?',
+    'summarise the main decisions made across every meeting in this scope.',
+)
 
 
 def indexed_meetings(container: str, prefix: str = TITLE_PREFIX) -> dict[str, str]:
@@ -204,6 +260,19 @@ def series_reference(
     return '\n'.join(lines) if lines else None
 
 
+def find_series(meeting_ids: list[str], min_size: int = 3) -> dict[str, list[str]]:
+    """Group AMI-style meeting ids (``ES2002a`` -> series ``ES2002``) with >= ``min_size``
+    sessions present. Shared by :func:`build` and :func:`build_corpus_scale` so the two
+    strata cannot silently diverge on what counts as a "real" series.
+    """
+    series: dict[str, list[str]] = defaultdict(list)
+    for mid in meeting_ids:
+        m = SERIES_RE.match(mid)
+        if m:
+            series[m.group(1)].append(mid)
+    return {s: sorted(mids) for s, mids in series.items() if len(mids) >= min_size}
+
+
 def load_qmsum(glob_pattern: str) -> dict[str, dict[str, Any]]:
     """Load every QMSum Product file, keyed by meeting id (deduped across splits)."""
     import glob as _glob
@@ -268,34 +337,16 @@ def build(
         )
 
     # Multi-file: whole series, so "across all these meetings" is a real scope.
-    series: dict[str, list[str]] = defaultdict(list)
-    for mid in usable:
-        m = SERIES_RE.match(mid)
-        if m:
-            series[m.group(1)].append(mid)
-    full = sorted(s for s, mids in series.items() if len(mids) >= 3)
+    series = find_series(usable, min_size=3)
+    full = sorted(series)
     rng.shuffle(full)
 
     # Each shape is paired with the AMI layer that ANSWERS it, so a cross-meeting
     # question carries a real human-written reference rather than None.
-    shapes = (
-        ('what were the key decisions made across all {n} {s} meetings?', 'decisions', 'decisions'),
-        (
-            'what action items or follow-ups came out of the {s} meeting series?',
-            'action_items',
-            'actions',
-        ),
-        ('what problems or concerns were raised across the {s} meetings?', 'problems', 'problems'),
-        (
-            'summarise how the design evolved across the {s} meeting series.',
-            'evolution',
-            'abstract',
-        ),
-    )
     grounded = 0
     for i, s in enumerate(full[:per_stratum]):
-        mids = sorted(series[s])
-        tmpl, kind, layer = shapes[i % len(shapes)]
+        mids = series[s]
+        tmpl, kind, layer = MULTI_FILE_SHAPES[i % len(MULTI_FILE_SHAPES)]
         ref = series_reference(ami, mids, layer)
         grounded += bool(ref)
         out.append(
@@ -342,6 +393,177 @@ def build(
     return out
 
 
+def build_corpus_scale(
+    qmsum: dict[str, dict[str, Any]],
+    indexed: dict[str, str],
+    distractor_indexed: dict[str, str],
+    ami: dict[str, dict[str, list[str]]],
+    seed: int,
+    n_needle: int = 3,
+    n_broad: int = 2,
+) -> list[dict[str, Any]]:
+    """Widen a handful of AMI-81-shaped questions to FULL-CORPUS scope (issue #829).
+
+    Every other stratum in :func:`build` scopes ``file_uuids`` to the one meeting (or
+    one series) a question is actually about — which structurally cannot catch a
+    ranking-vs-mapping divergence, because at scope size 1-4 there is nothing to rank
+    AWAY from. This stratum takes the same question shapes and scopes them to the
+    UNION of every meeting injected for this run — the QMSum meetings actually indexed
+    (``indexed``) plus the full AMI distractor haystack (``distractor_indexed``,
+    ``adapters/ami.py`` — see its module docstring and ``rag-evaluation.md``'s "AMI
+    distractor haystack" section) — so the correct answer is still findable, but now
+    has to be FOUND and MAPPED across everything else in the scope, not merely
+    returned as the sole candidate.
+
+    Three question shapes, same reasoning `rag-evaluation.md`'s already-reproduced bug
+    (`build_overview` composed from the ranked ``retrieve_digests`` leg instead of the
+    mapping ``scope_digest_hits`` leg — 50 sections drawn from 8 of a 25-file scope)
+    calls for:
+
+    * ``multi_file_corpus_scale`` — the SAME series questions :func:`build` asks at
+      series-only scope (4 files), reusing :data:`MULTI_FILE_SHAPES` and the AMI
+      abstractive reference, but scoped to the full corpus. Directly comparable to the
+      series-scope version: same question, same reference, only the haystack changed.
+    * ``single_specific_corpus_scale`` / ``single_general_corpus_scale`` — real QMSum
+      questions ("needle" tests) at full-corpus scope, checking whether chunk-tier
+      retrieval still discriminates the correct meeting from 30+ distractors.
+    * ``corpus_scale_broad`` — :data:`CORPUS_SCALE_BROAD_PROMPTS`, scope-wide
+      aggregation questions with no single-series anchor and no reference answer
+      (scored on ``coverage_ratio``/``files_consulted`` from ``--metrics-out``, not
+      answer text) — the shape that most directly exercises the map-vs-rank divergence.
+
+    Plus one ``negative_control_corpus_scale`` (an absent topic, full scope) to check
+    the model still declines correctly rather than latching onto an unrelated
+    distractor meeting.
+
+    Args:
+        qmsum: Every loaded QMSum Product meeting, keyed by meeting id.
+        indexed: QMSum meetings actually injected this run -> file_uuid.
+        distractor_indexed: AMI distractor meetings actually injected this run ->
+            file_uuid (``indexed_meetings(container, prefix=AMI_DISTRACTOR_TITLE_PREFIX)``).
+        ami: AMI abstractive layers, as loaded by :func:`load_ami_abstractive`.
+        seed: Shared with :func:`build` for reproducibility, not required to match it.
+        n_needle: Specific+general "needle" questions to build (each, not combined).
+        n_broad: Broad aggregation questions to build, capped at
+            ``len(CORPUS_SCALE_BROAD_PROMPTS)``.
+
+    Returns:
+        The corpus-scale question list. Empty (with a logged warning), never a raised
+        error, when no distractor meetings are indexed — a corpus-scale run with zero
+        distractors would silently degrade to the single_file case this stratum exists
+        to distinguish itself from.
+    """
+    if not distractor_indexed:
+        logger.warning(
+            'build_corpus_scale: distractor_indexed is empty — inject the "ami" corpus '
+            'first (adapters/ami.py, prefix %r). Returning no corpus-scale questions.',
+            AMI_DISTRACTOR_TITLE_PREFIX,
+        )
+        return []
+
+    rng = random.Random(seed)
+    usable = sorted(set(qmsum) & set(indexed))
+    full_scope = sorted({indexed[m] for m in usable} | set(distractor_indexed.values()))
+    logger.info(
+        'corpus_scale: qmsum_usable=%d distractors=%d full_scope=%d',
+        len(usable),
+        len(distractor_indexed),
+        len(full_scope),
+    )
+
+    out: list[dict[str, Any]] = []
+
+    # --- multi_file_corpus_scale: same series shapes as `build()`, full-corpus scope.
+    series = find_series(usable, min_size=3)
+    series_ids = sorted(series)
+    for i, s in enumerate(series_ids):
+        mids = series[s]
+        tmpl, kind, layer = MULTI_FILE_SHAPES[i % len(MULTI_FILE_SHAPES)]
+        ref = series_reference(ami, mids, layer)
+        out.append(
+            {
+                'label': f'scale-{i:03d}-{s}-{kind}',
+                'category': 'multi_file_corpus_scale',
+                'question': tmpl.format(n=len(mids), s=s),
+                'file_uuids': full_scope,
+                'scope_desc': f'{s} series ({", ".join(mids)}) + {len(full_scope) - len(mids)} '
+                'other corpus files',
+                'reference': ref,
+                'reference_source': f'AMI abstractive <{layer}>, unioned across the series'
+                if ref
+                else None,
+            }
+        )
+    n = len(series_ids)
+
+    # --- needle tests: real QMSum specific/general questions, full-corpus scope.
+    series_members = {m for mids in series.values() for m in mids}
+    needle_pool = [m for m in usable if m not in series_members] or usable
+    specific: list[tuple[str, dict[str, Any]]] = []
+    general: list[tuple[str, dict[str, Any]]] = []
+    for mid in needle_pool:
+        for q in qmsum[mid].get('specific_query_list') or []:
+            specific.append((mid, q))
+        for q in qmsum[mid].get('general_query_list') or []:
+            general.append((mid, q))
+
+    for i, (mid, q) in enumerate(rng.sample(specific, min(n_needle, len(specific)))):
+        out.append(
+            {
+                'label': f'scale-{n + i:03d}-{mid}-needle-specific',
+                'category': 'single_specific_corpus_scale',
+                'question': q['query'],
+                'file_uuids': full_scope,
+                'scope_desc': f'{mid} + {len(full_scope) - 1} other corpus files',
+                'reference': q.get('answer'),
+            }
+        )
+    n += min(n_needle, len(specific))
+
+    for i, (mid, q) in enumerate(rng.sample(general, min(n_needle, len(general)))):
+        out.append(
+            {
+                'label': f'scale-{n + i:03d}-{mid}-needle-general',
+                'category': 'single_general_corpus_scale',
+                'question': q['query'],
+                'file_uuids': full_scope,
+                'scope_desc': f'{mid} + {len(full_scope) - 1} other corpus files',
+                'reference': q.get('answer'),
+            }
+        )
+    n += min(n_needle, len(general))
+
+    # --- broad aggregation: no reference, the shape that most directly reproduces the
+    # documented ranking-vs-mapping divergence.
+    for i, prompt in enumerate(CORPUS_SCALE_BROAD_PROMPTS[: max(0, n_broad)]):
+        out.append(
+            {
+                'label': f'scale-{n + i:03d}-broad',
+                'category': 'corpus_scale_broad',
+                'question': prompt,
+                'file_uuids': full_scope,
+                'scope_desc': f'full corpus ({len(full_scope)} files)',
+                'reference': None,
+            }
+        )
+    n += min(n_broad, len(CORPUS_SCALE_BROAD_PROMPTS))
+
+    # --- negative control at full scope.
+    out.append(
+        {
+            'label': f'scale-{n:03d}-absent-topic',
+            'category': 'negative_control_corpus_scale',
+            'question': f'what was decided about {ABSENT_TOPICS[0]}?',
+            'file_uuids': full_scope,
+            'scope_desc': f'full corpus ({len(full_scope)} files)',
+            'reference': None,
+            'expect_refusal': True,
+        }
+    )
+
+    return out
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
     ap = argparse.ArgumentParser(
@@ -353,6 +575,33 @@ def main() -> int:
     ap.add_argument('--pg-container', default='otfresh-ragmeas-postgres')
     ap.add_argument('--qmsum-glob', default=QMSUM_GLOB)
     ap.add_argument('--ami-glob', default=AMI_ABSTRACTIVE_GLOB)
+    ap.add_argument(
+        '--corpus-scale',
+        action='store_true',
+        help='Also append a corpus-scale stratum (issue #829): widens a handful of '
+        'the same question shapes to full-corpus scope (QMSum meetings actually '
+        'indexed + the injected AMI distractor haystack), to catch a ranking-vs-'
+        'mapping divergence that single-file/single-series scope cannot. Requires '
+        'the "ami" corpus already injected alongside qmsum '
+        '(./scripts/inject-eval-corpus.sh --corpus ami).',
+    )
+    ap.add_argument(
+        '--distractor-prefix',
+        default=AMI_DISTRACTOR_TITLE_PREFIX,
+        help='Title prefix the AMI distractor adapter wrote (only used with --corpus-scale)',
+    )
+    ap.add_argument(
+        '--corpus-scale-needle',
+        type=int,
+        default=3,
+        help='--corpus-scale: specific+general "needle" questions to build (each)',
+    )
+    ap.add_argument(
+        '--corpus-scale-broad',
+        type=int,
+        default=2,
+        help='--corpus-scale: scope-wide aggregation questions with no reference',
+    )
     args = ap.parse_args()
 
     if '.rag-403' not in str(args.out) and '/tmp' not in str(args.out):
@@ -362,13 +611,22 @@ def main() -> int:
             args.out,
         )
 
-    qs = build(
-        load_qmsum(args.qmsum_glob),
-        indexed_meetings(args.pg_container),
-        load_ami_abstractive(args.ami_glob),
-        args.per_stratum,
-        args.seed,
-    )
+    qmsum = load_qmsum(args.qmsum_glob)
+    indexed = indexed_meetings(args.pg_container)
+    ami = load_ami_abstractive(args.ami_glob)
+
+    qs = build(qmsum, indexed, ami, args.per_stratum, args.seed)
+    if args.corpus_scale:
+        distractor_indexed = indexed_meetings(args.pg_container, prefix=args.distractor_prefix)
+        qs += build_corpus_scale(
+            qmsum,
+            indexed,
+            distractor_indexed,
+            ami,
+            args.seed,
+            args.corpus_scale_needle,
+            args.corpus_scale_broad,
+        )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(qs, indent=2))
 

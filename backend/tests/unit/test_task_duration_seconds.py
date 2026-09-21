@@ -1,4 +1,4 @@
-"""`update_task_status`'s transient `duration_seconds` attribute (issue #753).
+"""`update_task_status_with_duration`'s returned elapsed time (issue #753).
 
 DEFECT THIS GUARDS AGAINST: the duration chip's data does not exist anywhere
 in the app today, and the ONE place the timing information is briefly
@@ -22,7 +22,7 @@ from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.utils.task_utils import create_task_record
-from app.utils.task_utils import update_task_status
+from app.utils.task_utils import update_task_status_with_duration
 
 
 def _make_file(db_session, user, *, duration: float | None = None) -> MediaFile:
@@ -58,10 +58,12 @@ class TestDurationComputedBeforeTaskStartedAtIsCleared:
         media_file.task_started_at = datetime.now(UTC) - timedelta(seconds=45)
         db_session.commit()
 
-        updated = update_task_status(db_session, task.id, "completed", progress=1.0, completed=True)
+        updated, elapsed = update_task_status_with_duration(
+            db_session, task.id, "completed", progress=1.0, completed=True
+        )
 
         assert updated is not None
-        duration_seconds = updated.duration_seconds
+        duration_seconds = elapsed
         assert duration_seconds is not None
         assert 44 <= duration_seconds <= 46
         # The trap: must never equal (or even resemble) the recording length.
@@ -83,12 +85,14 @@ class TestDurationComputedBeforeTaskStartedAtIsCleared:
             db_session, str(uuid_mod.uuid4()), normal_user.id, media_file.id, "topic_extraction"
         )
 
-        updated = update_task_status(db_session, task.id, "completed", progress=1.0, completed=True)
+        updated, elapsed = update_task_status_with_duration(
+            db_session, task.id, "completed", progress=1.0, completed=True
+        )
 
         db_session.refresh(media_file)
         assert media_file.task_started_at is None
         assert updated is not None
-        assert updated.duration_seconds is not None
+        assert elapsed is not None
 
     def test_no_duration_when_task_was_never_marked_completed(self, db_session, normal_user):
         """A terminal status reached WITHOUT `completed=True` (e.g. some
@@ -100,10 +104,12 @@ class TestDurationComputedBeforeTaskStartedAtIsCleared:
             db_session, str(uuid_mod.uuid4()), normal_user.id, media_file.id, "search_indexing"
         )
 
-        updated = update_task_status(db_session, task.id, "failed", error_message="boom")
+        updated, elapsed = update_task_status_with_duration(
+            db_session, task.id, "failed", error_message="boom"
+        )
 
         assert updated is not None
-        assert updated.duration_seconds is None
+        assert elapsed is None
 
     def test_no_duration_when_task_has_no_media_file(self, db_session, normal_user):
         """A corpus-wide task (`media_file_id=None`) has no `MediaFile` to read
@@ -120,10 +126,12 @@ class TestDurationComputedBeforeTaskStartedAtIsCleared:
         db_session.add(task)
         db_session.commit()
 
-        updated = update_task_status(db_session, task_id, "completed", progress=1.0, completed=True)
+        updated, elapsed = update_task_status_with_duration(
+            db_session, task_id, "completed", progress=1.0, completed=True
+        )
 
         assert updated is not None
-        assert updated.duration_seconds is None
+        assert elapsed is None
 
     def test_in_progress_update_reports_no_duration(self, db_session, normal_user):
         """A non-terminal progress tick must not compute or claim a duration —
@@ -133,7 +141,9 @@ class TestDurationComputedBeforeTaskStartedAtIsCleared:
             db_session, str(uuid_mod.uuid4()), normal_user.id, media_file.id, "summarization"
         )
 
-        updated = update_task_status(db_session, task.id, "in_progress", progress=0.5)
+        updated, elapsed = update_task_status_with_duration(
+            db_session, task.id, "in_progress", progress=0.5
+        )
 
         assert updated is not None
-        assert getattr(updated, "duration_seconds", None) is None
+        assert elapsed is None

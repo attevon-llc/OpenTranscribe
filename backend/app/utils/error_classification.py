@@ -59,6 +59,36 @@ RETRIABLE_CATEGORIES: frozenset[ErrorCategory] = frozenset(
 )
 
 
+def resolve_persisted_error_category(
+    stored_category: str | None, last_error_message: str | None
+) -> ErrorCategory:
+    """Resolve the retry-policy code for an already-failed file, GH #959 item 2.
+
+    Prefer the code already persisted on ``media_file.error_category`` — it was computed
+    once, at the original failure site, from the raw exception text while it was still in
+    hand. Only fall back to re-parsing ``last_error_message`` when no code was ever
+    recorded (e.g. a file stuck in PROCESSING that crashed before any failure handler ran).
+    That fallback is a last resort, not the normal path: since #959, stored messages are
+    fixed, category-derived sentences rather than raw exception text, so re-classifying
+    one by substring match would silently regress to a generic bucket. Recovery code must
+    never key retry decisions on prose that a later refactor could reword.
+
+    Args:
+        stored_category: ``media_file.error_category``, if already set.
+        last_error_message: ``media_file.last_error_message``, used only when
+            ``stored_category`` is absent.
+
+    Returns:
+        The resolved :class:`ErrorCategory`.
+    """
+    if stored_category:
+        try:
+            return ErrorCategory(stored_category)
+        except ValueError:
+            logger.warning(f"Unrecognized persisted error_category {stored_category!r}")
+    return categorize_error(last_error_message or "")
+
+
 def categorize_error(error_message: str) -> ErrorCategory:
     """Categorize error message to determine retry strategy.
 

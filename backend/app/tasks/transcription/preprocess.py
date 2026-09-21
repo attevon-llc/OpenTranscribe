@@ -474,18 +474,28 @@ def _dispatch_waveform_if_missing(
 
 
 def _mark_pipeline_error(file_uuid: str, task_id: str, error_msg: str) -> None:
-    """Mark file and task as failed."""
+    """Mark file and task as failed.
+
+    ``error_msg`` may carry raw exception text — it is classified exactly once here,
+    while still in hand, into the retry-policy code (persisted to
+    ``media_file.error_category``) and a fixed, non-raw sentence (persisted everywhere
+    else). GH #959: the raw text itself is never written to a DB column; the caller's
+    ``logger.exception`` call already put it in the log.
+    """
+    from app.services.error_categorization_service import ErrorCategorizationService
     from app.utils.uuid_helpers import get_file_by_uuid
+
+    sanitized_msg = ErrorCategorizationService.sanitize_for_storage(error_msg)
 
     try:
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
             if media_file:
                 update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
-                media_file.last_error_message = error_msg
+                media_file.last_error_message = sanitized_msg
                 media_file.error_category = categorize_error(error_msg).value
                 db.commit()
                 send_error_notification(int(media_file.user_id), int(media_file.id), error_msg)
-            update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+            update_task_status(db, task_id, "failed", error_message=sanitized_msg, completed=True)
     except Exception as status_err:
         logger.error(f"Failed to update error status: {status_err}")

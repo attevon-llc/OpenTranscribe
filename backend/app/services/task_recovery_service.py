@@ -20,8 +20,8 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.services import system_settings_service
-from app.utils.error_classification import categorize_error
 from app.utils.error_classification import get_retry_delay
+from app.utils.error_classification import resolve_persisted_error_category
 from app.utils.error_classification import should_retry
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -309,8 +309,12 @@ class TaskRecoveryService:
 
         for media_file in stuck_files:
             try:
-                # Classify the error
-                error_category = categorize_error(media_file.last_error_message or "")  # type: ignore[arg-type]
+                # GH #959 item 2: prefer the code persisted at the original failure
+                # site over re-parsing (now-sanitized) stored text.
+                error_category = resolve_persisted_error_category(
+                    media_file.error_category,  # type: ignore[arg-type]
+                    media_file.last_error_message,  # type: ignore[arg-type]
+                )
                 media_file.error_category = error_category.value  # type: ignore[assignment]
 
                 # Enforce retry delay based on error category
@@ -865,8 +869,12 @@ class TaskRecoveryService:
         )
 
         if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
-            # Classify the error and decide whether to retry
-            error_category = categorize_error(media_file.last_error_message or "")  # type: ignore[arg-type]
+            # Classify the error and decide whether to retry. GH #959 item 2: prefer
+            # the code persisted at the original failure site.
+            error_category = resolve_persisted_error_category(
+                media_file.error_category,  # type: ignore[arg-type]
+                media_file.last_error_message,  # type: ignore[arg-type]
+            )
             media_file.error_category = error_category.value  # type: ignore[assignment]
 
             if should_retry(error_category, int(media_file.retry_count or 0)):

@@ -90,29 +90,74 @@ def update_task_status(
 ) -> Task | None:
     """Update task status in the database.
 
-    On a terminal transition, stamps the returned ``Task`` with a transient
-    (non-persisted) ``duration_seconds`` attribute — issue #753's duration
-    chip. It MUST be computed here, not by a later reader of ``MediaFile``:
-    the terminal branch below clears ``media_file.task_started_at`` in this
-    same call, which is the only record of when this task began. Once
-    cleared it is gone — there is no other timestamp to reconstruct it from,
-    and ``MediaFile.duration`` is the length of the RECORDING, a different
-    number that must never be substituted for processing time.
+    Thin wrapper over :func:`update_task_status_with_duration` for the majority of
+    callers, which do not care how long the task took. If you need the elapsed time,
+    call that function directly — it is the only place the number can be computed.
     """
+    task, _ = update_task_status_with_duration(
+        db, task_id, status, progress, error_message, completed
+    )
+    return task
+
+
+def update_task_status_with_duration(
+    db: Session,
+    task_id: str,
+    status: str,
+    progress: float | None = None,
+    error_message: str | None = None,
+    completed: bool = False,
+) -> tuple[Task | None, float | None]:
+    """Update task status, and report how long the task ran.
+
+    This function is a chokepoint twice over, for two unrelated reasons that both
+    landed in v0.6.0 — hence the two paragraphs below.
+
+    Returns ``(task, duration_seconds)``. The duration is issue #753's notification
+    chip, and it MUST be computed here rather than by a later reader of ``MediaFile``:
+    the terminal branch below clears ``media_file.task_started_at`` in this same call,
+    which is the only record of when this task began. Once cleared it is gone — there
+    is no other timestamp to reconstruct it from, and ``MediaFile.duration`` is the
+    length of the RECORDING, a different number that must never be substituted for
+    processing time.
+
+    ⚠️ It is **returned**, not stamped onto the ``Task``. An earlier revision set a
+    transient ``task.duration_seconds`` attribute, which forced a ``ClassVar``
+    declaration on the model to stop SQLAlchemy's Annotated Declarative scanner
+    raising ``MappedAnnotationError`` at class-definition time — and mypy then
+    correctly rejected assigning to that ``ClassVar`` through an instance. Smuggling a
+    computed value out on an ORM object was fighting both tools because it was the
+    wrong shape; returning it is simpler and needs no declaration at all.
+
+    ``error_message`` is the one place many callers across the codebase (not just the
+    transcription pipeline) still hand this function raw exception text. GH #959: this
+    is therefore also a chokepoint — whatever is persisted to ``task.error_message`` /
+    ``media_file.last_error_message`` is passed through
+    ``ErrorCategorizationService.sanitize_for_storage`` first, so a caller that has not
+    (yet) been updated to sanitize its own message cannot leak raw exception text into
+    either column. Callers that already sanitize get an idempotent no-op here (a fixed
+    sentence re-classifies as itself or, at worst, the generic bucket).
+    """
+    from app.services.error_categorization_service import ErrorCategorizationService
+
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         logger.warning(f"Task {task_id} not found")
-        return None
+        return None, None
 
     # Log state transition for debugging
     logger.debug(f"Task {task_id} state change: {task.status} -> {status}")
+
+    sanitized_error_message = (
+        ErrorCategorizationService.sanitize_for_storage(error_message) if error_message else None
+    )
 
     # Update task fields
     task.status = status  # type: ignore[assignment]
     if progress is not None:
         task.progress = progress  # type: ignore[assignment]
-    if error_message:
-        task.error_message = error_message  # type: ignore[assignment]
+    if sanitized_error_message:
+        task.error_message = sanitized_error_message  # type: ignore[assignment]
     if completed:
         task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
@@ -127,8 +172,8 @@ def update_task_status(
         media_file = get_refreshed_object(db, MediaFile, int(media_file_id))
         if media_file:
             media_file.task_last_update = datetime.now(UTC)
-            if error_message:
-                media_file.last_error_message = error_message
+            if sanitized_error_message:
+                media_file.last_error_message = sanitized_error_message
 
             # Clear active task once it reaches any terminal state — completed,
             # failed, or skipped. Leaving this set after a skip would misreport
@@ -144,7 +189,6 @@ def update_task_status(
 
     db.commit()
     db.refresh(task)
-    task.duration_seconds = duration_seconds  # transient — not a mapped column
 
     # Terminal states re-check the media file's aggregate status.
     task_media_file_id = task.media_file_id
@@ -154,7 +198,7 @@ def update_task_status(
     ):
         update_media_file_from_task_status(db, int(task_media_file_id))
 
-    return task  # type: ignore[no-any-return]
+    return task, duration_seconds
 
 
 def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> MediaFile | None:

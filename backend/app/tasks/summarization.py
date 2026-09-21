@@ -572,7 +572,7 @@ def _persist_summary(
     ``task_utils.update_task_status``'s docstring for why it must be read
     here rather than reconstructed later.
     """
-    from app.utils.task_utils import update_task_status
+    from app.utils.task_utils import update_task_status_with_duration
 
     with session_scope() as db:
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
@@ -596,8 +596,10 @@ def _persist_summary(
         except Exception as usage_err:  # noqa: BLE001
             logger.warning(f"Could not increment prompt usage_count: {usage_err}")
 
-        task = update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-        return getattr(task, "duration_seconds", None)
+        _task, duration_seconds = update_task_status_with_duration(
+            db, task_id, "completed", progress=1.0, completed=True
+        )
+        return duration_seconds
 
 
 def _handle_task_error(

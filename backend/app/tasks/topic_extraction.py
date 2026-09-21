@@ -184,10 +184,10 @@ def _mark_task_status(
     only record of the task's start time as part of this same call.
     """
     try:
-        from app.utils.task_utils import update_task_status
+        from app.utils.task_utils import update_task_status_with_duration
 
         with session_scope() as db:
-            task = update_task_status(
+            _task, duration_seconds = update_task_status_with_duration(
                 db,
                 task_id,
                 status,
@@ -195,7 +195,7 @@ def _mark_task_status(
                 error_message=error_message,
                 completed=status in ("completed", "failed"),
             )
-            return getattr(task, "duration_seconds", None)
+            return duration_seconds
     except Exception as status_err:  # noqa: BLE001
         logger.debug(f"Could not record topic-extraction task status: {status_err}")
         return None

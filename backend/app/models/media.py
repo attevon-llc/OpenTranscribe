@@ -2,7 +2,6 @@ import uuid as uuid_pkg
 from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import ClassVar
 
 from sqlalchemy import BigInteger
 from sqlalchemy import Boolean
@@ -804,20 +803,19 @@ class Task(Base):
     user: Mapped["User"] = relationship("User")
     media_file: Mapped["MediaFile | None"] = relationship("MediaFile", back_populates="tasks")
 
-    # NOT a mapped column — a transient, per-instance attribute the ORM must ignore.
-    # `task_utils.update_task_status` stamps a just-finished task's wall-clock
-    # duration here (issue #753's notification duration chip) at the one moment it
-    # is computable, then the caller reads it off the return value within the same
-    # request/task. It is never persisted or queried.
+    # ⚠️ Do NOT add a non-mapped attribute here to carry a computed value out of a
+    # helper. A `duration_seconds` transient briefly lived on this class for issue
+    # #753's notification chip and was wrong twice over: as a bare `float | None` it
+    # raised `MappedAnnotationError` at class-definition time (SQLAlchemy 2.0
+    # Annotated Declarative scans every annotated class attribute and rejects anything
+    # that is neither `Mapped[...]` nor `ClassVar[...]`), so `import app.models.media`
+    # failed and the whole app refused to start; and as a `ClassVar[...]` it satisfied
+    # SQLAlchemy but made every write a mypy error, because assigning to a ClassVar
+    # through an instance is a type error even though Python permits it.
     #
-    # ⚠️ It MUST be `ClassVar[...]`, not a bare `float | None`. Under SQLAlchemy 2.0
-    # Annotated Declarative, every annotated class attribute is scanned, and one
-    # that is neither `Mapped[...]` nor `ClassVar[...]` raises
-    # `MappedAnnotationError` at class-definition time — which means
-    # `import app.models.media` fails and the whole app refuses to start. The bare
-    # annotation shipped briefly and did exactly that; nothing caught it because
-    # ruff/mypy/the AST auditors never import the module.
-    duration_seconds: ClassVar[float | None] = None
+    # The value is now simply RETURNED — `task_utils.update_task_status_with_duration`
+    # hands back `(task, duration_seconds)`. Smuggling a computed value out on an ORM
+    # object was fighting both tools because it was the wrong shape.
 
 
 class Analytics(Base):

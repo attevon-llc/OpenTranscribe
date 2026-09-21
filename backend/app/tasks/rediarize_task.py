@@ -499,19 +499,25 @@ def rediarize_task(  # noqa: C901
         }
 
     except Exception as e:
+        from app.services.error_categorization_service import ErrorCategorizationService
+
         error_msg = str(e)
         logger.error(f"Rediarization failed for file {file_uuid}: {error_msg}")
+        # GH #959: classify once from the raw text, persist only the fixed sentence.
+        sanitized_msg = ErrorCategorizationService.sanitize_for_storage(error_msg)
 
         try:
             with session_scope() as db:
-                update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+                update_task_status(
+                    db, task_id, "failed", error_message=sanitized_msg, completed=True
+                )
                 # Resolve file_id if we have it
                 try:
                     from app.utils.uuid_helpers import get_file_by_uuid
 
                     media_file = get_file_by_uuid(db, file_uuid)
                     update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
-                    media_file.last_error_message = error_msg
+                    media_file.last_error_message = sanitized_msg
                     from app.utils.error_classification import categorize_error
 
                     media_file.error_category = categorize_error(error_msg).value

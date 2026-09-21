@@ -22,6 +22,7 @@
   import { galleryStore, galleryState, hasMoreFiles, isLoadingMore } from '$stores/gallery';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorCode } from '$lib/utils/apiError';
+  import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
   import SelectiveReprocessModal from '../components/SelectiveReprocessModal.svelte';
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
@@ -1057,9 +1058,15 @@
     // Use backend-provided error categorization
     if (file.error_reason && file.error_suggestions) {
       const suggestions = file.error_suggestions.map(s => `• ${s}`).join('\n');
+      // GH #960: translate the fixed backend reason client-side; fall back to the
+      // server-authored English `user_message` only for a reason this client doesn't know.
+      const mediaErrorI18nKey = resolveMediaErrorI18nKey(file.error_reason);
+      const message = mediaErrorI18nKey
+        ? $t(mediaErrorI18nKey)
+        : file.user_message || $t('gallery.processingFailed', { filename: file.title || file.filename });
       toastStore.error(
         $t('gallery.processingFailedWithSuggestions', {
-          message: file.user_message || $t('gallery.processingFailed', { filename: file.title || file.filename }),
+          message,
           suggestions: suggestions
         }),
         file.error_reason === 'file_quality' ? 10000 : 8000

@@ -23,6 +23,7 @@ from app.core.constants import gpu_preferred_queue
 from app.db.session_utils import session_scope
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
+from app.utils.task_utils import update_task_status_with_duration
 from app.utils.websocket_notify import send_ws_event_for_file
 
 from .notifications import send_completion_notification
@@ -223,10 +224,10 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                 user_id, file_id, 0.90, "Transcription complete, diarizing on GPU..."
             )
             with session_scope() as db:
-                task = update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-            send_completion_notification(
-                user_id, file_id, duration_seconds=getattr(task, "duration_seconds", None)
-            )
+                _task, task_duration_seconds = update_task_status_with_duration(
+                    db, task_id, "completed", progress=1.0, completed=True
+                )
+            send_completion_notification(user_id, file_id, duration_seconds=task_duration_seconds)
         elif is_cloud_asr and not diarization_disabled:
             # Cloud ASR with provider diarization: embedding task runs async on GPU
             send_progress_notification(user_id, file_id, 0.90, "Processing speaker identification")
@@ -240,13 +241,13 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
             # rediarize_task instead, to avoid double-counting the same run).
             send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
             with session_scope() as db:
-                task = update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+                _task, task_duration_seconds = update_task_status_with_duration(
+                    db, task_id, "completed", progress=1.0, completed=True
+                )
                 _fire_completion_metering(
                     db, file_id=file_id, run_id=task_id, provider=asr_provider, success=True
                 )
-            send_completion_notification(
-                user_id, file_id, duration_seconds=getattr(task, "duration_seconds", None)
-            )
+            send_completion_notification(user_id, file_id, duration_seconds=task_duration_seconds)
 
         completion_elapsed = time.perf_counter() - post_start
         logger.info(

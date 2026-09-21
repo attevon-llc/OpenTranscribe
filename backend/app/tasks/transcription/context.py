@@ -195,13 +195,24 @@ def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContex
 def _handle_transcription_failure(
     ctx: TranscriptionContext, task_id: str, error_msg: str, error_type: str
 ) -> dict:
-    """Handle transcription failure by updating status and sending notification."""
+    """Handle transcription failure by updating status and sending notification.
+
+    ``error_msg`` may be the raw exception text (``str(e)``) — it is classified exactly
+    once here, while still in hand, into the two things GH #959 allows to be persisted:
+    the retry-policy code (``ErrorCategory``, ``media_file.error_category``) and a fixed,
+    non-raw sentence (``ErrorCategorizationService``). The raw text itself is never
+    written to a DB column; it still reaches the ERROR log via ``send_error_notification``.
+    """
+    from app.services.error_categorization_service import ErrorCategorizationService
+
+    sanitized_msg = ErrorCategorizationService.sanitize_for_storage(error_msg)
+
     with session_scope() as db:
-        update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+        update_task_status(db, task_id, "failed", error_message=sanitized_msg, completed=True)
         update_media_file_status(db, ctx.file_id, FileStatus.ERROR)
         media_file = get_refreshed_object(db, MediaFile, ctx.file_id)
         if media_file:
-            media_file.last_error_message = error_msg
+            media_file.last_error_message = sanitized_msg
             media_file.error_category = categorize_error(error_msg).value
             db.commit()
 
@@ -229,7 +240,7 @@ def _handle_transcription_failure(
             logger.exception("Failure-path completion hook raised (contained)")
 
     send_error_notification(ctx.user_id, ctx.file_id, error_msg)
-    return {"status": "error", "message": error_msg, "error_type": error_type}
+    return {"status": "error", "message": sanitized_msg, "error_type": error_type}
 
 
 def _validate_transcription_result(
@@ -259,43 +270,21 @@ def _validate_transcription_result(
     return None
 
 
-def _get_user_friendly_error_message(error_message: str) -> str:
-    """Convert technical error to user-friendly message."""
-    error_lower = error_message.lower()
-
-    if "libcudnn" in error_lower:
-        return (
-            "Audio processing failed due to a system library compatibility issue. "
-            "The transcription service requires updated dependencies. "
-            "Please contact support for assistance."
-        )
-    if "cuda" in error_lower and "out of memory" in error_lower:
-        return (
-            "GPU out of memory error. The audio file may be too large for available GPU resources. "
-            "Please try with a shorter audio file or contact support."
-        )
-    if "cuda" in error_lower or "gpu" in error_lower:
-        return (
-            "GPU processing error occurred during transcription. "
-            "The system may need reconfiguration. "
-            "Please try again or contact support if the issue persists."
-        )
-    if "model" in error_lower and ("download" in error_lower or "load" in error_lower):
-        return (
-            "Failed to download or load AI models. "
-            "Please check your internet connection and try again. "
-            "If the problem persists, contact support."
-        )
-    return error_message
-
-
 def _handle_outer_exception(
     ctx: TranscriptionContext | None, task_id: str, error: Exception
 ) -> dict:
-    """Handle top-level exception in transcription task."""
+    """Handle top-level exception in transcription task.
+
+    Same GH #959 rule as ``_handle_transcription_failure``: ``error_msg`` (raw) is
+    classified once, here, into a persisted retry code and a persisted fixed sentence —
+    never the raw text itself.
+    """
+    from app.services.error_categorization_service import ErrorCategorizationService
+
     file_id = ctx.file_id if ctx else None
     user_id = ctx.user_id if ctx else None
     error_msg = str(error)
+    sanitized_msg = ErrorCategorizationService.sanitize_for_storage(error_msg)
 
     logger.error(f"Error processing file {file_id}: {error_msg}")
 
@@ -305,14 +294,14 @@ def _handle_outer_exception(
                 update_media_file_status(db, file_id, FileStatus.ERROR)
                 media_file = get_refreshed_object(db, MediaFile, file_id)
                 if media_file:
-                    media_file.last_error_message = error_msg
+                    media_file.last_error_message = sanitized_msg
                     media_file.error_category = categorize_error(error_msg).value
                     db.commit()
-            update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+            update_task_status(db, task_id, "failed", error_message=sanitized_msg, completed=True)
 
         if user_id and file_id:
             send_error_notification(user_id, file_id, error_msg)
     except Exception as update_err:
         logger.error(f"Error updating task status: {update_err}")
 
-    return {"status": "error", "message": error_msg}
+    return {"status": "error", "message": sanitized_msg}

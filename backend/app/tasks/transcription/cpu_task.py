@@ -22,7 +22,6 @@ from app.utils.task_utils import update_task_status
 
 from .cancellation import finish_cancelled
 from .context import TranscriptionContext
-from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
 from .context import requeue_after_abort
@@ -202,8 +201,9 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
             if self.request.retries < self.max_retries:
                 raise
             logger.error(f"CPU transcription failed for file {file_uuid} after all retries")
-            error_message = _get_user_friendly_error_message("Connection or timeout error")
-            _handle_transcription_failure(ctx, task_id, error_message, "cpu_processing_error")
+            _handle_transcription_failure(
+                ctx, task_id, "Connection or timeout error", "cpu_processing_error"
+            )
             raise
         except TranscriptionCancelledError as cancelled:
             # issue #823: MUST sit before `except Exception` below, for the same reason the
@@ -231,6 +231,5 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
             requeue_after_abort(file_uuid, abort, stage="CPU transcription")
         except Exception as e:
             logger.error(f"CPU transcription failed for file {file_uuid}: {e}")
-            error_message = _get_user_friendly_error_message(str(e))
-            _handle_transcription_failure(ctx, task_id, error_message, "cpu_processing_error")
+            _handle_transcription_failure(ctx, task_id, str(e), "cpu_processing_error")
             raise

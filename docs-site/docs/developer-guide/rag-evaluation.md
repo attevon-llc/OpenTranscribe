@@ -2031,6 +2031,71 @@ QMSum+AMI-distractors index), the same axis "Corpus composition is a result, not
 already uses, so a reader can see the Product-domain number moving for the reason this section
 documents rather than inferring a retrieval regression from a corpus-wide average.
 
+### Corpus-scale chat probe: AMI-81 past single-file scope (#829)
+
+**AMI-81 itself (`backend/tests/eval/baselines/probe-ami81-shipped-defaults-2026-08-21/`) is
+single-file scoped — every one of its 81 questions carries a 1-4-file `file_uuids` scope,
+confirmed by grepping that baseline's `latency_s` keys for meeting codes.** That is a
+structural gap, not an oversight in how the questions were picked: at scope size 4 or fewer there is
+nothing for a ranking leg to rank AWAY from, so AMI-81 as shipped cannot exercise the
+ranking-vs-mapping divergence this file already documents above (`build_overview` composed
+from the ranked `retrieve_digests` leg instead of the mapping `scope_digest_hits` leg — 50
+sections drawn from only 8 of a 25-file scope, caught once by hand, not by a standing test).
+
+`scripts/build_probe_question_set.py --corpus-scale` closes that gap by reusing the SAME
+question shapes AMI-81 already asks (a multi-file series question, real QMSum needle
+questions, a negative control) but widening every one of them to the FULL corpus actually
+injected for the run: the QMSum meetings used above, UNION the 34-meeting AMI distractor
+haystack this section describes. It also adds a `corpus_scale_broad` shape with no
+single-series anchor — a scope-wide "what topics were discussed across all the meetings in
+this scope?" prompt, scored on `coverage_ratio`/`files_consulted` from `probe_chat_rag.py
+--metrics-out`, never on answer text (there is no single human reference for an arbitrary
+cross-series summary).
+
+```bash
+./scripts/inject-eval-corpus.sh --fresh <name> --corpus qmsum --only TS3005a TS3005b TS3005c TS3005d IS1006c ES2006a TS3008d
+./scripts/inject-eval-corpus.sh --fresh <name> --corpus ami        # the 34-meeting distractor haystack
+python3 scripts/build_probe_question_set.py \
+    --out .rag-403/probe-runs/corpus-scale-AMI.json \
+    --per-stratum 0 --corpus-scale --pg-container otfresh-<name>-postgres
+python3 scripts/probe_chat_rag.py --port <fresh-backend-port> \
+    --question-set .rag-403/probe-runs/corpus-scale-AMI.json \
+    --llm-provider custom --llm-model mock-gpt --llm-base-url http://mock-llm:5199/v1 \
+    --out /tmp/ot-probe-corpus-scale \
+    --metrics-out backend/tests/eval/baselines/probe-ami81-corpus-scale-<date>
+```
+
+`--llm-provider custom --llm-model mock-gpt` (the `--with-mock-llm` overlay) is deliberate,
+not a shortcut that weakens the measurement: `coverage_ratio`/`files_consulted` are computed
+from the context-ASSEMBLY stage, before the model ever sees a prompt, so which model answers
+has no bearing on them — only retrieval/routing does. Answer text quality is a separate,
+unrelated axis this run does not claim to measure (and mock-gpt's answer text was empty on
+every turn in the baseline below, a mock-server characteristic, not a retrieval finding).
+
+**Measured 2026-09-21** (`probe-ami81-corpus-scale-2026-09-21/`, 41-file scope: 7 QMSum
+meetings + all 34 AMI distractors, shipped defaults — `chat.rag.map_tier_summaries` and
+`chat.rag.context_expansion_enabled` both `False`):
+
+| shape | files_consulted | coverage_ratio | what it shows |
+|---|---|---|---|
+| needle (`single_specific_corpus_scale` / `single_general_corpus_scale`, 6 questions) | 1-2 of 41 | 0.024-0.049 | **Correct.** A targeted question about one meeting should consult ~1 file even at 41-file scope — this is chunk-tier discrimination working, not a coverage failure. |
+| `multi_file_corpus_scale` (TS3005 decisions, 4-meeting gold scope) | 2 of 41 | 0.049 | Routed to `intent: summarize`, `tiers: [digest, chunk]`; `overview` metadata correctly reports `files_total: 41` — the mapping step DOES see the full scope. But cited evidence (`files_consulted`) still covers only 2 files, not even its own 4-meeting gold scope. |
+| `corpus_scale_broad` (2 questions, no series anchor) | 2 of 41 both | 0.049 both | One routed `intent: lookup` (`tiers: [chunk]` only — the digest/overview tier never engaged for this phrasing); the other routed `intent: summarize` (digest tier engaged, same `overview.files_total: 41`). **Both still ended at `files_consulted: 2`.** |
+
+**Conclusion: the divergence reproduces, and routing accuracy is not the deciding factor.**
+Whether a broad query triggers the digest/overview tier at all depends on phrasing (a
+`rules`-based intent classifier matching `summarize-verb`/`decisions` signals — "what topics
+were discussed..." matched neither and fell to plain chunk lookup; "summarise the main
+decisions..." matched `summarize-verb` and engaged `digest`+`chunk`). But even when digest
+routing succeeds and the overview block correctly reports `files_total: 41`
+(`files_in_scope: 41`, `reducer: code`, `map_tier_summaries` off so no LLM calls), the actual
+cited evidence never grows past 1-2 files — the same shape as this section's already-fixed
+`build_overview` bug, now confirmed to still exist somewhere downstream of the overview
+metadata (the chunk-tier top-K that assembles citations, not the file-count reporting) even
+after that fix landed. Follow-up root-causing (which downstream step ignores the `overview`
+block's own correct 41-file count) is out of scope for this measurement pass — see the open
+`epic:rag-quality` issues for that line of work.
+
 ## Answer-quality harness (#463, W2/A2)
 
 Where retrieval measures "did the right chunks come back," this tier measures "was the

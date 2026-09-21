@@ -486,6 +486,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'file_pipeline_timing' AND column_name = 'transcript_ready_ms')"
     )
 
+    # v394: media_file.duration_source — where `duration` came from (issue #969).
+    # Single-marker revision (one ADD COLUMN plus one CHECK, no backfill), so the
+    # column IS the fingerprint — the same shape v392/v393 use.
+    has_duration_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'duration_source')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -528,8 +536,18 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
+    # v394: same as v393 plus media_file.duration_source. The newest revision on
+    # this chain, so this is the top of the ladder.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_duration_source
+    ):
+        return "v394_add_media_duration_provenance"
     # v393: same as v392 plus file_pipeline_timing's transcribe/diarize overlap markers.
-    # The newest revision on this chain, so this is the top of the ladder.
     if (
         matches_v389
         and has_file_facts

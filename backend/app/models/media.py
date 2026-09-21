@@ -63,6 +63,12 @@ class MediaFile(Base):
         DateTime(timezone=True), nullable=True
     )  # When processing completed
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)  # Duration in seconds
+    # Where ``duration`` came from (v394, issue #969) — mirrors ``recorded_date_source``.
+    # NULL means "written before #969 was fixed; provenance unknown" — the pre-fix
+    # pipeline unconditionally overwrote this column with the transcript's speech
+    # extent, so an un-backfilled NULL row's duration is presumptively wrong. See
+    # ``app.core.enums.DurationSource``.
+    duration_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # BigInteger, not Integer: the column is bigint in Postgres and the app
     # advertises 15 GB uploads (MAX_UPLOAD_BYTES), well past Integer's 2.1 GB
     # ceiling. The model said Integer while the database said bigint — reads
@@ -372,6 +378,16 @@ class MediaFile(Base):
         CheckConstraint(
             "NOT recorded_date_locked OR recorded_date_source = 'manual'",
             name="ck_media_file_recorded_date_locked_is_manual",
+        ),
+        # v394 (#969). No provenance-required companion CHECK like
+        # ``ck_media_file_recorded_date_provenance``: every pre-existing row already
+        # has a duration and a NULL source, and the migration deliberately does not
+        # backfill (see v394's docstring) — that pairing would refuse to insert on
+        # a live production schema.
+        CheckConstraint(
+            "duration_source IS NULL OR duration_source IN "
+            "('container', 'transcript_extent', 'none')",
+            name="ck_media_file_duration_source",
         ),
         Index(
             "ix_media_file_recorded_date",

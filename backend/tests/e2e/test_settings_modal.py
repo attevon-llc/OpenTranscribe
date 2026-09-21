@@ -42,12 +42,15 @@ TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: 
 
 # Stable, per-user sections that render a `.section-title` quickly without
 # waiting on heavy admin data loads. Each entry: (sidebar nav label, expected
-# title text). Labels are matched as substrings of the nav-item text.
+# title text). Labels are matched as substrings of the nav-item text, so they
+# must match the *rendered* English label, not the section id — the `download`
+# section is labelled "URL Import Quality" (settings.download.title), and an
+# entry reading "Download" matched nothing while the >= 3 floor hid it (#861).
 SECTIONS_TO_SWITCH = [
     ("Profile & Security", "Profile"),
     ("Transcription Settings", "Transcription"),
     ("Recording Settings", "Recording"),
-    ("Download", "Download"),
+    ("URL Import Quality", "URL Import Quality"),
 ]
 
 # Pre-existing, non-regression console noise (see test_file_detail_transcript).
@@ -198,9 +201,7 @@ class TestSettingsModal:
             app_page.wait_for_timeout(300)
             switched += 1
 
-        assert switched >= 3, (
-            f"Expected to switch through at least 3 settings sections, did {switched}"
-        )
+        assert switched >= 4, f"Expected to switch through all 4 settings sections, did {switched}"
 
         unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors while switching sections: {unexpected}"

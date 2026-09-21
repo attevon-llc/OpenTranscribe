@@ -101,6 +101,13 @@ const EXEMPT: Record<string, string> = {
   // ── Self ──
   'lib/session/clearUserState':
     'The module under test. It holds no state of its own — it only orchestrates the others.',
+
+  'lib/fileDetail/downloadStream':
+    'createDownloadStreamManager() is a FACTORY — the downloadStreams/downloadTimeouts Maps ' +
+    'are created fresh per call inside the function closure, not at module scope. Each ' +
+    'file-detail page mount gets its own manager and calls cleanup() from onDestroy, which ' +
+    'closes every EventSource and clears every timer before the page (and any session) ends. ' +
+    "No previous user's data can survive here between sessions.",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

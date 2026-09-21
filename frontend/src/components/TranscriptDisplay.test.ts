@@ -11,10 +11,18 @@
  * shares object references between the two arrays would pass either way.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import TranscriptDisplay from './TranscriptDisplay.svelte';
 import { renameSpeakersInFile, appendSegmentPage } from '$lib/fileDetail/segmentSync';
+
+// TranscriptSearch's whole-transcript completeness probe (`GET /search/count`) fires on
+// every query; stub it out so it resolves quietly instead of rejecting against a real
+// network call jsdom can't make.
+vi.mock('$lib/axios', () => ({
+  default: { get: vi.fn().mockResolvedValue({ data: { total: 0 } }) },
+  isRequestCancelled: () => false,
+}));
 
 class StubIntersectionObserver {
   observe() {}
@@ -163,5 +171,50 @@ describe('TranscriptDisplay', () => {
     render(TranscriptDisplay, { props: { ...baseProps, file } });
 
     expect(document.querySelectorAll('[data-segment-id]')).toHaveLength(2);
+  });
+
+  describe('search highlighting after the find bar populates matches (regression, issue #755)', () => {
+    // The find bar's own counter is driven by TranscriptSearch's OWN local `totalMatches`/
+    // `currentMatch` state (`SearchBar`'s `counterText`), entirely independent of whether
+    // TranscriptSegmentList re-renders — so "N of M" reading correctly proves nothing about
+    // whether a `.transcript-search-highlight` span exists. This block asserts the actual
+    // DOM: it types into the REAL find bar (mounted as `TranscriptDisplay` mounts it, wired
+    // through the REAL `on:searchResults` -> `searchMatches`/`searchQuery`/`currentMatchIndex`
+    // props exactly as production does), and checks the segment text.
+    //
+    // A leaf-level render+rerender of `TranscriptSegmentList` alone (see its own test file)
+    // CANNOT catch this: `@testing-library/svelte`'s `rerender()` bundles every prop into one
+    // `$state.raw` bag and replaces the whole bag on each call, so any single prop change
+    // forces a full top-to-bottom re-render regardless of which template expression is
+    // statically wired to what. Only a real PARENT component passing updated props down (each
+    // exported prop its own compiled binding, the way `TranscriptDisplay` -> `searchQuery` /
+    // `searchMatches` / `currentMatchIndex` -> `TranscriptSegmentList` actually works in
+    // production) exercises the fine-grained reactivity gap this bug lived in.
+    it('highlights matches once the user types a query', async () => {
+      render(TranscriptDisplay, { props: { ...baseProps, file: makeFile() } });
+
+      // No query yet: plain text, no highlight spans.
+      expect(document.querySelectorAll('.transcript-search-highlight')).toHaveLength(0);
+
+      await fireEvent.click(document.querySelector('.search-trigger-button')!);
+      await tick();
+
+      const input = document.querySelector('.transcript-search input') as HTMLInputElement;
+      expect(input).toBeTruthy();
+      await fireEvent.input(input, { target: { value: 'segment' } });
+      await tick();
+      await tick();
+      await tick();
+
+      // Fails against the pre-fix code: `segmentHighlight(segment)` read
+      // `searchQuery`/`searchMatches`/`currentMatchIndex` from closure rather than as
+      // explicit parameters, so Svelte's per-block dependency tracking never saw those
+      // props as inputs to the `{@html …}` block and it stayed frozen at its as-mounted
+      // (query-less) output — segment text rendered as escaped plain text with zero
+      // `.transcript-search-highlight` spans, even though the count above it was correct.
+      const highlights = document.querySelectorAll('.transcript-search-highlight');
+      expect(highlights.length).toBeGreaterThan(0);
+      expect(highlights).toHaveLength(2);
+    });
   });
 });

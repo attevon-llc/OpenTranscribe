@@ -13,6 +13,38 @@ set -uo pipefail
 # shellcheck source=scripts/common.sh
 source ./scripts/common.sh
 
+# .env is gitignored, so a git worktree (e.g. .claude/worktrees/<name>) does not
+# get one automatically -- only the main checkout does. Left alone, every
+# *_PASSWORD/*_PORT var compose interpolates comes out empty and the first
+# symptom is Postgres crash-looping on "superuser password is not specified" --
+# nothing in that output says "you have no .env" (issue #961a).
+#
+# Auto-link (never copy, never read) the MAIN checkout's .env into this
+# worktree when one can be found. `git rev-parse --git-common-dir` resolves to
+# the MAIN checkout's .git regardless of which worktree invoked it; comparing
+# it against `--git-dir` (this worktree's own, private .git file) is git's own
+# documented way to detect "am I a worktree". Only a symlink is created --
+# .env's CONTENTS are never opened by this script, per the project's
+# secrets-file rule. A RELATIVE symlink is used deliberately: it was confirmed
+# to work by hand in a case where an absolute `cp` of the file was refused
+# (source-tree permissions), and it keeps working if the whole repo is moved.
+if [ ! -f ".env" ]; then
+  _ot_common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  _ot_git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+  if [ -n "$_ot_common_dir" ] && [ "$_ot_common_dir" != "$_ot_git_dir" ]; then
+    _ot_main_root="$(cd "$(dirname "$_ot_common_dir")" && pwd)"
+    if [ -f "${_ot_main_root}/.env" ]; then
+      _ot_env_rel="$(realpath --relative-to="$PWD" "${_ot_main_root}/.env" 2>/dev/null || echo "${_ot_main_root}/.env")"
+      if ln -s "$_ot_env_rel" .env 2>/dev/null; then
+        echo "🔗 No .env in this worktree — linked it from the main checkout (${_ot_env_rel})."
+        echo "   Contents are never read by this script; edit ${_ot_main_root}/.env directly."
+      fi
+    fi
+    unset _ot_main_root _ot_env_rel
+  fi
+  unset _ot_common_dir _ot_git_dir
+fi
+
 # Load environment variables from .env if present
 if [ -f ".env" ]; then
   set -a
@@ -20,6 +52,33 @@ if [ -f ".env" ]; then
   source ./.env
   set +a
 fi
+
+# Fail loudly, with a specific diagnosis, when a command that actually needs
+# .env (i.e. is about to run `docker compose`) finds none -- rather than
+# proceeding with every interpolated var empty and letting the first
+# container that reads one (historically Postgres) crash-loop on a symptom
+# that does not mention .env at all (issue #961a). The auto-link block above
+# already resolves the common worktree case; this is what fires when it
+# could not (no main checkout found, or the main checkout has no .env either).
+require_env_file_or_die() {
+  [ -f ".env" ] && return 0
+
+  echo "❌ No .env found in $(pwd)."
+  local common_dir git_dir
+  common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+  if [ -n "$common_dir" ] && [ "$common_dir" != "$git_dir" ]; then
+    local main_root
+    main_root="$(cd "$(dirname "$common_dir")" && pwd)"
+    echo "   This is a git worktree; .env is gitignored so it did not come with it,"
+    echo "   and the main checkout (${main_root}) has none either."
+    echo "   Create one there, then re-run (this script auto-links it into worktrees):"
+    echo "     cp ${main_root}/.env.example ${main_root}/.env"
+  else
+    echo "   Start from the template:  cp .env.example .env"
+  fi
+  exit 1
+}
 
 # Default the optional .env-sourced variables this script reads — directly or
 # through scripts/common.sh — so `set -u` doesn't abort when they're absent from
@@ -1088,6 +1147,18 @@ fresh_generate_overlay() {
     for svc in "${FRESH_NAMED_SERVICES[@]}" ${aux_services[@]+"${aux_services[@]}"}; do
       echo "  ${svc}:"
       echo "    container_name: ${proj}-${svc}"
+      if [ "$svc" = "frontend" ]; then
+        # Two Vite dev servers running side by side (this fresh stack +
+        # the main one) share the host's fs.inotify.max_user_instances
+        # (128 on this host) and the second one dies with EMFILE watching
+        # vite.config.ts (issue #961b). Raising the sysctl needs root;
+        # polling doesn't, and a --fresh stack is BY DEFINITION the second
+        # watcher, so it is the one that switches. CHOKIDAR_INTERVAL is
+        # tunable via the invoking shell's environment before `start`.
+        echo "    environment:"
+        echo "      - CHOKIDAR_USEPOLLING=true"
+        echo "      - CHOKIDAR_INTERVAL=${CHOKIDAR_INTERVAL:-300}"
+      fi
     done
   } > "$file"
   # Pre-#343 deployments also generated a <name>-ports.yml overlay that added a
@@ -2398,6 +2469,11 @@ start_app() {
   # docker-compose.gpu.yml (and its Blackwell variant) gets added to COMPOSE_FILES —
   # skipping it would validate a different overlay set than we run.
   if [ -z "$DRY_RUN_FLAG" ]; then
+    # See require_env_file_or_die's own comment: a real (non-dry) start is
+    # exactly the case where a missing .env stops interpolating anything
+    # useful and the first symptom shows up in Postgres, not here.
+    require_env_file_or_die
+
     # Create necessary directories
     create_required_dirs
 

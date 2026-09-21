@@ -665,9 +665,25 @@ this file is for.
 
 Root `CLAUDE.md` points here for the mechanics. `.fresh/` is gitignored and fully regenerated.
 
+**Starting `--fresh` from a git worktree (issue #961a):** `.env` is gitignored, so a worktree
+does not get one. `opentr.sh`'s prologue auto-links (never copies, never reads) the MAIN
+checkout's `.env` into the worktree via a *relative* symlink when it can find one —
+`git rev-parse --git-common-dir` resolves to the main checkout's `.git` regardless of which
+worktree invoked it, and comparing it against `--git-dir` is git's own documented worktree
+test. When no main `.env` exists either, `require_env_file_or_die()` refuses a real (non
+`--dry-run`) `start` with a diagnosis naming the main checkout, instead of proceeding with every
+interpolated var empty and letting Postgres crash-loop on an unrelated-looking
+"superuser password is not specified".
+
 - `.fresh/<name>.yml` — the ONLY generated compose overlay. It re-pins every hard-coded
   `container_name` to `otfresh-<name>-*` (`FRESH_NAMED_SERVICES` in `opentr.sh`, plus the aux
-  services below when their flag is passed).
+  services below when their flag is passed). It also carries an `environment:` addition
+  (issue #961b), generated — never hand-edit this file:
+  - `frontend` always gets `CHOKIDAR_USEPOLLING=true` / `CHOKIDAR_INTERVAL` (default 300,
+    tunable via that env var before `start`). Two Vite dev servers side by side (this stack +
+    the main one) exhaust `fs.inotify.max_user_instances` (128 on a typical host) and the
+    second one dies with `EMFILE` watching `vite.config.ts`. Raising the sysctl needs root; a
+    `--fresh` stack is by definition the second watcher, so it's the one that polls instead.
 - `.fresh/<name>.offset` — the recorded `--port-offset` (plain integer, absent = 0). Read on re-up,
   `status --fresh`, and `fresh-list`; deleted by `fresh-destroy` and by `--port-offset 0`.
 - `.fresh/<name>.aux` — the aux overlay files the deployment was started with, one per line.

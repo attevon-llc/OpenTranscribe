@@ -110,6 +110,37 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
 BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
 
+
+@pytest.hookimpl(trylast=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Refuse a mixed-stack run before xdist ever spawns a worker (issue #965).
+
+    Doing the check HERE, not only in the ``e2e_stack_preflight`` fixture below, matters
+    under ``-n auto``/``--dist loadfile``: ``pytest.exit()`` raised from an autouse SESSION
+    fixture inside an xdist WORKER process is not a shape xdist's controller expects — it
+    surfaces as an opaque ``INTERNALERROR> AssertionError`` in ``dsession.py`` with the
+    actual diagnostic message lost entirely (verified live against two real stacks,
+    2026-09-20). That is exactly the "confusing failure" issue #965 exists to prevent.
+    ``pytest_configure`` runs on the CONTROLLER before any worker exists — xdist re-invokes
+    it once per worker too, guarded off here via ``workerinput`` (present only on a worker's
+    own config) — so ``pytest.exit()`` here behaves like any ordinary early configuration
+    error: a clean message and exit code 3, with no test ever scheduled.
+
+    ``trylast=True`` so this runs AFTER pytest-base-url's own ``pytest_configure``, which is
+    what merges ``--base-url``/the (now removed) ini default into ``config.option.base_url``
+    — reading ``getoption("base_url")`` before that merge would silently see the pre-merge
+    value.
+    """
+    if hasattr(config, "workerinput"):
+        return
+
+    resolved_base = config.getoption("base_url", default=None) or FRONTEND_URL
+    resolved_backend = config.getoption("backend_url", default=None) or BACKEND_URL
+    problem = mixed_stack_problem(str(resolved_base), str(resolved_backend))
+    if problem:
+        pytest.exit(f"E2E preflight: {problem}", returncode=3)
+
+
 # Test user credentials (these should exist in dev database)
 TEST_ADMIN_EMAIL = "admin@example.com"
 TEST_ADMIN_PASSWORD = "password"

@@ -5,6 +5,7 @@
   import { galleryStore } from '$stores/gallery';
   import { t } from '$stores/locale';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
+  import FileStatusIndicator from './FileStatusIndicator.svelte';
   import type { MediaFile } from '$lib/types/media';
 
   export let items: MediaFile[] = [];
@@ -145,6 +146,18 @@
   $: topSpacerHeight = visibleStartRow * ROW_HEIGHT;
   $: bottomSpacerHeight = Math.max(0, (totalRows - visibleEndRow) * ROW_HEIGHT);
 
+  // ARIA requires `role="grid"` > `role="row"` > `role="gridcell"` (issue #967) — but the
+  // visual layout is a CSS `auto-fill` grid, not a literal per-row DOM structure. Group the
+  // flat visible-items window into rows (each rendered with `display: contents` so it adds
+  // no box and cannot perturb the CSS grid's column tracks) purely to carry the row role.
+  $: visibleRows = Array.from(
+    { length: Math.ceil(visibleItems.length / columnsPerRow) },
+    (_, r) => ({
+      rowIndex: visibleStartRow + r + 1,
+      files: visibleItems.slice(r * columnsPerRow, r * columnsPerRow + columnsPerRow),
+    })
+  );
+
   // Track which file is currently navigating to prevent double-clicks and
   // provide immediate visual feedback while the route change is in flight.
   let navigatingTo: string | null = null;
@@ -209,125 +222,124 @@
 
     <!-- Visible items in CSS grid -->
     <div class="file-grid">
-      {#each visibleItems as file, i (file.uuid)}
-        {@const globalIndex = visibleStartIndex + i}
-        <div
-          class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''} {navigatingTo === file.uuid ? 'navigating' : ''}"
-          role="gridcell"
-          aria-rowindex={Math.floor(globalIndex / columnsPerRow) + 1}
-        >
-          {#if isSelecting}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-            <label
-              class="file-selector"
-              on:click|stopPropagation={(e) => handleCheckboxLabelClick(file.uuid, e)}
+      {#each visibleRows as row (row.rowIndex)}
+        <div class="grid-row" role="row" aria-rowindex={row.rowIndex}>
+          {#each row.files as file (file.uuid)}
+            <div
+              class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''} {navigatingTo === file.uuid ? 'navigating' : ''}"
+              role="gridcell"
             >
-              <input
-                type="checkbox"
-                class="file-checkbox"
-                checked={selectedFiles.has(file.uuid)}
-                on:change={(e) => handleCheckboxChange(file.uuid, e)}
-                title={$t('gallery.selectFileTooltip')}
-              />
-              <span class="checkmark"></span>
-            </label>
-          {/if}
-          <a
-            href={isSelecting ? '#' : `/files/${file.uuid}`}
-            class="file-card-link"
-            on:click={(e) => handleCardClick(file, e)}
-            on:mousedown={() => handleCardMouseDown(file)}
-            on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid, file.status)}
-            on:mouseleave={cancelPrefetch}
-            aria-busy={navigatingTo === file.uuid}
-          >
-            <!-- Thumbnail area — edge-to-edge -->
-            <div class="thumbnail-container">
-              {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
-                <img
-                  use:cachedThumbnail={{ uuid: file.uuid, url: file.thumbnail_url }}
-                  alt={$t('gallery.thumbnailAlt', { title: file.title || file.filename })}
-                  loading="lazy"
-                  decoding="async"
-                  class="thumbnail-image"
-                />
-              {:else if file.content_type && file.content_type.startsWith('video/')}
-                <div class="placeholder video-placeholder">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="23 7 16 12 23 17 23 7"></polygon>
-                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-                  </svg>
-                </div>
-              {:else if file.content_type && file.content_type.startsWith('audio/')}
-                <div class="placeholder audio-placeholder">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                    <line x1="12" y1="19" x2="12" y2="23"></line>
-                    <line x1="8" y1="23" x2="16" y2="23"></line>
-                  </svg>
-                </div>
-              {:else}
-                <div class="placeholder file-placeholder">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                  </svg>
-                </div>
+              {#if isSelecting}
+                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+                <label
+                  class="file-selector"
+                  on:click|stopPropagation={(e) => handleCheckboxLabelClick(file.uuid, e)}
+                >
+                  <input
+                    type="checkbox"
+                    class="file-checkbox"
+                    checked={selectedFiles.has(file.uuid)}
+                    on:change={(e) => handleCheckboxChange(file.uuid, e)}
+                    title={$t('gallery.selectFileTooltip')}
+                  />
+                  <span class="checkmark"></span>
+                </label>
               {/if}
-
-              <!-- Type badge (top-left) -->
-              {#if file.content_type}
-                <div class="type-badge">
-                  {#if file.content_type.startsWith('video/')}
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polygon points="23 7 16 12 23 17 23 7"></polygon>
-                      <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-                    </svg>
+              <a
+                href={isSelecting ? '#' : `/files/${file.uuid}`}
+                class="file-card-link"
+                on:click={(e) => handleCardClick(file, e)}
+                on:mousedown={() => handleCardMouseDown(file)}
+                on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid, file.status)}
+                on:mouseleave={cancelPrefetch}
+                aria-busy={navigatingTo === file.uuid}
+              >
+                <!-- Thumbnail area — edge-to-edge -->
+                <div class="thumbnail-container">
+                  {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
+                    <img
+                      use:cachedThumbnail={{ uuid: file.uuid, url: file.thumbnail_url }}
+                      alt={$t('gallery.thumbnailAlt', { title: file.title || file.filename })}
+                      loading="lazy"
+                      decoding="async"
+                      class="thumbnail-image"
+                    />
+                  {:else if file.content_type && file.content_type.startsWith('video/')}
+                    <div class="placeholder video-placeholder">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                      </svg>
+                    </div>
+                  {:else if file.content_type && file.content_type.startsWith('audio/')}
+                    <div class="placeholder audio-placeholder">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                      </svg>
+                    </div>
                   {:else}
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                    </svg>
+                    <div class="placeholder file-placeholder">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                      </svg>
+                    </div>
+                  {/if}
+
+                  <!-- Type badge (top-left) -->
+                  {#if file.content_type}
+                    <div class="type-badge">
+                      {#if file.content_type.startsWith('video/')}
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                        </svg>
+                      {:else}
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        </svg>
+                      {/if}
+                    </div>
+                  {/if}
+
+                  <!-- Duration badge (bottom-right) -->
+                  {#if file.formatted_duration}
+                    <div class="duration-badge">{file.formatted_duration}</div>
                   {/if}
                 </div>
-              {/if}
 
-              <!-- Duration badge (bottom-right) -->
-              {#if file.formatted_duration}
-                <div class="duration-badge">{file.formatted_duration}</div>
-              {/if}
+                <!-- Text area -->
+                <div class="card-text">
+                  <h2 class="file-name">{file.title || file.filename}</h2>
+
+                  <div class="meta-line">
+                    <span>{file.formatted_upload_date}</span>
+                    {#if file.formatted_file_size}
+                      <span class="meta-dot">&middot;</span>
+                      <span>{file.formatted_file_size}</span>
+                    {/if}
+                    {#if file.speaker_summary && file.speaker_summary.count > 0}
+                      <span class="meta-dot">&middot;</span>
+                      <span>{file.speaker_summary.count} spk</span>
+                    {/if}
+                    <span class="status-slot">
+                      <FileStatusIndicator
+                        status={file.status}
+                        displayStatus={file.status === 'error' && file.user_message ? $t('gallery.errorClickForDetails') : file.display_status}
+                        clickable={file.status === 'error' && !!file.user_message}
+                        on:click={() => handleErrorClick(file)}
+                      />
+                    </span>
+                  </div>
+                </div>
+              </a>
             </div>
-
-            <!-- Text area -->
-            <div class="card-text">
-              <h2 class="file-name">{file.title || file.filename}</h2>
-
-              <div class="meta-line">
-                <span>{file.formatted_upload_date}</span>
-                {#if file.formatted_file_size}
-                  <span class="meta-dot">&middot;</span>
-                  <span>{file.formatted_file_size}</span>
-                {/if}
-                {#if file.speaker_summary && file.speaker_summary.count > 0}
-                  <span class="meta-dot">&middot;</span>
-                  <span>{file.speaker_summary.count} spk</span>
-                {/if}
-                <!-- Status dot with inline label on hover -->
-                <!-- svelte-ignore a11y-click-events-have-key-events -->
-                <!-- svelte-ignore a11y-no-static-element-interactions -->
-                <span
-                  class="status-wrap status-{file.status}"
-                  class:clickable-error={file.status === 'error' && file.user_message}
-                  on:click|preventDefault|stopPropagation={() => file.status === 'error' && file.user_message && handleErrorClick(file)}
-                >
-                  <span class="status-label">{file.status === 'error' && file.user_message ? $t('gallery.errorClickForDetails') : (file.display_status || file.status)}</span>
-                  <span class="status-dot"></span>
-                </span>
-              </div>
-            </div>
-          </a>
+          {/each}
         </div>
       {/each}
     </div>
@@ -354,6 +366,13 @@
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 0.75rem;
     padding: 0 2px 0.5rem;
+  }
+
+  /* Carries the ARIA `role="row"` layer (issue #967) without affecting the CSS Grid
+     layout above — `display: contents` removes this element's own box, so its
+     `.file-card` children still participate directly in `.file-grid`'s tracks. */
+  .grid-row {
+    display: contents;
   }
 
   /* --- Card --- */
@@ -596,7 +615,9 @@
 
   .file-name {
     font-size: 0.8125rem;
-    font-weight: 600;
+    /* Was 600 — the over-bold outlier issue #749 names (the list's `.file-title` is
+       already 500; this is the view that needed fixing, not the list). */
+    font-weight: 500;
     color: var(--text-primary);
     margin: 0;
     overflow: hidden;
@@ -620,104 +641,13 @@
     opacity: 0.5;
   }
 
-  /* --- Status indicator (dot + label on hover) --- */
-
-  .status-wrap {
-    display: flex;
-    align-items: center;
-    gap: 4px;
+  /* Positions the shared FileStatusIndicator at the end of the meta line — the
+     hover-reveal system that used to live here (`.status-wrap`/`.status-label`,
+     `max-width: 0 -> 120px`, `cursor: help` with no `title`) is gone; the
+     indicator now carries a real native tooltip everywhere (§5.4). */
+  .status-slot {
     margin-left: auto;
     flex-shrink: 0;
-    cursor: help;
-  }
-
-  .status-label {
-    font-size: 0.5625rem;
-    font-weight: 500;
-    color: currentColor;
-    max-width: 0;
-    overflow: hidden;
-    opacity: 0;
-    transition: max-width 0.15s ease, opacity 0.1s ease;
-    white-space: nowrap;
-  }
-
-  .status-wrap:hover .status-label {
-    max-width: 120px;
-    opacity: 1;
-  }
-
-  .status-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background-color: currentColor;
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
-  }
-
-  .status-wrap:hover .status-dot {
-    transform: scale(1.5);
-  }
-
-  /* Status colors */
-  .status-wrap.status-completed {
-    color: #10b981;
-  }
-
-  .status-wrap.status-error {
-    color: #ef4444;
-  }
-
-  .status-wrap.status-processing {
-    color: #f59e0b;
-  }
-
-  .status-wrap.status-pending,
-  .status-wrap.status-cancelling {
-    color: #f59e0b;
-  }
-
-  .status-wrap.status-pending .status-dot,
-  .status-wrap.status-cancelling .status-dot {
-    opacity: 0.6;
-  }
-
-  .status-wrap.status-pending:hover .status-dot,
-  .status-wrap.status-cancelling:hover .status-dot {
-    opacity: 1;
-  }
-
-  .status-wrap.status-cancelled {
-    color: #6b7280;
-  }
-
-  .status-wrap.status-orphaned {
-    color: #dc2626;
-  }
-
-  /* Abuse / DMCA takedown hold — amber, distinct from the red error states. */
-  .status-wrap.status-quarantined {
-    color: #d97706;
-  }
-
-  .status-wrap.clickable-error {
-    cursor: pointer;
-  }
-
-  @keyframes pulse {
-    0% { opacity: 0.5; }
-    50% { opacity: 1; }
-    100% { opacity: 0.5; }
-  }
-
-  .status-wrap.status-processing .status-dot {
-    animation: pulse 2s ease-in-out infinite;
-  }
-
-  .status-wrap.status-processing:hover .status-dot {
-    animation: none;
-    opacity: 1;
   }
 
   /* --- Dark mode --- */
@@ -763,10 +693,6 @@
       font-size: 0.625rem;
     }
 
-    .status-line {
-      font-size: 0.5625rem;
-    }
-
     .file-card {
       border-radius: 8px;
     }
@@ -796,15 +722,6 @@
     .file-selector {
       top: 4px;
       right: 4px;
-    }
-
-    .status-dot {
-      width: 6px;
-      height: 6px;
-    }
-
-    .status-label {
-      font-size: 0.5rem;
     }
   }
 

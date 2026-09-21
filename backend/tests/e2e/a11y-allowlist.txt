@@ -32,13 +32,11 @@
 
 gallery::aria-input-field-name::4       # BACKLOG #785 — filter/sort controls without an accessible name, tracked for #747-#757
 gallery::label::1                       # BACKLOG #785 — one form control missing an associated <label>
-gallery::aria-required-children::1      # BACKLOG #967 — VirtualGrid.svelte's role="grid" wrapper
-# has no role="row" between it and its role="gridcell" children. Pre-existing (VirtualGrid's
-# grid/gridcell markup was last touched by 0dac3b8f, unrelated to #750) and only newly
-# OBSERVABLE now that #750 seeded real files into the gallery — the grid wrapper never
-# rendered at all against the empty library this allowlist was otherwise measured against.
-gallery::aria-required-parent::3        # BACKLOG #967 — same root cause as the line above: one
-# role="gridcell" node per seeded file card (3 files) with no role="row" parent.
+# gallery::aria-required-children / gallery::aria-required-parent — REMOVED by #967:
+# VirtualGrid.svelte now wraps each visual row of `.file-card`s in a `role="row"` element
+# (`display: contents`, so the CSS Grid layout is unaffected) between the existing
+# `role="grid"` wrapper and `role="gridcell"` children, matching VirtualList's structure.
+# Observed 0 nodes on the gallery surface after that change.
 # gallery::label-title-only — REMOVED by #747: the finding was the gallery's old
 # "Search Files" sidebar input (title-only accessible name, no <label>), which #747 moved
 # out of FilterSidebar into GalleryHeader's toolbar (a SearchBar with a real aria-label).

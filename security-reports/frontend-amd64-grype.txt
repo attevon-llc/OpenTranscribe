@@ -13,7 +13,7 @@ libcrypto3     3.5.7-r0    3.5.8-r0   apk   CVE-2026-14456  High      0.7% (52nd
 libssl3        3.5.7-r0    3.5.8-r0   apk   CVE-2026-14456  High      0.7% (52nd)   0.5    
 libcrypto3     3.5.7-r0    3.5.8-r0   apk   CVE-2026-63072  High      0.7% (50th)   0.5    
 libssl3        3.5.7-r0    3.5.8-r0   apk   CVE-2026-63072  High      0.7% (50th)   0.5    
-libexpat       2.8.3-r0    2.8.4-r0   apk   CVE-2026-66046  High      0.6% (46th)   0.5    
+libexpat       2.8.3-r0    2.8.4-r0   apk   CVE-2026-66046  High      0.6% (47th)   0.5    
 tiff           4.7.1-r0               apk   CVE-2026-4775   High      0.6% (45th)   0.4    
 libcrypto3     3.5.7-r0    3.5.8-r0   apk   CVE-2026-54874  High      0.5% (43rd)   0.4    
 libssl3        3.5.7-r0    3.5.8-r0   apk   CVE-2026-54874  High      0.5% (43rd)   0.4    

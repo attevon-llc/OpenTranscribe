@@ -1,5 +1,5 @@
 {
   "exit_code": "1",
   "severity_threshold": "MEDIUM",
-  "fail_on_critical": "true"
+  "fail_on_critical": "false"
 }

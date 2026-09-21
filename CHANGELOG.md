@@ -96,6 +96,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   definition its `[x.y.z]` bracket implies, so they rendered as literal text rather than links.
   The one definition that existed still pointed at the pre-rename `davidamacey/OpenTranscribe`.
 
+### Security
+
+- **Fixed (issue #951): vendored `pcre2` CRITICAL CVEs via `psycopg2-binary`.** The wheel's
+  `manylinux` build bundles its own copy of several shared libraries; on the arm64 wheel, the
+  vendored `pcre2` was built against an AlmaLinux 8 base (`10.32-3.el8_6`) carrying three
+  unpatched CRITICALs (CVE-2022-1586, CVE-2022-1587, CVE-2025-58050), invisible to a version
+  bump since the wheel's own PyPI version never changes. Confirmed by inspecting the wheel's
+  `.libs/` directory directly. Switched `psycopg2-binary` → `psycopg2` (source build) across
+  every Dockerfile and CI workflow that installs it — a source build links the system's own
+  `libpq`/`pcre2` instead of vendoring a copy, so the vulnerable artifact no longer exists at
+  all. Verified in a full rebuild + rescan of every v0.5.1 release image: `lite-arm64` dropped
+  from 4 CRITICAL findings to 1 (the remaining one, `libxml2` CVE-2026-6653, is unrelated — see
+  below). Needs `libpq-dev` at build time; added to every affected Dockerfile and CI workflow.
+- **Consolidated the week's 5 Dependabot PRs (#945-949)**, merged progressively with
+  individually-tested merge commits. Caught 4 more real dependency-resolution conflicts the
+  same packages this file's Fixed section above already reverted once, in the *previous* week's
+  batch — Dependabot re-proposed all of them because no permanent `ignore:` rule existed for
+  three of the four until this pass:
+  - `numpy` 2.4.6 → 2.5.3: `ResolutionImpossible` vs presidio-analyzer/anonymizer's own
+    `numpy<2.5.0` metadata. Reverted, `ignore:` rule added.
+  - `tokenizers` 0.22.2 → 0.23.2: `ResolutionImpossible` vs `transformers==4.57.6`'s own
+    `tokenizers<=0.23.0,>=0.22.0` metadata. Reverted, `ignore:` rule added.
+  - `presidio-anonymizer` 2.2.362 → 2.2.364: `ResolutionImpossible` vs `cryptography==50.0.1` —
+    2.2.364's own wheel METADATA declares `cryptography<49.0.0`. Reverted, `ignore:` rule added.
+  - `requirements-lite.txt`'s `fastapi` pin was still `0.141.1` — the exact version already
+    documented as broken in this file's Fixed section above. The original fix only touched
+    `requirements.txt`/`requirements-ci.txt`; this file was missed. Reverted to `0.136.3`
+    (matching the other two files); the existing `ignore:` rule already covers it going forward.
+- **Fixed a pre-existing, unrelated test bug** surfaced while verifying the above:
+  `test_security_reports_are_regenerable.py`'s filename matcher split a report's name on every
+  hyphen and required exactly 3 parts, so `*-scan-verdict.json` (a legitimately tracked,
+  currently-written artifact whose tool name itself contains a hyphen) was rejected as an
+  orphan. Fixed the parser and registered the tool name, with 3 new guard cases.
+- **`security-reports/SECURITY-ADVISORY.md` fully refreshed for v0.5.1** (previously last
+  updated for v0.4.0). One CRITICAL remains across all 7 image legs — `libxml2` CVE-2026-6653 —
+  confirmed to have no fix anywhere in Debian's repos as of 2026-09-20, so no dependency or
+  base-image action can close it today. Its reachability is assessed honestly (ffmpeg's
+  `libavformat`/`libavfilter`/`libavdevice` link it directly, and process every uploaded media
+  file — a real if narrow path, unlike this document's other accepted-risk entries for packages
+  this application never exercises), not reflexively dismissed. See that document for the full
+  before/after CRITICAL counts, the HIGH-severity composition breakdown, and 3 further HIGH
+  findings identified but not yet fixed (`transformers` major-version CVEs, deliberately
+  deferred to v0.8.0's planned backend work; `msgpack`, confirmed not importable in the running
+  app; `setuptools`, one flagged version not present in the shipped image at all).
+
 ## [0.5.0] - 2026-09-13
 
 ### Overview

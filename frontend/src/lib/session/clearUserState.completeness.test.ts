@@ -63,6 +63,11 @@ const EXEMPT: Record<string, string> = {
     'uploadService.reset() is called by uploadsStore.reset(), which IS registered.',
 
   // ── Server-side reset endpoints, not module state ──
+  'lib/api/admin':
+    '`clear_legal_hold` is a POST BODY KEY sent to `/admin/files/{uuid}/release` (issue #576), ' +
+    'matching the backend Pydantic field name verbatim — not a store-teardown API. The ' +
+    'detector matched the object-literal key syntax `clear_legal_hold:`, which happens to ' +
+    'fit the reset/clear-prefix heuristic. AdminApi holds no module-level state at all.',
   'lib/api/downloadSettings': 'resetDownloadSettings() is an HTTP DELETE, not module state.',
   'lib/api/organizationContext': 'resetOrganizationContext() is an HTTP DELETE, not module state.',
   'lib/api/redactionSettings': 'resetRedactionSettings() is an HTTP DELETE, not module state.',

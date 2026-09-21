@@ -686,7 +686,10 @@
    * @param {() => Promise<unknown>} action
    * @param {(result: any, name: string) => string} successMessage
    * @param {string} failureMessage
-   * @param {boolean} [refresh] - Refresh the user list afterwards
+   * @param {boolean | ((result: any) => boolean)} [refresh] - Refresh the user
+   *   list afterwards. A function is evaluated against the action's result —
+   *   used by {@link unlockAccount}, whose refresh need depends on whether the
+   *   call also reactivated a disabled account (issue #570 §A.1.1).
    */
   async function runAccountAction(targetUser, action, successMessage, failureMessage, refresh = false) {
     pendingActionUuid = targetUser.uuid;
@@ -694,7 +697,8 @@
     try {
       const result = await action();
       toastStore.success(successMessage(result, userName));
-      if (refresh) onRefresh();
+      const shouldRefresh = typeof refresh === 'function' ? refresh(result) : refresh;
+      if (shouldRefresh) onRefresh();
     } catch (err) {
       console.error('Account action failed:', err);
       toastStore.error(getErrorMessage(err, failureMessage));
@@ -726,11 +730,14 @@
   }
 
   /**
-   * Clear a failed-login lockout.
-   *
-   * This is NOT the inverse of {@link lockAccount}: the endpoint resets the
-   * lockout counter only and leaves `is_active` alone, so `was_locked === false`
-   * is reported as "nothing to clear" rather than as a successful unlock.
+   * Clear a failed-login lockout — this IS the inverse of {@link lockAccount}
+   * (issue #570 §A.1.1): the endpoint clears both the lockout counter AND
+   * reactivates an account deactivated by `lockAccount`, reporting which
+   * happened via `was_locked`/`was_disabled`. `was_locked === false` alone is
+   * reported as "nothing to clear" rather than a successful unlock. The list
+   * is refreshed only when `was_disabled` is true — a reactivated account's row
+   * changes (it stops rendering as inactive); a merely lockout-locked one has
+   * nothing in the row to update.
    * @param {User} targetUser
    */
   function unlockAccount(targetUser) {
@@ -743,7 +750,8 @@
         (result, name) => result?.was_locked
           ? $t('userManagement.unlockSuccess', { name })
           : $t('userManagement.unlockNotLocked', { name }),
-        $t('userManagement.unlockFailed')
+        $t('userManagement.unlockFailed'),
+        (result) => Boolean(result?.was_disabled)
       ),
       $t('userManagement.unlockAccount')
     );

@@ -89,10 +89,23 @@ _APP = pathlib.Path(__file__).resolve().parents[2] / "app"
 #: `AUTH_ACCOUNT_UNLOCK`'s second emitter (`api/endpoints/admin.py`), which carried
 #: the target only in `details.target_user` (a UUID string) — the same shape
 #: `.log()`'s own docstring says already failed once, on a name this walk can see.
+#: issue #570 adds ``AUTH_LOCKOUT_COUNTER_RESET`` — the emitter was written with
+#: the subject in ``details`` only, watched go red against THIS set (the
+#: replacement for the prior plan's "watch the emitter fail first" step, which
+#: could not have worked: this set is what the assertion below actually
+#: consults, and a brand-new event name is invisible to it until added here),
+#: then fixed to carry ``target_user_id``/``target_username``. ``AUTH_ACCOUNT_LOCKOUT``
+#: is deliberately NOT added alongside it: its only emitter forwards through
+#: ``AuditLogger.log_account_lockout``'s own ``self.log(...)`` wrapper, which
+#: `_audit_log_calls` cannot resolve to a literal `AuditEventType.X` attribute
+#: access on `audit_logger` (the same call-graph-forwarding blind spot already
+#: recorded above for `ADMIN_FILE_QUARANTINE`/`ADMIN_FILE_RELEASE`) — adding it
+#: here would be decorative, the same reason those two are excluded.
 _ADMINISTRATIVE_EVENTS = {
     "ADMIN_ROLE_CHANGE",
     "AUTH_ACCOUNT_DISABLED",
     "AUTH_ACCOUNT_UNLOCK",
+    "AUTH_LOCKOUT_COUNTER_RESET",
     "GROUP_MEMBER_ADD",
     "GROUP_MEMBER_REMOVE",
     "GROUP_MEMBER_ROLE_CHANGE",

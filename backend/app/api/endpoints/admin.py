@@ -29,6 +29,10 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.lockout import current_store_kind as lockout_current_store_kind
+from app.auth.lockout import list_locked_accounts as lockout_list_locked_accounts
+from app.auth.lockout import normalize_identifier as lockout_normalize_identifier
+from app.auth.lockout import reset_lockout_state as lockout_reset_lockout_state
 from app.auth.lockout import unlock_account as lockout_unlock_account
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
@@ -70,6 +74,9 @@ from app.schemas.admin import GarbageCleanupConfig
 from app.schemas.admin import GarbageCleanupConfigUpdate
 from app.schemas.admin import LinkExternalIdentityRequest
 from app.schemas.admin import LinkExternalIdentityResponse
+from app.schemas.admin import LockedAccount
+from app.schemas.admin import LockedAccountsList
+from app.schemas.admin import LockoutResetResponse
 from app.schemas.admin import MediaSource
 from app.schemas.admin import MediaSourceCreate
 from app.schemas.admin import MediaSourcesList
@@ -1630,6 +1637,122 @@ def admin_unlock_account(
     return {"success": True, "was_locked": unlocked, "was_disabled": was_disabled}
 
 
+@router.get("/locked-accounts", response_model=LockedAccountsList)
+def admin_list_locked_accounts(
+    cursor: str | None = Query(None, description="Opaque pagination cursor from a prior page."),
+    limit: int = Query(100, ge=1, le=500),
+    include_unlocked: bool = Query(
+        False,
+        description=(
+            "Also include recent failed-login records that are not currently "
+            "locked -- useful for diagnosing a near-threshold account."
+        ),
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """List locked accounts (issue #570), cursor-paginated over the lockout store.
+
+    A **read**, and deliberately not audited per request -- the write below
+    (the reset) is. ``admin`` tier, matching the existing lock/unlock pair
+    (J-A2): a reset whose target an admin cannot see would be worse than a
+    listing a super_admin-only tier would otherwise require.
+    """
+    accounts, next_cursor, lockout_enabled = lockout_list_locked_accounts(
+        cursor, limit, include_unlocked=include_unlocked
+    )
+
+    # One batched enrichment query over the page's identifiers, never a
+    # per-row lookup (issue #570 §A.4.1).
+    identifiers = [a["identifier"] for a in accounts]
+    by_email: dict[str, User] = {}
+    if identifiers:
+        for u in db.query(User).filter(func.lower(User.email).in_(identifiers)).all():
+            by_email[str(u.email).lower()] = u
+
+    enriched = []
+    for account in accounts:
+        matched = by_email.get(account["identifier"])
+        enriched.append(
+            LockedAccount(
+                identifier=account["identifier"],
+                is_locked=account["is_locked"],
+                failed_attempts=account["failed_attempts"],
+                lockout_count=account["lockout_count"],
+                locked_until=account["locked_until"],
+                first_failed_attempt=account["first_failed_attempt"],
+                last_failed_attempt=account["last_failed_attempt"],
+                admin_unlocked_at=account["admin_unlocked_at"],
+                user_uuid=str(matched.uuid) if matched is not None else None,
+                full_name=str(matched.full_name) if matched is not None else None,
+                is_active=bool(matched.is_active) if matched is not None else None,
+                auth_type=str(matched.auth_type) if matched is not None else None,
+            )
+        )
+
+    return LockedAccountsList(
+        accounts=enriched,
+        next_cursor=next_cursor,
+        lockout_enabled=lockout_enabled,
+        store_backend=lockout_current_store_kind(),
+        truncated=next_cursor is not None,
+    )
+
+
+@router.post("/locked-accounts/{identifier}/reset", response_model=LockoutResetResponse)
+def admin_reset_lockout_counter(
+    identifier: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Reset an account's progressive lockout counter (issue #570).
+
+    Distinct from ``POST /admin/users/{uuid}/unlock`` (T8): this clears the
+    progressive ``lockout_count`` and ``failed_attempts`` but, per J-A1, leaves
+    an in-progress ``locked_until`` intact -- the single "unlock now" verb stays
+    the existing endpoint. 404 for an unknown identifier (nothing is written);
+    409 when the compare-and-set budget is exhausted (also nothing written --
+    never a silent partial write).
+    """
+    client_ip, user_agent = _get_client_info(request)
+    normalized = lockout_normalize_identifier(identifier)
+
+    outcome = lockout_reset_lockout_state(normalized, clear_lock=False)
+    if not outcome["found"]:
+        raise HTTPException(status_code=404, detail="No lockout record for this identifier")
+    if not outcome["written"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Could not reset lockout state (concurrent write); retry",
+        )
+
+    matched = db.query(User).filter(func.lower(User.email) == normalized).first()
+
+    audit_logger.log(
+        event_type=AuditEventType.AUTH_LOCKOUT_COUNTER_RESET,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        target_user_id=int(matched.id) if matched is not None else None,
+        target_username=normalized,
+        details={
+            "previous_lockout_count": outcome["previous_lockout_count"],
+            "was_locked": outcome["was_locked"],
+        },
+    )
+
+    return LockoutResetResponse(
+        success=True,
+        identifier=normalized,
+        previous_lockout_count=outcome["previous_lockout_count"],
+        was_locked=outcome["was_locked"],
+        unlocked=outcome["unlocked"],
+    )
+
+
 def _targets_a_super_admin_without_authority(user: User, current_user: User) -> bool:
     """Whether ``current_user`` (not super_admin) is acting on a super_admin ``user``.
 
@@ -2839,28 +2962,55 @@ def list_quarantined_files(
     an admin who deliberately kept a hold on a released file had no way to find
     it again through the API a review-queue client would use.
     """
+    from sqlalchemy.orm import aliased
+
+    from app.models.organization import Organization
+
+    # Two DIFFERENT FKs to `user` on the same row (owner, and the admin who acted),
+    # so this needs two aliased OUTER joins, not a per-row lookup (issue #576
+    # FINDING 3). Both are OUTER: `quarantined_by` is nullable (pre-v371 rows), and
+    # an INNER join there would silently drop legacy rows from the queue entirely.
+    owner_alias = aliased(User)
+    quarantined_by_alias = aliased(User)
+
     if include_legal_holds:
         condition = or_(MediaFile.is_quarantined.is_(True), MediaFile.legal_hold.is_(True))
     else:
         condition = MediaFile.is_quarantined.is_(True)
-    base = db.query(MediaFile).filter(condition)
-    total = base.with_entities(func.count(MediaFile.id)).scalar() or 0
+
+    base_query = db.query(MediaFile).filter(condition)
+    total = base_query.with_entities(func.count(MediaFile.id)).scalar() or 0
+
     rows = (
-        base.order_by(MediaFile.quarantined_at.desc().nullslast()).offset(offset).limit(limit).all()
+        db.query(MediaFile, owner_alias, quarantined_by_alias, Organization)
+        .filter(condition)
+        .outerjoin(owner_alias, owner_alias.id == MediaFile.user_id)
+        .outerjoin(quarantined_by_alias, quarantined_by_alias.id == MediaFile.quarantined_by)
+        .outerjoin(Organization, Organization.id == MediaFile.organization_id)
+        .order_by(MediaFile.quarantined_at.desc().nullslast())
+        .offset(offset)
+        .limit(limit)
+        .all()
     )
     files = [
         QuarantinedFile(
             uuid=str(f.uuid),
             filename=f.filename,
-            user_id=int(f.user_id),
-            organization_id=f.organization_id,
+            title=f.title,
+            # `owner_alias` is deliberately non-nullable in the response: `user_id` is a
+            # required FK on MediaFile, so a missing owner row would mean the
+            # database's own referential integrity was already broken -- not a
+            # case this endpoint needs to model as optional.
+            owner_uuid=str(owner.uuid) if owner is not None else "",
+            owner_email=str(owner.email) if owner is not None else "",
+            organization_uuid=str(org.uuid) if org is not None else None,
             quarantine_reason=f.quarantine_reason,
             quarantined_at=f.quarantined_at.isoformat() if f.quarantined_at else None,
-            quarantined_by=f.quarantined_by,
+            quarantined_by_email=str(quarantined_by.email) if quarantined_by is not None else None,
             legal_hold=bool(f.legal_hold),
             is_quarantined=bool(f.is_quarantined),
         )
-        for f in rows
+        for f, owner, quarantined_by, org in rows
     ]
     return QuarantinedFilesList(files=files, total=int(total))
 
@@ -2910,15 +3060,25 @@ def release_media_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Release a quarantined file: restore access, lift the legal-hold, audit."""
+    """Release a quarantined file: restore access, lift the legal-hold, audit.
+
+    J-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file
+    that is *released but still held* -- ``is_quarantined=False, legal_hold=True``.
+    Before this, that state's only documented remedy (this very endpoint) refused
+    it with 409 "File is not quarantined", which made the account-deletion guard's
+    (``_assert_no_files_under_legal_hold``) own documented remedy unreachable. The
+    409 stays for the *release-from-quarantine* leg -- releasing a file that was
+    never quarantined and carries no hold is still refused -- but a
+    released-but-held file may now have its hold lifted here.
+    """
     from app.services.takedown_service import release_file
     from app.utils.uuid_helpers import get_file_by_uuid
 
     file = get_file_by_uuid(db, file_uuid)
-    if not file.is_quarantined:
+    if not file.is_quarantined and not file.legal_hold:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="File is not quarantined",
+            detail="File is not quarantined and carries no legal hold",
         )
     clear_hold = request_body.clear_legal_hold if request_body is not None else True
     source_ip, user_agent = _request_meta(request)

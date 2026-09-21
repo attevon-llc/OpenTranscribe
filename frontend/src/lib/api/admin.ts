@@ -53,6 +53,69 @@ export interface CreateUserPayload {
   is_active?: boolean;
 }
 
+// ===== Locked-account management (issue #570) =====
+
+export interface LockedAccount {
+  identifier: string;
+  is_locked: boolean;
+  failed_attempts: number;
+  lockout_count: number;
+  locked_until: string | null;
+  first_failed_attempt: string | null;
+  last_failed_attempt: string | null;
+  admin_unlocked_at: string | null;
+  /** Null when `identifier` resolves to no account — an attacker-supplied
+   * string typed at a login form. Escape as data; never link. */
+  user_uuid: string | null;
+  full_name: string | null;
+  is_active: boolean | null;
+  auth_type: string | null;
+}
+
+export interface LockedAccountsList {
+  accounts: LockedAccount[];
+  next_cursor: string | null;
+  lockout_enabled: boolean;
+  store_backend: 'redis' | 'memory';
+  truncated: boolean;
+}
+
+export interface LockoutResetResult {
+  success: boolean;
+  identifier: string;
+  previous_lockout_count: number;
+  was_locked: boolean;
+  unlocked: boolean;
+}
+
+// ===== Quarantine / takedown review queue (issue #576) =====
+
+export interface QuarantinedFile {
+  uuid: string;
+  filename: string | null;
+  title: string | null;
+  owner_uuid: string;
+  owner_email: string;
+  organization_uuid: string | null;
+  quarantine_reason: string | null;
+  quarantined_at: string | null;
+  quarantined_by_email: string | null;
+  legal_hold: boolean;
+  is_quarantined: boolean;
+}
+
+export interface QuarantinedFilesList {
+  files: QuarantinedFile[];
+  total: number;
+}
+
+export interface QuarantineActionResult {
+  uuid: string;
+  is_quarantined: boolean;
+  legal_hold: boolean;
+  status: string;
+}
+
 export class AdminApi {
   /**
    * Create a user directly (`POST /admin/users`).
@@ -101,15 +164,104 @@ export class AdminApi {
   }
 
   /**
-   * Clear a failed-login lockout.
+   * Clear a failed-login lockout — the true inverse of {@link lockAccount}.
    *
    * `was_locked` is false when the account was not actually locked out, which the
-   * caller should surface rather than reporting a no-op as a success. Note this
-   * does NOT re-activate an account deactivated by {@link lockAccount} — see the
-   * backend's `admin_unlock_account`.
+   * caller should surface rather than reporting a no-op as a success.
+   *
+   * `was_disabled` reports whether this call ALSO reactivated an account
+   * deactivated by {@link lockAccount} (issue #570 §A.1.1) — the backend's
+   * `admin_unlock_account` clears both the lockout and `is_active` in one call,
+   * but this type previously omitted `was_disabled` entirely, so no caller could
+   * read it even if it wanted to.
    */
-  static async unlockAccount(userUuid: string): Promise<{ success: boolean; was_locked: boolean }> {
+  static async unlockAccount(
+    userUuid: string
+  ): Promise<{ success: boolean; was_locked: boolean; was_disabled: boolean }> {
     const response = await axiosInstance.post(`/admin/users/${userUuid}/unlock`);
+    return response.data;
+  }
+
+  /**
+   * List locked accounts (issue #570), cursor-paginated over the lockout store.
+   *
+   * `store_backend: 'memory'` means this is one process's view, not the
+   * deployment's — surface that, don't hide it.
+   */
+  static async listLockedAccounts(params?: {
+    cursor?: string | null;
+    limit?: number;
+    include_unlocked?: boolean;
+  }): Promise<LockedAccountsList> {
+    const response = await axiosInstance.get('/admin/locked-accounts', {
+      params: {
+        cursor: params?.cursor ?? undefined,
+        limit: params?.limit,
+        include_unlocked: params?.include_unlocked,
+      },
+    });
+    return response.data;
+  }
+
+  /**
+   * Reset an account's progressive lockout counter — distinct from
+   * {@link unlockAccount}. Leaves an in-progress lock intact; use
+   * {@link unlockAccount} to unlock immediately.
+   */
+  static async resetLockoutCounter(identifier: string): Promise<LockoutResetResult> {
+    const response = await axiosInstance.post(
+      `/admin/locked-accounts/${encodeURIComponent(identifier)}/reset`
+    );
+    return response.data;
+  }
+
+  // ===== Quarantine / takedown (issue #576) =====
+
+  /**
+   * The abuse/DMCA takedown review queue. Deployment-wide (every owner/org),
+   * which is correct for this platform-admin surface — never reuse for an
+   * org-scoped view (§B.6 E7).
+   */
+  static async listQuarantinedFiles(params?: {
+    limit?: number;
+    offset?: number;
+    include_legal_holds?: boolean;
+  }): Promise<QuarantinedFilesList> {
+    const response = await axiosInstance.get('/admin/files/quarantined', {
+      params: {
+        limit: params?.limit,
+        offset: params?.offset,
+        include_legal_holds: params?.include_legal_holds,
+      },
+    });
+    return response.data;
+  }
+
+  /** Take a file down (abuse/DMCA). Reversible via {@link releaseFile}. */
+  static async quarantineFile(
+    fileUuid: string,
+    reason: string,
+    legalHold: boolean = true
+  ): Promise<QuarantineActionResult> {
+    const response = await axiosInstance.post(`/admin/files/${fileUuid}/quarantine`, {
+      reason,
+      legal_hold: legalHold,
+    });
+    return response.data;
+  }
+
+  /**
+   * Release a quarantined file, or lift a legal hold on a released-but-still-held
+   * one (issue #689/#576 §B.1.2). 409 when the file is neither quarantined nor
+   * held — surface that as "already released", never retry blindly.
+   */
+  static async releaseFile(
+    fileUuid: string,
+    alsoLiftLegalHold: boolean = true
+  ): Promise<QuarantineActionResult> {
+    const response = await axiosInstance.post(`/admin/files/${fileUuid}/release`, {
+      clear_legal_hold: alsoLiftLegalHold,
+    });
     return response.data;
   }
 

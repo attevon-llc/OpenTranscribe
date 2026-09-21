@@ -7,6 +7,38 @@ interface UploadStoreState {
   uploads: UploadItem[];
   isExpanded: boolean;
   hasNewActivity: boolean;
+  /**
+   * Whether the user has EXPLICITLY collapsed the tray (as opposed to it
+   * simply starting collapsed). Distinct from `isExpanded` so the tray can
+   * auto-expand on new activity (#752 gap 1) without fighting a user who
+   * deliberately closed it: two booleans is the minimum honest model here.
+   * Persisted to localStorage so the choice survives a page reload; cleared
+   * on `reset()` (logout) so it does not leak between users on a shared
+   * device.
+   */
+  userCollapsed: boolean;
+}
+
+const USER_COLLAPSED_KEY = 'opentr:uploadTrayCollapsed';
+
+function readUserCollapsed(): boolean {
+  try {
+    return localStorage.getItem(USER_COLLAPSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistUserCollapsed(collapsed: boolean): void {
+  try {
+    if (collapsed) {
+      localStorage.setItem(USER_COLLAPSED_KEY, 'true');
+    } else {
+      localStorage.removeItem(USER_COLLAPSED_KEY);
+    }
+  } catch {
+    /* localStorage unavailable (private mode / quota) — in-memory state still works */
+  }
 }
 
 // Create the writable store
@@ -15,6 +47,7 @@ function createUploadStore() {
     uploads: [],
     isExpanded: false,
     hasNewActivity: false,
+    userCollapsed: readUserCollapsed(),
   };
 
   const { subscribe, set, update } = writable<UploadStoreState>(initialState);
@@ -27,16 +60,25 @@ function createUploadStore() {
     update((state) => {
       const uploads = uploadService.getAllUploads();
       let hasNewActivity = state.hasNewActivity;
+      let isExpanded = state.isExpanded;
 
       // Mark new activity for certain events
       if (['added', 'completed', 'failed'].includes(event.type)) {
         hasNewActivity = true;
       }
 
+      // Auto-expand the tray (Drive-style) the first time an upload starts,
+      // unless the user has explicitly collapsed it before (#752 gap 1).
+      if (event.type === 'added' && !state.isExpanded && !state.userCollapsed) {
+        isExpanded = true;
+        hasNewActivity = false;
+      }
+
       return {
         ...state,
         uploads,
         hasNewActivity,
+        isExpanded,
       };
     });
   });
@@ -52,26 +94,35 @@ function createUploadStore() {
 
     // Actions
     expand() {
+      persistUserCollapsed(false);
       update((state) => ({
         ...state,
         isExpanded: true,
         hasNewActivity: false, // Clear new activity when expanded
+        userCollapsed: false,
       }));
     },
 
     collapse() {
+      persistUserCollapsed(true);
       update((state) => ({
         ...state,
         isExpanded: false,
+        userCollapsed: true,
       }));
     },
 
     toggle() {
-      update((state) => ({
-        ...state,
-        isExpanded: !state.isExpanded,
-        hasNewActivity: state.isExpanded ? state.hasNewActivity : false, // Clear if expanding
-      }));
+      update((state) => {
+        const nextExpanded = !state.isExpanded;
+        persistUserCollapsed(!nextExpanded);
+        return {
+          ...state,
+          isExpanded: nextExpanded,
+          hasNewActivity: nextExpanded ? false : state.hasNewActivity, // Clear if expanding
+          userCollapsed: !nextExpanded,
+        };
+      });
     },
 
     clearNewActivity() {
@@ -163,7 +214,8 @@ function createUploadStore() {
      */
     reset() {
       uploadService.reset();
-      set({ uploads: [], isExpanded: false, hasNewActivity: false });
+      persistUserCollapsed(false);
+      set({ uploads: [], isExpanded: false, hasNewActivity: false, userCollapsed: false });
     },
 
     // Cleanup

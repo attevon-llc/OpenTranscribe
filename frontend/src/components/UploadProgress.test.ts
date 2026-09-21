@@ -99,3 +99,56 @@ describe('UploadProgress — estimatedTime is a duration, not a status', () => {
     expect(container.textContent).not.toContain('remaining');
   });
 });
+
+/**
+ * #752 gap 2: `getStatusColor()` used to return a hardcoded hex per status,
+ * consumed via an inline `style="color: …"` / `style="background-color: …"`
+ * attribute. It's now a CSS class keyed to theme tokens (see the doc comment
+ * on `statusClass()` in the component) so both light and dark mode pick up
+ * the right value automatically, and so the color is provable against
+ * `styles/primary-contrast.test.ts` rather than eyeballed.
+ */
+describe('UploadProgress — status colour is a theme-token class, not inline hex (#752 gap 2)', () => {
+  function icon(container: HTMLElement) {
+    return container.querySelector('.upload-icon') as HTMLElement;
+  }
+
+  function fill(container: HTMLElement) {
+    return container.querySelector('.progress-fill') as HTMLElement | null;
+  }
+
+  it.each([
+    ['completed', 'status-completed'],
+    ['failed', 'status-failed'],
+    ['cancelled', 'status-cancelled'],
+    ['uploading', 'status-active'],
+    ['processing', 'status-active'],
+    ['preparing', 'status-active'],
+    ['queued', 'status-pending'],
+  ] as const)('maps status "%s" to class "%s" on the icon', (status, expectedClass) => {
+    const { container } = render(UploadProgress, { props: { upload: uploadItem({ status }) } });
+    expect(icon(container).classList.contains(expectedClass)).toBe(true);
+  });
+
+  it('applies the same status class to the progress-fill while active', () => {
+    const { container } = render(UploadProgress, {
+      props: { upload: uploadItem({ status: 'uploading', progress: 55 }) },
+    });
+    expect(fill(container)?.classList.contains('status-active')).toBe(true);
+  });
+
+  it('never sets an inline color/background-color style (theme tokens only)', () => {
+    for (const status of ['completed', 'failed', 'cancelled', 'uploading', 'queued'] as const) {
+      const { container, unmount } = render(UploadProgress, {
+        props: { upload: uploadItem({ status }) },
+      });
+      expect(icon(container).getAttribute('style')).toBeNull();
+      const f = fill(container);
+      if (f) {
+        // Only "width" may be set inline; color must come from the class.
+        expect(f.getAttribute('style')).not.toMatch(/background-color/);
+      }
+      unmount();
+    }
+  });
+});

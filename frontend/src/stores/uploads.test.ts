@@ -62,6 +62,7 @@ function makeUpload(overrides: Partial<UploadItem> = {}): UploadItem {
 describe('uploadsStore', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    localStorage.clear();
     capturedListener = null;
     getAllUploadsReturn = [];
 
@@ -128,7 +129,7 @@ describe('uploadsStore', () => {
   });
 
   describe('hasNewActivity asymmetric state machine', () => {
-    it.each([['added'], ['completed'], ['failed']] as const)(
+    it.each([['completed'], ['failed']] as const)(
       'sets hasNewActivity on a %s event',
       async (eventType) => {
         const { uploadsStore } = await loadStore();
@@ -139,6 +140,22 @@ describe('uploadsStore', () => {
         expect(get(uploadsStore).hasNewActivity).toBe(true);
       }
     );
+
+    // 'added' is exercised separately (below, in the "tray auto-expand"
+    // describe block): on a fresh store it also triggers auto-expand, which
+    // clears hasNewActivity as part of expanding — the same asymmetry
+    // expand() already has. Pre-collapsing first (as the other tests in this
+    // block do) isolates the plain hasNewActivity behaviour from that.
+    it('sets hasNewActivity on an "added" event once the user has collapsed the tray (no auto-expand in the way)', async () => {
+      const { uploadsStore } = await loadStore();
+      uploadsStore.collapse();
+      expect(get(uploadsStore).hasNewActivity).toBe(false);
+
+      emit({ type: 'added', uploadId: 'u-1' });
+
+      expect(get(uploadsStore).hasNewActivity).toBe(true);
+      expect(get(uploadsStore).isExpanded).toBe(false);
+    });
 
     it.each([['started'], ['progress'], ['cancelled'], ['retry']] as const)(
       'does NOT set hasNewActivity on a %s event',
@@ -153,6 +170,7 @@ describe('uploadsStore', () => {
 
     it('expand() always clears hasNewActivity', async () => {
       const { uploadsStore } = await loadStore();
+      uploadsStore.collapse(); // avoid the 'added' below auto-expanding on its own
       emit({ type: 'added', uploadId: 'u-1' });
       expect(get(uploadsStore).hasNewActivity).toBe(true);
 
@@ -165,6 +183,7 @@ describe('uploadsStore', () => {
 
     it('toggle() clears hasNewActivity when transitioning collapsed -> expanded', async () => {
       const { uploadsStore } = await loadStore();
+      uploadsStore.collapse(); // avoid the 'added' below auto-expanding on its own
       emit({ type: 'added', uploadId: 'u-1' });
       expect(get(uploadsStore).isExpanded).toBe(false);
       expect(get(uploadsStore).hasNewActivity).toBe(true);
@@ -208,6 +227,7 @@ describe('uploadsStore', () => {
 
     it('clearNewActivity() clears the flag without touching isExpanded', async () => {
       const { uploadsStore } = await loadStore();
+      uploadsStore.collapse(); // avoid the 'added' below auto-expanding on its own
       emit({ type: 'added', uploadId: 'u-1' });
       expect(get(uploadsStore).hasNewActivity).toBe(true);
 
@@ -216,6 +236,75 @@ describe('uploadsStore', () => {
       const state = get(uploadsStore);
       expect(state.hasNewActivity).toBe(false);
       expect(state.isExpanded).toBe(false);
+    });
+  });
+
+  describe('tray auto-expand and userCollapsed persistence (#752 gap 1)', () => {
+    it('auto-expands on the first "added" event when the user has never collapsed the tray', async () => {
+      const { uploadsStore } = await loadStore();
+      expect(get(uploadsStore).isExpanded).toBe(false);
+
+      emit({ type: 'added', uploadId: 'u-1' });
+
+      const state = get(uploadsStore);
+      expect(state.isExpanded).toBe(true);
+      // Auto-expanding shows the activity directly, so the pulse/badge that
+      // hasNewActivity drives would be redundant — same rule as expand().
+      expect(state.hasNewActivity).toBe(false);
+    });
+
+    it('does NOT auto-expand once the user has explicitly collapsed the tray', async () => {
+      const { uploadsStore } = await loadStore();
+      uploadsStore.collapse();
+
+      emit({ type: 'added', uploadId: 'u-1' });
+
+      const state = get(uploadsStore);
+      expect(state.isExpanded).toBe(false);
+      expect(state.hasNewActivity).toBe(true);
+    });
+
+    it('does not re-trigger auto-expand on a second "added" event after the user re-collapses', async () => {
+      const { uploadsStore } = await loadStore();
+      emit({ type: 'added', uploadId: 'u-1' }); // auto-expands
+      expect(get(uploadsStore).isExpanded).toBe(true);
+
+      uploadsStore.collapse();
+      emit({ type: 'added', uploadId: 'u-2' });
+
+      expect(get(uploadsStore).isExpanded).toBe(false);
+    });
+
+    it('collapse() persists userCollapsed to localStorage', async () => {
+      const { uploadsStore } = await loadStore();
+      uploadsStore.collapse();
+      expect(localStorage.getItem('opentr:uploadTrayCollapsed')).toBe('true');
+    });
+
+    it('expand() clears the persisted userCollapsed flag', async () => {
+      const { uploadsStore } = await loadStore();
+      uploadsStore.collapse();
+      uploadsStore.expand();
+      expect(localStorage.getItem('opentr:uploadTrayCollapsed')).toBeNull();
+    });
+
+    it('a fresh store load honours a userCollapsed flag persisted by a previous session', async () => {
+      localStorage.setItem('opentr:uploadTrayCollapsed', 'true');
+      const { uploadsStore } = await loadStore();
+
+      expect(get(uploadsStore).userCollapsed).toBe(true);
+
+      emit({ type: 'added', uploadId: 'u-1' });
+      expect(get(uploadsStore).isExpanded).toBe(false);
+    });
+
+    it('toggle() persists userCollapsed on both directions', async () => {
+      const { uploadsStore } = await loadStore();
+      uploadsStore.toggle(); // collapsed -> expanded
+      expect(localStorage.getItem('opentr:uploadTrayCollapsed')).toBeNull();
+
+      uploadsStore.toggle(); // expanded -> collapsed
+      expect(localStorage.getItem('opentr:uploadTrayCollapsed')).toBe('true');
     });
   });
 
@@ -320,6 +409,7 @@ describe('uploadsStore', () => {
 
     it('isExpanded and hasNewActivity derived stores track store state', async () => {
       const { uploadsStore, isExpanded, hasNewActivity: hasNewActivityDerived } = await seed([]);
+      uploadsStore.collapse(); // avoid the 'added' below auto-expanding on its own
       expect(get(isExpanded)).toBe(false);
       expect(get(hasNewActivityDerived)).toBe(false);
 
@@ -391,6 +481,7 @@ describe('uploadsStore', () => {
         uploads: [upload],
         isExpanded: true,
         hasNewActivity: true,
+        userCollapsed: false,
       });
 
       uploadsStore.reset();
@@ -400,7 +491,19 @@ describe('uploadsStore', () => {
         uploads: [],
         isExpanded: false,
         hasNewActivity: false,
+        userCollapsed: false,
       });
+    });
+
+    it('clears the persisted userCollapsed flag too, so it does not leak into the next user session (#752)', async () => {
+      const { uploadsStore } = await loadStore();
+      uploadsStore.collapse();
+      expect(localStorage.getItem('opentr:uploadTrayCollapsed')).toBe('true');
+
+      uploadsStore.reset();
+
+      expect(get(uploadsStore).userCollapsed).toBe(false);
+      expect(localStorage.getItem('opentr:uploadTrayCollapsed')).toBeNull();
     });
 
     it('reset() ignores whatever getAllUploads() currently returns (uses set(), not update())', async () => {

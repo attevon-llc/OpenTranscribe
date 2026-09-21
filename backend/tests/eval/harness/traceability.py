@@ -51,11 +51,22 @@ same as :mod:`tests.eval.harness.probe_metrics`):
    reports ``None`` here, never a fabricated match.
 4. **``quote_fidelity``** — of the answer's ``[n]`` markers that are IMMEDIATELY preceded by a
    quoted span (``"...text..."[n]``), what fraction of those quotes appear, verbatim
-   (casefolded, whitespace-collapsed), in the CITED citation's ``snippet``. Reported as
+   (casefolded, whitespace-collapsed, and tolerant of a space before punctuation — see
+   ``_normalise``/``_PRE_PUNCTUATION_SPACE_RE``, issue #976), in the CITED citation's
+   ``snippet``. Reported as
    ``quote_fidelity``, never as "groundedness" — an unquoted claim is not measured by this at
    all (most of an answer is unquoted prose, and none of it is checked here). This is a proxy
    for one narrow failure mode (a fabricated quotation attributed to a real citation), not a
    substitute for a correctness judge.
+
+   ⚠️ **Space-before-punctuation tolerance (issue #976).** AMI/QMSum's raw transcript
+   tokenization convention puts a space before punctuation (``"recognition , Channel"``
+   rather than natural English ``"recognition, Channel"``); an LLM that quotes verbatim text
+   naturally re-punctuates it, which false-negatived a genuinely faithful quote against that
+   corpus. ``_normalise`` now strips a space immediately preceding ``,.;:!?`` on BOTH sides of
+   the comparison before the substring check. This is a spacing normalisation only — it
+   cannot make two quotes that differ in wording compare equal, so it does not loosen the
+   check's ability to catch a genuinely fabricated quote.
 
    ⚠️ **The "cut mid-quote" theory is retired — it was measured and found false (issue #832).**
    A probe run found 0 of 69 failing quotes were cut by the ~240-char snippet boundary
@@ -110,11 +121,30 @@ _QUOTED_CITATION_RE = re.compile(r'"([^"]{3,})"\s*\[(\d{1,3})\]')
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
+#: AMI/QMSum's raw transcript tokenization puts a space BEFORE punctuation
+#: (``"recognition , Channel"`` rather than natural English ``"recognition, Channel"``).
+#: An LLM that quotes verbatim text naturally re-punctuates while doing so, which defeated
+#: the substring-containment check below on a faithful quote (issue #976). Collapsing
+#: ``<space><punct>`` to just ``<punct>`` — after whitespace has already been collapsed to
+#: single spaces — makes both tokenization conventions compare equal, on both sides of the
+#: comparison (this is applied to the model's quote AND the citation's snippet alike).
+#: Scoped to the punctuation marks actually seen in this corpus (``,.;:!?``) rather than a
+#: broader "any space before any symbol" rule, so it stays a spacing fix, never a content
+#: fix: it cannot make two quotes with different WORDS compare equal, only ones that differ
+#: solely in whether a delimiter is glued to the token before it. Contractions (``don't``),
+#: quotation marks (excluded from the captured group by construction — see
+#: ``_QUOTED_CITATION_RE``), and multi-mark runs (``". . ."`` -> ``"..."``, applied by
+#: ``re.sub`` scanning left to right) are all unaffected or handled by the same single rule.
+_PRE_PUNCTUATION_SPACE_RE = re.compile(r"\s+([,.;:!?])")
+
 
 def _normalise(text: str) -> str:
-    """Casefold and collapse whitespace — the same tolerance ``answers.normalise_name``
-    applies to a name, used here for quote comparison."""
-    return _WHITESPACE_RE.sub(" ", text).strip().casefold()
+    """Casefold, collapse whitespace, and drop a space immediately before punctuation —
+    the same tolerance ``answers.normalise_name`` applies to a name, plus the
+    AMI/QMSum tokenization tolerance documented at :data:`_PRE_PUNCTUATION_SPACE_RE`
+    (issue #976), used here for quote comparison."""
+    collapsed = _WHITESPACE_RE.sub(" ", text).strip().casefold()
+    return _PRE_PUNCTUATION_SPACE_RE.sub(r"\1", collapsed)
 
 
 def _rate(total: int, bad: int) -> float | None:

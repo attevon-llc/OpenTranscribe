@@ -1146,9 +1146,14 @@
     transition: color 0.2s ease;
   }
 
-  .step-item.active .step-label { color: var(--primary-color, #3b82f6); font-weight: 600; }
-  .step-item.completed .step-label { color: var(--primary-color, #3b82f6); }
-  .step-item.visited .step-label { color: var(--primary-color, #3b82f6); opacity: 0.7; }
+  /* --primary-on-surface, not --primary-color: the accent is a FILL colour tuned for a
+   * white background, and at 10.4px on the dark surface it measures 2.83:1 — well under
+   * WCAG AA. The on-surface token inverts to a light blue in dark mode. Caught by #972's
+   * dark-theme axe scan; the light-only scan had always passed. The `.visited` rule is
+   * the worst of the three, since it then multiplies by opacity 0.7. */
+  .step-item.active .step-label { color: var(--primary-on-surface); font-weight: 600; }
+  .step-item.completed .step-label { color: var(--primary-on-surface); }
+  .step-item.visited .step-label { color: var(--primary-on-surface); opacity: 0.7; }
 
   /* Connector line between steps */
   .step-line {

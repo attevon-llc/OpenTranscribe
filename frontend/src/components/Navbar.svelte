@@ -658,7 +658,11 @@
   }
 
   .tab-button.active {
-    color: var(--primary-color, #3b82f6);
+    /* --primary-on-surface, not --primary-color: the accent is a FILL colour, tuned for
+     * a white background. As 14.4px text on the dark surface it measures 2.83:1 — well
+     * under WCAG AA — while the on-surface token inverts to a light blue in dark mode.
+     * Caught by #972's dark-theme axe scan; the light-only scan had always passed. */
+    color: var(--primary-on-surface);
     background-color: transparent;
   }
 

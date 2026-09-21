@@ -1,12 +1,18 @@
 # Accepted / deferred axe-core findings for backend/tests/e2e/test_a11y.py.
 #
-# Format: <surface>::<axe rule id>::<node count>  # reason
+# Format: <surface>::<theme>::<axe rule id>::<node count>  # reason
 #
 # THE SURFACE IS PART OF THE KEY. A rule accepted on the gallery is NOT accepted on chat —
 # each surface must earn its own entry, even for a rule that also appears elsewhere.
 #
-# THE COUNT IS PART OF THE KEY. One line buys exactly N nodes for that surface+rule; N+1
-# fails the run. Fixing one of the N offending nodes means LOWERING the count here, not
+# THE THEME IS PART OF THE KEY (issue #972). test_a11y.py scans every surface in both
+# `light` and `dark`, because a colour can clear WCAG AA in one theme and fail in the other —
+# TasksGrid.svelte's dark `.status-error` badge measured 4.38:1 while its light sibling
+# (3.29:1) was already caught by the light-only scan. A `light` entry does NOT cover the same
+# rule observed in `dark`.
+#
+# THE COUNT IS PART OF THE KEY. One line buys exactly N nodes for that surface+theme+rule;
+# N+1 fails the run. Fixing one of the N offending nodes means LOWERING the count here, not
 # leaving it as headroom for a different node to grow into.
 #
 # A REASON IS REQUIRED. An entry is a deliberate, reviewed decision — never a parking space.
@@ -26,12 +32,30 @@
 #     python3 scripts/update-a11y-baseline.py
 #
 # Every finding below was measured 2026-09-20 against the live dev stack, on the surfaces
-# test_a11y.py scans today. All are pre-existing debt, not something #785 fixes — see its
-# plan's §4.3: ratchet first at today's counts, then let the components' own rewrites
-# (#747-#757) lower each number as they land.
+# test_a11y.py scanned that day (LIGHT theme only, at the time). All are pre-existing debt,
+# not something #785 fixes — see its plan's §4.3: ratchet first at today's counts, then let
+# the components' own rewrites (#747-#757) lower each number as they land.
+#
+# Issue #972 (this re-key): every LIGHT line below is mechanically unchanged in substance —
+# only the key gained `::light`. Every one of these rules (aria-input-field-name, label,
+# label-title-only, nested-interactive, select-name) is a structural/attribute check — axe
+# evaluates DOM structure and ARIA/label wiring for these, not computed colour — so the same
+# missing <label> or accessible name is exactly as missing under `data-theme="dark"` as it is
+# under `data-theme="light"`: neither the DOM tree nor which elements exist changes with the
+# theme attribute. Each LIGHT entry therefore earns an identical-count `dark` sibling below,
+# carrying the same measurement date and the same underlying finding — NOT a guess at an
+# unmeasured dark count. `search::color-contrast` is the one rule here that IS theme-sensitive
+# by definition (WCAG contrast is a function of the rendered colours), so it is deliberately
+# NOT duplicated into dark: an unverified color-contrast count must never be invented, and if
+# a real dark-theme color-contrast finding appears on `search` it will show up as a genuinely
+# NEW violation next run, to be measured and allowlisted for real at that point.
+#
+# `file-status-badges` (issue #972) is a NEW surface: a fixture route
+# (/a11y-fixtures/status-badges) that renders TasksGrid.svelte's four status-badge states
+# unconditionally, replacing dependence on the live task queue's contents for this rule.
 
-gallery::aria-input-field-name::4       # BACKLOG #785 — filter/sort controls without an accessible name, tracked for #747-#757
-gallery::label::1                       # BACKLOG #785 — one form control missing an associated <label>
+gallery::light::aria-input-field-name::4       # BACKLOG #785 — filter/sort controls without an accessible name, tracked for #747-#757
+gallery::dark::aria-input-field-name::4        # BACKLOG #785 #972 — same structural finding as the light entry above (missing accessible name is not theme-dependent); re-keyed, not independently re-measured
 # gallery::aria-required-children / gallery::aria-required-parent — REMOVED by #967:
 # VirtualGrid.svelte now wraps each visual row of `.file-card`s in a `role="row"` element
 # (`display: contents`, so the CSS Grid layout is unaffected) between the existing
@@ -42,30 +66,39 @@ gallery::label::1                       # BACKLOG #785 — one form control miss
 # out of FilterSidebar into GalleryHeader's toolbar (a SearchBar with a real aria-label).
 # Observed 0 nodes on the gallery surface after that change.
 
-settings-modal::aria-input-field-name::4  # BACKLOG #785 — same filter/sort controls rendered inside the modal
-settings-modal::label::1                  # BACKLOG #785 — one form control missing an associated <label>
+settings-modal::light::aria-input-field-name::4  # BACKLOG #785 — same filter/sort controls rendered inside the modal
+settings-modal::dark::aria-input-field-name::4   # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 # settings-modal::label-title-only — REMOVED by #747, same root cause as gallery above:
 # this surface's modal capture leaks the gallery page underneath it (see the settings/gallery
 # note on `.count-chip` in test_visual_regression.py), so it inherited the same input.
 
-speakers::label::1                      # BACKLOG #785 — one form control missing an associated <label>
 
-search::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered on /search
-search::color-contrast::1               # BACKLOG #785 — theme-token work (frontend/src/styles/theme.css), tracked for #747-#757
-search::label::1                        # BACKLOG #785 — one form control missing an associated <label>
-search::label-title-only::1             # BACKLOG #785 — a control's only accessible name comes from a title attribute
+search::light::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered on /search
+search::dark::aria-input-field-name::4         # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
+search::light::color-contrast::1               # BACKLOG #785 — theme-token work (frontend/src/styles/theme.css), tracked for #747-#757
+search::light::label-title-only::1             # BACKLOG #785 — a control's only accessible name comes from a title attribute
+search::dark::label-title-only::1              # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 
-chat::label::1                          # BACKLOG #785 — one form control missing an associated <label>
 
-file-detail::label::1                   # BACKLOG #785 — one form control missing an associated <label>
-file-detail::label-title-only::1        # BACKLOG #785 — a control's only accessible name comes from a title attribute
-file-detail::nested-interactive::2      # BACKLOG #785 — an interactive control nested inside another, tracked for #747-#757
+file-detail::light::label-title-only::1        # BACKLOG #785 — a control's only accessible name comes from a title attribute
+file-detail::dark::label-title-only::1         # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
+file-detail::light::nested-interactive::2      # BACKLOG #785 — an interactive control nested inside another, tracked for #747-#757
+file-detail::dark::nested-interactive::2       # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 
-file-status::label::1                   # BACKLOG #785 — one form control missing an associated <label>
-file-status::select-name::2             # BACKLOG #785 — two <select> elements without an accessible name
+file-status::light::select-name::2             # BACKLOG #785 — two <select> elements without an accessible name
+file-status::dark::select-name::2              # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 
-upload::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered behind the upload modal
-upload::label::1                        # BACKLOG #785 — one form control missing an associated <label>
+upload::light::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered behind the upload modal
+upload::dark::aria-input-field-name::4         # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 # upload::label-title-only — REMOVED by #747, same root cause as gallery above: this
 # surface's scan is the upload modal open OVER the gallery page, which inherited the same
 # input before #747 moved it out of FilterSidebar.
+
+# file-status-badges: no entries. The TasksGrid.svelte contrast fixes in this same commit
+# (issue #972 — .status-completed/.status-pending/.status-processing switched to the
+# --color-*-text token family, .status-processing's dark override moved off a one-off hex
+# that computed to ~4.42:1 onto --color-info-text at ~6.23:1) are expected to leave this
+# fixture page clean in both themes. This claim is CSS-UNVERIFIED in this environment (no
+# live frontend build was available to render it against — see the PR/commit description) —
+# if a real run finds a violation here, allowlist it for real rather than assuming this
+# comment is still accurate.

@@ -6,10 +6,18 @@ sync Playwright ``Page``.
 
 The app carries known, pre-existing a11y debt (dozens of ``svelte-ignore`` directives and
 the findings recorded in ``a11y-allowlist.txt``), so this is NOT a wall of red: it asserts
-"no NEW serious/critical violations beyond the allowlist for THIS surface, and no MORE nodes
-than the allowlist accepts". Issue #785 replaced the old flat, rule-ID-only baseline with this
-per-surface, count-aware, reason-carrying allowlist — see ``a11y_lib.py`` and
-``a11y-allowlist.txt``'s header for the format and the four properties it enforces.
+"no NEW serious/critical violations beyond the allowlist for THIS surface+theme, and no MORE
+nodes than the allowlist accepts". Issue #785 replaced the old flat, rule-ID-only baseline
+with this per-surface, count-aware, reason-carrying allowlist — see ``a11y_lib.py`` and
+``a11y-allowlist.txt``'s header for the format and the properties it enforces.
+
+Issue #972: every surface below is now scanned in BOTH ``light`` and ``dark`` theme via the
+module-scoped, function-scoped ``theme`` fixture (``params=("light", "dark")``, applied via
+``a11y_lib.set_theme``). This matters because dark is its own risk, not a duplicate of light:
+a status badge composites a translucent colour tint over the dark surface, and that composited
+background can fail AA even where the same token passes on a plain surface — measured,
+``TasksGrid.svelte``'s dark ``.status-error`` was 4.38:1 on the badge while the SAME token read
+5.29:1 on the plain dark surface. Scanning light only would never see that class of defect.
 
 Regenerate paste-ready allowlist lines (never a silent overwrite — see that script's module
 docstring) with::
@@ -34,10 +42,12 @@ from typing import Any
 
 import pytest
 from a11y_lib import ALLOWLIST_PATH
+from a11y_lib import KNOWN_THEMES
 from a11y_lib import evaluate_surface
 from a11y_lib import form_login_with_retry
 from a11y_lib import load_allowlist
 from a11y_lib import run_axe
+from a11y_lib import set_theme
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
@@ -94,35 +104,51 @@ def authed_page(browser: Any, auth_storage_state: str, base_url: str) -> Any:
     context.close()
 
 
+@pytest.fixture(params=sorted(KNOWN_THEMES))
+def theme(request: Any) -> str:
+    """Parameterises every test that takes it over BOTH themes (issue #972).
+
+    A plain ``params=`` fixture (not ``pytest.mark.parametrize`` on each test function)
+    because every per-surface scan needs it identically — declaring it once here means a new
+    surface test picks up both-theme coverage just by requesting the fixture, with no
+    per-test parametrize decorator to forget.
+    """
+    return str(request.param)
+
+
 # ---------------------------------------------------------------------------
 # Per-page axe scans. Each records what it observed into the shared accumulator so the
-# final "is the allowlist current" test can compare against every surface actually scanned
-# this run — see a11y_lib.SurfaceResult and the module docstring on discovered_results.
+# final "is the allowlist current" test can compare against every surface+theme actually
+# scanned this run — see a11y_lib.SurfaceResult and the module docstring on
+# discovered_results.
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
-def discovered_results() -> dict[str, dict[str, int]]:
-    """Accumulator: surface -> {rule_id: observed node count}, for surfaces ACTUALLY scanned.
+def discovered_results() -> dict[tuple[str, str], dict[str, int]]:
+    """Accumulator: (surface, theme) -> {rule_id: observed node count}, for combos scanned.
 
-    Deliberately keyed by surface (not a flat rule-id set) so the final consistency check can
-    tell "this surface was scanned and is clean" from "this surface was never scanned this
-    run" (e.g. `chat`, deselected by marker without an LLM provider) — conflating the two
-    would report every allowlist entry for a deselected surface as stale (issue #785 §11.3).
+    Deliberately keyed by (surface, theme) — not a flat rule-id set, and not surface alone —
+    so the final consistency check can tell "this surface+theme was scanned and is clean"
+    from "this surface+theme was never scanned this run" (e.g. `chat`, deselected by marker
+    without an LLM provider) — conflating the two would report every allowlist entry for a
+    deselected surface as stale (issue #785 §11.3, extended to the theme axis by #972).
     """
     return {}
 
 
 def _assert_surface_clean(
     surface: str,
+    theme: str,
     results: Any,
-    allowlist: dict[tuple[str, str], Any],
-    discovered: dict[str, dict[str, int]],
+    allowlist: dict[tuple[str, str, str], Any],
+    discovered: dict[tuple[str, str], dict[str, int]],
 ) -> None:
-    """Evaluate one surface's axe results against the allowlist and record what was observed."""
-    outcome = evaluate_surface(surface, results, allowlist)
-    discovered[surface] = outcome.observed
+    """Evaluate one surface+theme's axe results and record what was observed."""
+    outcome = evaluate_surface(surface, theme, results, allowlist)
+    discovered[(surface, theme)] = outcome.observed
     if outcome.failures:
         pytest.fail(
-            f"a11y regression on surface {surface!r} (allowlist: {ALLOWLIST_PATH.name}):\n"
+            f"a11y regression on surface {surface!r} theme {theme!r} "
+            f"(allowlist: {ALLOWLIST_PATH.name}):\n"
             + "\n".join(outcome.failures)
             + "\n\nIf these are intentional/accepted, regenerate allowlist lines with "
             "python3 scripts/update-a11y-baseline.py and paste them in with a reason."
@@ -130,27 +156,31 @@ def _assert_surface_clean(
 
 
 class TestAccessibility:
-    """axe-core smoke scans on the app's main authenticated surfaces."""
+    """axe-core smoke scans on the app's main authenticated surfaces, in both themes."""
 
     def test_gallery_home_a11y(
         self,
         authed_page: Page,
-        discovered_results: dict[str, dict[str, int]],
+        theme: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
     ) -> None:
         """The gallery / home page has no new serious/critical violations."""
         page = authed_page
+        set_theme(page, theme)
         expect(page.locator(".user-button")).to_be_visible(timeout=30000)
         page.wait_for_load_state("networkidle")
         results = run_axe(page)
-        _assert_surface_clean("gallery", results, load_allowlist(), discovered_results)
+        _assert_surface_clean("gallery", theme, results, load_allowlist(), discovered_results)
 
     def test_settings_modal_a11y(
         self,
         authed_page: Page,
-        discovered_results: dict[str, dict[str, int]],
+        theme: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
     ) -> None:
         """The Settings modal has no new serious/critical violations."""
         page = authed_page
+        set_theme(page, theme)
         user_button = page.locator(".user-button")
         expect(user_button).to_be_visible(timeout=15000)
         user_button.click()
@@ -164,18 +194,22 @@ class TestAccessibility:
         # there is nothing to auto-wait on (issue #431).
         page.wait_for_timeout(500)
         results = run_axe(page)
-        _assert_surface_clean("settings-modal", results, load_allowlist(), discovered_results)
+        _assert_surface_clean(
+            "settings-modal", theme, results, load_allowlist(), discovered_results
+        )
         page.keyboard.press("Escape")
 
     def test_speakers_page_a11y(
         self,
         authed_page: Page,
-        discovered_results: dict[str, dict[str, int]],
+        theme: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
         base_url: str,
     ) -> None:
         """The /speakers page has no new serious/critical violations."""
         page = authed_page
         page.goto(f"{base_url}/speakers")
+        set_theme(page, theme)
         page.wait_for_load_state("networkidle")
         # The speakers route must actually render its main container.
         expect(page.locator("main, .speakers-page, .page-container").first).to_be_visible(
@@ -185,44 +219,85 @@ class TestAccessibility:
         # transition finish before axe reads computed styles (issue #431).
         page.wait_for_timeout(500)
         results = run_axe(page)
-        _assert_surface_clean("speakers", results, load_allowlist(), discovered_results)
+        _assert_surface_clean("speakers", theme, results, load_allowlist(), discovered_results)
 
     def test_search_page_a11y(
         self,
         authed_page: Page,
-        discovered_results: dict[str, dict[str, int]],
+        theme: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
         base_url: str,
     ) -> None:
         """The /search page has no new serious/critical violations."""
         page = authed_page
         page.goto(f"{base_url}/search")
+        set_theme(page, theme)
         page.wait_for_load_state("networkidle")
         expect(page.locator(".search-page, main").first).to_be_visible(timeout=15000)
         page.wait_for_timeout(500)
         results = run_axe(page)
-        _assert_surface_clean("search", results, load_allowlist(), discovered_results)
+        _assert_surface_clean("search", theme, results, load_allowlist(), discovered_results)
 
     def test_file_status_page_a11y(
         self,
         authed_page: Page,
-        discovered_results: dict[str, dict[str, int]],
+        theme: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
         base_url: str,
     ) -> None:
-        """The /file-status page has no new serious/critical violations."""
+        """The /file-status page has no new serious/critical violations.
+
+        Covers this page's own controls (filters, selects) — NOT the status-badge contrast
+        rules, whose node count depends on which task states happen to be queued right now.
+        Those are covered unconditionally by ``test_file_status_badges_a11y`` below
+        (issue #972).
+        """
         page = authed_page
         page.goto(f"{base_url}/file-status")
+        set_theme(page, theme)
         page.wait_for_load_state("networkidle")
         # The route must actually render its page container before axe scans it — a
         # rendering failure and an a11y violation are different failures.
         expect(page.locator(".file-status-page").first).to_be_visible(timeout=15000)
         page.wait_for_timeout(500)
         results = run_axe(page)
-        _assert_surface_clean("file-status", results, load_allowlist(), discovered_results)
+        _assert_surface_clean("file-status", theme, results, load_allowlist(), discovered_results)
+
+    def test_file_status_badges_a11y(
+        self,
+        authed_page: Page,
+        theme: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
+        base_url: str,
+    ) -> None:
+        """Every status-badge state (pending/in_progress/completed/failed) has no new violation.
+
+        Scans ``/a11y-fixtures/status-badges`` — a dedicated fixture route that mounts
+        ``TasksGrid.svelte`` with one task per status UNCONDITIONALLY, rather than the live
+        ``/file-status`` page above, whose badge mix depends on the dev queue's current
+        contents. That dependency is exactly how ``file-status::light::color-contrast`` was
+        once allowlisted at ``1`` and later observed at ``13`` (issue #972) — more failing
+        tasks on screen, same single defect, and a count the allowlist could never pin down.
+        """
+        page = authed_page
+        page.goto(f"{base_url}/a11y-fixtures/status-badges")
+        set_theme(page, theme)
+        page.wait_for_load_state("networkidle")
+        expect(page.locator(".status-badge").first).to_be_visible(timeout=15000)
+        # 4 statuses must all be on screen — the whole point of the fixture page is that
+        # this can never be fewer depending on what the live queue holds.
+        expect(page.locator(".status-badge")).to_have_count(4)
+        page.wait_for_timeout(500)
+        results = run_axe(page)
+        _assert_surface_clean(
+            "file-status-badges", theme, results, load_allowlist(), discovered_results
+        )
 
     def test_upload_panel_a11y(
         self,
         authed_page: Page,
-        discovered_results: dict[str, dict[str, int]],
+        theme: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
         base_url: str,
     ) -> None:
         """The upload stepper modal has no new serious/critical violations.
@@ -231,7 +306,7 @@ class TestAccessibility:
         or clean up (unlike `file-detail` below, which needs a real completed recording).
         """
         page = authed_page
-        page.goto(base_url)
+        set_theme(page, theme)
         page.wait_for_selector(".upload-btn", timeout=15000)
         page.click(".upload-btn")
         expect(page.locator("[role=dialog], .modal-backdrop, .upload-modal").first).to_be_visible(
@@ -240,14 +315,15 @@ class TestAccessibility:
         page.wait_for_selector(".tab-button", timeout=5000)
         page.wait_for_timeout(500)
         results = run_axe(page)
-        _assert_surface_clean("upload", results, load_allowlist(), discovered_results)
+        _assert_surface_clean("upload", theme, results, load_allowlist(), discovered_results)
         page.keyboard.press("Escape")
 
     @pytest.mark.chat
     def test_chat_page_a11y(
         self,
         authed_page: Page,
-        discovered_results: dict[str, dict[str, int]],
+        theme: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
         base_url: str,
     ) -> None:
         """The /chat page has no new serious/critical violations.
@@ -261,22 +337,24 @@ class TestAccessibility:
         """
         page = authed_page
         page.goto(f"{base_url}/chat")
+        set_theme(page, theme)
         page.wait_for_load_state("networkidle")
         # The composer must actually render before axe scans it — a rendering failure and an
         # a11y violation are different failures.
         expect(page.locator('[data-testid="chat-composer-input"]')).to_be_visible(timeout=15000)
         page.wait_for_timeout(500)
         results = run_axe(page)
-        _assert_surface_clean("chat", results, load_allowlist(), discovered_results)
+        _assert_surface_clean("chat", theme, results, load_allowlist(), discovered_results)
 
     def test_file_detail_a11y(
         self,
         browser: Any,
         auth_storage_state: str,
         base_url: str,
+        theme: str,
         owned_media_factory: Any,
         admin_token: str,
-        discovered_results: dict[str, dict[str, int]],
+        discovered_results: dict[tuple[str, str], dict[str, int]],
     ) -> None:
         """The file-detail page has no new serious/critical violations.
 
@@ -294,13 +372,16 @@ class TestAccessibility:
         page = context.new_page()
         try:
             page.goto(f"{base_url}/files/{media['uuid']}")
+            set_theme(page, theme)
             page.wait_for_load_state("networkidle")
             # The route must actually render its page container before axe scans it — a
             # rendering failure and an a11y violation are different failures.
             expect(page.locator(".file-detail-page").first).to_be_visible(timeout=15000)
             page.wait_for_timeout(1000)
             results = run_axe(page)
-            _assert_surface_clean("file-detail", results, load_allowlist(), discovered_results)
+            _assert_surface_clean(
+                "file-detail", theme, results, load_allowlist(), discovered_results
+            )
         finally:
             page.close()
             context.close()
@@ -308,26 +389,28 @@ class TestAccessibility:
     def test_allowlist_is_current(
         self,
         authed_page: Page,
-        discovered_results: dict[str, dict[str, int]],
+        discovered_results: dict[tuple[str, str], dict[str, int]],
     ) -> None:
-        """Every allowlist entry for a surface scanned this run matches what was observed.
+        """Every allowlist entry for a surface+theme scanned this run matches what was observed.
 
         Runs last (source order, after the scans above populate the shared
-        ``discovered_results`` accumulator), so this compares the LIVE allowlist file against
-        node counts actually seen this run — not a re-run of axe. Real findings:
+        ``discovered_results`` accumulator across BOTH theme param instances of every prior
+        test), so this compares the LIVE allowlist file against node counts actually seen
+        this run — not a re-run of axe. Real findings:
 
-        - An entry whose surface WAS scanned this run but whose observed count is lower than
-          the allowlisted count (or the rule id was not observed at all): the allowlist is
-          STALE — a node was fixed (or removed) and nothing shrinks the accepted count
+        - An entry whose surface+theme WAS scanned this run but whose observed count is lower
+          than the allowlisted count (or the rule id was not observed at all): the allowlist
+          is STALE — a node was fixed (or removed) and nothing shrinks the accepted count
           automatically, so it silently keeps covering headroom that could mask a
           regression elsewhere.
         - An observed count HIGHER than allowlisted already fails in that surface's own scan
           test above; this is a second, independent check of the same fact.
 
-        A surface that was NOT scanned this run (e.g. `chat`, deselected by marker without an
-        LLM provider) is skipped here entirely — an unscanned surface's entries are neither
-        confirmed nor stale, and treating an intentional deselection as staleness would delete
-        every entry for that surface the moment the marker excludes it (issue #785 §11.3).
+        A surface+theme combo that was NOT scanned this run (e.g. `chat`, deselected by
+        marker without an LLM provider — deselected identically in both themes) is skipped
+        here entirely — an unscanned combo's entries are neither confirmed nor stale, and
+        treating an intentional deselection as staleness would delete every entry for that
+        surface the moment the marker excludes it (issue #785 §11.3).
 
         Regenerate with ``python3 scripts/update-a11y-baseline.py`` (prints paste-ready
         lines; never writes the file — see that script and ``a11y_lib.py`` for why).
@@ -335,19 +418,21 @@ class TestAccessibility:
         allowlist = load_allowlist()
         stale: list[str] = []
         regressed: list[str] = []
-        for (surface, rule_id), entry in sorted(allowlist.items()):
-            if surface not in discovered_results:
+        for (surface, entry_theme, rule_id), entry in sorted(allowlist.items()):
+            if (surface, entry_theme) not in discovered_results:
                 continue
-            observed = discovered_results[surface].get(rule_id, 0)
+            observed = discovered_results[(surface, entry_theme)].get(rule_id, 0)
             if observed < entry.count:
                 stale.append(
-                    f"  - {surface}::{rule_id}::{entry.count} (line {entry.lineno}) — "
-                    f"observed {observed} node(s) this run, lower the count or remove the line"
+                    f"  - {surface}::{entry_theme}::{rule_id}::{entry.count} "
+                    f"(line {entry.lineno}) — observed {observed} node(s) this run, lower "
+                    "the count or remove the line"
                 )
             elif observed > entry.count:
                 regressed.append(
-                    f"  - {surface}::{rule_id}::{entry.count} (line {entry.lineno}) — "
-                    f"observed {observed} node(s) this run, exceeds the allowlisted count"
+                    f"  - {surface}::{entry_theme}::{rule_id}::{entry.count} "
+                    f"(line {entry.lineno}) — observed {observed} node(s) this run, exceeds "
+                    "the allowlisted count"
                 )
         assert not stale and not regressed, (
             f"a11y allowlist ({ALLOWLIST_PATH.name}) does not match what was just observed.\n"

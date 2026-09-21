@@ -140,7 +140,7 @@
    * solid background or an icon — not as small text sitting on their own soft tint. Used
    * that way they fail WCAG AA (SC 1.4.3, 4.5:1 for normal text) outright: #10b981 on the
    * success tint measures 2.27:1 and #ef4444 on the error tint 3.29:1. `--color-warning-text`
-   * already existed for exactly this reason; these two complete the set.
+   * already existed for exactly this reason; these complete the set.
    *
    * `--text-on-tint` is the same story for `--text-secondary` (#64748b). It clears AA on the
    * base white surface (4.76:1) and fails on every tint the app actually uses — 4.34:1 on
@@ -150,9 +150,16 @@
    * Measured against the tints in use — light: #047857 on #e2f7f0 = 4.91:1,
    * #b91c1c on #fdecec = 5.67:1 (and 6.47:1 on white), #475569 on #f1f5f9 = 6.91:1.
    * Dark: #34d399 on #1e293b = 7.57:1, #f87171 on #1e293b = 5.29:1.
+   *
+   * ⚠️ Those dark figures are against the PLAIN dark surface and do not transfer to a
+   * tinted badge, which composites a translucent wash of the status colour UNDERNEATH the
+   * text. `TasksGrid.svelte`'s dark `.status-error` measured 4.38:1 that way with the very
+   * same #f87171 that reads 5.29:1 on the plain surface (issue #972). Always re-measure
+   * against the composited background, never against the token's nominal surface.
    */
   --color-success-text: #047857;
   --color-error-text: #b91c1c;
+  --color-info-text: #1d4ed8;
   --text-on-tint: #475569;
 
   /* Alternate-name aliases used by some components */
@@ -252,10 +259,8 @@
   --error-dark: #b91c1c;
   --error-hover: #dc2626;
   --success-hover: #059669;
-  --color-success-text: #047857;
   --warning-dark: #b45309;
   --info-dark: #1d4ed8;
-  --color-info-text: #1d4ed8;
 
   /* Named for dark mode and used inside already-dark-scoped rules, so these
      intentionally hold the same dark value in both themes. */
@@ -334,8 +339,12 @@
    * rather than darker. `--text-on-tint` matches `--text-secondary` here because dark tints
    * are overlays on an already-dark surface, so the near-misses the light theme has do not
    * arise. */
-  --color-success-text: #34d399;
+  /* ⚠️ These are sized for a TINTED badge, not the plain dark surface — that is the
+   * stricter of the two and the one #972 found failing. Hence the lighter greens/blues
+   * than the plain-surface figures in the light block's comment would suggest. */
+  --color-success-text: #6ee7b7;
   --color-error-text: #f87171;
+  --color-info-text: #93c5fd;
   --text-on-tint: var(--text-secondary);
   --color-info-bg: rgba(96, 165, 250, 0.15);
   --color-info-border: rgba(96, 165, 250, 0.3);
@@ -363,10 +372,8 @@
   --error-dark: #fca5a5;
   --error-hover: #ef4444;
   --success-hover: #10b981;
-  --color-success-text: #6ee7b7;
   --warning-dark: #fcd34d;
   --info-dark: #93c5fd;
-  --color-info-text: #93c5fd;
 }
 
 /* Global styles that should adapt to theme */

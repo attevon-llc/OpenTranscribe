@@ -170,7 +170,10 @@
 
   .status-completed {
     background: rgba(16, 185, 129, 0.1);
-    color: #10b981;
+    /* The green FILL on its own 10%-green tint fails WCAG AA the same way the red fill
+     * does below (#10b981 on #e2f7f0 measures under 4.5:1) — --color-success-text is the
+     * text-weight equivalent, calibrated against this exact tint. */
+    color: var(--color-success-text);
   }
 
   .status-processing {
@@ -180,7 +183,7 @@
 
   .status-pending {
     background: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
+    color: var(--color-warning-text);
   }
 
   .status-error {
@@ -198,17 +201,27 @@
 
   :global([data-theme='dark']) .status-completed {
     background: rgba(16, 185, 129, 0.2);
-    color: #34d399;
+    /* --color-success-text's dark value (#34d399... via the alias chain, currently
+     * #6ee7b7) already matched this literal — switched to the token so it can't drift
+     * from its sibling badges again (issue #972). */
+    color: var(--color-success-text);
   }
 
   :global([data-theme='dark']) .status-processing {
     background: rgba(59, 130, 246, 0.2);
-    color: #60a5fa;
+    /* Was a one-off #60a5fa: computed ~4.42:1 against this badge's composited background
+     * (rgba(59,130,246,0.2) over the dark surface #1e293b -> rgb(36,59,96)) — just under
+     * AA's 4.5:1, same failure class as the dark .status-error bug below (issue #972).
+     * --color-info-text (#93c5fd, same value as --primary-on-surface in dark) computes to
+     * ~6.23:1 on the same composited background. */
+    color: var(--color-info-text);
   }
 
   :global([data-theme='dark']) .status-pending {
     background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
+    /* --color-warning-text's dark value already matched this literal (#fbbf24) — switched
+     * to the token for the same reason as .status-completed above (issue #972). */
+    color: var(--color-warning-text);
   }
 
   :global([data-theme='dark']) .status-error {
@@ -216,10 +229,13 @@
     /* Measured 4.38:1 as #f87171 (the --color-error-text dark value): that colour is
      * calibrated for the plain dark surface, where it clears AA at 5.29:1, but this
      * badge composites a 20% red tint over that surface and the margin disappears.
-     * #fca5a5 measures 6.44:1 against the composited rgb(72,46,61). The a11y E2E suite
-     * scans light theme only, so nothing catches this class of dark-only miss — see the
-     * follow-up issue for the three sibling badges, which have no failing task on the
-     * page to measure and are therefore still unverified. */
+     * #fca5a5 measures 6.38:1 against the composited rgb(72,46,61). The a11y E2E suite
+     * used to scan light theme only, so nothing caught this class of dark-only miss —
+     * issue #972 adds the dark-theme scan and a fixture page
+     * (/a11y-fixtures/status-badges) that renders every badge state unconditionally, so
+     * this and its three sibling badges are gated going forward regardless of what the
+     * live task queue happens to hold. Deliberately a one-off hex, not
+     * --color-error-text: that token fails on this specific composited background. */
     color: #fca5a5;
   }
 

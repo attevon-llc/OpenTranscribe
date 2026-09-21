@@ -14,6 +14,7 @@ import pytest
 from tests.eval.harness import probe_metrics
 from tests.eval.harness.probe_metrics import ProseLeakError
 from tests.eval.harness.traceability import TurnTraceability
+from tests.eval.harness.traceability import _normalise
 from tests.eval.harness.traceability import assert_no_prose
 from tests.eval.harness.traceability import build_traceability_results
 from tests.eval.harness.traceability import build_traceability_rows
@@ -56,6 +57,51 @@ def _record(**overrides: object) -> dict:
     }
     base.update(overrides)
     return base
+
+
+# ---------------------------------------------------------------------------
+# _normalise — the space-before-punctuation tolerance (issue #976), tested directly
+# against the edge cases named in the issue: contractions, quotation marks, ellipses,
+# multiple/adjacent punctuation marks.
+# ---------------------------------------------------------------------------
+
+
+def test_normalise_strips_space_before_punctuation() -> None:
+    assert _normalise("speech recognition , Channel one") == "speech recognition, channel one"
+
+
+def test_normalise_handles_multiple_punctuation_marks_in_one_string() -> None:
+    assert (
+        _normalise("yeah , then you say the question ; the answer .")
+        == "yeah, then you say the question; the answer."
+    )
+
+
+def test_normalise_leaves_contractions_untouched() -> None:
+    """Contractions have no whitespace around the apostrophe in either tokenization
+    convention, so the punctuation-spacing rule must not touch them."""
+    assert _normalise("that's not now , don't worry") == "that's not now, don't worry"
+
+
+def test_normalise_collapses_a_tokenized_ellipsis() -> None:
+    """AMI/QMSum-shaped ellipsis (space before each mark) collapses to the natural
+    run of periods, matching a naturally-punctuated '...' on the other side."""
+    assert _normalise("and then . . . nothing") == _normalise("and then... nothing")
+
+
+def test_normalise_does_not_merge_different_words_across_a_punctuation_boundary() -> None:
+    """The tolerance is scoped to spacing only — it must never make two DIFFERENT
+    words compare equal just because a delimiter sits between them."""
+    assert _normalise("channel one , four") != _normalise("channel two , four")
+
+
+def test_normalise_is_idempotent_on_already_natural_punctuation() -> None:
+    """A snippet that already has natural (no-space-before) punctuation must be
+    unaffected by the new rule — this is the regression guard for #976 introducing
+    a false positive on ordinary text."""
+    natural = "we plan to ship on friday, pending review."
+    assert _normalise(natural) == _normalise(natural)
+    assert _normalise(natural) == "we plan to ship on friday, pending review."
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +273,65 @@ def test_quote_fidelity_normalises_whitespace_and_case() -> None:
     )
     metrics = extract_turn_traceability(record)
     assert metrics.quotes_unsupported == 0
+
+
+def test_quote_fidelity_tolerates_ami_qmsum_space_before_punctuation() -> None:
+    """Issue #976: AMI/QMSum's raw tokenization puts a space before punctuation
+    (``"speech recognition , Channel one , channel four , yeah ."``). A model that
+    quotes the same material re-punctuates naturally (no space before the comma/
+    period), and that must still be scored as a faithful quote — this is the
+    documented must-fire false-negative case from the issue."""
+    record = _record(
+        app_answer=('They said "speech recognition, Channel one, channel four, yeah."[1].'),
+        citations=[
+            {
+                "id": 1,
+                "file_uuid": "file-a",
+                "snippet": "speech recognition , Channel one , channel four , yeah .",
+            }
+        ],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_total == 1
+    assert metrics.quotes_unsupported == 0
+    assert metrics.quote_fidelity == 1.0
+
+
+def test_quote_fidelity_second_ami_qmsum_example_from_the_issue() -> None:
+    """The issue's second worked example: 'No, that not now' quoted against a
+    snippet tokenized as 'No , that not now ,'."""
+    record = _record(
+        app_answer='The speaker replied "No, that not now"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "No , that not now ,"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported == 0
+
+
+def test_quote_fidelity_still_fails_a_genuinely_different_quote_despite_the_tolerance() -> None:
+    """Must-stay-clean control for the #976 fix: the punctuation-spacing tolerance
+    must not loosen the check enough to pass a quote whose WORDS differ from the
+    snippet, even when the snippet uses AMI/QMSum-style space-before-punctuation."""
+    record = _record(
+        app_answer='They said "we should cancel the launch , Channel one ."[1].',
+        citations=[
+            {
+                "id": 1,
+                "file_uuid": "file-a",
+                "snippet": "speech recognition , Channel one , channel four , yeah .",
+            }
+        ],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_total == 1
+    assert metrics.quotes_unsupported == 1
+    assert metrics.quote_fidelity == 0.0
 
 
 def test_quote_fidelity_ignores_a_quote_pointed_at_a_dangling_marker() -> None:

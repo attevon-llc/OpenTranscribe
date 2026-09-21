@@ -246,12 +246,66 @@
   const orgAdminCapOn = (state: typeof $capabilities, key: string) =>
     isCloudEdition && isCapabilityEnabled(state, key) && state.audience[key] === 'org_admin';
 
-  // Define sidebar sections (filtered by capability; empty sections drop out)
+  // Define sidebar sections (filtered by capability; empty sections drop out).
+  //
+  // Grouped by WHO changes it and HOW OFTEN, not by subject matter (issue #861):
+  // the user's own settings first, then shared/media concerns, then admin
+  // configuration, then deployment maintenance last. Within every group, rows are
+  // ordered by expected frequency of use — do NOT re-alphabetize them.
+  //
+  // Group gating vs row gating: a group carrying `...(isAdmin ? [...] : [])` is
+  // invisible below that tier. A row inside an UNGATED group that needs privilege
+  // is spread in the same way, which keeps the group (and its ungated siblings)
+  // visible. `SECTION_MIN_ROLE` above stays the single source of privilege truth —
+  // never add an ad-hoc guard on a render block.
   $: sidebarSections = [
     {
-      title: $t('settings.sections.system'),
+      title: $t('settings.sections.account'),
       items: [
-        { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' }
+        { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
+        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' }
+      ]
+    },
+    {
+      title: $t('settings.sections.transcription'),
+      items: [
+        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform', cap: 'transcription.prefs' },
+        { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic', cap: 'asr.user_providers' },
+        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list', cap: 'vocab.user' },
+        { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
+        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' }
+      ]
+    },
+    {
+      title: $t('settings.sections.aiChat'),
+      items: [
+        // Admin platform tuning for chat lives in this panel's Advanced tab, not a second row.
+        { id: 'chat' as SettingsSection, label: $t('chat.settings.title'), icon: 'message', cap: 'chat.rag' },
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
+        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message', cap: 'prompts.user' },
+        // Org context is prompt material: OrganizationContextSettings persists
+        // include_in_default_prompts / include_in_custom_prompts and nothing else reads it.
+        { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' }
+      ]
+    },
+    {
+      // The user setting and the admin policy sit together on purpose: their labels
+      // are near-identical, and adjacency is what makes the padlock explain the
+      // difference instead of the two reading as duplicate rows apart.
+      title: $t('settings.sections.privacyRedaction'),
+      items: [
+        { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off', cap: 'redaction.user' },
+        ...(isAdmin ? [{ id: 'redaction-policy' as SettingsSection, label: $t('settings.redactionPolicy.title'), icon: 'shield', cap: 'redaction.policy' }] : [])
+      ]
+    },
+    {
+      title: $t('settings.sections.mediaOutput'),
+      items: [
+        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'exports' },
+        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' },
+        { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye', cap: 'watch_sources' },
+        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic', cap: 'recording' },
+        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' }
       ]
     },
     // Cloud edition — org-admin billing/usage/team. Gated by audience='org_admin'
@@ -267,61 +321,37 @@
         ]
       }
     ] : []),
+    // Administration = who may do what, and how this deployment behaves.
+    // Listed for every admin; rows above the admin's tier render disabled — see sectionLocked().
     ...(isAdmin ? [
       {
         title: $t('settings.sections.administration'),
         items: [
-          // Listed for every admin, disabled for non-super_admins — see sectionLocked().
-          { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
+          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin', badge: pendingApprovalCount },
           { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' },
-          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin', badge: pendingApprovalCount }
-        ]
-      },
-      {
-        title: $t('settings.sections.systemManagement'),
-        items: [
-          { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield', cap: 'admin.data_integrity' },
-          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock', cap: 'admin.retention' },
-          { id: 'backup' as SettingsSection, label: $t('settings.backup.title'), icon: 'database', cap: 'admin.backup' },
-          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search', cap: 'admin.search_indexing' },
-          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database', cap: 'admin.embedding_migration' },
-          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' }
+          { id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu', cap: 'engine.settings' },
+          { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' }
         ]
       }
     ] : []),
     {
-      title: $t('settings.sections.account'),
+      // System = looking at or repairing the deployment's state (vs. Administration,
+      // which configures its behaviour). Last because it is the least-often opened.
+      // The GROUP is deliberately ungated: `system-statistics` is open to every
+      // signed-in user and is the modal's default landing section
+      // (settingsModalStore initialState / Navbar.svelte). Only the maintenance rows
+      // are admin-gated.
+      title: $t('settings.sections.system'),
       items: [
-        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
-        { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' }
-      ]
-    },
-    {
-      title: $t('settings.sections.transcriptionAi'),
-      items: [
-        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message', cap: 'prompts.user' },
-        { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic', cap: 'asr.user_providers' },
-        ...(isAdmin ? [{ id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu', cap: 'engine.settings' }] : []),
-        ...(isAdmin ? [{ id: 'redaction-policy' as SettingsSection, label: $t('settings.redactionPolicy.title'), icon: 'shield', cap: 'redaction.policy' }] : []),
-        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
-        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list', cap: 'vocab.user' },
-        { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off', cap: 'redaction.user' },
-        // Admin platform tuning lives in this panel's Advanced tab, not a second row.
-        { id: 'chat' as SettingsSection, label: $t('chat.settings.title'), icon: 'message', cap: 'chat.rag' },
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
-        { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' },
-        { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
-        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform', cap: 'transcription.prefs' }
-      ]
-    },
-    {
-      title: $t('settings.sections.mediaOutput'),
-      items: [
-        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
-        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' },
-        { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye', cap: 'watch_sources' },
-        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic', cap: 'recording' },
-        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'exports' }
+        { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' },
+        ...(isAdmin ? [
+          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' },
+          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search', cap: 'admin.search_indexing' },
+          { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield', cap: 'admin.data_integrity' },
+          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database', cap: 'admin.embedding_migration' },
+          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock', cap: 'admin.retention' },
+          { id: 'backup' as SettingsSection, label: $t('settings.backup.title'), icon: 'database', cap: 'admin.backup' }
+        ] : [])
       ]
     }
   ]
@@ -1351,12 +1381,13 @@
   .sidebar-section {
     margin-bottom: 0.25rem;
     padding-top: 0.75rem;
-    border-top: 1px solid var(--border-color);
   }
 
-  .sidebar-section:first-child {
-    border-top: none;
-    padding-top: 0;
+  /* The divider belongs BETWEEN groups. `:first-child` could never match here —
+     `.settings-search` is the sidebar's first child — so the top group used to
+     render a stray rule directly under the search box. */
+  .sidebar-section + .sidebar-section {
+    border-top: 1px solid var(--border-color);
   }
 
   .section-heading {

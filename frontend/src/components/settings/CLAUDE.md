@@ -100,11 +100,20 @@ picker and the content router all read it, so a nav entry cannot disagree with t
 - A panel nested inside another section has no section id of its own; report dirty state to the
   parent (see `CacheSettings` → `RetentionSettings`) instead of inventing a store key with no
   nav entry.
+- **Sidebar grouping is by WHO changes it and HOW OFTEN, not by subject** (issue #861), with
+  rows inside a group ordered by expected frequency of use. Keep groups at ~6 rows or fewer; if
+  a group outgrows that, split it rather than appending. A group that needs a privilege carries
+  `...(isAdmin ? [...] : [])` around the whole group; a privileged row inside an **ungated**
+  group carries the same spread on the row, so the group stays visible to everyone else.
 
 ## Gotchas
 
-- **E2E-guarded selectors** in the shell: `.settings-modal`, `.settings-sidebar`, `.nav-item`,
-  `.section-title`. Renaming them breaks Playwright tests — keep them stable.
+- **E2E-guarded selectors** in the shell: `.settings-modal`, `.settings-sidebar`,
+  `.sidebar-section` (the group wrapper —
+  `backend/tests/e2e/test_settings_modal.py`'s `NAV_GROUPS`), `.nav-item`, and
+  `.settings-content .section-title` (the **content panel's** `<h3>`). Renaming any of them
+  breaks Playwright tests — keep them stable. Note the sidebar **group title** is
+  `.section-heading`, which is _not_ guarded and is a different element from `.section-title`.
 - The modal closes itself on route change (`$page.url.pathname`) — don't re-add navigation logic.
 - Watch Sources is a **user** feature whose email-config and global-settings blocks are
   super*admin; gate those on `isSuperAdmin`, not `isAdmin`, or a plain admin gets two swallowed

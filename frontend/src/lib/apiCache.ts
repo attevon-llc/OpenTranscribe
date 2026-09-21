@@ -25,6 +25,7 @@ export const CacheTTL = {
   GROUPS: 5 * 60 * 1000, // 5 minutes
   SHARES: 2 * 60 * 1000, // 2 minutes
   SHARED_COLLECTIONS: 3 * 60 * 1000, // 3 minutes
+  OWNERS: 5 * 60 * 1000, // 5 minutes (issue #966 — closed enumeration, changes rarely)
 } as const;
 
 class ApiCache {
@@ -123,6 +124,7 @@ class ApiCache {
         this.invalidate('files:');
         this.invalidate('status:');
         this.invalidate('prefetch:file:');
+        this.invalidate('owners:'); // issue #966: a new/removed file can add/drop an owner
         break;
       case 'tags':
         this.invalidate('tags:');
@@ -135,6 +137,7 @@ class ApiCache {
         break;
       case 'collections':
         this.invalidate('collections:');
+        this.invalidate('owners:'); // issue #966: a collection share can add/drop a visible owner
         break;
       case 'groups':
         this.invalidate('groups:');
@@ -197,6 +200,7 @@ export const cacheKey = {
   shares: (collectionUuid: string) => `shares:collection:${collectionUuid}`,
   sharedCollections: () => 'shared-collections:all',
   fileDetail: (uuid: string) => `prefetch:file:${uuid}`,
+  owners: () => 'owners:all',
 };
 
 // Expose stats to dev console

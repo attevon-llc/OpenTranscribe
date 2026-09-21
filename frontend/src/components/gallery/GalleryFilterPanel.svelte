@@ -16,6 +16,7 @@
   export let selectedFileTypes: string[];
   export let selectedStatuses: string[];
   export let ownershipFilter: 'all' | 'mine' | 'shared';
+  export let selectedOwners: string[] = []; // Owner UUIDs (issue #966)
 
   const dispatch = createEventDispatcher();
 
@@ -78,6 +79,7 @@
         selectedFileTypes={selectedFileTypes}
         selectedStatuses={selectedStatuses}
         ownershipFilter={ownershipFilter}
+        selectedOwners={selectedOwners}
         on:filter
         on:reset
       />

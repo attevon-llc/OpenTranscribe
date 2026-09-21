@@ -54,6 +54,7 @@ export interface GalleryState {
   filterSelectedFileTypes: string[];
   filterSelectedStatuses: string[];
   filterOwnershipFilter: 'all' | 'mine' | 'shared';
+  filterSelectedOwners: string[]; // Owner UUIDs (issue #966)
   filterSortBy: string;
   filterSortOrder: 'asc' | 'desc';
 }
@@ -115,6 +116,7 @@ const initialState: GalleryState = {
   filterSelectedFileTypes: [],
   filterSelectedStatuses: [],
   filterOwnershipFilter: 'all',
+  filterSelectedOwners: [],
   filterSortBy: 'upload_time',
   filterSortOrder: 'desc',
 };
@@ -386,6 +388,7 @@ function createGalleryStore() {
       selectedFileTypes: string[];
       selectedStatuses: string[];
       ownershipFilter: 'all' | 'mine' | 'shared';
+      selectedOwners: string[];
       sortBy: string;
       sortOrder: 'asc' | 'desc';
     }) => {
@@ -401,6 +404,7 @@ function createGalleryStore() {
         filterSelectedFileTypes: [...filters.selectedFileTypes],
         filterSelectedStatuses: [...filters.selectedStatuses],
         filterOwnershipFilter: filters.ownershipFilter,
+        filterSelectedOwners: [...filters.selectedOwners],
         filterSortBy: filters.sortBy,
         filterSortOrder: filters.sortOrder,
       }));
@@ -419,6 +423,7 @@ function createGalleryStore() {
         filterSelectedFileTypes: [],
         filterSelectedStatuses: [],
         filterOwnershipFilter: 'all',
+        filterSelectedOwners: [],
         filterSortBy: 'upload_time',
         filterSortOrder: 'desc',
       }));

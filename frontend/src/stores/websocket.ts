@@ -4,6 +4,7 @@ import { downloadStore, type DownloadState } from './downloads';
 import { t } from '$stores/locale';
 import axiosInstance from '$lib/axios';
 import { generateId } from '$lib/utils/ids';
+import { formatCompactDuration } from '$lib/utils/formatting';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
 
@@ -80,6 +81,12 @@ export interface NotificationData {
   task?: string;
   tasks?: string[];
   eta_seconds?: number | null;
+  // How long the just-finished task actually ran, in seconds — issue #753's
+  // duration chip. Sent by the backend only on a terminal transcription_status
+  // / summarization_status / topic_extraction_status frame; absent otherwise.
+  // NEVER the same number as a recording's length (that's `file_updated`'s
+  // `duration`/`formatted_duration` — a different, unrelated field).
+  duration_seconds?: number;
   [key: string]: unknown;
 }
 
@@ -121,16 +128,13 @@ interface WebSocketState {
   error: string | null;
 }
 
-// Format ETA seconds into human-readable string
+// Format ETA seconds into human-readable string. The "no ETA yet" guard is
+// specific to this call site (an ETA of 0 or unknown means "don't show one"),
+// so it stays here; the Xh/Ym/Zs arithmetic itself is shared with the
+// notification duration chip via formatCompactDuration (issue #753).
 function formatEtaSeconds(seconds: number | null | undefined): string | undefined {
   if (seconds == null || seconds <= 0) return undefined;
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60);
-  if (minutes < 60) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  return formatCompactDuration(seconds);
 }
 
 // Admin task type to progressId mapping

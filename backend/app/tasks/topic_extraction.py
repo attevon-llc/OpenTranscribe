@@ -46,6 +46,7 @@ def send_topic_extraction_notification(
     status: str,
     message: str,
     suggestion_id: str | None = None,
+    duration_seconds: float | None = None,
 ) -> bool:
     """Send AI suggestion extraction status notification via WebSocket."""
     from app.services.notification_service import send_task_notification
@@ -53,6 +54,8 @@ def send_topic_extraction_notification(
     extra: dict[str, Any] = {}
     if status == "completed" and suggestion_id:
         extra["suggestion_id"] = suggestion_id
+    if duration_seconds is not None:
+        extra["duration_seconds"] = duration_seconds
 
     return send_task_notification(
         user_id,
@@ -168,18 +171,23 @@ def _trigger_batch_grouping(user_id: int, upload_batch_id: int | None) -> None:
 
 def _mark_task_status(
     task_id: str, status: str, *, progress: float | None = None, error_message: str | None = None
-) -> None:
+) -> float | None:
     """Record the task's terminal status, opening its **own** short session.
 
     Best-effort and must never mask the caller's real outcome: a status-recording
     failure logs and is swallowed rather than raised, matching every other
     best-effort side path in this module (notifications, batch grouping).
+
+    Returns the just-finished task's duration in seconds (issue #753), or
+    ``None`` — callers sending a terminal notification must call this FIRST
+    and thread the result through, since ``update_task_status`` clears the
+    only record of the task's start time as part of this same call.
     """
     try:
         from app.utils.task_utils import update_task_status
 
         with session_scope() as db:
-            update_task_status(
+            task = update_task_status(
                 db,
                 task_id,
                 status,
@@ -187,8 +195,10 @@ def _mark_task_status(
                 error_message=error_message,
                 completed=status in ("completed", "failed"),
             )
+            return getattr(task, "duration_seconds", None)
     except Exception as status_err:  # noqa: BLE001
         logger.debug(f"Could not record topic-extraction task status: {status_err}")
+        return None
 
 
 def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
@@ -340,6 +350,11 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         tag_count = result.tag_count
         collection_count = result.collection_count
 
+        # Marked BEFORE the completion notification (issue #753): this is what
+        # clears MediaFile.task_started_at, so its duration must be captured
+        # here to be available at all — see _mark_task_status's docstring.
+        duration_seconds = _mark_task_status(task_id, "completed", progress=1.0)
+
         # Send completion notification
         send_topic_extraction_notification(
             user_id=user_id,
@@ -347,6 +362,7 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
             status="completed",
             message=f"Found {tag_count} tags and {collection_count} collections",
             suggestion_id=result.suggestion_uuid,
+            duration_seconds=duration_seconds,
         )
 
         # Check if this file is part of a batch and trigger grouping.
@@ -356,8 +372,6 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
             f"Successfully extracted {tag_count} tags and {collection_count} collections "
             f"for file {file_id}"
         )
-
-        _mark_task_status(task_id, "completed", progress=1.0)
 
         return {
             "status": "completed",

@@ -1517,6 +1517,7 @@
   "notifications.minutesAgo": "منذ {{count}} دقيقة",
   "notifications.hoursAgo": "منذ {{count}} ساعة",
   "notifications.daysAgo": "منذ {{count}} يوم",
+  "notifications.completedIn": "اكتمل خلال {{duration}}",
   "about.title": "حول OpenTranscribe",
   "about.closeDialog": "إغلاق نافذة \"حول\"",
   "about.subtitle": "منصة النسخ وإدارة الوسائط المدعومة بالذكاء الاصطناعي",

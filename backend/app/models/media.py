@@ -803,6 +803,15 @@ class Task(Base):
     user: Mapped["User"] = relationship("User")
     media_file: Mapped["MediaFile | None"] = relationship("MediaFile", back_populates="tasks")
 
+    # NOT a mapped column — deliberately a plain class attribute (no `Mapped[...]`
+    # annotation), so the ORM mapper ignores it and it is never persisted or
+    # queried. `task_utils.update_task_status` stamps a just-finished task's
+    # wall-clock duration here (issue #753's notification duration chip) at the
+    # one moment it is computable, then the caller reads it off the return
+    # value within the same request/task. The default only exists so mypy
+    # knows the attribute's type; every real value is set at runtime.
+    duration_seconds: float | None = None
+
 
 class Analytics(Base):
     __tablename__ = "analytics"

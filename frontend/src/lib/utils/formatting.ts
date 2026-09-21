@@ -91,6 +91,28 @@ export function formatClock(totalSeconds: number | null | undefined): string {
 }
 
 /**
+ * Compact `Xh Ym`/`Ym Zs`/`Zs` duration, the "how long did this take" idiom
+ * (issue #753's notification duration chip; e.g. `125` -> `"2m 5s"`,
+ * `45` -> `"45s"`, `3660` -> `"1h 1m"`). Unlike {@link formatDuration}/
+ * {@link formatClock} this omits zero units entirely rather than padding —
+ * intentionally different, per `lib/utils/CLAUDE.md`'s do-not-migrate note
+ * for compact `Xh Ym` durations. `$stores/websocket`'s `formatEtaSeconds`
+ * delegates its arithmetic here and keeps its own `undefined`-for-no-ETA
+ * guard on top, so the two duration idioms share one implementation instead
+ * of two independently-maintained copies of the same minute/hour rollover.
+ */
+export function formatCompactDuration(totalSeconds: number): string {
+  const seconds = Math.round(isNaN(totalSeconds) || totalSeconds < 0 ? 0 : totalSeconds);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (minutes < 60) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+/**
  * Live player time with decimal milliseconds (padded minutes).
  * e.g. 3.25 -> "00:03.250", 3661.5 -> "01:01:01.500". Invalid input -> "00:00.000".
  */

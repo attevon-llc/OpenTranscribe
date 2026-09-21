@@ -1517,6 +1517,7 @@
   "notifications.minutesAgo": "{{count}}분 전",
   "notifications.hoursAgo": "{{count}}시간 전",
   "notifications.daysAgo": "{{count}}일 전",
+  "notifications.completedIn": "{{duration}} 만에 완료됨",
   "about.title": "OpenTranscribe 정보",
   "about.closeDialog": "정보 대화상자 닫기",
   "about.subtitle": "AI 기반 전사 및 미디어 관리 플랫폼",

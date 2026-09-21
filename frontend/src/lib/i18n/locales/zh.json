@@ -1516,6 +1516,7 @@
   "notifications.minutesAgo": "{{count}}分钟前",
   "notifications.hoursAgo": "{{count}}小时前",
   "notifications.daysAgo": "{{count}}天前",
+  "notifications.completedIn": "在 {{duration}} 内完成",
   "about.title": "关于 OpenTranscribe",
   "about.closeDialog": "关闭对话框",
   "about.subtitle": "AI驱动的转录与媒体管理平台",

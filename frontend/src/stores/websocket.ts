@@ -1022,6 +1022,10 @@ function createWebSocketStore() {
         return translate('notifications.mediaMirrorUpdate');
       case 'audio_extraction_status':
         return translate('notifications.audioExtraction');
+      case 'download_progress':
+        // Resurrects a key that shipped in all 12 locales but was dead (issue
+        // #569's currency review) — `downloadNotifications.ts` is the first caller.
+        return translate('notifications.downloadProgress');
       case 'file_upload':
         return translate('notifications.fileUpload');
       case 'file_created':
@@ -1119,12 +1123,16 @@ function createWebSocketStore() {
             timestamp: state.notifications[existingIndex].timestamp, // Keep original timestamp
           };
         } else {
-          // Add new notification at the beginning
-          state.notifications = [newNotification, ...state.notifications];
+          // Add new notification at the beginning. Capped like every WS-delivered
+          // path (`:782`/`:836`/`:858`/`:1288`) — this one was the odd one out
+          // (issue #569's currency review), so a client-originated source (audio
+          // extraction, download bridge) with a fresh `progressId` per item could
+          // grow the list without bound.
+          state.notifications = [newNotification, ...state.notifications.slice(0, 99)];
         }
       } else {
         // Add new notification at the beginning
-        state.notifications = [newNotification, ...state.notifications];
+        state.notifications = [newNotification, ...state.notifications.slice(0, 99)];
       }
 
       saveNotificationsToStorage(state.notifications);

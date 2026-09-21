@@ -379,6 +379,21 @@ describe('websocket message dispatch', () => {
 
     expect(notifications()).toHaveLength(100);
   });
+
+  it('caps the list at 100 for addNotification too (issue #569 — the WS-delivered paths capped, this client-originated one did not)', () => {
+    for (let i = 0; i < 120; i += 1) {
+      websocketStore.addNotification({
+        type: 'audio_extraction_status',
+        title: 'Audio Extraction',
+        message: `clip-${i}.mp3`,
+        progressId: `extract-${i}`, // distinct progressId per call — each is a genuine append, not an in-place update
+        status: 'completed',
+        dismissible: true,
+      });
+    }
+
+    expect(notifications()).toHaveLength(100);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

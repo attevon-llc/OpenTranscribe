@@ -1,13 +1,16 @@
 # Spec — summary search, display, and redaction
 
-**Status:** shipped. Postgres FTS over `summary_data`, exposed as `result_type` on
-`/api/search` (`services/search/summary_search.py`, frontend legs in
-`routes/search/+page.svelte` + `stores/search.ts`). Tracked as #462 (search, open) and #465
-(redaction, CLOSED) — **not** #89/#90, which are unrelated MERGED PRs from October 2025;
-citing them here would resolve to the wrong issue, the same "citation that resolves and
-misleads" defect as #875. Multi-select UI: #760. Uncached-redaction residual: #822.
-**Decided:** 2026-08-14, with the owner.
-**Supersedes:** the "add `doc_type: summary` to the v6 index" idea, rejected below.
+**Status:** shipped, and REWRITTEN by #963 (2026-09-21). The read path is now a hybrid
+(BM25 + kNN, RRF-fused) OpenSearch query against a `doc_type: "summary"` plane in
+`transcript_chunks` — not Postgres FTS — exposed as `result_type` on `/api/search`
+(`services/search/summary_search.py`, frontend legs in `routes/search/+page.svelte` +
+`stores/search.ts`). Tracked as #462 (search, open) and #465 (redaction, CLOSED) — **not**
+#89/#90, which are unrelated MERGED PRs from October 2025; citing them here would resolve to
+the wrong issue, the same "citation that resolves and misleads" defect as #875. Multi-select
+UI: #760. Uncached-redaction residual: #822.
+**Decided:** 2026-08-14, with the owner. **Amended:** 2026-09-21, #963 (see the note after §2).
+**Supersedes:** the "add `doc_type: summary` to the v6 index" idea, rejected below **for chat
+retrieval** — #963 builds it for **search only**, isolated behind `summary_plane_clause()`.
 
 ---
 
@@ -42,6 +45,28 @@ Adding the LLM summary as a third `doc_type` was considered and rejected for fou
    digest works everywhere. Retrieval built on summaries silently vanishes there.
 4. **RRF competition.** Indexing both puts two representations of the same recording into one
    fused ranking — a results page that is all the same meeting.
+
+> **2026-09-21 — superseded IN PART by #963.** Issue #963 rebuilds the *search* leg (not chat
+> retrieval) as a third `doc_type: "summary"` plane in `transcript_chunks`, reachable only
+> through `summary_plane_clause()`. Each rejection above is a reason about **chat retrieval
+> grounding**, and each is neutralised by plane isolation rather than avoided by not indexing at
+> all:
+> 1. **Grounding is unaffected.** `chunk_plane_clause()`/`digest_plane_clause()` never match
+>    `doc_type: "summary"`, so the summary plane is invisible to `HybridSearchService._build_filters`'s
+>    default callers, `chat_retrieval.retrieve_chunks`, and `retrieve_digests`. `VERBATIM_DOC_TYPES`
+>    stays `(DOC_TYPE_CHUNK,)`. No chat code changes.
+> 2. **Instability is handled like the digest plane already handles it**: the plane is fully
+>    rebuilt on every write (deterministic leaf-ordinal ids, orphan pruning), not patched.
+> 3. **D6 still holds**: an empty `summary_data` produces zero documents and the leg returns
+>    `{"summary_results": [], "summary_total": 0}`, exactly like today.
+> 4. **RRF competition is answered at the QUERY layer, not the storage layer.** The summary plane
+>    gets its own fused BM25+kNN query, its own RRF pipeline run, and its own result list/total —
+>    **never merged** into the transcript leg's ranked sequence. Two lists, two totals, same as
+>    today.
+>
+> This does **not** reopen the chat-retrieval question above — the LLM summary still does not
+> become a chat citation source. See `backend/app/services/search/CLAUDE.md`'s "Index v6" section
+> for the shipped shape.
 
 **Keyword search over summaries is a different job from grounding a chat answer**, and that is the
 job this spec builds.

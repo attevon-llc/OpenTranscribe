@@ -124,6 +124,14 @@ class SummarySectionMatchSchema(BaseModel):
     snippet: str = Field(
         ..., description="The matching leaf text, masked under the reader's policy"
     )
+    score: float = Field(
+        0.0,
+        description=(
+            "The OpenSearch RRF fusion score for this leaf (issue #963). Not comparable "
+            "to the transcript leg's per-chunk scores or to summary_total's window "
+            "semantics — an intra-leg relevance signal only."
+        ),
+    )
 
 
 class SummaryHitSchema(BaseModel):
@@ -133,5 +141,5 @@ class SummaryHitSchema(BaseModel):
     file_id: int = Field(..., description="File integer ID")
     title: str = Field("", description="File title (falls back to filename)")
     matches: list[SummarySectionMatchSchema] = Field(
-        default_factory=list, description="Matching sections, in document order"
+        default_factory=list, description="Matching sections, ordered by relevance"
     )

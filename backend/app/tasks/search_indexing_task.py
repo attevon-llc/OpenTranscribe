@@ -592,6 +592,79 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
 
 
 @celery_app.task(
+    name="index_file_summary",
+    priority=UtilityPriority.ROUTINE,
+)
+def index_file_summary(file_id: int) -> dict[str, Any]:
+    """Rebuild ONE file's summary plane from ``media_file.summary_data`` (issue #963).
+
+    The *fresh-summary* trigger: ``index_transcript_chunks`` already regenerates
+    the summary plane on every transcript rebuild (addendum G1), but a summary
+    is generated — or cleared — LATER and independently of the transcript, so
+    it needs its own light trigger. Dispatched AFTER the write that changed
+    ``summary_data`` has COMMITTED — never from inside that transaction. A
+    dispatch inside the transaction would either read uncommitted state or,
+    worse, tempt a caller to pass the dict along instead of letting this task
+    re-read it from Postgres, which is precisely the #67 shape
+    (``_index_summary_plane`` has no ``summary_data`` parameter for exactly
+    this reason).
+
+    Args:
+        file_id: Media file integer id. ``summary_data`` may be a populated
+            dict, ``None`` (a cleared/never-generated summary — the plane
+            prunes to zero), or anything else JSON-shaped; the document
+            builder handles all three.
+
+    Returns:
+        Dict with ``status`` and ``summary_leaves`` (the count that landed).
+    """
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+    from app.services.search.embedding_provenance import active_embedding_model
+    from app.services.search.indexing_service import TranscriptIndexingService
+    from app.services.search.indexing_service import is_neural_pipeline_available
+
+    with session_scope() as db:
+        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).one_or_none()
+        if media_file is None:
+            logger.warning(f"index_file_summary: file {file_id} not found")
+            return {"status": "not_found", "summary_leaves": 0}
+        file_uuid = media_file.uuid
+        user_id = media_file.user_id
+        meta = extract_file_index_metadata(db, media_file, file_id)
+
+    use_neural = is_neural_pipeline_available()
+    provenance = active_embedding_model() if use_neural else None
+
+    indexing_service = TranscriptIndexingService()
+    leaves = indexing_service._index_summary_plane(
+        file_id=file_id,
+        file_uuid=str(file_uuid),
+        base_metadata={
+            "user_id": user_id,
+            "title": meta["title"],
+            "tags": meta["tag_names"],
+            "upload_time": meta["upload_time"],
+            "language": meta["language"],
+            "content_type": meta["content_type"],
+            "duration": meta["duration"],
+            "file_size": meta["file_size"],
+            "collection_ids": meta["collection_ids"],
+            "accessible_user_ids": meta["accessible_user_ids"],
+            "indexed_at": None,
+            "embedding_model": provenance,
+            **(
+                {}
+                if meta["organization_id"] is None
+                else {"organization_id": meta["organization_id"]}
+            ),
+        },
+        use_neural=use_neural,
+    )
+    return {"status": "success", "summary_leaves": leaves}
+
+
+@celery_app.task(
     name="backfill_speaker_id_fields",
     priority=UtilityPriority.ROUTINE,
 )

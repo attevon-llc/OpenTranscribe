@@ -1,94 +1,83 @@
-"""Postgres full-text search over ``media_file.summary_data`` (issue #462).
+"""OpenSearch hybrid search over ``media_file.summary_data`` (issues #462, #963).
 
-Covers the pure tree-walk helpers, the leaf-level FTS matching against real
-Postgres, access control (reusing ``PermissionService.get_accessible_file_ids_
-subquery`` — never a second sharing rule), per-leaf masking BEFORE snippet
-extraction, and the fail-closed contract on a detector outage.
+Covers the pure tree-walk helper and ``search_summaries``'s own orchestration —
+masking per leaf BEFORE snippet extraction, the fail-closed contract on a
+detector outage, quarantine-set passthrough, and dataclass shape. The actual
+OpenSearch query (access control via ``accessible_user_ids``, the RRF fusion,
+the real hybrid BM25+kNN retrieval) is a property of two systems talking to
+each other and is covered against a real cluster in
+``tests/integration/test_summary_plane_opensearch.py`` — no unit test with a
+mocked query layer can prove that. Here, ``HybridSearchService.search_summary_plane``
+is monkeypatched at the boundary so these tests are fast, DB-optional, and
+exercise exactly the orchestration logic that lives in this module.
 """
 
 from __future__ import annotations
 
-import uuid as uuid_pkg
+from typing import cast
 
 import pytest
-from sqlalchemy import text as sa_text
+from sqlalchemy.orm import Session
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
-from app.models.media import MediaFile
-from app.models.prompt import UserSetting
-from app.models.sharing import CollectionShare
-from app.services.redaction.config import resolve_effective_config
+from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
 from app.services.search import summary_search
-from app.services.search.summary_search import _walk_leaves
+from app.services.search.summary_search import SummarySectionMatch
 from app.services.search.summary_search import search_summaries
+from app.services.search.summary_search import walk_summary_leaves
 
 pytestmark = pytest.mark.unit
 
+#: search_summaries's `db` param is unused (see its docstring) — a real
+#: Postgres session buys nothing here, so a sentinel keeps this file DB-free.
+_DB = cast(Session, object())
 
-def _make_file(db_session, user, *, summary, title=None) -> MediaFile:
-    file_uuid = uuid_pkg.uuid4()
-    row = MediaFile(
-        uuid=file_uuid,
-        filename=f"{file_uuid}.wav",
-        title=title,
-        storage_path=f"media/test/{file_uuid}.wav",
-        content_type="audio/wav",
-        file_size=1024,
-        user_id=user.id,
-        status="completed",
-        summary_data=summary,
+
+def _cfg(enabled: bool, categories: frozenset[str] = frozenset()) -> EffectiveRedactionConfig:
+    """A real ``EffectiveRedactionConfig`` — ``resolve_summary_leaf_policy`` calls
+    ``dataclasses.replace(cfg, ...)``, which requires a real dataclass instance,
+    not a stand-in class."""
+    return EffectiveRedactionConfig(enabled=enabled, enabled_categories=set(categories))
+
+
+def _patch_plane(monkeypatch, hits: list[dict], total: int | None = None) -> list[tuple]:
+    """Stand in for the real OpenSearch call; records every call's kwargs.
+
+    Also stubs ``_quarantined_file_uuids`` to an empty set — it opens its OWN
+    Postgres session (by design, see its docstring), which this file has no
+    business paying for just to prove `search_summaries`'s orchestration.
+    Tests exercising the quarantine-set passthrough itself override this.
+    """
+    calls: list[tuple] = []
+
+    def _fake_search_summary_plane(self, query, user_id, **kwargs):
+        calls.append((query, user_id, kwargs))
+        return hits, total if total is not None else len(hits)
+
+    monkeypatch.setattr(
+        "app.services.search.hybrid_search_service.HybridSearchService.search_summary_plane",
+        _fake_search_summary_plane,
     )
-    db_session.add(row)
-    db_session.commit()
-    db_session.refresh(row)
-    return row
-
-
-def _enable_redaction(db_session, user, categories: str = '["pii"]') -> None:
-    for key, value in (("redaction_enabled", "true"), ("redaction_categories", categories)):
-        db_session.add(UserSetting(user_id=user.id, setting_key=key, setting_value=value))
-    db_session.commit()
-
-
-def _share_with(db_session, owner, recipient, media_file, *, permission="viewer") -> None:
-    collection = Collection(
-        user_id=owner.id,
-        name=f"share-{uuid_pkg.uuid4().hex[:8]}",
-        description="summary search test",
-    )
-    db_session.add(collection)
-    db_session.commit()
-    db_session.add(CollectionMember(collection_id=collection.id, media_file_id=media_file.id))
-    db_session.add(
-        CollectionShare(
-            collection_id=collection.id,
-            shared_by_id=owner.id,
-            target_type="user",
-            target_user_id=recipient.id,
-            permission=permission,
-        )
-    )
-    db_session.commit()
+    monkeypatch.setattr("app.services.search.hybrid_search_service._quarantined_file_uuids", list)
+    return calls
 
 
 # --------------------------------------------------------------------------- #
-# _walk_leaves — varied JSONB shapes, including extra="allow" custom keys      #
+# walk_summary_leaves — varied JSONB shapes, including extra="allow" keys      #
 # --------------------------------------------------------------------------- #
 
 
-class TestWalkLeaves:
+class TestWalkSummaryLeaves:
     def test_a_bare_top_level_string(self):
-        assert _walk_leaves("hello", "") == [("", "hello")]
+        assert walk_summary_leaves("hello", "") == [("", "hello")]
 
     def test_flat_dict(self):
-        leaves = _walk_leaves({"bluf": "one", "brief_summary": "two"}, "")
+        leaves = walk_summary_leaves({"bluf": "one", "brief_summary": "two"}, "")
         assert dict(leaves) == {"bluf": "one", "brief_summary": "two"}
 
     def test_nested_dicts_and_lists(self):
         node = {"major_topics": [{"topic": "Budget", "key_points": ["alpha", "beta"]}]}
-        leaves = _walk_leaves(node, "")
+        leaves = walk_summary_leaves(node, "")
         assert leaves == [
             ("major_topics[0].topic", "Budget"),
             ("major_topics[0].key_points[0]", "alpha"),
@@ -99,250 +88,242 @@ class TestWalkLeaves:
         """SummaryData is extra="allow" — a custom prompt's own field names must
         be walked exactly like the known ones."""
         node = {"risk_register": {"items": [{"severity": "high", "detail": "leak"}]}}
-        leaves = _walk_leaves(node, "")
+        leaves = walk_summary_leaves(node, "")
         assert ("risk_register.items[0].severity", "high") in leaves
         assert ("risk_register.items[0].detail", "leak") in leaves
 
     def test_unicode_leaves(self):
         node = {"bluf": "Café résumé — 日本語のテスト"}
-        assert _walk_leaves(node, "") == [("bluf", "Café résumé — 日本語のテスト")]
+        assert walk_summary_leaves(node, "") == [("bluf", "Café résumé — 日本語のテスト")]
 
     def test_metadata_top_level_key_is_skipped(self):
         node = {"bluf": "kept", "metadata": {"provider": "openai", "created_at": "2026-01-01"}}
-        leaves = _walk_leaves(node, "")
+        leaves = walk_summary_leaves(node, "")
         assert leaves == [("bluf", "kept")]
 
     def test_non_string_leaves_are_never_emitted(self):
         node = {"counts": {"topics": 3, "ratio": 0.5, "flagged": True, "missing": None}}
-        assert _walk_leaves(node, "") == []
+        assert walk_summary_leaves(node, "") == []
 
     def test_blank_strings_are_never_emitted(self):
-        assert _walk_leaves({"bluf": "   "}, "") == []
+        assert walk_summary_leaves({"bluf": "   "}, "") == []
 
     def test_a_nested_metadata_key_is_not_special(self):
         """Only the TOP-LEVEL ``metadata`` key is machine-generated provenance;
         a section that happens to be named "metadata" one level down is
         ordinary model prose and must be walked."""
         node = {"major_topics": [{"metadata": "not actually special here"}]}
-        leaves = _walk_leaves(node, "")
+        leaves = walk_summary_leaves(node, "")
         assert leaves == [("major_topics[0].metadata", "not actually special here")]
 
 
 # --------------------------------------------------------------------------- #
-# Leaf-level FTS matching — real Postgres                                      #
+# search_summaries — orchestration: mapping, snippets, dataclass shape         #
 # --------------------------------------------------------------------------- #
 
 
-class TestMatchingLeafIndices:
-    def test_matches_the_expected_positions(self, db_session):
-        positions = summary_search._matching_leaf_indices(
-            db_session,
-            [0, 0, 0],
-            [0, 1, 2],
-            ["hello world", "goodbye moon", "summary generation done"],
-            "summary",
+class TestSearchSummariesOrchestration:
+    def test_a_hit_maps_into_a_summary_hit_with_its_match(self, monkeypatch):
+        _patch_plane(
+            monkeypatch,
+            hits=[
+                {
+                    "file_uuid": "11111111-1111-1111-1111-111111111111",
+                    "file_id": 42,
+                    "title": "Q3 roadmap",
+                    "matches": [
+                        {
+                            "key_path": "bluf",
+                            "content": "The quarterly roadmap review.",
+                            "score": 1.5,
+                        }
+                    ],
+                }
+            ],
         )
-        assert positions == {(0, 2)}
-
-    def test_no_texts_short_circuits_without_a_query(self, db_session):
-        assert summary_search._matching_leaf_indices(db_session, [], [], [], "anything") == set()
-
-    def test_websearch_operators_are_honoured(self, db_session):
-        """Confirms this really is websearch_to_tsquery, not a substring check —
-        quoted-phrase and OR both take the real operator meaning."""
-        positions = summary_search._matching_leaf_indices(
-            db_session,
-            [0, 0],
-            [0, 1],
-            ["the budget review", "an unrelated note"],
-            '"budget review"',
-        )
-        assert positions == {(0, 0)}
-
-    def test_row_and_leaf_indices_are_preserved_not_just_positional_order(self, db_session):
-        """The array-parallelism invariant: a match must be attributed to the
-        ROW/LEAF pair it was submitted under, not to its position in the
-        combined arrays — proven here by using non-contiguous, out-of-order
-        row/leaf indices rather than the ``[0, 0, 0]`` / ``[0, 1, 2]`` shape
-        every other test in this class uses."""
-        positions = summary_search._matching_leaf_indices(
-            db_session,
-            [3, 1],
-            [5, 0],
-            ["an unrelated note", "the budget review"],
-            "budget",
-        )
-        assert positions == {(1, 0)}
-
-
-# --------------------------------------------------------------------------- #
-# search_summaries — access control, ordering, snippets, masking               #
-# --------------------------------------------------------------------------- #
-
-
-class TestSearchSummaries:
-    def test_matches_a_leaf_and_reports_its_key_path(self, db_session, normal_user):
-        media_file = _make_file(
-            db_session, normal_user, summary={"bluf": "The quarterly roadmap review."}
-        )
-        result = search_summaries(db_session, "roadmap", normal_user.id, organization_id=None)
+        result = search_summaries(_DB, "roadmap", 1, organization_id=None)
         assert result.total == 1
         assert len(result.results) == 1
         hit = result.results[0]
-        assert hit.file_uuid == str(media_file.uuid)
+        assert hit.file_uuid == "11111111-1111-1111-1111-111111111111"
+        assert hit.file_id == 42
+        assert hit.title == "Q3 roadmap"
         assert hit.matches == [
-            summary_search.SummarySectionMatch(
-                key_path="bluf", snippet="The quarterly roadmap review."
-            )
+            SummarySectionMatch(key_path="bluf", snippet="The quarterly roadmap review.", score=1.5)
         ]
 
-    def test_title_falls_back_to_filename(self, db_session, normal_user):
-        media_file = _make_file(
-            db_session, normal_user, summary={"bluf": "roadmap review"}, title=None
+    def test_a_missing_title_falls_back_to_the_empty_string(self, monkeypatch):
+        _patch_plane(
+            monkeypatch,
+            hits=[{"file_uuid": "u", "file_id": 1, "title": "", "matches": []}],
         )
-        result = search_summaries(db_session, "roadmap", normal_user.id, organization_id=None)
-        assert result.results[0].title == media_file.filename
+        result = search_summaries(_DB, "roadmap", 1, organization_id=None)
+        assert result.results[0].title == ""
 
-    def test_a_non_matching_query_returns_nothing(self, db_session, normal_user):
-        _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-        result = search_summaries(
-            db_session, "zzz_no_such_term", normal_user.id, organization_id=None
-        )
+    def test_no_hits_returns_an_empty_result(self, monkeypatch):
+        _patch_plane(monkeypatch, hits=[], total=0)
+        result = search_summaries(_DB, "zzz_no_such_term", 1, organization_id=None)
         assert result.total == 0
         assert result.results == []
 
-    def test_a_file_with_no_summary_is_never_matched(self, db_session, normal_user):
-        _make_file(db_session, normal_user, summary=None)
-        result = search_summaries(db_session, "anything", normal_user.id, organization_id=None)
-        assert result.total == 0
-
-    def test_a_json_null_typed_summary_is_never_matched(self, db_session, normal_user):
-        """Real dev-DB shape: a failed summary run can store the JSON scalar
-        ``null`` (jsonb_typeof = 'null'), not SQL NULL. `summary_data::text` on
-        that row is the four characters "null" — to_tsvector must never be
-        asked to search it, and jsonb_typeof is the guard.
-        """
-        media_file = _make_file(db_session, normal_user, summary={"bluf": "placeholder"})
-        db_session.execute(
-            sa_text("UPDATE media_file SET summary_data = 'null'::jsonb WHERE id = :id"),
-            {"id": media_file.id},
-        )
-        db_session.commit()
-        result = search_summaries(db_session, "null", normal_user.id, organization_id=None)
-        assert result.total == 0
-
-    def test_pagination_total_counts_files_not_leaves(self, db_session, normal_user):
-        for _ in range(3):
-            _make_file(
-                db_session, normal_user, summary={"bluf": "roadmap", "brief_summary": "roadmap"}
-            )
-        result = search_summaries(
-            db_session, "roadmap", normal_user.id, organization_id=None, page=1, page_size=2
-        )
-        assert result.total == 3
-        assert len(result.results) == 2
-
-    def test_snippet_is_truncated_for_a_pathological_leaf(self, db_session, normal_user):
+    def test_snippet_is_truncated_for_a_pathological_leaf(self, monkeypatch):
         long_text = "roadmap " + ("word " * 200)
-        _make_file(db_session, normal_user, summary={"bluf": long_text})
-        result = search_summaries(db_session, "roadmap", normal_user.id, organization_id=None)
+        _patch_plane(
+            monkeypatch,
+            hits=[
+                {
+                    "file_uuid": "u",
+                    "file_id": 1,
+                    "title": "",
+                    "matches": [{"key_path": "bluf", "content": long_text, "score": 1.0}],
+                }
+            ],
+        )
+        result = search_summaries(_DB, "roadmap", 1, organization_id=None)
         snippet = result.results[0].matches[0].snippet
         assert len(snippet) <= summary_search._MAX_SNIPPET_CHARS + 1  # +1 for the ellipsis char
         assert snippet.endswith("…")
 
-
-# --------------------------------------------------------------------------- #
-# Access control — the SAME authority transcript search uses, no second rule   #
-# --------------------------------------------------------------------------- #
-
-
-class TestAccessControl:
-    def test_leak_a_file_only_shared_via_a_different_collection_is_invisible(
-        self, db_session, normal_user, other_user
-    ):
-        """Permission matrix row T5, LEAK half. `other_user` owns two files: one
-        shared with `normal_user` via collection C2, one that is NOT (either
-        unshared, or shared only via a different collection C1 the recipient
-        has no access to). Searching for the unshared file's term must return
-        nothing.
-        """
-        blocked = _make_file(
-            db_session, other_user, summary={"bluf": "The confidential merger term-sheet."}
+    def test_filter_kwargs_and_quarantine_set_are_forwarded_to_the_plane_search(self, monkeypatch):
+        """The whole point of #963's rewrite (closing #831): one filter builder,
+        forwarded verbatim, not re-derived here."""
+        calls = _patch_plane(monkeypatch, hits=[])
+        monkeypatch.setattr(
+            "app.services.search.hybrid_search_service._quarantined_file_uuids",
+            lambda: ["deadbeef"],
         )
-        visible = _make_file(db_session, other_user, summary={"bluf": "The public roadmap update."})
-        _share_with(db_session, other_user, normal_user, visible)
-        # `blocked` deliberately has no share at all — the plainest "different
-        # collection" case: a collection the recipient was never granted.
 
-        result = search_summaries(db_session, "merger", normal_user.id, organization_id=None)
+        search_summaries(
+            _DB,
+            "roadmap",
+            7,
+            organization_id=3,
+            speakers=["Dana"],
+            tags=["planning"],
+            date_from="2024-01-01",
+            date_to="2024-12-31",
+            file_type=["audio"],
+            collection_id=5,
+            min_duration=1.0,
+            max_duration=100.0,
+            min_file_size=1,
+            max_file_size=1000,
+            language="en",
+            title_filter="kickoff",
+            file_uuid="some-uuid",
+        )
 
-        assert result.total == 0
-        assert result.results == []
+        assert len(calls) == 1
+        _query, user_id, kwargs = calls[0]
+        assert user_id == 7
+        assert kwargs["organization_id"] == 3
+        assert kwargs["speakers"] == ["Dana"]
+        assert kwargs["tags"] == ["planning"]
+        assert kwargs["date_from"] == "2024-01-01"
+        assert kwargs["date_to"] == "2024-12-31"
+        assert kwargs["file_type"] == ["audio"]
+        assert kwargs["collection_id"] == 5
+        assert kwargs["title_filter"] == "kickoff"
+        assert kwargs["file_uuid"] == "some-uuid"
+        assert kwargs["quarantined_file_uuids"] == ["deadbeef"]
 
-    def test_shared_visibility_a_real_share_row_makes_the_summary_reachable(
-        self, db_session, normal_user, other_user
-    ):
-        """Permission matrix row T5, SHARED-VISIBILITY half. Must assert
-        non-zero results against a REAL share row — a fixture that never
-        actually shares anything would pass this vacuously.
-        """
-        shared = _make_file(db_session, other_user, summary={"bluf": "The public roadmap update."})
-        _share_with(db_session, other_user, normal_user, shared)
+    def test_include_quarantined_skips_resolving_the_exclusion_set(self, monkeypatch):
+        calls = _patch_plane(monkeypatch, hits=[])
 
-        result = search_summaries(db_session, "roadmap", normal_user.id, organization_id=None)
+        def _boom():
+            raise AssertionError("quarantine resolution must not run for an admin review")
 
-        assert result.total == 1
-        assert result.results[0].file_uuid == str(shared.uuid)
-        assert result.results[0].matches, "a shared-visibility hit must still carry its match"
+        monkeypatch.setattr(
+            "app.services.search.hybrid_search_service._quarantined_file_uuids", _boom
+        )
 
-    def test_an_owned_file_is_always_visible(self, db_session, normal_user):
-        media_file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-        result = search_summaries(db_session, "roadmap", normal_user.id, organization_id=None)
-        assert result.results[0].file_uuid == str(media_file.uuid)
+        search_summaries(_DB, "roadmap", 1, organization_id=None, include_quarantined=True)
+        assert calls[0][2]["quarantined_file_uuids"] == []
 
 
 # --------------------------------------------------------------------------- #
-# Masking — per leaf, BEFORE snippet extraction, fail-closed                   #
+# Masking — per leaf, BEFORE snippet extraction, fail-closed, never batched    #
 # --------------------------------------------------------------------------- #
 
 
 class TestMasking:
-    def test_no_cfg_returns_the_raw_snippet(self, db_session, normal_user):
-        _make_file(db_session, normal_user, summary={"bluf": "Damn, that slipped."})
-        result = search_summaries(
-            db_session, "slipped", normal_user.id, organization_id=None, redaction_cfg=None
+    def test_no_cfg_returns_the_raw_snippet(self, monkeypatch):
+        _patch_plane(
+            monkeypatch,
+            hits=[
+                {
+                    "file_uuid": "u",
+                    "file_id": 1,
+                    "title": "",
+                    "matches": [
+                        {"key_path": "bluf", "content": "Damn, that slipped.", "score": 1.0}
+                    ],
+                }
+            ],
         )
+        result = search_summaries(_DB, "slipped", 1, organization_id=None, redaction_cfg=None)
         assert "Damn" in result.results[0].matches[0].snippet
 
-    def test_a_disabled_policy_leaves_the_snippet_untouched(self, db_session, normal_user):
-        _make_file(db_session, normal_user, summary={"bluf": "Damn, that slipped."})
-        cfg = resolve_effective_config(db_session, normal_user.id)
-        assert not cfg.enabled  # fixture precondition
-        result = search_summaries(
-            db_session, "slipped", normal_user.id, organization_id=None, redaction_cfg=cfg
+    def test_a_disabled_policy_leaves_the_snippet_untouched(self, monkeypatch):
+        _patch_plane(
+            monkeypatch,
+            hits=[
+                {
+                    "file_uuid": "u",
+                    "file_id": 1,
+                    "title": "",
+                    "matches": [
+                        {"key_path": "bluf", "content": "Damn, that slipped.", "score": 1.0}
+                    ],
+                }
+            ],
         )
+        cfg = _cfg(False)
+        result = search_summaries(_DB, "slipped", 1, organization_id=None, redaction_cfg=cfg)
         assert "Damn" in result.results[0].matches[0].snippet
 
-    def test_an_enabled_policy_masks_the_returned_snippet(self, db_session, normal_user):
-        _make_file(db_session, normal_user, summary={"bluf": "Damn, that slipped."})
-        _enable_redaction(db_session, normal_user, categories='["profanity"]')
-        cfg = resolve_effective_config(db_session, normal_user.id)
-        result = search_summaries(
-            db_session, "slipped", normal_user.id, organization_id=None, redaction_cfg=cfg
+    def test_an_enabled_policy_masks_the_returned_snippet(self, monkeypatch):
+        _patch_plane(
+            monkeypatch,
+            hits=[
+                {
+                    "file_uuid": "u",
+                    "file_id": 1,
+                    "title": "",
+                    "matches": [
+                        {"key_path": "bluf", "content": "Damn, that slipped.", "score": 1.0}
+                    ],
+                }
+            ],
         )
+        cfg = _cfg(True, frozenset({"profanity"}))
+        result = search_summaries(_DB, "slipped", 1, organization_id=None, redaction_cfg=cfg)
         assert "Damn" not in result.results[0].matches[0].snippet
 
-    def test_masking_is_applied_per_returned_leaf_not_batched(
-        self, db_session, normal_user, monkeypatch
-    ):
+    def test_masking_is_applied_per_returned_leaf_not_batched(self, monkeypatch):
         """The measured failure mode this brief calls out: a batched detector
-        pass loses text across leaves. `search_summaries` must call the
-        per-leaf `mask_summary_leaf` exactly once per RETURNED MATCH (not once
-        per document, and never coalescing multiple leaves' text into one
-        detection call) — see ``test_summary_search_masks_only_returned_leaves.py``
-        for the fuller proof (issue #822) that non-matching leaves are never
-        even examined.
+        pass loses text across leaves (31 of 32 snippets, measured on the
+        sibling search-snippet path). `search_summaries` must call the
+        per-leaf `mask_summary_leaf` exactly once per RETURNED MATCH, never
+        coalescing multiple leaves' text into one detection call.
         """
+        _patch_plane(
+            monkeypatch,
+            hits=[
+                {
+                    "file_uuid": "u1",
+                    "file_id": 1,
+                    "title": "",
+                    "matches": [{"key_path": "bluf", "content": "roadmap one", "score": 1.0}],
+                },
+                {
+                    "file_uuid": "u2",
+                    "file_id": 2,
+                    "title": "",
+                    "matches": [{"key_path": "bluf", "content": "roadmap two", "score": 1.0}],
+                },
+            ],
+        )
         calls: list[str] = []
         real_mask_summary_leaf = summary_search.mask_summary_leaf
 
@@ -351,96 +332,49 @@ class TestMasking:
             return real_mask_summary_leaf(text, cfg)
 
         monkeypatch.setattr(summary_search, "mask_summary_leaf", _spy)
+        cfg = _cfg(True, frozenset({"profanity"}))
 
-        _make_file(db_session, normal_user, summary={"bluf": "roadmap one"})
-        _make_file(db_session, normal_user, summary={"bluf": "roadmap two"})
-        _enable_redaction(db_session, normal_user, categories='["profanity"]')
-        cfg = resolve_effective_config(db_session, normal_user.id)
+        search_summaries(_DB, "roadmap", 1, organization_id=None, redaction_cfg=cfg)
 
-        search_summaries(
-            db_session, "roadmap", normal_user.id, organization_id=None, redaction_cfg=cfg
+        assert calls == ["roadmap one", "roadmap two"], (
+            "mask_summary_leaf must be called once per matched leaf, individually — "
+            "never with more than one leaf's text in a single call"
         )
 
-        assert len(calls) == 2, "mask_summary_leaf must be called once per matched leaf"
-
-    def test_a_detector_outage_on_a_returned_leaf_fails_closed(
-        self, db_session, normal_user, monkeypatch
-    ):
-        _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-        _enable_redaction(db_session, normal_user)
-        cfg = resolve_effective_config(db_session, normal_user.id)
+    def test_a_detector_outage_on_a_returned_leaf_fails_closed(self, monkeypatch):
+        _patch_plane(
+            monkeypatch,
+            hits=[
+                {
+                    "file_uuid": "u",
+                    "file_id": 1,
+                    "title": "",
+                    "matches": [{"key_path": "bluf", "content": "roadmap review", "score": 1.0}],
+                }
+            ],
+        )
 
         def _raise(*_args, **_kwargs):
             raise SummaryMaskingUnavailableError("pii detector unavailable")
 
         monkeypatch.setattr(summary_search, "mask_summary_leaf", _raise)
+        cfg = _cfg(True, frozenset({"pii"}))
 
         with pytest.raises(SummaryMaskingUnavailableError):
-            search_summaries(
-                db_session, "roadmap", normal_user.id, organization_id=None, redaction_cfg=cfg
-            )
+            search_summaries(_DB, "roadmap", 1, organization_id=None, redaction_cfg=cfg)
 
-
-# --------------------------------------------------------------------------- #
-# Quarantine (#818) — a pre-filter, so total/offset stay consistent            #
-# --------------------------------------------------------------------------- #
-
-
-class TestQuarantine:
-    def test_a_quarantined_summary_is_not_counted_or_returned(self, db_session, normal_user):
-        clean = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-        quarantined = _make_file(db_session, normal_user, summary={"bluf": "roadmap review too"})
-        quarantined.is_quarantined = True
-        db_session.commit()
-
-        result = search_summaries(db_session, "roadmap", normal_user.id, organization_id=None)
-
-        assert result.total == 1
-        assert [h.file_uuid for h in result.results] == [str(clean.uuid)]
-
-    def test_the_count_does_not_disclose_an_off_page_quarantined_hit(self, db_session, normal_user):
-        """THE oracle test. Before the pre-filter, page 1's count included the
-        quarantined hit even though it sorted onto page 2 — a taken-down file
-        disclosed through `total` alone.
-        """
-        # Created FIRST -> lower id -> sorts onto page 2 under `MediaFile.id.desc()`.
-        quarantined = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-        clean = _make_file(db_session, normal_user, summary={"bluf": "roadmap review too"})
-        quarantined.is_quarantined = True
-        db_session.commit()
-
-        page1 = search_summaries(
-            db_session, "roadmap", normal_user.id, organization_id=None, page=1, page_size=1
-        )
-        assert page1.total == 1, "the count disclosed a taken-down file's off-page hit"
-        assert len(page1.results) == 1
-        assert page1.results[0].file_uuid == str(clean.uuid)
-
-        page2 = search_summaries(
-            db_session, "roadmap", normal_user.id, organization_id=None, page=2, page_size=1
-        )
-        assert page2.results == []
-        assert page2.total == 1, "the count must stay consistent across pages"
-
-    def test_an_admin_still_sees_and_counts_it(self, db_session, normal_user):
-        clean = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-        quarantined = _make_file(db_session, normal_user, summary={"bluf": "roadmap review too"})
-        quarantined.is_quarantined = True
-        db_session.commit()
-
-        result = search_summaries(
-            db_session,
-            "roadmap",
-            normal_user.id,
-            organization_id=None,
-            include_quarantined=True,
+    def test_a_file_with_no_matches_is_never_examined_by_the_masker(self, monkeypatch):
+        """issue #822's narrowing, preserved: an empty ``matches`` list must
+        never reach the masker at all."""
+        _patch_plane(
+            monkeypatch, hits=[{"file_uuid": "u", "file_id": 1, "title": "", "matches": []}]
         )
 
-        assert result.total == 2
+        def _boom(*_a, **_k):
+            raise AssertionError("mask_summary_leaf must not run on a file with no matches")
 
-    def test_a_visible_summary_is_still_found(self, db_session, normal_user):
-        """CONTROL: an ordinary file must still be found and counted."""
-        media_file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-        result = search_summaries(db_session, "roadmap", normal_user.id, organization_id=None)
-        assert result.total == 1
-        assert result.results[0].file_uuid == str(media_file.uuid)
+        monkeypatch.setattr(summary_search, "mask_summary_leaf", _boom)
+        cfg = _cfg(True, frozenset({"pii"}))
+
+        result = search_summaries(_DB, "roadmap", 1, organization_id=None, redaction_cfg=cfg)
+        assert result.results[0].matches == []

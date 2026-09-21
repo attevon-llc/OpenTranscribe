@@ -1,7 +1,13 @@
 <script lang="ts">
-  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { createEventDispatcher, onDestroy, tick } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults } from '../../lib/api/llmSettings';
+  import {
+    LLMSettingsApi,
+    llmProviderDisplayName,
+    type UserLLMSettings,
+    type ProviderDefaults,
+    type LocalEndpointStatus
+  } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -86,6 +92,55 @@
   }> = [];
   let showAnthropicModelSelector = false;
 
+
+  // Local endpoint discovery (issue #644) — a fixed-allowlist reachability probe over
+  // this repo's own dev/test LLM overlay services, surfaced as one-click fill-ins.
+  let localEndpoints: LocalEndpointStatus[] = [];
+  // Defaults to `true` (no nag) until the first probe response actually says otherwise —
+  // a deployment that never enabled any of these overlays must not see a warning about a
+  // setting that is irrelevant to it.
+  let localEndpointsPrivateAllowed = true;
+  let loadingLocalEndpoints = false;
+
+  async function loadLocalEndpoints() {
+    loadingLocalEndpoints = true;
+    try {
+      const result = await LLMSettingsApi.getLocalEndpoints();
+      localEndpoints = result.endpoints;
+      localEndpointsPrivateAllowed = result.private_endpoints_allowed;
+    } catch {
+      // Best-effort discovery convenience, never a hard requirement of the form —
+      // fail silently and leave the section empty rather than toasting an error over
+      // a feature the user did not explicitly ask to run.
+      localEndpoints = [];
+    } finally {
+      loadingLocalEndpoints = false;
+    }
+  }
+
+  // Issue #644 — the "Use this" ordering trap. `formData.provider = X` reactively
+  // triggers `$: if (formData.provider) {...}` below, whose `providerChanged` branch
+  // OVERWRITES `formData.base_url`/`formData.model_name` from the provider catalog's
+  // defaults. That reactive block does not run synchronously with this assignment —
+  // Svelte batches it — so setting `base_url` immediately afterward in the same
+  // function would still get silently wiped out once the batched update finally runs.
+  // `await tick()` forces that reactive block to run and settle FIRST (which also
+  // syncs its internal `previousProvider` tracker to the new provider), so the
+  // base_url/model_name assignment below lands last and sticks.
+  async function useDiscoveredEndpoint(endpoint: LocalEndpointStatus) {
+    formData.provider = endpoint.provider;
+    formData = { ...formData };
+    await tick();
+    formData.base_url = endpoint.base_url;
+    if (endpoint.models.length > 0) {
+      formData.model_name = endpoint.models[0];
+    }
+    formData = { ...formData };
+  }
+
+  $: if (show) {
+    loadLocalEndpoints();
+  }
 
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
@@ -540,6 +595,74 @@
           </select>
         </div>
 
+        <!-- Local endpoint discovery (issue #644). Deliberately OUTSIDE the
+             {#if formData.provider} block below: "Use this" SETS the provider, so a
+             user who has not picked one yet is exactly who needs to see this first. -->
+        {#if loadingLocalEndpoints || localEndpoints.length > 0}
+          <div class="form-group discovery-panel">
+            <div class="discovery-header">
+              <span class="discovery-title">{$t('llm.discovery.title')}</span>
+              <button
+                type="button"
+                class="discovery-rescan-btn"
+                on:click={loadLocalEndpoints}
+                disabled={loadingLocalEndpoints}
+                title={$t('llm.discovery.rescanTooltip')}
+              >
+                {#if loadingLocalEndpoints}
+                  <Spinner size="small" />
+                {:else}
+                  {$t('llm.discovery.rescan')}
+                {/if}
+              </button>
+            </div>
+
+            {#if localEndpoints.length > 0}
+              <ul class="discovery-list">
+                {#each localEndpoints as endpoint (endpoint.id)}
+                  <li class="discovery-row" class:discovery-row-unreachable={!endpoint.reachable}>
+                    <span
+                      class="discovery-status-dot"
+                      class:discovery-status-dot-reachable={endpoint.reachable}
+                      aria-hidden="true"
+                    ></span>
+                    <div class="discovery-row-body">
+                      <div class="discovery-row-label">{endpoint.label}</div>
+                      {#if endpoint.reachable}
+                        <div class="discovery-row-detail">
+                          <code>{endpoint.base_url}</code>
+                          {#if endpoint.models.length > 0}
+                            <span class="discovery-row-models">{endpoint.models.join(', ')}</span>
+                          {/if}
+                        </div>
+                      {:else}
+                        <div class="discovery-row-detail discovery-row-detail-muted">
+                          {$t('llm.discovery.notRunning')}
+                          <code>{endpoint.start_command}</code>
+                        </div>
+                      {/if}
+                    </div>
+                    {#if endpoint.reachable}
+                      <button
+                        type="button"
+                        class="btn btn-secondary discovery-use-btn"
+                        on:click={() => useDiscoveredEndpoint(endpoint)}
+                        disabled={saving}
+                      >
+                        {$t('llm.discovery.useThis')}
+                      </button>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+
+              {#if !localEndpointsPrivateAllowed && localEndpoints.some((e) => e.reachable)}
+                <p class="discovery-warning">{$t('llm.discovery.privateEndpointsDisabledWarning')}</p>
+              {/if}
+            {/if}
+          </div>
+        {/if}
+
         {#if formData.provider}
           <!-- Bedrock: no base URL / API key to enter — credentials and region are a
                deployment-level setting (BEDROCK_REGION / AWS credential chain), not
@@ -991,6 +1114,128 @@
   .discover-models-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  /* Local endpoint discovery (issue #644) */
+  .discovery-panel {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--card-bg);
+    padding: 0.75rem 1rem;
+  }
+
+  .discovery-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  .discovery-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .discovery-rescan-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+  }
+
+  .discovery-rescan-btn:hover:not(:disabled) {
+    background: var(--hover-color);
+    border-color: var(--primary-color);
+  }
+
+  .discovery-rescan-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .discovery-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .discovery-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0;
+  }
+
+  .discovery-row-unreachable {
+    opacity: 0.7;
+  }
+
+  .discovery-status-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+
+  .discovery-status-dot-reachable {
+    background: var(--success-color);
+  }
+
+  .discovery-row-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .discovery-row-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .discovery-row-detail {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+    word-break: break-all;
+  }
+
+  .discovery-row-detail code {
+    font-size: 0.75rem;
+  }
+
+  .discovery-row-detail-muted {
+    font-style: italic;
+  }
+
+  .discovery-row-models {
+    color: var(--text-color);
+  }
+
+  .discovery-use-btn {
+    flex-shrink: 0;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .discovery-warning {
+    margin: 0.75rem 0 0;
+    font-size: 0.75rem;
+    color: var(--warning-color);
   }
 
   .api-key-header {

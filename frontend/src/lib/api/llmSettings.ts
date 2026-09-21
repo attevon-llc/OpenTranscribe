@@ -167,6 +167,34 @@ export interface LLMSettingsStatus {
   using_system_default: boolean;
 }
 
+/**
+ * One row of the fixed-allowlist local-endpoint discovery table (issue #644).
+ *
+ * `base_url` is always a container-network address (a compose service name), never a
+ * host-side `127.0.0.1:<port>` — see `LocalEndpointsResponse`'s note. `reachable` is a
+ * bare boolean by design: the server never reports why an endpoint is unreachable, so
+ * this can never become a network-probe UI.
+ */
+export interface LocalEndpointStatus {
+  id: string;
+  label: string;
+  base_url: string;
+  provider: LLMProvider;
+  reachable: boolean;
+  models: string[];
+  start_command: string;
+}
+
+export interface LocalEndpointsResponse {
+  endpoints: LocalEndpointStatus[];
+  /**
+   * Mirrors this deployment's OWN `LLM_ALLOW_PRIVATE_ENDPOINTS` setting — it says
+   * nothing about any specific target. A reachable local server is still refused at
+   * save/dial time until this is `true` and the backend has restarted.
+   */
+  private_endpoints_allowed: boolean;
+}
+
 const LLM_PROVIDER_DISPLAY_KEYS: Record<string, string> = {
   openai: 'llm.provider.openai',
   vllm: 'llm.provider.vllm',
@@ -208,6 +236,17 @@ export class LLMSettingsApi {
    */
   static async getStatus(): Promise<LLMSettingsStatus> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/status`);
+    return response.data;
+  }
+
+  /**
+   * Discover which of this deployment's own dev/test LLM overlay services
+   * (vLLM, Ollama, the mock LLM) are reachable right now. Takes no parameters —
+   * the set of things it can ever report on is a fixed table on the server
+   * (issue #644).
+   */
+  static async getLocalEndpoints(): Promise<LocalEndpointsResponse> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/local-endpoints`);
     return response.data;
   }
 

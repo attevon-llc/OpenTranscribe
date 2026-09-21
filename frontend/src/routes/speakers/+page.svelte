@@ -9,6 +9,7 @@
   import ProfilesTab from '$components/speakers/ProfilesTab.svelte';
   import InboxTab from '$components/speakers/InboxTab.svelte';
   import SpeakerPreviewPlayer from '$components/speakers/SpeakerPreviewPlayer.svelte';
+  import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
   import { audioPlaybackStore } from '$stores/audioPlaybackStore';
   import {
     listClusters,
@@ -857,6 +858,11 @@
     {/if}
   </div>
 
+  <!-- Issue #756: clustering quality + gender/attribute metrics are still evolving here;
+       suggestions are never auto-applied. A distinct surface from chat/search (#461) — see
+       RetrievalQualityNotice's header comment. -->
+  <RetrievalQualityNotice surface="speakers" />
+
   <div class="tabs">
     <button class="tab" class:active={activeTab === 'clusters'} on:click={() => switchTab('clusters')}>
       {$t('speakers.tabs.clusters')}
@@ -870,7 +876,12 @@
         <span class="badge">{profiles.length}</span>
       {/if}
     </button>
-    <button class="tab" class:active={activeTab === 'inbox'} on:click={() => switchTab('inbox')}>
+    <button
+      class="tab"
+      class:active={activeTab === 'inbox'}
+      on:click={() => switchTab('inbox')}
+      data-testid="speakers-tab-inbox"
+    >
       {$t('speakers.tabs.inbox')}
       {#if inboxTotal > 0}
         <span class="badge alert">{inboxTotal}</span>

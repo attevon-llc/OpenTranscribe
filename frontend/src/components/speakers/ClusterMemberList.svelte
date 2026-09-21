@@ -5,6 +5,7 @@
   import { analyzeClusterOutliers } from '$lib/api/speakerClusters';
   import { audioPlaybackStore } from '$stores/audioPlaybackStore';
   import { t } from '$stores/locale';
+  import GenderBadge from './GenderBadge.svelte';
 
   export let members: SpeakerClusterMember[];
   export let cluster: SpeakerCluster;
@@ -161,16 +162,11 @@
         <span class="member-name">{member.display_name || member.speaker_name}</span>
         <span class="member-file">{member.media_file_title || ''}</span>
         <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
-        {#if member.predicted_gender}
-          <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">
-            {#if member.predicted_gender === 'male'}
-              <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
-            {:else}
-              <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
-            {/if}
-            {#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>{'\u2713'}</span>{/if}
-          </span>
-        {/if}
+        <GenderBadge
+          gender={member.predicted_gender}
+          confidence={member.gender_confidence}
+          confirmed={member.gender_confirmed_by_user}
+        />
         {#if outlierMap.has(member.speaker_uuid)}
           {@const analysis = outlierMap.get(member.speaker_uuid)}
           {#if analysis}
@@ -214,16 +210,11 @@
       <span class="member-name">{member.display_name || member.speaker_name}</span>
       <span class="member-file">{member.media_file_title || ''}</span>
       <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
-      {#if member.predicted_gender}
-        <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">
-          {#if member.predicted_gender === 'male'}
-            <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
-          {:else}
-            <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
-          {/if}
-          {#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>{'\u2713'}</span>{/if}
-        </span>
-      {/if}
+      <GenderBadge
+        gender={member.predicted_gender}
+        confidence={member.gender_confidence}
+        confirmed={member.gender_confirmed_by_user}
+      />
       {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
     </div>
   {/each}
@@ -283,27 +274,9 @@
     color: var(--success-color, #059669);
   }
 
-  .gender-icon {
-    font-size: 12px;
-    color: var(--text-secondary, #6b7280);
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    line-height: 1;
-    vertical-align: middle;
-  }
-
-  .gender-svg {
-    width: 12px;
-    height: 12px;
-    flex-shrink: 0;
-  }
-
-  .gender-confirmed-tick {
-    font-size: 10px;
-    color: var(--success-color, #10b981);
-    margin-left: 1px;
-  }
+  /* .gender-icon / .gender-svg / .gender-confirmed-tick moved to GenderBadge.svelte
+     (issue #756) — Svelte scopes <style> per component, so markup rendered by a child
+     needs its styles to live there, not here. */
 
   .gender-outlier {
     background: color-mix(in srgb, var(--warning-color, #f59e0b) 8%, transparent);
@@ -494,10 +467,6 @@
     }
 
     .member-confidence {
-      font-size: 11px;
-    }
-
-    .gender-icon {
       font-size: 11px;
     }
 

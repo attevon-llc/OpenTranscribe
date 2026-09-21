@@ -9,30 +9,56 @@
   link is the point — it turns a disclaimer into an invitation to read the
   numbers.
 
-  Two surfaces, two different true statements, hence the `surface` prop:
+  Three surfaces, three different true statements, hence the `surface` prop:
 
-  - `chat`   — the reranker's only production call site is the chat retrieval
-               path (`services/chat/retrieval.py`), and it is on by default.
-  - `search` — `/search` is ranked by OpenSearch RRF fusion and never touches
-               the reranker. #461 §2 measured 24 fusion arms and adopted none,
-               and §3 showed the two eval corpora are anti-correlated. So the
-               ranking is measured-but-unimproved, which is worth saying; the
-               reranker claim would be false here.
+  - `chat`     — the reranker's only production call site is the chat retrieval
+                 path (`services/chat/retrieval.py`), and it is on by default.
+  - `search`   — `/search` is ranked by OpenSearch RRF fusion and never touches
+                 the reranker. #461 §2 measured 24 fusion arms and adopted none,
+                 and §3 showed the two eval corpora are anti-correlated. So the
+                 ranking is measured-but-unimproved, which is worth saying; the
+                 reranker claim would be false here.
+  - `speakers` — issue #756. Neither reranking nor RRF fusion runs on this
+                 page at all: clustering is voice-embedding similarity, and any
+                 LLM speaker-ID suggestion is surfaced for manual verification,
+                 never auto-applied. The copy must not borrow either of the
+                 other two surfaces' claims. Measurement issue: #524 (the
+                 speaker axis at corpus scale), not #461.
 
-  Blurring the two into one sentence would look fine on screen and be wrong, so
-  `RetrievalQualityNotice.test.ts` pins that they differ.
+  Blurring these into one sentence would look fine on screen and be wrong, so
+  `RetrievalQualityNotice.test.ts` pins that they differ. The copy/URL lookup
+  below is a per-surface MAP, not a ternary — a ternary silently renders the
+  `else` branch's (chat's) copy for any surface it was not written to handle,
+  which is exactly how #756 found this: adding `'speakers'` to the union alone
+  would have rendered the chat copy with a zero-test-failure regression.
 
   Nothing here says anything is broken: this is about accuracy of results, not
   stability.
 -->
+<script context="module" lang="ts">
+  export type RetrievalQualitySurface = 'chat' | 'search' | 'speakers';
+</script>
+
 <script lang="ts">
   import { t } from '$stores/locale';
 
-  /** Which surface this is rendered on — selects the copy and the dismissal key. */
-  export let surface: 'chat' | 'search' = 'chat';
+  /** Which surface this is rendered on — selects the copy, issue link, and dismissal key. */
+  export let surface: RetrievalQualitySurface = 'chat';
 
-  /** Where the measurements actually live. */
-  const ISSUE_URL = 'https://github.com/attevon-llc/OpenTranscribe/issues/461';
+  /** Where the measurements for each surface actually live. */
+  const ISSUE_URL_BY_SURFACE: Record<RetrievalQualitySurface, string> = {
+    chat: 'https://github.com/attevon-llc/OpenTranscribe/issues/461',
+    search: 'https://github.com/attevon-llc/OpenTranscribe/issues/461',
+    speakers: 'https://github.com/attevon-llc/OpenTranscribe/issues/524',
+  };
+  $: issueUrl = ISSUE_URL_BY_SURFACE[surface];
+
+  const MESSAGE_KEY_BY_SURFACE: Record<RetrievalQualitySurface, string> = {
+    chat: 'retrievalQuality.chatMessage',
+    search: 'retrievalQuality.searchMessage',
+    speakers: 'retrievalQuality.speakersMessage',
+  };
+  $: messageKey = MESSAGE_KEY_BY_SURFACE[surface];
 
   /**
    * Dismissal is per-surface: the two notices report different facts, so having
@@ -82,12 +108,10 @@
     </svg>
 
     <p class="notice-text">
-      {surface === 'search'
-        ? $t('retrievalQuality.searchMessage')
-        : $t('retrievalQuality.chatMessage')}
+      {$t(messageKey)}
       <a
         class="notice-link"
-        href={ISSUE_URL}
+        href={issueUrl}
         target="_blank"
         rel="noopener noreferrer"
         data-testid="retrieval-quality-link"

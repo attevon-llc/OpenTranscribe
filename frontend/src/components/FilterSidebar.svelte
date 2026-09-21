@@ -3,6 +3,7 @@
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import RangeSlider from 'svelte-range-slider-pips';
   import DateRangePicker from '$components/ui/DateRangePicker.svelte';
+  import FilterChipButton from '$components/ui/FilterChipButton.svelte';
   import axiosInstance from '../lib/axios';
   import { listTags } from '$lib/api/tags';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
@@ -537,6 +538,52 @@
     triggerFiltersDebounced();
   }
 
+  // Duration quick chips (#750 item 8). Wire format is seconds
+  // (routes/+page.svelte builds min_duration/max_duration from this same
+  // durationRange), so the four named buckets map to fixed second ranges.
+  // `max: null` means "no upper bound" — the same null-at-bounds convention
+  // the slider already uses, so a chip click and a slider drag never disagree.
+  const DURATION_CHIPS: { code: string; min: number; max: number | null }[] = [
+    { code: 'duration1to10', min: 60, max: 600 },
+    { code: 'duration11to30', min: 660, max: 1800 },
+    { code: 'duration31to60', min: 1860, max: 3600 },
+    { code: 'duration60plus', min: 3600, max: null },
+  ];
+
+  /** Clamp a chip's nominal range into the library's real bounds. */
+  function chipRange(chip: { min: number; max: number | null }): [number, number] {
+    const min = Math.max(chip.min, durationBounds.min);
+    const max = chip.max === null ? durationBounds.max : Math.min(chip.max, durationBounds.max);
+    return [min, max];
+  }
+
+  // A chip that provably matches nothing in this library is the same class of
+  // defect #744 fixed — only render chips whose nominal range overlaps the
+  // real bounds.
+  $: visibleDurationChips = DURATION_CHIPS.filter(
+    (chip) => chip.min <= durationBounds.max && (chip.max === null || chip.max >= durationBounds.min)
+  );
+
+  function isDurationChipActive(chip: { min: number; max: number | null }): boolean {
+    const [min, max] = chipRange(chip);
+    const isAtMin = min <= durationBounds.min;
+    const isAtMax = max >= durationBounds.max;
+    const effMin = isAtMin ? null : min;
+    const effMax = isAtMax ? null : max;
+    return durationRange.min === effMin && durationRange.max === effMax;
+  }
+
+  function selectDurationChip(chip: { min: number; max: number | null }) {
+    const [min, max] = chipRange(chip);
+    durationSliderValues = [min, max];
+    const isAtMin = min <= durationBounds.min;
+    const isAtMax = max >= durationBounds.max;
+    durationRange = { min: isAtMin ? null : min, max: isAtMax ? null : max };
+    // Discrete choice, like the other quick-select facets — not the free-drag
+    // debounce the slider itself uses.
+    triggerFiltersImmediate();
+  }
+
   function handleFileSizeSliderChange(e: CustomEvent<{ values: number[] }>) {
     const [min, max] = e.detail.values;
     const isAtMin = min <= fileSizeBounds.min;
@@ -719,56 +766,45 @@
     </div>
   {/if}
 
-  <div class="filter-section">
-    <h3>{$t('filter.tags')}</h3>
-    {#if loadingTags}
-      <p class="loading-text">{$t('filter.loadingTags')}</p>
-    {:else if errorTags}
-      <EmptyState
-        icon="⚠️"
-        title={$t('filter.tagsLoadFailed')}
-        description={$t('filter.facetLoadFailedHelp')}
-        padding="12px 0"
-      >
-        <button class="retry-button" data-testid="tags-retry" on:click={fetchTags}
-          >{$t('filter.retry')}</button>
-      </EmptyState>
-    {:else if allTags.length === 0}
-      <p class="empty-text">{$t('filter.noTagsCreated')}</p>
-    {:else}
-      <div class="tags-list">
-        {#each allTags.slice(0, 6) as tag}
-          <button
-            class="tag-button {selectedTags.includes(tag.name) ? 'selected' : ''}"
-            on:click={() => toggleTag(tag.name)}
-            title={$t('filter.tagTooltip', { tag: tag.name, count: tag.usage_count ? $t('filter.tagUsedInFiles', { count: tag.usage_count }) : '' })}
-          >
-            {tag.name}
-            {#if tag.usage_count}
-              <span class="tag-count">{tag.usage_count}</span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-      {#if allTags.length > 0}
-        <div class="dropdown-section">
-          <SearchableMultiSelect
-            options={dropdownTags}
-            selectedIds={selectedTagIds}
-            placeholder={$t('filter.selectTagsPlaceholder')}
-            maxHeight="300px"
-            showCounts={true}
-            on:select={handleTagSelect}
-            on:deselect={handleTagDeselect}
-          />
-        </div>
-      {/if}
-    {/if}
-  </div>
+  <!-- Section order (#750 item 5, J11): sections that have a matching list-view
+       column, in that column's order (Type, Speakers, Duration, Date, Size,
+       Status), then the sections with no column at all (Tags, Collections,
+       Language), then Ownership last. This is a judgment call, not a
+       derivation — the list view has no Tags/Collections/Language/Ownership
+       column, so "matches the column order" only constrains part of the list.
+       Flagging as reviewable rather than settled; take it from the designer's
+       mockup if one exists. -->
 
+  <!-- File Type -->
   <div class="filter-section">
-    <h3>{$t('filter.collections')}</h3>
-    <CollectionsFilter bind:selectedCollectionId={selectedCollectionId} bind:this={collectionsFilterRef} />
+    <h3>{$t('filter.fileType')}</h3>
+    <div class="file-type-list">
+      {#each availableFileTypes as fileType}
+        <FilterChipButton
+          class="file-type-button"
+          selected={selectedFileTypes.includes(fileType)}
+          on:click={() => toggleFileType(fileType)}
+          title={$t('filter.fileTypeTooltip', { type: fileType })}
+        >
+          <svelte:fragment slot="icon">
+            {#if fileType === 'video'}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+              </svg>
+            {:else if fileType === 'audio'}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            {/if}
+          </svelte:fragment>
+          {fileType === 'audio' ? $t('common.audio') : $t('common.video')}
+        </FilterChipButton>
+      {/each}
+    </div>
   </div>
 
   <div class="filter-section">
@@ -806,16 +842,15 @@
       {:else}
         <div class="speakers-list">
           {#each namedSpeakers.slice(0, 4) as speaker}
-            <button
-              class="speaker-button {selectedSpeakers.includes(speakerLabel(speaker)) ? 'selected' : ''}"
+            <FilterChipButton
+              class="speaker-button"
+              selected={selectedSpeakers.includes(speakerLabel(speaker))}
+              count={speaker.media_count || null}
               on:click={() => toggleSpeaker(speakerLabel(speaker))}
               title={$t('filter.speakerTooltip', { speaker: translateSpeakerLabel(speakerLabel(speaker)), count: speaker.media_count ? $t('filter.speakerAppearsInFiles', { count: speaker.media_count }) : '' })}
             >
               {translateSpeakerLabel(speakerLabel(speaker))}
-              {#if speaker.media_count}
-                <span class="speaker-count">{speaker.media_count}</span>
-              {/if}
-            </button>
+            </FilterChipButton>
           {/each}
         </div>
         <div class="dropdown-section">
@@ -840,15 +875,15 @@
       <!-- Unlabeled speakers: ONE facet, never a list of pseudo-people (#743). -->
       {#if unlabeledSpeakers.length > 0}
         <div class="speakers-list">
-          <button
-            class="speaker-button {unlabeledSelected ? 'selected' : ''}"
+          <FilterChipButton
+            class="speaker-button"
+            selected={unlabeledSelected}
             data-testid="unlabeled-speakers-facet"
-            aria-pressed={unlabeledSelected}
             on:click={toggleUnlabeledSpeakers}
             title={$t('filter.unlabeledSpeakersTooltip')}
           >
             {$t('filter.unlabeledSpeakers')}
-          </button>
+          </FilterChipButton>
         </div>
         <small class="input-help">{$t('filter.unlabeledSpeakersHelp')}</small>
       {/if}
@@ -859,6 +894,64 @@
       {/if}
     {/if}
   </div>
+
+  <!-- Duration range + quick chips.
+       Gated on `metadataLoaded` (#744): a range control whose bounds are the
+       hardcoded seed rather than the library's real min/max emits a filter
+       every file satisfies, which reads as "the slider does nothing". The
+       quick chips (#750 item 8) share the exact same null-at-bounds
+       conversion as the slider so the two controls never disagree about what
+       is filtered. -->
+  {#if errorMetadata}
+    <div class="filter-section">
+      <h3>{$t('filter.duration')}</h3>
+      <EmptyState
+        icon="⚠️"
+        title={$t('filter.rangesLoadFailed')}
+        description={$t('filter.rangesLoadFailedHelp')}
+        padding="12px 0"
+      >
+        <button class="retry-button" data-testid="metadata-retry" on:click={fetchMediaMetadata}
+          >{$t('filter.retry')}</button>
+      </EmptyState>
+    </div>
+  {:else if !metadataLoaded}
+    <div class="filter-section">
+      <h3>{$t('filter.duration')}</h3>
+      <p class="loading-text">{$t('filter.loadingRanges')}</p>
+    </div>
+  {:else}
+    <div class="filter-section">
+      <h3>{$t('filter.duration')}</h3>
+      {#if visibleDurationChips.length > 0}
+        <div class="duration-chip-list">
+          {#each visibleDurationChips as chip (chip.code)}
+            <FilterChipButton
+              selected={isDurationChipActive(chip)}
+              on:click={() => selectDurationChip(chip)}
+            >
+              {$t(`filter.${chip.code}`)}
+            </FilterChipButton>
+          {/each}
+        </div>
+      {/if}
+      <div class="slider-labels">
+        <span>{formatClock(durationSliderValues[0])}</span>
+        <span>{formatClock(durationSliderValues[1])}</span>
+      </div>
+      <div class="slider-wrapper">
+        <RangeSlider
+          bind:values={durationSliderValues}
+          min={durationBounds.min}
+          max={durationBounds.max}
+          step={durationBounds.max > 7200 ? 60 : durationBounds.max > 600 ? 30 : 10}
+          range
+          pushy
+          on:change={handleDurationSliderChange}
+        />
+      </div>
+    </div>
+  {/if}
 
   <div class="filter-section">
     <div class="section-header-row">
@@ -883,85 +976,26 @@
     />
   </div>
 
-  <!-- File Type -->
-  <div class="filter-section">
-    <h3>{$t('filter.fileType')}</h3>
-    <div class="file-type-list">
-      {#each availableFileTypes as fileType}
-        <button
-          class="file-type-button {selectedFileTypes.includes(fileType) ? 'selected' : ''}"
-          on:click={() => toggleFileType(fileType)}
-          title={$t('filter.fileTypeTooltip', { type: fileType })}
-        >
-          {fileType === 'audio' ? $t('common.audio') : $t('common.video')}
-        </button>
-      {/each}
-    </div>
-  </div>
-
-  <!-- Transcript language (#453). Rendered only when the library actually holds more
-       than one, so a single-language user never sees a filter that can do nothing. -->
-  {#if availableLanguages.length > 1}
-    <div class="filter-section">
-      <h3>{$t('filter.language')}</h3>
-      <div class="file-type-list">
-        {#each availableLanguages as lang}
-          <button
-            class="file-type-button {selectedLanguage === lang ? 'selected' : ''}"
-            on:click={() => (selectedLanguage = selectedLanguage === lang ? null : lang)}
-            title={$t('filter.languageTooltip', { language: lang })}
-          >
-            {lang.toUpperCase()}
-          </button>
-        {/each}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Duration + File Size ranges.
-       Both are gated on `metadataLoaded` (#744): a range control whose bounds
-       are the hardcoded seed rather than the library's real min/max emits a
-       filter every file satisfies, which reads as "the slider does nothing". -->
+  <!-- File Size range — same gate as Duration, above. -->
   {#if errorMetadata}
     <div class="filter-section">
-      <h3>{$t('filter.duration')}</h3>
+      <h3>{$t('filter.fileSize')}</h3>
       <EmptyState
         icon="⚠️"
         title={$t('filter.rangesLoadFailed')}
         description={$t('filter.rangesLoadFailedHelp')}
         padding="12px 0"
       >
-        <button class="retry-button" data-testid="metadata-retry" on:click={fetchMediaMetadata}
+        <button class="retry-button" data-testid="filesize-metadata-retry" on:click={fetchMediaMetadata}
           >{$t('filter.retry')}</button>
       </EmptyState>
     </div>
   {:else if !metadataLoaded}
     <div class="filter-section">
-      <h3>{$t('filter.duration')}</h3>
+      <h3>{$t('filter.fileSize')}</h3>
       <p class="loading-text">{$t('filter.loadingRanges')}</p>
     </div>
   {:else}
-    <!-- Duration Range -->
-    <div class="filter-section">
-      <h3>{$t('filter.duration')}</h3>
-      <div class="slider-labels">
-        <span>{formatClock(durationSliderValues[0])}</span>
-        <span>{formatClock(durationSliderValues[1])}</span>
-      </div>
-      <div class="slider-wrapper">
-        <RangeSlider
-          bind:values={durationSliderValues}
-          min={durationBounds.min}
-          max={durationBounds.max}
-          step={durationBounds.max > 7200 ? 60 : durationBounds.max > 600 ? 30 : 10}
-          range
-          pushy
-          on:change={handleDurationSliderChange}
-        />
-      </div>
-    </div>
-
-    <!-- File Size Range -->
     <div class="filter-section">
       <h3>{$t('filter.fileSize')}</h3>
       <div class="slider-labels">
@@ -987,41 +1021,113 @@
     <h3>{$t('filter.processingStatus')}</h3>
     <div class="status-list">
       {#each availableStatuses as status}
-        <button
-          class="status-button {selectedStatuses.includes(status) ? 'selected' : ''}"
+        <FilterChipButton
+          class="status-button"
+          selected={selectedStatuses.includes(status)}
           on:click={() => toggleStatus(status)}
           title={$t('filter.statusTooltip', { status })}
         >
           {status === 'pending' ? $t('common.pending') : status === 'processing' ? $t('common.processing') : status === 'completed' ? $t('common.completed') : status === 'error' ? $t('common.error') : status.charAt(0).toUpperCase() + status.slice(1)}
-        </button>
+        </FilterChipButton>
       {/each}
     </div>
   </div>
 
   <div class="filter-section">
+    <h3>{$t('filter.tags')}</h3>
+    {#if loadingTags}
+      <p class="loading-text">{$t('filter.loadingTags')}</p>
+    {:else if errorTags}
+      <EmptyState
+        icon="⚠️"
+        title={$t('filter.tagsLoadFailed')}
+        description={$t('filter.facetLoadFailedHelp')}
+        padding="12px 0"
+      >
+        <button class="retry-button" data-testid="tags-retry" on:click={fetchTags}
+          >{$t('filter.retry')}</button>
+      </EmptyState>
+    {:else if allTags.length === 0}
+      <p class="empty-text">{$t('filter.noTagsCreated')}</p>
+    {:else}
+      <div class="tags-list">
+        {#each allTags.slice(0, 6) as tag}
+          <FilterChipButton
+            class="tag-button"
+            selected={selectedTags.includes(tag.name)}
+            count={tag.usage_count || null}
+            on:click={() => toggleTag(tag.name)}
+            title={$t('filter.tagTooltip', { tag: tag.name, count: tag.usage_count ? $t('filter.tagUsedInFiles', { count: tag.usage_count }) : '' })}
+          >
+            {tag.name}
+          </FilterChipButton>
+        {/each}
+      </div>
+      {#if allTags.length > 0}
+        <div class="dropdown-section">
+          <SearchableMultiSelect
+            options={dropdownTags}
+            selectedIds={selectedTagIds}
+            placeholder={$t('filter.selectTagsPlaceholder')}
+            maxHeight="300px"
+            showCounts={true}
+            on:select={handleTagSelect}
+            on:deselect={handleTagDeselect}
+          />
+        </div>
+      {/if}
+    {/if}
+  </div>
+
+  <div class="filter-section">
+    <h3>{$t('filter.collections')}</h3>
+    <CollectionsFilter bind:selectedCollectionId={selectedCollectionId} bind:this={collectionsFilterRef} />
+  </div>
+
+  <!-- Transcript language (#453). Rendered only when the library actually holds more
+       than one, so a single-language user never sees a filter that can do nothing. -->
+  {#if availableLanguages.length > 1}
+    <div class="filter-section">
+      <h3>{$t('filter.language')}</h3>
+      <div class="file-type-list">
+        {#each availableLanguages as lang}
+          <FilterChipButton
+            class="file-type-button"
+            selected={selectedLanguage === lang}
+            on:click={() => (selectedLanguage = selectedLanguage === lang ? null : lang)}
+            title={$t('filter.languageTooltip', { language: lang })}
+          >
+            {lang.toUpperCase()}
+          </FilterChipButton>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  <div class="filter-section">
     <h3>{$t('filter.ownership')}</h3>
     <div class="ownership-list">
-      <button
+      <FilterChipButton
         class="ownership-button"
-        class:selected={ownershipFilter === 'all'}
+        selected={ownershipFilter === 'all'}
         on:click={() => setOwnershipFilter('all')}
       >
         {$t('filter.allFiles')}
-      </button>
-      <button
+      </FilterChipButton>
+      <FilterChipButton
         class="ownership-button"
-        class:selected={ownershipFilter === 'mine'}
+        selected={ownershipFilter === 'mine'}
         on:click={() => setOwnershipFilter('mine')}
       >
         {$t('filter.myFiles')}
-      </button>
-      <button
+      </FilterChipButton>
+      <FilterChipButton
         class="ownership-button"
-        class:selected={ownershipFilter === 'shared'}
+        selected={ownershipFilter === 'shared'}
         on:click={() => setOwnershipFilter('shared')}
       >
         {$t('filter.sharedWithMe')}
-      </button>
+      </FilterChipButton>
     </div>
   </div>
 </div>
@@ -1034,7 +1140,10 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    /* #750 items 3+4: more breathing room between sections, and a thinner,
+       fully-opaque divider reads as more structure than the old thick faded
+       one at less distance. */
+    gap: 1.5rem;
   }
 
   .filter-header {
@@ -1091,17 +1200,17 @@
   .filter-section:not(:first-child)::before {
     content: '';
     position: absolute;
-    top: -0.5rem;
-    left: 5%;
-    right: 5%;
-    height: 2px;
+    top: -0.75rem;
+    left: 0;
+    right: 0;
+    height: 1px;
     background: var(--border-color);
-    opacity: 0.5;
+    opacity: 1;
   }
 
   .filter-section h3 {
     font-size: 0.6875rem;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-secondary);
@@ -1247,108 +1356,24 @@
     border-color: var(--primary-color);
   }
 
-  /* Tag and Speaker button styles */
+  /* Chip rows. Per-chip visual styling (background, border, selected state)
+     now lives entirely in `ui/FilterChipButton.svelte` (#750) — these five
+     lists used to each carry their own copy of the same button CSS. */
   .tags-list,
-  .speakers-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-
-  .tag-button,
-  .speaker-button {
-    background-color: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
-    font-size: 0.8rem;
-    font-weight: 400;
-    padding: 0.35rem 0.7rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-  }
-
-  .tag-button:hover,
-  .speaker-button:hover {
-    background-color: var(--hover-color);
-    border-color: var(--primary-color-light);
-  }
-
-  .tag-button.selected,
-  .speaker-button.selected {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-  }
-
-  /* File Type and Status button styles */
+  .speakers-list,
   .file-type-list,
-  .status-list {
+  .status-list,
+  .ownership-list,
+  .duration-chip-list {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 0.5rem;
   }
 
-  .file-type-button,
-  .status-button {
-    background-color: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
-    font-size: 0.8rem;
-    font-weight: 400;
-    padding: 0.35rem 0.7rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-  }
-
-  .file-type-button:hover,
-  .status-button:hover {
-    background-color: var(--hover-color);
-    border-color: var(--primary-color-light);
-  }
-
-  .file-type-button.selected,
-  .status-button.selected {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-  }
-
-  /* Ownership filter styles */
-  .ownership-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-
-  .ownership-button {
-    background-color: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
-    font-size: 0.8rem;
-    font-weight: 400;
-    padding: 0.35rem 0.7rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-  }
-
-  .ownership-button:hover {
-    background-color: var(--hover-color);
-    border-color: var(--primary-color-light);
-  }
-
-  .ownership-button.selected {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
+  .duration-chip-list {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
   }
 
   /* Input help text */

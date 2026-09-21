@@ -46,19 +46,35 @@
 
 <!-- Left Sidebar: Filters (Sticky) -->
 <div class="filter-sidebar {showFilters ? 'show' : ''}">
-  <!-- Filters Toggle Button (always visible) -->
+  <!-- Filters Toggle Button (always visible). A compact rotating chevron —
+       see issue #750 item 1: the old control was a 40px full-width button
+       carrying a sliders icon and no text, a leftover from a label that no
+       longer exists. The mobile sliders-icon toggle lives separately in
+       `GalleryHeader.svelte` and is unaffected. One glyph, one `transform:
+       rotate()`, which is RTL-correct for free (a rotation has no
+       handedness). -->
   <div class="filter-toggle-container">
     <button
       class="filter-toggle-btn {showFilters ? 'expanded' : 'collapsed'}"
       on:click={toggleFilters}
+      aria-expanded={showFilters}
       title={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
+      aria-label={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
     >
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
-        <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
-        <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
-        <line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line>
-        <line x1="17" y1="16" x2="23" y2="16"></line>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="toggle-chevron"
+        class:rotated={showFilters}
+      >
+        <polyline points="9 18 15 12 9 6"></polyline>
       </svg>
     </button>
   </div>
@@ -118,23 +134,21 @@
     padding: 0.5rem 1rem 0;
   }
 
+  /* Compact square control, not the old 40px full-width button (#750 item 1). */
   .filter-toggle-btn {
-    width: 100%;
+    width: 32px;
+    height: 32px;
     background-color: var(--bg-primary);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 0.6rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
+    padding: 0;
     cursor: pointer;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: center;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    height: 40px;
-    white-space: nowrap;
   }
 
   .filter-toggle-btn:hover {
@@ -143,19 +157,23 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }
 
-  .filter-toggle-btn:active {
-    transform: scale(0.98);
+  .filter-toggle-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
   }
 
-  .filter-toggle-btn svg {
+  .filter-toggle-btn:active {
+    transform: scale(0.94);
+  }
+
+  .toggle-chevron {
     flex-shrink: 0;
     opacity: 0.8;
+    transition: transform 0.2s ease;
   }
 
-  .filter-toggle-btn.collapsed {
-    justify-content: center;
-    padding: 0.6rem;
-    width: auto;
+  .toggle-chevron.rotated {
+    transform: rotate(180deg);
   }
 
   .filter-content {

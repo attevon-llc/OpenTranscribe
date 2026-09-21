@@ -345,6 +345,105 @@ describe('FilterSidebar — duration slider bounds (#744)', () => {
   });
 });
 
+/**
+ * Issue #750 item 8 — duration quick chips. They must share the slider's
+ * exact null-at-bounds conversion (so a chip click and a slider drag never
+ * disagree about what's filtered — trap 1 in the plan), and a chip that
+ * provably cannot match anything in this library must not render at all
+ * (the same class of defect #744 fixed for the sliders themselves).
+ */
+describe('FilterSidebar — duration quick chips (#750)', () => {
+  it('only renders chips that can match something in this library', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      // A 100-second library: only the "1-10 min" chip (60-600s) overlaps.
+      if (url === '/files/metadata-filters') {
+        return Promise.resolve({
+          data: { duration: { min: 0, max: 100 }, file_size: { min: 0, max: 100 }, languages: [] },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const { container } = render(FilterSidebarTestHost);
+    await waitFor(() =>
+      expect(container.querySelectorAll('.duration-chip-list button').length).toBeGreaterThan(0)
+    );
+
+    const chips = Array.from(
+      container.querySelectorAll('.duration-chip-list button')
+    ) as HTMLElement[];
+    expect(chips).toHaveLength(1);
+    expect(chips[0].textContent).toContain('filter.duration1to10');
+  });
+
+  it('clicking a chip dispatches the same null-at-bounds range the slider would', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      // Wide bounds so every chip renders and none of them sit at a bound.
+      if (url === '/files/metadata-filters') {
+        return Promise.resolve({
+          data: { duration: { min: 0, max: 4000 }, file_size: { min: 0, max: 100 }, languages: [] },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const events: Array<{ durationRange: { min: number | null; max: number | null } }> = [];
+    const { container } = render(FilterSidebarTestHost, {
+      props: {
+        onFilter: (detail: unknown) =>
+          events.push(detail as { durationRange: { min: number | null; max: number | null } }),
+      },
+    });
+    await waitFor(() =>
+      expect(container.querySelectorAll('.duration-chip-list button').length).toBe(4)
+    );
+
+    const chips = Array.from(
+      container.querySelectorAll('.duration-chip-list button')
+    ) as HTMLElement[];
+    // "11-30 min" -> [660, 1800] seconds, neither end at the 0-4000 bounds.
+    await fireEvent.click(chips[1]);
+
+    const last = events[events.length - 1];
+    expect(last.durationRange).toEqual({ min: 660, max: 1800 });
+  });
+
+  it('a chip touching the library max collapses that end to null, like the slider', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      // Library maxes out at 1800s — the "11-30 min" chip's upper end (1800)
+      // sits exactly on the bound, so the effective max must be null.
+      if (url === '/files/metadata-filters') {
+        return Promise.resolve({
+          data: { duration: { min: 0, max: 1800 }, file_size: { min: 0, max: 100 }, languages: [] },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const events: Array<{ durationRange: { min: number | null; max: number | null } }> = [];
+    const { container } = render(FilterSidebarTestHost, {
+      props: {
+        onFilter: (detail: unknown) =>
+          events.push(detail as { durationRange: { min: number | null; max: number | null } }),
+      },
+    });
+    await waitFor(() =>
+      expect(container.querySelectorAll('.duration-chip-list button').length).toBe(2)
+    );
+
+    const chips = Array.from(
+      container.querySelectorAll('.duration-chip-list button')
+    ) as HTMLElement[];
+    await fireEvent.click(chips[1]); // "11-30 min"
+
+    const last = events[events.length - 1];
+    expect(last.durationRange).toEqual({ min: 660, max: null });
+  });
+});
+
 describe('FilterSidebar — facet selection', () => {
   it('selecting two tag facets includes both in the dispatched filter event', async () => {
     const events: unknown[] = [];

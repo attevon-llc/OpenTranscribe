@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DatePicker } from '@svelte-plugins/datepicker';
-  import { format } from 'date-fns';
+  import { format, parseISO, isValid } from 'date-fns';
   import { createEventDispatcher, tick } from 'svelte';
   import { t } from '$stores/locale';
 
@@ -34,6 +34,44 @@
   let wrapper: HTMLDivElement;
   let dpStartDate: Date | string | null = from;
   let dpEndDate: Date | string | null = to;
+
+  // Keyboard-enterable dates (#750 item 6) — the trigger button below only
+  // *opens a calendar*, with no text-entry path at all. Two `type="date"`
+  // fields give free locale-aware parsing, a native keyboard path, and mobile
+  // pickers, with an unambiguous `yyyy-mm-dd` wire format. Shared with
+  // `fileStatus/TaskFilterPanel.svelte` (same component, both get the fields).
+  let instanceId = `date-range-${Math.random().toString(36).slice(2, 9)}`;
+
+  const dateToInputValue = (d: Date | null): string => (d && isValid(d) ? format(d, 'yyyy-MM-dd') : '');
+  $: fromInputValue = dateToInputValue(from);
+  $: toInputValue = dateToInputValue(to);
+
+  // `enableFutureDates=false` must mean the same thing to the typed field as
+  // it does to the calendar plugin, or the two controls disagree about what's
+  // selectable.
+  $: maxAttr = enableFutureDates ? undefined : format(new Date(), 'yyyy-MM-dd');
+
+  function parseTypedDate(value: string): Date | null {
+    if (!value) return null;
+    const parsed = parseISO(value);
+    return isValid(parsed) ? parsed : null;
+  }
+
+  /** Typed input must write BOTH the props and the plugin's own start/end
+   * state, or the calendar renders a different range than the text field. */
+  function handleFromTyped(event: Event) {
+    const parsed = parseTypedDate((event.target as HTMLInputElement).value);
+    from = parsed;
+    dpStartDate = parsed;
+    dispatch('change', { from, to });
+  }
+
+  function handleToTyped(event: Event) {
+    const parsed = parseTypedDate((event.target as HTMLInputElement).value);
+    to = parsed;
+    dpEndDate = parsed;
+    dispatch('change', { from, to });
+  }
 
   // Keep the plugin's internal state in step when a parent resets the range
   // (the sidebar's "clear" button does exactly that).
@@ -75,6 +113,33 @@
 </script>
 
 <div class="datepicker-wrapper" class:closing bind:this={wrapper}>
+  <div class="typed-date-fields">
+    <div class="typed-date-field">
+      <label for="{instanceId}-from">{$t('common.from')}</label>
+      <input
+        id="{instanceId}-from"
+        type="date"
+        class="typed-date-input"
+        value={fromInputValue}
+        max={toInputValue || maxAttr}
+        title={$t('filter.fromDateTooltip')}
+        on:change={handleFromTyped}
+      />
+    </div>
+    <div class="typed-date-field">
+      <label for="{instanceId}-to">{$t('common.to')}</label>
+      <input
+        id="{instanceId}-to"
+        type="date"
+        class="typed-date-input"
+        value={toInputValue}
+        min={fromInputValue || undefined}
+        max={maxAttr}
+        title={$t('filter.toDateTooltip')}
+        on:change={handleToTyped}
+      />
+    </div>
+  </div>
   <DatePicker
     isRange
     {enableFutureDates}
@@ -109,6 +174,47 @@
   /* Date picker wrapper */
   .datepicker-wrapper {
     position: relative;
+  }
+
+  .typed-date-fields {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .typed-date-field {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+
+  .typed-date-field label {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+  }
+
+  .typed-date-input {
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    font-size: 0.75rem;
+    box-sizing: border-box;
+  }
+
+  .typed-date-input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+
+  /* Chromium/WebKit's native calendar-picker-indicator ignores `color`, so it
+     stays a near-invisible dark glyph on a dark background otherwise. */
+  :global([data-theme='dark']) .typed-date-input::-webkit-calendar-picker-indicator {
+    filter: invert(1);
   }
 
   .date-trigger-btn {

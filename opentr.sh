@@ -1628,6 +1628,77 @@ preflight_ports_or_die() {
   exit 1
 }
 
+# `docker compose up -d --wait` has a known race (moby/compose): a container
+# stuck in a restart loop can be observed "Running" at the instant --wait
+# polls, satisfying the wait condition and returning exit 0 even though the
+# container never actually came up. Observed live (issue #962): `up --wait`
+# reported success while `otfresh-*-postgres` sat in `Restarting (1)`, having
+# never initialized, and on a separate run while the frontend container was
+# crash-looping on EMFILE. Both times the caller (a human, or an automation
+# wrapper like run-dev-tests.sh/test-matrix.sh) had no signal that the stack
+# it just "started" was unusable.
+#
+# This is a SECOND, independent check: after `up` returns — regardless of ITS
+# exit code — re-inspect what actually exists on disk.
+#
+# "Core service" = any container the exact invocation's compose project
+# controls (every ID `docker compose $COMPOSE_FILES ps -a -q` returns, i.e.
+# the full resolved overlay chain for this start). Nothing outside that chain
+# is ever inspected, so an unrelated container sharing this Docker host (e.g.
+# GPU 0's tritonserver) is never touched or even looked at.
+#
+# A service still reporting `health: starting` is NOT a failure: Docker's own
+# healthcheck state machine already refuses to flip a container to
+# "unhealthy" before ITS OWN declared `start_period` elapses (the backend's
+# 600s, Keycloak's 120s, ...) — duplicating that budget with a second, global
+# timeout here is exactly the mistake that once marked a healthy Keycloak
+# unhealthy at 3.5 minutes and aborted a full gate run before a single test
+# ran. This function only ever fails on a status Docker itself has already
+# decided is bad: `restarting`, `exited`, `dead`, or `unhealthy`. A service
+# with no healthcheck at all is judged on container status alone, per the
+# same reasoning.
+verify_stack_health() {
+  local compose_files="$1"
+  local -a broken=()
+  local cid name status health
+
+  # shellcheck disable=SC2086
+  for cid in $(docker compose $compose_files ps -a -q 2>/dev/null); do
+    [ -n "$cid" ] || continue
+    name="$(docker inspect --format '{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##')"
+    [ -n "$name" ] || name="$cid"
+    status="$(docker inspect --format '{{.State.Status}}' "$cid" 2>/dev/null)"
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null)"
+
+    case "$status" in
+      restarting|exited|dead)
+        echo "❌ ${name}: container state is '${status}', not running."
+        broken+=("$name")
+        continue
+        ;;
+    esac
+    if [ "$health" = "unhealthy" ]; then
+      echo "❌ ${name}: reports unhealthy."
+      broken+=("$name")
+    fi
+  done
+
+  [ ${#broken[@]} -eq 0 ] && return 0
+
+  echo ""
+  echo "❌ ./opentr.sh start: 'docker compose up --wait' reported success, but"
+  echo "   ${#broken[@]} core service(s) are not actually up: ${broken[*]}"
+  echo "   (known --wait race — a crash-looping container can be observed"
+  echo "   'Running' at poll time; see issue #962)"
+  echo ""
+  for name in "${broken[@]}"; do
+    echo "📋 Last 30 log lines — ${name}:"
+    docker logs --tail=30 "$name" 2>&1 | sed 's/^/     /'
+    echo ""
+  done
+  return 1
+}
+
 # Compute the resolved live data paths (NAS overlay active or not) and print
 # them. Shared by the `data-paths` subcommand and the guardrail marker writer.
 # Sets globals: DP_NAS_ACTIVE, DP_NAS_PATH, DP_PG_PATH, DP_OS_PATH.
@@ -2938,6 +3009,12 @@ start_app() {
     echo "📋 Recent logs:"
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES logs --tail=50
+    exit 1
+  fi
+
+  # `up --wait` returning 0 is not proof by itself — see verify_stack_health's
+  # header comment for the race this closes (issue #962).
+  if ! verify_stack_health "$COMPOSE_FILES"; then
     exit 1
   fi
 

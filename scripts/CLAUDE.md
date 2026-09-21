@@ -675,6 +675,15 @@ test. When no main `.env` exists either, `require_env_file_or_die()` refuses a r
 interpolated var empty and letting Postgres crash-loop on an unrelated-looking
 "superuser password is not specified".
 
+**`up --wait` returning 0 is not sufficient proof the stack is up (issue #962).** It has a known
+race (moby/compose) where a container stuck in a restart loop can be observed "Running" at poll
+time. `verify_stack_health()` re-inspects every container this invocation's compose project
+controls (`docker compose $COMPOSE_FILES ps -a -q`) after `up` returns, and fails the whole
+`start` if any is `restarting`/`exited`/`dead`/`unhealthy`. A container still `health: starting`
+is never a failure — Docker's own healthcheck state machine already won't flip that to
+`unhealthy` before the service's OWN `start_period` (Keycloak's 120s, the backend's 600s, ...),
+so nothing here re-implements a competing global timeout.
+
 - `.fresh/<name>.yml` — the ONLY generated compose overlay. It re-pins every hard-coded
   `container_name` to `otfresh-<name>-*` (`FRESH_NAMED_SERVICES` in `opentr.sh`, plus the aux
   services below when their flag is passed). It also carries an `environment:` addition

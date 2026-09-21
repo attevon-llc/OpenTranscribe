@@ -493,15 +493,22 @@ class TestSelectionModeButtons:
         )
 
     def test_cancel_button_visible_and_has_tooltip(self) -> None:
-        """Cancel (X) button should be visible with a tooltip."""
-        btn = self.page.locator(".cancel-btn")
+        """Cancel (X) button should be visible with a tooltip.
+
+        Scoped to ``.gallery-action-buttons`` for the same reason as the locator
+        at :308 — ``.cancel-btn`` is not unique in this app. #752 namespaced the
+        upload tray's copy to ``.upload-tray-cancel-btn``, but
+        ``FileHeader.svelte`` still declares a bare ``.cancel-btn``, so an
+        unscoped locator here is a latent ambiguity rather than a resolved one.
+        """
+        btn = self.page.locator(".gallery-action-buttons .cancel-btn")
         expect(btn).to_be_visible()
         title = btn.get_attribute("title")
         assert title is not None and len(title) > 10
 
     def test_cancel_exits_selection_mode(self) -> None:
         """Clicking Cancel should return to normal mode."""
-        self.page.click(".cancel-btn")
+        self.page.click(".gallery-action-buttons .cancel-btn")
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         expect(self.page.locator(".upload-btn")).to_be_visible(timeout=5000)
         expect(self.page.locator(".select-btn")).to_be_visible(timeout=5000)

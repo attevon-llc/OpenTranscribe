@@ -363,11 +363,11 @@ def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -
     from app.services.error_categorization_service import ErrorCategorizationService
 
     error_message = str(db_file.last_error_message) if db_file.last_error_message else None
-    error_info = ErrorCategorizationService.get_error_info(error_message)
-    response.error_reason = error_info["category"]
-    response.error_suggestions = error_info["suggestions"]
-    response.user_message = error_info["user_message"]
-    response.is_retryable = error_info["is_retryable"]
+    fields = ErrorCategorizationService.build_error_response_fields(error_message)
+    response.error_reason = fields["error_reason"]
+    response.error_suggestions = fields["error_suggestions"]
+    response.user_message = fields["user_message"]
+    response.is_retryable = fields["is_retryable"]
 
 
 def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:

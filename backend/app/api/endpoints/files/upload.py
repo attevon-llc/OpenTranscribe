@@ -360,8 +360,11 @@ def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: E
     """Persist ERROR + ``last_error_message`` on a stored-but-undispatchable upload.
 
     Best-effort, never raises: the caller re-raises the real failure regardless of
-    whether this bookkeeping succeeds.
+    whether this bookkeeping succeeds. GH #959: the DB column gets only a fixed,
+    category-derived sentence — never the raw ``message`` — even though the caller
+    still re-raises the original exception unchanged for the synchronous 503 response.
     """
+    from app.services.error_categorization_service import ErrorCategorizationService
     from app.utils.task_utils import update_media_file_status
 
     message = getattr(exc, "message", None) or str(exc) or exc.__class__.__name__
@@ -369,7 +372,9 @@ def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: E
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
         if media_file is None:
             return
-        media_file.last_error_message = message  # type: ignore[assignment]
+        media_file.last_error_message = (  # type: ignore[assignment]
+            ErrorCategorizationService.sanitize_for_storage(message)
+        )
         update_media_file_status(db, file_id, FileStatus.ERROR)  # takedown-aware writer, #824
     except Exception:
         logger.exception("Could not mark file %s ERROR after a dispatch failure", file_id)

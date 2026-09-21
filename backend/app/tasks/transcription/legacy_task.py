@@ -23,7 +23,6 @@ from .audio_processor import prepare_audio_for_transcription
 from .cloud_asr import _run_cloud_asr_pipeline
 from .context import TranscriptionContext
 from .context import _get_media_file_context
-from .context import _get_user_friendly_error_message
 from .context import _handle_outer_exception
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
@@ -278,8 +277,7 @@ def transcribe_audio_task(
             return _handle_transcription_failure(ctx, task_id, str(e), "gated_model_access")
         except Exception as e:
             logger.error(f"Error in transcription processing: {str(e)}")
-            error_message = _get_user_friendly_error_message(str(e))
-            return _handle_transcription_failure(ctx, task_id, error_message, "processing_error")
+            return _handle_transcription_failure(ctx, task_id, str(e), "processing_error")
 
     except Exception as e:
         return _handle_outer_exception(ctx, task_id, e)

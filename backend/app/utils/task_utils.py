@@ -88,7 +88,19 @@ def update_task_status(
     error_message: str | None = None,
     completed: bool = False,
 ) -> Task | None:
-    """Update task status in the database."""
+    """Update task status in the database.
+
+    ``error_message`` is the one place many callers across the codebase (not just the
+    transcription pipeline) still hand this function raw exception text. GH #959: this
+    is therefore also a chokepoint — whatever is persisted to ``task.error_message`` /
+    ``media_file.last_error_message`` is passed through
+    ``ErrorCategorizationService.sanitize_for_storage`` first, so a caller that has not
+    (yet) been updated to sanitize its own message cannot leak raw exception text into
+    either column. Callers that already sanitize get an idempotent no-op here (a fixed
+    sentence re-classifies as itself or, at worst, the generic bucket).
+    """
+    from app.services.error_categorization_service import ErrorCategorizationService
+
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         logger.warning(f"Task {task_id} not found")
@@ -97,12 +109,16 @@ def update_task_status(
     # Log state transition for debugging
     logger.debug(f"Task {task_id} state change: {task.status} -> {status}")
 
+    sanitized_error_message = (
+        ErrorCategorizationService.sanitize_for_storage(error_message) if error_message else None
+    )
+
     # Update task fields
     task.status = status  # type: ignore[assignment]
     if progress is not None:
         task.progress = progress  # type: ignore[assignment]
-    if error_message:
-        task.error_message = error_message  # type: ignore[assignment]
+    if sanitized_error_message:
+        task.error_message = sanitized_error_message  # type: ignore[assignment]
     if completed:
         task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
@@ -115,8 +131,8 @@ def update_task_status(
         media_file = get_refreshed_object(db, MediaFile, int(media_file_id))
         if media_file:
             media_file.task_last_update = datetime.now(UTC)
-            if error_message:
-                media_file.last_error_message = error_message
+            if sanitized_error_message:
+                media_file.last_error_message = sanitized_error_message
 
             # Clear active task once it reaches any terminal state — completed,
             # failed, or skipped. Leaving this set after a skip would misreport

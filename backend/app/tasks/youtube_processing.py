@@ -24,6 +24,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.transcription import dispatch_transcription_pipeline
@@ -434,9 +435,11 @@ def process_youtube_url_task(
                         f"Retrying in {countdown}s..."
                     )
 
-                    # Update status to show retry is pending
+                    # Update status to show retry is pending. GH #959: the raw
+                    # `error_msg` is only used for classification (above) and the log
+                    # line already emitted — the stored message is a fixed sentence.
                     media_file.last_error_message = (  # type: ignore[assignment]
-                        f"Retry {self.request.retries + 1}/{self.max_retries}: {error_msg}"
+                        ErrorCategorizationService.sanitize_for_storage(error_msg)
                     )
                     db.flush()
 
@@ -457,17 +460,20 @@ def process_youtube_url_task(
                     f"for {url}: {error_msg}"
                 )
 
-                media_file.last_error_message = error_msg  # type: ignore[assignment]
+                media_file.last_error_message = (  # type: ignore[assignment]
+                    ErrorCategorizationService.sanitize_for_storage(error_msg)
+                )
                 media_file.error_category = error_category.value  # type: ignore[assignment]
                 db.flush()
                 update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
 
-                # Send error notification
+                # Send error notification. GH #959: the client-facing message is the
+                # same fixed sentence just persisted, never the raw exception text.
                 send_youtube_notification_via_redis(
                     user_id=user_id,
                     file_id=file_id,
                     status=FileStatus.ERROR,
-                    message=f"YouTube processing failed: {error_msg}",
+                    message=ErrorCategorizationService.sanitize_for_storage(error_msg),
                     progress=0,
                 )
 
@@ -649,7 +655,9 @@ def _dispatch_video_task(
     except Exception as e:
         logger.error(f"Failed to dispatch task for video {media_file.title}: {e}")
         error_msg = f"Failed to start processing: {str(e)}"
-        media_file.last_error_message = error_msg  # type: ignore[assignment]
+        media_file.last_error_message = (  # type: ignore[assignment]
+            ErrorCategorizationService.sanitize_for_storage(error_msg)
+        )
         media_file.error_category = categorize_error(error_msg).value  # type: ignore[assignment]
         db.flush()
         update_media_file_status(db, int(media_file.id), FileStatus.ERROR)

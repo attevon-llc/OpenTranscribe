@@ -356,6 +356,48 @@ class ErrorCategorizationService:
         }
 
     @staticmethod
+    def build_error_response_fields(last_error_message: str | None) -> dict[str, Any]:
+        """Build the four wire-response error fields from a media file's stored message.
+
+        Single home for the ``error_reason`` / ``error_suggestions`` / ``user_message`` /
+        ``is_retryable`` block, previously duplicated between
+        ``api/endpoints/files/crud.py`` and ``services/formatting_service.py`` (GH #959
+        item 4).
+
+        Args:
+            last_error_message: ``media_file.last_error_message``, or None.
+
+        Returns:
+            A dict with keys ``error_reason``, ``error_suggestions``, ``user_message``,
+            ``is_retryable``, ready to spread onto a response model.
+        """
+        error_info = ErrorCategorizationService.get_error_info(last_error_message)
+        return {
+            "error_reason": error_info["category"],
+            "error_suggestions": error_info["suggestions"],
+            "user_message": error_info["user_message"],
+            "is_retryable": error_info["is_retryable"],
+        }
+
+    @staticmethod
+    def sanitize_for_storage(raw_message: str | None) -> str:
+        """Classify a raw error ONCE and return the only text that may be PERSISTED.
+
+        GH #959 item 1: the raw exception text must never be written to
+        ``media_file.last_error_message`` / ``Task.error_message`` — only this fixed,
+        category-derived sentence may. Call this at the failure site, while the raw
+        text is still in hand for classification; the raw text itself belongs only in
+        a log line (``logger.error``/``logger.exception``), never in a DB column.
+
+        Args:
+            raw_message: The raw exception text. Can be None.
+
+        Returns:
+            A fixed, non-raw sentence safe to persist and to serve to a client.
+        """
+        return str(ErrorCategorizationService.get_error_info(raw_message)["user_message"])
+
+    @staticmethod
     def should_show_enhanced_notification(error_message: str | None) -> bool:
         """Determine if an enhanced error notification should be shown.
 

@@ -1,0 +1,22 @@
+# GH #959 gate: scripts/audit-error-disclosure.py
+#
+# Every entry below passes a raw exception string into `update_task_status(...,
+# error_message=...)`. That is safe, not deferred: `app/utils/task_utils.py::
+# update_task_status` is the chokepoint fix from GH #959 — it runs every `error_message`
+# through `ErrorCategorizationService.sanitize_for_storage` before writing
+# `task.error_message` / `media_file.last_error_message`, so the raw text this scanner
+# sees at the call site never reaches a DB column. The scanner cannot see through the
+# call to know that; each line is legitimately allowlisted rather than "fixed", because
+# there is nothing left to fix at the call site itself.
+#
+# <file>::<lineno>::<reason>
+backend/app/tasks/analytics.py::84::sanitized inside update_task_status (GH #959 chokepoint)
+backend/app/tasks/redaction_task.py::163::sanitized inside update_task_status (GH #959 chokepoint)
+backend/app/tasks/search_indexing_task.py::342::sanitized inside update_task_status (GH #959 chokepoint)
+backend/app/tasks/speaker_attribute_task.py::534::sanitized inside update_task_status (GH #959 chokepoint)
+backend/app/tasks/speaker_clustering.py::144::sanitized inside update_task_status (GH #959 chokepoint)
+backend/app/tasks/speaker_embedding_task.py::61::sanitized inside update_task_status (GH #959 chokepoint)
+backend/app/tasks/speaker_embedding_task.py::382::sanitized inside update_task_status (GH #959 chokepoint)
+backend/app/tasks/topic_extraction.py::374::sanitized inside update_task_status (GH #959 chokepoint)
+backend/app/tasks/transcription/background.py::201::sanitized inside update_task_status (GH #959 chokepoint)
+backend/app/tasks/transcription/postprocess.py::280::sanitized inside update_task_status (GH #959 chokepoint)

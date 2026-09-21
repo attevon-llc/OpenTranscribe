@@ -159,8 +159,13 @@ def _mark_dispatch_failed(file_uuid: str, task_id: str, message: str) -> None:
     session. A broker failure there leaves an in_progress task and a PROCESSING
     file nothing will ever advance — link_error only fires for a chain that was
     actually published. Best-effort: never raises, never masks the real exception.
+
+    ``message`` may carry raw exception text — GH #959: only the fixed, category-derived
+    sentence is persisted; the raw text was already logged by the caller.
     """
-    truncated = message[:2000]
+    from app.services.error_categorization_service import ErrorCategorizationService
+
+    truncated = ErrorCategorizationService.sanitize_for_storage(message[:2000])
     try:
         with session_scope() as db:
             # Task row first, file status LAST: update_task_status's terminal

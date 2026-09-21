@@ -18,7 +18,6 @@ from app.utils.task_utils import update_task_status
 
 from .cancellation import finish_cancelled
 from .context import TranscriptionContext
-from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
 from .context import requeue_after_abort
@@ -198,6 +197,5 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
                     cleanup_shared_volume_wav(transcript.local_wav_path)
             except Exception as _cleanup_err:  # nosec B110
                 logger.debug("WAV cleanup on diarize error skipped: %s", _cleanup_err)
-            error_message = _get_user_friendly_error_message(str(e))
-            _handle_transcription_failure(ctx, task_id, error_message, "gpu_processing_error")
+            _handle_transcription_failure(ctx, task_id, str(e), "gpu_processing_error")
             raise

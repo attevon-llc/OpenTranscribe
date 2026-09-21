@@ -41,7 +41,6 @@ from app.utils.task_utils import update_task_status
 from .cancellation import finish_cancelled
 from .cloud_asr import _run_cloud_asr_pipeline
 from .context import TranscriptionContext
-from .context import _get_user_friendly_error_message
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
 from .context import requeue_after_abort
@@ -354,9 +353,7 @@ def _finish_failed_or_aborted(
         requeue_after_abort(file_uuid, exc, stage="GPU transcription")
     _cleanup_wav_quietly(local_wav_path)
     logger.error(f"GPU transcription failed for file {file_uuid}: {exc}")
-    _handle_transcription_failure(
-        ctx, task_id, _get_user_friendly_error_message(str(exc)), "gpu_processing_error"
-    )
+    _handle_transcription_failure(ctx, task_id, str(exc), "gpu_processing_error")
     raise exc
 
 

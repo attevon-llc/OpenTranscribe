@@ -23,8 +23,14 @@
 
   let collections: PickerCollection[] = [];
   let loading = true;
+  let filter = '';
 
   $: selectedSet = new Set(selected);
+  $: visible = filter.trim()
+    ? collections.filter((collection) =>
+        collection.name.toLowerCase().includes(filter.trim().toLowerCase())
+      )
+    : collections;
 
   onMount(async () => {
     try {
@@ -51,8 +57,16 @@
   {#if loading}
     <div class="loading"><Spinner size="small" /></div>
   {:else}
+    <input
+      class="collection-filter"
+      type="search"
+      bind:value={filter}
+      placeholder={$t('chat.picker.searchCollections')}
+      aria-label={$t('chat.picker.searchCollections')}
+    />
+
     <ul class="picker-list" data-testid="picker-collections-list">
-      {#each collections as collection (collection.uuid)}
+      {#each visible as collection (collection.uuid)}
         <li>
           <label class="picker-row">
             <input
@@ -69,7 +83,7 @@
         </li>
       {/each}
 
-      {#if collections.length === 0}
+      {#if visible.length === 0}
         <li class="empty">{$t('chat.picker.emptyCollections')}</li>
       {/if}
     </ul>
@@ -87,6 +101,22 @@
     display: flex;
     justify-content: center;
     padding: 2rem 0;
+  }
+
+  .collection-filter {
+    width: 100%;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.87rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .collection-filter:focus {
+    outline: none;
+    border-color: var(--primary-color);
   }
 
   .picker-list {

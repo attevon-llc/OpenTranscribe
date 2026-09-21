@@ -51,7 +51,9 @@
 <style>
   .gender-icon {
     font-size: 12px;
-    color: var(--text-secondary, #6b7280);
+    /* Rendered inside the cluster card's tinted gender chip, where --text-secondary
+     * measures 4.25:1 against the success tint — under WCAG AA for this 11px label. */
+    color: var(--text-on-tint, #475569);
     display: inline-flex;
     align-items: center;
     gap: 2px;

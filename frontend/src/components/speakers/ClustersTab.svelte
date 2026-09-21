@@ -350,7 +350,8 @@
 
   .last-clustered-chip {
     font-size: 11px;
-    color: var(--text-secondary);
+    /* 11px on the hover tint — --text-secondary measures 4.34:1 here, under AA. */
+    color: var(--text-on-tint);
     background: var(--hover-color);
     padding: 1px 7px;
     border-radius: 10px;

@@ -663,7 +663,9 @@
   }
 
   .status-label {
-    color: var(--text-light);
+    /* These labels sit on per-status tinted cards; on the error tint --text-light
+     * (an alias of --text-secondary) measures 4.16:1, under WCAG AA. */
+    color: var(--text-on-tint);
     font-size: 0.8rem;
     font-weight: 500;
   }

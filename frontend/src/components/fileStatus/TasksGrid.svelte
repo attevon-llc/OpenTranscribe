@@ -185,7 +185,10 @@
 
   .status-error {
     background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    /* The red FILL on its own 10%-red tint measures 3.29:1 — the worst contrast on this
+     * page, and on the one badge a user most needs to read. --color-error-text is the
+     * text-weight red; the dark override below already used the dark equivalent. */
+    color: var(--color-error-text);
   }
 
   .status-unknown {
@@ -210,7 +213,14 @@
 
   :global([data-theme='dark']) .status-error {
     background: rgba(239, 68, 68, 0.2);
-    color: #f87171;
+    /* Measured 4.38:1 as #f87171 (the --color-error-text dark value): that colour is
+     * calibrated for the plain dark surface, where it clears AA at 5.29:1, but this
+     * badge composites a 20% red tint over that surface and the margin disappears.
+     * #fca5a5 measures 6.44:1 against the composited rgb(72,46,61). The a11y E2E suite
+     * scans light theme only, so nothing catches this class of dark-only miss — see the
+     * follow-up issue for the three sibling badges, which have no failing task on the
+     * page to measure and are therefore still unverified. */
+    color: #fca5a5;
   }
 
   .tasks-table-wrapper {
@@ -296,7 +306,9 @@
   .task-error-inline {
     display: block;
     font-size: 0.75rem;
-    color: var(--error-color);
+    /* 3.76:1 as --error-color, even on plain white — the fill red is simply not a text
+     * colour at 12px. */
+    color: var(--color-error-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

@@ -134,6 +134,27 @@
   --color-info-border: rgba(59, 130, 246, 0.3);
   --color-info: var(--info-color);
 
+  /* Text-weight status colours, and secondary text for TINTED surfaces.
+   *
+   * `--success-color` / `--error-color` are FILL colours, calibrated to be legible as a
+   * solid background or an icon — not as small text sitting on their own soft tint. Used
+   * that way they fail WCAG AA (SC 1.4.3, 4.5:1 for normal text) outright: #10b981 on the
+   * success tint measures 2.27:1 and #ef4444 on the error tint 3.29:1. `--color-warning-text`
+   * already existed for exactly this reason; these two complete the set.
+   *
+   * `--text-on-tint` is the same story for `--text-secondary` (#64748b). It clears AA on the
+   * base white surface (4.76:1) and fails on every tint the app actually uses — 4.34:1 on
+   * slate-100, 4.25:1 on the success tint, 4.16:1 on the error tint. All three are near
+   * misses, which is why they survived review: they look fine and are measurably not.
+   *
+   * Measured against the tints in use — light: #047857 on #e2f7f0 = 4.91:1,
+   * #b91c1c on #fdecec = 5.67:1 (and 6.47:1 on white), #475569 on #f1f5f9 = 6.91:1.
+   * Dark: #34d399 on #1e293b = 7.57:1, #f87171 on #1e293b = 5.29:1.
+   */
+  --color-success-text: #047857;
+  --color-error-text: #b91c1c;
+  --text-on-tint: #475569;
+
   /* Alternate-name aliases used by some components */
   --bg-primary: var(--surface-color);
   --text-primary: var(--text-color);
@@ -308,6 +329,14 @@
   --color-warning-bg: rgba(251, 191, 36, 0.15);
   --color-warning-border: rgba(251, 191, 36, 0.3);
   --color-warning-text: #fbbf24;
+  /* Dark-mode siblings of the light block's text-weight status colours. The direction
+   * inverts: on a dark surface the FILL colours are too dark to read, so these go lighter
+   * rather than darker. `--text-on-tint` matches `--text-secondary` here because dark tints
+   * are overlays on an already-dark surface, so the near-misses the light theme has do not
+   * arise. */
+  --color-success-text: #34d399;
+  --color-error-text: #f87171;
+  --text-on-tint: var(--text-secondary);
   --color-info-bg: rgba(96, 165, 250, 0.15);
   --color-info-border: rgba(96, 165, 250, 0.3);
   --color-info: var(--info-color);

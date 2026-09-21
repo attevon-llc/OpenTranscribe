@@ -55,11 +55,17 @@
     if (e.key === 'Escape') cancelEdit();
   }
 
+  /**
+   * Returns a TEXT colour, so it must use the text-weight status tokens rather than the
+   * fill ones. `--success-color` (#10b981) on the badge's own success tint measures
+   * 2.27:1 — less than half of WCAG AA's 4.5:1 — and the amber and red fills fail the
+   * same way. The `--color-*-text` variants exist for exactly this distinction.
+   */
   function qualityColor(score: number | null): string {
-    if (score === null) return 'var(--text-secondary)';
-    if (score >= 0.8) return 'var(--success-color, #10b981)';
-    if (score >= 0.6) return 'var(--warning-color, #f59e0b)';
-    return 'var(--error-color, #ef4444)';
+    if (score === null) return 'var(--text-on-tint)';
+    if (score >= 0.8) return 'var(--color-success-text, #047857)';
+    if (score >= 0.6) return 'var(--color-warning-text, #b45309)';
+    return 'var(--color-error-text, #b91c1c)';
   }
 </script>
 

@@ -647,7 +647,9 @@
   }
 
   .no-comments {
-    color: var(--text-secondary);
+    /* Sits on the slate-100 secondary surface, where --text-secondary is 4.34:1 —
+     * under WCAG AA, and italic 12px is the least legible text on the page. */
+    color: var(--text-on-tint);
     font-size: 12px;
     font-style: italic;
   }

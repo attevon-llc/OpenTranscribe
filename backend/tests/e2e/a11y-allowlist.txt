@@ -57,12 +57,10 @@ search::label-title-only::1             # BACKLOG #785 — a control's only acce
 
 chat::label::1                          # BACKLOG #785 — one form control missing an associated <label>
 
-file-detail::color-contrast::1          # BACKLOG #785 — theme-token work (frontend/src/styles/theme.css), tracked for #747-#757
 file-detail::label::1                   # BACKLOG #785 — one form control missing an associated <label>
 file-detail::label-title-only::1        # BACKLOG #785 — a control's only accessible name comes from a title attribute
 file-detail::nested-interactive::2      # BACKLOG #785 — an interactive control nested inside another, tracked for #747-#757
 
-file-status::color-contrast::1          # BACKLOG #785 — theme-token work (frontend/src/styles/theme.css), tracked for #747-#757
 file-status::label::1                   # BACKLOG #785 — one form control missing an associated <label>
 file-status::select-name::2             # BACKLOG #785 — two <select> elements without an accessible name
 

@@ -55,12 +55,23 @@ function themeScannableFiles(dir: string, out: string[] = []): string[] {
  * silently: removing the selector from one of these files fails the test until
  * the entry is deleted too.
  */
-const KNOWN_DEAD_DARK_SELECTOR_FILES = [
-  'components/search/SearchTranscriptModal.svelte',
+const KNOWN_DEAD_DARK_SELECTOR_FILES: string[] = [
+  // EMPTY, and that is the point: every file that once carried the dead
+  // `:global(.dark)` selector has now been migrated or deleted. Retiring the
+  // last two entries took two independent v0.6.0 branches, which is why this
+  // list existed at all — it let each one leave without waiting on the other.
+  //
   // `routes/+page.svelte` left this list when its hand-rolled modal chrome was
   // replaced by BaseModal (#739): the dead `:global(.dark)` rules went with it.
-  // `components/FileUploader.svelte` left this list in #751: its three
-  // `:global(.dark)` rules were migrated to `:global([data-theme='dark'])`.
+  // `components/FileUploader.svelte` left in #751: its three `:global(.dark)`
+  // rules were migrated to `:global([data-theme='dark'])`.
+  // `components/search/SearchTranscriptModal.svelte` left in #755, which deleted
+  // the file outright (consolidated into
+  // `components/transcript/TranscriptViewModal.svelte`, which never used it).
+  //
+  // The assertion below is exact in BOTH directions, so this cannot rot: a new
+  // `:global(.dark)` anywhere under src/ now fails the suite immediately rather
+  // than being absorbed by an allowlist entry.
 ];
 
 describe('dark-mode selector convention', () => {

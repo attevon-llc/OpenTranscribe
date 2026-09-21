@@ -1,6 +1,11 @@
 /**
- * Utility functions for calculating scrollbar position indicator placement
- * Handles edge cases and provides robust position calculations for transcript playhead tracking
+ * Utility functions for locating the transcript segment under the current playhead time.
+ *
+ * `calculateScrollbarPositionBySegment` and `createThrottledPositionUpdate` were deleted
+ * with `ScrollbarIndicator.svelte` (issue #748 §5.3) — that minimap component was their only
+ * consumer. `findCurrentSegment` survives: it is still needed to locate the target segment
+ * for the "Jump to current" button that replaced the indicator
+ * (`TranscriptDisplay.handleJumpToPlayhead`).
  */
 
 export interface TranscriptSegment {
@@ -15,59 +20,6 @@ export interface TranscriptSegment {
     name?: string;
     display_name?: string;
   };
-}
-
-/**
- * Calculate scrollbar position based on current time relative to transcript timeline
- * This provides smooth movement that follows the video playhead exactly
- */
-export function calculateScrollbarPositionBySegment(
-  currentTime: number,
-  transcriptSegments: TranscriptSegment[]
-): number {
-  if (
-    !transcriptSegments ||
-    transcriptSegments.length === 0 ||
-    isNaN(currentTime) ||
-    currentTime < 0
-  ) {
-    return 0;
-  }
-
-  // Sort segments by start time to ensure proper order
-  const sortedSegments = [...transcriptSegments].sort((a, b) => a.start_time - b.start_time);
-
-  // Get time bounds
-  const firstSegment = sortedSegments[0];
-  const lastSegment = sortedSegments[sortedSegments.length - 1];
-
-  if (!firstSegment || !lastSegment) {
-    return 0;
-  }
-
-  const totalStartTime = firstSegment.start_time;
-  const totalEndTime = lastSegment.end_time;
-  const totalDuration = totalEndTime - totalStartTime;
-
-  if (totalDuration <= 0) {
-    return 0;
-  }
-
-  // Calculate position based on time progression through the entire transcript
-  // This ensures smooth movement that follows the video playhead exactly
-  if (currentTime <= totalStartTime) {
-    return 0;
-  }
-
-  if (currentTime >= totalEndTime) {
-    return 100;
-  }
-
-  // Linear interpolation based on time position within the transcript
-  const timeProgress = (currentTime - totalStartTime) / totalDuration;
-  const position = timeProgress * 100;
-
-  return Math.max(0, Math.min(100, position));
 }
 
 /**
@@ -97,34 +49,4 @@ export function findCurrentSegment(
   }
 
   return null;
-}
-
-/**
- * Throttle function to limit the frequency of position updates
- * Prevents excessive DOM updates during playback
- */
-export function createThrottledPositionUpdate(
-  callback: (position: number) => void,
-  delay: number = 16 // ~60fps
-): (position: number) => void {
-  let lastCallTime = 0;
-  let animationFrameId: number | null = null;
-
-  return (position: number) => {
-    const now = Date.now();
-
-    if (now - lastCallTime >= delay) {
-      lastCallTime = now;
-      callback(position);
-    } else {
-      // Schedule update for next frame if not already scheduled
-      if (animationFrameId === null) {
-        animationFrameId = requestAnimationFrame(() => {
-          callback(position);
-          lastCallTime = Date.now();
-          animationFrameId = null;
-        });
-      }
-    }
-  };
 }

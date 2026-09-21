@@ -2,11 +2,10 @@
   import type { GroupedSegmentView } from '$lib/types/media';
   import type { Segment, Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
-  import ScrollbarIndicator from '$components/ScrollbarIndicator.svelte';
   import SegmentSpeakerDropdown from '$components/SegmentSpeakerDropdown.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { highlightTextWithMatches, type SearchMatch } from '$lib/utils/searchHighlight';
+  import { highlightClassifiedText, type MatchClassificationType } from '$lib/transcript/matchClassification';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { formatClock } from '$lib/utils/formatting';
   import { t } from '$stores/locale';
@@ -14,18 +13,46 @@
 
   export let file: any = null;
   export let groupedTranscriptSegments: GroupedSegmentView[] = [];
-  export let transcriptSegments: TranscriptSegment[] = [];
   export let speakerList: Speaker[] = [];
-  export let currentTime: number = 0;
   export let diarizationDisabled: boolean = false;
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
   export let savingTranscript: boolean = false;
+  // Issue #755: this list is also the read-only renderer behind the consolidated
+  // "view transcript" modal (file-detail AND search-result surfaces), which may be
+  // opened by a viewer-only user. Defaults to false so a call site that forgets to
+  // set it is read-only rather than editable (page.test.ts pins this default-deny
+  // shape for the sibling FileActionButtons component).
+  export let editable: boolean = false;
 
   // Search props
   export let searchQuery: string = '';
   export let searchMatches: SearchMatch[] = [];
   export let currentMatchIndex: number = -1;
+
+  // Issue #755: keyword/semantic classification for the search-result "view transcript"
+  // surface (server-ranked occurrences, not a live query — see $lib/transcript/matchClassification).
+  // Keyed by segment uuid. When a segment has no entry, falls back to the ordinary
+  // query-driven highlighting above — this is purely additive and does not touch that path.
+  export let segmentClassification: Record<string, MatchClassificationType> = {};
+
+  // `segment` here matches `GroupedSegmentView.segments: any[]` — the same open type every
+  // other per-segment helper in this file (`getOriginalSegmentIndex`, `speakerMatchState`)
+  // already accepts, since segments arrive from the backend's grouped-view resolution, not
+  // a single narrow interface.
+  function segmentHighlight(segment: any): string {
+    const cls = segmentClassification[String(segment.uuid)];
+    if (cls) {
+      return highlightClassifiedText(segment.text, cls, searchQuery);
+    }
+    return highlightTextWithMatches(
+      segment.text,
+      searchQuery,
+      getOriginalSegmentIndex(segment),
+      searchMatches,
+      currentMatchIndex
+    );
+  }
 
   // Pagination props
   export let totalSegments: number = 0;
@@ -41,10 +68,6 @@
   // Scroll progress tracking (reading progress bar)
   let scrollProgress: number = 0;
   let transcriptDisplayElement: HTMLElement | null = null;
-
-  // Scrollbar indicator state
-  let transcriptContainer: HTMLElement | null = null;
-  let scrollbarIndicatorEnabled: boolean = true;
 
   // Calculate loaded segments info
   $: loadedSegments = file?.transcript_segments?.length || 0;
@@ -204,33 +227,19 @@
     return { highlighted: true, isCurrent: matchIdx === currentMatchIndex };
   }
 
-  // Handle scrollbar indicator click to seek to playhead
-  function handleSeekToPlayhead(event: CustomEvent) {
-    const { currentTime: seekTime, targetSegment } = event.detail;
-
-    if (targetSegment) {
-      // Scroll to the current segment
-      const segmentElement = document.querySelector(`[data-segment-id="${targetSegment.uuid}"]`);
-      if (segmentElement) {
-        segmentElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-          inline: 'nearest'
-        });
-      }
-    }
-
-    // Also dispatch to parent for potential video seeking
-    dispatch('seekToPlayhead', { time: seekTime, segment: targetSegment });
-  }
-
-  // Check if scrollbar indicator should be enabled
-  $: {
-    scrollbarIndicatorEnabled = !!(
-      transcriptSegments &&
-      transcriptSegments.length > 10 && // Only show for transcripts with substantial content
-      currentTime >= 0
-    );
+  /**
+   * Issue #748 §5.3 — replaces the deleted `ScrollbarIndicator`'s click handler. It used to
+   * scroll AND dispatch `seekToPlayhead` up to the page, which re-seeked the player to
+   * `currentTime - 0.5s` — a silent playback rewind on every click. This scrolls ONLY;
+   * exported so the coordinator (`TranscriptDisplay`, wired to a "Jump to current" button on
+   * the find-bar row) can call it directly without a round-trip through the video player.
+   */
+  export function scrollToCurrentSegment(uuid: string): void {
+    const segmentElement = document.querySelector(`[data-segment-id="${uuid}"]`);
+    if (!segmentElement) return;
+    segmentElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    segmentElement.classList.add('highlight-flash');
+    setTimeout(() => segmentElement.classList.remove('highlight-flash'), 1500);
   }
 
   function handleSegmentClick(startTime: number) {
@@ -266,7 +275,7 @@
   }
 </script>
 
-<div bind:this={transcriptContainer} class="transcript-display-container">
+<div class="transcript-display-container">
   <!-- Reading progress bar at top -->
   {#if totalSegments > 0}
     <div class="reading-progress-bar">
@@ -304,7 +313,7 @@
             class:last-in-overlap={!diarizationDisabled && segIdx === group.segments.length - 1}
             data-segment-id="{segment.uuid}"
           >
-            {#if editingSegmentId === segment.uuid}
+            {#if editable && editingSegmentId === segment.uuid}
               <div class="segment-edit-container">
                 <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
                 {#if !diarizationDisabled}
@@ -358,22 +367,22 @@
                       mediaFileUuid={file?.uuid?.toString() || ''}
                       highlighted={speakerMatch.highlighted}
                       isCurrentMatch={speakerMatch.isCurrent}
+                      readOnly={!editable}
                       on:change={handleSegmentSpeakerChange}
                       on:speakerCreated={handleSpeakerCreated}
                       on:speakerUpdate={handleSpeakerUpdate}
                     />
                   </div>
                   {/if}
-                  <div class="segment-text">
-                    {@html sanitizeHighlightHtml(highlightTextWithMatches(
-                      segment.text,
-                      searchQuery,
-                      getOriginalSegmentIndex(segment),
-                      searchMatches,
-                      currentMatchIndex
-                    ))}
+                  <div
+                    class="segment-text"
+                    class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
+                    class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
+                  >
+                    {@html sanitizeHighlightHtml(segmentHighlight(segment))}
                   </div>
                 </button>
+                {#if editable}
                 <button
                   class="edit-button"
                   on:click|stopPropagation={() => editSegment(segment)}
@@ -381,6 +390,7 @@
                 >
                   {$t('common.edit')}
                 </button>
+                {/if}
               </div>
             {/if}
           </div>
@@ -394,7 +404,7 @@
         data-segment-id="{segment.uuid}"
         data-seg-index={group.startSegmentIndex}
       >
-        {#if editingSegmentId === segment.uuid}
+        {#if editable && editingSegmentId === segment.uuid}
           <div class="segment-edit-container">
             <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
             {#if !diarizationDisabled}
@@ -448,25 +458,25 @@
                   mediaFileUuid={file?.uuid?.toString() || ''}
                   highlighted={speakerMatch.highlighted}
                   isCurrentMatch={speakerMatch.isCurrent}
+                  readOnly={!editable}
                   on:change={handleSegmentSpeakerChange}
                   on:speakerCreated={handleSpeakerCreated}
                   on:speakerUpdate={handleSpeakerUpdate}
                 />
               </div>
               {/if}
-              <div class="segment-text">
-                {@html sanitizeHighlightHtml(highlightTextWithMatches(
-                  segment.text,
-                  searchQuery,
-                  getOriginalSegmentIndex(segment),
-                  searchMatches,
-                  currentMatchIndex
-                ))}
+              <div
+                class="segment-text"
+                class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
+                class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
+              >
+                {@html sanitizeHighlightHtml(segmentHighlight(segment))}
                 {#if segment.confidence !== undefined && segment.confidence !== null && segment.confidence < 0.7}
                   <span class="low-confidence-dot" title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}>●</span>
                 {/if}
               </div>
             </button>
+            {#if editable}
             <button
               class="edit-button"
               on:click|stopPropagation={() => editSegment(segment)}
@@ -474,6 +484,7 @@
             >
               {$t('common.edit')}
             </button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -509,16 +520,8 @@
     </div>
   {/if}
 
-  <!-- Scrollbar Position Indicator - Inside transcript-display-container for proper positioning -->
-  {#if scrollbarIndicatorEnabled}
-    <ScrollbarIndicator
-      {currentTime}
-      {transcriptSegments}
-      containerElement={transcriptContainer?.querySelector('.transcript-display')}
-      disabled={!file?.transcript_segments?.length}
-      on:seekToPlayhead={handleSeekToPlayhead}
-    />
-  {/if}
+  <!-- Issue #748: the ScrollbarIndicator minimap was deleted (see scrollToCurrentSegment
+       below) — its click both scrolled AND silently rewound playback by 0.5s. -->
 </div>
 
 <style>
@@ -720,6 +723,16 @@
     overflow-wrap: break-word;
     word-break: break-word;
     min-width: 0; /* Allow text to shrink in grid layout */
+  }
+
+  /* Issue #755 D15 — a "there is a match here" affordance scannable without scrolling to
+     a highlight, ported from the deleted SearchTranscriptModal. Only populated when the
+     parent supplies `segmentClassification` (the search-result view). */
+  .segment-text.keyword-segment {
+    border-left: 3px solid var(--primary-color, #6366f1);
+  }
+  .segment-text.semantic-segment {
+    border-left: 3px solid var(--text-secondary, #94a3b8);
   }
 
   /* Content redaction — "blur" mask style. The backend emits

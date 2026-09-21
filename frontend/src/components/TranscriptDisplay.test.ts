@@ -11,7 +11,7 @@
  * shares object references between the two arrays would pass either way.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import TranscriptDisplay from './TranscriptDisplay.svelte';
 import { renameSpeakersInFile, appendSegmentPage } from '$lib/fileDetail/segmentSync';
@@ -163,5 +163,43 @@ describe('TranscriptDisplay', () => {
     render(TranscriptDisplay, { props: { ...baseProps, file } });
 
     expect(document.querySelectorAll('[data-segment-id]')).toHaveLength(2);
+  });
+
+  describe('"Jump to current" (issue #748 §5.3)', () => {
+    // The deleted ScrollbarIndicator's click handler both scrolled the transcript AND
+    // dispatched `seekToPlayhead` up to the page, which re-seeked the player to
+    // `currentTime - 0.5s` — a silent playback rewind on every click. The replacement
+    // button must ONLY scroll. There is no `seekToPlayhead` event left on this component
+    // at all (verified structurally: nothing here listens for or forwards one), so the
+    // positive case below is the whole contract.
+    it('scrolls the segment under the current playhead into view and flashes it', async () => {
+      const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+
+      const { container } = render(TranscriptDisplay, {
+        props: { ...baseProps, file: makeFile(), currentTime: 6 }, // inside segment 'b' (5-10)
+      });
+
+      const button = container.querySelector('.jump-to-playhead-button') as HTMLButtonElement;
+      expect(button).not.toBeNull();
+      await fireEvent.click(button);
+
+      expect(scrollSpy).toHaveBeenCalled();
+      const target = container.querySelector('[data-segment-id="b"]');
+      expect(target?.classList.contains('highlight-flash')).toBe(true);
+
+      scrollSpy.mockRestore();
+    });
+
+    it('is disabled when there is no transcript to jump within', () => {
+      const { container } = render(TranscriptDisplay, {
+        props: {
+          ...baseProps,
+          file: { uuid: 'file-1', status: 'completed', transcript_segments: [] },
+        },
+      });
+
+      const button = container.querySelector('.jump-to-playhead-button') as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+    });
   });
 });

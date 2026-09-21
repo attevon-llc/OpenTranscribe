@@ -7,6 +7,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { highlightTextWithMatches, type SearchMatch } from '$lib/utils/searchHighlight';
+  import { highlightClassifiedText, type MatchClassificationType } from '$lib/transcript/matchClassification';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { formatClock } from '$lib/utils/formatting';
   import { t } from '$stores/locale';
@@ -21,11 +22,41 @@
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
   export let savingTranscript: boolean = false;
+  // Issue #755: this list is also the read-only renderer behind the consolidated
+  // "view transcript" modal (file-detail AND search-result surfaces), which may be
+  // opened by a viewer-only user. Defaults to false so a call site that forgets to
+  // set it is read-only rather than editable (page.test.ts pins this default-deny
+  // shape for the sibling FileActionButtons component).
+  export let editable: boolean = false;
 
   // Search props
   export let searchQuery: string = '';
   export let searchMatches: SearchMatch[] = [];
   export let currentMatchIndex: number = -1;
+
+  // Issue #755: keyword/semantic classification for the search-result "view transcript"
+  // surface (server-ranked occurrences, not a live query — see $lib/transcript/matchClassification).
+  // Keyed by segment uuid. When a segment has no entry, falls back to the ordinary
+  // query-driven highlighting above — this is purely additive and does not touch that path.
+  export let segmentClassification: Record<string, MatchClassificationType> = {};
+
+  // `segment` here matches `GroupedSegmentView.segments: any[]` — the same open type every
+  // other per-segment helper in this file (`getOriginalSegmentIndex`, `speakerMatchState`)
+  // already accepts, since segments arrive from the backend's grouped-view resolution, not
+  // a single narrow interface.
+  function segmentHighlight(segment: any): string {
+    const cls = segmentClassification[String(segment.uuid)];
+    if (cls) {
+      return highlightClassifiedText(segment.text, cls, searchQuery);
+    }
+    return highlightTextWithMatches(
+      segment.text,
+      searchQuery,
+      getOriginalSegmentIndex(segment),
+      searchMatches,
+      currentMatchIndex
+    );
+  }
 
   // Pagination props
   export let totalSegments: number = 0;
@@ -304,7 +335,7 @@
             class:last-in-overlap={!diarizationDisabled && segIdx === group.segments.length - 1}
             data-segment-id="{segment.uuid}"
           >
-            {#if editingSegmentId === segment.uuid}
+            {#if editable && editingSegmentId === segment.uuid}
               <div class="segment-edit-container">
                 <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
                 {#if !diarizationDisabled}
@@ -358,22 +389,22 @@
                       mediaFileUuid={file?.uuid?.toString() || ''}
                       highlighted={speakerMatch.highlighted}
                       isCurrentMatch={speakerMatch.isCurrent}
+                      readOnly={!editable}
                       on:change={handleSegmentSpeakerChange}
                       on:speakerCreated={handleSpeakerCreated}
                       on:speakerUpdate={handleSpeakerUpdate}
                     />
                   </div>
                   {/if}
-                  <div class="segment-text">
-                    {@html sanitizeHighlightHtml(highlightTextWithMatches(
-                      segment.text,
-                      searchQuery,
-                      getOriginalSegmentIndex(segment),
-                      searchMatches,
-                      currentMatchIndex
-                    ))}
+                  <div
+                    class="segment-text"
+                    class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
+                    class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
+                  >
+                    {@html sanitizeHighlightHtml(segmentHighlight(segment))}
                   </div>
                 </button>
+                {#if editable}
                 <button
                   class="edit-button"
                   on:click|stopPropagation={() => editSegment(segment)}
@@ -381,6 +412,7 @@
                 >
                   {$t('common.edit')}
                 </button>
+                {/if}
               </div>
             {/if}
           </div>
@@ -394,7 +426,7 @@
         data-segment-id="{segment.uuid}"
         data-seg-index={group.startSegmentIndex}
       >
-        {#if editingSegmentId === segment.uuid}
+        {#if editable && editingSegmentId === segment.uuid}
           <div class="segment-edit-container">
             <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
             {#if !diarizationDisabled}
@@ -448,25 +480,25 @@
                   mediaFileUuid={file?.uuid?.toString() || ''}
                   highlighted={speakerMatch.highlighted}
                   isCurrentMatch={speakerMatch.isCurrent}
+                  readOnly={!editable}
                   on:change={handleSegmentSpeakerChange}
                   on:speakerCreated={handleSpeakerCreated}
                   on:speakerUpdate={handleSpeakerUpdate}
                 />
               </div>
               {/if}
-              <div class="segment-text">
-                {@html sanitizeHighlightHtml(highlightTextWithMatches(
-                  segment.text,
-                  searchQuery,
-                  getOriginalSegmentIndex(segment),
-                  searchMatches,
-                  currentMatchIndex
-                ))}
+              <div
+                class="segment-text"
+                class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
+                class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
+              >
+                {@html sanitizeHighlightHtml(segmentHighlight(segment))}
                 {#if segment.confidence !== undefined && segment.confidence !== null && segment.confidence < 0.7}
                   <span class="low-confidence-dot" title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}>●</span>
                 {/if}
               </div>
             </button>
+            {#if editable}
             <button
               class="edit-button"
               on:click|stopPropagation={() => editSegment(segment)}
@@ -474,6 +506,7 @@
             >
               {$t('common.edit')}
             </button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -720,6 +753,16 @@
     overflow-wrap: break-word;
     word-break: break-word;
     min-width: 0; /* Allow text to shrink in grid layout */
+  }
+
+  /* Issue #755 D15 — a "there is a match here" affordance scannable without scrolling to
+     a highlight, ported from the deleted SearchTranscriptModal. Only populated when the
+     parent supplies `segmentClassification` (the search-result view). */
+  .segment-text.keyword-segment {
+    border-left: 3px solid var(--primary-color, #6366f1);
+  }
+  .segment-text.semantic-segment {
+    border-left: 3px solid var(--text-secondary, #94a3b8);
   }
 
   /* Content redaction — "blur" mask style. The backend emits

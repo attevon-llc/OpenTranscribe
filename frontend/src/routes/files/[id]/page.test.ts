@@ -75,7 +75,7 @@ vi.mock('$components/CollectionsSection.svelte', () => ({ default: noopComponent
 vi.mock('$components/SelectiveReprocessModal.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/ConfirmationModal.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/SummaryModal.svelte', () => ({ default: noopComponent() }));
-vi.mock('$components/TranscriptModal.svelte', () => ({ default: noopComponent() }));
+vi.mock('$components/transcript/TranscriptViewModal.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/fileDetail/TxtExportOptionsModal.svelte', () => ({
   default: noopComponent(),
 }));

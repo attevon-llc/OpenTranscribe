@@ -37,7 +37,7 @@
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
-  import TranscriptModal from '$components/TranscriptModal.svelte';
+  import TranscriptViewModal from '$components/transcript/TranscriptViewModal.svelte';
   import TxtExportOptionsModal from '$components/fileDetail/TxtExportOptionsModal.svelte';
   import FileActionButtons from '$components/fileDetail/FileActionButtons.svelte';
   import RedactionControls from '$components/fileDetail/RedactionControls.svelte';
@@ -45,7 +45,7 @@
   import SpeakerProfileConfirmModal from '$components/fileDetail/SpeakerProfileConfirmModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
   import { authStore } from '$stores/auth';
-  import { transcriptStore, processedTranscriptSegments, type SpeakerInfo } from '$stores/transcriptStore';
+  import { transcriptStore, type SpeakerInfo } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
@@ -2462,13 +2462,15 @@
   />
 {/if}
 
-<!-- Transcript Modal -->
+<!-- Transcript view modal (issue #755 — consolidated with the search-result surface) -->
 {#if file?.uuid}
-  <TranscriptModal
+  <TranscriptViewModal
+    mode="file"
     bind:isOpen={showTranscriptModal}
-    fileId={file.uuid}
+    {file}
+    {speakerList}
     fileName={file?.filename || 'Unknown File'}
-    {totalSpeakerSegments}
+    totalSegments={totalSpeakerSegments}
     {hasMoreSegments}
     {loadingMoreSegments}
     {diarizationDisabled}

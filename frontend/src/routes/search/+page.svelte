@@ -7,7 +7,7 @@
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { searchStore, type SearchResponse, type SearchOccurrence, type SearchResultType } from '$stores/search';
   import SearchResultCard from '$components/search/SearchResultCard.svelte';
-  import SearchTranscriptModal from '$components/search/SearchTranscriptModal.svelte';
+  import TranscriptViewModal from '$components/transcript/TranscriptViewModal.svelte';
   import SearchPagination from '$components/search/SearchPagination.svelte';
   import SummaryResultCard from '$components/search/SummaryResultCard.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
@@ -815,7 +815,8 @@
     />
   {/if}
 
-  <SearchTranscriptModal
+  <TranscriptViewModal
+    mode="search"
     bind:isOpen={transcriptModalOpen}
     fileUuid={transcriptModalFileUuid}
     fileName={transcriptModalFileName}

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { GroupedSegmentView, GroupedTranscriptSegment } from '$lib/types/media';
   import type { Segment, Speaker } from '$lib/types/speaker';
+  import { resolveGroupedSegments } from '$lib/transcript/resolveGroupedSegments';
   import { createEventDispatcher, onDestroy } from 'svelte';
   import TranscriptSearch from './TranscriptSearch.svelte';
   import SpeakerEditorPanel from './transcript/SpeakerEditorPanel.svelte';
@@ -60,64 +60,11 @@
   // Reactive transcript segments (passed to search + segment list children)
   $: transcriptSegments = (file?.transcript_segments || []) as TranscriptSegment[];
 
-  // Index the flat segment list once per change, not once per group — resolving each
-  // group with a linear scan would be O(n²) on a 500-segment page.
-  $: segmentsByUuid = (() => {
-    const map = new Map<string, TranscriptSegment>();
-    for (const segment of transcriptSegments) {
-      if (segment?.uuid != null) map.set(String(segment.uuid), segment);
-    }
-    return map;
-  })();
-
-  // Resolve a backend group's uuid references against the flat segment list, into the
-  // camelCase shape the template consumes.
-  //
-  // `transcript_segments` is the SINGLE representation of segment data. Groups used to
-  // embed copies, which gave the page two objects per segment; every optimistic update
-  // patched only the flat one, so renames and text edits rendered stale until a full
-  // reload (#352). Resolving by uuid here makes that desync impossible.
-  //
-  // `claimed` enforces the invariant the render layer depends on: a segment belongs to
-  // exactly one group. The rows are a keyed each, so the same uuid reaching two groups is
-  // a duplicate key — Svelte throws and the whole transcript list fails to render, not
-  // just the offending row. Enforcing it here covers every payload source (initial load,
-  // refetch, redaction reload, pagination), which a guard on any single path would not.
-  function mapBackendGroup(
-    group: GroupedTranscriptSegment,
-    claimed: Set<string>
-  ): GroupedSegmentView {
-    const segments: TranscriptSegment[] = [];
-    for (const raw of group.segment_uuids || []) {
-      const uuid = String(raw);
-      if (claimed.has(uuid)) continue;
-      // A group can reference segments from a page that hasn't loaded yet; skip those
-      // rather than rendering holes.
-      const segment = segmentsByUuid.get(uuid);
-      if (!segment) continue;
-      claimed.add(uuid);
-      segments.push(segment);
-    }
-    return {
-      // A run reduced to one member by the checks above is no longer an overlap cluster.
-      isOverlapGroup: (group.is_overlap_group ?? false) && segments.length > 1,
-      overlapGroupId: group.overlap_group_id ?? undefined,
-      startTime: group.start_time,
-      endTime: group.end_time,
-      segments,
-      startSegmentIndex: group.start_segment_index ?? 0,
-    };
-  }
-
-  // The backend owns grouping (fat backend, thin frontend) and both the detail and the
-  // paginated segments endpoints return it. `TranscriptSegmentList` dereferences
-  // `group.segments[0]`, so groups that resolved to nothing are dropped.
-  $: groupedTranscriptSegments = (() => {
-    const claimed = new Set<string>();
-    return ((file?.grouped_segments || []) as GroupedTranscriptSegment[])
-      .map((group) => mapBackendGroup(group, claimed))
-      .filter((group: GroupedSegmentView) => group.segments.length > 0);
-  })();
+  // The backend owns grouping (fat backend, thin frontend); resolution against the flat
+  // uuid-keyed segment list (the single representation, #352) is shared with the
+  // search-result "view transcript" surface via `$lib/transcript/resolveGroupedSegments`
+  // (issue #755) rather than duplicated here.
+  $: groupedTranscriptSegments = resolveGroupedSegments(transcriptSegments, file?.grouped_segments);
 
   // Search functionality state
   let searchMatches: SearchMatch[] = [];
@@ -429,6 +376,7 @@
       {speakerList}
       {currentTime}
       {diarizationDisabled}
+      editable={true}
       {editingSegmentId}
       bind:editingSegmentText
       {savingTranscript}

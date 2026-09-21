@@ -23,6 +23,10 @@
   // are the shared highlight classes from src/styles/search.css.
   export let highlighted: boolean = false;
   export let isCurrentMatch: boolean = false;
+  // Read-only presentation (e.g. the search-result / "view transcript" modal, issue
+  // #755): renders the same chip, but the dropdown never opens and no mutation is
+  // possible. Those surfaces may be opened by a viewer-only user.
+  export let readOnly: boolean = false;
 
   const dispatch = createEventDispatcher();
   let triggerButton: HTMLButtonElement;
@@ -210,6 +214,7 @@
   function toggleDropdown(event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
+    if (readOnly) return;
 
     isOpen = !isOpen;
 
@@ -646,9 +651,11 @@
 <div class="speaker-dropdown-container">
   <button
     class="speaker-trigger"
+    class:read-only={readOnly}
     bind:this={triggerButton}
     on:click={toggleDropdown}
-    title={$t('speaker.clickToChangeSpeaker')}
+    aria-disabled={readOnly}
+    title={readOnly ? triggerLabel : $t('speaker.clickToChangeSpeaker')}
   >
     <div
       class="segment-speaker"
@@ -658,7 +665,7 @@
     >
       {triggerLabel}
     </div>
-    {#if pendingSuggestion}
+    {#if pendingSuggestion && !readOnly}
       <!-- The suggestion exists but is unconfirmed: a marker, not a name. -->
       <span class="suggestion-marker" title={$t('speaker.unconfirmedSuggestion')} aria-hidden="true">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
@@ -666,6 +673,7 @@
         </svg>
       </span>
     {/if}
+    {#if !readOnly}
     <svg
       class="dropdown-arrow"
       class:open={isOpen}
@@ -678,6 +686,7 @@
     >
       <polyline points="6 9 12 15 18 9"></polyline>
     </svg>
+    {/if}
   </button>
 </div>
 
@@ -760,6 +769,10 @@
     padding: 0;
     max-width: 100%;
     min-width: 0;
+  }
+
+  .speaker-trigger.read-only {
+    cursor: default;
   }
 
   .segment-speaker {

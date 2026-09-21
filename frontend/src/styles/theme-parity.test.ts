@@ -57,9 +57,11 @@ function themeScannableFiles(dir: string, out: string[] = []): string[] {
  */
 const KNOWN_DEAD_DARK_SELECTOR_FILES = [
   'components/FileUploader.svelte',
-  'components/search/SearchTranscriptModal.svelte',
   // `routes/+page.svelte` left this list when its hand-rolled modal chrome was
   // replaced by BaseModal (#739): the dead `:global(.dark)` rules went with it.
+  // `components/search/SearchTranscriptModal.svelte` left this list when it was deleted
+  // (issue #755 — consolidated into `components/transcript/TranscriptViewModal.svelte`,
+  // which never used `:global(.dark)`).
 ];
 
 describe('dark-mode selector convention', () => {

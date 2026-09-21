@@ -34,6 +34,7 @@ export type SettingsSection =
   // an empty pane. Cache configuration lives inside the 'retention' panel.
   | 'admin-users'
   | 'admin-task-health'
+  | 'quarantine'
   | 'chat-admin'
   | 'redaction-policy'
   | 'embedding-migration'
@@ -80,6 +81,7 @@ const initialState: SettingsModalState = {
     team: false,
     'admin-users': false,
     'admin-task-health': false,
+    quarantine: false,
     'redaction-policy': false,
     'embedding-migration': false,
     'data-integrity': false,

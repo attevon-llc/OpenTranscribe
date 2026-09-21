@@ -328,8 +328,11 @@
                       <span>{file.speaker_summary.count} spk</span>
                     {/if}
                     <span class="status-slot">
+                      <!-- Keyed off `is_quarantined`, never bare `status` (issue #576 E11):
+                           a file quarantined mid-pipeline can have `status` overwritten to a
+                           terminal value by a running task while this flag stays correct. -->
                       <FileStatusIndicator
-                        status={file.status}
+                        status={file.is_quarantined ? 'quarantined' : file.status}
                         displayStatus={file.status === 'error' && file.user_message ? $t('gallery.errorClickForDetails') : file.display_status}
                         clickable={file.status === 'error' && !!file.user_message}
                         on:click={() => handleErrorClick(file)}

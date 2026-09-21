@@ -31,6 +31,8 @@
   import AutoLabelSettings from '$components/settings/AutoLabelSettings.svelte';
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
+  import LockedAccountsPanel from '$components/settings/LockedAccountsPanel.svelte';
+  import QuarantinePanel from '$components/settings/QuarantinePanel.svelte';
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
   import ASRSettings from '$components/settings/ASRSettings.svelte';
   import EngineSettings from '$components/settings/EngineSettings.svelte';
@@ -111,6 +113,7 @@
     // admin
     'admin-users': 'admin',
     'admin-task-health': 'admin',
+    quarantine: 'admin',
     'data-integrity': 'admin',
     'embedding-migration': 'admin',
     retention: 'admin',
@@ -330,7 +333,12 @@
           { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin', badge: pendingApprovalCount },
           { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' },
           { id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu', cap: 'engine.settings' },
-          { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' }
+          { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
+          // issue #576: abuse/DMCA takedown review queue. `admin.takedown` is a
+          // weak, frontend-only capability key (J-B4) — the endpoints are NOT
+          // capability-gated, since `require_capability` 404s and a compliance
+          // endpoint that vanishes is worse than one that refuses.
+          { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' }
         ]
       }
     ] : []),
@@ -1150,6 +1158,14 @@
                 onRefresh={refreshAdminUsers}
                 onUserRecovery={recoverUserFiles}
               />
+              <LockedAccountsPanel />
+            </div>
+          {/if}
+
+          <!-- Quarantine / Takedown Review Queue Section (issue #576) -->
+          {#if activeSection === 'quarantine'}
+            <div class="content-section">
+              <QuarantinePanel />
             </div>
           {/if}
 

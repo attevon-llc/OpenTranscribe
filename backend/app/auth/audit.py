@@ -48,6 +48,10 @@ class AuditEventType(StrEnum):
     # Account events
     AUTH_ACCOUNT_LOCKOUT = "auth.account.lockout"
     AUTH_ACCOUNT_UNLOCK = "auth.account.unlock"
+    #: Admin clearing the progressive lockout counter (issue #570) — distinct from
+    #: AUTH_ACCOUNT_UNLOCK, which also reactivates a disabled account. See
+    #: `api/endpoints/admin.py::admin_reset_lockout_counter`.
+    AUTH_LOCKOUT_COUNTER_RESET = "auth.lockout.counter_reset"  # noqa: S105 # nosec B105
     AUTH_ACCOUNT_DISABLED = "auth.account.disabled"
     AUTH_ACCOUNT_EXPIRED = "auth.account.expired"
     # Distinct from AUTH_ACCOUNT_EXPIRED: the AC-2 inactivity sweep declined to
@@ -474,13 +478,24 @@ class AuditLogger:
         lockout_duration_minutes: int,
         failed_attempts: int,
     ) -> None:
-        """Log an account lockout event."""
+        """Log an account lockout event.
+
+        This is a SYSTEM-initiated event (the progressive lockout threshold was
+        crossed by a login attempt, not by an administrator), so there is no
+        actor: ``user_id``/``username`` stay unset and the locked account is the
+        TARGET (issue #443's contract — the subject always goes in
+        ``target_user_id``/``target_username``, never in the actor fields, even
+        when there is no human actor to distinguish it from). This was
+        previously the exact pre-#443 shape: the locked account named in
+        ``username`` with no target at all, invisible to "everything done TO
+        this identifier" queries.
+        """
         self.log(
             event_type=AuditEventType.AUTH_ACCOUNT_LOCKOUT,
             outcome=AuditOutcome.SUCCESS,
-            username=username,
             source_ip=source_ip,
             user_agent=user_agent,
+            target_username=username,
             details={
                 "lockout_duration_minutes": lockout_duration_minutes,
                 "failed_attempts": failed_attempts,

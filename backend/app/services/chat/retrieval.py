@@ -29,6 +29,7 @@ from app.services.chat.trace import emit
 from app.services.search.chunk_retrieval import ChunkHit
 from app.services.search.chunk_retrieval import diversity_sample
 from app.services.search.chunk_retrieval import retrieve_chunks
+from app.services.search.chunk_retrieval import scope_aware_pool_size
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +275,17 @@ def retrieve_context(
     )
 
     # Over-fetch: the pool feeds diversity sampling and reranking, not the prompt.
+    # Issue #975: a FIXED pool doesn't scale with scope size, so at large scope the
+    # initial pull can concentrate on 1-2 files before diversity sampling or
+    # reranking ever see the rest. `effective_pool` widens toward covering every
+    # file in a bounded scope; an unbounded ("all accessible") scope is left
+    # unscaled — see `scope_aware_pool_size`'s docstring for why.
+    scope_size = len(file_uuids) if file_uuids is not None else None
+    effective_pool = scope_aware_pool_size(
+        settings.candidate_pool,
+        per_file=settings.max_chunks_per_file,
+        scope_size=scope_size,
+    )
     retrieve_started = time.monotonic()
     chunk_diagnostics: dict[str, Any] = {}
     # ⚠️ ONE node, not two. `retrieve_chunks` runs a single chunk-plane query,
@@ -286,7 +298,7 @@ def retrieve_context(
         node_id="main",
         plane="chunk",
         source="opensearch",
-        limit=settings.candidate_pool,
+        limit=effective_pool,
     )
     hits = retrieve_chunks(
         query,
@@ -294,7 +306,7 @@ def retrieve_context(
         organization_id=organization_id,
         file_uuids=file_uuids,
         speakers=speakers,
-        size=settings.candidate_pool,
+        size=effective_pool,
         search_mode=search_mode,
         diagnostics=chunk_diagnostics,
     )
@@ -341,7 +353,7 @@ def retrieve_context(
             organization_id=organization_id,
             file_uuids=file_uuids,
             speakers=speaker_focus_names,
-            size=settings.candidate_pool,
+            size=effective_pool,
             search_mode=search_mode,
         )
         result.timings_ms["speaker_focus"] = int((time.monotonic() - focus_started) * 1000)
@@ -380,12 +392,19 @@ def retrieve_context(
 
     # Rerank BEFORE narrowing: the cross-encoder is what decides relevance, so it
     # must see the whole pool. Diversity is then applied to the reranked order.
+    # Issue #975: `effective_pool` can now be much larger than the admin's
+    # `rerank_max_pairs` floor, so widen it the same way — a large unscored tail
+    # left in raw retrieval order is exactly what let `diversity_sample` (below)
+    # give equal round-1 representation to a barely-matching file. `max()`, not
+    # `scope_aware_pool_size()` again: the point is "at least cover effective_pool",
+    # not a second, possibly different, per-file-scaled number.
+    effective_rerank_max_pairs = max(settings.rerank_max_pairs, effective_pool)
     if settings.rerank_enabled:
         from app.services.chat.reranker import rerank
 
         rerank_started = time.monotonic()
-        hits = rerank(query, hits, max_pairs=settings.rerank_max_pairs)
-        result.reranked = min(len(hits), settings.rerank_max_pairs)
+        hits = rerank(query, hits, max_pairs=effective_rerank_max_pairs)
+        result.reranked = min(len(hits), effective_rerank_max_pairs)
         result.timings_ms["rerank"] = int((time.monotonic() - rerank_started) * 1000)
         emit(
             recorder,
@@ -393,7 +412,7 @@ def retrieve_context(
             parent=parent,
             node_id="rerank",
             count=result.reranked,
-            limit=settings.rerank_max_pairs,
+            limit=effective_rerank_max_pairs,
             ms=result.timings_ms["rerank"],
         )
     else:
@@ -407,10 +426,26 @@ def retrieve_context(
         )
 
     pool_size = len(hits)
+    # Issue #975: `min_file_score=0.0` keeps a barely-matching file out of the
+    # round-robin ENTIRELY rather than merely visiting it later — 0.0 is the
+    # cross-encoder's own relevance/irrelevance boundary when reranking ran
+    # (measured on this corpus: the genuinely relevant file(s) for a needle
+    # question scored +1.6/+2.7, every other file scored negative, some as low
+    # as -11). Applied ONLY when the pool was actually widened past the admin's
+    # configured floor: at the ~4-file scope this repo's existing tuning
+    # (#531's 40/12/4 measurement) was measured against, `effective_pool ==
+    # settings.candidate_pool` and this stays `None` — byte-identical to
+    # pre-#975 behaviour. Unconditionally applying it instead changed
+    # small-scope answers too (measured: a negative-control question that used
+    # to surface its file's nearest-but-irrelevant chunks — the material the
+    # negative-control check needs the model to correctly decline despite
+    # having — started retrieving nothing at all).
+    min_file_score = 0.0 if effective_pool > settings.candidate_pool else None
     selected = diversity_sample(
         hits,
         max_per_file=settings.max_chunks_per_file,
         cap=settings.final_chunks,
+        min_file_score=min_file_score,
     )
     result.chunks = selected
     result.timings_ms["total"] = int((time.monotonic() - started) * 1000)

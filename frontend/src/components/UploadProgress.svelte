@@ -14,16 +14,27 @@
     return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
   }
 
-  // Get status color
-  function getStatusColor(status: string): string {
+  /**
+   * Status -> CSS class, keyed to theme tokens rather than hardcoded hex
+   * (#752 gap 2). Each token pair was chosen because it clears BOTH the WCAG
+   * AA 4.5:1 text threshold (the status icon is a glyph, i.e. text) and the
+   * WCAG 2.1 SC 1.4.11 3:1 non-text threshold (the progress-bar fill against
+   * --border-color) in both themes — verified in
+   * `styles/primary-contrast.test.ts`. The plain `--success-color` /
+   * `--warning-color` / etc. tokens do NOT clear 3:1 against --border-color
+   * in light mode (measured as low as 1.73:1 for warning), so this
+   * deliberately reuses the existing darker "-text"/"-dark" tokens instead
+   * of the base status colors.
+   */
+  function statusClass(status: string): string {
     switch (status) {
-      case 'completed': return '#10b981';
-      case 'failed': return '#ef4444';
-      case 'cancelled': return '#6b7280';
+      case 'completed': return 'status-completed';
+      case 'failed': return 'status-failed';
+      case 'cancelled': return 'status-cancelled';
       case 'uploading':
       case 'processing':
-      case 'preparing': return '#3b82f6';
-      default: return '#f59e0b';
+      case 'preparing': return 'status-active';
+      default: return 'status-pending';
     }
   }
 
@@ -57,7 +68,7 @@
 <div class="upload-item">
   <div class="upload-header">
     <div class="upload-info">
-      <div class="upload-icon" style="color: {getStatusColor(upload.status)}">
+      <div class="upload-icon {statusClass(upload.status)}">
         {getStatusIcon(upload.status)}
       </div>
       <div class="upload-details">
@@ -92,7 +103,7 @@
     <div class="upload-actions">
       {#if upload.status === 'failed'}
         <button
-          class="action-btn retry-btn"
+          class="upload-tray-action-btn upload-tray-retry-btn"
           on:click={handleRetry}
           title={$t('upload.retryUpload')}
         >
@@ -102,7 +113,7 @@
 
       {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing'}
         <button
-          class="action-btn cancel-btn"
+          class="upload-tray-action-btn upload-tray-cancel-btn"
           on:click={handleCancel}
           title={$t('upload.cancelUpload')}
         >
@@ -110,7 +121,7 @@
         </button>
       {:else}
         <button
-          class="action-btn remove-btn"
+          class="upload-tray-action-btn upload-tray-remove-btn"
           on:click={handleRemove}
           title={$t('upload.removeFromList')}
         >
@@ -122,10 +133,10 @@
 
   {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing'}
     <div class="progress-container">
-      <div class="progress-bar">
+      <div class="upload-tray-progress-bar">
         <div
-          class="progress-fill"
-          style="width: {upload.progress}%; background-color: {getStatusColor(upload.status)}"
+          class="progress-fill {statusClass(upload.status)}"
+          style="width: {upload.progress}%"
         ></div>
       </div>
       <span class="progress-text">{upload.progress}%</span>
@@ -170,6 +181,23 @@
     min-width: 20px;
     text-align: center;
   }
+
+  /* Status colours (#752 gap 2) — one token per status, shared by the icon
+     (text, needs WCAG AA 4.5:1) and the progress-fill (non-text, needs WCAG
+     2.1 SC 1.4.11's 3:1) against their respective backgrounds. Each token
+     already carries its own [data-theme='dark'] value in theme.css, so no
+     separate dark-mode override is needed here. */
+  .upload-icon.status-completed { color: var(--color-success-text); }
+  .upload-icon.status-failed { color: var(--error-dark); }
+  .upload-icon.status-cancelled { color: var(--text-secondary); }
+  .upload-icon.status-active { color: var(--color-info-text); }
+  .upload-icon.status-pending { color: var(--color-warning-text); }
+
+  .progress-fill.status-completed { background-color: var(--color-success-text); }
+  .progress-fill.status-failed { background-color: var(--error-dark); }
+  .progress-fill.status-cancelled { background-color: var(--text-secondary); }
+  .progress-fill.status-active { background-color: var(--color-info-text); }
+  .progress-fill.status-pending { background-color: var(--color-warning-text); }
 
   .upload-details {
     flex: 1;
@@ -216,7 +244,7 @@
     gap: 4px;
   }
 
-  .action-btn {
+  .upload-tray-action-btn {
     background: none;
     border: none;
     padding: 4px 6px;
@@ -228,17 +256,17 @@
     transition: all 0.2s ease;
   }
 
-  .action-btn:hover {
+  .upload-tray-action-btn:hover {
     background: var(--hover-color);
   }
 
-  .retry-btn:hover {
+  .upload-tray-retry-btn:hover {
     color: #10b981;
     background: rgba(16, 185, 129, 0.1);
   }
 
-  .cancel-btn:hover,
-  .remove-btn:hover {
+  .upload-tray-cancel-btn:hover,
+  .upload-tray-remove-btn:hover {
     color: #ef4444;
     background: rgba(239, 68, 68, 0.1);
   }
@@ -250,7 +278,7 @@
     margin-top: 8px;
   }
 
-  .progress-bar {
+  .upload-tray-progress-bar {
     flex: 1;
     height: 4px;
     background: var(--border-color);
@@ -300,15 +328,15 @@
     background: rgba(245, 158, 11, 0.18);
   }
 
-  :global([data-theme='dark']) .action-btn {
+  :global([data-theme='dark']) .upload-tray-action-btn {
     color: var(--text-secondary);
   }
 
-  :global([data-theme='dark']) .action-btn:hover {
+  :global([data-theme='dark']) .upload-tray-action-btn:hover {
     background: var(--hover-color);
   }
 
-  :global([data-theme='dark']) .progress-bar {
+  :global([data-theme='dark']) .upload-tray-progress-bar {
     background: var(--border-color);
   }
 

@@ -140,6 +140,56 @@ function compositeOver(
   ];
 }
 
+/**
+ * `UploadProgress.svelte`'s per-file progress-bar fill (#752 gap 2) is a
+ * NON-text UI component, so WCAG 2.1 SC 1.4.11 applies (3:1), not the 4.5:1
+ * normal-text threshold used above. The fix reuses existing "-text"/"-dark"
+ * status tokens rather than the plain `--success-color` / `--warning-color`
+ * / etc. tokens, because the plain tokens do NOT clear 3:1 against
+ * `--border-color` in light mode (see the control below) — this is exactly
+ * the trap §12.4 of the plan warns about: verify the "before" number first
+ * rather than assuming a token swap alone fixes the contrast.
+ */
+const NON_TEXT_AA = 3.0;
+
+describe('progress fill clears non-text contrast (WCAG 1.4.11) against its track', () => {
+  const progressStatusTokens: Record<string, string> = {
+    completed: '--color-success-text',
+    failed: '--error-dark',
+    cancelled: '--text-secondary',
+    active: '--color-info-text',
+    pending: '--color-warning-text',
+  };
+
+  for (const [label, selector] of [
+    ['light', ':root'],
+    ['dark', "[data-theme='dark']"],
+  ] as const) {
+    const border = hexToRgb(token(selector, '--border-color'));
+
+    for (const [status, tokenName] of Object.entries(progressStatusTokens)) {
+      it(`${label}: ${status} fill (${tokenName}) vs --border-color clears ${NON_TEXT_AA}:1`, () => {
+        const fill = hexToRgb(token(selector, tokenName));
+        expect(contrast(fill, border)).toBeGreaterThanOrEqual(NON_TEXT_AA);
+      });
+    }
+  }
+
+  it('control: the OLD hardcoded per-status hex values do not all clear 3:1 in light mode', () => {
+    // These are the literals UploadProgress.svelte's getStatusColor() used to
+    // return, checked against the LIGHT --border-color. Proves the gate
+    // discriminates rather than passing anything already in the file.
+    const lightBorder = hexToRgb(token(':root', '--border-color'));
+    const oldHardcoded: Record<string, string> = {
+      completed: '#10b981',
+      pending: '#f59e0b', // the biggest offender: 1.73:1
+    };
+    for (const hex of Object.values(oldHardcoded)) {
+      expect(contrast(hexToRgb(hex), lightBorder)).toBeLessThan(NON_TEXT_AA);
+    }
+  });
+});
+
 describe('.chip (upload-shared.css) clears AA contrast in dark mode', () => {
   const chipCss = fs.readFileSync(
     path.resolve(__dirname, '../components/upload/upload-shared.css'),

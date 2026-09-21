@@ -111,12 +111,10 @@
       <span class="review-value">{getModelLabel()}</span>
     </div>
 
-    {#if skipSummary}
-      <div class="review-row">
-        <span class="review-label">{$t('upload.skipSummary')}</span>
-        <span class="review-value">{$t('common.yes')}</span>
-      </div>
-    {/if}
+    <div class="review-row">
+      <span class="review-label">{$t('upload.aiSummary')}</span>
+      <span class="review-value">{skipSummary ? $t('common.no') : $t('common.yes')}</span>
+    </div>
   </div>
 
 </div>

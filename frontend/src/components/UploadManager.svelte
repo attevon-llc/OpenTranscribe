@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import {
     uploadsStore,
     activeUploadCount,
@@ -13,80 +12,6 @@
   import { t } from '../stores/locale';
   import UploadProgress from './UploadProgress.svelte';
   import EmptyState from './ui/EmptyState.svelte';
-
-  // Component state
-  let isDragging = false;
-  let dragOffset = { x: 0, y: 0 };
-  let startPosition = { x: 0, y: 0 };
-  let position = { x: 20, y: 20 }; // Default bottom-right position
-
-  // Load saved position
-  const savedPosition = localStorage.getItem('upload-manager-position');
-  if (savedPosition) {
-    try {
-      position = JSON.parse(savedPosition);
-    } catch (e) {
-      // Use default position
-    }
-  }
-
-  // Save position when changed
-  function savePosition() {
-    localStorage.setItem('upload-manager-position', JSON.stringify(position));
-  }
-
-  // Handle drag start
-  function handleDragStart(event: MouseEvent) {
-    if (event.target && (event.target as HTMLElement).closest('.upload-actions, .action-btn')) {
-      return; // Don't drag when clicking action buttons
-    }
-
-    isDragging = true;
-    startPosition = { x: event.clientX, y: event.clientY };
-    dragOffset = { x: 0, y: 0 };
-
-    document.addEventListener('mousemove', handleDragMove);
-    document.addEventListener('mouseup', handleDragEnd);
-    event.preventDefault();
-  }
-
-  // Handle header keyboard interactions
-  function handleHeaderKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      // For keyboard users, just toggle expand/collapse
-      handleToggle();
-      event.preventDefault();
-    }
-  }
-
-  // Handle drag move
-  function handleDragMove(event: MouseEvent) {
-    if (!isDragging) return;
-
-    dragOffset = {
-      x: event.clientX - startPosition.x,
-      y: event.clientY - startPosition.y
-    };
-  }
-
-  // Handle drag end
-  function handleDragEnd() {
-    if (!isDragging) return;
-
-    isDragging = false;
-
-    // Update position
-    position = {
-      x: Math.max(20, Math.min(window.innerWidth - 320, position.x + dragOffset.x)),
-      y: Math.max(20, Math.min(window.innerHeight - 200, position.y + dragOffset.y))
-    };
-
-    savePosition();
-    dragOffset = { x: 0, y: 0 };
-
-    document.removeEventListener('mousemove', handleDragMove);
-    document.removeEventListener('mouseup', handleDragEnd);
-  }
 
   // Toggle expanded state
   function handleToggle() {
@@ -105,12 +30,6 @@
     }
   }
 
-  // Cleanup
-  onDestroy(() => {
-    document.removeEventListener('mousemove', handleDragMove);
-    document.removeEventListener('mouseup', handleDragEnd);
-  });
-
   // Reactive values
   $: showManager = $uploadCount > 0;
   $: completedCount = $uploadStats.completed;
@@ -122,19 +41,12 @@
   <div
     class="upload-manager"
     class:expanded={$isExpanded}
-    class:dragging={isDragging}
-    style="
-      right: {position.x}px;
-      bottom: {position.y}px;
-      transform: translate({dragOffset.x}px, {dragOffset.y}px);
-    "
   >
     <!-- Minimized State -->
     {#if !$isExpanded}
       <div
         class="upload-badge"
         class:has-activity={$hasNewActivity}
-        on:mousedown={handleDragStart}
         on:click={handleToggle}
         role="button"
         tabindex="0"
@@ -160,7 +72,7 @@
             {/if}
           </div>
 
-          <div class="badge-text">
+          <div class="badge-text" aria-live="polite">
             {#if $activeUploadCount > 0}
               {$activeUploadCount} {$t('upload.uploading')}
             {:else if completedCount > 0}
@@ -182,7 +94,7 @@
     {#if $isExpanded}
       <div class="upload-panel">
         <!-- Header -->
-        <div class="panel-header" role="button" tabindex="0" on:mousedown={handleDragStart} on:keydown={handleHeaderKeydown}>
+        <div class="panel-header">
           <div class="header-content">
             <h3>{$t('upload.uploads')}</h3>
             <div class="header-stats">
@@ -259,18 +171,25 @@
 {/if}
 
 <style>
+  /*
+   * Drive-style fixed corner tray — never draggable (#752 gap 3; the previous
+   * drag math was inverted on both axes, had no touch equivalent, and fought
+   * the "stays put" behaviour the issue actually asked for). Anchored with
+   * logical properties (`inset-*-end`) rather than `right`/`bottom` so it
+   * sits at the trailing corner in RTL locales too (#2.6 — every other
+   * physically-anchored element in this app is a known RTL gap; new code
+   * shouldn't add to it).
+   */
   .upload-manager {
     position: fixed;
-    z-index: 9998;
+    inset-inline-end: 20px;
+    inset-block-end: 20px;
+    /* Sits in the documented --z-toast tier (theme.css) alongside Toast and
+       the classification banner, one tier below --z-critical. */
+    z-index: var(--z-toast);
     font-family: var(--font-family);
     user-select: none;
-    transition: transform 0.2s ease;
     margin-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  .upload-manager.dragging {
-    transition: none;
-    cursor: grabbing;
   }
 
   /* Minimized Badge */
@@ -279,7 +198,7 @@
     color: white;
     border-radius: 20px;
     padding: 8px 12px;
-    cursor: grab;
+    cursor: pointer;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     transition: all 0.2s ease;
     position: relative;
@@ -316,10 +235,10 @@
   .activity-indicator {
     position: absolute;
     top: -2px;
-    right: -2px;
+    inset-inline-end: -2px;
     width: 8px;
     height: 8px;
-    background: #ef4444;
+    background: var(--error-color);
     border-radius: 50%;
     border: 2px solid white;
     animation: pulse 2s ease-in-out infinite;
@@ -341,14 +260,9 @@
     background: var(--primary-color);
     color: white;
     padding: 12px 16px;
-    cursor: grab;
     display: flex;
     align-items: center;
     justify-content: space-between;
-  }
-
-  .panel-header:active {
-    cursor: grabbing;
   }
 
   .header-content h3 {
@@ -511,8 +425,7 @@
     }
 
     .upload-manager {
-      right: 20px !important;
-      left: 20px !important;
+      inset-inline: 20px !important;
       width: auto;
     }
   }

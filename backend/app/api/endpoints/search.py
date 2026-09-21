@@ -37,8 +37,6 @@ from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
 from app.services.search.reindex_cancel import read_fanout
 from app.services.search.reindex_cancel import request_cancel
-from app.services.search.summary_filters import SummarySearchFilters
-from app.services.search.summary_filters import parse_date_bound
 
 logger = logging.getLogger(__name__)
 
@@ -283,16 +281,23 @@ def search_transcripts(
         # The SPA sends every filter on every tab, so the summary leg has to
         # honour the same ones the transcript leg above just did — otherwise one
         # request's two legs disagree about which files the caller asked for
-        # (issue #831). `date_from`/`date_to` reach the transcript leg as raw
-        # strings because OpenSearch parses them itself; Postgres does not, so
-        # they are parsed here and a bad value is a 400 rather than a silently
-        # dropped bound.
-        try:
-            summary_filters = SummarySearchFilters(
+        # (issue #831). Since #963 both legs route through the SAME filter
+        # builder (`HybridSearchService._build_filters`), so there is no
+        # longer a second SQL predicate implementation to keep in sync.
+        # `date_from`/`date_to` reach OpenSearch as raw strings — it parses
+        # them itself — so the 400-on-bad-date arm the retired Postgres leg
+        # needed (`parse_date_bound`) no longer applies here.
+        payload.update(
+            _summary_search_payload(
+                db,
+                ctx,
+                q,
+                page,
+                page_size,
                 speakers=speakers,
                 tags=tags,
-                date_from=parse_date_bound(date_from, upper=False),
-                date_to=parse_date_bound(date_to, upper=True),
+                date_from=date_from,
+                date_to=date_to,
                 file_type=file_type,
                 collection_id=collection_id,
                 min_duration=min_duration,
@@ -303,12 +308,7 @@ def search_transcripts(
                 title_filter=title_filter,
                 file_uuid=file_uuid,
             )
-        except ValueError as e:
-            raise HTTPException(
-                status_code=400,
-                detail="date_from and date_to must be ISO 8601 dates or datetimes",
-            ) from e
-        payload.update(_summary_search_payload(db, ctx, q, page, page_size, summary_filters))
+        )
 
     if want_summaries:
         # `total_pages` is the only paging signal the response carries, so it has
@@ -466,9 +466,30 @@ def _summary_search_payload(
     q: str,
     page: int,
     page_size: int,
-    filters: SummarySearchFilters,
+    *,
+    speakers: list[str] | None = None,
+    tags: list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    file_type: list[str] | None = None,
+    collection_id: int | None = None,
+    min_duration: float | None = None,
+    max_duration: float | None = None,
+    min_file_size: int | None = None,
+    max_file_size: int | None = None,
+    language: str | None = None,
+    title_filter: str | None = None,
+    file_uuid: str | None = None,
 ) -> dict[str, Any]:
-    r"""Build the ``summary_results``/``summary_total`` pair for issue #462.
+    r"""Build the ``summary_results``/``summary_total`` pair for issue #462, #963.
+
+    Since #963 this queries the OpenSearch summary plane
+    (``services/search/summary_search.search_summaries`` ->
+    ``HybridSearchService.search_summary_plane``), not Postgres full-text
+    search — see that module's docstring for the design. The filter kwargs
+    below are forwarded verbatim into the SAME filter builder the transcript
+    leg uses (`HybridSearchService._build_filters`), closing #831's whole
+    defect class (one builder, not two).
 
     ⚠️ Deliberately UNCACHED — do not "finish the job" by adding a response
     cache here the way the transcript leg has one (issue #822's plan named this
@@ -513,9 +534,11 @@ def _summary_search_payload(
     still needs a summary-regeneration invalidation signal that does not yet
     exist.
 
-    Access control is ``PermissionService.get_accessible_file_ids_subquery`` —
-    the same authority every owner-scoped listing uses — applied inside
-    ``search_summaries`` itself; this function does not re-derive visibility.
+    Access control (since #963) is the OpenSearch-side ``accessible_user_ids``
+    denormalized copy — the SAME authority and the SAME query
+    (``HybridSearchService._build_filters``) the transcript leg uses — applied
+    inside ``search_summaries`` -> ``search_summary_plane`` itself; this
+    function does not re-derive visibility.
 
     Masking uses the REQUESTING user's policy (the read-surface rule from #85,
     the same subject the summary-detail endpoint already resolves) and fails
@@ -526,20 +549,23 @@ def _summary_search_payload(
     ``redaction/summary_redaction.py`` for why batching leaks repeated names,
     and for why only the returned leaves are examined (issue #822).
 
-    Quarantine is applied INSIDE ``search_summaries`` via
-    ``exclude_quarantined`` — a pre-filter, so ``summary_total`` and the page
-    offsets are consistent with what is returned. This function used to
-    post-filter the hit list here; that left the count disclosing a
-    taken-down file whose hit fell outside the requested page (#818).
+    Quarantine is resolved from Postgres (fail-closed:
+    ``hybrid_search_service._quarantined_file_uuids``) and applied INSIDE
+    ``search_summary_plane`` as a ``must_not`` PRE-filter, so
+    ``summary_total`` and the page offsets are consistent with what is
+    returned. This function used to post-filter the hit list here; that left
+    the count disclosing a taken-down file whose hit fell outside the
+    requested page (#818).
 
-    ``filters`` (the request's date/tag/collection/… filters) goes the same way
-    and for the same reason — into ``search_summaries``' own query, never a pass
-    over the returned hits. Applying them here instead would leave
-    ``summary_total`` counting files the page had just removed, which is the
-    #818 shape exactly. See ``services/search/summary_filters.py``.
+    The date/tag/collection/… filter kwargs go the same way and for the same
+    reason — into ``search_summary_plane``'s own query, never a pass over the
+    returned hits. Applying them here instead would leave ``summary_total``
+    counting files the page had just removed, which is the #818 shape
+    exactly.
     """
     from app.services.redaction.config import resolve_effective_config
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
+    from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
     from app.services.search.summary_search import search_summaries
 
     cfg = resolve_effective_config(db, ctx.user.id)
@@ -553,10 +579,29 @@ def _summary_search_payload(
             page_size=page_size,
             redaction_cfg=cfg,
             include_quarantined=ctx.user.is_admin,
-            filters=filters,
+            speakers=speakers,
+            tags=tags,
+            date_from=date_from,
+            date_to=date_to,
+            file_type=file_type,
+            collection_id=collection_id,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            min_file_size=min_file_size,
+            max_file_size=max_file_size,
+            language=language,
+            title_filter=title_filter,
+            file_uuid=file_uuid,
         )
     except SummaryMaskingUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
+    except QuarantineExclusionUnavailableError as e:
+        # Literal 503, matching this module's other quarantine-unavailable
+        # arms — silently searching without the exclusion is a takedown
+        # bypass, not a degraded result.
+        raise HTTPException(
+            status_code=503, detail="The summary search exclusion list is unavailable."
+        ) from e
 
     return {
         "summary_results": [
@@ -564,7 +609,10 @@ def _summary_search_payload(
                 "file_uuid": hit.file_uuid,
                 "file_id": hit.file_id,
                 "title": hit.title,
-                "matches": [{"key_path": m.key_path, "snippet": m.snippet} for m in hit.matches],
+                "matches": [
+                    {"key_path": m.key_path, "snippet": m.snippet, "score": m.score}
+                    for m in hit.matches
+                ],
             }
             for hit in result.results
         ],

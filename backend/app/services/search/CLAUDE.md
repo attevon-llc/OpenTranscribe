@@ -189,7 +189,8 @@ speaker plane exists to let people *set*.
 
 ## Gotchas
 
-- **Do NOT add `aggs` to the collapsed hybrid body** (`hybrid_search_service.py:1464`):
+- **Do NOT add `aggs` to the collapsed hybrid body** (`hybrid_search_service.py:2320`, corrected
+  citation — a prior version of this line pointed at `:1464`, which is unrelated `Args:` prose):
   OpenSearch 3.4 throws `ArrayIndexOutOfBoundsException` in `score-ranker-processor` when
   cardinality aggs meet hybrid + collapse + RRF. `total_files` is derived from collapsed results.
 - RRF + collapse **strips inner-hit highlights** — hence `_detect_keyword_match_fallback` and
@@ -708,30 +709,62 @@ bare `FAILED` and the passing `assert hits` above it was read as the failure. Us
 `chunk_plane_query` — the same rule the product follows — and assert `hits` non-empty on its own
 line so "nothing indexed" can never again be confused with "wrong plane".
 
-## Index v6: two planes in one index (#403 Stage 3)
+## Index v6: three planes in one index (#403 Stage 3, #963)
 
 `_INDEX_VERSION` is **6**, and it is assigned *from*
 `services/ingest_artifacts/index_mapping.TARGET_INDEX_VERSION` so the number and the mapping
-cannot drift. `transcript_chunks` now holds two kinds of document:
+cannot drift. `transcript_chunks` now holds three kinds of document:
 
 | plane | `doc_type` | `_id` | `chunk_index` |
 |---|---|---|---|
 | transcript chunk | `chunk` (absent on anything written before v6) | `{uuid}_{n}` | `n` |
 | digest section | `digest` | `{uuid}_digest_{n}` | `-1-n` (negative sentinel; `index.sort.field` includes `chunk_index`, and 0 is a real chunk) |
+| summary leaf | `summary` (issue #963) | `{uuid}_summary_{n}` | `SUMMARY_CHUNK_INDEX_BASE - n` (a disjoint, more-negative sentinel band; `test_the_sentinel_bands_never_collide`) |
 
-Everything about the shape — the mapping additions, the id scheme, the sentinel, the
-`chunk_plane_clause()` / `digest_plane_clause()` helpers, `build_embedding_text` and
-`build_digest_documents` — lives in `services/ingest_artifacts/index_mapping.py` and is
-**imported, never restated**. It was pinned there a stage early precisely so Stage 3 got one
-bump and one reindex.
+Everything about the shape — the mapping additions, the id scheme, the sentinels, the
+`chunk_plane_clause()` / `digest_plane_clause()` / `summary_plane_clause()` helpers,
+`build_embedding_text`, `build_digest_documents` and `build_summary_documents` — lives in
+`services/ingest_artifacts/index_mapping.py` and is **imported, never restated**. The summary
+plane's mapping additions (`summary_key_path` keyword, `summary_leaf_index` integer) landed as
+`ADDITIVE_MAPPING_STEPS` step 3 — additive, no `_INDEX_VERSION` bump, no destructive reindex.
 
-- **Three predicate builders, and picking the wrong one is silent.** `chunk_plane_query`
+- **The summary plane's SOURCE OF TRUTH is `media_file.summary_data` in Postgres, never
+  OpenSearch.** `TranscriptIndexingService._index_summary_plane` has no `summary_data`
+  parameter — it reads the column itself, on its own session — which is the structural
+  anti-regression for #67 (the retired implementation wrote the SAME dict to the column and to
+  OpenSearch in one task). The plane is a derived, fully-rebuildable cache, addressed by
+  deterministic leaf-ordinal id, never a second store of record.
+- **Four predicate builders, and picking the wrong one is silent.** `chunk_plane_query`
   (compat-armed chunk plane — the #400 tail prune, the #405 rename rewrite),
-  `digest_plane_query` (digest sections of one file — the digest-orphan prune), and
+  `digest_plane_query` (digest sections of one file — the digest-orphan prune),
+  `summary_plane_query` (summary leaves of one file — the summary-orphan prune, #963), and
   `file_plane_query` (**every** plane — file deletion and the full rebuild in
   `reindex_transcript`). A rebuild that used the chunk-plane predicate would leave the
-  digests of a shorter re-sectioning behind; a delete that used it would leave a readable
-  summary of a deleted recording.
+  digests/summaries of a shorter re-sectioning/re-summarization behind; a delete that used it
+  would leave a readable summary of a deleted recording.
+- **The summary plane rides the SAME per-file index path as the digest plane, for the identical
+  reason (addendum G1).** `index_transcript_chunks` calls `_index_summary_plane` right after
+  `_index_digest_plane`, sharing one `base_metadata` dict built once. `delete_transcript_chunks`
+  is unqualified (`file_plane_query`), and every rebuild trigger — version bump, model switch,
+  maintenance repair, manual reindex — routes through `index_transcript_chunks`; a rebuild that
+  regenerated chunks and digests but not summaries would destroy the summary plane permanently.
+  A summary is also generated/cleared LATER and independently of the transcript, so it has its
+  own light trigger too: the `index_file_summary` Celery task (CPU queue), dispatched from every
+  site that mutates `media_file.summary_data` — **always after that write's session has
+  committed**, never from inside it.
+- **The summary plane is query-time isolated, never chat-visible.** `HybridSearchService._build_filters`
+  takes an optional `plane_clause` kwarg; every existing caller keeps the default
+  (`chunk_plane_clause()`), and `HybridSearchService.search_summary_plane` is the one caller
+  that passes `summary_plane_clause()`. `VERBATIM_DOC_TYPES` stays `(DOC_TYPE_CHUNK,)` — a
+  summary is derived, interpretive text and must never surface as if a speaker had said it.
+  Chat retrieval (`chunk_retrieval.retrieve_chunks`/`retrieve_digests`) is untouched: neither
+  clause it uses matches `doc_type: "summary"`.
+- **Summary search stores RAW text; masking is query-time, per leaf, under the REQUESTING
+  user's policy** — the same rule the chunk plane follows (`summary_search.py`,
+  `redaction/summary_redaction.mask_summary_leaf`). Index-time masking was rejected: one index
+  copy cannot carry N users' policies, and it would make a user's own masked content unfindable
+  by them. `unmask_for_local`/`is_local_provider` have no bearing here — this is a display
+  surface, not an egress event.
 - **The compat arm is mandatory, and for a precise reason.** A bare `term` on `doc_type` is
   not broken by the dynamic mapping (the four values are single lowercase tokens OpenSearch
   3.4 matches fine) — it is broken by **every document already indexed carrying no `doc_type`

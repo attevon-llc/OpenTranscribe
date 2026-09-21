@@ -323,6 +323,7 @@ celery_app.conf.update(
         "reindex_transcripts": {"queue": CeleryQueues.CPU},
         "reindex_batch": {"queue": CeleryQueues.CPU},
         "search_index_maintenance": {"queue": CeleryQueues.CPU},
+        "index_file_summary": {"queue": CeleryQueues.CPU},
         "search.reembed_degraded": {"queue": CeleryQueues.CPU},
         "neural_search_bootstrap": {"queue": CeleryQueues.UTILITY},
         "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},

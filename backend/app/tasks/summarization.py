@@ -400,6 +400,15 @@ def _load_summarization_inputs(
         media_file.summary_status = "processing"  # type: ignore[assignment]
         db.commit()
 
+        if force_regenerate:
+            # Prune the summary plane now, in case regeneration below fails
+            # before reaching `_persist_summary` — the happy path re-runs this
+            # anyway (harmless, deterministic ids overwrite) once the new
+            # summary is persisted (issue #963).
+            from app.tasks.search_indexing_task import index_file_summary
+
+            index_file_summary.delay(file_id)
+
         # ``joinedload`` rather than letting ``segment.speaker`` lazy-load per
         # row: the builders below read it for every segment.
         transcript_segments = (
@@ -695,6 +704,15 @@ def summarize_transcript_task(
 
         # Phase 3 — write (DB session reopened, Postgres only).
         _persist_summary(file_id, user_id, task_id, summary_data, prompt_uuid)
+
+        # Rebuild the OpenSearch summary plane from what was just committed
+        # (issue #963). Dispatched AFTER `_persist_summary`'s own session
+        # committed — never from inside it, and never with the dict passed
+        # along: `_index_summary_plane` re-reads `summary_data` from Postgres
+        # itself, which is the whole anti-regression for #67.
+        from app.tasks.search_indexing_task import index_file_summary
+
+        index_file_summary.delay(file_id)
 
         _send_completion_notification(
             user_id, file_id, summary_data, "AI summary generation completed successfully"

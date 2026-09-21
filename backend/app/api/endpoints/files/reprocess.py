@@ -106,6 +106,15 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
             db.delete(existing_analytics)
 
         db.commit()
+
+        # Prune the OpenSearch summary plane to match the now-cleared column
+        # (issue #963) — a full transcription reprocess clears summary_data
+        # unconditionally above and the new transcript may never gain a
+        # fresh summary before this file is searched again.
+        from app.tasks.search_indexing_task import index_file_summary
+
+        index_file_summary.delay(int(media_file.id))
+
         logger.info(f"Cleared existing transcription data for file {media_file.id}")
 
         # Remove deleted speakers from all OpenSearch speaker indices (non-fatal)
@@ -267,6 +276,14 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
 
         db.commit()
         tracker.flush(db)
+
+        if "summarization" in stages:
+            # Prune the OpenSearch summary plane to match the now-cleared
+            # column (issue #963).
+            from app.tasks.search_indexing_task import index_file_summary
+
+            index_file_summary.delay(int(media_file.id))
+
         logger.info(f"Cleared selective data for stages {stages} on file {media_file.id}")
     except Exception as e:
         logger.exception(f"Error clearing selective data for file {media_file.id}: {e}")

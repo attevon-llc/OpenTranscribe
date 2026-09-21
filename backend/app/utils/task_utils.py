@@ -857,6 +857,14 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
             media_file.summary_status = "pending"
 
             db.commit()
+
+            # Prune the OpenSearch summary plane to match the cleared column
+            # (issue #963) — a transcription retry may never reach a fresh
+            # summary generation, so nothing else is guaranteed to.
+            from app.tasks.search_indexing_task import index_file_summary
+
+            index_file_summary.delay(int(file_id))
+
             logger.info(f"Reset file {file_id} for retry (attempt {media_file.retry_count})")
             return True
 

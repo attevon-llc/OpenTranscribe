@@ -1418,9 +1418,18 @@ DEFAULT_CHAT_TRACE_ENABLED = True  # chat.trace_enabled
 # widened time range is what the cached-span rebuild reads), and the growth
 # is bounded so it comes out of the SAME excerpt budget without silently
 # evicting other files' evidence (`MAX_EXPANSION_SEGMENTS`/
-# `MAX_EXPANDED_WORDS`). Default OFF: a new, unmeasured retrieval shape, same
-# posture as every other W2.x flag above.
-DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = False  # chat.rag.context_expansion_enabled
+# `MAX_EXPANDED_WORDS`). Default ON as of 2026-09-21: measured (2026-08-20/21,
+# re-verified post-#526 on a TS3005/ES2002a A/B) that expansion delivers a
+# real, reproducible answer-quality gain ("same chunks, richer content") with
+# coverage a wash, not a regression, and #526 (the citation/quote-fidelity
+# blocker — an expanded chunk's citation pointed at a shorter, unexpanded
+# indexed span) is CLOSED on both the backend (`ChunkHit.expanded` +
+# `EXPANDED_SNIPPET_CHARS`) and the reader (`ChatSources.svelte`'s expander,
+# #913). citation_resolution_rate/citation_validity_rate stayed a perfect 1.0
+# in both arms of the re-verification. See issue #523's closing comment for
+# the full numbers, including a harness measurement artifact (filed
+# separately) that made raw quote_fidelity look worse than it is.
+DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = True  # chat.rag.context_expansion_enabled
 
 # --- #532 synthesis-gap EXPERIMENT flags. -----------------------------------
 # The measured defect: retrieval OFFERS 99% of a multi-file scope, the answer

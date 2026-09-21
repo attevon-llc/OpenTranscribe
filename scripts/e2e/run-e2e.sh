@@ -9,6 +9,12 @@
 #   ./scripts/e2e/run-e2e.sh -m upload           # one marker (upload/search/...)
 #   ./scripts/e2e/run-e2e.sh --headed            # visible browser (DISPLAY=:11)
 #   ./scripts/e2e/run-e2e.sh tests/e2e/test_search.py -v   # pytest passthrough
+#   ./scripts/e2e/run-e2e.sh --fresh myname      # target an isolated `--fresh --port-offset`
+#                                                 # deployment (offset read from .fresh/myname.offset)
+#
+# E2E_FRONTEND_URL / E2E_BACKEND_URL (or --fresh <name>) point this runner at an
+# isolated stack instead of the live dev one (issue #965). Without either, it targets
+# http://localhost:5173 / :5174, same as always.
 
 set -euo pipefail
 
@@ -20,6 +26,83 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VENV_PY="$PROJECT_ROOT/backend/venv/bin/python"
+
+# --fresh <name>: derive E2E_FRONTEND_URL/E2E_BACKEND_URL from the port offset recorded
+# for an isolated `--fresh --port-offset` deployment (issue #965). Parsed out of the
+# argument list FIRST, before the generic ARGS handling below, since `--fresh <name>`
+# is not a pytest path/marker and must never reach pytest as one.
+FRESH_NAME=""
+_RUN_E2E_FILTERED_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --fresh)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo -e "${RED}--fresh requires a deployment name, e.g. --fresh myname${NC}" >&2
+                exit 1
+            fi
+            FRESH_NAME="$2"
+            shift 2
+            ;;
+        *)
+            _RUN_E2E_FILTERED_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${_RUN_E2E_FILTERED_ARGS[@]}"
+
+if [[ -n "$FRESH_NAME" ]]; then
+    FRESH_OFFSET_FILE="$PROJECT_ROOT/.fresh/${FRESH_NAME}.offset"
+    if [[ -f "$FRESH_OFFSET_FILE" ]]; then
+        FRESH_OFFSET="$(cat "$FRESH_OFFSET_FILE")"
+    else
+        FRESH_OFFSET=0
+        echo -e "${YELLOW}--fresh ${FRESH_NAME}: no ${FRESH_OFFSET_FILE} found (no --port-offset" \
+            "recorded for this deployment) -- assuming offset 0${NC}" >&2
+    fi
+    if ! [[ "$FRESH_OFFSET" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}--fresh ${FRESH_NAME}: ${FRESH_OFFSET_FILE} does not contain a plain" \
+            "integer offset (got: '${FRESH_OFFSET}')${NC}" >&2
+        exit 1
+    fi
+    export E2E_FRONTEND_URL="http://localhost:$((5173 + FRESH_OFFSET))"
+    export E2E_BACKEND_URL="http://localhost:$((5174 + FRESH_OFFSET))"
+fi
+
+# Same defaults conftest.py's FRONTEND_URL/BACKEND_URL constants use, so a bare
+# invocation with neither --fresh nor an env var behaves exactly as before.
+E2E_FRONTEND_URL="${E2E_FRONTEND_URL:-http://localhost:5173}"
+E2E_BACKEND_URL="${E2E_BACKEND_URL:-http://localhost:5174}"
+export E2E_FRONTEND_URL E2E_BACKEND_URL
+
+# Pure bash URL host/port extraction (no python dependency for this early check).
+# Assumes the simple `scheme://host[:port]` shape every URL this script deals with has.
+url_host() {
+    local rest="${1#*://}"
+    local hostport="${rest%%/*}"
+    echo "${hostport%%:*}"
+}
+url_port() {
+    local rest="${1#*://}"
+    local hostport="${rest%%/*}"
+    if [[ "$hostport" == *:* ]]; then
+        echo "${hostport##*:}"
+    else
+        echo "$2"
+    fi
+}
+
+FRONTEND_HOST="$(url_host "$E2E_FRONTEND_URL")"
+FRONTEND_PORT="$(url_port "$E2E_FRONTEND_URL" 80)"
+BACKEND_HOST="$(url_host "$E2E_BACKEND_URL")"
+BACKEND_PORT="$(url_port "$E2E_BACKEND_URL" 80)"
+
+# Logged unconditionally (issue #965) — a result must always be attributable to the
+# stack that produced it. The mixed-stack guard itself lives in conftest.py's
+# `e2e_stack_preflight` fixture (stack_urls.mixed_stack_problem), which runs before any
+# test and pytest.exit(3)s loudly on a mismatch rather than letting the run continue
+# against two different stacks.
+echo -e "${GREEN}E2E target stack:${NC} frontend=${E2E_FRONTEND_URL} backend=${E2E_BACKEND_URL}"
 
 # A phase that declined to be counted is neither a pass nor a failure. 4 is the same code
 # scripts/run-integration-tests.sh uses for it, and the same one scripts/run-dev-tests.sh's
@@ -95,15 +178,16 @@ E2E_SKIP_CEILING="${E2E_SKIP_CEILING:-23}"           # 23 measured with overlays
 E2E_CHAT_SKIP_CEILING="${E2E_CHAT_SKIP_CEILING:-2}"  # 2 with the mock LLM up; 24 = the whole family gated off
 E2E_VISUAL_SKIP_CEILING="${E2E_VISUAL_SKIP_CEILING:-6}"  # 6 measured; 8 = no completed file in the dataset
 
-port_open() { (exec 3<>"/dev/tcp/localhost/$1") 2>/dev/null && exec 3>&- && return 0 || return 1; }
+port_open() { (exec 3<>"/dev/tcp/$1/$2") 2>/dev/null && exec 3>&- && return 0 || return 1; }
 
 if [ ! -x "$VENV_PY" ]; then
     echo -e "${RED}backend/venv not found — create it per CLAUDE.md first.${NC}"
     exit 1
 fi
-if ! port_open 5173 || ! port_open 5174; then
-    echo -e "${RED}Frontend (5173) / backend (5174) not reachable.${NC}"
-    echo -e "Start the stack with: ${YELLOW}./opentr.sh start dev${NC}"
+if ! port_open "$FRONTEND_HOST" "$FRONTEND_PORT" || ! port_open "$BACKEND_HOST" "$BACKEND_PORT"; then
+    echo -e "${RED}Frontend (${E2E_FRONTEND_URL}) / backend (${E2E_BACKEND_URL}) not reachable.${NC}"
+    echo -e "Start the stack with: ${YELLOW}./opentr.sh start dev${NC}" \
+        "(or point --fresh <name> / E2E_FRONTEND_URL+E2E_BACKEND_URL at an isolated stack)"
     exit 1
 fi
 
@@ -175,6 +259,7 @@ if $HAS_CUSTOM || [[ "$WORKERS" == "0" ]]; then
     # to map them. pytest's other codes keep their meaning and propagate unchanged.
     custom_rc=0
     "$VENV_PY" -m pytest "${SKIP_REASONS[@]}" \
+        --base-url "$E2E_FRONTEND_URL" --backend-url "$E2E_BACKEND_URL" \
         --junitxml="$E2E_ARTIFACT_DIR/e2e-custom.xml" "${ARGS[@]}" || custom_rc=$?
     if [[ $custom_rc -eq $EXIT_NOT_MEASURED ]]; then
         echo -e "${RED}pytest exited ${custom_rc} — a USAGE ERROR, not a measurement." \
@@ -188,13 +273,15 @@ fi
 # visit triggers on-demand module re-transforms that can stall page loads
 # past test timeouts. One throwaway headless visit compiles everything.
 "$VENV_PY" - <<'PYEOF' || true
+import os
 from playwright.sync_api import sync_playwright
+base_url = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
 with sync_playwright() as p:
     b = p.chromium.launch()
     page = b.new_page()
     for path in ("/", "/login"):
         try:
-            page.goto(f"http://localhost:5173{path}", timeout=60000)
+            page.goto(f"{base_url}{path}", timeout=60000)
             page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
             pass
@@ -281,7 +368,8 @@ enforce_skip_ceiling() {
 
 echo -e "${GREEN}Running E2E (parallel, ${WORKERS} workers, visual+chat excluded):${NC} pytest ${ARGS[*]}"
 status=0
-"$VENV_PY" -m pytest "${ARGS[@]}" -m "not visual and not chat" -n "$WORKERS" --dist loadfile \
+"$VENV_PY" -m pytest --base-url "$E2E_FRONTEND_URL" --backend-url "$E2E_BACKEND_URL" \
+    "${ARGS[@]}" -m "not visual and not chat" -n "$WORKERS" --dist loadfile \
     "${SKIP_REASONS[@]}" --junitxml="$E2E_ARTIFACT_DIR/e2e-phase1.xml" || status=$?
 status=$(resolve_phase "$status" "Phase 1 (-m 'not visual and not chat')")
 enforce_skip_ceiling "Phase 1 (-m 'not visual and not chat')" "$status" \
@@ -294,7 +382,8 @@ enforce_skip_ceiling "Phase 1 (-m 'not visual and not chat')" "$status" \
 # honest fix: the flake was contention, never the tests or the app.
 echo -e "${GREEN}Running E2E (chat, serial):${NC}"
 chat_status=0
-"$VENV_PY" -m pytest "${ARGS[@]}" -m chat \
+"$VENV_PY" -m pytest --base-url "$E2E_FRONTEND_URL" --backend-url "$E2E_BACKEND_URL" \
+    "${ARGS[@]}" -m chat \
     "${SKIP_REASONS[@]}" --junitxml="$E2E_ARTIFACT_DIR/e2e-chat.xml" || chat_status=$?
 chat_status=$(resolve_phase "$chat_status" "Phase 2 (-m chat)")
 enforce_skip_ceiling "Phase 2 (-m chat)" "$chat_status" \
@@ -302,7 +391,8 @@ enforce_skip_ceiling "Phase 2 (-m chat)" "$chat_status" \
 
 echo -e "${GREEN}Running E2E (visual regression, serial):${NC}"
 visual_status=0
-"$VENV_PY" -m pytest "${ARGS[@]}" -m visual \
+"$VENV_PY" -m pytest --base-url "$E2E_FRONTEND_URL" --backend-url "$E2E_BACKEND_URL" \
+    "${ARGS[@]}" -m visual \
     "${SKIP_REASONS[@]}" --junitxml="$E2E_ARTIFACT_DIR/e2e-visual.xml" || visual_status=$?
 visual_status=$(resolve_phase "$visual_status" "Phase 3 (-m visual)")
 enforce_skip_ceiling "Phase 3 (-m visual)" "$visual_status" \

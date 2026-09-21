@@ -310,6 +310,11 @@ pytest_plugins = [
     "fixtures.dir_collector_memo",
     "fixtures.search_corpus_stack",
     "fixtures.auth_state_isolation",
+    # pytest's own bundled plugin, enabling the `pytester` fixture — used by
+    # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
+    # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures
+    # of its own beyond `pytester`/`pytester_static_path`, so nothing else changes.
+    "pytester",
 ]
 
 

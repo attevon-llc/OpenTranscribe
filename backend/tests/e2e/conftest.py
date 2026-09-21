@@ -69,6 +69,7 @@ if _backend_dir not in sys.path:
 # only** (setting `os.environ` before any `app.*` import happens), not registered as a plugin,
 # so its own fixtures / its own `pytest_plugins` entries don't leak into this rootdir.
 from frontend_warm import find_entry_modules
+from stack_urls import mixed_stack_problem
 from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
@@ -388,7 +389,17 @@ def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
     failures that looked like test defects and were not. Failing here — once, with
     the remedy — beats letting the condition surface as a different arbitrary
     subset of timeouts on every run.
+
+    Logs the resolved URLs unconditionally (issue #965) — every run's result must be
+    attributable to the stack that produced it, and the mixed-stack guard immediately
+    below is worthless if the URLs it validated are never printed anywhere.
     """
+    print(f"E2E preflight: base_url={base_url} backend_url={backend_url}")
+
+    stack_problem = mixed_stack_problem(base_url, backend_url)
+    if stack_problem:
+        pytest.exit(f"E2E preflight: {stack_problem}", returncode=3)
+
     problem = _await_stable_backend(backend_url)
     if problem:
         pytest.exit(

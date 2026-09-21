@@ -3,6 +3,11 @@
   import { galleryStore, galleryState, selectedCount, allFilesSelected } from '../../stores/gallery';
   import { chatStore } from '../../stores/chat';
   import { toastStore } from '../../stores/toast';
+  import { user as userStore } from '$stores/auth';
+
+  // Same expression as SettingsModal.svelte:92 — do not invent a second admin
+  // predicate (issue #576).
+  $: isAdmin = $userStore?.role === 'admin' || $userStore?.role === 'super_admin';
 
   /** Mirrors ChatScope.file_uuids max_length in backend/app/schemas/chat.py. */
   const CHAT_MAX_FILES = 100;
@@ -86,6 +91,7 @@
   function handleExport(format: string) { galleryStore.triggerExport(format); closeAllMenus(); }
   function handleSpeakerId() { galleryStore.triggerSpeakerId(); closeAllMenus(); }
   function handleCancelProcessing() { galleryStore.triggerCancelProcessing(); closeAllMenus(); }
+  function handleQuarantine() { galleryStore.triggerQuarantine(); closeAllMenus(); }
 
   /**
    * Hand the selection to /chat.
@@ -328,6 +334,25 @@
             >
               {$t('gallery.bulk.exportTxt')}
             </button>
+            {#if isAdmin}
+              <div class="dropdown-divider"></div>
+              <!-- Every status is quarantinable, deliberately (issue #576 §B.5) —
+                   taking down a file that is still downloading infringing content
+                   is exactly the case that matters, so this is NOT gated on
+                   hasCompletedSelected the way the export entries above are. -->
+              <button
+                class="dropdown-item quarantine-item"
+                on:click={handleQuarantine}
+                disabled={$selectedCount === 0}
+                title={$t('gallery.bulk.quarantineTooltip')}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                </svg>
+                {$t('gallery.bulk.quarantine', { count: $selectedCount })}
+              </button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -596,6 +621,15 @@
     height: 1px;
     background-color: var(--border-color);
     margin: 0.25rem 0;
+  }
+
+  /* Matches .delete-btn's destructive red — this is also a takedown action. */
+  .quarantine-item {
+    color: #dc2626;
+  }
+
+  .quarantine-item:hover:not(:disabled) {
+    background-color: rgba(220, 38, 38, 0.1);
   }
 
 

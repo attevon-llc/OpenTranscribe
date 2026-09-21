@@ -28,6 +28,7 @@
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
   import GalleryGrid from '$components/gallery/GalleryGrid.svelte';
   import BulkTagModal from '$components/gallery/BulkTagModal.svelte';
+  import QuarantineModal from '$components/gallery/QuarantineModal.svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
   import type { BulkTagAction } from '$lib/types/tag';
@@ -44,6 +45,8 @@
   // Bulk tag modal state
   let showBulkTagModal = false;
   let bulkTagAction: BulkTagAction = 'add_tag';
+  let showQuarantineModal = false;
+  let quarantineTargetFiles: MediaFile[] = [];
 
   // Bulk reprocess modal state
   let showBulkReprocessModal = false;
@@ -747,6 +750,26 @@
     showBulkTagModal = true;
   }
 
+  /** Opens the takedown modal over every currently-selected file, whatever its
+   * status (issue #576 §B.5 — quarantining a still-downloading file is exactly
+   * the case that matters, so this is NOT gated on completed status). */
+  function openQuarantineModal() {
+    const selected = $galleryState.selectedFiles;
+    quarantineTargetFiles = files.filter((f) => selected.has(f.uuid));
+    if (quarantineTargetFiles.length === 0) return;
+    showQuarantineModal = true;
+  }
+
+  /**
+   * Update rows locally; do NOT remove them (§B.6 E5) — a quarantined row
+   * legitimately stays in an admin's gallery. Optimistically removing it looks
+   * like it works until the next refetch puts it back.
+   */
+  function handleQuarantined(event: CustomEvent<{ uuids: string[] }>) {
+    const changed = new Set(event.detail.uuids);
+    files = files.map((f) => (changed.has(f.uuid) ? { ...f, is_quarantined: true } : f));
+  }
+
   function handleBulkTagApplied(event: CustomEvent<{ changed: number }>) {
     // Nothing the gallery renders depends on tags, so a re-query is only owed
     // when a tag filter is active — files can enter or leave that filtered set.
@@ -1385,6 +1408,10 @@
       openBulkTagModal('remove_tag');
     });
 
+    const unsubscribeQuarantine = galleryStore.onQuarantineTrigger(() => {
+      openQuarantineModal();
+    });
+
     const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
       deleteSelectedFiles();
     });
@@ -1433,6 +1460,7 @@
       unsubscribeExport();
       unsubscribeSpeakerId();
       unsubscribeCancelProcessing();
+      unsubscribeQuarantine();
     };
   });
 </script>
@@ -1595,6 +1623,14 @@
   fileUuids={bulkTagFileUuids}
   on:applied={handleBulkTagApplied}
   on:close={() => (showBulkTagModal = false)}
+/>
+
+<!-- Quarantine (takedown) Modal — admin-only (issue #576) -->
+<QuarantineModal
+  isOpen={showQuarantineModal}
+  files={quarantineTargetFiles}
+  on:quarantined={handleQuarantined}
+  on:close={() => (showQuarantineModal = false)}
 />
 
 <!-- Bulk Selective Reprocess Modal -->

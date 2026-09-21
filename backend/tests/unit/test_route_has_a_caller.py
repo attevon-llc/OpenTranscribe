@@ -189,9 +189,10 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/org-admin/gdpr/erase-organization": _NO_ADMIN_PANEL_REASON,
     "/api/org-admin/gdpr/erase-user/{user_uuid}": _NO_ADMIN_PANEL_REASON,
     "/api/org-admin/audit-logs": _NO_ADMIN_PANEL_REASON,
-    "/api/admin/files/{file_uuid}/quarantine": _NO_ADMIN_PANEL_REASON,
-    "/api/admin/files/{file_uuid}/release": _NO_ADMIN_PANEL_REASON,
-    "/api/admin/files/quarantined": _NO_ADMIN_PANEL_REASON,
+    # issue #576: /admin/files/{file_uuid}/quarantine, /release and /files/quarantined
+    # now have a caller (AdminApi.quarantineFile / releaseFile / listQuarantinedFiles),
+    # so these three xfail entries were removed — leaving them would make the test
+    # XPASS(strict) and fail every commit in the worktree.
     # --- investigation found the SPA calling a different route for this feature ---
     "/api/admin/settings/media-sources": _SUPERSEDED_OR_DUPLICATE_REASON,
     "/api/admin/settings/media-sources/{source_id}": _SUPERSEDED_OR_DUPLICATE_REASON,

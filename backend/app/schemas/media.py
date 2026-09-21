@@ -516,6 +516,14 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     thumbnail_path: str | None = None
     thumbnail_url: str | None = None
 
+    #: Authoritative takedown flag (issue #570/#576 wire contract). The gallery loads
+    #: this schema whole for every page, so this is the one field cheap enough to put
+    #: here; the reason/timestamp/hold detail live on `MediaFileDetail` only. A
+    #: non-admin can never SEE a quarantined row at all (`takedown_service.is_hidden_for`),
+    #: so this can only ever be `False` in a non-admin response — no admin-only
+    #: serialization branch is needed or added.
+    is_quarantined: bool = False
+
     # Technical metadata
     media_format: str | None = None
     codec: str | None = None
@@ -622,6 +630,13 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
 
 
 class MediaFileDetail(MediaFile):
+    #: Detail-only takedown fields — kept off the list schema (§B.3): a `Text` reason
+    #: is not free on a ~70-column row loaded for every gallery page, and nothing in
+    #: the gallery renders it. `is_quarantined` itself is inherited from `MediaFile`.
+    quarantine_reason: str | None = None
+    quarantined_at: datetime | None = None
+    legal_hold: bool = False
+
     transcript_segments: list[TranscriptSegment] = []
     # Pre-grouped view of transcript_segments (overlap groups kept together).
     # Mirrors the frontend grouping so it can render groups without recomputing.

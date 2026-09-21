@@ -317,8 +317,11 @@
                 <!-- Status dot with inline label on hover -->
                 <!-- svelte-ignore a11y-click-events-have-key-events -->
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
+                <!-- Keyed off `is_quarantined`, never bare `status` (issue #576 E11):
+                     a file quarantined mid-pipeline can have `status` overwritten to a
+                     terminal value by a running task while this flag stays correct. -->
                 <span
-                  class="status-wrap status-{file.status}"
+                  class="status-wrap status-{file.is_quarantined ? 'quarantined' : file.status}"
                   class:clickable-error={file.status === 'error' && file.user_message}
                   on:click|preventDefault|stopPropagation={() => file.status === 'error' && file.user_message && handleErrorClick(file)}
                 >

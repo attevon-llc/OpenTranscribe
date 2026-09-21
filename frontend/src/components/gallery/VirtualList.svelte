@@ -281,7 +281,8 @@
 
           <!-- Status -->
           <div class="list-cell list-cell-status">
-            <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.user_message}>
+            <!-- Keyed off `is_quarantined`, never bare `status` (issue #576 E11). -->
+            <div class="file-status status-{file.is_quarantined ? 'quarantined' : file.status}" class:clickable-error={file.status === 'error' && file.user_message}>
               <span class="status-dot"></span>
               {#if file.status === 'error' && file.user_message}
                 <!-- svelte-ignore a11y-click-events-have-key-events -->

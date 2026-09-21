@@ -54,6 +54,11 @@ export type MediaFileStatus =
 
 export interface MediaFile {
   uuid: string;
+  /** Authoritative takedown flag (issue #576 §B.3) — honour this over `status`
+   * when rendering the quarantine badge. A file quarantined mid-pipeline can
+   * have `status` overwritten to a terminal value by a running task
+   * (issue #824's documented residual gap) while this flag stays correct. */
+  is_quarantined?: boolean;
   filename: string;
   status: MediaFileStatus;
   upload_time: string;
@@ -130,6 +135,12 @@ export interface MediaFile {
  * can't silently start depending on a field the list endpoint never sends.
  */
 export interface MediaFileDetail extends MediaFile {
+  /** Detail-only takedown fields (issue #576 §B.3) — kept off the list
+   * schema, matching `is_quarantined`'s backend-side split. */
+  quarantine_reason?: string | null;
+  quarantined_at?: string | null;
+  legal_hold?: boolean;
+
   /**
    * Full tag objects, the same shape `/api/tags` returns (#326). `GET /files`
    * sends no tags, so this deliberately lives here and not on `MediaFile`.

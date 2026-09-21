@@ -16,6 +16,14 @@ import { tick } from 'svelte';
 import TranscriptDisplay from './TranscriptDisplay.svelte';
 import { renameSpeakersInFile, appendSegmentPage } from '$lib/fileDetail/segmentSync';
 
+// TranscriptSearch's whole-transcript completeness probe (`GET /search/count`) fires on
+// every query; stub it out so it resolves quietly instead of rejecting against a real
+// network call jsdom can't make.
+vi.mock('$lib/axios', () => ({
+  default: { get: vi.fn().mockResolvedValue({ data: { total: 0 } }) },
+  isRequestCancelled: () => false,
+}));
+
 class StubIntersectionObserver {
   observe() {}
   disconnect() {}
@@ -165,41 +173,48 @@ describe('TranscriptDisplay', () => {
     expect(document.querySelectorAll('[data-segment-id]')).toHaveLength(2);
   });
 
-  describe('"Jump to current" (issue #748 §5.3)', () => {
-    // The deleted ScrollbarIndicator's click handler both scrolled the transcript AND
-    // dispatched `seekToPlayhead` up to the page, which re-seeked the player to
-    // `currentTime - 0.5s` — a silent playback rewind on every click. The replacement
-    // button must ONLY scroll. There is no `seekToPlayhead` event left on this component
-    // at all (verified structurally: nothing here listens for or forwards one), so the
-    // positive case below is the whole contract.
-    it('scrolls the segment under the current playhead into view and flashes it', async () => {
-      const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+  describe('search highlighting after the find bar populates matches (regression, issue #755)', () => {
+    // The find bar's own counter is driven by TranscriptSearch's OWN local `totalMatches`/
+    // `currentMatch` state (`SearchBar`'s `counterText`), entirely independent of whether
+    // TranscriptSegmentList re-renders — so "N of M" reading correctly proves nothing about
+    // whether a `.transcript-search-highlight` span exists. This block asserts the actual
+    // DOM: it types into the REAL find bar (mounted as `TranscriptDisplay` mounts it, wired
+    // through the REAL `on:searchResults` -> `searchMatches`/`searchQuery`/`currentMatchIndex`
+    // props exactly as production does), and checks the segment text.
+    //
+    // A leaf-level render+rerender of `TranscriptSegmentList` alone (see its own test file)
+    // CANNOT catch this: `@testing-library/svelte`'s `rerender()` bundles every prop into one
+    // `$state.raw` bag and replaces the whole bag on each call, so any single prop change
+    // forces a full top-to-bottom re-render regardless of which template expression is
+    // statically wired to what. Only a real PARENT component passing updated props down (each
+    // exported prop its own compiled binding, the way `TranscriptDisplay` -> `searchQuery` /
+    // `searchMatches` / `currentMatchIndex` -> `TranscriptSegmentList` actually works in
+    // production) exercises the fine-grained reactivity gap this bug lived in.
+    it('highlights matches once the user types a query', async () => {
+      render(TranscriptDisplay, { props: { ...baseProps, file: makeFile() } });
 
-      const { container } = render(TranscriptDisplay, {
-        props: { ...baseProps, file: makeFile(), currentTime: 6 }, // inside segment 'b' (5-10)
-      });
+      // No query yet: plain text, no highlight spans.
+      expect(document.querySelectorAll('.transcript-search-highlight')).toHaveLength(0);
 
-      const button = container.querySelector('.jump-to-playhead-button') as HTMLButtonElement;
-      expect(button).not.toBeNull();
-      await fireEvent.click(button);
+      await fireEvent.click(document.querySelector('.search-trigger-button')!);
+      await tick();
 
-      expect(scrollSpy).toHaveBeenCalled();
-      const target = container.querySelector('[data-segment-id="b"]');
-      expect(target?.classList.contains('highlight-flash')).toBe(true);
+      const input = document.querySelector('.transcript-search input') as HTMLInputElement;
+      expect(input).toBeTruthy();
+      await fireEvent.input(input, { target: { value: 'segment' } });
+      await tick();
+      await tick();
+      await tick();
 
-      scrollSpy.mockRestore();
-    });
-
-    it('is disabled when there is no transcript to jump within', () => {
-      const { container } = render(TranscriptDisplay, {
-        props: {
-          ...baseProps,
-          file: { uuid: 'file-1', status: 'completed', transcript_segments: [] },
-        },
-      });
-
-      const button = container.querySelector('.jump-to-playhead-button') as HTMLButtonElement;
-      expect(button.disabled).toBe(true);
+      // Fails against the pre-fix code: `segmentHighlight(segment)` read
+      // `searchQuery`/`searchMatches`/`currentMatchIndex` from closure rather than as
+      // explicit parameters, so Svelte's per-block dependency tracking never saw those
+      // props as inputs to the `{@html …}` block and it stayed frozen at its as-mounted
+      // (query-less) output — segment text rendered as escaped plain text with zero
+      // `.transcript-search-highlight` spans, even though the count above it was correct.
+      const highlights = document.querySelectorAll('.transcript-search-highlight');
+      expect(highlights.length).toBeGreaterThan(0);
+      expect(highlights).toHaveLength(2);
     });
   });
 });

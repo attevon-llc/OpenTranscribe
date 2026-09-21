@@ -40,17 +40,39 @@
   // other per-segment helper in this file (`getOriginalSegmentIndex`, `speakerMatchState`)
   // already accepts, since segments arrive from the backend's grouped-view resolution, not
   // a single narrow interface.
-  function segmentHighlight(segment: any): string {
-    const cls = segmentClassification[String(segment.uuid)];
+  //
+  // Every reactive value this needs (`query`, `matches`, `currentIdx`, `classification`) is
+  // taken as an EXPLICIT PARAMETER rather than read from the enclosing closure. Svelte's
+  // compiler determines a template block's dependencies by statically scanning the
+  // identifiers that appear directly in that block's markup expression — it does not follow
+  // a called function into its body to see what reactive props/state it reads. The two call
+  // sites below invoke this as `segmentHighlight(segment, searchQuery, searchMatches,
+  // currentMatchIndex, segmentClassification)`, so those identifiers appear in the markup
+  // expression itself and Svelte re-runs the block whenever any of them change. Before this
+  // fix the call site was just `segmentHighlight(segment)`: the block's only visible
+  // dependency was `segment`, so a new search query or a advancing `currentMatchIndex` never
+  // re-rendered the segment text — the counter (driven by TranscriptSearch's own separate
+  // reactive state) kept updating correctly while every `.segment-text` stayed frozen at
+  // whatever it rendered on mount (escaped plain text, zero `.transcript-search-highlight`
+  // spans). Regression from issue #755, which introduced this helper in place of the
+  // literal `highlightTextWithMatches(...)` call the markup used to make directly.
+  function segmentHighlight(
+    segment: any,
+    query: string,
+    matches: SearchMatch[],
+    currentIdx: number,
+    classification: Record<string, MatchClassificationType>
+  ): string {
+    const cls = classification[String(segment.uuid)];
     if (cls) {
-      return highlightClassifiedText(segment.text, cls, searchQuery);
+      return highlightClassifiedText(segment.text, cls, query);
     }
     return highlightTextWithMatches(
       segment.text,
-      searchQuery,
+      query,
       getOriginalSegmentIndex(segment),
-      searchMatches,
-      currentMatchIndex
+      matches,
+      currentIdx
     );
   }
 
@@ -379,7 +401,7 @@
                     class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
                     class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
                   >
-                    {@html sanitizeHighlightHtml(segmentHighlight(segment))}
+                    {@html sanitizeHighlightHtml(segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification))}
                   </div>
                 </button>
                 {#if editable}
@@ -470,7 +492,7 @@
                 class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
                 class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
               >
-                {@html sanitizeHighlightHtml(segmentHighlight(segment))}
+                {@html sanitizeHighlightHtml(segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification))}
                 {#if segment.confidence !== undefined && segment.confidence !== null && segment.confidence < 0.7}
                   <span class="low-confidence-dot" title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}>●</span>
                 {/if}

@@ -575,6 +575,7 @@
           bind:fileSizeRange={filterFileSizeRange}
           bind:selectedFileTypes={filterSelectedFileTypes}
           bind:selectedStatuses={filterSelectedStatuses}
+          showOwnerFilter={false}
           on:filter={handleFilterEvent}
           on:reset={handleFilterReset}
         />

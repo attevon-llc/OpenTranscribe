@@ -22,6 +22,7 @@ from fastapi import File
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from fastapi import UploadFile
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
@@ -34,6 +35,10 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
+from app.auth.rate_limit import get_directory_rate_limit
+from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
+from app.auth.utils import mask_email_for_display
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -46,6 +51,7 @@ from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
+from app.schemas.user import UserSearchResult
 from app.services.formatting_service import FormattingService
 from app.utils.error_handlers import ErrorHandler
 
@@ -63,7 +69,9 @@ from .crud import set_file_urls
 from .crud import update_media_file
 from .crud import update_single_transcript_segment
 from .filtering import apply_all_filters
+from .filtering import get_accessible_owners
 from .filtering import get_metadata_filters
+from .filtering import resolve_owner_user_ids
 from .reprocess import process_file_reprocess
 from .segments import router as segments_router
 from .streaming import get_thumbnail_streaming_response
@@ -203,6 +211,12 @@ def list_media_files(
         pattern="^(mine|shared|all)$",
         description="Filter: 'mine' (owned), 'shared' (via shared collections), 'all' (both)",
     ),
+    # Specific-owner filter (issue #966), repeatable. Orthogonal to `ownership`:
+    # applied INSIDE whichever ownership-scoped file set that param already
+    # selected (see `resolve_owner_user_ids` / `apply_owner_filter`).
+    owner: list[UUID] | None = Query(
+        None, description="Filter to specific owner UUID(s); repeatable"
+    ),
     # Existing filters
     search: str | None = None,
     tag: list[str] | None = Query(None),
@@ -333,6 +347,7 @@ def list_media_files(
         "status": status,
         "transcript_search": transcript_search,
         "user_id": effective_user_id,
+        "owner_user_ids": resolve_owner_user_ids(db, owner),
     }
 
     # Apply all filters
@@ -395,6 +410,9 @@ def list_media_files(
 @router.get("/metadata-filters", response_model=dict)
 def get_metadata_filters_endpoint(
     ownership: str = Query("all", pattern="^(mine|shared|all)$"),
+    owner: list[UUID] | None = Query(
+        None, description="Filter to specific owner UUID(s); repeatable (issue #966)"
+    ),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
@@ -406,7 +424,55 @@ def get_metadata_filters_endpoint(
         ownership=ownership,
         organization_id=ctx.org_id,
         is_admin=ctx.user.is_admin,
+        owner_user_ids=resolve_owner_user_ids(db, owner),
     )
+
+
+@router.get("/owners", response_model=list[UserSearchResult])
+@limiter.limit(get_directory_rate_limit(), key_func=user_or_ip_key)
+def list_file_owners(
+    request: Request,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
+):
+    """List the owners of files visible to the caller, for the gallery's
+    ownership filter (issue #966).
+
+    **Closed enumeration, not a directory search.** This deliberately takes
+    no free-text query parameter — the caller receives the (capped) list of
+    owners of files they can already see and narrows it client-side, the same
+    shape ``SearchableMultiSelect`` already uses for tags and collections. A
+    free-text parameter would turn an authorized list into an
+    account-probing oracle, which is exactly what this route must not be.
+
+    **Scope is `get_accessible_owners`**, which joins ``User`` against the
+    IDENTICAL predicate ``GET /files`` uses to decide what this caller can
+    see (``PermissionService.get_accessible_file_ids_subquery``, or the same
+    org-tenant predicate for an admin) — never the tenant-wide scope
+    ``GET /users/search`` uses for the sharing picker. A user who shares
+    nothing with anyone else, and with whom nothing is shared, sees only
+    themselves here.
+
+    **Rate-limited** the same way as ``GET /users/search``
+    (``RATE_LIMIT_DIRECTORY_PER_MINUTE``), as a volume/noise bound — the
+    authorization boundary is the join predicate above, not this limit.
+
+    **Payload-minimized**: reuses ``UserSearchResult`` — the exact wire shape
+    the sharing picker already exposes (``uuid``, ``full_name``,
+    ``masked_email``) — so this route exposes no more per-owner information
+    than the app already shows elsewhere.
+    """
+    owners = get_accessible_owners(
+        db, ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.user.is_admin
+    )
+    return [
+        UserSearchResult(
+            uuid=u.uuid, full_name=u.full_name, masked_email=mask_email_for_display(u.email)
+        )
+        for u in owners
+    ]
 
 
 # =============================================================================

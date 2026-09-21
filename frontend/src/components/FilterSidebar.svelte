@@ -131,6 +131,21 @@
   /** @type {'all' | 'mine' | 'shared'} */
   export let ownershipFilter: 'all' | 'mine' | 'shared' = 'all';
 
+  // Specific-owner filter (issue #966) — orthogonal to `ownershipFilter` above:
+  // a searchable multi-select of the individual owners whose files the caller
+  // can already see, layered on top of the coarse all/mine/shared bucket
+  // rather than replacing it (the backend applies it as an additional
+  // predicate — see `resolve_owner_user_ids`/`apply_owner_filter`).
+  /** @type {string[]} */
+  export let selectedOwners: string[] = []; // Owner UUIDs
+
+  // `GET /search` has no notion of a specific-owner filter (it ranks
+  // OpenSearch hits, not `/files` rows), so the search page hides this
+  // section the same way it already hides `showSearchField`'s counterpart —
+  // rendering a control that silently does nothing would be worse than not
+  // rendering it.
+  export let showOwnerFilter = true;
+
   // State
   /** @type {Tag[]} */
   let allTags: TagWithCount[] = [];
@@ -150,6 +165,22 @@
   $: selectedTagIds = allTags
     .filter(tag => selectedTags.includes(tag.name))
     .map(tag => tag.uuid);
+
+  // Owners the caller can already see (issue #966) — the closed-enumeration
+  // list `GET /files/owners` returns, in the same `{uuid, full_name,
+  // masked_email}` shape `UserSearchResult` uses for the sharing picker.
+  type OwnerOption = { uuid: string; full_name: string | null; masked_email: string };
+  let allOwners: OwnerOption[] = [];
+  let loadingOwners = false;
+  let errorOwners: string | null = null;
+
+  /** Prefer the display name; fall back to the masked email, never a raw one. */
+  const ownerLabel = (owner: OwnerOption): string => owner.full_name || owner.masked_email;
+
+  $: dropdownOwners = allOwners.map(owner => ({
+    id: owner.uuid,
+    name: ownerLabel(owner),
+  }));
 
   // Component refs
   let collectionsFilterRef: any;
@@ -283,6 +314,38 @@
     }
   }
 
+  // Fetch the owners of files the caller can already see (issue #966).
+  //
+  // `GET /files/owners` is a CLOSED enumeration — no `q`/search parameter — so
+  // this fetches the (capped) full list once and `SearchableMultiSelect`
+  // filters it client-side, exactly like the tags dropdown above. There is
+  // deliberately no server-side type-to-search here the way `fetchSpeakers`
+  // has one: a free-text parameter on this endpoint would turn an authorized
+  // "owners of files you can see" list into an account-probing oracle.
+  async function fetchOwners() {
+    if (!showOwnerFilter) return;
+    loadingOwners = true;
+    errorOwners = null;
+
+    try {
+      const rows = await apiCache.getOrFetch(
+        cacheKey.owners(),
+        async () => {
+          const response = await axiosInstance.get('/files/owners');
+          return response.data;
+        },
+        CacheTTL.OWNERS
+      );
+      allOwners = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+      console.error('[FilterSidebar] Error fetching owners:', err);
+      allOwners = [];
+      errorOwners = describeError(err);
+    } finally {
+      loadingOwners = false;
+    }
+  }
+
   // Fetch speakers for filtering (cached with TTL, invalidated via WebSocket push).
   //
   // Server-side type-to-search (`GET /speakers?for_filter=true&q=...`), the same
@@ -393,6 +456,28 @@
       selectedTags = selectedTags.filter(t => t !== tag.name);
       triggerFiltersImmediate();
     }
+  }
+
+  /**
+   * Handle owner selection from the multiselect dropdown (issue #966).
+   * @param {CustomEvent} event - Event with owner uuid
+   */
+  function handleOwnerSelect(event: CustomEvent) {
+    const ownerUuid = event.detail.id;
+    if (!selectedOwners.includes(ownerUuid)) {
+      selectedOwners = [...selectedOwners, ownerUuid];
+      triggerFiltersImmediate();
+    }
+  }
+
+  /**
+   * Handle owner deselection from the multiselect dropdown (issue #966).
+   * @param {CustomEvent} event - Event with owner uuid
+   */
+  function handleOwnerDeselect(event: CustomEvent) {
+    const ownerUuid = event.detail.id;
+    selectedOwners = selectedOwners.filter(o => o !== ownerUuid);
+    triggerFiltersImmediate();
   }
 
   /**
@@ -647,6 +732,7 @@
       fileTypes: selectedFileTypes,
       statuses: selectedStatuses,
       ownership: ownershipFilter,
+      owners: selectedOwners,
     });
   }
 
@@ -666,6 +752,7 @@
     selectedFileTypes = [];
     selectedStatuses = [];
     ownershipFilter = 'all';
+    selectedOwners = [];
 
     // Reset sliders to full bounds
     durationSliderValues = [durationBounds.min, durationBounds.max];
@@ -702,10 +789,14 @@
     // discard the in-progress search and repopulate the full list underneath it.
     if (scope === 'speakers' || scope === 'all') fetchSpeakers(speakerSearchQuery);
     if (scope === 'metadata' || scope === 'files' || scope === 'all') fetchMediaMetadata();
+    // Owner visibility changes with the files a caller can see (a new upload)
+    // and with collection sharing — both scopes can add or remove an owner.
+    if (scope === 'files' || scope === 'collections' || scope === 'all') fetchOwners();
   }
 
   onMount(() => {
     fetchTags();
+    fetchOwners();
     fetchSpeakers();
     fetchMediaMetadata();
 
@@ -1130,6 +1221,38 @@
       </FilterChipButton>
     </div>
   </div>
+
+  {#if showOwnerFilter}
+    <div class="filter-section">
+      <h3>{$t('filter.owners')}</h3>
+      {#if loadingOwners}
+        <p class="loading-text">{$t('filter.loadingOwners')}</p>
+      {:else if errorOwners}
+        <EmptyState
+          icon="⚠️"
+          title={$t('filter.ownersLoadFailed')}
+          description={$t('filter.facetLoadFailedHelp')}
+          padding="12px 0"
+        >
+          <button class="retry-button" data-testid="owners-retry" on:click={fetchOwners}
+            >{$t('filter.retry')}</button>
+        </EmptyState>
+      {:else if allOwners.length === 0}
+        <p class="empty-text">{$t('filter.noOwners')}</p>
+      {:else}
+        <div class="dropdown-section">
+          <SearchableMultiSelect
+            options={dropdownOwners}
+            selectedIds={selectedOwners}
+            placeholder={$t('filter.selectOwnersPlaceholder')}
+            maxHeight="300px"
+            on:select={handleOwnerSelect}
+            on:deselect={handleOwnerDeselect}
+          />
+        </div>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>

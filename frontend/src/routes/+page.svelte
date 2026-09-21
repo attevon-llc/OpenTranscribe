@@ -63,6 +63,7 @@
       fileTypes?: string[];
       statuses?: string[];
       ownership?: 'all' | 'mine' | 'shared';
+      owners?: string[]; // Owner UUIDs (issue #966)
     };
   }
 
@@ -139,6 +140,7 @@
   let selectedFileTypes: string[] = [...$galleryState.filterSelectedFileTypes];
   let selectedStatuses: string[] = [...$galleryState.filterSelectedStatuses];
   let ownershipFilter: 'all' | 'mine' | 'shared' = $galleryState.filterOwnershipFilter;
+  let selectedOwners: string[] = [...$galleryState.filterSelectedOwners];
   $: showFilters = $galleryState.showFilters;
 
   // Whether any filter is currently narrowing the list — including the toolbar
@@ -290,6 +292,11 @@
     // Ownership filter (backend defaults to 'mine' if omitted)
     if (ownershipFilter) {
       params.append('ownership', ownershipFilter);
+    }
+
+    // Specific owner(s) (issue #966) — orthogonal to the ownership bucket above
+    if (selectedOwners.length > 0) {
+      selectedOwners.forEach(ownerUuid => params.append('owner', ownerUuid));
     }
 
     return params;
@@ -578,7 +585,7 @@
 
   // Handle filter changes
   function applyFilters(event: FilterEvent) {
-    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses, ownership } = event.detail;
+    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses, ownership, owners } = event.detail;
 
     searchQuery = search;
     selectedTags = tags;
@@ -592,6 +599,7 @@
     if (fileTypes !== undefined) selectedFileTypes = fileTypes;
     if (statuses !== undefined) selectedStatuses = statuses;
     if (ownership !== undefined) ownershipFilter = ownership;
+    if (owners !== undefined) selectedOwners = owners;
 
     fetchFiles();
   }
@@ -656,6 +664,7 @@
     selectedFileTypes = [];
     selectedStatuses = [];
     ownershipFilter = 'all';
+    selectedOwners = [];
     sortBy = 'upload_time';
     sortOrder = 'desc';
 
@@ -1340,6 +1349,7 @@
       selectedFileTypes,
       selectedStatuses,
       ownershipFilter,
+      selectedOwners,
       sortBy,
       sortOrder,
     });
@@ -1478,6 +1488,7 @@
         {selectedFileTypes}
         {selectedStatuses}
         {ownershipFilter}
+        {selectedOwners}
         on:toggle={toggleFilters}
         on:filter={applyFilters}
         on:reset={resetFilters}

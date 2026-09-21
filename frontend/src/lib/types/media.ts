@@ -52,6 +52,24 @@ export type MediaFileStatus =
   | 'orphaned'
   | 'quarantined';
 
+/**
+ * Every value of the backend `UserErrorReason` enum
+ * (`backend/app/services/error_categorization_service.py`) — the user-facing error
+ * vocabulary carried on the wire as `error_reason`. GH #960: this is the closed set
+ * `$lib/i18n/mediaErrors.ts`'s `Record<MediaErrorReason, string>` is exhaustive over, so a
+ * backend reason with no translated copy fails the frontend build rather than rendering a
+ * raw key. Hand-maintained mirror, no codegen — keep in sync with the backend enum.
+ */
+export type MediaErrorReason =
+  | 'file_quality'
+  | 'no_audio_track'
+  | 'no_speech'
+  | 'format_issue'
+  | 'processing_error'
+  | 'network_error'
+  | 'permission_error'
+  | 'unclassified';
+
 export interface MediaFile {
   uuid: string;
   filename: string;
@@ -73,7 +91,7 @@ export interface MediaFile {
   status_badge_class?: string;
 
   // Error handling fields from backend
-  error_reason?: string;
+  error_reason?: MediaErrorReason | string;
   error_suggestions?: string[];
   user_message?: string;
   is_retryable?: boolean;

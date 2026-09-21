@@ -100,9 +100,11 @@ class ChatSettings:
     #: failure can never fail a turn.
     trace_enabled: bool = C.DEFAULT_CHAT_TRACE_ENABLED
     #: Issue #523. Widen a short retrieved chunk to its surrounding exchange,
-    #: by timestamp, before masking — see `chat/context_expansion.py`. Off by
-    #: default: a new, unmeasured retrieval shape, same posture as every
-    #: other W2.x flag above.
+    #: by timestamp, before masking — see `chat/context_expansion.py`. ON by
+    #: default as of 2026-09-21: measured to improve answer quality on the
+    #: short-speaker-turn slice with coverage a wash and citation integrity
+    #: unaffected (#526, the prior blocker, is closed). See `constants.py`'s
+    #: `DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED` for the measurement summary.
     context_expansion_enabled: bool = C.DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED
     #: #532 synthesis-gap EXPERIMENT arms — delete after measurement (see
     #: constants.py). (a) overview entries carry citation ids; (b) the

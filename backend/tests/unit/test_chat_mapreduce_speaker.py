@@ -23,6 +23,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.services.chat.citations import KIND_DIGEST
+from app.services.chat.citations import KIND_SUMMARY
+from app.services.chat.citations import build_overview_citations
 from app.services.chat.mapreduce import FileSummary
 from app.services.chat.mapreduce import build_file_summaries
 from app.services.chat.mapreduce import build_overview
@@ -239,6 +242,11 @@ def test_a_fresh_summary_is_preferred_over_the_digest_when_the_flag_is_on():
     assert "Meeting leader" in hits[0].content
     assert "Set the Q3 budget" in hits[0].content
     assert hits.coverage["summary_hits"] == 1
+    assert hits[0].is_llm_summary is True, (
+        "#464: a speaker-scoped summary hit must carry the same provenance "
+        "flag as the recording-level map, so citations.py can tell it apart "
+        "from a digest hit."
+    )
 
 
 def test_owner_matched_action_items_are_included():
@@ -285,6 +293,37 @@ def test_a_stale_summary_falls_back_to_the_digest():
     assert len(hits) == 2  # the two real sections, exactly as the non-summary path
     assert "summary_hits" not in hits.coverage or hits.coverage.get("summary_hits") == 0
     assert all(h.digest_section is not None for h in hits)
+    assert all(h.is_llm_summary is False for h in hits), (
+        "a stale-summary fallback must never carry the LLM-summary provenance flag"
+    )
+
+
+def test_speaker_scoped_overview_citation_kind_is_summary_for_a_fresh_llm_summary():
+    """End to end: `scope_speaker_digest_hits` -> `build_file_summaries` ->
+    `build_overview_citations` must emit `kind: "summary"` for a speaker-scoped
+    fresh-summary hit, exactly as the recording-level map does."""
+    db = MagicMock()
+    rows = [
+        (
+            1,
+            "uuid-1",
+            "Weekly sync",
+            MIXED_DIGEST,
+            "fp-1",
+            "completed",
+            _summary_row(fingerprint="fp-1"),
+        )
+    ]
+    _query_returns(db, rows)
+
+    hits = scope_speaker_digest_hits(db, ["uuid-1"], ["Dana Whitfield"], use_summaries=True)
+    summaries = build_file_summaries(None, hits, masked_text={id(h): h.content for h in hits})
+
+    citations = build_overview_citations(((1, "uuid-1"),), summaries)
+
+    assert len(citations) == 1
+    assert citations[0]["kind"] == KIND_SUMMARY
+    assert citations[0]["kind"] != KIND_DIGEST
 
 
 def test_flag_off_never_reads_the_summary_columns_shape():

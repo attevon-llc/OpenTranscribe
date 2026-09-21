@@ -2491,8 +2491,17 @@ plane instead of guessing, when that redaction-policy decision is made.
 
 Recorded here so a future session does not have to rediscover it by reading code:
 
-- **`chat.speaker_resolver_enabled`** — default **FALSE**. **UNMEASURED** (W2.2).
-- **`chat.context_expansion_enabled`** — default **FALSE**. **UNMEASURED** (issue #523).
+- **`chat.speaker_resolver_enabled`** — default **FALSE**. Partially measured (issue #523,
+  2026-09-21): the mechanism fires correctly and produces a substantive answer when a
+  question's verb matches `speaker_resolver.py`'s lexicon, but a pre-existing full-scale
+  artifact intended to A/B it (`.rag-403/probe-runs/ami81-routerfix`) shows `speaker_focus`
+  false on all 81 questions — including several using covered verbs — meaning that run was
+  generated with the flag not actually applied (the documented "applied-check" trap). Default
+  stays OFF pending a valid full-scale re-measurement.
+- **`chat.context_expansion_enabled`** — default **TRUE** as of issue #523's closure
+  (2026-09-21). Measured: real, reproducible answer-quality gain, coverage a wash, citation
+  integrity (`citation_resolution_rate`/`citation_validity_rate`) unaffected now that #526 is
+  closed. See #523's closing comment for the full numbers.
 - **Fusion strategy** — `rrf` is the shipped default. #403 Stage 5 measured **24 arms** across two
   corpora and adopted **zero** of them: the two corpora's per-arm rankings are **anti-correlated**
   (Kendall's tau-b −0.714 / −0.905 — a config that helps one corpus tends to hurt the other). See

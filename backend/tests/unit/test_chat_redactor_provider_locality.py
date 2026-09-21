@@ -393,7 +393,10 @@ def test_both_kwargs_builders_carry_the_exemption():
     from app.services.chat.service import _build_digest_mask_kwargs
     from app.services.chat.service import _build_mask_kwargs
 
-    settings = ChatSettings()
+    # context_expansion_enabled held explicitly OFF (default flipped ON by #523's
+    # A/B, 2026-09-21) so this test isolates the LOCAL-PROVIDER exemption this
+    # function name is about, rather than also asserting on an orthogonal flag.
+    settings = ChatSettings(context_expansion_enabled=False)
     assert _build_mask_kwargs(_LOCAL_LLM, settings) == {"unmask_for_local": True}
     assert _build_mask_kwargs(_REMOTE_LLM, settings) == {}
     assert _build_digest_mask_kwargs(_LOCAL_LLM) == {"unmask_for_local": True}

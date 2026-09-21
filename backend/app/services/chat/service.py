@@ -1318,8 +1318,8 @@ def _build_mask_kwargs(llm: Any, settings: Any) -> dict[str, bool]:
     ``expand_short_chunks`` (#523) widens a chunk under
     ``context_expansion.SHORT_CHUNK_WORD_THRESHOLD`` words to its surrounding
     exchange BEFORE masking, inside ``mask_chunks`` itself, so the
-    strictest-wins policy applies to every widened word. Flag-gated, default OFF
-    (``chat.context_expansion_enabled``).
+    strictest-wins policy applies to every widened word. Flag-gated, default ON
+    as of the #523 A/B (2026-09-21) (``chat.context_expansion_enabled``).
 
     ⚠️ THIS IS THE CHUNK PLANE ONLY. The digest plane takes
     :func:`_build_digest_mask_kwargs`, which omits ``expand_short_chunks`` — see its
@@ -1342,8 +1342,9 @@ def _emit_expansion(recorder, masked: list, *, enabled: bool) -> None:
     returns — hence a helper called from there rather than an emit beside the
     other narrowing stages.
 
-    ``chat.context_expansion_enabled`` is default-OFF, and a stage that did not
-    run still reports ``SKIPPED`` rather than vanishing: an absent row reads as
+    ``chat.context_expansion_enabled`` is admin-editable (default ON as of
+    2026-09-21), and a stage that did not run still reports ``SKIPPED`` rather
+    than vanishing: an absent row reads as
     "not part of this pipeline", which is precisely the ambiguity the panel
     exists to remove. ``chunk.expanded`` counts chunks whose own time range was
     widened; the rest were already long enough to keep as they were.

@@ -59,6 +59,12 @@ class FileSummary:
     #: but nothing came back" is a coverage note the reducer can render,
     #: rather than being indistinguishable from "not in this file at all".
     speaker_in_roster: bool = False
+    #: #464. True when `digest` above was assembled from a fresh LLM summary
+    #: hit (`ChunkHit.is_llm_summary`) rather than extractive digest sections.
+    #: `citations.build_overview_citations` reads this to pick `KIND_SUMMARY`
+    #: vs `KIND_DIGEST` — see `ChunkHit.is_llm_summary`'s docstring for why the
+    #: two must never share a citation kind.
+    is_llm_summary: bool = False
 
 
 class DigestScopeHits(list):
@@ -154,6 +160,11 @@ def build_file_summaries(
                 speaker_in_roster=(
                     speaker_focus is not None and _speaker_in_roster(facts, speaker_focus)
                 ),
+                # A file's hits are either ALL from the summary branch (one hit) or ALL
+                # from the digest branch (`sections_per_file` sections) — `scope_digest_hits`
+                # never mixes the two for one file — so `any()` and `all()` agree here;
+                # `any()` reads as the more honest statement of the actual per-hit fact.
+                is_llm_summary=any(getattr(hit, "is_llm_summary", False) for hit in hits),
             )
         )
     return summaries
@@ -358,6 +369,7 @@ def scope_digest_hits(
                         start_time=0.0,
                         end_time=None,
                         digest_section=len(sections),
+                        is_llm_summary=True,
                     )
                 )
                 summary_hits += 1

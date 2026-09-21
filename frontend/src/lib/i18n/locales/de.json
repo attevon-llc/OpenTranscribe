@@ -291,7 +291,7 @@
   "collectionsPanel.updateCollection": "Sammlung aktualisieren",
   "collectionsPanel.updatedSuccess": "Sammlung \"{{name}}\" erfolgreich aktualisiert",
   "collectionsPanel.updating": "Wird aktualisiert...",
-  "collectionsPanel.searchPlaceholder": "Sammlungen durchsuchen...",
+  "collectionsPanel.searchPlaceholder": "Sammlungen durchsuchen…",
   "collectionsPanel.currentSingle": "Sammlungen dieser Datei",
   "collectionsPanel.currentMulti": "Sammlungen der Auswahl",
   "collectionsPanel.inCount": "in {{count}} von {{total}}",

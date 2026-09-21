@@ -2420,7 +2420,7 @@
   "collectionsPanel.nameHint": "Een korte, beschrijvende naam (maximaal 100 tekens)",
   "collectionsPanel.descriptionHint": "Optioneel — waar dient deze collectie voor? (maximaal 500 tekens)",
   "collectionsPanel.system": "Systeem",
-  "collectionsPanel.searchPlaceholder": "Collecties zoeken...",
+  "collectionsPanel.searchPlaceholder": "Collecties zoeken…",
   "collectionsPanel.currentSingle": "Collecties voor dit bestand",
   "collectionsPanel.currentMulti": "Collecties voor de selectie",
   "collectionsPanel.inCount": "in {{count}} van {{total}}",

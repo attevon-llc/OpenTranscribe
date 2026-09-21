@@ -2419,7 +2419,7 @@
   "collectionsPanel.nameHint": "简短的描述性名称(最多 100 个字符)",
   "collectionsPanel.descriptionHint": "可选 — 此合集用于什么?(最多 500 个字符)",
   "collectionsPanel.system": "系统",
-  "collectionsPanel.searchPlaceholder": "搜索集合...",
+  "collectionsPanel.searchPlaceholder": "搜索集合…",
   "collectionsPanel.currentSingle": "此文件所属合集",
   "collectionsPanel.currentMulti": "所选项所属合集",
   "collectionsPanel.inCount": "{{total}} 个中的 {{count}} 个",

@@ -291,7 +291,7 @@
   "collectionsPanel.updateCollection": "Mettre à Jour la Collection",
   "collectionsPanel.updatedSuccess": "Collection \"{{name}}\" mise à jour avec succès",
   "collectionsPanel.updating": "Mise à jour...",
-  "collectionsPanel.searchPlaceholder": "Rechercher des collections...",
+  "collectionsPanel.searchPlaceholder": "Rechercher des collections…",
   "collectionsPanel.currentSingle": "Collections de ce fichier",
   "collectionsPanel.currentMulti": "Collections de la sélection",
   "collectionsPanel.inCount": "dans {{count}} sur {{total}}",

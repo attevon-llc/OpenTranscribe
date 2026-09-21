@@ -2420,7 +2420,7 @@
   "collectionsPanel.nameHint": "A short, descriptive name (up to 100 characters)",
   "collectionsPanel.descriptionHint": "Optional — what's this collection for? (up to 500 characters)",
   "collectionsPanel.system": "System",
-  "collectionsPanel.searchPlaceholder": "Search collections...",
+  "collectionsPanel.searchPlaceholder": "Search collections…",
   "collectionsPanel.currentSingle": "Collections for this file",
   "collectionsPanel.currentMulti": "Collections for the selection",
   "collectionsPanel.inCount": "in {{count}} of {{total}}",

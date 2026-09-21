@@ -2409,7 +2409,7 @@
   "collectionsPanel.nameHint": "Короткое описательное имя (до 100 символов)",
   "collectionsPanel.descriptionHint": "Необязательно — для чего эта коллекция? (до 500 символов)",
   "collectionsPanel.system": "Системный",
-  "collectionsPanel.searchPlaceholder": "Поиск коллекций...",
+  "collectionsPanel.searchPlaceholder": "Поиск коллекций…",
   "collectionsPanel.currentSingle": "Коллекции этого файла",
   "collectionsPanel.currentMulti": "Коллекции выбранного",
   "collectionsPanel.inCount": "в {{count}} из {{total}}",

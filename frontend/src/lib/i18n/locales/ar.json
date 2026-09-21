@@ -2420,7 +2420,7 @@
   "collectionsPanel.nameHint": "اسم قصير ووصفي (حتى 100 حرف)",
   "collectionsPanel.descriptionHint": "اختياري — ما الغرض من هذه المجموعة؟ (حتى 500 حرف)",
   "collectionsPanel.system": "النظام",
-  "collectionsPanel.searchPlaceholder": "البحث في المجموعات...",
+  "collectionsPanel.searchPlaceholder": "البحث في المجموعات…",
   "collectionsPanel.currentSingle": "المجموعات لهذا الملف",
   "collectionsPanel.currentMulti": "المجموعات للتحديد",
   "collectionsPanel.inCount": "في {{count}} من {{total}}",

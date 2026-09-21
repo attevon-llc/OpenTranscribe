@@ -2420,7 +2420,7 @@
   "collectionsPanel.nameHint": "Un nome breve e descrittivo (fino a 100 caratteri)",
   "collectionsPanel.descriptionHint": "Facoltativo — a cosa serve questa raccolta? (fino a 500 caratteri)",
   "collectionsPanel.system": "Sistema",
-  "collectionsPanel.searchPlaceholder": "Cerca raccolte...",
+  "collectionsPanel.searchPlaceholder": "Cerca raccolte…",
   "collectionsPanel.currentSingle": "Raccolte per questo file",
   "collectionsPanel.currentMulti": "Raccolte per la selezione",
   "collectionsPanel.inCount": "in {{count}} di {{total}}",

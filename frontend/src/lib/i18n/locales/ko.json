@@ -2420,7 +2420,7 @@
   "collectionsPanel.nameHint": "짧고 명확한 이름 (최대 100자)",
   "collectionsPanel.descriptionHint": "선택 사항 — 이 컬렉션의 용도를 설명하세요 (최대 500자)",
   "collectionsPanel.system": "시스템",
-  "collectionsPanel.searchPlaceholder": "컬렉션 검색...",
+  "collectionsPanel.searchPlaceholder": "컬렉션 검색…",
   "collectionsPanel.currentSingle": "이 파일의 컬렉션",
   "collectionsPanel.currentMulti": "선택 항목의 컬렉션",
   "collectionsPanel.inCount": "{{total}}개 중 {{count}}개에 포함됨",

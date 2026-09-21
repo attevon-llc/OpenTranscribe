@@ -2419,7 +2419,7 @@
   "collectionsPanel.nameHint": "短く分かりやすい名前(最大 100 文字)",
   "collectionsPanel.descriptionHint": "任意 — このコレクションは何のためのものですか?(最大 500 文字)",
   "collectionsPanel.system": "システム",
-  "collectionsPanel.searchPlaceholder": "コレクションを検索...",
+  "collectionsPanel.searchPlaceholder": "コレクションを検索…",
   "collectionsPanel.currentSingle": "このファイルのコレクション",
   "collectionsPanel.currentMulti": "選択項目のコレクション",
   "collectionsPanel.inCount": "{{total}} 件中 {{count}} 件",

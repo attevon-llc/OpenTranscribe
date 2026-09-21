@@ -2419,7 +2419,7 @@
   "collectionsPanel.nameHint": "Um nome curto e descritivo (até 100 caracteres)",
   "collectionsPanel.descriptionHint": "Opcional — para que serve esta coleção? (até 500 caracteres)",
   "collectionsPanel.system": "Sistema",
-  "collectionsPanel.searchPlaceholder": "Pesquisar coleções...",
+  "collectionsPanel.searchPlaceholder": "Pesquisar coleções…",
   "collectionsPanel.currentSingle": "Coleções deste ficheiro",
   "collectionsPanel.currentMulti": "Coleções da seleção",
   "collectionsPanel.inCount": "em {{count}} de {{total}}",

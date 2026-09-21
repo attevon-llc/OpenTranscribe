@@ -134,6 +134,28 @@
   --color-info-border: rgba(59, 130, 246, 0.3);
   --color-info: var(--info-color);
 
+  /* Text-weight status colours, and secondary text for TINTED surfaces.
+   *
+   * `--success-color` / `--error-color` are FILL colours, calibrated to be legible as a
+   * solid background or an icon — not as small text sitting on their own soft tint. Used
+   * that way they fail WCAG AA (SC 1.4.3, 4.5:1 for normal text) outright: #10b981 on the
+   * success tint measures 2.27:1 and #ef4444 on the error tint 3.29:1. `--color-warning-text`
+   * already existed for exactly this reason; this completes the set (issue #972 — the pair
+   * of dark-only badge-composite failures this token family exists to prevent).
+   *
+   * `--text-on-tint` is the same story for `--text-secondary` (#64748b). It clears AA on the
+   * base white surface (4.76:1) and fails on every tint the app actually uses.
+   *
+   * Measured against the tints in use — light: #b91c1c on #fdecec = 5.67:1 (6.47:1 on
+   * white), #475569 on #f1f5f9 = 6.91:1. Dark: #f87171 on #1e293b (plain surface) = 5.29:1 —
+   * NOT the same as its measured value on a tinted badge; see
+   * frontend/src/components/fileStatus/TasksGrid.svelte's dark `.status-error` override,
+   * which composites this colour's own tint UNDER it and fails at 4.38:1 for exactly that
+   * reason (issue #972).
+   */
+  --color-error-text: #b91c1c;
+  --text-on-tint: #475569;
+
   /* Alternate-name aliases used by some components */
   --bg-primary: var(--surface-color);
   --text-primary: var(--text-color);
@@ -311,6 +333,13 @@
   --color-info-bg: rgba(96, 165, 250, 0.15);
   --color-info-border: rgba(96, 165, 250, 0.3);
   --color-info: var(--info-color);
+  /* Dark-mode sibling of the light block's text-weight status colours. The direction
+   * inverts: on a dark surface the FILL colours are too dark to read, so this goes
+   * lighter rather than darker. `--text-on-tint` matches `--text-secondary` here because
+   * dark tints are overlays on an already-dark surface, so the near-misses the light
+   * theme has do not arise. */
+  --color-error-text: #f87171;
+  --text-on-tint: var(--text-secondary);
 
   /* Alternate-name aliases used by some components - dark mode */
   --bg-primary: var(--surface-color);

@@ -43,7 +43,20 @@
   // ── Types ──
   interface FileWithSize extends File { size: number; }
   type StepId = 'media' | 'extraction' | 'tags' | 'collections' | 'speakers' | 'model' | 'review';
-  interface StepConfig { id: StepId; labelKey: string; optional: boolean; skipped: boolean; }
+  interface StepConfig {
+    id: StepId;
+    labelKey: string;
+    optional: boolean;
+    skipped: boolean;
+    /**
+     * Optional per-step content width (any valid CSS `max-width` value), applied
+     * to `.step-content` for the active step. All steps share one `.step-body`
+     * (see the modal's fixed width), so a step whose natural content is narrower
+     * than the others — e.g. a short list of chips — would otherwise stretch to
+     * fill the same width as a step with a wide filter/create row (#751 item 1).
+     */
+    contentWidth?: string;
+  }
   interface UploadPreviousValues {
     collectionIds: string[];
     collectionNames: string[];
@@ -79,7 +92,7 @@
   // ── Stepper State ──
   let steps: StepConfig[] = [
     { id: 'media',       labelKey: 'uploader.stepMedia',       optional: false, skipped: false },
-    { id: 'tags',        labelKey: 'uploader.stepTags',        optional: true,  skipped: false },
+    { id: 'tags',        labelKey: 'uploader.stepTags',        optional: true,  skipped: false, contentWidth: '420px' },
     { id: 'collections', labelKey: 'uploader.stepCollections', optional: true,  skipped: false },
     { id: 'speakers',    labelKey: 'uploader.stepSpeakers',    optional: false, skipped: false },
     { id: 'model',       labelKey: 'uploader.stepModel',       optional: false, skipped: false },
@@ -787,7 +800,11 @@
 
   <!-- Step Content -->
   <div class="step-body" role="tabpanel">
-      <div class="step-content">
+      <div
+        class="step-content"
+        class:step-content--narrow={!!currentStep?.contentWidth}
+        style={currentStep?.contentWidth ? `max-width: ${currentStep.contentWidth};` : ''}
+      >
         {#if currentStep?.id === 'media'}
           <!-- Tab Navigation -->
           <div class="tab-navigation">
@@ -1075,7 +1092,7 @@
     background: rgba(59, 130, 246, 0.08);
   }
 
-  :global(.dark) .step-item:not(:disabled):hover {
+  :global([data-theme='dark']) .step-item:not(:disabled):hover {
     background: rgba(59, 130, 246, 0.12);
   }
 
@@ -1160,6 +1177,14 @@
 
   .step-content {
     padding: 0 0.25rem;
+  }
+
+  /* Narrower steps (e.g. Tags) fit their natural width instead of stretching to
+     the modal's full width — #751 item 1. margin-inline is logical so it stays
+     centred in RTL too. */
+  .step-content--narrow {
+    margin-inline: auto;
+    width: 100%;
   }
 
   /* ── Tab Navigation ── */
@@ -1330,11 +1355,11 @@
     transform: translateY(-1px);
   }
 
-  :global(.dark) .nav-review-defaults {
+  :global([data-theme='dark']) .nav-review-defaults {
     background: rgba(59, 130, 246, 0.12);
   }
 
-  :global(.dark) .nav-review-defaults:hover {
+  :global([data-theme='dark']) .nav-review-defaults:hover {
     background: rgba(59, 130, 246, 0.22);
   }
 

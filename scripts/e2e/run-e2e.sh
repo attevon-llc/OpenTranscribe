@@ -14,7 +14,11 @@
 #
 # E2E_FRONTEND_URL / E2E_BACKEND_URL (or --fresh <name>) point this runner at an
 # isolated stack instead of the live dev one (issue #965). Without either, it targets
-# http://localhost:5173 / :5174, same as always.
+# http://localhost:5173 / :5174, same as always. `--fresh <name>` also exports
+# POSTGRES_PORT/OPENSEARCH_PORT/MINIO_PORT for the handful of fixtures that talk to
+# those services directly rather than through the backend's HTTP API — set them by hand
+# (matching your own `--port-offset`) if you point this at a fresh stack via the env vars
+# instead of `--fresh <name>`, or those fixtures will silently read the main dev stack.
 
 set -euo pipefail
 
@@ -67,6 +71,22 @@ if [[ -n "$FRESH_NAME" ]]; then
     fi
     export E2E_FRONTEND_URL="http://localhost:$((5173 + FRESH_OFFSET))"
     export E2E_BACKEND_URL="http://localhost:$((5174 + FRESH_OFFSET))"
+    # POSTGRES_PORT/OPENSEARCH_PORT/MINIO_PORT: fixtures that talk to those services
+    # DIRECTLY (never through the backend's HTTP API — e.g. owned_corpus.py's
+    # _wait_for_chunks_indexed polling OpenSearch, or cleanup-test-data.py's Postgres
+    # sweep) resolve their target from these env vars via backend/tests/conftest.py,
+    # completely independent of E2E_FRONTEND_URL/E2E_BACKEND_URL above. Without them a
+    # `--fresh --port-offset` run's HTTP traffic correctly hits the isolated stack while
+    # every direct-connection fixture silently hits the MAIN dev stack's Postgres/
+    # OpenSearch instead — a mixed-stack read that manufactured 48 spurious `owned_*`
+    # fixture failures (fanning out from one shared session fixture) when this was
+    # missing, even though #965's frontend/backend URL fix worked correctly. conftest.py
+    # already special-cases these exact three names for exactly this scenario ("this
+    # brings MinIO/OpenSearch in line" with POSTGRES_PORT's existing behaviour) — this
+    # was the missing wiring on the `--fresh <name>` convenience path, not a new contract.
+    export POSTGRES_PORT="$((5176 + FRESH_OFFSET))"
+    export OPENSEARCH_PORT="$((5180 + FRESH_OFFSET))"
+    export MINIO_PORT="$((5178 + FRESH_OFFSET))"
 fi
 
 # Same defaults conftest.py's FRONTEND_URL/BACKEND_URL constants use, so a bare

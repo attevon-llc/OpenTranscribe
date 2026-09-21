@@ -315,12 +315,14 @@
           on:click={() => handleTabChange('status')}
           on:mouseenter={prefetchFileStatusData}
         >
+          <!-- Activity/pulse line (Feather `activity`), not the document glyph
+               that used to sit here: that glyph was a near-twin of the sibling
+               Gallery tab's image icon and the bell panel's file-text icon, and
+               read as "a file", not "status" (issue #754, J9). A pulse line
+               reads as state-over-time and shares no silhouette with any other
+               nav/tab icon. -->
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-            <polyline points="10 9 9 9 8 9"></polyline>
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
           </svg>
           <span class="tab-label">{$t('nav.fileStatus')}</span>
         </button>
@@ -370,7 +372,7 @@
       {#if chatEnabled}
         <a
           href="/chat"
-          title={$t('nav.chat')}
+          title={$t('nav.aiChat')}
           class="nav-link"
           class:active={isChatActive}
           aria-current={isChatActive ? 'page' : undefined}
@@ -379,7 +381,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
           </svg>
-          <span class="nav-label">{$t('nav.chat')}</span>
+          <span class="nav-label">{$t('nav.aiChat')}</span>
         </a>
       {/if}
 
@@ -604,8 +606,9 @@
     right: 0;
     height: calc(60px + env(safe-area-inset-top, 0px));
     padding-top: env(safe-area-inset-top, 0px);
-    background-color: var(--surface-color);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    background-color: var(--navbar-bg);
+    border-bottom: 1px solid var(--navbar-border);
+    box-shadow: var(--navbar-shadow);
     z-index: 1200;
     overflow: visible; /* Allow button hover effects to display properly */
   }
@@ -704,13 +707,13 @@
   }
 
   .nav-link:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background-color: var(--navbar-hover);
     color: var(--primary-on-surface);
   }
 
   .nav-link.active {
     color: var(--primary-on-surface);
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background-color: var(--navbar-hover);
   }
 
   /* Focus states for accessibility */
@@ -768,7 +771,7 @@
   }
 
   .notifications-btn:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--navbar-hover);
   }
 
   .notification-badge {
@@ -819,13 +822,24 @@
 
   /* Reduce gap, hide username, keep nav labels.
      MEASURED, not guessed: at full spacing with the username shown the navbar
-     needs 1435px, so this tier must start above that with real headroom — it
-     used to start at 1200px and the bar simply overflowed the viewport from
-     1201px to 1434px, clipping the user menu off-screen (issue #452).
+     needed 1435px for "Chat" — it used to start at 1200px and the bar simply
+     overflowed the viewport from 1201px to 1434px, clipping the user menu
+     off-screen (issue #452).
+     ⚠️ RE-MEASURED for issue #754 ("Chat" → "AI chat"/localized equivalents):
+     an offline canvas measurement (`.nav-link`'s exact font: 500 16px
+     system-ui stack) puts the widest real translation — Japanese "AIチャット"
+     — ~45px wider than the old English "Chat" (79.65px vs 34.75px genuinely
+     rendered; German/Russian/Arabic all land in the 55-63px range, well under
+     that). 1435 + 45 ≈ 1480px of required width, which left only ~20px of
+     headroom under the old 1500px threshold — too tight given this was an
+     offline estimate, not a live-DOM measurement (no dev stack was available
+     to this pass; needs a live sweep to confirm). Raised to 1560px for
+     headroom back in line with the original ~65px margin.
      ⚠️ This threshold is coordinated with the identical one in
      navbar/UserDropdown.svelte, which hides `.username`. Both must move
-     together, and both must move UP whenever a nav item is added. */
-  @media (max-width: 1500px) {
+     together, and both must move UP whenever a nav item is added or a label
+     widens. */
+  @media (max-width: 1560px) {
     .navbar-container {
       gap: 1.5rem;
       padding: 0.5rem 1rem;
@@ -833,10 +847,16 @@
   }
 
   /* Icon-only nav links, tighter layout.
-     Reduced spacing with full text labels needs 1227px, so this tier starts at
-     1280 rather than the old 1024 — between 1025 and 1226 the bar overflowed
-     here too, which is why raising only the tier above would not have fixed it. */
-  @media (max-width: 1280px) {
+     Reduced spacing with full text labels needed 1227px for "Chat", so this
+     tier started at 1280 rather than the old 1024 — between 1025 and 1226 the
+     bar overflowed here too, which is why raising only the tier above would
+     not have fixed it.
+     ⚠️ RE-MEASURED for issue #754 on the same basis as the threshold above:
+     1227 + ~45px (widest measured translation) ≈ 1272px required, versus 53px
+     of headroom under the old 1280px value. Raised to 1330px to restore
+     comparable headroom. Same offline-estimate caveat applies — confirm with
+     a live `NAVBAR_SWEEP_WIDTHS` sweep. */
+  @media (max-width: 1330px) {
     .navbar-container {
       gap: 1rem;
     }
@@ -898,7 +918,7 @@
       top: calc(60px + env(safe-area-inset-top, 0px));
       left: 0;
       right: 0;
-      background: var(--surface-color);
+      background: var(--navbar-bg);
       border-bottom: 1px solid var(--border-color);
       padding: 0.75rem 1rem;
       z-index: 1100;

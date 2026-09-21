@@ -471,3 +471,278 @@ def test_backfill_reports_the_row_count_the_apply_step_actually_wrote(monkeypatc
 
     assert summary["matched"] == 2
     assert summary["updated"] == 1
+
+
+# --------------------------------------------------------------------------------------
+# media_duration_backfill (issue #969)
+# --------------------------------------------------------------------------------------
+
+import contextlib
+import uuid as uuid_module
+
+from app.core.enums import FileStatus
+from app.models.media import TranscriptSegment
+
+
+def _patch_session_scope_to_test_db(monkeypatch, db_session):
+    """Route every ``session_scope()`` call in the task at the test's savepoint session.
+
+    The task opens several short-lived sessions on purpose (the read/slow-work/write
+    phase split the session-lifetime rule requires) — all of them must land on the
+    SAME connection the test's fixtures and assertions use, or writes are invisible
+    to the test and rollback can't undo them.
+    """
+
+    @contextlib.contextmanager
+    def _scope():
+        yield db_session
+
+    monkeypatch.setattr(recovery_tasks, "session_scope", _scope)
+
+
+def _corrupted_file(
+    db_session,
+    user_id: int,
+    *,
+    stored_duration: float = 30.0,
+    segment_end: float | None = None,
+    metadata_important: dict | None = None,
+    is_quarantined: bool = False,
+    legal_hold: bool = False,
+    status: FileStatus = FileStatus.COMPLETED,
+) -> MediaFile:
+    """A completed file whose stored duration matches its speech extent (the #969 signature).
+
+    ``segment_end`` defaults to ``stored_duration`` -- the overwrite's exact-equality
+    fingerprint the backfill selects on. Pass it explicitly to build a row that does
+    NOT carry the signature (``test_a_non_matching_row_is_not_selected``).
+    """
+    if segment_end is None:
+        segment_end = stored_duration
+    mf = MediaFile(
+        uuid=uuid_module.uuid4(),
+        user_id=user_id,
+        filename="corrupted.mp4",
+        storage_path=f"user_{user_id}/corrupted-{uuid_module.uuid4().hex[:8]}.mp4",
+        file_size=4096,
+        content_type="video/mp4",
+        status=status,
+        duration=stored_duration,
+        duration_source=None,
+        metadata_important=metadata_important or {},
+        is_quarantined=is_quarantined,
+        legal_hold=legal_hold,
+    )
+    db_session.add(mf)
+    db_session.commit()
+    db_session.refresh(mf)
+
+    db_session.add(
+        TranscriptSegment(
+            media_file_id=mf.id,
+            start_time=0.0,
+            end_time=segment_end,
+            text="x",
+        )
+    )
+    db_session.commit()
+    return mf
+
+
+def test_dry_run_reports_counts_and_writes_nothing(monkeypatch, db_session, normal_user):
+    """``dry_run=True`` (the default) must not touch the database."""
+    mf = _corrupted_file(
+        db_session, normal_user.id, metadata_important={"Duration": 358.19}, stored_duration=30.0
+    )
+    _patch_session_scope_to_test_db(monkeypatch, db_session)
+
+    summary = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=True)
+
+    assert summary["examined"] == 1
+    assert summary["tier_a"] == 1
+    assert summary["updated"] == 1
+
+    db_session.refresh(mf)
+    assert mf.duration == pytest.approx(30.0), "dry run must not write anything"
+    assert mf.duration_source is None
+
+
+def test_tier_a_corrects_from_metadata_with_no_minio_call(monkeypatch, db_session, normal_user):
+    """A row with a usable ``metadata_important.Duration`` is corrected by a pure dict read."""
+    import app.services.minio_service as minio_service
+
+    def _boom(*_a, **_k):
+        raise AssertionError("Tier A must not touch MinIO")
+
+    monkeypatch.setattr(minio_service, "get_internal_presigned_url", _boom)
+    _patch_session_scope_to_test_db(monkeypatch, db_session)
+
+    mf = _corrupted_file(
+        db_session, normal_user.id, metadata_important={"Duration": 358.19}, stored_duration=347.24
+    )
+
+    summary = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=False)
+
+    assert summary["tier_a"] == 1
+    assert summary["updated"] == 1
+    db_session.refresh(mf)
+    assert mf.duration == pytest.approx(358.19)
+    assert mf.duration_source == "container"
+
+
+def test_tier_b_probes_minio_when_metadata_has_no_duration(monkeypatch, db_session, normal_user):
+    """No usable metadata Duration -> the MinIO object is re-probed directly with ffprobe."""
+    import app.services.minio_service as minio_service
+    import app.tasks.transcription.metadata_extractor as metadata_extractor
+
+    monkeypatch.setattr(
+        minio_service, "get_internal_presigned_url", lambda path, expires=3600: f"https://x/{path}"
+    )
+    monkeypatch.setattr(metadata_extractor, "probe_media_duration", lambda url, timeout=15: 358.19)
+    _patch_session_scope_to_test_db(monkeypatch, db_session)
+
+    mf = _corrupted_file(db_session, normal_user.id, metadata_important={}, stored_duration=347.24)
+
+    summary = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=False)
+
+    assert summary["tier_b"] == 1
+    assert summary["updated"] == 1
+    db_session.refresh(mf)
+    assert mf.duration == pytest.approx(358.19)
+    assert mf.duration_source == "container"
+
+
+def test_unrecoverable_leaves_duration_untouched_and_labels_it_transcript_extent(
+    monkeypatch, db_session, normal_user
+):
+    """When neither tier produces a duration, the row is labelled honestly, not silently skipped."""
+    import app.services.minio_service as minio_service
+    import app.tasks.transcription.metadata_extractor as metadata_extractor
+
+    monkeypatch.setattr(
+        minio_service, "get_internal_presigned_url", lambda path, expires=3600: f"https://x/{path}"
+    )
+    monkeypatch.setattr(metadata_extractor, "probe_media_duration", lambda url, timeout=15: None)
+    _patch_session_scope_to_test_db(monkeypatch, db_session)
+
+    mf = _corrupted_file(db_session, normal_user.id, metadata_important={}, stored_duration=30.0)
+
+    summary = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=False)
+
+    assert summary["unrecoverable"] == 1
+    assert summary["updated"] == 1
+    db_session.refresh(mf)
+    assert mf.duration == pytest.approx(30.0), "the speech-extent value is left in place"
+    assert mf.duration_source == "transcript_extent"
+
+
+def test_a_second_run_is_a_no_op(monkeypatch, db_session, normal_user):
+    """Idempotency: ``duration_source`` cleared on the first run means nothing matches the second."""
+    import app.services.minio_service as minio_service
+
+    monkeypatch.setattr(
+        minio_service, "get_internal_presigned_url", lambda path, expires=3600: f"https://x/{path}"
+    )
+    _patch_session_scope_to_test_db(monkeypatch, db_session)
+
+    _corrupted_file(
+        db_session, normal_user.id, metadata_important={"Duration": 358.19}, stored_duration=30.0
+    )
+
+    first = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=False)
+    assert first["updated"] == 1
+
+    second = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=False)
+    assert second["examined"] == 0
+    assert second["updated"] == 0
+
+
+def test_a_shorter_probed_value_is_skipped_not_applied(monkeypatch, db_session, normal_user):
+    """A Tier A/B candidate SHORTER than the stored value is an anomaly, never a correction."""
+    _patch_session_scope_to_test_db(monkeypatch, db_session)
+
+    mf = _corrupted_file(
+        db_session, normal_user.id, metadata_important={"Duration": 350.0}, stored_duration=400.0
+    )
+
+    summary = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=False)
+
+    assert summary["skipped_lower"] == 1
+    assert summary["updated"] == 0
+    db_session.refresh(mf)
+    assert mf.duration == pytest.approx(400.0), "the (wrong but larger) stored value must survive"
+    assert mf.duration_source is None, "an anomaly must not be silently marked resolved"
+
+
+@pytest.mark.parametrize("is_quarantined,legal_hold", [(True, False), (False, True), (True, True)])
+def test_quarantined_or_legal_hold_rows_are_never_touched(
+    monkeypatch, db_session, normal_user, is_quarantined, legal_hold
+):
+    """Issue #824/#664: a held file's duration must not move while it is held."""
+    _patch_session_scope_to_test_db(monkeypatch, db_session)
+
+    mf = _corrupted_file(
+        db_session,
+        normal_user.id,
+        metadata_important={"Duration": 358.19},
+        stored_duration=30.0,
+        is_quarantined=is_quarantined,
+        legal_hold=legal_hold,
+    )
+
+    summary = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=False)
+
+    assert summary["examined"] == 0
+    db_session.refresh(mf)
+    assert mf.duration == pytest.approx(30.0)
+    assert mf.duration_source is None
+
+
+def test_updated_files_are_dispatched_for_reindexing(monkeypatch, db_session, normal_user):
+    """Issue #969: duration is indexed and copied into every chunk's metadata."""
+    import app.services.minio_service as minio_service
+    import app.tasks.search_indexing_task as search_indexing_task
+
+    monkeypatch.setattr(
+        minio_service, "get_internal_presigned_url", lambda path, expires=3600: f"https://x/{path}"
+    )
+    dispatched: list[dict] = []
+    monkeypatch.setattr(
+        search_indexing_task.index_transcript_search_task,
+        "delay",
+        lambda **kwargs: dispatched.append(kwargs),
+    )
+    _patch_session_scope_to_test_db(monkeypatch, db_session)
+
+    mf = _corrupted_file(
+        db_session, normal_user.id, metadata_important={"Duration": 358.19}, stored_duration=30.0
+    )
+
+    summary = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=False)
+
+    assert summary["reindexed"] == 1
+    assert len(dispatched) == 1
+    assert dispatched[0]["file_id"] == mf.id
+    assert dispatched[0]["file_uuid"] == str(mf.uuid)
+    assert dispatched[0]["user_id"] == normal_user.id
+
+
+def test_a_non_matching_row_is_not_selected(monkeypatch, db_session, normal_user):
+    """A row whose duration is NOT the speech-extent signature was never touched by #969."""
+    _patch_session_scope_to_test_db(monkeypatch, db_session)
+
+    # stored_duration (400.0) does not equal segment_end (30.0) -- not the overwrite signature.
+    mf = _corrupted_file(
+        db_session,
+        normal_user.id,
+        metadata_important={"Duration": 358.19},
+        stored_duration=400.0,
+        segment_end=30.0,
+    )
+
+    summary = recovery_tasks.media_duration_backfill(user_id=normal_user.id, dry_run=False)
+
+    assert summary["examined"] == 0
+    db_session.refresh(mf)
+    assert mf.duration == pytest.approx(400.0)
+    assert mf.duration_source is None

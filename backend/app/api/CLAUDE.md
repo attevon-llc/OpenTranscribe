@@ -105,6 +105,7 @@ noted. Admin (`get_current_admin_user`) unless stated.
 | `POST /speakers/cleanup-orphaned-embeddings` | `get_current_active_user` — self-scoped by `user_id`, the only unprivileged search-index mutation here |
 | `POST /files/management/cleanup-orphaned` · `GET /files/management/stuck` | Stuck-file recovery, **not** orphan cleanup — see Gotchas |
 | `GET /admin/data-integrity/counts` | `run_orphan_cleanup(dry_run=True)` inline; read-only |
+| `POST /admin/media-duration-backfill` | super_admin; dispatches `recovery.media_duration_backfill` (issue #969), `dry_run=true` default |
 | `/speakers/combined-migration/{start,status,stop}` · `DELETE .../progress` | super_admin; `stop` revokes in-flight batches |
 | `DELETE /speaker-attributes/migration/progress` | super_admin; clears stale Redis progress, refuses while running |
 | `GET /embeddings/migration/mode` | super_admin; pure config read (declares an unused `db` dependency) |

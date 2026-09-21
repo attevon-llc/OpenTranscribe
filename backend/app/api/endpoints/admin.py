@@ -2706,6 +2706,25 @@ def get_data_integrity_counts(
     return get_integrity_counts()
 
 
+@router.post("/media-duration-backfill")
+def start_media_duration_backfill(
+    dry_run: bool = True,
+    current_user: User = Depends(get_current_super_admin_user),
+) -> dict:
+    """Start the issue #969 media-duration provenance backfill. Super-admin only.
+
+    Restores the container duration on rows the pre-#969 pipeline overwrote with
+    the transcript's speech extent. ``dry_run=true`` (the default) reports what
+    would change without writing anything or dispatching a reindex — see
+    ``app.tasks.recovery_tasks.media_duration_backfill`` for the full tiering,
+    safety guarantees, and why quarantined/legal-hold rows are never touched.
+    """
+    from app.tasks.recovery_tasks import media_duration_backfill
+
+    result = media_duration_backfill.delay(user_id=None, dry_run=dry_run)
+    return {"status": "started", "task_id": str(result.id), "dry_run": dry_run}
+
+
 # ---------------------------------------------------------------------------
 # Embedding Consistency (Self-Healing) Endpoints
 # ---------------------------------------------------------------------------

@@ -159,6 +159,7 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/admin/gpu-profiles": _MAINTENANCE_OPS_REASON,
     "/api/admin/imohash-recompute/start": _MAINTENANCE_OPS_REASON,
     "/api/admin/imohash-recompute/status": _MAINTENANCE_OPS_REASON,
+    "/api/admin/media-duration-backfill": _MAINTENANCE_OPS_REASON,
     "/api/admin/profile-embeddings/repair": _MAINTENANCE_OPS_REASON,
     "/api/admin/timing": _MAINTENANCE_OPS_REASON,
     "/api/admin/timing/{task_id}": _MAINTENANCE_OPS_REASON,

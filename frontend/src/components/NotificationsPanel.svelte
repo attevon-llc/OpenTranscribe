@@ -10,6 +10,7 @@
   import { showNotificationsPanel } from '../stores/notificationsPanel';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
+  import { resolveEnrichmentTaskI18nKey } from '$lib/i18n/enrichmentTasks';
 
 
   // Subscribe to the showNotificationsPanel store
@@ -449,7 +450,7 @@
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="20 6 9 17 4 12"></polyline>
                           </svg>
-                          {$t(`notifications.enrichment.${task}`)}
+                          {$t(resolveEnrichmentTaskI18nKey(task))}
                         </span>
                       {/each}
                     </div>

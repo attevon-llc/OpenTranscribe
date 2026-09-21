@@ -9,6 +9,11 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import axiosInstance from '$lib/axios';
+  import {
+    resolveReasoningOffSwitchI18nKey,
+    resolveContextWindowStatusI18nKey,
+    resolveContextWindowRelationI18nKey,
+  } from '$lib/i18n/llmProbeVerdicts';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin: boolean = false;
@@ -288,7 +293,9 @@
 
     try {
       const result = await LLMSettingsApi.probeReasoningCapability(config.uuid);
-      const message = $t(`settings.llmProvider.reasoningOffSwitch.${result.off_switch}`);
+      // GH #970: was interpolated straight into the key, the same construct that made #964
+      // render nine raw keys. `ReasoningOffSwitch` is exhaustively mapped at compile time.
+      const message = $t(resolveReasoningOffSwitchI18nKey(result.off_switch));
 
       if (result.off_switch === 'works') {
         toastStore.success(`${config.name}: ${message}`, 8000);
@@ -322,7 +329,8 @@
           window: result.context_window ?? 0,
           configured: result.configured_max_tokens ?? 0
         };
-        const message = $t(`settings.llmProvider.contextWindow.measured_${result.relation}`, params);
+        // GH #970: same fix — `relation` is exhaustively mapped at compile time.
+        const message = $t(resolveContextWindowRelationI18nKey(result.relation), params);
         if (result.relation === 'match') {
           toastStore.success(`${config.name}: ${message}`, 8000);
         } else {
@@ -331,7 +339,8 @@
           toastStore.warning(`${config.name}: ${message}`, 10000);
         }
       } else {
-        const message = $t(`settings.llmProvider.contextWindow.${result.status}`);
+        // GH #970: same fix — `status` is exhaustively mapped at compile time.
+        const message = $t(resolveContextWindowStatusI18nKey(result.status));
         toastStore.info(`${config.name}: ${message}`, 8000);
       }
     } catch (err: unknown) {

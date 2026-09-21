@@ -722,8 +722,8 @@
 
           <!-- Model Selection -->
           <div class="form-group">
-            <label for="model-name">
-              {$t('llm.modelName')}
+            <div class="model-name-header">
+              <label for="model-name">{$t('llm.modelName')}</label>
               {#if formData.provider === 'ollama'}
                 <button
                   type="button"
@@ -800,7 +800,7 @@
                   {$t('llm.discoverModels')}
                 </button>
               {/if}
-            </label>
+            </div>
             <input
               type="text"
               id="model-name"
@@ -1242,6 +1242,23 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+
+  /*
+   * GH #971: the discover-models button used to be nested inside `<label for="model-name">`,
+   * giving one label two accessible-name associations (see the issue). This sibling row
+   * reproduces the api-key-header pattern above and keeps the visual layout — label left,
+   * button right — that `.form-group label`'s own flex rule used to provide.
+   */
+  .model-name-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .model-name-header label {
+    margin-bottom: 0;
   }
 
   .toggle-password {

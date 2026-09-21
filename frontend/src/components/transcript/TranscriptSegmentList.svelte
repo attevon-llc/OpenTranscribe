@@ -2,10 +2,8 @@
   import type { GroupedSegmentView } from '$lib/types/media';
   import type { Segment, Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
-  import ScrollbarIndicator from '$components/ScrollbarIndicator.svelte';
   import SegmentSpeakerDropdown from '$components/SegmentSpeakerDropdown.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { highlightTextWithMatches, type SearchMatch } from '$lib/utils/searchHighlight';
   import { highlightClassifiedText, type MatchClassificationType } from '$lib/transcript/matchClassification';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
@@ -15,9 +13,7 @@
 
   export let file: any = null;
   export let groupedTranscriptSegments: GroupedSegmentView[] = [];
-  export let transcriptSegments: TranscriptSegment[] = [];
   export let speakerList: Speaker[] = [];
-  export let currentTime: number = 0;
   export let diarizationDisabled: boolean = false;
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
@@ -72,10 +68,6 @@
   // Scroll progress tracking (reading progress bar)
   let scrollProgress: number = 0;
   let transcriptDisplayElement: HTMLElement | null = null;
-
-  // Scrollbar indicator state
-  let transcriptContainer: HTMLElement | null = null;
-  let scrollbarIndicatorEnabled: boolean = true;
 
   // Calculate loaded segments info
   $: loadedSegments = file?.transcript_segments?.length || 0;
@@ -235,33 +227,19 @@
     return { highlighted: true, isCurrent: matchIdx === currentMatchIndex };
   }
 
-  // Handle scrollbar indicator click to seek to playhead
-  function handleSeekToPlayhead(event: CustomEvent) {
-    const { currentTime: seekTime, targetSegment } = event.detail;
-
-    if (targetSegment) {
-      // Scroll to the current segment
-      const segmentElement = document.querySelector(`[data-segment-id="${targetSegment.uuid}"]`);
-      if (segmentElement) {
-        segmentElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-          inline: 'nearest'
-        });
-      }
-    }
-
-    // Also dispatch to parent for potential video seeking
-    dispatch('seekToPlayhead', { time: seekTime, segment: targetSegment });
-  }
-
-  // Check if scrollbar indicator should be enabled
-  $: {
-    scrollbarIndicatorEnabled = !!(
-      transcriptSegments &&
-      transcriptSegments.length > 10 && // Only show for transcripts with substantial content
-      currentTime >= 0
-    );
+  /**
+   * Issue #748 §5.3 — replaces the deleted `ScrollbarIndicator`'s click handler. It used to
+   * scroll AND dispatch `seekToPlayhead` up to the page, which re-seeked the player to
+   * `currentTime - 0.5s` — a silent playback rewind on every click. This scrolls ONLY;
+   * exported so the coordinator (`TranscriptDisplay`, wired to a "Jump to current" button on
+   * the find-bar row) can call it directly without a round-trip through the video player.
+   */
+  export function scrollToCurrentSegment(uuid: string): void {
+    const segmentElement = document.querySelector(`[data-segment-id="${uuid}"]`);
+    if (!segmentElement) return;
+    segmentElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    segmentElement.classList.add('highlight-flash');
+    setTimeout(() => segmentElement.classList.remove('highlight-flash'), 1500);
   }
 
   function handleSegmentClick(startTime: number) {
@@ -297,7 +275,7 @@
   }
 </script>
 
-<div bind:this={transcriptContainer} class="transcript-display-container">
+<div class="transcript-display-container">
   <!-- Reading progress bar at top -->
   {#if totalSegments > 0}
     <div class="reading-progress-bar">
@@ -542,16 +520,8 @@
     </div>
   {/if}
 
-  <!-- Scrollbar Position Indicator - Inside transcript-display-container for proper positioning -->
-  {#if scrollbarIndicatorEnabled}
-    <ScrollbarIndicator
-      {currentTime}
-      {transcriptSegments}
-      containerElement={transcriptContainer?.querySelector('.transcript-display')}
-      disabled={!file?.transcript_segments?.length}
-      on:seekToPlayhead={handleSeekToPlayhead}
-    />
-  {/if}
+  <!-- Issue #748: the ScrollbarIndicator minimap was deleted (see scrollToCurrentSegment
+       below) — its click both scrolled AND silently rewound playback by 0.5s. -->
 </div>
 
 <style>

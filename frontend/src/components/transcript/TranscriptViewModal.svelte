@@ -362,7 +362,6 @@
       <TranscriptSegmentList
         file={activeFile}
         groupedTranscriptSegments={activeGroupedSegments}
-        transcriptSegments={activeTranscriptSegments}
         {speakerList}
         {diarizationDisabled}
         editable={false}

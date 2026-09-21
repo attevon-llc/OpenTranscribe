@@ -93,6 +93,22 @@
   --info-color: #3b82f6;
   --card-background: #ffffff;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  /* Navbar surface (#754). NOT an alias of --surface-color: that token also
+     backs cards, modals and dropdowns, and darkening it globally would
+     repaint all of those for a change the issue scoped to the nav bar.
+     Light: one step darker than --surface-color (#ffffff) via the existing
+     --hover-color neighbour, so the bar reads as lifted off the (lighter)
+     page. Dark: the bar is ALREADY lighter than the page (#1e293b over
+     #0f172a) — held here at the unchanged --surface-color value, so applying
+     "darker" only in light mode does not invert dark mode's existing lift.
+     Elevation in dark comes from --navbar-shadow + --navbar-border instead
+     of a value shift. --navbar-hover is intentionally NOT --hover-color:
+     in light mode --hover-color IS --navbar-bg's value, so nav-link
+     hover/rest would be indistinguishable if hover reused it. */
+  --navbar-bg: #f1f5f9;
+  --navbar-border: transparent;
+  --navbar-hover: #e2e8f0;
+  --navbar-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 2px 6px rgba(15, 23, 42, 0.08);
   --divider-color: #e5e7eb;
   --input-background: #ffffff;
   --input-border: #d1d5db;
@@ -276,6 +292,18 @@
   --info-color: #60a5fa;
   --card-background: #1e293b;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  /* Navbar surface (#754), dark mode. Value held at the unchanged
+     --surface-color (#1e293b) deliberately — the bar is already lighter
+     than the page here, so "darker" (a light-mode-only observation, §4.2
+     of the plan) is not applied. Elevation is bought with a visible hairline
+     border (page bg #0f172a vs this border ~1.7:1, enough to read as a
+     lifted edge) and a stronger/larger-radius shadow than light mode. Hover
+     reuses --hover-color: no collision risk here since --navbar-bg was NOT
+     repurposed from it (unlike the light block). */
+  --navbar-bg: #1e293b;
+  --navbar-border: #334155;
+  --navbar-hover: #334155;
+  --navbar-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.35);
   --divider-color: #334155;
   --input-background: #334155; /* Darker input background */
   --input-border: #475569;

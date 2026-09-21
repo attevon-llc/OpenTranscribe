@@ -5,7 +5,7 @@
   import axiosInstance, { isRequestCancelled } from '$lib/axios';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
-  import { searchStore, type SearchResponse, type SearchOccurrence, type SearchResultType } from '$stores/search';
+  import { searchStore, type SearchResponse, type SearchOccurrence, type SearchSource, SEARCH_SOURCES } from '$stores/search';
   import SearchResultCard from '$components/search/SearchResultCard.svelte';
   import TranscriptViewModal from '$components/transcript/TranscriptViewModal.svelte';
   import SearchPagination from '$components/search/SearchPagination.svelte';
@@ -87,12 +87,27 @@
   let summaryModalFileName = '';
   let summaryModalKeyPath: string | null = null;
 
-  // Backend total_pages is only computed for the transcripts leg (result_type=summaries
-  // gets the placeholder `SearchResponseSchema` with total_pages hardcoded 0 — see
-  // `api/endpoints/search.py::search_transcripts`). Derived client-side here as a
-  // purely-presentational value from data the page already has, same exception as
-  // export formatting gets under the thin-frontend rule.
-  $: summaryTotalPages = Math.ceil(($searchStore.summaryTotal || 0) / ($searchStore.pageSize || 20));
+  // Issue #760, §7.1: `total_pages` has been `max(transcript_pages, summary_pages)`
+  // server-side since #831 — DO NOT reintroduce a client-side derivation. Both
+  // sections share the single `$searchStore.totalPages` pager below.
+  $: showTranscriptSection = $searchStore.selectedSources.some(
+    (s) => s === 'content' || s === 'title' || s === 'speaker'
+  );
+  $: showSummarySection = $searchStore.selectedSources.includes('summary');
+  $: hasAnySourceSelected = $searchStore.selectedSources.length > 0;
+
+  function sourceLabel(source: SearchSource): string {
+    switch (source) {
+      case 'content':
+        return $t('search.sourceTranscript');
+      case 'title':
+        return $t('search.sourceTitle');
+      case 'speaker':
+        return $t('search.sourceSpeaker');
+      case 'summary':
+        return $t('search.sourceSummary');
+    }
+  }
 
   function findSpeakerAtTime(time: number): string {
     if (!previewData) return '';
@@ -114,7 +129,24 @@
   $: urlSort = $page.url.searchParams.get('sort') || 'relevance';
   $: urlSortOrder = ($page.url.searchParams.get('sort_order') || 'desc') as 'asc' | 'desc';
   $: urlMode = $page.url.searchParams.get('mode') || 'hybrid';
-  $: urlType = ($page.url.searchParams.get('type') || 'transcripts') as SearchResultType;
+  // Issue #760: `sources=` (repeated) replaces the exclusive `type=` param.
+  // `null` means "no URL override" — keep the store's default (all four).
+  // The legacy `type=` param is still read so links already in history/docs
+  // resolve, mapped through the old two-value scheme.
+  $: urlSources = ((): SearchSource[] | null => {
+    const raw = $page.url.searchParams.getAll('sources');
+    if (raw.length) {
+      const valid = raw.filter((s): s is SearchSource =>
+        (SEARCH_SOURCES as readonly string[]).includes(s)
+      );
+      return valid.length ? valid : null;
+    }
+    const legacyType = $page.url.searchParams.get('type');
+    if (legacyType === 'summaries') return ['summary'];
+    if (legacyType === 'all') return [...SEARCH_SOURCES];
+    if (legacyType === 'transcripts') return ['content', 'title', 'speaker'];
+    return null;
+  })();
   $: urlSpeakers = $page.url.searchParams.getAll('speakers');
   $: urlTags = $page.url.searchParams.getAll('tags');
 
@@ -126,7 +158,7 @@
     searchStore.setSortBy(urlSort);
     searchStore.setSortOrder(urlSortOrder);
     searchStore.setSearchMode(urlMode);
-    searchStore.setResultType(urlType);
+    if (urlSources) searchStore.setSources(urlSources);
     if (urlSpeakers.length) searchStore.setSpeakers(urlSpeakers);
     if (urlTags.length) searchStore.setTags(urlTags);
 
@@ -194,7 +226,7 @@
   function buildSearchParamsString(query: string, pageNum: number): string {
     return JSON.stringify({
       q: query, page: pageNum, sort: $searchStore.sortBy, sortOrder: $searchStore.sortOrder,
-      mode: $searchStore.searchMode, resultType: $searchStore.resultType, speakers: $searchStore.selectedSpeakers,
+      mode: $searchStore.searchMode, sources: [...$searchStore.selectedSources].sort(), speakers: $searchStore.selectedSpeakers,
       tags: $searchStore.selectedTags, dateFrom: $searchStore.dateFrom, dateTo: $searchStore.dateTo,
       fileTypes: $searchStore.selectedFileTypes, collectionId: $searchStore.selectedCollectionId,
       durationRange: $searchStore.durationRange, fileSizeRange: $searchStore.fileSizeRange,
@@ -204,6 +236,9 @@
 
   async function performSearch(query: string, pageNum: number = 1) {
     if (!query.trim()) return;
+    // Issue #760, J-760-8: zero sources selected is a deliberate UI state —
+    // no request is sent, the pill row's last counts stay on screen.
+    if ($searchStore.selectedSources.length === 0) return;
 
     // Supersede any in-flight search so its response can't land after this one.
     searchController?.abort();
@@ -220,7 +255,14 @@
     if ($searchStore.sortBy !== 'relevance') params.set('sort', $searchStore.sortBy);
     if ($searchStore.sortOrder !== 'desc') params.set('sort_order', $searchStore.sortOrder);
     if ($searchStore.searchMode !== 'hybrid') params.set('mode', $searchStore.searchMode);
-    if ($searchStore.resultType !== 'transcripts') params.set('type', $searchStore.resultType);
+    // Omit `sources=` when the selection equals the default (all four) — a
+    // reload with no override falls back to that same default (see urlSources).
+    const isDefaultSources =
+      $searchStore.selectedSources.length === SEARCH_SOURCES.length &&
+      SEARCH_SOURCES.every((s) => $searchStore.selectedSources.includes(s));
+    if (!isDefaultSources) {
+      $searchStore.selectedSources.forEach((s) => params.append('sources', s));
+    }
     $searchStore.selectedSpeakers.forEach((s) => params.append('speakers', s));
     $searchStore.selectedTags.forEach((tag) => params.append('tags', tag));
 
@@ -234,7 +276,10 @@
         sort_by: $searchStore.sortBy,
         sort_order: $searchStore.sortOrder,
         search_mode: $searchStore.searchMode,
-        result_type: $searchStore.resultType,
+        // Always sent explicitly (issue #760) — the UI default (all four) differs
+        // from `result_type`'s legacy default (transcripts only), so omitting this
+        // would silently drop the Summary section despite it showing selected.
+        sources: [...$searchStore.selectedSources],
         speakers: $searchStore.selectedSpeakers.length ? $searchStore.selectedSpeakers : undefined,
         tags: $searchStore.selectedTags.length ? $searchStore.selectedTags : undefined,
         date_from: $searchStore.dateFrom || undefined,
@@ -345,10 +390,10 @@
     }
   }
 
-  function handleResultTypeChange(resultType: SearchResultType) {
-    if (resultType === $searchStore.resultType) return;
-    searchStore.setResultType(resultType);
-    if ($searchStore.query) {
+  function handleToggleSource(source: SearchSource) {
+    searchStore.toggleSource(source);
+    // Zero-sources (J-760-8): don't search, just show the deliberate empty state.
+    if ($searchStore.query && $searchStore.selectedSources.length > 0) {
       performSearch($searchStore.query, 1);
     }
   }
@@ -613,28 +658,30 @@
         </div>
 
         {#if $searchStore.query}
-          <div class="result-type-toggle" role="tablist" aria-label={$t('search.resultTypeToggleLabel')}>
-            <button
-              type="button"
-              class="result-type-btn"
-              class:active={$searchStore.resultType === 'transcripts'}
-              role="tab"
-              aria-selected={$searchStore.resultType === 'transcripts'}
-              on:click={() => handleResultTypeChange('transcripts')}
-            >
-              {$t('search.resultTypeTranscripts')}
-            </button>
-            <button
-              type="button"
-              class="result-type-btn"
-              class:active={$searchStore.resultType === 'summaries'}
-              role="tab"
-              aria-selected={$searchStore.resultType === 'summaries'}
-              on:click={() => handleResultTypeChange('summaries')}
-            >
-              {$t('search.resultTypeSummaries')}
-            </button>
+          <div
+            class="source-toggle"
+            role="group"
+            aria-label={$t('search.sourceToggleLabel')}
+            aria-describedby="search-source-counts-hint"
+          >
+            {#each SEARCH_SOURCES as source (source)}
+              <button
+                type="button"
+                class="source-btn"
+                class:active={$searchStore.selectedSources.includes(source)}
+                aria-pressed={$searchStore.selectedSources.includes(source)}
+                on:click={() => handleToggleSource(source)}
+              >
+                {sourceLabel(source)}
+                {#if $searchStore.sourceCounts[source] !== undefined && $searchStore.sourceCounts[source] !== null}
+                  <span class="source-count">({$searchStore.sourceCounts[source]})</span>
+                {/if}
+              </button>
+            {/each}
           </div>
+          <p id="search-source-counts-hint" class="visually-hidden">
+            {$t('search.sourceCountsAreKeyword')}
+          </p>
         {/if}
 
         {#if hasActiveFilters}
@@ -650,9 +697,9 @@
           </div>
         {/if}
 
-        <!-- Results Info Bar (transcripts only — the mode toggle/neural status/sort
-             below are all transcript-specific; summaries have their own count line). -->
-        {#if $searchStore.resultType === 'transcripts' && $searchStore.query && !$searchStore.isLoading && $searchStore.totalResults >= 0 && $searchStore.results.length > 0}
+        <!-- Results Info Bar (transcript-plane only — the mode toggle/neural status/sort
+             below are all transcript-specific; the summary section has its own count line). -->
+        {#if showTranscriptSection && $searchStore.query && !$searchStore.isLoading && $searchStore.totalResults >= 0 && $searchStore.results.length > 0}
           <div class="results-info">
             <span class="result-summary">
               {$t('search.results', { count: $searchStore.totalFiles, time: formatSearchTime($searchStore.searchTimeMs) })}
@@ -712,24 +759,6 @@
             </svg>
             <p class="state-text">{$searchStore.error}</p>
           </div>
-        {:else if $searchStore.query && $searchStore.resultType === 'transcripts' && $searchStore.results.length === 0}
-          <div class="state-container">
-            <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <p class="state-title">{$t('searchPage.noResults', { query: $searchStore.query })}</p>
-            <p class="state-hint">{$t('search.noResultsHint')}</p>
-          </div>
-        {:else if $searchStore.query && $searchStore.resultType === 'summaries' && $searchStore.summaryResults.length === 0}
-          <div class="state-container">
-            <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <p class="state-title">{$t('search.noSummaryResults', { query: $searchStore.query })}</p>
-            <p class="state-hint">{$t('search.noResultsHint')}</p>
-          </div>
         {:else if !$searchStore.query}
           <div class="state-container welcome">
             <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
@@ -740,52 +769,90 @@
             <p class="state-hint">{$t('search.welcomeHint')}</p>
             <p class="state-hint search-tip">{$t('search.speakerSearchTip')}</p>
           </div>
-        {:else if $searchStore.resultType === 'summaries'}
-          <!-- Summary hits are a SIBLING container to .results-list, never nested
-               inside it — test_search.py's `.results-list > *` count must stay a
-               pure count of transcript hits regardless of which tab is active. -->
-          <div class="summary-results-info">
-            {$t('search.summariesFound', { count: $searchStore.summaryTotal })}
+        {:else if !hasAnySourceSelected}
+          <!-- J-760-8: a deliberate, reachable state — not an error. -->
+          <div class="state-container">
+            <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <p class="state-title">{$t('search.noSourcesSelected')}</p>
+            <p class="state-hint">{$t('search.noSourcesSelectedHint')}</p>
           </div>
-          <div class="summary-results-list">
-            {#each $searchStore.summaryResults as hit (hit.file_uuid)}
-              <SummaryResultCard {hit} on:openMatch={handleOpenSummaryMatch} />
-            {/each}
-          </div>
-
-          {#if summaryTotalPages > 1}
-            <SearchPagination
-              page={$searchStore.page}
-              totalPages={summaryTotalPages}
-              on:pageChange={handlePageChange}
-            />
-          {/if}
         {:else}
-          <!-- Smart mode only: Exact mode is literal BM25 keyword matching and is
-               untouched by the fusion ranking #461 measured. Kept OUTSIDE
-               .results-list because test_search.py counts `.results-list > *`. -->
-          {#if $searchStore.searchMode === 'hybrid'}
-            <div class="quality-notice-slot">
-              <RetrievalQualityNotice surface="search" />
+          <!-- Issue #760: sections render side by side, one per selected source
+               plane (OR-union — never AND-intersected). `.summary-results-list`
+               is a SIBLING of `.results-list`, never nested inside it —
+               test_search.py's `.results-list > *` count must stay a pure
+               transcript-hit count with both sections on screen. -->
+          {#if showSummarySection}
+            <div class="summary-results-section">
+              <h2 class="section-heading">{$t('search.summaryResultsHeading')}</h2>
+              {#if $searchStore.summaryUnavailable}
+                <div class="summary-unavailable-notice">
+                  <p class="state-title">{$t('search.summaryUnavailableTitle')}</p>
+                  <p class="state-hint">{$t('search.summaryUnavailableBody')}</p>
+                </div>
+              {:else if $searchStore.summaryResults.length === 0}
+                <p class="summary-results-info">
+                  {$t('search.noSummaryResults', { query: $searchStore.query })}
+                </p>
+              {:else}
+                <p class="summary-results-info">
+                  {$t('search.summariesFound', { count: $searchStore.summaryTotal })}
+                </p>
+                <div class="summary-results-list">
+                  {#each $searchStore.summaryResults as hit (hit.file_uuid)}
+                    <SummaryResultCard {hit} on:openMatch={handleOpenSummaryMatch} />
+                  {/each}
+                </div>
+              {/if}
             </div>
           {/if}
 
-          <div class="results-list">
-              {#if allSemanticOnly}
-                <div class="no-keyword-notice">
-                  <p>{$t('search.noKeywordMatches')}</p>
+          {#if showTranscriptSection}
+            <div class="transcript-results-section">
+              {#if showSummarySection}
+                <h2 class="section-heading">{$t('search.transcriptResultsHeading')}</h2>
+              {/if}
+              <!-- Smart mode only: Exact mode is literal BM25 keyword matching and is
+                   untouched by the fusion ranking #461 measured. Kept OUTSIDE
+                   .results-list because test_search.py counts `.results-list > *`. -->
+              {#if $searchStore.searchMode === 'hybrid'}
+                <div class="quality-notice-slot">
+                  <RetrievalQualityNotice surface="search" />
                 </div>
               {/if}
 
-              {#each $searchStore.results as hit (hit.file_uuid)}
-                <SearchResultCard
-                  {hit}
-                  {activePreview}
-                  on:preview={handlePreview}
-                  on:viewTranscript={handleViewTranscript}
-                />
-              {/each}
-          </div>
+              {#if $searchStore.results.length === 0}
+                <div class="state-container">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                  <p class="state-title">{$t('searchPage.noResults', { query: $searchStore.query })}</p>
+                  <p class="state-hint">{$t('search.noResultsHint')}</p>
+                </div>
+              {:else}
+                <div class="results-list">
+                    {#if allSemanticOnly}
+                      <div class="no-keyword-notice">
+                        <p>{$t('search.noKeywordMatches')}</p>
+                      </div>
+                    {/if}
+
+                    {#each $searchStore.results as hit (hit.file_uuid)}
+                      <SearchResultCard
+                        {hit}
+                        {activePreview}
+                        on:preview={handlePreview}
+                        on:viewTranscript={handleViewTranscript}
+                      />
+                    {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
 
           {#if $searchStore.totalPages > 1}
             <SearchPagination
@@ -1076,20 +1143,33 @@
     color: var(--text-color, #374151);
   }
 
-  /* Result type toggle (transcripts vs summaries, issue #462) - same pill style as
-     the search-mode toggle above, but result type is orthogonal to it, so it lives
-     as its own control near the search bar rather than inside .results-controls
-     (which only renders once there are transcript results). */
-  .result-type-toggle {
+  /* Multi-select source toggle (issue #760, replaces the exclusive
+     transcripts/summaries tab strip from #462). Independent, combinable
+     pills — `role="group"` + `aria-pressed`, NOT `tablist`/`tab`/`aria-selected`,
+     which are single-select by definition. */
+  .source-toggle {
     display: inline-flex;
+    flex-wrap: wrap;
     background: var(--hover-color, #f1f5f9);
     border-radius: 8px;
     padding: 2px;
-    gap: 0;
+    gap: 2px;
     margin-top: 0.5rem;
   }
 
-  .result-type-btn {
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .source-btn {
     padding: 0.375rem 0.875rem;
     background: transparent;
     border: none;
@@ -1102,19 +1182,43 @@
     white-space: nowrap;
   }
 
-  .result-type-btn.active {
+  .source-btn .source-count {
+    opacity: 0.75;
+    margin-inline-start: 0.25em;
+  }
+
+  .source-btn.active {
     background: var(--primary-color, #4f46e5);
     color: white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   }
 
-  .result-type-btn:hover:not(.active) {
+  .source-btn:hover:not(.active) {
     color: var(--text-color, #374151);
   }
 
-  .result-type-btn:focus-visible {
+  .source-btn:focus-visible {
     outline: 2px solid var(--primary-color, #4f46e5);
     outline-offset: 1px;
+  }
+
+  .section-heading {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color, #111827);
+    margin: 0 0 0.75rem;
+  }
+
+  .summary-results-section {
+    margin-bottom: 2rem;
+  }
+
+  .summary-unavailable-notice {
+    padding: 1rem;
+    border-radius: 8px;
+    background: var(--warning-bg, #fef3c7);
+    border: 1px solid var(--warning-border, #f59e0b);
+    margin-bottom: 0.75rem;
   }
 
   /* Results */

@@ -17,6 +17,8 @@ Run:
     DISPLAY=:11 pytest backend/tests/e2e/test_search.py -v --headed
 """
 
+import re
+
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -298,17 +300,31 @@ class TestSearchResultClickThrough:
         expect(highlights.first).to_be_visible(timeout=10000)
 
 
-class TestSearchResultType:
-    """Result-type toggle (issue #462: transcripts vs summaries)."""
+class TestSearchSources:
+    """Multi-select result-source toggle (issue #760, replaces #462's exclusive tab).
 
-    def test_summaries_tab_switches_view_and_updates_url(self, search_page: Page, known_query: str):
-        """Switching to the Summaries tab updates the URL and renders an outcome.
+    ``role="group"`` + ``aria-pressed`` on each pill, never ``tablist``/``tab``/
+    ``aria-selected`` — a tablist is single-select by definition and would be an
+    a11y defect on a multi-select control. Pill labels carry a trailing match
+    count (e.g. "Transcript (37)"), so matching by exact name would break the
+    moment a count renders; every lookup here anchors on the label prefix.
+    """
+
+    def _pill(self, toggle, label_prefix: str):
+        return toggle.get_by_role("button", name=re.compile(f"^{label_prefix}"))
+
+    def test_deselecting_transcript_title_speaker_leaves_summary_only(
+        self, search_page: Page, known_query: str
+    ):
+        """Turning off every transcript-plane source leaves the Summary section
+        alone — the OR-union's complement of the classic "transcripts only"
+        default, proven at the UI layer rather than just the API.
 
         Read-only: this never creates or deletes anything, so no data-hygiene
-        cleanup is needed. Whether any file has a *generated summary* matching the
-        query is a separate axis the suite does not own (summarisation needs an
-        LLM), so this asserts the page reaches a well-formed outcome state rather
-        than a specific hit — same pattern as
+        cleanup is needed. Whether any file has a *generated summary* matching
+        the query is a separate axis the suite does not own (summarisation
+        needs an LLM), so this asserts the page reaches a well-formed outcome
+        state rather than a specific hit — same pattern as
         `test_nonsense_query_leaves_welcome_state`.
         """
         _run_search(search_page, known_query)
@@ -316,30 +332,57 @@ class TestSearchResultType:
         # not auto-wait (issue #431's pattern, repeated throughout this module).
         search_page.wait_for_timeout(2000)
 
-        toggle = search_page.locator(".result-type-toggle")
+        toggle = search_page.locator(".source-toggle")
         expect(toggle).to_be_visible(timeout=5000)
 
-        summaries_tab = toggle.get_by_role("tab", name="Summaries")
-        summaries_tab.click()
+        # Default selection is all four (issue #760) — verify, then deselect
+        # every transcript-plane source, leaving Summary the only one active.
+        for prefix in ("Transcript", "Title", "Speaker"):
+            pill = self._pill(toggle, prefix)
+            expect(pill).to_have_attribute("aria-pressed", "true")
+            pill.click()
+            search_page.wait_for_timeout(300)
+
         search_page.wait_for_load_state("networkidle")
         search_page.wait_for_timeout(1500)
 
-        assert "type=summaries" in search_page.url
+        assert "sources=summary" in search_page.url
 
         # Summary hits render as a sibling of .results-list, never inside it —
         # the invariant `.results-list > *` (above) protects. Either an outcome
-        # (summary-results-list) or the empty state is a well-formed result;
-        # .results-list itself must NOT be what's showing for this tab.
-        outcome = search_page.locator(".summary-results-list, .state-container")
+        # (summary-results-section) or the empty state is a well-formed result;
+        # .results-list itself must NOT be what's showing with the transcript
+        # plane fully deselected.
+        outcome = search_page.locator(".summary-results-section, .state-container")
         expect(outcome.first).to_be_visible(timeout=10000)
         assert search_page.locator(".results-list").count() == 0
 
-        # Switching back returns to the transcript view and drops the URL param.
-        transcripts_tab = toggle.get_by_role("tab", name="Transcripts")
-        transcripts_tab.click()
+        # Re-selecting Transcript brings the transcript section back, alongside
+        # Summary — both sections on screen at once (OR-union, not exclusive).
+        self._pill(toggle, "Transcript").click()
         search_page.wait_for_load_state("networkidle")
         search_page.wait_for_timeout(1500)
-        assert "type=summaries" not in search_page.url
+        assert "sources=content" in search_page.url
+        expect(search_page.locator(".results-list")).to_be_visible(timeout=10000)
+
+    def test_deselecting_every_source_shows_the_deliberate_empty_state(
+        self, search_page: Page, known_query: str
+    ):
+        """J-760-8: zero sources selected is a reachable, explicit UI state —
+        never an empty results list indistinguishable from "no matches"."""
+        _run_search(search_page, known_query)
+        search_page.wait_for_timeout(2000)
+
+        toggle = search_page.locator(".source-toggle")
+        expect(toggle).to_be_visible(timeout=5000)
+
+        for prefix in ("Transcript", "Title", "Speaker", "Summary"):
+            self._pill(toggle, prefix).click()
+            search_page.wait_for_timeout(200)
+
+        expect(search_page.locator(".state-container")).to_be_visible(timeout=5000)
+        assert search_page.locator(".results-list").count() == 0
+        assert search_page.locator(".summary-results-section").count() == 0
 
 
 class TestSearchKnownCorpusRanking:

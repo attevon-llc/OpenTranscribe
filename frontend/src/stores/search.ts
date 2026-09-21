@@ -52,7 +52,14 @@ export interface SummaryHit {
   matches: SummarySectionMatch[];
 }
 
-export type SearchResultType = 'transcripts' | 'summaries';
+// Issue #760. Mirrors `backend/app/schemas/search.py::SEARCH_SOURCES`.
+// `content` (not `transcript`) on purpose: it is the word `match_sources`
+// already reports back, so request and response speak one vocabulary. The
+// UI label is still "Transcript" — that's an i18n string, not a wire token.
+export type SearchSource = 'content' | 'title' | 'speaker' | 'summary';
+export const SEARCH_SOURCES: readonly SearchSource[] = ['content', 'title', 'speaker', 'summary'];
+
+export type SourceCounts = Partial<Record<SearchSource, number | null>>;
 
 export interface SearchResponse {
   query: string;
@@ -65,9 +72,13 @@ export interface SearchResponse {
   search_time_ms: number;
   filters_applied: Record<string, any>;
   search_mode?: string;
-  // Present only when `result_type` requested summaries (`summaries` or `all`).
+  // Present only when `result_type`/`sources` requested summaries.
   summary_results?: SummaryHit[];
   summary_total?: number;
+  // Issue #760 — present only when `sources` was sent explicitly.
+  sources?: SearchSource[];
+  source_counts?: SourceCounts;
+  summary_unavailable?: string | null;
 }
 
 export interface SearchState {
@@ -101,8 +112,13 @@ export interface SearchState {
   titleFilter: string;
   lastSearchParams: string;
   scrollPosition: number;
-  // Issue #462: which result group(s) the last/next `GET /search` requested.
-  resultType: SearchResultType;
+  // Issue #760: multi-select result sources, replacing the exclusive
+  // `resultType` tab. Any combination is valid; an empty array is the
+  // deliberate "select at least one source" UI state — no request is sent
+  // while it is empty (see `+page.svelte`).
+  selectedSources: SearchSource[];
+  sourceCounts: SourceCounts;
+  summaryUnavailable: string | null;
   summaryResults: SummaryHit[];
   summaryTotal: number;
 }
@@ -135,7 +151,18 @@ const initialState: SearchState = {
   titleFilter: '',
   lastSearchParams: '',
   scrollPosition: 0,
-  resultType: 'transcripts',
+  // Issue #760, default-selection decision: ALL FOUR sources on by default.
+  // The original plan recommended summary opt-in because of the "Postgres
+  // FTS + mandatory Presidio pass on every default search" cost — that
+  // argument no longer holds post-#963: the summary leg is now a second
+  // OpenSearch RRF query against the same index/filters as the transcript
+  // leg (see `summary_search.py`'s module docstring), and masking is scoped
+  // to the leaves actually returned on the current page, not the whole
+  // corpus. The incremental cost of including it by default is one more RRF
+  // query, not a slow secondary engine.
+  selectedSources: ['content', 'title', 'speaker', 'summary'],
+  sourceCounts: {},
+  summaryUnavailable: null,
   summaryResults: [],
   summaryTotal: 0,
 };
@@ -152,7 +179,16 @@ function createSearchStore() {
     setSort: (sortBy: string, sortOrder: 'asc' | 'desc') =>
       update((s) => ({ ...s, sortBy, sortOrder, page: 1 })),
     setSearchMode: (searchMode: string) => update((s) => ({ ...s, searchMode, page: 1 })),
-    setResultType: (resultType: SearchResultType) => update((s) => ({ ...s, resultType, page: 1 })),
+    setSources: (selectedSources: SearchSource[]) =>
+      update((s) => ({ ...s, selectedSources, page: 1 })),
+    toggleSource: (source: SearchSource) =>
+      update((s) => ({
+        ...s,
+        selectedSources: s.selectedSources.includes(source)
+          ? s.selectedSources.filter((src) => src !== source)
+          : [...s.selectedSources, source],
+        page: 1,
+      })),
     setLoading: (isLoading: boolean) => update((s) => ({ ...s, isLoading })),
     setError: (error: string | null) => update((s) => ({ ...s, error })),
     setSpeakers: (selectedSpeakers: string[]) =>
@@ -186,10 +222,14 @@ function createSearchStore() {
         totalPages: response.total_pages,
         searchTimeMs: response.search_time_ms,
         filtersApplied: response.filters_applied,
-        // Absent when this response didn't request summaries (result_type=transcripts) —
-        // reset to empty rather than leaving a stale page from a prior 'summaries' search.
+        // Absent when this response didn't request summaries —
+        // reset to empty rather than leaving a stale page from a prior search.
         summaryResults: response.summary_results ?? [],
         summaryTotal: response.summary_total ?? 0,
+        // Issue #760: reset the same way on every response, so toggling a
+        // pill off never leaves a stale count/notice from the prior search.
+        sourceCounts: response.source_counts ?? {},
+        summaryUnavailable: response.summary_unavailable ?? null,
         isLoading: false,
         error: null,
       })),

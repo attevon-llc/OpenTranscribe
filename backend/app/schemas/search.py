@@ -45,9 +45,52 @@ class SearchHitSchema(BaseModel):
     semantic_only: bool = Field(False, description="True if only semantic matches, no keywords")
     semantic_confidence: str = Field("", description="Semantic confidence: '', 'high', or 'low'")
     match_sources: list[str] = Field(
-        default_factory=list, description="Match sources: content, title, speaker, semantic"
+        default_factory=list,
+        description=(
+            "Match sources: content, title, speaker, semantic, metadata_speaker. "
+            "'semantic' and 'metadata_speaker' are not members of the request-side "
+            "`sources` vocabulary — semantic hits ride with `content` and "
+            "`metadata_speaker` is a `speaker`-pill enrichment."
+        ),
     )
     relevance_percent: int = Field(0, description="Relevance confidence 0-100 for display")
+
+
+# Source union (issue #760) — the REQUEST vocabulary for which fields/legs a
+# search targets, and the same words `SearchHitSchema.match_sources` reports
+# back. One parameter, closed vocabulary; the `include_*` prohibition on
+# `SEARCH_RESULT_TYPES` below applies to this one too.
+#
+# `content`/`title`/`speaker` are FIELDS in the transcript leg's one query;
+# `summary` is a separate OpenSearch leg (issue #963 rebuilt it onto the same
+# index/RRF machinery as the transcript leg — it is no longer a slow Postgres
+# FTS query, so unlike the original #760 plan it is included in the default
+# selection below). Three field selectors and a leg, not four peers.
+SEARCH_SOURCES = ("content", "title", "speaker", "summary")
+
+#: Legacy `result_type` → source set. `transcripts` reproduces
+#: `_get_search_fields`'s historical field list exactly, for byte-identical
+#: back-compat when `sources` is not supplied.
+RESULT_TYPE_TO_SOURCES: dict[str, frozenset[str]] = {
+    "transcripts": frozenset({"content", "title", "speaker"}),
+    "summaries": frozenset({"summary"}),
+    "all": frozenset(SEARCH_SOURCES),
+}
+
+
+class SourceCountsSchema(BaseModel):
+    """Corpus-wide matching counts per source, for the toggle labels (issue #760).
+
+    Independent of which sources are selected — a disabled pill still shows
+    what it would return. `None` means the count could not be computed;
+    render NO number, never `0` — "0 matches" and "the count failed" must
+    never be indistinguishable.
+    """
+
+    content: int | None = None
+    title: int | None = None
+    speaker: int | None = None
+    summary: int | None = None
 
 
 class SearchResponseSchema(BaseModel):
@@ -63,6 +106,20 @@ class SearchResponseSchema(BaseModel):
     search_time_ms: float = Field(0.0, description="Search execution time in ms")
     filters_applied: dict[str, Any] = Field(default_factory=dict, description="Active filters")
     search_mode: str = Field("hybrid", description="Search mode: hybrid or keyword")
+    sources: list[str] | None = Field(
+        None, description="The resolved source set (issue #760), only when `sources` was sent."
+    )
+    source_counts: SourceCountsSchema | None = Field(
+        None, description="Corpus-wide per-source counts; see SourceCountsSchema."
+    )
+    summary_unavailable: str | None = Field(
+        None,
+        description=(
+            "Machine-readable reason the summary leg returned nothing despite being "
+            "requested, e.g. 'masking_unavailable'. An absent/empty `summary_results` "
+            "with this key set must NEVER render as 'no summaries matched'."
+        ),
+    )
 
 
 class EmbeddingModelSchema(BaseModel):

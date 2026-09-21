@@ -911,6 +911,7 @@ class HybridSearchService:
         organization_id: int | None = None,
         file_uuid: str | None = None,
         fusion: FusionConfig | None = None,
+        sources: frozenset[str] | None = None,
     ) -> SearchResponse:
         """Execute hybrid search and return grouped results.
 
@@ -981,6 +982,10 @@ class HybridSearchService:
             fusion_pipeline=search_pipeline_id(fusion),
             redaction_policy=policy_fingerprint,
             corpus_version=_search_corpus_version(),
+            # Issue #760: a cached page must name the sources it was built
+            # for, or toggling a pill re-serves the previous page for
+            # SEARCH_CACHE_TTL_SECONDS.
+            sources=sorted(sources) if sources is not None else None,
         )
         cached = _get_cached_response(cache_key)
         if cached:
@@ -1034,6 +1039,14 @@ class HybridSearchService:
         )
         has_speaker_filter = bool(speakers)
 
+        # Issue #760, §5: a semantic (kNN) hit cannot be attributed to a
+        # field — the embedding covers title/speaker roster/content all at
+        # once — so it is unattributable to Title-only or Speaker-only. When
+        # `content` was not selected, force keyword-only: no kNN leg, no
+        # fusion pipeline, so nothing unsupportable is ever returned.
+        if sources is not None and "content" not in sources:
+            use_neural = False
+
         result = self._search_with_collapse(
             query=query,
             search_query=search_query,
@@ -1048,6 +1061,7 @@ class HybridSearchService:
             has_speaker_filter=has_speaker_filter,
             use_neural=use_neural,
             search_pipeline=pipeline_id,
+            sources=sources,
         )
 
         # Read-time content redaction of snippets, for whichever of PII / profanity /
@@ -1825,6 +1839,20 @@ class HybridSearchService:
         file_uuid: str | None = None,
         organization_id: int | None = None,
         is_admin: bool = False,
+        fields: list[str] | None = None,
+        count_files: bool = False,
+        speakers: list[str] | None = None,
+        tags: list[str] | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        file_type: list[str] | None = None,
+        collection_id: int | None = None,
+        min_duration: float | None = None,
+        max_duration: float | None = None,
+        min_file_size: int | None = None,
+        max_file_size: int | None = None,
+        language: str | None = None,
+        title_filter: str | None = None,
     ) -> int:
         """Count transcript chunks matching ``query`` (optionally within one file).
 
@@ -1852,9 +1880,27 @@ class HybridSearchService:
             organization_id: Active org id (None = personal) — tenant gate.
             is_admin: When True, skip the quarantine exclusion — the admin review
                 bypass every other quarantine-aware read surface applies.
+            fields: OpenSearch fields to query (defaults to content/content.exact,
+                the find-bar's original behaviour). Issue #760 reuses this method
+                for the per-source pill counts by passing ``["title"]`` /
+                ``["speaker"]`` — never masked, since it counts, never renders.
+            count_files: When True, count DISTINCT matching files (a `cardinality`
+                agg on `file_uuid`, HyperLogLog++ — exact at/below 10,000 distinct
+                files) instead of matching chunks. The pill counts (#760) must
+                count files, matching what `total_files` already means elsewhere
+                on this page; the find bar's original chunk count is unchanged
+                (`count_files=False` default).
+            speakers, tags, date_from, date_to, file_type, collection_id,
+                min_duration, max_duration, min_file_size, max_file_size,
+                language, title_filter: The SAME filter set `search()` accepts —
+                so a per-source pill count reflects the filters currently active
+                on the page it labels, not the whole unfiltered corpus. All
+                default to None (unfiltered), matching the find bar's original
+                behaviour when the caller passes none of them.
 
         Returns:
-            The exact matching-chunk count.
+            The exact matching-chunk count, or (``count_files=True``) the
+            approximate-above-10,000 distinct-file count.
 
         Raises:
             SearchCountUnavailableError: The quarantine exclusion set could not be
@@ -1874,10 +1920,18 @@ class HybridSearchService:
         _ensure_infrastructure()
         filters = self._build_filters(
             user_id,
-            None,
-            None,
-            None,
-            None,
+            speakers,
+            tags,
+            date_from,
+            date_to,
+            file_type=file_type,
+            collection_id=collection_id,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            min_file_size=min_file_size,
+            max_file_size=max_file_size,
+            language=language,
+            title_filter=title_filter,
             file_uuid=file_uuid,
             organization_id=organization_id,
         )
@@ -1889,10 +1943,10 @@ class HybridSearchService:
         quarantined_uuids = [] if (is_admin or file_uuid) else _quarantined_file_uuids()
         query_must_not = [{"terms": {"file_uuid": quarantined_uuids}}] if quarantined_uuids else []
 
-        text_query = self._build_text_query(clean, ["content", "content.exact"])
-        body = {
+        text_query = self._build_text_query(clean, fields or ["content", "content.exact"])
+        body: dict[str, Any] = {
             "size": 0,
-            "track_total_hits": True,
+            "track_total_hits": not count_files,
             "query": {
                 "bool": {
                     "filter": filters,
@@ -1901,6 +1955,12 @@ class HybridSearchService:
                 }
             },
         }
+        if count_files:
+            # Same shape as `_build_collapsed_bm25_body`'s `total_files` agg —
+            # exact at/below 10,000 distinct files, approximate above it.
+            body["aggs"] = {
+                "total_files": {"cardinality": {"field": "file_uuid", "precision_threshold": 10000}}
+            }
         try:
             resp = client.search(index=settings.OPENSEARCH_CHUNKS_INDEX, body=body)
         except Exception as exc:
@@ -1909,6 +1969,8 @@ class HybridSearchService:
                 "The transcript match count could not be computed."
             ) from exc
 
+        if count_files:
+            return int(resp.get("aggregations", {}).get("total_files", {}).get("value", 0))
         total = resp.get("hits", {}).get("total", {})
         if isinstance(total, dict):
             return int(total.get("value", 0))
@@ -1918,31 +1980,41 @@ class HybridSearchService:
         self,
         has_speaker_filter: bool,
         use_exact: bool = False,
+        sources: frozenset[str] | None = None,
     ) -> dict[str, Any]:
         """Build highlight field configuration shared by all search paths.
 
         Args:
             has_speaker_filter: Whether a speaker filter is active.
             use_exact: If True, use content.exact instead of content for BM25-only mode.
+            sources: Issue #760 — mirrors `_get_search_fields`'s gating. Threaded
+                mainly for symmetry with the query fields (OpenSearch's
+                `require_field_match: true` default already means an unqueried
+                field produces no highlight regardless).
 
         Returns:
             Highlight fields dict for OpenSearch.
         """
+        want_content = sources is None or "content" in sources
+        want_title = sources is None or "title" in sources
+        want_speaker = sources is None or "speaker" in sources
+
         content_field = "content.exact" if use_exact else "content"
-        fields: dict[str, Any] = {
-            content_field: {
+        fields: dict[str, Any] = {}
+        if want_content:
+            fields[content_field] = {
                 "pre_tags": ["<mark>"],
                 "post_tags": ["</mark>"],
                 "fragment_size": 200,
                 "number_of_fragments": 3,
-            },
-            "title": {
+            }
+        if want_title:
+            fields["title"] = {
                 "pre_tags": ["<mark>"],
                 "post_tags": ["</mark>"],
                 "number_of_fragments": 0,
-            },
-        }
-        if not has_speaker_filter:
+            }
+        if want_speaker and not has_speaker_filter:
             fields["speaker"] = {
                 "pre_tags": ["<mark>"],
                 "post_tags": ["</mark>"],
@@ -2109,28 +2181,39 @@ class HybridSearchService:
         self,
         has_speaker_filter: bool,
         use_exact: bool = False,
+        sources: frozenset[str] | None = None,
     ) -> list[str]:
-        """Get search fields based on speaker filter and mode.
+        """Get search fields based on speaker filter, mode, and source selection.
 
         Args:
             has_speaker_filter: Whether a speaker filter is active.
             use_exact: If True, use content.exact instead of content.
+            sources: Issue #760 — which of {content, title, speaker} the caller
+                asked for. `None` means "every unthreaded caller" and keeps the
+                historical full field list (back-compat). An explicit set gates
+                each field group; the `has_speaker_filter` rule is applied
+                AFTER the gate, so a speaker filter still drops `speaker^3`
+                even when `speaker` is a selected source.
 
         Returns:
             List of boosted field names.
         """
+        want_content = sources is None or "content" in sources
+        want_title = sources is None or "title" in sources
+        want_speaker = sources is None or "speaker" in sources
+
         content_field = "content.exact^3" if use_exact else "content^3"
         content_exact = "content.exact^2" if not use_exact else None
-        if has_speaker_filter:
-            fields = [content_field]
+
+        fields: list[str] = []
+        if want_content:
+            fields.append(content_field)
             if content_exact:
                 fields.append(content_exact)
+        if want_title:
             fields.append("title^2")
-            return fields
-        fields = [content_field]
-        if content_exact:
-            fields.append(content_exact)
-        fields.extend(["title^2", "speaker^3"])
+        if want_speaker and not has_speaker_filter:
+            fields.append("speaker^3")
         return fields
 
     @staticmethod
@@ -2196,6 +2279,7 @@ class HybridSearchService:
         use_neural: bool,
         sort_by: str = "relevance",
         sort_order: str = "desc",
+        sources: frozenset[str] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Build a search body with native collapse + inner_hits.
 
@@ -2218,9 +2302,9 @@ class HybridSearchService:
             whether the caller must attach the ``search_pipeline`` param — see
             the starvation check below for why this is not simply ``use_neural``).
         """
-        search_fields = self._get_search_fields(has_speaker_filter)
+        search_fields = self._get_search_fields(has_speaker_filter, sources=sources)
         text_query_clause = self._build_text_query(query, search_fields)
-        highlight_fields = self._build_highlight_fields(has_speaker_filter)
+        highlight_fields = self._build_highlight_fields(has_speaker_filter, sources=sources)
 
         # Inner hits: top segments per file group
         inner_hits_config: dict[str, Any] = {
@@ -2397,6 +2481,7 @@ class HybridSearchService:
         highlight_fields: dict[str, Any] | None = None,
         sort_by: str = "relevance",
         sort_order: str = "desc",
+        sources: frozenset[str] | None = None,
     ) -> dict[str, Any]:
         """Build a BM25-only search body with native collapse.
 
@@ -2415,14 +2500,16 @@ class HybridSearchService:
         Returns:
             OpenSearch search body dict.
         """
-        search_fields = self._get_search_fields(has_speaker_filter, use_exact=True)
+        search_fields = self._get_search_fields(has_speaker_filter, use_exact=True, sources=sources)
         text_query_clause = self._build_text_query(query, search_fields)
 
         # Always rebuild highlight fields with use_exact=True to match BM25
         # search fields (content.exact). OpenSearch's unified highlighter uses
         # require_field_match=true by default, so highlight fields must match
         # the fields being queried.
-        bm25_highlight_fields = self._build_highlight_fields(has_speaker_filter, use_exact=True)
+        bm25_highlight_fields = self._build_highlight_fields(
+            has_speaker_filter, use_exact=True, sources=sources
+        )
 
         inner_hits_config: dict[str, Any] = {
             "name": "segments",
@@ -2462,6 +2549,7 @@ class HybridSearchService:
         inner_source: dict[str, Any],
         word_patterns: list[tuple[str, re.Pattern[str], re.Pattern[str]]],
         match_sources: list[str],
+        sources: frozenset[str] | None = None,
     ) -> bool:
         """Detect keyword matches using word-boundary regex when highlights are lost.
 
@@ -2473,17 +2561,26 @@ class HybridSearchService:
             inner_source: Inner hit _source dict.
             word_patterns: Pre-compiled (word, pattern, stem_pattern) tuples.
             match_sources: Mutable list of match sources to update.
+            sources: Issue #760 — the requested source set. `None` means every
+                unthreaded caller (full set). This fallback re-derives
+                `match_sources` independently of highlights and runs on the
+                DEFAULT RRF+collapse path, so it must honour the same gate
+                `_get_search_fields` applies or it re-adds a deselected source
+                (PC3/4.4a).
 
         Returns:
             True if keyword match was detected.
         """
+        fields = [
+            (inner_source.get("content", ""), "content"),
+            (inner_source.get("title", ""), "title"),
+            (inner_source.get("speaker", ""), "speaker"),
+        ]
+        if sources is not None:
+            fields = [(text, name) for text, name in fields if name in sources]
         has_match = False
         for _qw, pattern, stem_pattern in word_patterns:
-            for field_text, source_name in [
-                (inner_source.get("content", ""), "content"),
-                (inner_source.get("title", ""), "title"),
-                (inner_source.get("speaker", ""), "speaker"),
-            ]:
+            for field_text, source_name in fields:
                 if pattern.search(field_text) or stem_pattern.search(field_text):
                     has_match = True
                     if source_name not in match_sources:
@@ -2525,6 +2622,7 @@ class HybridSearchService:
         outer_score: float,
         query: str = "",
         language: str | None = None,
+        sources: frozenset[str] | None = None,
     ) -> tuple[list[SearchOccurrence], str, list[str], int, int, float]:
         """Convert inner hits into SearchOccurrence objects.
 
@@ -2582,6 +2680,7 @@ class HybridSearchService:
                     inner_source,
                     word_patterns,
                     match_sources,
+                    sources,
                 )
                 # Use outer score as fallback since inner scores are lost
                 # to the RRF collapse bug.
@@ -2602,14 +2701,22 @@ class HybridSearchService:
             if not title_highlighted:
                 title_highlighted = _extract_highlighted_field(highlight, "title")
 
-            # Track match sources from OpenSearch highlights
+            # Track match sources from OpenSearch highlights. Gated on the
+            # requested source set (issue #760, PC3/4.4a): a deselected field
+            # is never queried, so OpenSearch cannot highlight it — but guard
+            # explicitly anyway rather than depend on that being the only path.
+            want_content = sources is None or "content" in sources
+            want_title = sources is None or "title" in sources
+            want_speaker = sources is None or "speaker" in sources
             if (
-                "content" in highlight or "content.exact" in highlight
-            ) and "content" not in match_sources:
+                want_content
+                and ("content" in highlight or "content.exact" in highlight)
+                and "content" not in match_sources
+            ):
                 match_sources.append("content")
-            if "title" in highlight and "title" not in match_sources:
+            if want_title and "title" in highlight and "title" not in match_sources:
                 match_sources.append("title")
-            if "speaker" in highlight and "speaker" not in match_sources:
+            if want_speaker and "speaker" in highlight and "speaker" not in match_sources:
                 match_sources.append("speaker")
 
             if has_keyword_match:
@@ -2693,6 +2800,7 @@ class HybridSearchService:
         sort_by: str,
         sort_order: str,
         query: str,
+        sources: frozenset[str] | None = None,
     ) -> list["SearchHit"]:
         """Backfill file groups starved out of the hybrid RRF rank window.
 
@@ -2713,6 +2821,7 @@ class HybridSearchService:
                 has_speaker_filter,
                 sort_by=sort_by,
                 sort_order=sort_order,
+                sources=sources,
             )
             bm25_response = client.search(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,
@@ -2722,7 +2831,9 @@ class HybridSearchService:
             logger.warning(f"BM25 group backfill failed for query='{query}': {e}")
             return grouped
 
-        bm25_grouped, _ = self._process_collapsed_results(bm25_response, query, is_fused_rrf=False)
+        bm25_grouped, _ = self._process_collapsed_results(
+            bm25_response, query, is_fused_rrf=False, sources=sources
+        )
         seen = {hit.file_uuid for hit in grouped}
         new_hits = [hit for hit in bm25_grouped if hit.file_uuid not in seen]
         if not new_hits:
@@ -2744,6 +2855,7 @@ class HybridSearchService:
         response: dict[str, Any],
         query: str,
         is_fused_rrf: bool = False,
+        sources: frozenset[str] | None = None,
     ) -> tuple[list[SearchHit], int]:
         """Process collapsed OpenSearch response into SearchHit objects.
 
@@ -2808,6 +2920,7 @@ class HybridSearchService:
                 outer_score,
                 query,
                 source.get("language"),
+                sources,
             )
 
             if not occurrences:
@@ -2827,8 +2940,11 @@ class HybridSearchService:
                     threshold = settings.SEARCH_SEMANTIC_HIGH_CONFIDENCE
                     semantic_confidence = "high" if best_score >= threshold else "low"
 
-            # Detect metadata speaker match
-            if query_lower:
+            # Detect metadata speaker match — belongs to the Speaker pill
+            # (issue #760, PC4.4b): gate on `speaker` being in the requested
+            # source set, or a Speaker-deselected request still badges a hit
+            # as a speaker match.
+            if query_lower and (sources is None or "speaker" in sources):
                 for speaker_name in source.get("speakers", []):
                     speaker_lower = speaker_name.lower()
                     if query_lower in speaker_lower or speaker_lower in query_lower:
@@ -2904,6 +3020,7 @@ class HybridSearchService:
         self,
         phase2_resp: dict[str, Any],
         query: str,
+        sources: frozenset[str] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Build a file_uuid → hit-details lookup from a Phase 2 BM25 response.
 
@@ -2922,7 +3039,7 @@ class HybridSearchService:
                 continue
             inner_data = outer_hit.get("inner_hits", {}).get("segments", {}).get("hits", {})
             occs, title_hl, msrcs, kw_cnt, sem_cnt, score = self._process_inner_hits(
-                inner_data.get("hits", []), 1.0, query, src.get("language")
+                inner_data.get("hits", []), 1.0, query, src.get("language"), sources
             )
             lookup[fid] = {
                 "occurrences": occs,
@@ -2970,6 +3087,7 @@ class HybridSearchService:
         bucket: dict[str, Any],
         p2: dict[str, Any] | None,
         query_lower: str,
+        sources: frozenset[str] | None = None,
     ) -> SearchHit | None:
         """Merge Phase 1 metadata and Phase 2 highlights into a SearchHit.
 
@@ -2996,7 +3114,7 @@ class HybridSearchService:
         best_score: float = p2["best_score"]
 
         speakers: list[str] = meta["speakers"]
-        if query_lower:
+        if query_lower and (sources is None or "speaker" in sources):
             for speaker_name in speakers:
                 ql_in_sp = query_lower in speaker_name.lower()
                 sp_in_ql = speaker_name.lower() in query_lower
@@ -3075,6 +3193,7 @@ class HybridSearchService:
         start_time: float,
         has_speaker_filter: bool,
         search_pipeline: str,
+        sources: frozenset[str] | None = None,
     ) -> SearchResponse:
         """Two-phase search for non-relevance sorts with hybrid mode.
 
@@ -3127,9 +3246,10 @@ class HybridSearchService:
                 has_speaker_filter=has_speaker_filter,
                 use_neural=False,
                 search_pipeline=search_pipeline,
+                sources=sources,
             )
 
-        search_fields = self._get_search_fields(has_speaker_filter)
+        search_fields = self._get_search_fields(has_speaker_filter, sources=sources)
         text_query_clause = self._build_text_query(search_query, search_fields)
 
         # ── Phase 1: Hybrid file discovery ──────────────────────────────────
@@ -3280,8 +3400,10 @@ class HybridSearchService:
         # ── Phase 2: BM25 collapse on page file UUIDs ────────────────────────
         # Fetch highlighted snippets for just the current page's files.
         t_p2 = time.time()
-        highlight_fields = self._build_highlight_fields(has_speaker_filter, use_exact=True)
-        bm25_fields = self._get_search_fields(has_speaker_filter, use_exact=True)
+        highlight_fields = self._build_highlight_fields(
+            has_speaker_filter, use_exact=True, sources=sources
+        )
+        bm25_fields = self._get_search_fields(has_speaker_filter, use_exact=True, sources=sources)
         p2_text_query = self._build_text_query(search_query, bm25_fields)
 
         phase2_body: dict[str, Any] = {
@@ -3319,14 +3441,14 @@ class HybridSearchService:
         p2_ms = round((time.time() - t_p2) * 1000)
 
         # Build lookup: file_uuid → (occurrences, title_highlighted, match_sources, ...)
-        p2_hits_by_uuid = self._phase2_lookup(phase2_resp, query)
+        p2_hits_by_uuid = self._phase2_lookup(phase2_resp, query, sources)
 
         # ── Merge Phase 1 metadata + Phase 2 highlights ──────────────────────
         query_lower = query.lower().strip() if query else ""
         results: list[SearchHit] = []
         for bucket in page_buckets:
             hit = self._build_search_hit_from_bucket(
-                bucket, p2_hits_by_uuid.get(bucket["key"]), query_lower
+                bucket, p2_hits_by_uuid.get(bucket["key"]), query_lower, sources
             )
             if hit is not None:
                 results.append(hit)
@@ -3373,6 +3495,7 @@ class HybridSearchService:
         has_speaker_filter: bool,
         use_neural: bool,
         search_pipeline: str,
+        sources: frozenset[str] | None = None,
     ) -> SearchResponse:
         """Execute search using native collapse + inner_hits.
 
@@ -3419,6 +3542,7 @@ class HybridSearchService:
                 start_time=start_time,
                 has_speaker_filter=has_speaker_filter,
                 search_pipeline=search_pipeline,
+                sources=sources,
             )
 
         client = get_opensearch_client()
@@ -3436,6 +3560,7 @@ class HybridSearchService:
             use_neural,
             sort_by,
             sort_order,
+            sources=sources,
         )
         build_ms = round((time.time() - t_build) * 1000)
 
@@ -3484,6 +3609,7 @@ class HybridSearchService:
                             has_speaker_filter,
                             sort_by=sort_by,
                             sort_order=sort_order,
+                            sources=sources,
                         )
                         response = client.search(
                             index=settings.OPENSEARCH_CHUNKS_INDEX,
@@ -3510,7 +3636,7 @@ class HybridSearchService:
         t_process = time.time()
         is_fused_rrf = needs_search_pipeline and not fell_back_to_bm25
         grouped, total_files_est = self._process_collapsed_results(
-            response, query, is_fused_rrf=is_fused_rrf
+            response, query, is_fused_rrf=is_fused_rrf, sources=sources
         )
         process_ms = round((time.time() - t_process) * 1000)
 
@@ -3535,6 +3661,7 @@ class HybridSearchService:
                 sort_by=sort_by,
                 sort_order=sort_order,
                 query=query,
+                sources=sources,
             )
 
         self._apply_semantic_demotion(grouped)

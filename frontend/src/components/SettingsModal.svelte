@@ -673,6 +673,17 @@
   }
 
   async function loadStats() {
+    // Cloud only: capabilities are fail-open until their fetch resolves (see
+    // stores/capabilities.ts), and system-statistics is the modal's default
+    // section, so on mount this can fire before capabilities confirm
+    // system.hardware_stats is disabled for this tenant -- hitting the
+    // capability-gated endpoint and surfacing a user-visible 404 toast for a
+    // panel the user never asked to see. isCloudEdition is a build-time
+    // constant (not a fetch), so this adds no delay/flicker for self-host,
+    // where the capability is always enabled and this condition never holds.
+    if (isCloudEdition && (!capState.loaded || !capOn(capState, 'system.hardware_stats'))) {
+      return;
+    }
     if (statsInitialLoaded) {
       statsRefreshing = true;
     } else {

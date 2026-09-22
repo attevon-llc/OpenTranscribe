@@ -239,6 +239,22 @@
   const capOn = (state: typeof $capabilities, key?: string) =>
     !key || isCapabilityEnabled(state, key);
 
+  // The modal's default landing section is 'system-statistics' (self-host: a
+  // reasonable dashboard for any signed-in user). The capabilities store is
+  // fail-open until its fetch resolves (see stores/capabilities.ts) so on a
+  // deployment where system.hardware_stats is disabled (cloud), the default
+  // section is briefly selected, its panel mounts and fires its data fetch,
+  // THEN capabilities arrive and hide it — surfacing as a flash of the nav
+  // item plus a user-visible "Not Found" toast from the now-orphaned fetch
+  // hitting the capability-gated endpoint. Once capabilities are actually
+  // loaded and confirm the default is unavailable, hop to 'profile' (always
+  // visible, no `cap` requirement) instead of leaving the user parked on a
+  // section that will never render. No-ops for self-host (loaded stays true
+  // with the capability enabled, so this condition never matches there).
+  $: if (isOpen && capState.loaded && activeSection === 'system-statistics' && !capOn(capState, 'system.hardware_stats')) {
+    settingsModalStore.setActiveSection('profile');
+  }
+
   // Cloud-edition org-admin gating: the new billing/usage/team panels are only
   // surfaced when the backend marks their capability as enabled AND audience as
   // 'org_admin' (so regular org members don't see billing controls). The

@@ -35,8 +35,18 @@ config.set_main_option(
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
+#
+# disable_existing_loggers=False is load-bearing whenever migrations run
+# inline in a long-lived process (e.g. dev backend startup, via
+# app/db/migrations.py). fileConfig()'s default (True) disables every
+# logger that already exists and isn't explicitly listed in this ini's
+# [loggers] section — which is just root/sqlalchemy/alembic — silently
+# killing the app's own loggers (app.*, and any edition's, e.g. cloud.*)
+# for the rest of the process's life. Symptom: structured app logs stop
+# appearing entirely right after the "Database migrations complete" line,
+# with no error anywhere, because the loggers are disabled, not broken.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

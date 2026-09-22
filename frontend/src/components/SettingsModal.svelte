@@ -243,17 +243,17 @@
   // reasonable dashboard for any signed-in user). The capabilities store is
   // fail-open until its fetch resolves (see stores/capabilities.ts) so on a
   // deployment where system.hardware_stats is disabled (cloud), the default
-  // section is briefly selected, its panel mounts and fires its data fetch,
-  // THEN capabilities arrive and hide it — surfacing as a flash of the nav
-  // item plus a user-visible "Not Found" toast from the now-orphaned fetch
-  // hitting the capability-gated endpoint. Once capabilities are actually
-  // loaded and confirm the default is unavailable, hop to 'profile' (always
-  // visible, no `cap` requirement) instead of leaving the user parked on a
-  // section that will never render. No-ops for self-host (loaded stays true
-  // with the capability enabled, so this condition never matches there).
-  $: if (isOpen && capState.loaded && activeSection === 'system-statistics' && !capOn(capState, 'system.hardware_stats')) {
-    settingsModalStore.setActiveSection('profile');
-  }
+  // section is briefly selected before capabilities arrive and hide its nav
+  // entry. A purely local derived fallback (rather than writing the correction
+  // back into settingsModalStore) — the render condition below reads this
+  // instead of `activeSection` directly, so there's no cross-store update to
+  // land in the same reactive flush as the capabilities change. No-op for
+  // self-host, where the capability is always enabled and this never departs
+  // from `activeSection`.
+  $: effectiveActiveSection =
+    activeSection === 'system-statistics' && capState.loaded && !capOn(capState, 'system.hardware_stats')
+      ? 'profile'
+      : activeSection;
 
   // Cloud-edition org-admin gating: the new billing/usage/team panels are only
   // surfaced when the backend marks their capability as enabled AND audience as
@@ -806,7 +806,7 @@
                   {#each section.items as item}
                     <button
                       class="nav-item"
-                      class:active={activeSection === item.id}
+                      class:active={effectiveActiveSection === item.id}
                       class:dirty={$settingsModalStore.dirtyState[item.id]}
                       class:locked={item.locked}
                       disabled={item.locked}
@@ -889,7 +889,7 @@
             </div>
           {:else}
           <!-- Profile Section -->
-          {#if activeSection === 'profile'}
+          {#if effectiveActiveSection === 'profile'}
             <UserProfileSettings />
           {/if}
 
@@ -1151,7 +1151,7 @@
           {/if}
 
           <!-- System Statistics Section -->
-          {#if activeSection === 'system-statistics'}
+          {#if effectiveActiveSection === 'system-statistics'}
             <SystemStatisticsPanel
               {stats}
               {statsLoading}

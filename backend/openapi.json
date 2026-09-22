@@ -37771,7 +37771,7 @@
     },
     "/api/system/stats": {
       "get": {
-        "description": "Get system statistics accessible to all authenticated users.\n\nReturns system health metrics (CPU, memory, disk, GPU) and aggregate\nstatistics about files, tasks, and models.",
+        "description": "Get system statistics accessible to all authenticated users, where the\n``system.hardware_stats`` capability is enabled.\n\nReturns system health metrics (CPU, memory, disk, GPU) and aggregate\nstatistics about files, tasks, and models. Self-host/community\ndeployments enable this capability by default (any signed-in user on\na single-tenant instance reasonably sees their own server's health);\nthe cloud edition disables it for tenants (``cloud/capabilities.py``),\nsince this data is shared multi-tenant infrastructure telemetry and\nplatform-wide aggregate counts, not anything scoped to the caller's own\norganization. Platform staff still bypass the gate\n(``require_capability``'s ``platform_admin_bypass``).",
         "operationId": "get_system_stats_api_system_stats_get",
         "responses": {
           "200": {

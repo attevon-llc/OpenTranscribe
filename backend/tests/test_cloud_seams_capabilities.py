@@ -29,6 +29,7 @@ from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.services.usage_service import record_event
 from app.tasks.transcription.hooks import CompletionContext
+from app.tasks.transcription.hooks import DispatchBlockedError
 from app.tasks.transcription.hooks import DispatchContext
 from app.tasks.transcription.hooks import QuotaExceededError
 from app.tasks.transcription.hooks import clear_hooks
@@ -193,6 +194,41 @@ class TestPipelineHooks:
         register_before_dispatch(lambda ctx: (_ for _ in ()).throw(RuntimeError("boom")))
         with does_not_raise("one hook raising must not stop the others or reach the caller"):
             fire_before_dispatch(self._dispatch_ctx())  # contained, no raise
+
+    def test_dispatch_blocked_propagates_and_stops_later_hooks(self):
+        """A hook's DELIBERATE non-quota refusal must block, not be swallowed (#980).
+
+        Before this signal existed, the only blocking exception was
+        ``QuotaExceededError``: a hook refusing for a suspension/legal-hold/policy
+        reason had its exception logged under "allowing dispatch" and the job ran
+        anyway. Asserting the *later* hook never runs is what separates "propagated"
+        from "contained and the loop moved on".
+        """
+        ran_after: list[str] = []
+
+        def blocking_hook(ctx: DispatchContext) -> None:
+            raise DispatchBlockedError(detail="Organization suspended")
+
+        register_before_dispatch(blocking_hook)
+        register_before_dispatch(lambda ctx: ran_after.append(ctx.file_uuid))
+
+        with pytest.raises(DispatchBlockedError) as exc:
+            fire_before_dispatch(self._dispatch_ctx())
+
+        assert exc.value.status_code == 403
+        assert exc.value.detail == "Organization suspended"
+        assert ran_after == []
+
+    def test_dispatch_blocked_carries_a_custom_status(self):
+        """403 is only the default — a blocker may name its own status (451, say)."""
+        register_before_dispatch(
+            lambda ctx: (_ for _ in ()).throw(
+                DispatchBlockedError(detail="Legal hold", status_code=451)
+            )
+        )
+        with pytest.raises(DispatchBlockedError) as exc:
+            fire_before_dispatch(self._dispatch_ctx())
+        assert exc.value.status_code == 451
 
     def test_completion_hook_receives_context_and_errors_contained(self):
         seen: list[CompletionContext] = []

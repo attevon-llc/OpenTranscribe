@@ -5,7 +5,16 @@ resolver overrides it — plus the upload-size validation helper that the upload
 paths call.
 """
 
+from typing import cast
+
 import pytest
+from sqlalchemy.orm import Session
+
+# The redaction-floor resolver is the only one handed a session, and neither the
+# community resolver nor the test doubles below ever touch it — so a cast stand-in
+# keeps this module genuinely DB-free (same device as tests/redaction/
+# test_config_resolution.py's ``_DB``).
+_NO_DB = cast(Session, None)
 
 
 @pytest.fixture(autouse=True)
@@ -19,6 +28,7 @@ def _reset_resolvers():
 
 def test_community_default_is_noop():
     from app.core.tenant_limits import min_retention_override_days
+    from app.core.tenant_limits import resolve_redaction_floor
     from app.core.tenant_limits import resolve_retention_days
     from app.core.tenant_limits import resolve_upload_limits
 
@@ -27,6 +37,8 @@ def test_community_default_is_noop():
     assert resolve_retention_days(123) is None
     assert resolve_upload_limits(123) is None
     assert min_retention_override_days() is None
+    assert resolve_redaction_floor(_NO_DB, 123) is None
+    assert resolve_redaction_floor(_NO_DB, None) is None
 
 
 def test_registered_retention_resolver_overrides():
@@ -64,9 +76,61 @@ def test_registered_upload_limits_resolver_overrides():
     assert resolve_upload_limits(None) is None
 
 
+def test_registered_redaction_floor_resolver_overrides():
+    from app.core.tenant_limits import RedactionFloor
+    from app.core.tenant_limits import resolve_redaction_floor
+    from app.core.tenant_limits import set_redaction_floor_resolver
+
+    seen: list[tuple[object, int | None]] = []
+
+    def _resolver(db, org_id):
+        seen.append((db, org_id))
+        if org_id != 42:
+            return None
+        return RedactionFloor(
+            forced_categories=frozenset({"pii"}),
+            forced_pii_entities=frozenset({"US_SSN"}),
+            forced_custom_words=("projectx",),
+            force_toxicity_threshold=0.2,
+            force_redact_before_llm=True,
+        )
+
+    set_redaction_floor_resolver(_resolver)
+    sentinel_session = cast(Session, object())
+
+    floor = resolve_redaction_floor(sentinel_session, 42)
+    assert floor is not None
+    assert floor.forced_categories == frozenset({"pii"})
+    assert floor.force_redact_before_llm is True
+    assert resolve_redaction_floor(sentinel_session, 7) is None
+
+    # The resolver is handed the CALLER's session, not one core opened for it.
+    assert seen == [(sentinel_session, 42), (sentinel_session, 7)]
+
+
+def test_redaction_floor_is_frozen_and_defaults_to_no_addition():
+    """An empty floor must be inert, and a caller must not be able to edit one."""
+    import dataclasses
+
+    from app.core.tenant_limits import RedactionFloor
+
+    floor = RedactionFloor()
+    assert floor.forced_categories == frozenset()
+    assert floor.forced_pii_entities == frozenset()
+    assert floor.forced_custom_words == ()
+    assert floor.force_toxicity_threshold is None
+    assert floor.force_export_redacted is False
+    assert floor.force_redact_before_llm is False
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        floor.force_export_redacted = True  # type: ignore[misc]
+
+
 def test_resolver_error_falls_back_to_global():
+    from app.core.tenant_limits import resolve_redaction_floor
     from app.core.tenant_limits import resolve_retention_days
     from app.core.tenant_limits import resolve_upload_limits
+    from app.core.tenant_limits import set_redaction_floor_resolver
     from app.core.tenant_limits import set_retention_resolver
     from app.core.tenant_limits import set_upload_limits_resolver
 
@@ -75,9 +139,13 @@ def test_resolver_error_falls_back_to_global():
 
     set_retention_resolver(_boom)
     set_upload_limits_resolver(_boom)
+    set_redaction_floor_resolver(lambda _db, _org_id: _boom(_org_id))
     # A misbehaving resolver must never break the caller -> global fallback.
     assert resolve_retention_days(1) is None
     assert resolve_upload_limits(1) is None
+    # For redaction, "global fallback" means the deployment's own
+    # redaction.force_* floor still applies — not that masking is switched off.
+    assert resolve_redaction_floor(_NO_DB, 1) is None
 
 
 def test_validate_file_size_for_tenant_blocks_over_limit():

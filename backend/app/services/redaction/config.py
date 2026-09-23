@@ -4,6 +4,12 @@ Per-user prefs live in ``UserSetting`` (``redaction_*`` keys); the admin governa
 floor lives in ``SystemSettings`` (``redaction.force_*`` keys). A forced category is
 always enabled and the user cannot disable it. There are NO ``.env`` vars — defaults
 are coded constants in ``app.core.constants``.
+
+A THIRD input exists for multi-tenant deployments: the per-org floor seam
+(``core.tenant_limits.resolve_redaction_floor``, issue #982), unioned in by
+:func:`_apply_tenant_floor`. It is strictly additive — it can force more, never
+relax what this deployment's admin forced — and the community resolver returns
+``None``, so a self-host install resolves exactly what it always did.
 """
 
 from __future__ import annotations
@@ -18,6 +24,8 @@ from dataclasses import field
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
+from app.core.tenant_limits import RedactionFloor as TenantRedactionFloor
+from app.core.tenant_limits import resolve_redaction_floor
 
 # Re-imported, NOT redefined (issue #545). The copy that used to live here returned "en" for
 # every sentinel and echoed everything else verbatim, which is what made `detector_language_
@@ -179,10 +187,67 @@ def _load_admin_policy(db: Session) -> dict:
     }
 
 
-def resolve_effective_config(db: Session, user_id: int) -> EffectiveRedactionConfig:
-    """Resolve a user's effective redaction config (user prefs ∪ admin force)."""
+def _apply_tenant_floor(policy: dict, floor: TenantRedactionFloor | None) -> dict:
+    """Union a per-tenant floor into the global one. Strictest wins, always.
+
+    The tenant floor can only ADD (see :class:`~app.core.tenant_limits.RedactionFloor`):
+    sets are unioned, words concatenated, the toxicity threshold takes the lower
+    (more sensitive) value, and the two locks OR. Nothing here can clear a
+    category, an entity or a lock the deployment's own admin forced — a tenant
+    override able to relax the operator's floor would be a governance hole.
+
+    Args:
+        policy: The global floor as ``_load_admin_policy`` returns it.
+        floor: The tenant addition, or None for "no addition".
+
+    Returns:
+        A new dict in ``_load_admin_policy``'s shape; ``policy`` itself when
+        ``floor`` is None, since that is the community path and must cost
+        nothing.
+    """
+    if floor is None:
+        return policy
+
+    merged = dict(policy)
+    merged["forced_categories"] = policy["forced_categories"] | set(floor.forced_categories)
+    merged["forced_pii_entities"] = policy["forced_pii_entities"] | set(floor.forced_pii_entities)
+    merged["forced_custom_words"] = _dedupe_casefold(
+        list(policy["forced_custom_words"]) + list(floor.forced_custom_words)
+    )
+    if floor.force_toxicity_threshold is not None:
+        merged["force_toxicity_threshold"] = min(
+            policy["force_toxicity_threshold"], floor.force_toxicity_threshold
+        )
+    merged["force_export_redacted"] = policy["force_export_redacted"] or floor.force_export_redacted
+    merged["force_redact_before_llm"] = (
+        policy["force_redact_before_llm"] or floor.force_redact_before_llm
+    )
+    return merged
+
+
+def resolve_effective_config(
+    db: Session, user_id: int, organization_id: int | None = None
+) -> EffectiveRedactionConfig:
+    """Resolve a user's effective redaction config (user prefs ∪ admin force ∪ tenant floor).
+
+    Args:
+        db: Database session.
+        user_id: The subject whose preferences are resolved.
+        organization_id: Tenant scope for the per-org redaction floor seam
+            (``core.tenant_limits.resolve_redaction_floor``). Threaded by the
+            caller from the originating request/record — never guessed from
+            membership, for the reason ``services.organization_service``'s module
+            docstring gives. Community edition has no resolver registered, so the
+            value is unused there and every existing two-argument caller is
+            unaffected.
+
+    Returns:
+        The resolved config. A tenant floor can only make it stricter.
+    """
     prefs = _load_user_prefs(db, user_id)
-    admin = _load_admin_policy(db)
+    admin = _apply_tenant_floor(
+        _load_admin_policy(db), resolve_redaction_floor(db, organization_id)
+    )
 
     user_enabled = _parse_bool(prefs.get("redaction_enabled"), C.DEFAULT_REDACTION_ENABLED)
     user_detectors = set(

@@ -283,3 +283,122 @@ def test_offered_citation_refs_skips_malformed_entries() -> None:
 
 def test_offered_citation_refs_empty_input_is_empty_output() -> None:
     assert probe._offered_citation_refs([]) == []
+
+
+# ---------------------------------------------------------------------------
+# _parse_chat_flags — "FIELD=true|false" strings -> {field: bool}
+# ---------------------------------------------------------------------------
+
+
+def test_parse_chat_flags_true_and_false() -> None:
+    assert probe._parse_chat_flags(
+        ["speaker_resolver_enabled=true", "recurrence_enabled=false"]
+    ) == {"speaker_resolver_enabled": True, "recurrence_enabled": False}
+
+
+def test_parse_chat_flags_case_insensitive_and_trims_whitespace() -> None:
+    assert probe._parse_chat_flags([" speaker_resolver_enabled = TRUE "]) == {
+        "speaker_resolver_enabled": True
+    }
+
+
+def test_parse_chat_flags_empty_list_is_empty_dict() -> None:
+    assert probe._parse_chat_flags([]) == {}
+
+
+def test_parse_chat_flags_missing_equals_sign_refuses() -> None:
+    with pytest.raises(SystemExit, match="FIELD=true\\|false"):
+        probe._parse_chat_flags(["speaker_resolver_enabled"])
+
+
+def test_parse_chat_flags_non_boolean_value_refuses() -> None:
+    """Only booleans are supported today — a silently-mis-parsed value would defeat
+    the whole point of the read-back check that consumes this dict."""
+    with pytest.raises(SystemExit, match="only true/false"):
+        probe._parse_chat_flags(["candidate_pool=48"])
+
+
+# ---------------------------------------------------------------------------
+# ensure_chat_flags — PUT /admin/chat-settings, then refuse on a read-back mismatch
+#
+# Uses a hand-rolled fake session (no `requests` import, matching this file's own
+# rule) — ensure_chat_flags only ever calls .put()/.get() on whatever it is handed.
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeChatSettingsSession:
+    """Models /admin/chat-settings: PUT merges into a stored dict, GET returns it.
+
+    ``stuck_at`` lets a test simulate the exact issue #523 failure mode — a PUT
+    that is accepted (200) but never actually changes what GET reports, e.g. a
+    stack whose backend never picked up the write.
+    """
+
+    def __init__(self, initial: dict, *, stuck_at: dict | None = None) -> None:
+        self._stored = dict(initial)
+        self._stuck_at = stuck_at or {}
+
+    def put(self, url: str, json: dict, timeout: int) -> _FakeResponse:  # noqa: A002
+        for key, value in json.items():
+            if key in self._stuck_at:
+                continue  # simulates a write that silently did not apply
+            self._stored[key] = value
+        return _FakeResponse({})
+
+    def get(self, url: str, timeout: int) -> _FakeResponse:
+        return _FakeResponse(dict(self._stored))
+
+
+def test_ensure_chat_flags_applies_and_reads_back() -> None:
+    session = _FakeChatSettingsSession({"speaker_resolver_enabled": False})
+    result = probe.ensure_chat_flags(session, "http://x/api", {"speaker_resolver_enabled": True})
+    assert result == {"speaker_resolver_enabled": True}
+
+
+def test_ensure_chat_flags_empty_updates_is_a_noop() -> None:
+    """No flags requested -> no PUT/GET at all, and an empty dict back — matches
+    ``main()``'s ``if chat_flag_updates:`` guard, which skips calling this at all
+    when --chat-flag was never passed."""
+
+    class _ExplodingSession:
+        def put(self, *a, **k):  # noqa: ANN001, ANN002, ANN003
+            raise AssertionError("must not PUT when there are no updates")
+
+        def get(self, *a, **k):  # noqa: ANN001, ANN002, ANN003
+            raise AssertionError("must not GET when there are no updates")
+
+    assert probe.ensure_chat_flags(_ExplodingSession(), "http://x/api", {}) == {}
+
+
+def test_ensure_chat_flags_refuses_on_readback_mismatch() -> None:
+    """The exact issue #523 failure mode: a PUT that is accepted but the flag never
+    actually applies. Must SystemExit rather than silently proceeding to run a
+    measurement against a flag that is still off."""
+    session = _FakeChatSettingsSession(
+        {"speaker_resolver_enabled": False},
+        stuck_at={"speaker_resolver_enabled": False},
+    )
+    with pytest.raises(SystemExit, match="read-back mismatch"):
+        probe.ensure_chat_flags(session, "http://x/api", {"speaker_resolver_enabled": True})
+
+
+def test_ensure_chat_flags_error_names_the_applied_check_failure_mode() -> None:
+    """The message must be diagnosable on sight, not just detectable — this is the
+    trap the docstring says #523's own artifact fell into."""
+    session = _FakeChatSettingsSession(
+        {"speaker_resolver_enabled": False},
+        stuck_at={"speaker_resolver_enabled": False},
+    )
+    with pytest.raises(SystemExit, match="applied-check"):
+        probe.ensure_chat_flags(session, "http://x/api", {"speaker_resolver_enabled": True})

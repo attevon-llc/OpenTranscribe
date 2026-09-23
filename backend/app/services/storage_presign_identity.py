@@ -62,10 +62,6 @@ logger = logging.getLogger(__name__)
 #: this lowercase string; do not "normalize" it to a bool-ish value elsewhere.
 QUARANTINE_TAG_VALUE = "true"
 
-# The buckets covered by the presign identity's policy. Both are GET-presigned by
-# browser-facing helpers today (media originals + the processed-videos derived cache).
-_PROCESSED_VIDEOS_BUCKET = "processed-videos"
-
 _SERVICE_ACCOUNT_NAME = "ot-presign"
 _SERVICE_ACCOUNT_DESCRIPTION = "OpenTranscribe presigned-GET identity (issue #907)"
 
@@ -175,8 +171,14 @@ def build_presign_policy(buckets: list[str], tag_key: str) -> dict:
 
 
 def _presign_buckets() -> list[str]:
-    """Buckets the presign identity's policy must cover."""
-    return [settings.MEDIA_BUCKET_NAME, _PROCESSED_VIDEOS_BUCKET]
+    """Buckets the presign identity's policy must cover.
+
+    Both are GET-presigned by browser-facing helpers today (media originals + the
+    derived/bulk-export cache), so both are read from settings — a deployment that
+    repoints ``CACHE_BUCKET_NAME`` (issue #985) would otherwise get a policy scoped to
+    a bucket it no longer uses, and every presigned derived-asset URL would 403.
+    """
+    return [settings.MEDIA_BUCKET_NAME, settings.CACHE_BUCKET_NAME]
 
 
 def presign_identity_available() -> bool:

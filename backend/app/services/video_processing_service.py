@@ -299,7 +299,7 @@ class VideoProcessingService:
 
     def __init__(self, minio_service: MinIOService):
         self.minio_service = minio_service
-        self.cache_bucket = "processed-videos"
+        self.cache_bucket = settings.CACHE_BUCKET_NAME
         self._ensure_cache_bucket_exists()
 
     async def _send_download_progress(

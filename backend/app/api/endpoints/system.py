@@ -18,6 +18,7 @@ from app.api.endpoints.admin import get_gpu_usage
 from app.api.endpoints.admin import get_memory_usage
 from app.api.endpoints.admin import get_system_uptime
 from app.api.endpoints.auth import get_current_active_user
+from app.core.capabilities import require_capability
 from app.core.version import APP_VERSION
 from app.db.base import get_db
 from app.models.user import User
@@ -98,13 +99,23 @@ def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
 
 @router.get("/stats", response_model=dict[str, Any])
 def get_system_stats(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    _capability: None = Depends(require_capability("system.hardware_stats")),
 ):
     """
-    Get system statistics accessible to all authenticated users.
+    Get system statistics accessible to all authenticated users, where the
+    ``system.hardware_stats`` capability is enabled.
 
     Returns system health metrics (CPU, memory, disk, GPU) and aggregate
-    statistics about files, tasks, and models.
+    statistics about files, tasks, and models. Self-host/community
+    deployments enable this capability by default (any signed-in user on
+    a single-tenant instance reasonably sees their own server's health);
+    the cloud edition disables it for tenants (``cloud/capabilities.py``),
+    since this data is shared multi-tenant infrastructure telemetry and
+    platform-wide aggregate counts, not anything scoped to the caller's own
+    organization. Platform staff still bypass the gate
+    (``require_capability``'s ``platform_admin_bypass``).
     """
     logger.info(f"System stats requested by user {current_user.email}")
 

@@ -36,6 +36,23 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
+# v4 (0.6.0): the before-dispatch pipeline hook gained an explicit fail-closed
+# signal. ``tasks.transcription.hooks.DispatchBlockedError`` propagates out of
+# fire_before_dispatch alongside QuotaExceededError; every OTHER hook exception is
+# still contained. Additive — a v3 cloud layer keeps working — but a hook that
+# raised its own exception type meaning to block was being silently ignored and
+# the job dispatched anyway, so a cloud edition pinned at v3 should audit its
+# before-dispatch hooks for exactly that.
+#   Also v4: ``services.usage_service.record_event`` no longer swallows write
+#   failures. True/False now mean "recorded"/"already recorded by an earlier
+#   attempt" and nothing else; a real DB failure raises. THIS ONE IS BREAKING for
+#   any cloud caller that treated False as "contained, carry on" — it will now see
+#   the exception and must decide to retry, alarm, or contain it itself.
+#   Also v4: ``core.tenant_limits`` gained a third registry hook,
+#   set_redaction_floor_resolver / resolve_redaction_floor(db, org_id) -> RedactionFloor.
+#   Additive; its community resolver returns None, and the floor it returns can only
+#   ADD to the global redaction.force_* settings, never relax them.
+#
 # v3 (0.5.x): the OIDC surface was renamed provider-neutral (v379/v380). The user
 # identity columns became user.oidc_subject (the value is an OIDC `sub`, unique only
 # per ISSUER — the previous name asserted a global identifier) and
@@ -52,7 +69,7 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 3
+CLOUD_SEAM_VERSION = 4
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

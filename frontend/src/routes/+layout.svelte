@@ -35,6 +35,7 @@
   import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
   import QuotaExceededModal from "$lib/cloud/components/QuotaExceededModal.svelte";
+  import LegalGateModal from "$lib/cloud/components/LegalGateModal.svelte";
 
   /**
    * Routes reachable without a session — the ONE definition.
@@ -227,6 +228,7 @@
       <ConnectionStatusBanner />
       {#if isCloudEdition}
         <QuotaExceededModal />
+        <LegalGateModal />
       {/if}
     {/if}
 

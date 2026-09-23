@@ -242,6 +242,22 @@
   const capOn = (state: typeof $capabilities, key?: string) =>
     !key || isCapabilityEnabled(state, key);
 
+  // The modal's default landing section is 'system-statistics' (self-host: a
+  // reasonable dashboard for any signed-in user). The capabilities store is
+  // fail-open until its fetch resolves (see stores/capabilities.ts) so on a
+  // deployment where system.hardware_stats is disabled (cloud), the default
+  // section is briefly selected before capabilities arrive and hide its nav
+  // entry. A purely local derived fallback (rather than writing the correction
+  // back into settingsModalStore) — the render condition below reads this
+  // instead of `activeSection` directly, so there's no cross-store update to
+  // land in the same reactive flush as the capabilities change. No-op for
+  // self-host, where the capability is always enabled and this never departs
+  // from `activeSection`.
+  $: effectiveActiveSection =
+    activeSection === 'system-statistics' && capState.loaded && !capOn(capState, 'system.hardware_stats')
+      ? 'profile'
+      : activeSection;
+
   // Cloud-edition org-admin gating: the new billing/usage/team panels are only
   // surfaced when the backend marks their capability as enabled AND audience as
   // 'org_admin' (so regular org members don't see billing controls). The
@@ -695,6 +711,17 @@
   }
 
   async function loadStats() {
+    // Cloud only: capabilities are fail-open until their fetch resolves (see
+    // stores/capabilities.ts), and system-statistics is the modal's default
+    // section, so on mount this can fire before capabilities confirm
+    // system.hardware_stats is disabled for this tenant -- hitting the
+    // capability-gated endpoint and surfacing a user-visible 404 toast for a
+    // panel the user never asked to see. isCloudEdition is a build-time
+    // constant (not a fetch), so this adds no delay/flicker for self-host,
+    // where the capability is always enabled and this condition never holds.
+    if (isCloudEdition && (!capState.loaded || !capOn(capState, 'system.hardware_stats'))) {
+      return;
+    }
     if (statsInitialLoaded) {
       statsRefreshing = true;
     } else {
@@ -817,7 +844,7 @@
                   {#each section.items as item}
                     <button
                       class="nav-item"
-                      class:active={activeSection === item.id}
+                      class:active={effectiveActiveSection === item.id}
                       class:dirty={$settingsModalStore.dirtyState[item.id]}
                       class:locked={item.locked}
                       disabled={item.locked}
@@ -900,7 +927,7 @@
             </div>
           {:else}
           <!-- Profile Section -->
-          {#if activeSection === 'profile'}
+          {#if effectiveActiveSection === 'profile'}
             <UserProfileSettings />
           {/if}
 
@@ -1170,7 +1197,7 @@
           {/if}
 
           <!-- System Statistics Section -->
-          {#if activeSection === 'system-statistics'}
+          {#if effectiveActiveSection === 'system-statistics'}
             <SystemStatisticsPanel
               {stats}
               {statsLoading}

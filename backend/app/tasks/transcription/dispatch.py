@@ -248,7 +248,8 @@ def dispatch_transcription_pipeline(
         user_id = int(media_file.user_id)
 
         # Cloud-edition seam: quota reservation hook (no-op in community).
-        # QuotaExceededError (HTTP 402) propagates BEFORE the task record is
+        # QuotaExceededError (HTTP 402) and DispatchBlockedError (403 by default,
+        # a hook's non-quota refusal) propagate BEFORE the task record is
         # created, so a blocked job leaves no trace and nothing dispatches.
         from decimal import Decimal
 

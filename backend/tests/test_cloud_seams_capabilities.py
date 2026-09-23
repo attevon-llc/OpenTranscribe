@@ -8,10 +8,12 @@ surfaces, hooks are no-ops, and a broken cloud layer can never break core.
 import uuid
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
 from fastapi import Request
+from sqlalchemy.exc import OperationalError
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -29,6 +31,7 @@ from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.services.usage_service import record_event
 from app.tasks.transcription.hooks import CompletionContext
+from app.tasks.transcription.hooks import DispatchBlockedError
 from app.tasks.transcription.hooks import DispatchContext
 from app.tasks.transcription.hooks import QuotaExceededError
 from app.tasks.transcription.hooks import clear_hooks
@@ -194,6 +197,41 @@ class TestPipelineHooks:
         with does_not_raise("one hook raising must not stop the others or reach the caller"):
             fire_before_dispatch(self._dispatch_ctx())  # contained, no raise
 
+    def test_dispatch_blocked_propagates_and_stops_later_hooks(self):
+        """A hook's DELIBERATE non-quota refusal must block, not be swallowed (#980).
+
+        Before this signal existed, the only blocking exception was
+        ``QuotaExceededError``: a hook refusing for a suspension/legal-hold/policy
+        reason had its exception logged under "allowing dispatch" and the job ran
+        anyway. Asserting the *later* hook never runs is what separates "propagated"
+        from "contained and the loop moved on".
+        """
+        ran_after: list[str] = []
+
+        def blocking_hook(ctx: DispatchContext) -> None:
+            raise DispatchBlockedError(detail="Organization suspended")
+
+        register_before_dispatch(blocking_hook)
+        register_before_dispatch(lambda ctx: ran_after.append(ctx.file_uuid))
+
+        with pytest.raises(DispatchBlockedError) as exc:
+            fire_before_dispatch(self._dispatch_ctx())
+
+        assert exc.value.status_code == 403
+        assert exc.value.detail == "Organization suspended"
+        assert ran_after == []
+
+    def test_dispatch_blocked_carries_a_custom_status(self):
+        """403 is only the default — a blocker may name its own status (451, say)."""
+        register_before_dispatch(
+            lambda ctx: (_ for _ in ()).throw(
+                DispatchBlockedError(detail="Legal hold", status_code=451)
+            )
+        )
+        with pytest.raises(DispatchBlockedError) as exc:
+            fire_before_dispatch(self._dispatch_ctx())
+        assert exc.value.status_code == 451
+
     def test_completion_hook_receives_context_and_errors_contained(self):
         seen: list[CompletionContext] = []
         register_transcription_complete(seen.append)
@@ -240,6 +278,44 @@ class TestRecordEvent:
             )
             is False
         )
+
+    def test_db_failure_raises_instead_of_masquerading_as_a_dedupe(self, db_session):
+        """A genuine write failure must RAISE, never return False (issue #981).
+
+        ``False`` is reserved for "this event was already recorded". Returning it
+        for an outage as well left every caller unable to tell a successful
+        dedupe from billable usage that was silently dropped — same value, no
+        retry, no alarm. The session must still be rolled back on the way out.
+        """
+        outage = OperationalError("INSERT INTO usage_event", {}, Exception("connection lost"))
+
+        with (
+            patch.object(db_session, "commit", side_effect=outage),
+            patch.object(db_session, "rollback", wraps=db_session.rollback) as rollback,
+            pytest.raises(OperationalError),
+        ):
+            record_event(
+                db_session,
+                event_type="transcription.hours",
+                quantity=2.5,
+                unit="hours",
+                idempotency_key=f"test:{uuid.uuid4().hex[:8]}",
+            )
+
+        rollback.assert_called_once()
+
+    def test_duplicate_key_still_returns_false_rather_than_raising(self, db_session):
+        """The dedupe path is untouched by #981 — only the DB-failure path changed.
+
+        Stated separately from ``test_records_and_dedupes`` because the fix was a
+        hair's breadth from making BOTH paths raise, which would turn every
+        ordinary retry into an error the caller has to handle.
+        """
+        key = f"test:{uuid.uuid4().hex[:8]}"
+        assert record_event(db_session, event_type="chat.tokens", idempotency_key=key) is True
+
+        with does_not_raise("a replayed idempotency key is a normal outcome, not a failure"):
+            assert record_event(db_session, event_type="chat.tokens", idempotency_key=key) is False
 
 
 class TestRequestContext:

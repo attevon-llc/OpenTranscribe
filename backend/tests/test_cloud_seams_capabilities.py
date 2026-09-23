@@ -8,10 +8,12 @@ surfaces, hooks are no-ops, and a broken cloud layer can never break core.
 import uuid
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
 from fastapi import Request
+from sqlalchemy.exc import OperationalError
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -276,6 +278,44 @@ class TestRecordEvent:
             )
             is False
         )
+
+    def test_db_failure_raises_instead_of_masquerading_as_a_dedupe(self, db_session):
+        """A genuine write failure must RAISE, never return False (issue #981).
+
+        ``False`` is reserved for "this event was already recorded". Returning it
+        for an outage as well left every caller unable to tell a successful
+        dedupe from billable usage that was silently dropped — same value, no
+        retry, no alarm. The session must still be rolled back on the way out.
+        """
+        outage = OperationalError("INSERT INTO usage_event", {}, Exception("connection lost"))
+
+        with (
+            patch.object(db_session, "commit", side_effect=outage),
+            patch.object(db_session, "rollback", wraps=db_session.rollback) as rollback,
+            pytest.raises(OperationalError),
+        ):
+            record_event(
+                db_session,
+                event_type="transcription.hours",
+                quantity=2.5,
+                unit="hours",
+                idempotency_key=f"test:{uuid.uuid4().hex[:8]}",
+            )
+
+        rollback.assert_called_once()
+
+    def test_duplicate_key_still_returns_false_rather_than_raising(self, db_session):
+        """The dedupe path is untouched by #981 — only the DB-failure path changed.
+
+        Stated separately from ``test_records_and_dedupes`` because the fix was a
+        hair's breadth from making BOTH paths raise, which would turn every
+        ordinary retry into an error the caller has to handle.
+        """
+        key = f"test:{uuid.uuid4().hex[:8]}"
+        assert record_event(db_session, event_type="chat.tokens", idempotency_key=key) is True
+
+        with does_not_raise("a replayed idempotency key is a normal outcome, not a failure"):
+            assert record_event(db_session, event_type="chat.tokens", idempotency_key=key) is False
 
 
 class TestRequestContext:

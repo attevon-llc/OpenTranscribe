@@ -8,8 +8,11 @@ no-ops with zero overhead. The commercial cloud layer registers:
     (idempotent on ``file_id:run_id`` against retries/replays).
 
 Hook-author contract (covered by ``CLOUD_SEAM_VERSION``, app.auth.constants):
-  - THROWING is contained: any exception except ``QuotaExceededError`` is
-    logged and swallowed -- a broken hook can never fail a transcription.
+  - THROWING is contained, with exactly TWO deliberate exceptions:
+    ``QuotaExceededError`` and ``DispatchBlockedError`` propagate and stop the
+    job. Anything else a hook raises is logged and swallowed -- a broken hook
+    can never fail a transcription. A hook that MEANS to refuse must say so by
+    raising one of those two; an unexpected crash is not a policy decision.
   - HANGING is NOT contained: hooks run synchronously inside the completion
     path (an open session_scope holding the task's final status). A hook that
     blocks on network I/O delays the completion commit + user notification
@@ -41,6 +44,27 @@ class QuotaExceededError(HTTPException):
     def __init__(self, detail: str = "Transcription quota exceeded", hours_over: float = 0.0):
         super().__init__(status_code=402, detail=detail)
         self.hours_over = hours_over
+
+
+class DispatchBlockedError(HTTPException):
+    """Raised by a before-dispatch hook to refuse a job for a NON-quota reason.
+
+    Containment in :func:`fire_before_dispatch` exists so a buggy third-party
+    hook can never stop community transcription. The cost was that a hook with a
+    *considered* reason to refuse — a suspended tenant, a legal hold, a content
+    policy — had no way to say so: its exception was logged and the job
+    dispatched anyway. This is the explicit "fail closed" signal, and raising it
+    is the ONLY way (besides ``QuotaExceededError``) a hook can block dispatch.
+
+    Subclasses HTTPException so an API-triggered dispatch surfaces a clean
+    status without a translation layer, exactly as ``QuotaExceededError`` does
+    with 402. The default is 403 Forbidden — "you may not run this", as opposed
+    to quota's "pay for more and you may". ``status_code`` is settable for a
+    blocker that needs a different one (451 for a legal hold, say).
+    """
+
+    def __init__(self, detail: str = "Transcription blocked", status_code: int = 403):
+        super().__init__(status_code=status_code, detail=detail)
 
 
 @dataclass(frozen=True)
@@ -95,13 +119,28 @@ def clear_hooks() -> None:
 
 
 def fire_before_dispatch(ctx: DispatchContext) -> None:
-    """Run pre-dispatch hooks. QuotaExceededError propagates (blocks the job);
-    any other hook failure is contained so a broken cloud layer can never
-    stop community transcription."""
+    """Run pre-dispatch hooks. Three outcomes, only two of which block the job.
+
+    * Returns normally — no hook objected, the job dispatches.
+    * ``QuotaExceededError`` (402) or ``DispatchBlockedError`` (403 by default)
+      propagates — a hook DELIBERATELY refused. Nothing dispatches, and the
+      remaining hooks do not run.
+    * Any other exception is logged and swallowed, and dispatch proceeds. A
+      broken cloud layer must never stop community transcription, so the
+      default stays fail-open for *unexpected* failures; a hook that intends to
+      refuse raises one of the two errors above instead.
+
+    Args:
+        ctx: The dispatch context handed to every registered hook.
+
+    Raises:
+        QuotaExceededError: A hook refused because the tenant is over quota.
+        DispatchBlockedError: A hook refused for any other deliberate reason.
+    """
     for hook in _before_dispatch_hooks:
         try:
             hook(ctx)
-        except QuotaExceededError:
+        except (QuotaExceededError, DispatchBlockedError):
             raise
         except Exception:
             logger.exception("before-dispatch hook failed; allowing dispatch")

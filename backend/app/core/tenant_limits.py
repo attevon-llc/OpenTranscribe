@@ -25,6 +25,14 @@ ceiling (15 GB / 4 h). A cloud tier may allow more or less. The resolver returns
 a :class:`TenantUploadLimits` (max bytes / max duration seconds, either field
 ``None`` = no per-tenant override for that dimension); ``None`` for the whole
 result means "no override, use the global ceiling".
+
+Hook 3 — **redaction floor** (``resolve_redaction_floor``). core's redaction
+governance floor is a single global set of ``redaction.force_*`` SystemSettings
+(``services.redaction.config``), with no per-tenant path at all. A regulated
+cloud tenant may need PII forced on for its own users while the rest of the
+deployment is left alone. The resolver returns a :class:`RedactionFloor` that is
+UNIONED with the global floor at mask time — it can only ever add, never relax
+what the operator already mandated; ``None`` means "no tenant floor".
 """
 
 from __future__ import annotations
@@ -32,6 +40,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # import only for typing — core must stay import-light here
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +76,50 @@ class TenantChatLimits:
     max_retrieved_chunks: int | None = None
 
 
+@dataclass(frozen=True)
+class RedactionFloor:
+    """Per-tenant redaction governance floor — a FLOOR, never a ceiling.
+
+    One field per global ``redaction.force_*`` SystemSetting, so a cloud
+    resolver expresses tenant policy in exactly the vocabulary core's admin UI
+    already uses (``services.redaction.config._load_admin_policy`` is the one
+    place that reads those keys, and this mirrors its shape).
+
+    **Every field can only ADD.** The read surface unions this with the global
+    floor: categories/entities/words are merged, ``force_toxicity_threshold``
+    takes the lower (more sensitive) value, and the booleans OR. A tenant
+    override that could *unset* something the deployment's operator mandated
+    would be a governance hole, not a feature, so no field is capable of it.
+
+    Collections are ``frozenset``/``tuple`` rather than ``set``/``list``: the
+    dataclass is frozen, and a mutable member would let a caller edit a floor
+    the resolver may well be caching and handing to the next tenant too.
+
+    Attributes:
+        forced_categories: Categories always masked for this tenant, from the
+            same vocabulary as the global floor (``pii``, ``toxicity``,
+            ``profanity``). Forcing one also forces its detector to run.
+        forced_pii_entities: Presidio entity names always masked.
+        forced_custom_words: Literal words always masked.
+        force_toxicity_threshold: ``None`` = no opinion. A value is a MAXIMUM:
+            the effective threshold becomes the lower of this and the user's,
+            matching how the global floor already behaves.
+        force_export_redacted: Mandate censored exports for this tenant.
+        force_redact_before_llm: Mandate masked text to LLM providers, INCLUDING
+            local ones — this is the same lock as the global
+            ``redaction.force_redact_before_llm``, which always beats the
+            per-provider local-model exemption (see
+            ``services.redaction.config.EffectiveRedactionConfig``).
+    """
+
+    forced_categories: frozenset[str] = frozenset()
+    forced_pii_entities: frozenset[str] = frozenset()
+    forced_custom_words: tuple[str, ...] = ()
+    force_toxicity_threshold: float | None = None
+    force_export_redacted: bool = False
+    force_redact_before_llm: bool = False
+
+
 # Resolver signatures. ``organization_id`` is None for personal/no-org scope
 # (community edition is ALWAYS None here), in which case a community resolver
 # returns None and the global value applies.
@@ -84,6 +140,15 @@ ChatLimitsResolver = Callable[[int | None], TenantChatLimits | None]
 # restriction". An EMPTY set is meaningful and distinct from None: it means the
 # tenant may use no model at all, which is how a suspended account is expressed.
 AllowedModelsResolver = Callable[[int | None], set[str] | None]
+# Takes the caller's live ``Session`` as well as the org, unlike every resolver
+# above: the ONLY read surface is ``resolve_effective_config``, which already
+# holds a session open for the user-prefs and admin-floor reads, and a floor
+# resolver that opened a second one would add a connection to a hot path that
+# runs on every mask. It is a read-only borrow — a resolver must not write or
+# commit on it (see ``usage_service.record_event`` for what a stray rollback on
+# a borrowed session costs). ``organization_id`` is None for personal scope
+# (ALWAYS None in community), in which case the community resolver returns None.
+RedactionFloorResolver = Callable[["Session", int | None], "RedactionFloor | None"]
 
 
 def _community_retention_resolver(_org_id: int | None) -> int | None:
@@ -106,11 +171,16 @@ def _community_allowed_models_resolver(_org_id: int | None) -> set[str] | None:
     return None  # no restriction -> any configured model may be selected
 
 
+def _community_redaction_floor_resolver(_db: Session, _org_id: int | None) -> RedactionFloor | None:
+    return None  # no tenant floor -> the global redaction.force_* settings apply
+
+
 _retention_resolver: RetentionResolver = _community_retention_resolver
 _min_retention_resolver: MinRetentionResolver = _community_min_retention_resolver
 _upload_limits_resolver: UploadLimitsResolver = _community_upload_limits_resolver
 _chat_limits_resolver: ChatLimitsResolver = _community_chat_limits_resolver
 _allowed_models_resolver: AllowedModelsResolver = _community_allowed_models_resolver
+_redaction_floor_resolver: RedactionFloorResolver = _community_redaction_floor_resolver
 
 
 def set_retention_resolver(
@@ -151,15 +221,23 @@ def set_allowed_models_resolver(resolver: AllowedModelsResolver) -> None:
     _allowed_models_resolver = resolver
 
 
+def set_redaction_floor_resolver(resolver: RedactionFloorResolver) -> None:
+    """Replace the redaction-floor resolver (registered by the cloud layer)."""
+    global _redaction_floor_resolver
+    logger.info("Redaction-floor resolver overridden (cloud edition)")
+    _redaction_floor_resolver = resolver
+
+
 def reset_resolvers() -> None:
     """Restore the community resolvers (primarily for tests)."""
     global _retention_resolver, _min_retention_resolver, _upload_limits_resolver
-    global _chat_limits_resolver, _allowed_models_resolver
+    global _chat_limits_resolver, _allowed_models_resolver, _redaction_floor_resolver
     _retention_resolver = _community_retention_resolver
     _min_retention_resolver = _community_min_retention_resolver
     _upload_limits_resolver = _community_upload_limits_resolver
     _chat_limits_resolver = _community_chat_limits_resolver
     _allowed_models_resolver = _community_allowed_models_resolver
+    _redaction_floor_resolver = _community_redaction_floor_resolver
 
 
 def min_retention_override_days() -> int | None:
@@ -231,4 +309,32 @@ def resolve_allowed_models(organization_id: int | None) -> set[str] | None:
         return _allowed_models_resolver(organization_id)
     except Exception:
         logger.exception("allowed-models resolver failed; allowing any model")
+        return None
+
+
+def resolve_redaction_floor(db: Session, organization_id: int | None) -> RedactionFloor | None:
+    """Per-org redaction floor to UNION with the global one, or ``None`` for no addition.
+
+    Best-effort like the other resolvers, and the fallback here is the least
+    alarming of the set: ``None`` does not mean "no redaction", it means "nothing
+    on top of the deployment's own ``redaction.force_*`` floor", which is exactly
+    what every self-host deployment already gets. A broken cloud resolver
+    therefore degrades to core's global policy rather than to no policy.
+
+    It is still a degradation, not a guarantee: a deployment that must never mask
+    less than a tenant's contracted floor should make that floor the GLOBAL one,
+    because only the global floor is read from a source that cannot raise.
+
+    Args:
+        db: The caller's live session, borrowed read-only (see
+            ``RedactionFloorResolver``). Never written to or committed by core.
+        organization_id: Tenant scope, or None for personal scope.
+
+    Returns:
+        The tenant's floor, or None for "no per-tenant addition".
+    """
+    try:
+        return _redaction_floor_resolver(db, organization_id)
+    except Exception:
+        logger.exception("redaction-floor resolver failed; falling back to the global floor")
         return None

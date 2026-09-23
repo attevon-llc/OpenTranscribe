@@ -36,11 +36,13 @@ def _fire_gpu_rework_access_gate(media_file: MediaFile) -> None:
     ZERO-hours estimate: the transcript was already billed so there is nothing
     to meter (a 0-hour reservation is harmless — nothing to release), but the
     cloud enforcer's access-state check (suspension/cancel/dispute) can still
-    block with 402. Community edition: no hooks registered — a no-op. No seam
-    signature change (CLOUD_SEAM_VERSION stays 2).
+    block with 402. Community edition: no hooks registered — a no-op.
 
     Raises:
-        QuotaExceededError: (HTTP 402) when a registered hook blocks the org.
+        QuotaExceededError: (HTTP 402) when a registered hook blocks the org
+            for being over quota.
+        DispatchBlockedError: (HTTP 403 by default) when a registered hook
+            blocks the org for any other deliberate reason.
     """
     from app.tasks.transcription.hooks import DispatchContext
     from app.tasks.transcription.hooks import fire_before_dispatch

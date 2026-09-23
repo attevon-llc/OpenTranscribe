@@ -40,9 +40,13 @@ UNIT_TOKENS = "tokens"
 def record_chat_usage(ctx: ChatCompletionContext) -> None:
     """Persist one usage event for a finished chat exchange.
 
-    Registered as a message-complete hook. Contained by contract: the hook runner
-    already guards against exceptions, and ``record_event`` swallows its own
-    failures, because usage accounting must never break the feature that emitted it.
+    Registered as a message-complete hook. Contained by contract — but the
+    containment is HERE, in the ``except`` below, not inside ``record_event``.
+    Since issue #981 a genuine write failure propagates out of ``record_event``
+    (only a duplicate ``idempotency_key`` still returns quietly), so this
+    recorder's own guard is what keeps a metering outage from turning a
+    delivered answer into an error. The hook runner is a second net, not the
+    first one.
 
     Opens its **own** session deliberately. ``record_event`` rolls back on a
     duplicate-key skip, which would discard any uncommitted work on a borrowed

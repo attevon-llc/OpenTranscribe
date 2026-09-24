@@ -187,6 +187,7 @@ def prepare_bulk_subtitles_task(
     include_speakers: bool,
     job_id: str,
     user_id: int | None = None,
+    organization_id: int | None = None,
 ) -> dict:
     """Build a ZIP of subtitles for a batch of files and push a presigned URL over SSE.
 
@@ -210,6 +211,11 @@ def prepare_bulk_subtitles_task(
         user_id: Whose redaction policy masks the archive. Optional **only** so a
             message queued by a pre-#85 API container cannot crash a new worker with a
             ``TypeError``; ``None`` refuses the export rather than exporting raw.
+        organization_id: The dispatching request's active tenant scope
+            (``ctx.org_id``), threaded into ``resolve_effective_config`` so a
+            registered per-org redaction floor (issue #982/#987) is actually
+            consulted (#988). ``None`` on a message queued before this field
+            existed, which resolves to personal scope — the pre-#988 behavior.
     """
     import json
 
@@ -230,7 +236,7 @@ def prepare_bulk_subtitles_task(
         # session_scope auto-commits/rolls-back/closes; the archive build is read-only.
         with session_scope() as db:
             publish_bulk_event(job_id, status="processing", message="Building subtitle archive…")
-            redaction_cfg = resolve_effective_config(db, user_id)
+            redaction_cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
             zip_bytes, exported, skipped = SubtitleService.build_subtitle_archive(
                 db,
                 [(int(fid), str(name)) for fid, name in file_specs],

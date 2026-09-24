@@ -248,7 +248,7 @@ def export_conversation(
         )
         for row in rows
     ]
-    cfg = resolve_export_policy(db, ctx.user.id)
+    cfg = resolve_export_policy(db, ctx.user.id, organization_id=ctx.org_id)
 
     # A citation is persisted at answer time and never re-checked against the
     # file's CURRENT quarantine state, so a file taken down after this

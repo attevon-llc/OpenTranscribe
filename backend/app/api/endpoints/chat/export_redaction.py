@@ -42,7 +42,9 @@ from app.services.redaction.summary_redaction import mask_summary_leaf
 logger = logging.getLogger(__name__)
 
 
-def resolve_export_policy(db: Session, user_id: int) -> EffectiveRedactionConfig:
+def resolve_export_policy(
+    db: Session, user_id: int, organization_id: int | None = None
+) -> EffectiveRedactionConfig:
     """The requesting user's effective policy, or refuse the export.
 
     Same fail-closed shape as ``files/transcript_export._resolve_export_redaction`` and
@@ -50,11 +52,16 @@ def resolve_export_policy(db: Session, user_id: int) -> EffectiveRedactionConfig
     "redaction is off", which is indistinguishable from "the caller forgot", and is exactly
     the value that let two of the three export paths in issue #85 ship unmasked.
 
+    Args:
+        organization_id: The requester's active tenant scope (``ctx.org_id``),
+            threaded into ``resolve_effective_config`` so a registered per-org
+            redaction floor (issue #982/#987) is actually consulted (#988).
+
     Raises:
         HTTPException: 503 when the redaction policy cannot be resolved.
     """
     try:
-        return resolve_effective_config(db, user_id)
+        return resolve_effective_config(db, user_id, organization_id=organization_id)
     except Exception as e:
         logger.exception("Failed to resolve redaction config; refusing the chat export")
         raise HTTPException(

@@ -542,7 +542,7 @@ def _summary_search_payload(
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
     from app.services.search.summary_search import search_summaries
 
-    cfg = resolve_effective_config(db, ctx.user.id)
+    cfg = resolve_effective_config(db, ctx.user.id, organization_id=ctx.org_id)
     try:
         result = search_summaries(
             db,

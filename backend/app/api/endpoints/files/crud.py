@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.core import constants as C  # noqa: N812
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.media import Analytics
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -520,11 +521,19 @@ def _resolve_redaction_for_request(
     *,
     is_admin: bool,
     redact: bool,
+    organization_id: OrgScope = UNSCOPED,
 ) -> tuple[Any, set]:
     """Resolve (effective_cfg, reveal_categories) for a transcript read.
 
     The owner (and admins, audited) may set ``redact=false`` to reveal NON-forced
     categories; admin-forced categories stay masked. Non-owners never reveal.
+
+    Args:
+        organization_id: The requester's active tenant scope. ``UNSCOPED`` (the
+            legacy/non-HTTP default) normalizes to personal scope, since
+            ``resolve_effective_config`` takes a strict ``int | None`` — never
+            the sentinel itself (#988). The one production caller always passes
+            the request's own ``ctx.org_id`` instead.
 
     Raises:
         HTTPException: 503 when the redaction policy cannot be resolved.
@@ -532,7 +541,8 @@ def _resolve_redaction_for_request(
     try:
         from app.services.redaction.config import resolve_effective_config
 
-        cfg = resolve_effective_config(db, current_user.id)
+        resolved_org_id = None if isinstance(organization_id, _Unscoped) else organization_id
+        cfg = resolve_effective_config(db, current_user.id, organization_id=resolved_org_id)
     except Exception as e:
         # FAIL CLOSED. Returning (None, set()) told every downstream reader that
         # redaction was off: `_apply_redaction` short-circuits on a None config
@@ -927,7 +937,12 @@ def get_media_file_detail(
 
         # Resolve read-time redaction config for the caller.
         redaction_cfg, reveal_categories = _resolve_redaction_for_request(
-            db, db_file, current_user, is_admin=is_admin, redact=redact
+            db,
+            db_file,
+            current_user,
+            is_admin=is_admin,
+            redact=redact,
+            organization_id=organization_id,
         )
 
         # If redaction is enabled but detection hasn't finished, withhold the transcript

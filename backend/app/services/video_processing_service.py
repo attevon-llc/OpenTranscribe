@@ -568,6 +568,11 @@ class VideoProcessingService:
         that comes out. See ``services/redaction/export_policy.py`` for why the
         requesting user rather than the file owner.
 
+        The tenant floor (issue #982/#987) consulted here is the FILE's own
+        ``organization_id`` — this Celery task carries no request context to read
+        the requester's own active org from (#988), and the file's tenant is what
+        the floor governs regardless of which member is reading it.
+
         Raises:
             ExportRedactionNotReadyError: The policy masks this file but its detection
                 scan has produced no spans yet.
@@ -575,8 +580,14 @@ class VideoProcessingService:
         from app.models.media import MediaFile
 
         with session_scope() as db:
-            cfg = resolve_effective_config(db, redaction_user_id)
-            status = db.query(MediaFile.redaction_status).filter(MediaFile.id == file_id).scalar()
+            row = (
+                db.query(MediaFile.redaction_status, MediaFile.organization_id)
+                .filter(MediaFile.id == file_id)
+                .first()
+            )
+            status = row.redaction_status if row else None
+            organization_id = row.organization_id if row else None
+            cfg = resolve_effective_config(db, redaction_user_id, organization_id=organization_id)
         if export_masking_is_pending(cfg, status):
             raise ExportRedactionNotReadyError(
                 "Content redaction has not finished for this file, so its subtitles "

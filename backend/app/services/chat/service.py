@@ -268,6 +268,7 @@ def _resolve_summary_tier(
     ranked_digests: list[ChunkHit],
     ranked_digests_masked: list[MaskedChunk],
     user_id: int,
+    organization_id: int | None = None,
     mask_kwargs: dict[str, Any],
 ) -> tuple[list[Any], list[MaskedChunk], str | None, int, int]:
     """Decide which leg feeds the map-reduce overview's summaries (W2.1).
@@ -336,7 +337,9 @@ def _resolve_summary_tier(
         files_without_artifacts = int(map_hits.coverage.get("files_without_artifacts", 0))
         files_no_content = int(map_hits.coverage.get("files_no_content", 0))
         if map_hits:
-            summary_masked = mask_digests(session_scope, map_hits, user_id, **mask_kwargs)
+            summary_masked = mask_digests(
+                session_scope, map_hits, user_id, organization_id=organization_id, **mask_kwargs
+            )
             return (
                 map_hits,
                 summary_masked,
@@ -366,7 +369,9 @@ def _resolve_summary_tier(
         files_without_artifacts = int(map_hits.coverage.get("files_without_artifacts", 0))
         files_no_content = int(map_hits.coverage.get("files_no_content", 0))
         if map_hits:
-            summary_masked = mask_digests(session_scope, map_hits, user_id, **mask_kwargs)
+            summary_masked = mask_digests(
+                session_scope, map_hits, user_id, organization_id=organization_id, **mask_kwargs
+            )
             return map_hits, summary_masked, "scope_map", files_without_artifacts, files_no_content
         if ranked_digests:
             # The map covered nothing (every file in scope lacks a digest, or
@@ -1609,7 +1614,9 @@ def _prepare_context(
 
     digest_masked: list[MaskedChunk] = []
     summaries: list[Any] = []
-    masked = mask_chunks(session_scope, result.chunks, user_id, **_mask_kwargs)
+    masked = mask_chunks(
+        session_scope, result.chunks, user_id, organization_id=organization_id, **_mask_kwargs
+    )
 
     _emit_expansion(recorder, masked, enabled="expand_short_chunks" in _mask_kwargs)
 
@@ -1622,7 +1629,13 @@ def _prepare_context(
         # the per-sentence provenance.
         from app.services.chat.redactor import mask_digests
 
-        digest_masked = mask_digests(session_scope, result.digests, user_id, **_digest_mask_kwargs)
+        digest_masked = mask_digests(
+            session_scope,
+            result.digests,
+            user_id,
+            organization_id=organization_id,
+            **_digest_mask_kwargs,
+        )
 
     # W2.1: which leg feeds the overview — the scope map (bounded scope, reads
     # `file_facts` for every file) or the ranked digest leg above (unbounded
@@ -1637,6 +1650,7 @@ def _prepare_context(
             ranked_digests=result.digests,
             ranked_digests_masked=digest_masked,
             user_id=user_id,
+            organization_id=organization_id,
             mask_kwargs=_digest_mask_kwargs,
         )
     )
@@ -1895,7 +1909,7 @@ async def _keepalive_until_done(awaitable, holder: _Awaited, trace_q=None):
             getter.cancel()
 
 
-def _resolve_output_policy(user_id: int):
+def _resolve_output_policy(user_id: int, organization_id: int | None = None):
     """The requesting user's effective redaction config, or None if unresolvable.
 
     Its own short-lived session: this runs on every turn including
@@ -1903,13 +1917,18 @@ def _resolve_output_policy(user_id: int):
     ``None`` is not "no redaction" — ``OutputRedactor`` reads it as "mask
     everything", because being unable to resolve the policy must not mean
     sending generated text out unexamined.
+
+    Args:
+        organization_id: The requester's active tenant scope, threaded into
+            ``resolve_effective_config`` so a registered per-org redaction
+            floor (issue #982/#987) is actually consulted (#988).
     """
     from app.db.session_utils import session_scope
     from app.services.redaction.config import resolve_effective_config
 
     try:
         with session_scope() as db:
-            return resolve_effective_config(db, user_id)
+            return resolve_effective_config(db, user_id, organization_id=organization_id)
     except Exception:  # noqa: BLE001 — the redactor fails closed on None
         logger.exception("Could not resolve the output redaction policy for user %s", user_id)
         return None
@@ -2458,7 +2477,9 @@ class ChatService:
             # because a `use_context=False` turn never runs that stage and its
             # answer is just as visible — which is also why it sits OUTSIDE the
             # use_context block above, unlike the language warning.
-            output_policy = await run_in_threadpool(_resolve_output_policy, user_id)
+            output_policy = await run_in_threadpool(
+                _resolve_output_policy, user_id, organization_id
+            )
             answer_redactor = OutputRedactor(output_policy)
             reasoning_redactor = OutputRedactor(output_policy)
 

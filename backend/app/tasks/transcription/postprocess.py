@@ -607,13 +607,21 @@ def _dispatch_redaction(file_id: int, user_id: int, pipeline_task_id: str | None
     (or an admin forces it). Redaction is opt-out by default, so we skip the (potentially
     expensive) scan for the common case. If a user enables redaction later, detection is
     dispatched lazily the first time they open the file.
+
+    Consults the FILE's own ``organization_id`` for the tenant floor (issue #982/
+    #987) — this pipeline callback carries only ``file_id``/``user_id``, no request
+    context, and the file's own tenant is what the floor governs (#988).
     """
     try:
         from app.db.session_utils import session_scope
+        from app.models.media import MediaFile
         from app.services.redaction.config import resolve_effective_config
 
         with session_scope() as db:
-            cfg = resolve_effective_config(db, user_id)
+            organization_id = (
+                db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
+            )
+            cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
         if not cfg.enabled:
             logger.info(f"Redaction off for owner of file {file_id}; skipping detection")
             return

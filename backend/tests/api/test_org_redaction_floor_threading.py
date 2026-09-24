@@ -117,6 +117,7 @@ def _make_org_file(db_session, owner, org: Organization) -> MediaFile:
         )
     )
     db_session.commit()
+    return media_file
 
 
 def test_org_redaction_floor_masks_a_word_the_users_own_prefs_leave_off(

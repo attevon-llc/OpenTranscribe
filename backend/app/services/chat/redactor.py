@@ -225,6 +225,7 @@ def _effective_cfg_for_owner(
     requester_user_id: int,
     requester_cfg: Any,
     owner_cache: dict[Any, Any],
+    owner_organization_id: int | None = None,
 ) -> Any:
     """Strictest-wins union of ``requester_cfg`` with the file owner's own policy.
 
@@ -232,6 +233,13 @@ def _effective_cfg_for_owner(
     ``None`` when the row itself was missing) — read structurally, never assumed
     to be an ``int``, so a duck-typed test double stays exercised the same way
     the real column does.
+
+    ``owner_organization_id`` is the SAME scan row's ``organization_id`` — the
+    file's own tenant, not necessarily the requester's active org (a sharee can
+    read across orgs). Threaded into the owner's ``resolve_effective_config``
+    call so a per-org redaction floor (issue #982/#987) actually applies to the
+    owner side of the union (#988); the requester side already carries its own
+    org via ``requester_cfg``, resolved by the caller.
 
     Fails CLOSED to :func:`~app.services.redaction.config.most_restrictive_config`
     whenever the owner cannot be identified at all, or their own policy cannot be
@@ -272,7 +280,9 @@ def _effective_cfg_for_owner(
         owner_cfg = owner_cache[owner_id]
     else:
         try:
-            owner_cfg = resolve_effective_config(db, owner_id)
+            owner_cfg = resolve_effective_config(
+                db, owner_id, organization_id=owner_organization_id
+            )
         except Exception:  # noqa: BLE001
             logger.exception(
                 "Could not resolve the file owner's redaction policy for chat "
@@ -328,12 +338,13 @@ def _gather_chunk_segments(
     from app.models.media import TranscriptSegment
     from app.services.redaction.coverage import uncovered_detectors
 
-    # Five columns rather than the ORM row: `uncovered_detectors` reads
+    # Six columns rather than the ORM row: `uncovered_detectors` reads
     # `redaction_coverage` and `language` by getattr, and a Row exposes both by
     # label. Keeping this a plain Row also honours the phase-4 rule that nothing
     # ORM-shaped escapes the masking session (see this package's CLAUDE.md).
-    # `user_id` is read the same way, for the owner side of the strictest-wins
-    # union — never a second query for it.
+    # `user_id`/`organization_id` are read the same way, for the owner side of
+    # the strictest-wins union (#988 threads the latter into that resolve) —
+    # never a second query for either.
     scan = (
         db.query(
             MediaFile.id,
@@ -341,12 +352,18 @@ def _gather_chunk_segments(
             MediaFile.redaction_coverage,
             MediaFile.language,
             MediaFile.user_id,
+            MediaFile.organization_id,
         )
         .filter(MediaFile.id == chunk.file_id)
         .first()
     )
     effective = _effective_cfg_for_owner(
-        db, getattr(scan, "user_id", None), requester_user_id, requester_cfg, owner_cache
+        db,
+        getattr(scan, "user_id", None),
+        requester_user_id,
+        requester_cfg,
+        owner_cache,
+        getattr(scan, "organization_id", None),
     )
     if scan is None or scan.redaction_status != C.REDACTION_STATUS_DONE:
         # Detection hasn't run (or didn't finish) — there are no spans to apply.
@@ -605,12 +622,18 @@ def _gather_digest_plans(
                     MediaFile.redaction_coverage,
                     MediaFile.language,
                     MediaFile.user_id,
+                    MediaFile.organization_id,
                 )
                 .filter(MediaFile.id == digest.file_id)
                 .first()
             )
             effective = _effective_cfg_for_owner(
-                db, getattr(scan, "user_id", None), requester_user_id, requester_cfg, owner_cache
+                db,
+                getattr(scan, "user_id", None),
+                requester_user_id,
+                requester_cfg,
+                owner_cache,
+                getattr(scan, "organization_id", None),
             )
             # Same v392 coverage gate as the chunk path: `done` means the scan
             # finished, not that every relied-on detector ran. A gap falls
@@ -655,6 +678,7 @@ def _gather(
     session_factory: SessionFactory,
     user_id: int,
     *,
+    organization_id: int | None = None,
     chunks: list[ChunkHit] | None = None,
     digests: list[ChunkHit] | None = None,
     unmask_for_local: bool = False,
@@ -666,6 +690,11 @@ def _gather(
     resolved is not a policy that permits sending text.
 
     Args:
+        organization_id: The REQUESTER's active tenant scope — threaded into
+            their own ``resolve_effective_config`` call so a registered per-org
+            redaction floor (issue #982/#987) is actually consulted (#988).
+            Each file's OWNER side of the strictest-wins union resolves its own
+            org from the file's row instead (see ``_effective_cfg_for_owner``).
         unmask_for_local: True when the turn's LLM config is local
             (``llm_guard.is_local_provider``) — the text never leaves the
             machine, so masking it before the call costs recall for no egress
@@ -694,7 +723,7 @@ def _gather(
     from app.services.redaction.config import resolve_effective_config
 
     with session_factory() as db:
-        requester_cfg = resolve_effective_config(db, user_id)
+        requester_cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
         if unmask_for_local and not requester_cfg.redact_before_llm_locked:
             return _MaskingInputs(cfg=requester_cfg, applies=False)
 
@@ -853,6 +882,7 @@ def mask_chunks(
     chunks: list[ChunkHit],
     user_id: int,
     *,
+    organization_id: int | None = None,
     unmask_for_local: bool = False,
     expand_short_chunks: bool = False,
 ) -> list[MaskedChunk]:
@@ -883,6 +913,9 @@ def mask_chunks(
         user_id: The REQUESTING user. Their effective policy (admin force floor
             included) is unioned with each chunk's own file owner's — see
             above — matching :func:`mask_digests` beside it.
+        organization_id: The REQUESTER's active tenant scope (``ctx.org_id``),
+            threaded into their side of the union so a registered per-org
+            redaction floor (issue #982/#987) is actually consulted (#988).
         unmask_for_local: True when the turn's LLM is local
             (``redaction.llm_guard.is_local_provider``) — the excerpt text never
             leaves the machine, so masking is skipped for every chunk regardless
@@ -916,7 +949,13 @@ def mask_chunks(
             logger.exception("Context expansion failed; masking the un-expanded chunks instead")
 
     try:
-        inputs = _gather(session_factory, user_id, chunks=chunks, unmask_for_local=unmask_for_local)
+        inputs = _gather(
+            session_factory,
+            user_id,
+            organization_id=organization_id,
+            chunks=chunks,
+            unmask_for_local=unmask_for_local,
+        )
     except Exception:  # noqa: BLE001
         logger.exception("Could not resolve redaction config; masking all chunk content")
         # Fail CLOSED: if we cannot tell whether masking is required, don't send text.
@@ -952,6 +991,7 @@ def mask_digests(
     digests: list[ChunkHit],
     user_id: int,
     *,
+    organization_id: int | None = None,
     unmask_for_local: bool = False,
 ) -> list[MaskedChunk]:
     """Re-mask digest sections **through their provenance**, failing closed per sentence.
@@ -982,6 +1022,8 @@ def mask_digests(
         user_id: The REQUESTING user. As in :func:`mask_chunks`, their policy is
             unioned per-section with that section's own file owner's
             (strictest-wins, task #40) — never the requester alone.
+        organization_id: The REQUESTER's active tenant scope — same rule as
+            :func:`mask_chunks` (#988).
         unmask_for_local: Same rule as :func:`mask_chunks` — skip masking for a
             local LLM unless the admin force floor (the REQUESTER's
             ``cfg.redact_before_llm_locked``) overrides the exemption.
@@ -994,7 +1036,11 @@ def mask_digests(
         return []
     try:
         inputs = _gather(
-            session_factory, user_id, digests=digests, unmask_for_local=unmask_for_local
+            session_factory,
+            user_id,
+            organization_id=organization_id,
+            digests=digests,
+            unmask_for_local=unmask_for_local,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Could not resolve redaction config; withholding all digest content")

@@ -38,11 +38,16 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
+def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool, organization_id=None):
     """Resolve (cfg, reveal_categories) for a subtitle export.
 
     Honors the admin forced-export lock: when ``export_locked`` is set, the original
     can never be exported regardless of the ``redact`` flag.
+
+    Args:
+        organization_id: The requester's active tenant scope (``ctx.org_id``),
+            threaded into ``resolve_effective_config`` so a registered per-org
+            redaction floor (issue #982/#987) is actually consulted (#988).
 
     Raises:
         HTTPException: 503 when the redaction policy cannot be resolved.
@@ -50,7 +55,7 @@ def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
     try:
         from app.services.redaction.config import resolve_effective_config
 
-        cfg = resolve_effective_config(db, current_user.id)
+        cfg = resolve_effective_config(db, current_user.id, organization_id=organization_id)
     except Exception as e:
         # FAIL CLOSED. Returning None skipped the `export_locked` branch three
         # lines below and handed SubtitleService a None config, whose masking
@@ -102,7 +107,9 @@ def get_subtitles(
         raise HTTPException(status_code=400, detail="Transcription not completed yet")
 
     # Resolve read-time redaction (export honors the censor toggle + admin floor).
-    cfg, reveal = _resolve_subtitle_redaction(db, media_file, current_user, redact)
+    cfg, reveal = _resolve_subtitle_redaction(
+        db, media_file, current_user, redact, organization_id=ctx.org_id
+    )
 
     # Withhold the export until detection has produced spans to apply. Note this
     # is checked AFTER the reveal is resolved and ignores it: `?redact=false`
@@ -306,6 +313,9 @@ def prepare_bulk_export(
         # matching the single-file export beside it (issue #85). The worker re-resolves
         # the policy from this id at run time; nothing about the policy is sent here.
         user_id=current_user.id,
+        # The requester's active tenant scope, so the worker's re-resolve actually
+        # consults a registered per-org redaction floor (issue #982/#987, #988).
+        organization_id=ctx.org_id,
     )
     return {"status": "processing", "job_id": job_id}
 

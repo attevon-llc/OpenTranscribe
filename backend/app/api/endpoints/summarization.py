@@ -231,7 +231,9 @@ def get_file_summary(
     return SummaryResponse(
         file_id=UUID(str(media_file.uuid)),
         filename=media_file.title or media_file.filename,
-        summary_data=_redacted_summary(db, current_user, dict(media_file.summary_data)),
+        summary_data=_redacted_summary(
+            db, current_user, dict(media_file.summary_data), organization_id=ctx.org_id
+        ),
     )
 
 
@@ -297,7 +299,9 @@ def export_summary(
             detail="No summary available for this file. Please generate one first.",
         )
 
-    masked = _redacted_summary(db, current_user, dict(media_file.summary_data))
+    masked = _redacted_summary(
+        db, current_user, dict(media_file.summary_data), organization_id=ctx.org_id
+    )
 
     labels = SummaryExportLabels(
         title=title_label,
@@ -350,7 +354,10 @@ def export_summary(
 
 
 def _redacted_summary(
-    db: Session, current_user: User, summary_data: dict[str, Any]
+    db: Session,
+    current_user: User,
+    summary_data: dict[str, Any],
+    organization_id: int | None = None,
 ) -> dict[str, Any]:
     """Apply the requesting user's redaction policy to a summary (#465).
 
@@ -390,7 +397,7 @@ def _redacted_summary(
     from app.services.redaction.summary_redaction import mask_summary
 
     try:
-        cfg = resolve_effective_config(db, current_user.id)
+        cfg = resolve_effective_config(db, current_user.id, organization_id=organization_id)
     except Exception as e:
         logger.exception("Failed to resolve redaction config; refusing the summary read")
         raise HTTPException(

@@ -711,7 +711,9 @@ def _resolve_ready_download(
     return None
 
 
-def _download_redaction_variant(db: Session, db_file: MediaFile, user_id: int, mode: str) -> str:
+def _download_redaction_variant(
+    db: Session, db_file: MediaFile, user_id: int, mode: str, organization_id: int | None = None
+) -> str:
     """The caller's redaction fingerprint for a burned-in-subtitle download.
 
     Only ``video_subtitles`` carries transcript text; every audio mode is the original
@@ -720,6 +722,11 @@ def _download_redaction_variant(db: Session, db_file: MediaFile, user_id: int, m
 
     Refuses the download when the reader's policy masks this file and its detection
     scan has not produced spans yet — burned-in text cannot be masked afterwards.
+
+    Args:
+        organization_id: The requester's active tenant scope (``ctx.org_id``),
+            threaded into ``resolve_effective_config`` so a registered per-org
+            redaction floor (issue #982/#987) is actually consulted (#988).
 
     Raises:
         HTTPException: 503 when the policy cannot be resolved, 409 while the file's
@@ -740,7 +747,7 @@ def _download_redaction_variant(db: Session, db_file: MediaFile, user_id: int, m
     from app.services.redaction.export_policy import export_policy_fingerprint
 
     try:
-        cfg = resolve_effective_config(db, user_id)
+        cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
     except Exception as e:
         # FAIL CLOSED, as the subtitle endpoint does: an unresolvable policy must not
         # degrade to "no policy", which is exactly what produced the unmasked renders.
@@ -822,7 +829,9 @@ def prepare_download(
         db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
 
-    variant = _download_redaction_variant(db, db_file, current_user.id, mode)
+    variant = _download_redaction_variant(
+        db, db_file, current_user.id, mode, organization_id=ctx.org_id
+    )
 
     ready = _resolve_ready_download(db_file, mode, variant)
     if ready:
@@ -888,7 +897,7 @@ def download_stream(
     user_id = current_user.id
     # Resolved once, on the request thread, while the request's session is open: the
     # generator below runs on the event loop and its DB work is threadpooled.
-    variant = _download_redaction_variant(db, db_file, user_id, mode)
+    variant = _download_redaction_variant(db, db_file, user_id, mode, organization_id=ctx.org_id)
 
     def sse(event: str, payload: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(payload)}\n\n"

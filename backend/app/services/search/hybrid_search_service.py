@@ -528,7 +528,9 @@ def _search_corpus_version() -> str:
         return "0"
 
 
-def _resolve_redaction_config_for_cache(user_id: int) -> "EffectiveRedactionConfig | None":
+def _resolve_redaction_config_for_cache(
+    user_id: int, organization_id: int | None = None
+) -> "EffectiveRedactionConfig | None":
     """Resolve the requesting user's redaction policy BEFORE the cache lookup.
 
     Must run here rather than only inside :meth:`_redact_snippets` — the config
@@ -544,6 +546,9 @@ def _resolve_redaction_config_for_cache(user_id: int) -> "EffectiveRedactionConf
 
     Args:
         user_id: The requesting user (matches ``_redact_snippets``'s subject).
+        organization_id: The requester's active tenant scope, threaded into
+            ``resolve_effective_config`` so a registered per-org redaction
+            floor (issue #982/#987) is actually consulted (#988).
 
     Returns:
         The effective config, or ``None`` when it could not be resolved at all
@@ -555,7 +560,7 @@ def _resolve_redaction_config_for_cache(user_id: int) -> "EffectiveRedactionConf
 
     try:
         with session_scope() as db:
-            return resolve_effective_config(db, user_id)
+            return resolve_effective_config(db, user_id, organization_id=organization_id)
     except Exception:  # noqa: BLE001 — a config read must not break search
         logger.exception("Redaction config unavailable while resolving the search cache key")
         return None
@@ -944,7 +949,9 @@ class HybridSearchService:
         # `SEARCH_CACHE_TTL_SECONDS` to take effect on a repeated query, and two
         # policies could collide on one key if `user_id` were ever reused for a
         # tenant-shared cache in the future.
-        redaction_cfg = _resolve_redaction_config_for_cache(user_id)
+        redaction_cfg = _resolve_redaction_config_for_cache(
+            user_id, organization_id=organization_id
+        )
         policy_fingerprint = _redaction_policy_fingerprint(redaction_cfg)
 
         # Check cache
@@ -1066,6 +1073,7 @@ class HybridSearchService:
         result: SearchResponse,
         user_id: int,
         cfg: "EffectiveRedactionConfig | None | _NotGiven" = _NOT_GIVEN,
+        organization_id: int | None = None,
     ) -> None:
         """Mask this page's snippets under the requesting user's redaction policy.
 
@@ -1106,9 +1114,12 @@ class HybridSearchService:
                 for callers outside ``search()``'s own cache-key flow, so this
                 method's original resolve-it-yourself contract still holds for
                 anyone driving it directly.
+            organization_id: Only consulted on that same self-resolve fallback
+                path (#988) — ``search()`` passes its own already-resolved
+                ``cfg`` instead and never reaches this branch.
         """
         if isinstance(cfg, _NotGiven):
-            cfg = _resolve_redaction_config_for_cache(user_id)
+            cfg = _resolve_redaction_config_for_cache(user_id, organization_id=organization_id)
 
         occurrences = [
             occ

@@ -1334,6 +1334,17 @@ DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED = False  # chat.aggregate.speaker_s
 # have (a separate, later change).
 DEFAULT_CHAT_MAP_TIER_SUMMARIES = False  # chat.rag.map_tier_summaries
 
+# #532 follow-up plan (docs/design/532_hybrid_summary_synthesis_plan.md): the
+# hybrid map-tier entry — each file's overview entry becomes a structured
+# abstractive summary (lead + key decisions + action items) PLUS its closing
+# digest section verbatim, REPLACING the control's leading sections. Only
+# takes effect when `map_tier_summaries` is also True (hybrid off + summaries
+# on = arm (d) exactly as shipped). Default OFF, same reason as the flag
+# above: on-by-default needs measured answer-quality evidence this does not
+# yet have. Delete after measurement (section 6 of the plan), in either
+# direction.
+DEFAULT_CHAT_MAP_TIER_HYBRID = False  # chat.rag.map_tier_hybrid
+
 # A provider that accepts the request but never emits a first token would
 # otherwise hold the stream open until the read timeout.
 DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S = 90

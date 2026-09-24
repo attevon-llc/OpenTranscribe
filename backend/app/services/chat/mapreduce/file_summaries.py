@@ -42,11 +42,32 @@ class FileSummary:
     duration: float | None = None
     speakers: tuple[str, ...] = ()
     keyphrases: tuple[str, ...] = ()
-    #: The digest text, **already masked** by the caller. This module never sees
-    #: raw index content and never masks: masking needs a session and a policy
-    #: subject, and a module that quietly did it would be a second place for the
-    #: fail-closed contract to drift out of step with `redactor.py`.
+    #: The EXTRACTIVE digest text, **already masked** by the caller, in EVERY
+    #: mode (#532 follow-up, section 2.5). This module never sees raw index
+    #: content and never masks: masking needs a session and a policy subject,
+    #: and a module that quietly did it would be a second place for the
+    #: fail-closed contract to drift out of step with `redactor.py`. Never
+    #: holds abstractive text — see `llm_summary` below for that.
     digest: str = ""
+    #: #532 follow-up. The ABSTRACTIVE text — `structured_summary_text`'s
+    #: lead + decisions + action items in hybrid mode, or the plain
+    #: `_summary_highlight_text` paragraph in the pre-hybrid (arm-(d)) shape —
+    #: already masked, exactly like `digest`. `""` when this file's map hit
+    #: carries no fresh-summary content at all (a plain digest-tier file).
+    #: `digest` and `llm_summary` are two DIFFERENT KINDS of text and must
+    #: never be concatenated into one field again — that is the #464/#532
+    #: mixing bug this split exists to prevent (see `is_hybrid` below).
+    llm_summary: str = ""
+    #: #532 follow-up. This file's `digest`'s real digest-section index,
+    #: start time and end time — populated ONLY when `digest` was assembled
+    #: from EXACTLY ONE section (the hybrid's closing section). `None` in
+    #: every other shape: a non-hybrid file's digest can join several
+    #: sections (`sections_per_file` > 1), for which no single index/time is
+    #: meaningful. Exists for a real per-part citation deep link (plan's
+    #: conditional Unit U5), not consumed by the code-composer rendering path.
+    digest_section_index: int | None = None
+    digest_start_time: float | None = None
+    digest_end_time: float | None = None
     #: W2.3. When this summary was built for a speaker-scoped map
     #: (`scope_speaker_digest_hits`), the focus speaker's own
     #: `file_facts.facts["speakers"]` entry (`total_time`/`turn_count`/
@@ -59,12 +80,30 @@ class FileSummary:
     #: but nothing came back" is a coverage note the reducer can render,
     #: rather than being indistinguishable from "not in this file at all".
     speaker_in_roster: bool = False
-    #: #464. True when `digest` above was assembled from a fresh LLM summary
-    #: hit (`ChunkHit.is_llm_summary`) rather than extractive digest sections.
-    #: `citations.build_overview_citations` reads this to pick `KIND_SUMMARY`
-    #: vs `KIND_DIGEST` — see `ChunkHit.is_llm_summary`'s docstring for why the
-    #: two must never share a citation kind.
+    #: #464. True when this file's map hit(s) included a FRESH LLM summary
+    #: hit (`ChunkHit.is_llm_summary`) — either the pre-#532 arm-(d) shape
+    #: (`llm_summary` set, `digest` empty) or the #532 hybrid shape (BOTH
+    #: `llm_summary` and `digest` set — see `is_hybrid`). Before #532 this
+    #: field doubled as "was `digest` itself built from a summary", which the
+    #: hybrid shape makes false: `digest` is extractive-only in every mode
+    #: now (see that field's own docstring). `citations.build_overview_citations`
+    #: still reads this coarse flag to pick `KIND_SUMMARY` vs `KIND_DIGEST` —
+    #: correct for the non-hybrid shapes; `service._overview_citation_start`'s
+    #: hybrid guard is what keeps a hybrid file from ever reaching that
+    #: function today (no per-part citation kind exists yet — plan's
+    #: conditional Unit U5).
     is_llm_summary: bool = False
+
+    @property
+    def is_hybrid(self) -> bool:
+        """#532 follow-up.
+
+        True when this file carries BOTH an abstractive summary and an
+        extractive digest section — the hybrid map entry shape, distinct from
+        arm-(d)'s summary-only shape (`llm_summary` set, `digest` empty) and
+        the plain digest-tier shape (`digest` set, `llm_summary` empty).
+        """
+        return bool(self.llm_summary) and bool(self.digest)
 
 
 class DigestScopeHits(list):
@@ -137,10 +176,33 @@ def build_file_summaries(
         payload = facts_by_file.get(str(hits[0].file_id), {})
         facts = payload.get("facts") or {}
         keyphrases = payload.get("keyphrases") or {}
-        # Sections are joined in the order the digest leg returned them, which is
-        # relevance order, not transcript order. Said here because the reader of a
-        # summary would reasonably assume chronology.
-        text = " ".join(masked_text.get(id(hit), "").strip() for hit in hits).strip()
+        # #532 follow-up: route each hit by KIND rather than joining every hit
+        # into one field. Before the hybrid shape existed, a file's hits were
+        # either ALL summary (one hit) or ALL digest (`sections_per_file`
+        # sections) — never mixed — so `any()`/`all()` agreed and one join was
+        # safe. The hybrid shape breaks that invariant (one summary hit PLUS
+        # one closing-section hit for the same file), so `digest` and
+        # `llm_summary` are now populated from their own hit subsets, never
+        # from a shared join. Sections are joined in the order the digest leg
+        # returned them, which is relevance order, not transcript order — said
+        # here because the reader of a summary would reasonably assume
+        # chronology.
+        summary_hits = [hit for hit in hits if getattr(hit, "is_llm_summary", False)]
+        section_hits = [hit for hit in hits if not getattr(hit, "is_llm_summary", False)]
+        llm_summary_text = " ".join(
+            masked_text.get(id(hit), "").strip() for hit in summary_hits
+        ).strip()
+        digest_text = " ".join(masked_text.get(id(hit), "").strip() for hit in section_hits).strip()
+        digest_section_index = digest_start_time = digest_end_time = None
+        if len(section_hits) == 1:
+            # A single section can only be identified unambiguously when it is
+            # the sole digest hit for this file — the hybrid's closing
+            # section, or a non-hybrid file whose `sections_per_file` allowance
+            # happened to be 1. A join of several sections has no single index.
+            only = section_hits[0]
+            digest_section_index = getattr(only, "digest_section", None)
+            digest_start_time = getattr(only, "start_time", None)
+            digest_end_time = getattr(only, "end_time", None)
         summaries.append(
             FileSummary(
                 file_uuid=file_uuid,
@@ -153,18 +215,18 @@ def build_file_summaries(
                 keyphrases=tuple(
                     str(entry.get("phrase", "")) for entry in (keyphrases.get("phrases") or [])[:5]
                 ),
-                digest=text,
+                digest=digest_text,
+                llm_summary=llm_summary_text,
+                digest_section_index=digest_section_index,
+                digest_start_time=digest_start_time,
+                digest_end_time=digest_end_time,
                 speaker_stats=(
                     _speaker_facts_entry(facts, speaker_focus) if speaker_focus else None
                 ),
                 speaker_in_roster=(
                     speaker_focus is not None and _speaker_in_roster(facts, speaker_focus)
                 ),
-                # A file's hits are either ALL from the summary branch (one hit) or ALL
-                # from the digest branch (`sections_per_file` sections) — `scope_digest_hits`
-                # never mixes the two for one file — so `any()` and `all()` agree here;
-                # `any()` reads as the more honest statement of the actual per-hit fact.
-                is_llm_summary=any(getattr(hit, "is_llm_summary", False) for hit in hits),
+                is_llm_summary=bool(summary_hits),
             )
         )
     return summaries
@@ -209,12 +271,107 @@ def _summary_highlight_text(summary_data: dict[str, Any]) -> str:
     return str(summary_data.get("brief_summary") or summary_data.get("bluf") or "").strip()
 
 
+#: #532 follow-up plan, section 2.2: cap on decisions/action items rendered
+#: into the hybrid map entry's abstractive half. Small on purpose — this is
+#: one paragraph in a collection-view entry, not the full summary modal.
+HYBRID_MAX_ITEMS_PER_LEAF = 3
+
+
+def _fit_clause(label: str, items: list[str], remaining: int) -> str:
+    """The widest PREFIX of ``items`` that fits in ``remaining`` chars, or ``""``.
+
+    Never partial: a clause that does not fit at ``n`` items is retried at
+    ``n - 1``, so an item is always rendered whole or not at all — this is
+    the "cuts at item boundaries, drops whole trailing items, never cuts
+    inside an item" rule from the plan's section 2.3.
+    """
+    for n in range(len(items), 0, -1):
+        clause = f" {label}: " + "; ".join(items[:n]) + "."
+        if len(clause) <= remaining:
+            return clause
+    return ""
+
+
+def structured_summary_text(summary_data: dict[str, Any], budget_chars: int) -> str:
+    """The hybrid map entry's abstractive half: lead paragraph + decisions + action items.
+
+    Fixed fill order — lead, then decisions, then action items (plan section
+    2.2) — cutting at ITEM boundaries only. A clause that does not fully fit
+    is dropped whole rather than truncated mid-item, and a later clause is
+    still attempted against whatever budget remains (a decisions clause that
+    does not fit at all does not block action items from being tried).
+
+    If the lead alone exceeds ``budget_chars`` it is cut at the last sentence
+    boundary inside the budget — the same cut ``prompting.format_excerpts``
+    uses for a ``truncated="true"`` excerpt (``prompting._cut_at_boundary``),
+    reused rather than reimplemented — instead of dropping the whole entry:
+    some abstractive text beats none. Returns ``""`` when there is no lead to
+    render, or the budget cannot hold even a trimmed lead (``budget_chars <=
+    0``); the caller (:func:`scope_digest_hits`) treats an empty render
+    exactly like an absent summary and falls back to the control's digest
+    sections.
+
+    Items are extracted with :func:`app.services.chat.recurrence.normalize_leaf`
+    — the module's own shape-tolerant extractor for ``key_decisions``/
+    ``action_items`` entries (string or dict, several key spellings) — never
+    a second extractor written here. An item ``normalize_leaf`` declines to
+    parse (an unrecognised custom-prompt shape) is silently omitted, exactly
+    as it is everywhere else that function is used.
+
+    Args:
+        summary_data: A file's ``MediaFile.summary_data`` (already validated
+            fresh by the caller via :func:`_summary_is_fresh`).
+        budget_chars: Characters available for this text. The caller derives
+            it as ``entry_budget(n) - len(closing_section_text)`` per the
+            plan's section 2.3 — the closing digest section is rendered
+            verbatim and never truncated, so it is subtracted first.
+
+    Returns:
+        The composed text, or ``""``.
+    """
+    from app.services.chat.recurrence import LEAF_ACTION_ITEM
+    from app.services.chat.recurrence import LEAF_KEY_DECISION
+    from app.services.chat.recurrence import normalize_leaf
+
+    lead = _summary_highlight_text(summary_data)
+    if not lead or budget_chars <= 0:
+        return ""
+
+    if len(lead) > budget_chars:
+        from app.services.chat.prompting import _cut_at_boundary
+
+        return _cut_at_boundary(lead, budget_chars)
+
+    text = lead
+    remaining = budget_chars - len(text)
+
+    for label, raw_items, leaf in (
+        ("Decisions", summary_data.get("key_decisions"), LEAF_KEY_DECISION),
+        ("Action items", summary_data.get("action_items"), LEAF_ACTION_ITEM),
+    ):
+        items: list[str] = []
+        for raw in (raw_items or [])[:HYBRID_MAX_ITEMS_PER_LEAF]:
+            extracted = normalize_leaf(raw, leaf)
+            if extracted is not None:
+                items.append(extracted[0])
+        if not items:
+            continue
+        clause = _fit_clause(label, items, remaining)
+        if clause:
+            text += clause
+            remaining -= len(clause)
+
+    return text
+
+
 def scope_digest_hits(
     db,
     file_uuids: list[str],
     *,
     sections_per_file: int = 1,
     use_summaries: bool = False,
+    hybrid: bool = False,
+    entry_budget_chars: int = 0,
 ) -> DigestScopeHits:
     """One digest per file **for every file in scope** — the actual MAP step.
 
@@ -290,6 +447,26 @@ def scope_digest_hits(
             enough for a collection view and keeps the block inside its budget.
         use_summaries: Resolved ``ChatSettings.map_tier_summaries``. ``False`` —
             the default — reproduces pre-#464 behaviour exactly.
+        hybrid: #532 follow-up (``docs/design/532_hybrid_summary_synthesis_plan.md``),
+            resolved ``ChatSettings.map_tier_hybrid and ChatSettings.map_tier_summaries``.
+            Only consulted when ``use_summaries`` is also True. ``False`` — the
+            default — reproduces the #464 (arm-(d)) shape exactly: a fresh
+            summary contributes one paragraph-only hit. ``True`` composes each
+            fresh-summary file's entry as
+            :func:`structured_summary_text` (lead + decisions + action items)
+            **plus** the file's closing digest section (``sections[-1]``,
+            verbatim), REPLACING the leading ``sections[:sections_per_file]``
+            the control would otherwise show — never adding to them. A file
+            whose abstractive render comes back empty, or whose summary is not
+            fresh, falls back to the plain digest sections exactly as the
+            non-hybrid path does.
+        entry_budget_chars: The per-file character ceiling a hybrid entry may
+            not exceed — ``sections_budget(len(file_uuids)) *
+            DIGEST_SNIPPET_CHARS`` (plan section 2.3), computed by the caller
+            since this module does not import ``citations.py``. The closing
+            section (verbatim, never truncated) is subtracted first; the
+            remainder bounds :func:`structured_summary_text`. Unused when
+            ``hybrid`` is False.
 
     Returns:
         A :class:`DigestScopeHits` — behaves as the list of ``ChunkHit``s (carrying
@@ -304,7 +481,17 @@ def scope_digest_hits(
         caller reconciling ``len(hits)`` against ``len(file_uuids)``
         (``mapreduce.coverage.check_scope_coverage`` is that reconciliation).
         ``coverage["summary_hits"]`` (present only when ``use_summaries`` is True) counts
-        files represented by a fresh summary instead of their digest.
+        files represented by a fresh summary instead of their digest — a hybrid file counts
+        here too, alongside the arm-(d)-shaped ones. Present only when ``use_summaries`` is
+        True, ``coverage`` also carries the #532 follow-up counters:
+        ``hybrid_entries`` (fresh-summary files rendered as abstractive + closing section),
+        ``summary_only_entries`` (fresh-summary files with zero digest sections to close
+        with, so the entry is abstractive-only — the arm-(d) shape, reached only via the
+        hybrid path since it renders a structured text even with no sections), ``entries_digest``
+        (files that fell back to the plain digest sections — stale/absent summary, or
+        hybrid's abstractive render came back empty), ``summary_chars`` and
+        ``closing_section_chars`` (summed rendered character counts, for the per-turn
+        volume instrumentation the plan's section 4.3 applied-checks read).
     """
     if not file_uuids:
         return DigestScopeHits([], {"files_without_artifacts": 0, "files_no_content": 0})
@@ -334,6 +521,11 @@ def scope_digest_hits(
     files_without_artifacts = 0
     files_no_content = 0
     summary_hits = 0
+    hybrid_entries = 0
+    summary_only_entries = 0
+    entries_digest = 0
+    summary_chars = 0
+    closing_section_chars = 0
     #: Which scope uuids the query actually matched. The query outer-joins
     #: ``file_facts`` onto ``media_file`` filtered by ``MediaFile.uuid.in_(...)``,
     #: so a scope uuid with no accessible ``media_file`` row produces NO row at
@@ -357,26 +549,76 @@ def scope_digest_hits(
         sections = (digest or {}).get("sections", [])
 
         if use_summaries and _summary_is_fresh(summary_status, summary_data, fingerprint):
-            text = _summary_highlight_text(summary_data)
-            if text:
-                hits.append(
-                    ChunkHit(
-                        file_uuid=str(uuid),
-                        file_id=int(file_id),
-                        chunk_index=-1,
-                        content=text,
-                        title=str(title or ""),
-                        start_time=0.0,
-                        end_time=None,
-                        digest_section=len(sections),
-                        is_llm_summary=True,
+            if hybrid:
+                # #532 follow-up: REPLACE the leading sections with abstractive
+                # text + the closing section, never add to them (plan 2.3).
+                closing = sections[-1] if sections else None
+                closing_text = str(closing.get("text") or "") if closing else ""
+                abstractive_budget = max(0, entry_budget_chars - len(closing_text))
+                abstractive = structured_summary_text(summary_data, abstractive_budget)
+                if abstractive:
+                    hits.append(
+                        ChunkHit(
+                            file_uuid=str(uuid),
+                            file_id=int(file_id),
+                            chunk_index=-1,
+                            content=abstractive,
+                            title=str(title or ""),
+                            start_time=0.0,
+                            end_time=None,
+                            digest_section=len(sections),
+                            is_llm_summary=True,
+                        )
                     )
-                )
-                summary_hits += 1
-                continue
-            # An empty/unusable summary shape acts like an absent one — fall
-            # through to the digest below rather than contributing nothing for
-            # a file the digest tier can still cover.
+                    summary_hits += 1
+                    summary_chars += len(abstractive)
+                    if closing is not None:
+                        hits.append(
+                            ChunkHit(
+                                file_uuid=str(uuid),
+                                file_id=int(file_id),
+                                chunk_index=-1 - int(closing.get("index", 0)),
+                                content=closing_text,
+                                title=str(title or ""),
+                                start_time=float(closing.get("start_time") or 0.0),
+                                end_time=closing.get("end_time"),
+                                digest_section=int(closing.get("index", 0)),
+                            )
+                        )
+                        closing_section_chars += len(closing_text)
+                        hybrid_entries += 1
+                    else:
+                        # No sections to close with — abstractive-only, the
+                        # arm-(d) shape, but reached via structured_summary_text
+                        # rather than _summary_highlight_text alone (so decisions
+                        # and action items still render even with zero sections).
+                        summary_only_entries += 1
+                    continue
+                # The abstractive render came back "" (no lead at all, or a
+                # budget too small to hold even a trimmed one) — an empty
+                # render acts like an absent summary, same rule as the
+                # non-hybrid branch below: fall through to the digest.
+            else:
+                text = _summary_highlight_text(summary_data)
+                if text:
+                    hits.append(
+                        ChunkHit(
+                            file_uuid=str(uuid),
+                            file_id=int(file_id),
+                            chunk_index=-1,
+                            content=text,
+                            title=str(title or ""),
+                            start_time=0.0,
+                            end_time=None,
+                            digest_section=len(sections),
+                            is_llm_summary=True,
+                        )
+                    )
+                    summary_hits += 1
+                    continue
+                # An empty/unusable summary shape acts like an absent one — fall
+                # through to the digest below rather than contributing nothing for
+                # a file the digest tier can still cover.
 
         file_contributed = False
         for section in sections[:sections_per_file]:
@@ -393,6 +635,13 @@ def scope_digest_hits(
                 )
             )
             file_contributed = True
+        if file_contributed and use_summaries:
+            # A file that fell back to the plain digest sections while tiering
+            # was on — stale/absent summary, or (hybrid only) an empty
+            # abstractive render. Meaningless noise when tiering is off (every
+            # file takes this path trivially), so counted only alongside the
+            # other use_summaries-only counters below.
+            entries_digest += 1
         if not file_contributed:
             # A real ``file_facts`` row with a digest, but the digest's own
             # ``sections`` list is empty (an extractive digest that selected
@@ -411,6 +660,11 @@ def scope_digest_hits(
     }
     if use_summaries:
         coverage["summary_hits"] = summary_hits
+        coverage["hybrid_entries"] = hybrid_entries
+        coverage["summary_only_entries"] = summary_only_entries
+        coverage["entries_digest"] = entries_digest
+        coverage["summary_chars"] = summary_chars
+        coverage["closing_section_chars"] = closing_section_chars
     return DigestScopeHits(hits, coverage)
 
 

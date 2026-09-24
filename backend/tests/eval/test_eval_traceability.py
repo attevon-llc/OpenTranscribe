@@ -349,6 +349,128 @@ def test_quote_fidelity_ignores_a_quote_pointed_at_a_dangling_marker() -> None:
 
 
 # ---------------------------------------------------------------------------
+# quote_fidelity_tolerant — #532 follow-up SECONDARY metric (Unit U6).
+# The PRIMARY quote_fidelity above must stay unaffected by any test here.
+# ---------------------------------------------------------------------------
+
+
+def test_tolerant_must_fire_on_a_markdown_escaped_quote_the_strict_metric_misses() -> None:
+    """Unit U6a must-fire case from the design plan: the model's own markdown
+    escaping (``L\\_C\\_D\\_``) is not a change in content. The PRIMARY strict
+    metric must still fail it (unchanged behaviour); the tolerant one must not."""
+    record = _record(
+        app_answer='They said "dump the L\\_C\\_D\\_ screen"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "you dump the L_C_D_ screen first"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported == 1, "the PRIMARY metric is unaffected by U6"
+    assert metrics.quote_fidelity == 0.0
+    assert metrics.quotes_unsupported_tolerant == 0
+    assert metrics.quote_fidelity_tolerant == 1.0
+
+
+def test_tolerant_must_fire_on_an_ellipsis_elided_quote_with_fragments_in_order() -> None:
+    """Unit U6b must-fire case: fragments split by an ellipsis, present IN ORDER
+    in the cited snippet."""
+    record = _record(
+        app_answer='They said "big buttons... that is easier to use than"[1].',
+        citations=[
+            {
+                "id": 1,
+                "file_uuid": "file-a",
+                "snippet": "we want big buttons because that is easier to use than tiny icons",
+            }
+        ],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported == 1, "the PRIMARY metric does not elide ellipses"
+    assert metrics.quotes_unsupported_tolerant == 0
+    assert metrics.quote_fidelity_tolerant == 1.0
+
+
+def test_tolerant_must_stay_clean_when_ellipsis_fragments_are_out_of_order() -> None:
+    """Must-stay-clean control, the real multi-002 quote from the design plan:
+    fragments exist in the snippet but in the WRONG order — never supported,
+    tolerant or not. This is what keeps U6b a formatting tolerance, not a
+    content one."""
+    record = _record(
+        app_answer='They said "… going to want... to do"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "going to... want it to do most"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported == 1
+    assert metrics.quotes_unsupported_tolerant == 1
+    assert metrics.quote_fidelity_tolerant == 0.0
+
+
+def test_tolerant_must_stay_clean_when_a_fragment_is_simply_absent() -> None:
+    record = _record(
+        app_answer='They said "foo... bar"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "foo but never the other word"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported_tolerant == 1
+    assert metrics.quote_fidelity_tolerant == 0.0
+
+
+def test_tolerant_must_stay_clean_when_fragments_split_across_two_citations() -> None:
+    """A quote's fragments existing only when pooled across TWO different
+    citations must not be scored supported — each fragment is checked only
+    against the ONE cited snippet, never a union of snippets."""
+    record = _record(
+        app_answer='They said "foo... bar"[1].',
+        citations=[
+            {"id": 1, "file_uuid": "file-a", "snippet": "foo appears here only"},
+            {"id": 2, "file_uuid": "file-b", "snippet": "bar appears here only"},
+        ],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}, {"id": 2, "file_uuid": "file-b"}],
+        chunks_used=2,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported_tolerant == 1
+    assert metrics.quote_fidelity_tolerant == 0.0
+
+
+def test_tolerant_is_still_a_genuinely_faithful_check_for_a_different_quote() -> None:
+    """Must-stay-clean: an outright fabricated quote (no ellipsis, no markdown
+    escapes — just different words) must still fail under the tolerant metric."""
+    record = _record(
+        app_answer='They said "we should cancel the launch"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "totally unrelated content"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported_tolerant == 1
+    assert metrics.quote_fidelity_tolerant == 0.0
+
+
+def test_tolerant_and_strict_share_the_same_quotes_total() -> None:
+    """Same total as the primary metric (same regex, same answer) — only
+    which quotes are found unsupported can differ, per the module docstring."""
+    record = _record()  # the default fixture's one supported, non-elided quote
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_total == 1
+    # Deliberately not asserting quotes_unsupported_tolerant's VALUE here beyond
+    # "same total" — the shared-fixture default quote is already covered by
+    # test_quote_fidelity_must_stay_clean_when_the_quote_is_supported.
+
+
+def test_tolerant_is_none_when_the_answer_makes_no_quoted_claims() -> None:
+    record = _record(app_answer="The team discussed feedback [2] without quoting anyone.")
+    metrics = extract_turn_traceability(record)
+    assert metrics.quote_fidelity_tolerant is None
+
+
+# ---------------------------------------------------------------------------
 # extract_turn_traceability — required fields
 # ---------------------------------------------------------------------------
 
@@ -577,6 +699,8 @@ def test_the_new_fields_pass_the_no_prose_check() -> None:
         "quote_fidelity_complete",
         "quotes_unsupported_at_240",
         "quote_fidelity_at_240",
+        "quotes_unsupported_tolerant",
+        "quote_fidelity_tolerant",
     ):
         assert key in row
 
@@ -633,6 +757,8 @@ def test_turn_traceability_as_json_field_shape() -> None:
         quote_fidelity_complete=1.0,
         quotes_unsupported_at_240=0,
         quote_fidelity_at_240=1.0,
+        quotes_unsupported_tolerant=0,
+        quote_fidelity_tolerant=1.0,
     )
     payload = metrics.as_json()
     assert set(payload) == {
@@ -660,4 +786,6 @@ def test_turn_traceability_as_json_field_shape() -> None:
         "quote_fidelity_complete",
         "quotes_unsupported_at_240",
         "quote_fidelity_at_240",
+        "quotes_unsupported_tolerant",
+        "quote_fidelity_tolerant",
     }

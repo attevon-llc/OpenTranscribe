@@ -401,6 +401,7 @@ class ChatAdminSettings(BaseModel):
     speaker_facet_content_scope: bool = False
     speaker_stats_enabled: bool = False
     map_tier_summaries: bool = False
+    map_tier_hybrid: bool = False
     speaker_resolver_enabled: bool = False
     map_tier_speaker_summaries: bool = False
     recurrence_enabled: bool = False
@@ -431,6 +432,7 @@ class ChatAdminSettingsUpdate(BaseModel):
     speaker_facet_content_scope: bool | None = None
     speaker_stats_enabled: bool | None = None
     map_tier_summaries: bool | None = None
+    map_tier_hybrid: bool | None = None
     speaker_resolver_enabled: bool | None = None
     map_tier_speaker_summaries: bool | None = None
     recurrence_enabled: bool | None = None

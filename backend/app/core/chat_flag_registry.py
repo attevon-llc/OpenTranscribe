@@ -32,15 +32,21 @@ four edits, down from the original seven: one ``ChatFlagSpec`` here, one
 ``DEFAULT_CHAT_*`` constant in ``core/constants.py``, one ``ChatSettings``
 field, and one field on each of the two schemas in ``schemas/chat.py``.
 
-**None of the registered flags are experimental** (currently 27 — re-derive with
-``len(CHAT_FLAG_REGISTRY)`` rather than trusting a transcribed count, since this repo's
-history is that such numbers rot). ``experimental=True`` is
-plumbing for admin-tunable knobs that require a working LLM provider to have
-any effect (a future planner/enrichment toggle is the motivating case) — the
-admin UI groups those under a separate "Experimental (measurement-gated)"
-subsection and disables them with an explanatory hint when no provider is
-configured. No such flag exists yet; the field is here so the first one that
-does needs one registry entry, not a new mechanism.
+``experimental=True`` is plumbing for admin-tunable knobs that require a working LLM
+provider to have any effect — the admin UI groups those under a separate "Experimental
+(measurement-gated)" subsection and disables them with an explanatory hint when no
+provider is configured. Re-derive the registered/experimental counts with
+``len(CHAT_FLAG_REGISTRY)``/``len(EXPERIMENTAL_FIELDS)`` rather than trusting a
+transcribed count, since this repo's history is that such numbers rot.
+
+**``map_tier_hybrid`` (#532 follow-up) is the first flag to actually set
+``experimental=True``.** `ChatAdminSettings.svelte`'s "Experimental" subsection was written
+before any field existed there, so it renders explanatory copy only (`experimentalEmpty`)
+rather than a control loop over `EXPERIMENTAL_FIELDS` — it does not yet read this registry
+at all. `map_tier_hybrid` and every other #532/#464 measurement-gated flag is set via the
+admin `PUT /chat/admin-settings` API or a script, not this panel; wiring the panel to
+actually render `EXPERIMENTAL_FIELDS` is follow-on work, not required by this flag's own
+measurement.
 """
 
 from __future__ import annotations
@@ -217,6 +223,19 @@ CHAT_FLAG_REGISTRY: tuple[ChatFlagSpec, ...] = (
         description="Prefer each file's fresh LLM summary over its digest in the collection map",
         value_type=bool,
         default=C.DEFAULT_CHAT_MAP_TIER_SUMMARIES,
+    ),
+    ChatFlagSpec(
+        field="map_tier_hybrid",
+        setting_key="chat.rag.map_tier_hybrid",
+        description=(
+            "#532 follow-up: each file's collection-map entry becomes a structured "
+            "abstractive summary plus its closing digest section (replaces arm (d)'s "
+            "paragraph-only shape). Only takes effect when the map-tier-summaries flag "
+            "above is also on. Requires a summary-capable LLM provider."
+        ),
+        value_type=bool,
+        default=C.DEFAULT_CHAT_MAP_TIER_HYBRID,
+        experimental=True,
     ),
     ChatFlagSpec(
         field="speaker_resolver_enabled",

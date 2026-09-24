@@ -208,6 +208,81 @@ def test_every_label_is_unique() -> None:
     assert len(labels) == len(set(labels)), labels
 
 
+# ---------------------------------------------------------------------------
+# build_multi_file_expanded — #532 follow-up (Unit U8)
+# ---------------------------------------------------------------------------
+
+
+def test_expanded_emits_every_grounded_series_shape_pair() -> None:
+    """One series (TS3005) x four shapes, every shape grounded in the AMI
+    fixture -> exactly 4 entries, deterministic (no seed needed)."""
+    out = bpqs.build_multi_file_expanded(_qmsum_fixture(), _indexed_fixture(), _ami_fixture())
+    assert len(out) == 4
+    assert {row["category"] for row in out} == {"multi_file"}
+    kinds = {row["label"].rsplit("-", 1)[-1] for row in out}
+    assert kinds == {"decisions", "action_items", "problems", "evolution"}
+
+
+def test_expanded_labels_are_stable_and_seed_independent() -> None:
+    """Same corpus, called twice: identical labels in identical order — no
+    `random.Random` involved, unlike every other stratum in this module."""
+    out1 = bpqs.build_multi_file_expanded(_qmsum_fixture(), _indexed_fixture(), _ami_fixture())
+    out2 = bpqs.build_multi_file_expanded(_qmsum_fixture(), _indexed_fixture(), _ami_fixture())
+    assert [r["label"] for r in out1] == [r["label"] for r in out2]
+    for row in out1:
+        assert row["label"] == f"multi-TS3005-{row['label'].rsplit('-', 1)[-1]}"
+
+
+def test_expanded_drops_an_ungrounded_series_shape_pair() -> None:
+    """A series with no AMI layer for one shape is dropped for THAT shape only,
+    never emitted with a null reference — an ungrounded multi_file question
+    cannot be scored on content coverage."""
+    ami = _ami_fixture()
+    del ami["TS3005a"]["problems"]  # series_reference unions across sessions,
+    del ami["TS3005b"]["problems"]  # so every session's layer must be removed
+    del ami["TS3005c"]["problems"]  # to make the whole series ungrounded for
+    del ami["TS3005d"]["problems"]  # this one shape.
+
+    out = bpqs.build_multi_file_expanded(_qmsum_fixture(), _indexed_fixture(), ami)
+    kinds = {row["label"].rsplit("-", 1)[-1] for row in out}
+    assert "problems" not in kinds
+    assert len(out) == 3
+
+
+def test_expanded_excludes_series_below_min_size() -> None:
+    """The two standalone meetings never form a series and contribute nothing."""
+    qmsum = {mid: _qmsum_meeting(mid) for mid in _STANDALONE_MEETINGS}
+    indexed = {mid: f"uuid-{mid}" for mid in _STANDALONE_MEETINGS}
+    out = bpqs.build_multi_file_expanded(qmsum, indexed, {})
+    assert out == []
+
+
+def test_expanded_every_entry_scopes_to_its_own_series_only() -> None:
+    """Unlike build_corpus_scale, this stratum stays series-scoped — it exists
+    to widen the DECISION SET size (more series x shapes), not the per-question
+    scope width."""
+    out = bpqs.build_multi_file_expanded(_qmsum_fixture(), _indexed_fixture(), _ami_fixture())
+    assert out, "fixture produced no expanded entries to check"
+    for row in out:
+        assert row["file_uuids"] == sorted(f"uuid-{m}" for m in _SERIES_MEETINGS)
+
+
+def test_expanded_is_a_superset_of_ami_81s_series_shape_pairs_for_the_same_corpus() -> None:
+    """The AMI-81 (per_stratum-sampled) multi_file set must never name a
+    (series, shape) pair the expanded set does not also cover — the expanded
+    set is meant to be strictly wider, never a different sample."""
+    ami81 = bpqs.build(_qmsum_fixture(), _indexed_fixture(), _ami_fixture(), per_stratum=25, seed=1)
+    ami81_multi = [row for row in ami81 if row["category"] == "multi_file"]
+    # build()'s label shape: "multi-{i:03d}-{series}-{kind}" -> parts[2]=series, parts[3]=kind.
+    ami81_pairs = {(row["label"].split("-")[2], row["label"].split("-")[3]) for row in ami81_multi}
+
+    expanded = bpqs.build_multi_file_expanded(_qmsum_fixture(), _indexed_fixture(), _ami_fixture())
+    # build_multi_file_expanded's label shape: "multi-{series}-{kind}".
+    expanded_pairs = {(row["label"].split("-")[1], row["label"].split("-")[2]) for row in expanded}
+
+    assert ami81_pairs <= expanded_pairs
+
+
 def test_n_needle_zero_still_produces_multi_file_and_broad_and_negative() -> None:
     out = bpqs.build_corpus_scale(
         _qmsum_fixture(),

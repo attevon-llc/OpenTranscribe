@@ -1,4 +1,4 @@
-"""Deterministic traceability metrics for a live chat-RAG probe turn (task #11 / GH #463).
+r"""Deterministic traceability metrics for a live chat-RAG probe turn (task #11 / GH #463).
 
 The user's own framing for what an evaluation must report: **representation, accuracy,
 correctness — with traceability to the data.** Of those, this module builds exactly one
@@ -80,6 +80,18 @@ same as :mod:`tests.eval.harness.probe_metrics`):
    fields below (``citations_truncated``, ``quote_fidelity_truncated``/``_complete``,
    ``quote_fidelity_at_240``) exist to keep measuring this per-cap rather than assuming a single
    fixed number describes every citation kind.
+
+   ⚠️ **``quote_fidelity`` (above) stays the PRIMARY reported number, unchanged, and it must never
+   be silently replaced (#532 follow-up, decided).** ``quote_fidelity_tolerant`` /
+   ``quotes_unsupported_tolerant`` are a SECONDARY, side column — computed with two additional
+   normalisations the plain metric does NOT apply: (a) stripping a markdown escape backslash
+   before ``_*`` `` [ ] ( ) # + - . ! `` on the quote side (the model's own markdown rendering,
+   e.g. ``L\_C\_D\_``, is not a change in content — unambiguous, always applied here) and (b)
+   ellipsis elision — a quote split on ``...``/``…`` is supported when every fragment (edge
+   punctuation trimmed) occurs, casefolded, **in order and non-overlapping**, within the SAME
+   cited snippet. (b) loosens a veto metric and was the disputed half — a quote whose fragments
+   are out of order, or split across two different citations, still fails. Report both columns
+   side by side; never quote the tolerant number alone as "quote fidelity".
 
 Every extractor below reads ``app_answer`` / a citation's ``snippet`` PURELY internally, to
 compute a count or a ratio — the text itself is never assigned to an output field.
@@ -223,6 +235,93 @@ def _quote_fidelity_counts(answer: str, citations: list[dict[str, Any]]) -> tupl
         total += 1
         snippet = by_id.get(int(marker_text))
         if snippet is None or _normalise(quote_text) not in _normalise(snippet):
+            unsupported += 1
+    return total, unsupported
+
+
+#: #532 follow-up, Unit U6a. A backslash immediately before a markdown-significant
+#: character, stripped on the QUOTE side only before comparison — the model's own
+#: markdown rendering (``L\_C\_D\_``) is not a change in content, and a snippet drawn
+#: from the transcript never carries the escape in the first place. Unambiguous, so
+#: this normalisation is always applied inside the tolerant helpers below — there is
+#: no gate on it the way there is on ellipsis elision.
+_MARKDOWN_ESCAPE_RE = re.compile(r"\\([_*`\[\]()#+\-.!])")
+
+#: #532 follow-up, Unit U6b. Splits a quote into fragments at an ellipsis — either the
+#: literal three-dot form or the single-character ``…``.
+_ELLIPSIS_SPLIT_RE = re.compile(r"\.\.\.|…")
+
+#: Edge punctuation/quote characters trimmed off each fragment after the ellipsis
+#: split, so `'"big buttons... '` trims to `'big buttons'` before normalising.
+_FRAGMENT_EDGE_CHARS = " \t\n\r,.;:!?\"'"
+
+
+def _normalise_tolerant(text: str) -> str:
+    """#532 follow-up (Unit U6a): everything :func:`_normalise` does, plus markdown-escape
+    stripping. Used by the SECONDARY tolerant quote-fidelity check only — see the module
+    docstring's amendment to measure 4. Never applied to the PRIMARY ``quote_fidelity``.
+    """
+    return _normalise(_MARKDOWN_ESCAPE_RE.sub(r"\1", text))
+
+
+def _tolerant_quote_supported(quote_text: str, snippet: str) -> bool:
+    """#532 follow-up (Unit U6): the SECONDARY, more tolerant quote-fidelity check.
+
+    Splits ``quote_text`` on an ellipsis (:data:`_ELLIPSIS_SPLIT_RE`) and requires every
+    non-empty fragment — edge punctuation trimmed, then :func:`_normalise_tolerant`-d — to
+    occur in the SAME ``snippet``, **in order and non-overlapping** (each fragment's search
+    starts where the previous one ended). A quote with no ellipsis at all degenerates to one
+    fragment, i.e. the same substring check :func:`_quote_fidelity_counts` makes, only with
+    the markdown-escape tolerance added.
+
+    Deliberately conservative in three ways that keep this a FORMATTING tolerance, never a
+    content one: fragments out of order fail (the real ``multi-002`` quote ``"… going to
+    want... to do"`` against a snippet reading ``"going to... want it to do most"`` is exactly
+    this — the fragments exist but in the wrong order); an absent fragment fails; and
+    fragments spread across what would be two different citations never get compared to the
+    wrong one (each call only ever sees the ONE cited snippet).
+    """
+    fragments = [
+        fragment.strip(_FRAGMENT_EDGE_CHARS) for fragment in _ELLIPSIS_SPLIT_RE.split(quote_text)
+    ]
+    fragments = [fragment for fragment in fragments if fragment]
+    if not fragments:
+        return False
+    norm_snippet = _normalise_tolerant(snippet)
+    cursor = 0
+    for fragment in fragments:
+        norm_fragment = _normalise_tolerant(fragment)
+        if not norm_fragment:
+            return False
+        found_at = norm_snippet.find(norm_fragment, cursor)
+        if found_at == -1:
+            return False
+        cursor = found_at + len(norm_fragment)
+    return True
+
+
+def _quote_fidelity_tolerant_counts(
+    answer: str, citations: list[dict[str, Any]]
+) -> tuple[int, int]:
+    """``(quotes_total, quotes_unsupported)`` — the SECONDARY tolerant metric (Unit U6).
+
+    Same ``quotes_total`` as :func:`_quote_fidelity_counts` (same regex, same answer); only
+    which quotes are found unsupported can differ, and only in the direction of FEWER
+    unsupported — loosening a formatting artefact can never make a genuinely faithful quote
+    start failing.
+    """
+    by_id = {
+        int(citation["id"]): str(citation.get("snippet") or "")
+        for citation in citations
+        if isinstance(citation, dict) and "id" in citation
+    }
+    total = 0
+    unsupported = 0
+    for match in _QUOTED_CITATION_RE.finditer(answer):
+        quote_text, marker_text = match.group(1), match.group(2)
+        total += 1
+        snippet = by_id.get(int(marker_text))
+        if snippet is None or not _tolerant_quote_supported(quote_text, snippet):
             unsupported += 1
     return total, unsupported
 
@@ -408,6 +507,12 @@ class TurnTraceability:
             ``quote_fidelity`` re-scored with every snippet re-truncated to 240
             chars locally (:func:`_truncate_local`) — a paired, zero-nondeterminism
             control for comparing this run against a future run at a different cap.
+        quotes_unsupported_tolerant / quote_fidelity_tolerant: #532 follow-up (Unit U6),
+            a SECONDARY column — never the reported number on its own. Same
+            ``quotes_total`` as ``quote_fidelity``; ``_tolerant_quote_supported`` adds
+            markdown-escape stripping and ellipsis-fragment matching (module docstring's
+            amendment to measure 4). Report both columns; the primary ``quote_fidelity``
+            above is unaffected by this field's existence.
     """
 
     query_id: str
@@ -434,6 +539,8 @@ class TurnTraceability:
     quote_fidelity_complete: float | None
     quotes_unsupported_at_240: int
     quote_fidelity_at_240: float | None
+    quotes_unsupported_tolerant: int
+    quote_fidelity_tolerant: float | None
 
     def as_json(self) -> dict[str, Any]:
         """JSON-safe, deterministic form. Field order matches the dataclass."""
@@ -462,6 +569,8 @@ class TurnTraceability:
             "quote_fidelity_complete": self.quote_fidelity_complete,
             "quotes_unsupported_at_240": self.quotes_unsupported_at_240,
             "quote_fidelity_at_240": self.quote_fidelity_at_240,
+            "quotes_unsupported_tolerant": self.quotes_unsupported_tolerant,
+            "quote_fidelity_tolerant": self.quote_fidelity_tolerant,
         }
 
 
@@ -516,6 +625,10 @@ def extract_turn_traceability(record: dict[str, Any]) -> TurnTraceability:
 
     quotes_unsupported_at_240 = _quote_fidelity_at_240_unsupported(answer, rendered_citations)
 
+    _quotes_total_tolerant, quotes_unsupported_tolerant = _quote_fidelity_tolerant_counts(
+        answer, rendered_citations
+    )
+
     return TurnTraceability(
         query_id=str(record["label"]),
         category=str(record["category"]),
@@ -543,6 +656,8 @@ def extract_turn_traceability(record: dict[str, Any]) -> TurnTraceability:
         quote_fidelity_complete=_rate(quotes_complete_total, quotes_complete_unsupported),
         quotes_unsupported_at_240=quotes_unsupported_at_240,
         quote_fidelity_at_240=_rate(quotes_total, quotes_unsupported_at_240),
+        quotes_unsupported_tolerant=quotes_unsupported_tolerant,
+        quote_fidelity_tolerant=_rate(quotes_total, quotes_unsupported_tolerant),
     )
 
 
@@ -554,8 +669,15 @@ def build_traceability_rows(records: list[dict[str, Any]]) -> list[dict[str, Any
 
 
 #: Ratio fields summarised uniformly below — mean AND min, never mean alone (a corpus
-#: mean hides the one turn that cited outside scope).
-_RATIO_FIELDS = ("citation_resolution_rate", "citation_validity_rate", "quote_fidelity")
+#: mean hides the one turn that cited outside scope). ``quote_fidelity_tolerant`` rides
+#: alongside the primary ``quote_fidelity`` as a SECONDARY column (#532 follow-up, Unit
+#: U6) — both are reported, never one in place of the other.
+_RATIO_FIELDS = (
+    "citation_resolution_rate",
+    "citation_validity_rate",
+    "quote_fidelity",
+    "quote_fidelity_tolerant",
+)
 
 
 def summarize_traceability_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -667,6 +789,7 @@ def render_traceability_table(rows: list[dict[str, Any]]) -> str:
         "citation_validity",
         "prompt_membership",
         "quote_fidelity",
+        "quote_fidelity_tolerant",
     ]
     lines = [
         "| " + " | ".join(header) + " |",
@@ -690,6 +813,7 @@ def render_traceability_table(rows: list[dict[str, Any]]) -> str:
                     _ratio(row["citation_validity_rate"]),
                     _bool(row["prompt_membership_matches"]),
                     _ratio(row["quote_fidelity"]),
+                    _ratio(row["quote_fidelity_tolerant"]),
                 ]
             )
             + " |"

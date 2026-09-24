@@ -486,6 +486,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'file_pipeline_timing' AND column_name = 'transcript_ready_ms')"
     )
 
+    # v397: user.platform_super_admin_link_authorized — the escape hatch for
+    # account_linking's super_admin JIT-link refusal (issue #993). Single ADD
+    # COLUMN, no constraint, so the column is the fingerprint — same shape as v392's
+    # has_redaction_coverage / v393's has_overlap_timing_columns. Numbered v397, not
+    # v394: see the revision file's docstring for why (a reserved-but-unmerged range).
+    has_platform_super_admin_link_authorized = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'platform_super_admin_link_authorized')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -528,8 +538,18 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
+    # v397: same as v393 plus user.platform_super_admin_link_authorized. The newest
+    # revision on this chain, so this is the top of the ladder.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+    ):
+        return "v397_add_platform_super_admin_link_authorized"
     # v393: same as v392 plus file_pipeline_timing's transcribe/diarize overlap markers.
-    # The newest revision on this chain, so this is the top of the ladder.
     if (
         matches_v389
         and has_file_facts

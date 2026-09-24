@@ -64,6 +64,20 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         String, default="user", nullable=False
     )  # "user", "admin", or "super_admin" (authorization source of truth)
+    # Escape hatch for `auth.account_linking.assert_provider_id_link_permitted`'s
+    # otherwise-unconditional refusal to JIT-link/refresh an external identity onto
+    # a `role == super_admin` row (issue #993). False for every existing row and
+    # every row this codebase itself ever creates — nothing in core ever sets it.
+    # It exists for a deployment with its own out-of-band, audited, non-self-serve
+    # admin-grant mechanism (outside this repo's scope) that deliberately granted
+    # super_admin to an externally-authenticated user and needs that grant to
+    # actually be usable on login. Narrow on purpose: it only lifts the super_admin
+    # refusal in that one function: it does not weaken email corroboration
+    # (`emails_agree`, still unconditional) and it is not read anywhere else —
+    # `assert_email_link_permitted`'s super_admin refusal is untouched.
+    platform_super_admin_link_authorized: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     auth_type: Mapped[str] = mapped_column(
         String, default="local", nullable=False
     )  # "local", "ldap", "oidc", "pki" — see auth/constants.VALID_AUTH_TYPES

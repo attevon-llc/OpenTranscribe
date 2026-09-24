@@ -21,6 +21,12 @@ _config_logger = logging.getLogger(__name__)
 #: DEFAULT independently of whatever an operator set in the running environment.
 DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
 
+#: Shipped default for :attr:`Settings.CACHE_BUCKET_NAME` — the historical hardcoded
+#: value, so an existing deployment that sets nothing keeps the bucket it already has.
+#: Same module-constant rationale as above: a test can pin the DEFAULT without being
+#: at the mercy of the running environment.
+DEFAULT_CACHE_BUCKET_NAME = "processed-videos"
+
 
 # The ONLY environment names that relax security controls. Anything else — including
 # a typo, an empty string, or an unset variable falling back to the default — is
@@ -466,6 +472,20 @@ class Settings(BaseSettings):
     MINIO_PORT: str = os.getenv("MINIO_PORT", "9000")
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
     MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
+    # Second bucket: the REGENERABLE cache. Subtitle-embedded videos and extracted audio
+    # under derived/, bulk-export ZIPs under bulk/. It is separate from the media bucket
+    # so one lifecycle rule can expire the whole thing without ever touching an original.
+    # Configurable for the same reason MEDIA_BUCKET_NAME is (issue #985): S3 bucket names
+    # are ONE GLOBAL NAMESPACE, so no deployment can assume a bucket literally called
+    # "processed-videos" is reachable by its credentials. While this was a hardcoded
+    # literal in VideoProcessingService, such a deployment booted fine and then failed at
+    # request time — bulk subtitle export, subtitle-embedded video download and the
+    # derived-cache admin endpoints all construct that service, whose
+    # _ensure_cache_bucket_exists re-raises — with no knob to point it anywhere else.
+    # Plain field default (no class-body os.getenv): pydantic-settings sources the env var
+    # itself, and with env_ignore_empty an explicit `CACHE_BUCKET_NAME=` falls back here
+    # instead of resolving to "" — the DATABASE_URL/S3_REGION bug class documented below.
+    CACHE_BUCKET_NAME: str = DEFAULT_CACHE_BUCKET_NAME
 
     # ===== Object-storage backend (issue #284 A1.11) =====
     # "minio" (default) keeps the bundled MinIO container exactly as it was: the

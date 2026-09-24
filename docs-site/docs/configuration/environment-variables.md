@@ -521,6 +521,24 @@ native AWS S3 backend is also available for cloud deployments.
 STORAGE_BACKEND=minio  # minio (default, self-hosted) or s3 (native AWS S3 / S3-compatible)
 ```
 
+### Buckets (both backends)
+
+```bash
+MEDIA_BUCKET_NAME=opentranscribe    # uploaded originals — the source of truth
+CACHE_BUCKET_NAME=processed-videos  # regenerable derived assets and bulk-export ZIPs
+```
+
+Two buckets, on purpose: everything in `CACHE_BUCKET_NAME` (subtitle-embedded videos and
+extracted audio under `derived/`, bulk-export ZIPs under `bulk/`) is a duplicate re-created on
+demand, so a lifecycle rule can expire that bucket wholesale without a rule that could ever
+match an original. Both buckets are created on first use if missing.
+
+Set `CACHE_BUCKET_NAME` whenever a bucket named `processed-videos` is not available to the
+configured credentials — S3 bucket names are one global namespace, so on native S3 the default
+generally is not yours. Getting this wrong is not a boot failure: the backend starts, and bulk
+subtitle export, subtitle-embedded video download and the admin media-cache screens fail at
+request time instead.
+
 ### MinIO (default)
 
 ```bash

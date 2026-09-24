@@ -393,6 +393,72 @@ def build(
     return out
 
 
+def build_multi_file_expanded(
+    qmsum: dict[str, dict[str, Any]],
+    indexed: dict[str, str],
+    ami: dict[str, dict[str, list[str]]],
+) -> list[dict[str, Any]]:
+    """#532 follow-up (Unit U8, ``docs/design/532_hybrid_summary_synthesis_plan.md``): every
+    grounded ``multi_file`` question the corpus can produce, not a random ``per_stratum``
+    sample of them.
+
+    :func:`build`'s ``multi_file`` stratum takes ``per_stratum`` series at random and pairs
+    each with exactly ONE shape (round-robin over :data:`MULTI_FILE_SHAPES`) — AMI-81's
+    n=25 was sized for a quick smoke run, not for detecting a ~7-point effect (the plan's
+    section 4.2: SDs measured in F1 give a 95% CI half-width of ±0.073 on USED coverage at
+    n≈130, vs ±0.167 at n=25). This emits **every** (series, shape) pair instead: for every
+    series with >= 3 usable sessions, all four :data:`MULTI_FILE_SHAPES`.
+
+    Only GROUNDED entries survive — :func:`series_reference` returning ``None`` for a
+    (series, shape) pair is dropped rather than emitted with ``reference: null``, because an
+    ungrounded multi-file question cannot be scored on content coverage (M2/M3 in the plan),
+    only on USED coverage (M1) — and the plan's decision set needs both.
+
+    Labels are ``multi-<series>-<kind>`` — stable and SEED-INDEPENDENT (unlike ``build()``'s
+    ``multi-{i:03d}-{s}-{kind}``, whose index depends on shuffle order), so the same series+
+    shape pair gets the same label across reruns and across a comparison against AMI-81's own
+    ``multi_file`` labels (see :func:`series_reference` above and
+    ``tests/eval/test_build_probe_question_set.py``'s superset test).
+
+    Args:
+        qmsum: Every loaded QMSum Product meeting, keyed by meeting id.
+        indexed: QMSum meetings actually injected this run -> file_uuid.
+        ami: AMI abstractive layers, as loaded by :func:`load_ami_abstractive`.
+
+    Returns:
+        One ``multi_file`` entry per grounded (series, shape) pair. Deterministic — no
+        ``random.Random`` involved, unlike every other stratum here.
+    """
+    usable = sorted(set(qmsum) & set(indexed))
+    series = find_series(usable, min_size=3)
+
+    out: list[dict[str, Any]] = []
+    for s in sorted(series):
+        mids = series[s]
+        for tmpl, kind, layer in MULTI_FILE_SHAPES:
+            ref = series_reference(ami, mids, layer)
+            if not ref:
+                continue
+            out.append(
+                {
+                    'label': f'multi-{s}-{kind}',
+                    'category': 'multi_file',
+                    'question': tmpl.format(n=len(mids), s=s),
+                    'file_uuids': [indexed[m] for m in mids],
+                    'scope_desc': f'{s} series ({", ".join(mids)})',
+                    'reference': ref,
+                    'reference_source': f'AMI abstractive <{layer}>, unioned across the series',
+                }
+            )
+    logger.info(
+        'multi_file_expanded: %d series, %d grounded (series, shape) pairs of a possible %d',
+        len(series),
+        len(out),
+        len(series) * len(MULTI_FILE_SHAPES),
+    )
+    return out
+
+
 def build_corpus_scale(
     qmsum: dict[str, dict[str, Any]],
     indexed: dict[str, str],
@@ -602,6 +668,15 @@ def main() -> int:
         default=2,
         help='--corpus-scale: scope-wide aggregation questions with no reference',
     )
+    ap.add_argument(
+        '--multi-file-expanded',
+        action='store_true',
+        help='#532 follow-up: build a SEPARATE question set containing ONLY multi_file '
+        'entries, for every grounded (series, shape) pair the corpus can produce (~34 '
+        "series x 4 shapes) rather than build()'s per_stratum-sized random sample. "
+        'Mutually exclusive with the default strata in one invocation — run this as its '
+        'own --out file (the AMI-81 set stays a separate, untouched build).',
+    )
     args = ap.parse_args()
 
     if '.rag-403' not in str(args.out) and '/tmp' not in str(args.out):
@@ -615,18 +690,21 @@ def main() -> int:
     indexed = indexed_meetings(args.pg_container)
     ami = load_ami_abstractive(args.ami_glob)
 
-    qs = build(qmsum, indexed, ami, args.per_stratum, args.seed)
-    if args.corpus_scale:
-        distractor_indexed = indexed_meetings(args.pg_container, prefix=args.distractor_prefix)
-        qs += build_corpus_scale(
-            qmsum,
-            indexed,
-            distractor_indexed,
-            ami,
-            args.seed,
-            args.corpus_scale_needle,
-            args.corpus_scale_broad,
-        )
+    if args.multi_file_expanded:
+        qs = build_multi_file_expanded(qmsum, indexed, ami)
+    else:
+        qs = build(qmsum, indexed, ami, args.per_stratum, args.seed)
+        if args.corpus_scale:
+            distractor_indexed = indexed_meetings(args.pg_container, prefix=args.distractor_prefix)
+            qs += build_corpus_scale(
+                qmsum,
+                indexed,
+                distractor_indexed,
+                ami,
+                args.seed,
+                args.corpus_scale_needle,
+                args.corpus_scale_broad,
+            )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(qs, indent=2))
 

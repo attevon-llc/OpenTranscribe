@@ -70,6 +70,14 @@ _OLD_HAND_WRITTEN_DESCRIPTIONS = {
     "map_tier_summaries": (
         "Prefer each file's fresh LLM summary over its digest in the collection map"
     ),
+    # #532 follow-up (hybrid map entry) — added in the same commit as its
+    # registry entry, same rule.
+    "map_tier_hybrid": (
+        "#532 follow-up: each file's collection-map entry becomes a structured "
+        "abstractive summary plus its closing digest section (replaces arm (d)'s "
+        "paragraph-only shape). Only takes effect when the map-tier-summaries flag "
+        "above is also on. Requires a summary-capable LLM provider."
+    ),
     "speaker_resolver_enabled": (
         "Resolve a speaker named in the question text into a parallel retrieval leg"
     ),
@@ -288,9 +296,12 @@ def test_numeric_flags_carry_bounds_matching_the_schema():
         assert le_constraints == [spec.le], spec.field
 
 
-def test_no_flag_is_marked_experimental_yet():
-    """Documents current reality: `experimental=True` is plumbing for a
-    future planner/enrichment toggle, not a live behaviour. If this ever
-    fails, the admin UI's "Experimental" subsection needs real controls, not
-    just its current explanatory-copy placeholder."""
-    assert all(not spec.experimental for spec in CHAT_FLAG_REGISTRY)
+def test_map_tier_hybrid_is_the_first_and_only_experimental_flag():
+    """#532 follow-up: `map_tier_hybrid` is the first real user of
+    `experimental=True` — it genuinely needs a summary-capable LLM provider
+    to do anything. The admin UI's "Experimental" subsection still renders
+    only explanatory copy (not a real control loop over `EXPERIMENTAL_FIELDS`)
+    — see `chat_flag_registry.py`'s module docstring — so this does not by
+    itself change what an admin can toggle from the panel."""
+    experimental_fields = {spec.field for spec in CHAT_FLAG_REGISTRY if spec.experimental}
+    assert experimental_fields == {"map_tier_hybrid"}

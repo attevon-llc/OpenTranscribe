@@ -69,6 +69,12 @@ class ChatSettings:
     #: ``file_facts`` row. Off by default: on-by-default needs measured
     #: answer-quality evidence this flag does not yet have.
     map_tier_summaries: bool = C.DEFAULT_CHAT_MAP_TIER_SUMMARIES
+    #: #532 follow-up. When `map_tier_summaries` is also on, a file's map entry
+    #: becomes a structured abstractive summary (lead + key decisions + action
+    #: items) PLUS its closing digest section verbatim, replacing the control's
+    #: leading sections rather than adding to them. Off by default — a new,
+    #: unmeasured composition; see `docs/design/532_hybrid_summary_synthesis_plan.md`.
+    map_tier_hybrid: bool = C.DEFAULT_CHAT_MAP_TIER_HYBRID
     #: W2.2. Resolve a speaker named in the question text (e.g. "what did Dana
     #: say about pricing") against the caller's roster and, on a unique match
     #: paired with a speaker-verb frame, add a PARALLEL speaker-scoped chunk

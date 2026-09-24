@@ -103,10 +103,12 @@ from app.services.chat.mapreduce.coverage import ScopeCoverage
 from app.services.chat.mapreduce.coverage import ScopeCoverageError
 from app.services.chat.mapreduce.coverage import assert_full_coverage
 from app.services.chat.mapreduce.coverage import check_scope_coverage
+from app.services.chat.mapreduce.file_summaries import HYBRID_MAX_ITEMS_PER_LEAF
 from app.services.chat.mapreduce.file_summaries import MAP_TIER_SPEAKER_SUMMARIES_SETTING_KEY
 from app.services.chat.mapreduce.file_summaries import MAP_TIER_SUMMARIES_SETTING_KEY
 from app.services.chat.mapreduce.file_summaries import DigestScopeHits
 from app.services.chat.mapreduce.file_summaries import FileSummary
+from app.services.chat.mapreduce.file_summaries import _fit_clause
 from app.services.chat.mapreduce.file_summaries import _load_facts
 from app.services.chat.mapreduce.file_summaries import _speaker_facts_entry
 from app.services.chat.mapreduce.file_summaries import _speaker_in_roster
@@ -114,6 +116,7 @@ from app.services.chat.mapreduce.file_summaries import _summary_highlight_text
 from app.services.chat.mapreduce.file_summaries import _summary_is_fresh
 from app.services.chat.mapreduce.file_summaries import build_file_summaries
 from app.services.chat.mapreduce.file_summaries import scope_digest_hits
+from app.services.chat.mapreduce.file_summaries import structured_summary_text
 from app.services.chat.mapreduce.overview import DEFAULT_BATCH_FILES
 from app.services.chat.mapreduce.overview import DEFAULT_MAP_BUDGET_CHARS
 from app.services.chat.mapreduce.overview import MAX_LISTED_FILES
@@ -138,6 +141,7 @@ from app.services.chat.mapreduce.speaker_map import scope_speaker_digest_hits
 __all__ = [
     "MAP_TIER_SPEAKER_SUMMARIES_SETTING_KEY",
     "MAP_TIER_SUMMARIES_SETTING_KEY",
+    "HYBRID_MAX_ITEMS_PER_LEAF",
     "ACCOUNTED_KEYS",
     "DEFAULT_BATCH_FILES",
     "DEFAULT_MAP_BUDGET_CHARS",
@@ -157,10 +161,12 @@ __all__ = [
     "scope_digest_hits",
     "scope_speaker_digest_hits",
     "sections_budget",
+    "structured_summary_text",
     "_BATCH_SYSTEM",
     "_clock",
     "_corpus_header",
     "_empty_speaker_focus_overview",
+    "_fit_clause",
     "_load_facts",
     "_owner_matched_action_items",
     "_sentence_speaker_in",

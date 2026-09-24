@@ -86,6 +86,14 @@ NEVER_COMMITTED_SUFFIXES = {
 #: Files in the directory that are prose, not scan output.
 PROSE = {"README.md", "SECURITY-ADVISORY.md"}
 
+#: Subdirectories that are a different kind of report entirely and are not, and will never be,
+#: produced by ``security-scan.sh``'s ``<component>-<arch>-<tool>.<ext>`` vocabulary. This test
+#: only reasons about that one scanner's output; a license-compliance SBOM has its own generator
+#: (``scripts/generate-sbom-report.py``) and its own regeneration instructions
+#: (``security-reports/license-compliance/README.md``), and is exempt for the same "committed
+#: for security transparency, but not something this scanner writes" reason `PROSE` is.
+EXEMPT_SUBDIRS = ("license-compliance/",)
+
 pytestmark = pytest.mark.skipif(
     not SCANNER.is_file(), reason="scripts/security-scan.sh is not present in this checkout"
 )
@@ -112,9 +120,12 @@ def _tracked_report_files() -> list[str]:
         check=True,
         timeout=60,
     )
-    return [
-        name for line in out.stdout.splitlines() if (name := Path(line).name) and name not in PROSE
+    lines = [
+        line
+        for line in out.stdout.splitlines()
+        if not any(line.startswith(f"security-reports/{d}") for d in EXEMPT_SUBDIRS)
     ]
+    return [name for line in lines if (name := Path(line).name) and name not in PROSE]
 
 
 def _is_a_name_the_scanner_could_write(name: str, components: set[str]) -> bool:

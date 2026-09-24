@@ -1,0 +1,81 @@
+Package,Version,License,Status,Reason,Repository,Publisher
+@babel/runtime,7.29.7,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
+@ffmpeg/ffmpeg,0.12.15,MIT,OK,permissive,https://github.com/ffmpegwasm/ffmpeg.wasm,Jerome Wu
+@ffmpeg/types,0.12.4,MIT,OK,permissive,https://github.com/ffmpegwasm/ffmpeg.wasm,Jerome Wu
+@ffmpeg/util,0.12.2,MIT,OK,permissive,https://github.com/ffmpegwasm/ffmpeg.wasm,Jerome Wu
+@jridgewell/gen-mapping,0.3.13,MIT,OK,permissive,https://github.com/jridgewell/sourcemaps,Justin Ridgewell
+@jridgewell/remapping,2.3.5,MIT,OK,permissive,https://github.com/jridgewell/sourcemaps,Justin Ridgewell
+@jridgewell/resolve-uri,3.1.2,MIT,OK,permissive,https://github.com/jridgewell/resolve-uri,Justin Ridgewell
+@jridgewell/sourcemap-codec,1.6.0,MIT,OK,permissive,https://github.com/jridgewell/sourcemaps,Justin Ridgewell
+@jridgewell/trace-mapping,0.3.31,MIT,OK,permissive,https://github.com/jridgewell/sourcemaps,Justin Ridgewell
+@oxc-project/types,0.149.0,MIT,OK,permissive,https://github.com/oxc-project/oxc,Boshen and oxc contributors
+@rolldown/pluginutils,1.0.1,MIT,OK,permissive,https://github.com/rolldown/plugins,
+@sveltejs/acorn-typescript,1.0.10,MIT,OK,permissive,https://github.com/sveltejs/acorn-typescript,tyrealhu and the Svelte team
+@types/estree,1.0.9,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
+@types/trusted-types,2.0.7,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
+@typescript-eslint/types,8.70.0,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+acorn,8.16.0,MIT,OK,permissive,https://github.com/acornjs/acorn,
+agent-base,6.0.2,MIT,OK,permissive,https://github.com/TooTallNate/node-agent-base,Nathan Rajlich
+aria-query,5.3.1,Apache-2.0,OK,permissive,https://github.com/A11yance/aria-query,Jesse Beach
+asynckit,0.4.0,MIT,OK,permissive,https://github.com/alexindigo/asynckit,Alex Indigo
+axios,1.20.0,MIT,OK,permissive,https://github.com/axios/axios,Matt Zabriskie
+axobject-query,4.1.0,Apache-2.0,OK,permissive,https://github.com/A11yance/axobject-query,Jesse Beach
+call-bind-apply-helpers,1.0.2,MIT,OK,permissive,https://github.com/ljharb/call-bind-apply-helpers,Jordan Harband
+clsx,2.1.1,MIT,OK,permissive,https://github.com/lukeed/clsx,Luke Edwards
+combined-stream,1.0.8,MIT,OK,permissive,https://github.com/felixge/node-combined-stream,Felix Geisendörfer
+core-js,3.49.0,MIT,OK,permissive,https://github.com/zloirock/core-js,Denis Pushkarev
+custom-event-polyfill,1.0.7,MIT,OK,permissive,https://github.com/kumarharsh/custom-event-polyfill,Evan Krambuhl
+date-fns,4.4.0,MIT,OK,permissive,https://github.com/date-fns/date-fns,
+debug,4.4.3,MIT,OK,permissive,https://github.com/debug-js/debug,Josh Junon
+delayed-stream,1.0.0,MIT,OK,permissive,https://github.com/felixge/node-delayed-stream,Felix Geisendörfer
+detect-libc,2.1.2,Apache-2.0,OK,permissive,https://github.com/lovell/detect-libc,Lovell Fuller
+devalue,5.9.2,MIT,OK,permissive,https://github.com/sveltejs/devalue,
+dompurify,3.4.15,(MPL-2.0 OR Apache-2.0),OK,satisfied by an OR'd permissive option: (MPL-2.0 OR Apache-2.0),https://github.com/cure53/DOMPurify,"Dr.-Ing. Mario Heiderich, Cure53"
+dunder-proto,1.0.1,MIT,OK,permissive,https://github.com/es-shims/dunder-proto,Jordan Harband
+es-define-property,1.0.1,MIT,OK,permissive,https://github.com/ljharb/es-define-property,Jordan Harband
+es-errors,1.3.0,MIT,OK,permissive,https://github.com/ljharb/es-errors,Jordan Harband
+es-object-atoms,1.1.2,MIT,OK,permissive,https://github.com/ljharb/es-object-atoms,Jordan Harband
+es-set-tostringtag,2.1.0,MIT,OK,permissive,https://github.com/es-shims/es-set-tostringtag,Jordan Harband
+esm-env,1.2.2,MIT,OK,permissive,https://github.com/benmccann/esm-env,Ben McCann
+esrap,2.3.7,MIT,OK,permissive,https://github.com/sveltejs/esrap,
+fdir,6.5.0,MIT,OK,permissive,https://github.com/thecodrr/fdir,thecodrr
+follow-redirects,1.16.0,MIT,OK,permissive,https://github.com/follow-redirects/follow-redirects,Ruben Verborgh
+form-data,4.0.6,MIT,OK,permissive,https://github.com/form-data/form-data,Felix Geisendörfer
+function-bind,1.1.2,MIT,OK,permissive,https://github.com/Raynos/function-bind,Raynos
+fuse.js,7.5.0,Apache-2.0,OK,permissive,https://github.com/krisk/Fuse,Kiro Risk
+get-intrinsic,1.3.0,MIT,OK,permissive,https://github.com/ljharb/get-intrinsic,Jordan Harband
+get-proto,1.0.1,MIT,OK,permissive,https://github.com/ljharb/get-proto,Jordan Harband
+gopd,1.2.0,MIT,OK,permissive,https://github.com/ljharb/gopd,Jordan Harband
+has-symbols,1.1.0,MIT,OK,permissive,https://github.com/inspect-js/has-symbols,Jordan Harband
+has-tostringtag,1.0.2,MIT,OK,permissive,https://github.com/inspect-js/has-tostringtag,Jordan Harband
+hasown,2.0.4,MIT,OK,permissive,https://github.com/inspect-js/hasOwn,Jordan Harband
+https-proxy-agent,5.0.1,MIT,OK,permissive,https://github.com/TooTallNate/node-https-proxy-agent,Nathan Rajlich
+i18next-browser-languagedetector,8.2.1,MIT,OK,permissive,https://github.com/i18next/i18next-browser-languageDetector,Jan Mühlemann
+i18next,25.10.10,MIT,OK,permissive,https://github.com/i18next/i18next,Jan Mühlemann
+is-reference,3.0.3,MIT,OK,permissive,https://github.com/Rich-Harris/is-reference,Rich Harris
+lightningcss,1.33.0,MPL-2.0,REVIEW,weak copyleft,https://github.com/parcel-bundler/lightningcss,
+loadjs,4.3.0,MIT,OK,permissive,https://github.com/kubetail-org/loadjs,
+locate-character,3.0.0,MIT,OK,permissive,git+https://gitlab.com/Rich-Harris/locate-character,Rich Harris
+magic-string,0.30.21,MIT,OK,permissive,https://github.com/Rich-Harris/magic-string,Rich Harris
+marked,18.0.13,MIT,OK,permissive,https://github.com/markedjs/marked,Christopher Jeffrey
+math-intrinsics,1.1.0,MIT,OK,permissive,https://github.com/es-shims/math-intrinsics,Jordan Harband
+mime-db,1.52.0,MIT,OK,permissive,https://github.com/jshttp/mime-db,
+mime-types,2.1.35,MIT,OK,permissive,https://github.com/jshttp/mime-types,
+ms,2.1.3,MIT,OK,permissive,https://github.com/vercel/ms,
+murmurhash3js-revisited,3.0.0,MIT,OK,permissive,https://github.com/cimi/murmurhash3js-revisited,Karan Lyons
+nanoid,3.3.18,MIT,OK,permissive,https://github.com/ai/nanoid,Andrey Sitnik
+picocolors,1.1.1,ISC,OK,permissive,https://github.com/alexeyraspopov/picocolors,Alexey Raspopov
+picomatch,4.0.7,MIT,OK,permissive,https://github.com/micromatch/picomatch,Jon Schlinkert
+plyr,3.8.4,MIT,OK,permissive,https://github.com/sampotts/plyr,Sam Potts
+postcss,8.5.28,MIT,OK,permissive,https://github.com/postcss/postcss,Andrey Sitnik
+proxy-from-env,2.1.0,MIT,OK,permissive,https://github.com/Rob--W/proxy-from-env,Rob Wu
+rangetouch,2.0.1,MIT,OK,permissive,https://github.com/sampotts/rangetouch,Sam Potts
+rolldown,1.2.8,MIT,OK,permissive,https://github.com/rolldown/rolldown,
+source-map-js,1.2.1,BSD-3-Clause,OK,permissive,https://github.com/7rulnik/source-map-js,Valentin 7rulnik Semirulnik
+svelte-multiselect,11.8.0,MIT,OK,permissive,https://github.com/janosh/svelte-multiselect,Janosh Riebesell
+svelte,5.57.0,MIT,OK,permissive,https://github.com/sveltejs/svelte,
+tinyglobby,0.2.17,MIT,OK,permissive,https://github.com/SuperchupuDev/tinyglobby,Superchupu
+typescript,5.9.3,Apache-2.0,OK,permissive,https://github.com/microsoft/TypeScript,Microsoft Corp.
+url-polyfill,1.1.14,MIT,OK,permissive,https://github.com/lifaon74/url-polyfill,valentin
+vite,8.3.0,MIT,OK,permissive,https://github.com/vitejs/vite,Evan You
+zimmerframe,1.1.4,MIT,OK,permissive,https://github.com/sveltejs/zimmerframe,

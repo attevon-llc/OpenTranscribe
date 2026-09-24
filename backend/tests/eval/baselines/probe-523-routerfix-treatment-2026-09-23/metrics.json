@@ -1,0 +1,228 @@
+{
+  "licence_note": "Metrics only. No question text, reference answers, app answer prose, or citation snippets are recorded here — see the module docstring of tests.eval.harness.probe_metrics (issue #72).",
+  "notes": [],
+  "rows": [
+    {
+      "category": "general",
+      "chunks_used": 6,
+      "coverage_ratio": 0.6,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 3,
+      "query_id": "control-1-general-topic",
+      "retrieved": 60,
+      "scope_size": 5,
+      "warning_codes": []
+    },
+    {
+      "category": "speaker_scoped_uncovered",
+      "chunks_used": 5,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "control-2-no-covered-verb",
+      "retrieved": 60,
+      "scope_size": 5,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 0,
+      "query_id": "control-3-negative-nonexistent-speaker",
+      "retrieved": 60,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 0,
+      "query_id": "control-4-negative-unrelated",
+      "retrieved": 60,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "speaker-1-marketing-contribute",
+      "retrieved": 111,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "speaker-10-pm-agree",
+      "retrieved": 93,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 24,
+      "coverage_ratio": 0.2,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "speaker-2-industrial-designer-think",
+      "retrieved": 99,
+      "scope_size": 5,
+      "warning_codes": []
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "speaker-3-project-manager-say",
+      "retrieved": 83,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "speaker-4-user-interface-suggest",
+      "retrieved": 109,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "speaker-5-marketing-mention",
+      "retrieved": 90,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "speaker-6-project-manager-explain",
+      "retrieved": 84,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "speaker-7-industrial-designer-propose",
+      "retrieved": 60,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 12,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "speaker-8-marketing-single-file",
+      "retrieved": 25,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "speaker_scoped",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "speaker-9-ui-feel",
+      "retrieved": 102,
+      "scope_size": 5,
+      "warning_codes": [
+        "no_context"
+      ]
+    }
+  ],
+  "run_name": "routerfix-treatment",
+  "schema_version": 1,
+  "summary": {
+    "general": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.6,
+      "min_coverage_ratio": 0.6,
+      "queries": 1
+    },
+    "negative_control": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.0,
+      "min_coverage_ratio": 0.0,
+      "queries": 2
+    },
+    "speaker_scoped": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.12,
+      "min_coverage_ratio": 0.0,
+      "queries": 10
+    },
+    "speaker_scoped_uncovered": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.0,
+      "min_coverage_ratio": 0.0,
+      "queries": 1
+    }
+  },
+  "target": {
+    "host": "localhost",
+    "llm_model": "gemma-4-e4b",
+    "llm_provider": "vllm",
+    "port": 6274
+  }
+}

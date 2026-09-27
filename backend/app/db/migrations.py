@@ -6,6 +6,7 @@ Alembic is the sole authority for database schema creation and upgrades.
 Handles empty databases, existing untracked databases, and tracked databases.
 """
 
+import functools
 import logging
 import os
 import time
@@ -33,6 +34,20 @@ def get_alembic_config() -> Config:
     config = Config(str(alembic_ini))
     config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
     return config
+
+
+@functools.lru_cache(maxsize=1)
+def get_alembic_head() -> str | None:
+    """Head revision of the migration scripts shipped with this build, parsed once per process.
+
+    Loading the script directory imports every revision file (~45-50 ms of CPU), and the
+    answer cannot change while the process runs — new revisions arrive with a new build.
+    ``/health/ready`` asks on every probe (issue #1000), so it must not pay that each time.
+    """
+    from alembic.script import ScriptDirectory
+
+    head: str | None = ScriptDirectory.from_config(get_alembic_config()).get_current_head()
+    return head
 
 
 def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
@@ -1406,11 +1421,7 @@ def run_migrations() -> None:
 
         config = get_alembic_config()
 
-        # Get the head revision from Alembic scripts
-        from alembic.script import ScriptDirectory
-
-        script_dir = ScriptDirectory.from_config(config)
-        head_rev = script_dir.get_current_head()
+        head_rev = get_alembic_head()
 
         if current_rev:
             logger.info(f"Current migration version: {current_rev}")

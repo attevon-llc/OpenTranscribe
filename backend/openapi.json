@@ -42458,7 +42458,7 @@
     },
     "/health/ready": {
       "get": {
-        "description": "Readiness probe for load balancers / orchestrators.\n\nProbes the critical dependencies (PostgreSQL, Redis) and the degraded-but-\nserviceable ones (OpenSearch, MinIO). A failed CRITICAL dependency returns\n503; OpenSearch/MinIO failures are reported but do not fail readiness, since\nqueued transcription survives a brief search/storage outage. Plain ``def``\nso Starlette threadpools the short, synchronous probes.",
+        "description": "Readiness probe for load balancers / orchestrators.\n\nProbes the critical dependencies (PostgreSQL, Redis) and the degraded-but-\nserviceable ones (OpenSearch, MinIO). A failed CRITICAL dependency returns\n503; OpenSearch/MinIO failures are reported but do not fail readiness, since\nqueued transcription survives a brief search/storage outage. Plain ``def``\nso Starlette threadpools the short, synchronous probes.\n\nProbed several times a minute, so it must stay cheap and bounded (issue #1000):\nRedis, OpenSearch and object storage each get ``DEPENDENCY_PROBE_TIMEOUT_SECONDS``\nvia probe-only clients, and the Alembic head is parsed once per process.",
         "operationId": "readiness_check_health_ready_get",
         "responses": {
           "200": {

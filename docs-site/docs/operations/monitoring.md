@@ -19,7 +19,7 @@ The backend instruments every HTTP request and database query and exposes them i
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /metrics` | Prometheus exposition format. Request latency/RPS/errors by route template, **DB queries per request** (the duplicate-call / N+1 detector), DB query latency, in-flight requests, cache hit/miss counters, Celery queue depth, and product counters (signups, uploads). |
-| `GET /health/ready` | Readiness probe for load balancers / Kubernetes. Checks Postgres + Redis (critical → 503 if down) and OpenSearch + MinIO (degraded-but-ready). Returns `{"status": "ready", "checks": {...}}`. The original `GET /health` (static 200) is unchanged and still drives the Docker healthcheck. |
+| `GET /health/ready` | Readiness probe for load balancers / Kubernetes. Checks Postgres + Redis (critical → 503 if down) and OpenSearch + MinIO (degraded-but-ready). Returns `{"status": "ready", "checks": {...}}`. The Redis, OpenSearch and object-storage checks are each bounded at 2 s (one attempt), and the migration head is computed once per process, so a probe stays cheap and cannot hang on one slow dependency. The original `GET /health` (static 200) is unchanged and still drives the Docker healthcheck. |
 
 Key metric names (stable; dashboards are built against these):
 

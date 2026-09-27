@@ -30,6 +30,9 @@ from app.services.llm_stream import apply_stream_payload
 from app.services.llm_stream import get_stream_parser
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
+    from sqlalchemy.orm import Session
+
+    from app.models.user_llm_settings import UserLLMSettings
     from app.utils.url_validation import PinnedTarget
 
 logger = logging.getLogger(__name__)
@@ -100,6 +103,16 @@ class LLMConfig:
     response_tokens: int = 4000  # Max tokens for response
 
 
+@dataclass(frozen=True)
+class _ResolvedUserLLM:
+    """A user's active LLM configuration row, validated but not yet built into a client."""
+
+    settings: "UserLLMSettings"
+    provider: LLMProvider
+    api_key: str | None
+    base_url: str | None
+
+
 class LLMEndpointBlockedError(Exception):
     """The configured LLM endpoint is not a permitted outbound target.
 
@@ -150,35 +163,53 @@ class LLMService:
         self._pinned_stack: ExitStack | None = None
         self._pinned: tuple[str, requests.Session, PinnedTarget] | None = None
 
-        # Provider-specific endpoint mappings
-        def build_endpoint(base_url: str) -> str:
+        self.endpoints = self._build_endpoints(config.base_url)
+
+        if not self._endpoint_resolves(config.provider, config.base_url):
+            raise ValueError(f"Invalid provider configuration for {config.provider}")
+
+        # Log the resolved endpoint for debugging (helps diagnose connection issues like Issue #100)
+        resolved_endpoint = self.endpoints.get(config.provider)
+        logger.info(
+            f"Initialized LLMService: {config.provider}/{config.model}, "
+            f"endpoint={resolved_endpoint}, "
+            f"base_url={config.base_url or 'default'}, "
+            f"context_window={self.user_context_window}, "
+            f"response_tokens={self.response_tokens}"
+        )
+
+    @staticmethod
+    def _build_endpoints(base_url: str | None) -> dict[LLMProvider, str | None]:
+        """Provider -> chat endpoint for ``base_url``; ``None`` where one cannot be derived."""
+
+        def build_endpoint(url: str) -> str:
             """Build chat completions endpoint"""
-            clean_url = base_url.strip().rstrip("/")
+            clean_url = url.strip().rstrip("/")
             if clean_url.endswith("/v1"):
                 return f"{clean_url}/chat/completions"
             else:
                 return f"{clean_url}/v1/chat/completions"
 
-        def build_ollama_endpoint(base_url: str) -> str:
+        def build_ollama_endpoint(url: str) -> str:
             """Build Ollama chat endpoint using native API"""
-            clean_url = base_url.strip().rstrip("/")
+            clean_url = url.strip().rstrip("/")
             # Remove /v1 suffix if present since we're using native API
             if clean_url.endswith("/v1"):
                 clean_url = clean_url[:-3]
             return f"{clean_url}/api/chat"
 
-        self.endpoints = {
+        return {
             # Dynamic endpoints - respect custom base_url for OpenAI-compatible servers (vLLM, etc.)
-            LLMProvider.OPENAI: build_endpoint(config.base_url)
-            if config.base_url
+            LLMProvider.OPENAI: build_endpoint(base_url)
+            if base_url
             else "https://api.openai.com/v1/chat/completions",
-            LLMProvider.VLLM: build_endpoint(config.base_url) if config.base_url else None,
-            LLMProvider.OLLAMA: build_ollama_endpoint(config.base_url)
-            if config.base_url
+            LLMProvider.VLLM: build_endpoint(base_url) if base_url else None,
+            LLMProvider.OLLAMA: build_ollama_endpoint(base_url)
+            if base_url
             else "http://localhost:11434/api/chat",
-            LLMProvider.CUSTOM: build_endpoint(config.base_url) if config.base_url else None,
-            LLMProvider.OPENROUTER: build_endpoint(config.base_url)
-            if config.base_url
+            LLMProvider.CUSTOM: build_endpoint(base_url) if base_url else None,
+            LLMProvider.OPENROUTER: build_endpoint(base_url)
+            if base_url
             else "https://openrouter.ai/api/v1/chat/completions",
             # Fixed endpoints - these providers don't support custom base URLs
             LLMProvider.CLAUDE: "https://api.anthropic.com/v1/messages",
@@ -192,20 +223,16 @@ class LLMService:
             ),
         }
 
-        # SDK-based providers have no HTTP endpoint to validate — Bedrock is reached
-        # through boto3, which resolves the endpoint from the region itself.
-        if config.provider not in SDK_PROVIDERS and not self.endpoints.get(config.provider):
-            raise ValueError(f"Invalid provider configuration for {config.provider}")
+    @staticmethod
+    def _endpoint_resolves(provider: LLMProvider, base_url: str | None) -> bool:
+        """Would ``__init__`` accept this provider/base_url pair?
 
-        # Log the resolved endpoint for debugging (helps diagnose connection issues like Issue #100)
-        resolved_endpoint = self.endpoints.get(config.provider)
-        logger.info(
-            f"Initialized LLMService: {config.provider}/{config.model}, "
-            f"endpoint={resolved_endpoint}, "
-            f"base_url={config.base_url or 'default'}, "
-            f"context_window={self.user_context_window}, "
-            f"response_tokens={self.response_tokens}"
-        )
+        SDK-based providers have no HTTP endpoint to validate — Bedrock is reached
+        through boto3, which resolves the endpoint from the region itself.
+        """
+        if provider in SDK_PROVIDERS:
+            return True
+        return bool(LLMService._build_endpoints(base_url).get(provider))
 
     def _is_reasoning_model(self) -> bool:
         """
@@ -2191,79 +2218,122 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             db.close()
 
     @staticmethod
-    def create_from_user_settings(user_id: int) -> Optional["LLMService"]:
-        """Create LLMService from user-specific database settings"""
+    def _resolve_user_llm_settings(db: "Session", user_id: int) -> _ResolvedUserLLM | None:
+        """The user's active LLM configuration, or ``None`` to fall back to system settings.
+
+        DB-only (no network). Shared by :meth:`create_from_user_settings` and
+        :meth:`is_configured_for_user` so the two cannot disagree about which row
+        counts: a dangling or foreign ``active_llm_config_id``, an undecryptable key
+        or an unknown provider string all resolve to ``None`` here in both.
+        """
+        from sqlalchemy import or_
+
         from app import models
-        from app.db.base import SessionLocal
         from app.models.user_llm_settings import UserLLMSettings
         from app.utils.encryption import decrypt_api_key
 
+        active_config_setting = (
+            db.query(models.UserSetting)
+            .filter(
+                models.UserSetting.user_id == user_id,
+                models.UserSetting.setting_key == "active_llm_config_id",
+            )
+            .first()
+        )
+        if not active_config_setting or not active_config_setting.setting_value:
+            logger.info(f"No active LLM configuration for user {user_id}, checking system settings")
+            return None
+
+        try:
+            active_config_id = int(active_config_setting.setting_value)
+        except (TypeError, ValueError):
+            logger.error(
+                f"Configuration error for user {user_id}: active_llm_config_id "
+                f"{active_config_setting.setting_value!r} is not an integer"
+            )
+            return None
+
+        # The active configuration may be the user's own or a shared one.
+        user_settings = (
+            db.query(UserLLMSettings)
+            .filter(
+                UserLLMSettings.id == active_config_id,
+                or_(
+                    UserLLMSettings.user_id == user_id,
+                    UserLLMSettings.is_shared == True,  # noqa: E712
+                ),
+            )
+            .first()
+        )
+        if not user_settings:
+            logger.warning(
+                f"Active LLM config {active_config_id} not found for user {user_id}, "
+                "checking system settings"
+            )
+            return None
+
+        api_key = None
+        if user_settings.api_key:
+            api_key = decrypt_api_key(str(user_settings.api_key))
+            if not api_key:
+                logger.error(f"Failed to decrypt API key for user {user_id}")
+                return None
+
+        try:
+            provider = LLMProvider(user_settings.provider)
+        except ValueError as e:
+            logger.error(f"Configuration error for user {user_id}: {e}")
+            return None
+
+        base_url = str(user_settings.base_url) if user_settings.base_url else None
+        return _ResolvedUserLLM(user_settings, provider, api_key, base_url)
+
+    @staticmethod
+    def is_configured_for_user(db: "Session", user_id: int) -> bool:
+        """Would :meth:`create_from_settings` build a service for this user?
+
+        The cheap, DB-only form of that question — it reads the same settings and
+        applies the same checks (provider set, credentials or endpoint present) but
+        opens no connection, builds no client and measures no context window. For
+        callers that decide whether to dispatch LLM work at all, such as the
+        post-transcription recovery sweep: a looser check there dispatches tasks
+        that can only skip.
+        """
+        resolved = LLMService._resolve_user_llm_settings(db, user_id)
+        if resolved is not None and LLMService._endpoint_resolves(
+            resolved.provider, resolved.base_url
+        ):
+            return True
+        return LLMService._resolve_system_provider() is not None
+
+    @staticmethod
+    def create_from_user_settings(user_id: int) -> Optional["LLMService"]:
+        """Create LLMService from user-specific database settings"""
+        from app.db.base import SessionLocal
+
         db = SessionLocal()
         try:
-            # Get user's active LLM configuration
-            active_config_setting = (
-                db.query(models.UserSetting)
-                .filter(
-                    models.UserSetting.user_id == user_id,
-                    models.UserSetting.setting_key == "active_llm_config_id",
-                )
-                .first()
-            )
-
-            if not active_config_setting or not active_config_setting.setting_value:
-                logger.info(
-                    f"No active LLM configuration for user {user_id}, checking system settings"
-                )
+            resolved = LLMService._resolve_user_llm_settings(db, user_id)
+            if resolved is None:
                 return LLMService.create_from_system_settings()
-
-            # Get the active LLM configuration (own or shared)
-            from sqlalchemy import or_
-
-            active_config_id = int(active_config_setting.setting_value)
-            user_settings = (
-                db.query(UserLLMSettings)
-                .filter(
-                    UserLLMSettings.id == active_config_id,
-                    or_(
-                        UserLLMSettings.user_id == user_id,
-                        UserLLMSettings.is_shared == True,  # noqa: E712
-                    ),
-                )
-                .first()
-            )
-
-            if not user_settings:
-                logger.warning(
-                    f"Active LLM config {active_config_id} not found for user {user_id}, checking system settings"
-                )
-                return LLMService.create_from_system_settings()
-
-            # Decrypt API key if present
-            api_key = None
-            if user_settings.api_key:
-                api_key = decrypt_api_key(str(user_settings.api_key))
-                if not api_key and user_settings.api_key:
-                    logger.error(f"Failed to decrypt API key for user {user_id}")
-                    return LLMService.create_from_system_settings()
+            user_settings = resolved.settings
 
             # Create config from user settings - USER'S DECLARED CONTEXT WINDOW, narrowed
             # only by a MEASURED ceiling read off the live server (#833) -- never inferred.
             from app.services import llm_context_window
 
-            provider = LLMProvider(user_settings.provider)
             temperature_float = float(user_settings.temperature)
-            base_url = str(user_settings.base_url) if user_settings.base_url else None
             declared_window = int(user_settings.max_tokens)
 
             config = LLMConfig(
-                provider=provider,
+                provider=resolved.provider,
                 model=str(user_settings.model_name),
-                api_key=api_key,
-                base_url=base_url,
+                api_key=resolved.api_key,
+                base_url=resolved.base_url,
                 max_tokens=llm_context_window.effective_window(
                     db,
                     provider=str(user_settings.provider),
-                    base_url=base_url,
+                    base_url=resolved.base_url,
                     model=str(user_settings.model_name),
                     declared=declared_window,
                 ),
@@ -2271,7 +2341,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             )
 
             logger.info(
-                f"Created LLMService for user {user_id}: {provider}/{user_settings.model_name}, user_context_window={user_settings.max_tokens}"
+                f"Created LLMService for user {user_id}: {resolved.provider}/{user_settings.model_name}, user_context_window={user_settings.max_tokens}"
             )
             return LLMService(config)
 
@@ -2397,8 +2467,13 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         return model, api_key, base_url
 
     @staticmethod
-    def create_from_system_settings() -> Optional["LLMService"]:
-        """Create LLMService from system settings"""
+    def _resolve_system_provider() -> tuple[LLMProvider, str, str | None, str | None] | None:
+        """``(provider, model, api_key, base_url)`` from the env settings, or ``None``.
+
+        No I/O at all. ``LLM_PROVIDER`` alone is not enough: the provider also needs
+        its credentials or endpoint (``_get_provider_config``) and an endpoint the
+        client would accept.
+        """
         if not settings.LLM_PROVIDER or settings.LLM_PROVIDER.strip() == "":
             logger.info("No LLM provider configured (LLM_PROVIDER not set)")
             return None
@@ -2414,6 +2489,19 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             return None
 
         model, api_key, base_url = provider_config
+        if not LLMService._endpoint_resolves(provider, base_url):
+            logger.info(f"{provider.value} provider configured but no usable endpoint")
+            return None
+        return provider, model, api_key, base_url
+
+    @staticmethod
+    def create_from_system_settings() -> Optional["LLMService"]:
+        """Create LLMService from system settings"""
+        resolved = LLMService._resolve_system_provider()
+        if resolved is None:
+            return None
+
+        provider, model, api_key, base_url = resolved
 
         window = 32768  # Conservative system default
         try:

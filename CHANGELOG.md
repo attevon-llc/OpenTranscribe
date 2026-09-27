@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`GET /api/auth/saml/metadata` returned 500 with SAML disabled (#998).** It now returns
   404 when SAML is off, and a configuration python3-saml rejects (on any SAML route) is a
   503 with one log line instead of an unhandled 500 and traceback.
+- **`POST /api/files` had no size limit while the body streamed (#999).** FastAPI spooled
+  the whole multipart body to `/tmp` before the handler's size check ran, so one oversized
+  or endless chunked request could fill the temp volume. A `Content-Length` over
+  `MAX_UPLOAD_BYTES` (plus a small framing allowance) is now refused with 413 before any
+  byte is read, and chunked bodies are counted and cut off with 413 as soon as they pass
+  it. The speaker-profile avatar upload is capped the same way. The no-op
+  `app.router.default_max_upload_size` assignment is removed. Presigned single-PUT and
+  multipart uploads are unaffected, so multi-GB uploads work as before.
 
 ## [0.5.1] - 2026-09-19
 

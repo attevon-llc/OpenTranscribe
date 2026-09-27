@@ -243,6 +243,9 @@ else:
 
 # File upload constants
 UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024  # 10MB chunks for file uploads
+# Speaker-profile avatar ceiling. Enforced while the body streams by
+# app/middleware/upload_limit.py and again on the parsed file by the endpoint.
+MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2MB
 MAX_FILENAME_LENGTH = 255
 DEFAULT_FILE_NAME = "unnamed_file"
 

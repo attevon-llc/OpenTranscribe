@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.core.constants import MAX_AVATAR_SIZE
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -814,7 +815,6 @@ def delete_speaker_profile(
 
 
 ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2MB
 
 
 @router.post("/profiles/{profile_uuid}/avatar", response_model=dict[str, Any])

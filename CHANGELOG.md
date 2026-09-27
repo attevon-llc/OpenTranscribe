@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **In-process diarization crashed on CPU-only hosts** (#1007). The pinned pyannote fork's
+  cache-release hook called `torch.mps.empty_cache()` whenever CUDA was absent, so every
+  diarization on a CPU worker without a GPU failed with `Cannot execute emptyCache() without
+  MPS backend`. The fork now releases the MPS cache only when an MPS backend exists, and the
+  pin (`requirements.txt` and `Dockerfile.blackwell`) moves to that commit. Rebuild images or
+  reinstall `backend/venv` to pick it up.
 - **Speaker identification no longer logs an ERROR and traceback on every file when no LLM is
   configured** (#1004). Having no provider is a deployment choice: `ai.identify_speakers` now
   skips at INFO with `{"status": "skipped", "reason": "LLM not configured"}`, the same way

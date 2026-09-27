@@ -707,7 +707,7 @@ OpenTranscribe ships a Content Security Policy to mitigate cross-site scripting 
 - `connect-src 'self'` -- same-origin API calls and the real-time notifications WebSocket. Under CSP Level 3, `'self'` matches `ws:`/`wss:` on the page's own host, which is all the socket needs (its URL is built from the page's location). Bare `ws:`/`wss:` sources are deliberately absent: they would allow a socket to **any** host ([#1028](https://github.com/attevon-llc/OpenTranscribe/issues/1028)), and `npm run build` fails if one reappears.
 - `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` -- defense-in-depth directives
 
-`frame-ancestors` is not valid in a `<meta>` policy; `X-Frame-Options: SAMEORIGIN` from the frontend nginx covers clickjacking. The optional reverse-proxy overlay (`nginx/site.conf.template`) additionally sends a CSP **header**; the browser enforces both, so a source must be allowed by each.
+`frame-ancestors` is not valid in a `<meta>` policy; `X-Frame-Options: SAMEORIGIN` from the frontend nginx covers clickjacking. The optional reverse-proxy overlay (`nginx/site.conf.template`) additionally sends a CSP **header**; the browser enforces both, so a source must be allowed by each. The Vite dev server (`./opentr.sh start dev`) sends the same policy as a response header instead of a `<meta>` tag. Its hot-reload socket is same-host, so `'self'` covers it too.
 
 :::note Deployers who rewrite the CSP
 If you rewrite `connect-src` with an nginx `sub_filter` (or similar), the string to match is now `connect-src 'self'` rather than `connect-src 'self' ws: wss:`. Add an explicit scheme+host (for example `wss://realtime.example.com`), never a bare scheme.
@@ -724,7 +724,7 @@ If you rewrite `connect-src` with an nginx `sub_filter` (or similar), the string
 
 An explicit value always wins, as a comma-separated list (`CORS_ORIGINS=https://app.example.com,https://admin.example.com`) or a JSON list (`CORS_ORIGINS=["https://app.example.com"]`). A wildcard (`*`) is refused at startup in a hardened deployment. The backend logs the resolved list at startup as `CORS allowed origins: ...`.
 
-Before [#1029](https://github.com/attevon-llc/OpenTranscribe/issues/1029), a production deployment that never set the variable allowed the Vite dev origins, so any page served on `localhost:5173` on a user's machine could make credentialed requests. The same-origin WebSocket check does not depend on this list.
+Before [#1029](https://github.com/attevon-llc/OpenTranscribe/issues/1029), a production deployment that never set the variable allowed the Vite dev origins, so any page served on `localhost:5173` on a user's machine could make credentialed requests. Behind the shipped nginx configs, the WebSocket same-origin check does not depend on this list. The Vite dev server's proxy rewrites `Host`, so in development the notifications socket is admitted through the list instead, which is why the relaxed default keeps the Vite origins. A dev stack on a non-default frontend port (for example `--fresh --port-offset`) needs that origin in `CORS_ORIGINS`.
 
 ## File Retention
 

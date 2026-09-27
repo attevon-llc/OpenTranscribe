@@ -73,6 +73,31 @@ describe('capabilities store', () => {
     expect(get(capabilities).maxUploadBytes).toBe(5_000_000);
   });
 
+  it('carries an explicit api_mediated_upload_enabled=false through', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        edition: 'community',
+        capabilities: {},
+        audience: {},
+        api_mediated_upload_enabled: false,
+      },
+    });
+
+    await loadCapabilities();
+
+    expect(get(capabilities).apiMediatedUploadEnabled).toBe(false);
+  });
+
+  it('treats a server that does not send api_mediated_upload_enabled as allowing it', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: { edition: 'community', capabilities: {}, audience: {} },
+    });
+
+    await loadCapabilities();
+
+    expect(get(capabilities).apiMediatedUploadEnabled).toBe(true);
+  });
+
   it('carries an explicit null max_upload_bytes through as null, not "unknown"', async () => {
     // The admin set MAX_UPLOAD_BYTES=0 server-side, which the backend resolves to
     // `None` (no limit) rather than a numeric ceiling.

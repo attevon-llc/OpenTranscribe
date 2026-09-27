@@ -59,6 +59,9 @@ def get_system_capabilities(request: Request) -> dict[str, Any]:
         # invent one. Kept in step with `validate_file_size_for_tenant`
         # (files/upload.py), which is what actually enforces it.
         "max_upload_bytes": settings.MAX_UPLOAD_BYTES,
+        # False when POST /api/files is disabled (issue #1008): the upload service must
+        # then never fall back from the presigned path to the API-mediated POST.
+        "api_mediated_upload_enabled": settings.API_MEDIATED_UPLOAD_ENABLED,
     }
 
 

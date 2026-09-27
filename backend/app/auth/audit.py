@@ -23,6 +23,17 @@ from app.core.config import settings
 # app/core/request_context.py).
 from app.core.request_context import request_id_var
 
+#: Writer-client limits. Indexing runs synchronously inside the request that produced
+#: the event, so a slow OpenSearch must cost the request at most this long, once —
+#: not the library's 10 s default multiplied by its retries (issue #997). A write
+#: that misses the deadline goes to the fallback file like any other failure.
+_AUDIT_WRITE_TIMEOUT_SECONDS = 2
+
+
+def _audit_index_name() -> str:
+    """The monthly index the current event belongs in."""
+    return f"audit-logs-{datetime.now(UTC).strftime('%Y.%m')}"
+
 
 class AuditEventType(StrEnum):
     """Audit event types for FedRAMP compliance."""
@@ -121,6 +132,9 @@ class AuditLogger:
         """Initialize the audit logger."""
         self._logger = logging.getLogger("audit")
         self._opensearch_client = None
+        # Indices this process has already seen exist (or created). Keyed by the
+        # monthly index name, so a new month is checked exactly once.
+        self._known_indices: set[str] = set()
 
         # Configure audit logger if not already configured
         if not self._logger.handlers:
@@ -141,7 +155,13 @@ class AuditLogger:
 
                 from app.core.opensearch_auth import opensearch_connection_kwargs
 
-                self._opensearch_client = OpenSearch(**opensearch_connection_kwargs())
+                self._opensearch_client = OpenSearch(
+                    **opensearch_connection_kwargs(
+                        timeout=_AUDIT_WRITE_TIMEOUT_SECONDS,
+                        max_retries=0,
+                        retry_on_timeout=False,
+                    )
+                )
             except Exception as e:
                 self._logger.warning(f"Failed to initialize OpenSearch client: {e}")
                 return None
@@ -216,44 +236,58 @@ class AuditLogger:
                 self._write_fallback_log(event)
             return
 
+        index_name = _audit_index_name()
         try:
-            index_name = f"audit-logs-{datetime.now(UTC).strftime('%Y.%m')}"
-
-            # Ensure index exists with proper mappings
-            if not client.indices.exists(index=index_name):
-                client.indices.create(
-                    index=index_name,
-                    body={
-                        "mappings": {
-                            "properties": {
-                                "timestamp": {"type": "date"},
-                                "event_type": {"type": "keyword"},
-                                "outcome": {"type": "keyword"},
-                                "user_id": {"type": "integer"},
-                                "target_user_id": {"type": "integer"},
-                                "organization_id": {"type": "integer"},
-                                "username": {"type": "keyword"},
-                                "source_ip": {"type": "ip"},
-                                "user_agent": {"type": "text"},
-                                "request_id": {"type": "keyword"},
-                                "error_code": {"type": "keyword"},
-                                "details": {"type": "object", "enabled": True},
-                            }
-                        },
-                        "settings": {
-                            "number_of_shards": 1,
-                            "number_of_replicas": 0,
-                        },
-                    },
-                )
-
+            self._ensure_index(client, index_name)
             client.index(index=index_name, body=event)
         except Exception as e:
+            # Forget the index: if it was deleted underneath us, the next write
+            # re-creates it with the proper mapping instead of trusting the cache.
+            self._known_indices.discard(index_name)
             self._logger.warning(f"Failed to index audit event to OpenSearch: {e}")
             # Use fallback logging if enabled
             if settings.AUDIT_LOG_FALLBACK_ENABLED:
                 self._logger.warning("Using fallback file logging for audit event")
                 self._write_fallback_log(event)
+
+    def _ensure_index(self, client: Any, index_name: str) -> None:
+        """Create *index_name* with the audit mapping unless this process knows it exists.
+
+        Checked once per index per process rather than before every document: the
+        HEAD round trip it replaces was the dominant cost of an audited request.
+        No lock around the round trip: while OpenSearch is slow, a lock would queue
+        every request thread behind one another's timeout. Two threads racing on a
+        brand-new month at worst both check, which is harmless.
+        """
+        if index_name in self._known_indices:
+            return
+        if not client.indices.exists(index=index_name):
+            client.indices.create(
+                index=index_name,
+                body={
+                    "mappings": {
+                        "properties": {
+                            "timestamp": {"type": "date"},
+                            "event_type": {"type": "keyword"},
+                            "outcome": {"type": "keyword"},
+                            "user_id": {"type": "integer"},
+                            "target_user_id": {"type": "integer"},
+                            "organization_id": {"type": "integer"},
+                            "username": {"type": "keyword"},
+                            "source_ip": {"type": "ip"},
+                            "user_agent": {"type": "text"},
+                            "request_id": {"type": "keyword"},
+                            "error_code": {"type": "keyword"},
+                            "details": {"type": "object", "enabled": True},
+                        }
+                    },
+                    "settings": {
+                        "number_of_shards": 1,
+                        "number_of_replicas": 0,
+                    },
+                },
+            )
+        self._known_indices.add(index_name)
 
     def log(
         self,

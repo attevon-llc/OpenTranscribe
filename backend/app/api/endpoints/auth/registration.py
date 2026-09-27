@@ -13,6 +13,8 @@ from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.local_auth_gate import is_break_glass_account
+from app.api.endpoints.auth.local_auth_gate import local_auth_enabled
 from app.auth.approval import initial_approval_status
 from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
@@ -31,6 +33,10 @@ router = APIRouter()
 
 
 logger = logging.getLogger(__name__)
+
+_RESET_REQUEST_MESSAGE = "If that email address is registered, you will receive a reset link."
+#: Must stay identical to what ``confirm_password_reset`` returns for a bad token.
+_RESET_REJECTED_DETAIL = "Invalid or expired reset token"
 
 
 # Pydantic request bodies for password reset endpoints
@@ -73,7 +79,11 @@ def register(
     so the admin-UI toggle that appeared to control this did nothing at all — a
     deployment running LDAP reported that users could still self-register (#354).
     """
-    if not get_auth_settings(db).allow_registration:
+    # local_enabled as well: the admin UI refuses allow_registration without it,
+    # but the env fallbacks (ALLOW_OPEN_REGISTRATION / LOCAL_AUTH_ENABLED) are not
+    # cross-validated, and an account minted here could never sign in (#997).
+    auth_settings = get_auth_settings(db)
+    if not auth_settings.allow_registration or not auth_settings.local_enabled:
         logger.warning(
             "Rejected registration attempt for %s: open registration is disabled",
             user_in.email,
@@ -191,8 +201,18 @@ def request_password_reset_endpoint(
 
     Always returns 200 regardless of whether the email exists to prevent
     email enumeration attacks. Rate limited per IP.
+
+    With local authentication disabled only the break-glass account can be
+    reset; every other request gets the same answer with no reset work and no
+    audit write (issue #997) — see ``local_auth_gate`` for why this route is not
+    simply 404 like the other local-account routes.
     """
     from app.auth.password_reset import request_password_reset
+
+    if not local_auth_enabled(db):
+        account = db.query(User).filter(User.email == body.email).first()
+        if not is_break_glass_account(account):
+            return {"message": _RESET_REQUEST_MESSAGE}
 
     # `_get_client_info` resolves through the trusted-proxy chain
     # (`app/utils/client_ip.py`) — the raw `request.client.host` this used to read
@@ -201,7 +221,7 @@ def request_password_reset_endpoint(
     client_ip, _ = _get_client_info(request)
     request_password_reset(db, body.email, client_ip)
 
-    return {"message": "If that email address is registered, you will receive a reset link."}
+    return {"message": _RESET_REQUEST_MESSAGE}
 
 
 @router.post("/password-reset/confirm")
@@ -216,8 +236,16 @@ def confirm_password_reset_endpoint(
 
     Validates the token and sets the new password. Returns 400 if the
     token is invalid or expired. Rate limited per IP.
+
+    With local authentication disabled only a break-glass account's token is
+    redeemable; any other token gets the invalid-token answer without an audit
+    write (issue #997).
     """
     from app.auth.password_reset import confirm_password_reset
+    from app.auth.password_reset import reset_token_owner
+
+    if not local_auth_enabled(db) and not is_break_glass_account(reset_token_owner(db, body.token)):
+        raise HTTPException(status_code=400, detail=_RESET_REJECTED_DETAIL)
 
     # `confirm_password_reset` threads `ip_address` to every audit call it makes,
     # but this was the only production caller and never passed the fourth
@@ -227,7 +255,7 @@ def confirm_password_reset_endpoint(
     client_ip, _ = _get_client_info(request)
     ok, errors = confirm_password_reset(db, body.token, body.new_password, client_ip)
     if not ok:
-        detail = errors[0] if errors else "Invalid or expired reset token"
+        detail = errors[0] if errors else _RESET_REJECTED_DETAIL
         raise HTTPException(status_code=400, detail=detail)
 
     return {"message": "Password has been reset successfully."}

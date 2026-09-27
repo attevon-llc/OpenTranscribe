@@ -298,6 +298,12 @@ deprecated alias for `anthropic`).
   multi-section stitching for long transcripts (`_chunk_transcript_intelligently` →
   `_summarize_section` → `_combine_sections`). Output languages: `core/constants.py:
   LLM_OUTPUT_LANGUAGES` (12: en es fr de it pt **nl** ru zh ja ko ar — no Hindi).
+- **Never log prompt or model-output text at INFO or above (issue #1022).** Output is derived
+  from the transcript, so it would copy transcript content into log aggregation. On a parse
+  failure log `utils/llm_log_safety.describe_llm_text(text)` (`len=N sha256=<12 hex>`) and, if
+  an excerpt helps debugging, `log_llm_text_excerpt` (DEBUG only). Watch for indirect leaks:
+  a pydantic `ValidationError`'s message embeds its `input_value`, so log `type(e).__name__`.
+  `tests/unit/test_llm_parse_failure_log_hygiene.py` drives each parse-failure path.
 - **Speaker suggestions are never auto-applied.** `identify_speakers` returns confidence-scored
   predictions stored for manual verification (`tasks/speaker_identification_task.py`). Only
   tags/collections have an auto-apply path (`auto_label_service.auto_apply_suggestions`).

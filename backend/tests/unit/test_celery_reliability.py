@@ -187,7 +187,7 @@ def test_readiness_asserts_schema_when_migrations_are_gated_off():
 
     source = inspect.getsource(readiness_check)
     assert "RUN_MIGRATIONS_ON_STARTUP" in source
-    assert "get_current_head" in source
+    assert "get_alembic_head" in source
     assert 'checks.get("schema"' in source
 
 

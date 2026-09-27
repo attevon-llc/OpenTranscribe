@@ -260,6 +260,11 @@ SPEAKER_CONFIDENCE_HIGH = 0.75  # Auto-accept (green)
 SPEAKER_CONFIDENCE_MEDIUM = 0.50  # Requires validation (yellow)
 SPEAKER_CONFIDENCE_LOW = 0.0  # Requires user input (red)
 
+# Per-dependency bound for the /health/ready checks (issue #1000). Library defaults
+# (no Redis socket timeout, minio-py's 300 s + 5 retries) let one slow dependency
+# outlast the prober's own timeout and pull a healthy instance from service.
+DEPENDENCY_PROBE_TIMEOUT_SECONDS = 2.0
+
 # Cache control settings
 CACHE_CONTROL_MEDIA_MAX_AGE = 86400  # 1 day for media files
 CACHE_CONTROL_THUMBNAILS_MAX_AGE = 86400  # 1 day for thumbnails

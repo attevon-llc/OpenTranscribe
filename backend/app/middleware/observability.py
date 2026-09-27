@@ -25,7 +25,8 @@ Edge cases:
   - **SSE / StreamingResponse**: ``call_next`` returns at response START, so the
     recorded duration is time-to-first-byte, not the stream's lifetime. Accepted.
   - **WebSockets** bypass BaseHTTPMiddleware entirely (http scopes only).
-  - ``/metrics`` self-scrapes are skipped to avoid feedback noise.
+  - ``/metrics`` and ``/metrics/queues`` scrapes are skipped to avoid feedback
+    noise (and per-poll cost when an autoscaler polls the queue page).
 No blocking I/O happens in ``dispatch``.
 """
 
@@ -48,7 +49,7 @@ from app.core.route_template import route_label
 
 access_logger = logging.getLogger("access")
 
-_METRICS_PATH = "/metrics"
+_SCRAPE_PATHS = frozenset({"/metrics", "/metrics/queues"})
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):
@@ -58,7 +59,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         # Skip self-scrape noise entirely; do not even count the counter.
-        if request.url.path == _METRICS_PATH:
+        if request.url.path in _SCRAPE_PATHS:
             return await call_next(request)
 
         token = start_request_counter()

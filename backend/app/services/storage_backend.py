@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    import urllib3
     from minio import Minio
 
 from app.core.config import settings
@@ -104,8 +105,13 @@ def _iam_role_credentials():
     return ChainedProvider([EnvAWSProvider(), IamAwsProvider()])
 
 
-def build_storage_client() -> Minio:
+def build_storage_client(http_client: urllib3.PoolManager | None = None) -> Minio:
     """Construct the storage client for the configured backend.
+
+    Args:
+        http_client: Transport override. ``None`` keeps minio-py's default pool
+            (5-minute connect/read timeouts, 5 retries) — right for transfers,
+            wrong for a health probe, which passes a tightly bounded pool.
 
     Returns:
         A ``minio.Minio`` client. For ``STORAGE_BACKEND=minio`` this is byte-for-byte
@@ -121,12 +127,19 @@ def build_storage_client() -> Minio:
             access_key=settings.MINIO_ROOT_USER,
             secret_key=settings.MINIO_ROOT_PASSWORD,
             secure=secure,
+            http_client=http_client,
         )
 
     region = storage_region()
     if settings.S3_USE_IAM_ROLE:
         logger.info(f"Storage backend: native S3 at {endpoint} (region {region}, IAM role chain)")
-        return Minio(endpoint, secure=secure, region=region, credentials=_iam_role_credentials())
+        return Minio(
+            endpoint,
+            secure=secure,
+            region=region,
+            credentials=_iam_role_credentials(),
+            http_client=http_client,
+        )
 
     if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
         logger.error(
@@ -140,6 +153,7 @@ def build_storage_client() -> Minio:
         secret_key=settings.AWS_SECRET_ACCESS_KEY,
         secure=secure,
         region=region,
+        http_client=http_client,
     )
 
 

@@ -1127,8 +1127,14 @@ def readiness_check():
     503; OpenSearch/MinIO failures are reported but do not fail readiness, since
     queued transcription survives a brief search/storage outage. Plain ``def``
     so Starlette threadpools the short, synchronous probes.
+
+    Probed several times a minute, so it must stay cheap and bounded (issue #1000):
+    Redis, OpenSearch and object storage each get ``DEPENDENCY_PROBE_TIMEOUT_SECONDS``
+    via probe-only clients, and the Alembic head is parsed once per process.
     """
     from sqlalchemy import text
+
+    from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
 
     checks: dict[str, str] = {}
 
@@ -1145,11 +1151,11 @@ def readiness_check():
     except Exception as exc:  # noqa: BLE001
         checks["postgres"] = f"error: {type(exc).__name__}"
 
-    # Redis (critical) — ping the shared db-0 singleton.
+    # Redis (critical) — db 0 through the time-bounded probe client.
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_probe_redis
 
-        get_redis().ping()
+        get_probe_redis().ping()
         checks["redis"] = "ok"
     except Exception as exc:  # noqa: BLE001
         checks["redis"] = f"error: {type(exc).__name__}"
@@ -1159,18 +1165,18 @@ def readiness_check():
         from app.services.opensearch_service import get_opensearch_client
 
         client = get_opensearch_client()
-        if client is not None and client.ping():
+        if client is not None and client.ping(request_timeout=DEPENDENCY_PROBE_TIMEOUT_SECONDS):
             checks["opensearch"] = "ok"
         else:
             checks["opensearch"] = "unavailable"
     except Exception as exc:  # noqa: BLE001
         checks["opensearch"] = f"error: {type(exc).__name__}"
 
-    # MinIO (degraded-but-ready) — reuse the existing client singleton.
+    # MinIO (degraded-but-ready) — same backend, time-bounded single-attempt transport.
     try:
-        from app.services.minio_service import minio_client
+        from app.services.minio_service import get_probe_client
 
-        minio_client.bucket_exists(settings.MEDIA_BUCKET_NAME)
+        get_probe_client().bucket_exists(settings.MEDIA_BUCKET_NAME)
         checks["minio"] = "ok"
     except Exception as exc:  # noqa: BLE001
         checks["minio"] = f"error: {type(exc).__name__}"
@@ -1191,12 +1197,11 @@ def readiness_check():
     schema_detail: dict[str, str] = {}
     try:
         from alembic.migration import MigrationContext
-        from alembic.script import ScriptDirectory
 
         from app.db.base import engine
-        from app.db.migrations import get_alembic_config
+        from app.db.migrations import get_alembic_head
 
-        head = ScriptDirectory.from_config(get_alembic_config()).get_current_head()
+        head = get_alembic_head()
         with engine.connect() as conn:
             current = MigrationContext.configure(conn).get_current_revision()
         checks["schema"] = "ok" if current == head else f"stale: {current} != head {head}"

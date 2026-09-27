@@ -45,6 +45,7 @@ import uuid as uuid_pkg
 from collections.abc import Sequence
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
@@ -70,7 +71,11 @@ OWNER_TAKEDOWN_EVENT = "file_takedown"
 OWNER_RELEASE_EVENT = "file_takedown_released"
 
 
-def exclude_quarantined(query: Query, *, include_quarantined: bool = False) -> Query:
+# Generic so a column-projecting RowReturningQuery keeps its row type through the
+# optional filter instead of being widened to a plain Query.
+def exclude_quarantined[QueryT: Query[Any]](
+    query: QueryT, *, include_quarantined: bool = False
+) -> QueryT:
     """Drop quarantined (taken-down) files from a ``MediaFile`` query.
 
     The list/gallery/search read paths call this so a taken-down file never

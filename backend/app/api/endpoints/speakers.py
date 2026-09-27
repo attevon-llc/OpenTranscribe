@@ -372,7 +372,7 @@ def _get_segment_counts_for_speakers(speaker_ids: list[int], db: Session) -> dic
         .group_by(TranscriptSegment.speaker_id)
         .all()
     )
-    return {speaker_id: count for speaker_id, count in count_results}
+    return {speaker_id: count for speaker_id, count in count_results if speaker_id is not None}
 
 
 def _get_first_segment_timestamps_for_speakers(

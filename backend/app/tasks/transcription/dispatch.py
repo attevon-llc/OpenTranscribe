@@ -28,6 +28,7 @@ from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
+from app.core.task_liveness import mark_queued
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -346,6 +347,9 @@ def dispatch_transcription_pipeline(
     benchmark_timing.mark(task_id, "dispatch_timestamp")
     benchmark_timing.capture_queue_depth(task_id)
 
+    # issue #1020: recovery must be able to tell a run waiting for a worker from a lost one.
+    mark_queued(task_id)
+
     # Dispatch with error callback for cleanup
     try:
         pipeline.apply_async(
@@ -463,6 +467,9 @@ def dispatch_batch_transcription(
 
     if not chains:
         return {"batch_id": None, "task_ids": []}
+
+    for queued_task_id in task_ids:
+        mark_queued(queued_task_id)  # issue #1020, as in dispatch_transcription_pipeline
 
     batch = group(chains)
     result = batch.apply_async()

@@ -500,6 +500,45 @@ NLP_MAX_TASKS=50           # Restart after N tasks
 CLOUD_ASR_CONCURRENCY=16   # Default: 16
 ```
 
+## Task Recovery
+
+A periodic health check (every 10 minutes) and a startup recovery pass reclaim work whose worker
+died. They never fail, or dispatch a second copy of, a transcription that is only **waiting** for
+a worker — for example while GPU workers are scaled to zero, paused, or behind a long backlog.
+
+Each transcription run carries two markers in Redis:
+
+- a **queued** marker, set when the pipeline is published and whenever a stage hands the run back
+  to the queue;
+- a **heartbeat**, refreshed by a worker while it is executing a stage.
+
+A run is treated as dead only when it has neither — its worker stopped heartbeating, or its
+message is gone from the queue. When recovery does retry a file, it cancels the old run, and a
+stage that picks up a run which has since been replaced exits without doing any work. If Redis
+cannot be read, recovery leaves transcriptions alone.
+
+```bash
+# Longest a transcription may wait in the queue before its message is treated as lost
+TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS=604800   # Default: 7 days
+
+# Heartbeat refresh interval, and how long one heartbeat is trusted (must exceed the interval)
+TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS=30   # Default: 30
+TRANSCRIPTION_HEARTBEAT_TTL_SECONDS=300       # Default: 300
+
+# Longest a transcription may RUN, measured from when a worker started it (not from upload)
+TASK_MAX_DURATION_TRANSCRIPTION_SECONDS=3600  # Default: 3600
+# Budget for other task types, which record their start when they begin running
+TASK_MAX_DURATION_DEFAULT_SECONDS=1800        # Default: 1800
+
+# How long a task must go without an update before the health check considers it
+TASK_RECOVERY_STALENESS_SECONDS=300           # Default: 300
+# ...and before startup recovery considers it orphaned
+TASK_RECOVERY_ORPHANED_HOURS=1                # Default: 1
+```
+
+An invalid value (non-numeric, or below 1) logs a warning and falls back to the default. The
+values are read when a worker starts, so restart the workers after changing them.
+
 ## Flower Monitoring Dashboard
 
 ```bash

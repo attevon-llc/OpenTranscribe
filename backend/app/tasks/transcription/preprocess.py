@@ -35,6 +35,7 @@ from .metadata_extractor import extract_media_metadata_from_url
 from .metadata_extractor import update_media_file_metadata
 from .notifications import send_error_notification
 from .notifications import send_progress_notification
+from .run_ownership import superseded_result
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,12 @@ def preprocess_for_transcription(
     """
     from app.services.minio_service import upload_temp_audio
     from app.utils.uuid_helpers import get_file_by_uuid
+
+    # issue #1020: a run recovery already replaced must not preprocess (and overwrite the
+    # temp audio of) the file a second time. Its payload makes every later stage stand down.
+    superseded = superseded_result(task_id, file_uuid, stage="Preprocess")
+    if superseded is not None:
+        return superseded
 
     step_start = time.perf_counter()
 

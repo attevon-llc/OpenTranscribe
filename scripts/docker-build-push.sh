@@ -1275,17 +1275,26 @@ main() {
         SEMVER="v0.0.0"
     fi
 
-    # Validate semantic version format (vX.Y.Z or X.Y.Z)
-    if [[ ! "${SEMVER}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    # --- BEGIN version-validate ---
+    # Validate semantic version format (vX.Y.Z or X.Y.Z), OR a throwaway dev tag
+    # (dev-<git-sha>) for testing an unreleased commit against a downstream consumer
+    # without touching the release ledger. A dev tag is never normalized with a 'v' prefix,
+    # so it can never collide with a real version tag, and it NEVER moves :latest — the
+    # default PUSH_LATEST=true would otherwise point every fresh install at an unreleased
+    # build.
+    if [[ "${SEMVER}" =~ ^dev-[0-9a-f]{7,40}$ ]]; then
+        if [ "${PUSH_LATEST}" = "true" ]; then
+            print_warning "dev tag ${SEMVER}: forcing PUSH_LATEST=false (:latest is release-only)"
+        fi
+        PUSH_LATEST=false
+    elif [[ ! "${SEMVER}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         print_error "Invalid semantic version format: ${SEMVER}"
-        print_error "Expected format: v1.2.3 or 1.2.3"
+        print_error "Expected format: v1.2.3, 1.2.3, or dev-<git-sha>"
         exit 1
-    fi
-
-    # Ensure version starts with 'v'
-    if [[ ! "${SEMVER}" =~ ^v ]]; then
+    elif [[ ! "${SEMVER}" =~ ^v ]]; then
         SEMVER="v${SEMVER}"
     fi
+    # --- END version-validate ---
 
     # Parse version for tagging (only full version used now)
     VERSION_FULL="${SEMVER}"  # e.g., v1.2.3

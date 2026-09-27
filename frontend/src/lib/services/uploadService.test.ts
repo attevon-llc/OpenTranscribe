@@ -66,6 +66,7 @@ vi.mock('$lib/services/stallWatchdog', () => ({
 }));
 
 import { uploadService } from './uploadService';
+import { capabilities } from '$stores/capabilities';
 
 function prepared(overrides: Record<string, unknown> = {}) {
   return {
@@ -562,6 +563,103 @@ describe('uploadExtractedAudio', () => {
     });
     mockAxiosInstance.post.mockResolvedValueOnce(prepared());
     mockAxiosDefault.put.mockRejectedValueOnce(new Error('timed out'));
+
+    const id = uploadService.addExtractedAudio(
+      new Blob(['a']),
+      'extracted.opus',
+      extractedAudioMetadata(),
+      90
+    );
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'));
+
+    const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacyCall).toBeUndefined();
+  });
+});
+
+// Issue #1008: a server can disable the API-mediated `POST /files` fallback and says so
+// on /system/capabilities. The upload service must then never send a body to that
+// route: a failed presigned attempt is surfaced as a (retried) failure instead.
+describe('API-mediated fallback disabled by the server', () => {
+  beforeEach(() => {
+    capabilities.update((state) => ({ ...state, apiMediatedUploadEnabled: false }));
+  });
+
+  afterEach(() => {
+    capabilities.update((state) => ({ ...state, apiMediatedUploadEnabled: true }));
+  });
+
+  it('does NOT fall back to legacy on a network error from the presigned PUT', async () => {
+    mockAxiosInstance.post.mockResolvedValueOnce(prepared());
+    mockAxiosDefault.put.mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'));
+
+    const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacyCall).toBeUndefined();
+    expect(uploadService.getUpload(id)?.error).toContain('ECONNRESET');
+  });
+
+  it('does NOT fall back to legacy on a transient /files/complete failure', async () => {
+    const transientFailure = Object.assign(new Error('Request failed with status code 500'), {
+      response: { status: 500, data: { detail: 'Internal Server Error' } },
+    });
+    mockAxiosInstance.post
+      .mockResolvedValueOnce(prepared())
+      .mockRejectedValueOnce(transientFailure);
+    mockAxiosDefault.put.mockResolvedValueOnce({ headers: { etag: '"x"' } });
+
+    const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'));
+
+    const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacyCall).toBeUndefined();
+  });
+
+  it('does NOT send the body to POST /files when no presigned plan was returned', async () => {
+    mockAxiosInstance.post.mockResolvedValueOnce(
+      prepared({ upload_url: undefined, upload_method: undefined, task_id: undefined })
+    );
+
+    const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'));
+
+    const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacyCall).toBeUndefined();
+  });
+
+  it('retries on the presigned path and completes once the PUT succeeds', async () => {
+    mockAxiosInstance.post
+      .mockResolvedValueOnce(prepared()) // attempt 1: /files/prepare
+      .mockResolvedValueOnce(prepared({ file_id: 'file-uuid-2' })) // attempt 2: /files/prepare
+      .mockResolvedValueOnce({ data: {} }); // attempt 2: /files/complete
+    mockAxiosDefault.put
+      .mockRejectedValueOnce(new Error('ECONNRESET'))
+      .mockResolvedValueOnce({ headers: { etag: '"x"' } });
+
+    vi.useFakeTimers();
+    try {
+      const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+      await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'), {
+        timeout: 5000,
+      });
+      await vi.advanceTimersByTimeAsync(RETRY_DELAY_FOR_FIRST_ATTEMPT);
+      await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('completed'), {
+        timeout: 5000,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(mockAxiosDefault.put).toHaveBeenCalledTimes(2);
+    const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacyCall).toBeUndefined();
+  });
+
+  it('extracted audio does NOT fall back to legacy either', async () => {
+    mockAxiosInstance.post.mockResolvedValueOnce(prepared());
+    mockAxiosDefault.put.mockRejectedValueOnce(new Error('ECONNRESET'));
 
     const id = uploadService.addExtractedAudio(
       new Blob(['a']),

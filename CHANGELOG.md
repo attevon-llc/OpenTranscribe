@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`API_MEDIATED_UPLOAD_ENABLED` server setting (#1008).** Default `true` (no change). Set
+  `false` to keep every file byte out of the API process: `POST /api/files` answers 404 before
+  reading the body, `/api/system/capabilities` advertises `api_mediated_upload_enabled`, the
+  browser never falls back from the presigned path to that route (a failed presigned attempt
+  is retried on the presigned path), and `/files/prepare` answers 503 instead of handing out a
+  fallback when it cannot plan a presigned upload. Presigned single-PUT and multipart uploads
+  are unchanged.
+
+### Security
+
+- **Anonymous local-account routes did real work with local authentication disabled
+  (#997).** With `local_enabled` off, `verify-email` / `verify-email/resend` now return 404,
+  `register` is refused even when the env fallback says open, and `password-reset/*` serve
+  only the active `super_admin` break-glass account — every other caller gets the usual
+  generic answer with no reset work and no audit write. Invitations and `/token` are
+  unchanged (they also serve external identity providers and LDAP).
+- **Audit indexing no longer costs a HEAD round trip per event (#997).** The audit index's
+  existence is checked once per monthly index per process, and the audit writer's OpenSearch
+  client uses a 2 s timeout with no retries, so a slow OpenSearch can no longer hold every
+  audited request for the library's default timeout.
+- **SAML and OIDC handlers no longer block the event loop (#997).** Their synchronous config
+  loads, user sync, lockout, audit and session work now run in the threadpool.
+
 ### Fixed
 
 - **Speaker identification no longer logs an ERROR and traceback on every file when no LLM is
@@ -20,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once at startup whether the media bucket carries the quarantine Deny bucket policy and logs a
   single backend-aware WARNING if not, naming `MEDIA_URL_EXPIRE_SECONDS` as the exposure window.
   The production-deployment docs describe the bucket policy and the TTL trade-off.
+- **`GET /api/auth/saml/metadata` returned 500 with SAML disabled (#998).** It now returns
+  404 when SAML is off, and a configuration python3-saml rejects (on any SAML route) is a
+  503 with one log line instead of an unhandled 500 and traceback.
+- **`POST /api/files` had no size limit while the body streamed (#999).** FastAPI spooled
+  the whole multipart body to `/tmp` before the handler's size check ran, so one oversized
+  or endless chunked request could fill the temp volume. A `Content-Length` over
+  `MAX_UPLOAD_BYTES` (plus a small framing allowance) is now refused with 413 before any
+  byte is read, and chunked bodies are counted and cut off with 413 as soon as they pass
+  it. The speaker-profile avatar upload is capped the same way. The no-op
+  `app.router.default_max_upload_size` assignment is removed. Presigned single-PUT and
+  multipart uploads are unaffected, so multi-GB uploads work as before.
 - **The default model download failed on CPU-only hosts** such as a `docker build` stage that
   bakes models into an image (#1003). `scripts/download-models.py` now makes
   `torch.mps.empty_cache()` a no-op when no MPS backend exists (the pinned pyannote fork calls

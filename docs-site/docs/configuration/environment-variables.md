@@ -579,7 +579,18 @@ for the bucket policy that enforces revocation and the TTL trade-off.
 STORAGE_PUBLIC_URL=               # backend-agnostic alias for MINIO_PUBLIC_URL; empty keeps the /s3 proxy path on MinIO and leaves native S3 URLs untouched
 PRESIGNED_URL_MAX_SECONDS=21600   # 6h default -- a presigned URL cannot outlive the credentials that signed it (IAM-role STS sessions expire well inside 24h)
 MULTIPART_THRESHOLD_MB=512        # objects at/above this size use browser-side multipart upload
+API_MEDIATED_UPLOAD_ENABLED=true  # false = refuse POST /api/files (file streamed through the API); uploads go browser -> storage only
 ```
+
+:::note[Disabling the API-mediated upload]
+Uploads normally go straight from the browser to object storage over presigned URLs;
+`POST /api/files` is only a fallback that streams the whole file through the API process.
+With `API_MEDIATED_UPLOAD_ENABLED=false` that route answers 404 before reading the body, the
+browser is told (via `/api/system/capabilities`) never to fall back to it, and a failed
+presigned attempt is retried on the presigned path instead. Multi-GB uploads are unaffected:
+they already use the presigned multipart path. With it enabled (the default), the route's
+body is capped at `MAX_UPLOAD_BYTES` while it streams.
+:::
 
 :::note[S3 vs MinIO single-PUT ceiling]
 MinIO accepts a single-PUT object up to 5 TiB. AWS S3 rejects a single PUT above 5 GiB

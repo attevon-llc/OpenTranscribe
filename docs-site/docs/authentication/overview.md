@@ -71,13 +71,14 @@ Rules the code enforces:
   deployment ceiling also allows it. An unrecognised `auth_type` is refused.
 - **An external identity may not take over an existing account by email coincidence.** See
   [Account linking](#account-linking) below.
-- **`local_enabled` gates sign-in only — it does not gate the password-reset chain.**
-  Turning local login off does not stop the deployment from mailing a reset link to a
-  `local` account. For an ordinary account that's a harmless dead end: the reset succeeds
-  but the next sign-in is still refused. For an active `super_admin` this is deliberate
-  recovery guidance — the reset chain is part of the break-glass path back into a
-  deployment that disabled local login while its identity provider was misconfigured, so a
-  working mail transport matters even when local sign-in is switched off.
+- **With `local_enabled` off, password reset serves only the break-glass account.**
+  Email verification and self-registration are switched off with local login, and the
+  password-reset endpoints answer every other account with the usual generic response
+  without doing any work. For an active `super_admin` the reset chain still completes, by
+  design — it is part of the break-glass path back into a deployment that disabled local
+  login while its identity provider was misconfigured, so a working mail transport matters
+  even when local sign-in is switched off. Invitations keep working: they also provision
+  accounts for external identity providers.
 
 ### The super_admin exemption
 

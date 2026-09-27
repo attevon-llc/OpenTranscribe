@@ -24752,7 +24752,7 @@
     },
     "/api/auth/password-reset/confirm": {
       "post": {
-        "description": "Confirm a password reset with token and new password.\n\nValidates the token and sets the new password. Returns 400 if the\ntoken is invalid or expired. Rate limited per IP.",
+        "description": "Confirm a password reset with token and new password.\n\nValidates the token and sets the new password. Returns 400 if the\ntoken is invalid or expired. Rate limited per IP.\n\nWith local authentication disabled only a break-glass account's token is\nredeemable; any other token gets the invalid-token answer without an audit\nwrite (issue #997).",
         "operationId": "confirm_password_reset_endpoint_api_auth_password_reset_confirm_post",
         "requestBody": {
           "content": {
@@ -24792,7 +24792,7 @@
     },
     "/api/auth/password-reset/request": {
       "post": {
-        "description": "Request a password reset link.\n\nAlways returns 200 regardless of whether the email exists to prevent\nemail enumeration attacks. Rate limited per IP.",
+        "description": "Request a password reset link.\n\nAlways returns 200 regardless of whether the email exists to prevent\nemail enumeration attacks. Rate limited per IP.\n\nWith local authentication disabled only the break-glass account can be\nreset; every other request gets the same answer with no reset work and no\naudit write (issue #997) — see ``local_auth_gate`` for why this route is not\nsimply 404 like the other local-account routes.",
         "operationId": "request_password_reset_endpoint_api_auth_password_reset_request_post",
         "requestBody": {
           "content": {
@@ -24958,7 +24958,7 @@
     },
     "/api/auth/saml/metadata": {
       "get": {
-        "description": "Serve this SP's metadata XML, for the IdP administrator to import.\n\nPublic and unauthenticated by necessity — an IdP admin fetches this once, out\nof band, to configure the SP side of the trust relationship. It carries no\nsecret: entity id, ACS/SLS URLs, and (if configured) the SP's public signing\ncertificate only, never the private key.",
+        "description": "Serve this SP's metadata XML, for the IdP administrator to import.\n\nPublic and unauthenticated by necessity — an IdP admin fetches this once, out\nof band, to configure the SP side of the trust relationship. It carries no\nsecret: entity id, ACS/SLS URLs, and (if configured) the SP's public signing\ncertificate only, never the private key.\n\n404 when SAML is disabled: there is no SP to describe (issue #998).",
         "operationId": "saml_metadata_api_auth_saml_metadata_get",
         "responses": {
           "200": {

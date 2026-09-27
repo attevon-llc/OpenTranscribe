@@ -18,7 +18,8 @@ The backend instruments every HTTP request and database query and exposes them i
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /metrics` | Prometheus exposition format. Request latency/RPS/errors by route template, **DB queries per request** (the duplicate-call / N+1 detector), DB query latency, in-flight requests, cache hit/miss counters, Celery queue depth, and product counters (signups, uploads). |
+| `GET /metrics` | Prometheus exposition format. Request latency/RPS/errors by route template, **DB queries per request** (the duplicate-call / N+1 detector), DB query latency, in-flight requests, cache hit/miss counters, Celery queue depth, and product counters (signups, uploads). Backup and media-mirror gauges are read from the database at most once a minute, not on every scrape. |
+| `GET /metrics/queues` | Only `celery_queue_depth` and `celery_queue_reserved`, in the same Prometheus text format — one Redis round trip, no database access. Point autoscalers that poll every few seconds here instead of at `/metrics`, whose full page renders every HTTP histogram series. Internal-only, like `/metrics`. |
 | `GET /health/ready` | Readiness probe for load balancers / Kubernetes. Checks Postgres + Redis (critical → 503 if down) and OpenSearch + MinIO (degraded-but-ready). Returns `{"status": "ready", "checks": {...}}`. The Redis, OpenSearch and object-storage checks are each bounded at 2 s (one attempt), and the migration head is computed once per process, so a probe stays cheap and cannot hang on one slow dependency. The original `GET /health` (static 200) is unchanged and still drives the Docker healthcheck. |
 
 Key metric names (stable; dashboards are built against these):
@@ -83,7 +84,7 @@ Two dashboards are auto-provisioned into the **OpenTranscribe** folder:
   (tasks a worker has picked up and not yet acknowledged — prefetched, or RUNNING under
   `acks_late=True`) is exposed on `/metrics` but has no panel of its own yet. Autoscale on
   `celery_queue_depth + celery_queue_reserved` — depth alone trends to zero as the fleet
-  saturates.
+  saturates. `GET /metrics/queues` serves exactly those two gauges for an autoscaler.
 - **Signups / uploads rate** product counters (API-process events).
 
 **OpenTranscribe — Product & Usage** (`product.json`, mixed datasources):

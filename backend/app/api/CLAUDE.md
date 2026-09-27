@@ -24,7 +24,10 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   frontend capability check is cosmetic), and `scope_to_context(query, model, ctx)`.
 - `websockets.py` — `/ws`, the in-process `ConnectionManager`, and the Redis subscriber on the
   `websocket_notifications` channel.
-- `endpoints/metrics.py` — `/metrics`, mounted at **root** (no `/api`), unauthenticated by design.
+- `endpoints/metrics.py` — `/metrics` and `/metrics/queues`, mounted at **root** (no `/api`),
+  unauthenticated by design. `/metrics/queues` is the autoscaler page: only
+  `celery_queue_depth`/`celery_queue_reserved`, one Redis round trip, no DB. On `/metrics` the
+  DB-backed backup/mirror gauges refresh at most once per `JOB_METRICS_TTL_SECONDS` (#1001).
 - `endpoints/scim/` — SCIM 2.0, also mounted at **root** (`/scim/v2`, RFC 7644 §3.1 fixes the
   base path). Bearer-token authenticated, not session-authenticated, and deliberately **not**
   rate limited; its errors are SCIM Error resources via `main.py`'s `SCIMError` handler.

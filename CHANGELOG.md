@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once at startup whether the media bucket carries the quarantine Deny bucket policy and logs a
   single backend-aware WARNING if not, naming `MEDIA_URL_EXPIRE_SECONDS` as the exposure window.
   The production-deployment docs describe the bucket policy and the TTL trade-off.
+- **The default model download failed on CPU-only hosts** such as a `docker build` stage that
+  bakes models into an image (#1003). `scripts/download-models.py` now makes
+  `torch.mps.empty_cache()` a no-op when no MPS backend exists (the pinned pyannote fork calls
+  it whenever CUDA is absent and it raised `Cannot execute emptyCache() without MPS backend`),
+  and the WhisperX step falls back to `cpu`/`int8` when `USE_GPU=true` but no GPU is present.
+  `Dockerfile.prod` and `Dockerfile.lite` now create `DIAR_MODELS_DIR`'s default `/models`
+  owned by `appuser`, which previously could not create it (EACCES).
 
 ## [0.5.1] - 2026-09-19
 

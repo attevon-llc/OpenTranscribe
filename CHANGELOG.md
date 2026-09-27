@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The CSP allowed WebSocket connections to any host (#1028).** `connect-src` was
+  `'self' ws: wss:`; bare scheme sources let script open a socket to any host, and `ws:` a
+  plaintext one. It is now `'self'`, which under CSP Level 3 still matches the app's own
+  same-host notifications socket. `npm run build` now fails if the emitted CSP carries a bare
+  `ws:`/`wss:`/`http:`/`https:` source. The reverse-proxy template's CSP header got the same
+  change. Deployers who rewrite that directive with `sub_filter` must update the match string.
+- **Production defaulted `CORS_ORIGINS` to the Vite dev origins (#1029).** A hardened
+  deployment that leaves it unset now allows no cross-origin origins (same-origin needs
+  none). Development keeps `http://localhost:5173` / `http://127.0.0.1:5173`. The resolved
+  list is logged at startup. The documented comma-separated form
+  (`CORS_ORIGINS=https://a,https://b`) also used to fail at startup with a settings parse
+  error; it now parses, as does a JSON list.
+- **Frontend nginx sends `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy:
+  same-origin` (#1030)** on every response, including the static-asset and HTML locations
+  that re-declare their headers. HTML and static assets now carry one `Cache-Control` header
+  each, not two. `Cross-Origin-Embedder-Policy` is deliberately not sent, because it would
+  block presigned media.
 - **Anonymous local-account routes did real work with local authentication disabled
   (#997).** With `local_enabled` off, `verify-email` / `verify-email/resend` now return 404,
   `register` is refused even when the env fallback says open, and `password-reset/*` serve

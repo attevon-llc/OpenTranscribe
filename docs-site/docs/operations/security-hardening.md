@@ -63,7 +63,7 @@ if placeholder keys are detected.
 :::
 - [ ] Set `DEBUG=false` in `.env`
 - [ ] Configure TLS certificates for HTTPS
-- [ ] Review and restrict CORS origins (`CORS_ORIGINS`)
+- [ ] Leave `CORS_ORIGINS` unset unless a frontend is served from a different origin (hardened default: none)
 - [ ] Configure trusted proxies / host validation for your domain(s) (nginx `server_name`; see `configuration/nginx-setup.md`) — there is no `ALLOWED_HOSTS` env var
 - [ ] Remove or restrict API documentation endpoint (`/docs`) in production
 
@@ -316,21 +316,26 @@ Authentication endpoints are rate-limited to prevent brute-force attacks:
 
 ### CORS Configuration
 
-Restrict origins to your domain(s):
+The SPA and API are served from the same origin, which needs no CORS entry. With
+`CORS_ORIGINS` unset, a hardened deployment allows **no** cross-origin origins (development
+defaults to the Vite dev server's origins). Set it only when a frontend is served from a
+different origin, and list exactly that origin:
 
 ```bash
-# .env - only allow your domain
+# .env - only when the frontend lives on a different origin
 CORS_ORIGINS=https://transcribe.yourdomain.com
 ```
 
-Never use `*` (wildcard) in production.
+Never use `*` (wildcard) in production; the backend refuses to start with it. The resolved list
+is logged at startup (`CORS allowed origins: ...`). See
+[CORS Origins](../configuration/environment-variables.md#cors-origins).
 
 ### Content Security Policy
 
 When using NGINX in production, configure CSP headers:
 
 ```nginx
-add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss:; media-src 'self' blob:;" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:;" always;
 add_header X-Frame-Options DENY always;
 add_header X-Content-Type-Options nosniff always;
 add_header Referrer-Policy strict-origin-when-cross-origin always;

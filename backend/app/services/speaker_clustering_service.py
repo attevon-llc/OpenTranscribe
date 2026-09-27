@@ -2079,7 +2079,7 @@ class SpeakerClusteringService:
                 .having(sa_func.count() > 0)
                 .all()
             )
-            members_with_segments = {int(r[0]) for r in seg_rows}
+            members_with_segments = {r[0] for r in seg_rows if r[0] is not None}
 
         member_items = []
         for m in members:

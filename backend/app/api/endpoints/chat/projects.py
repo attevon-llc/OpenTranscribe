@@ -71,7 +71,7 @@ def _conversation_counts(db: Session, project_ids: list[int]) -> dict[int, int]:
         .group_by(ChatConversation.project_id)
         .all()
     )
-    return {int(pid): int(count) for pid, count in rows}
+    return {int(pid): int(count) for pid, count in rows if pid is not None}
 
 
 def to_project_summary(project: ChatProject, conversation_count: int = 0) -> ProjectSummary:

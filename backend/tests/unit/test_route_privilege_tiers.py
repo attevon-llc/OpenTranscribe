@@ -107,6 +107,9 @@ KNOWN_PUBLIC = {
     "/health",
     "/health/ready",
     "/metrics",
+    # The Celery queue gauges alone, for autoscalers (issue #1001): a strict
+    # subset of /metrics, so it discloses nothing /metrics does not.
+    "/metrics/queues",
     # Build identity: version, git SHA, build time. Public deliberately —
     # /health already returns the version, so the only additional disclosure is a
     # short commit SHA, and the callers (a fresh-install test with no account

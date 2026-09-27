@@ -191,8 +191,8 @@ def _register() -> None:
     )
     # Backup collectors run in a Celery worker, so their state is persisted to
     # SystemSettings by the run task and projected here at scrape time by
-    # ``app.core.backup_metrics.update_backup_metrics`` (same sample-at-scrape
-    # pattern as celery_queue_depth).
+    # ``app.core.backup_metrics.update_backup_metrics`` — at most once per
+    # ``JOB_METRICS_TTL_SECONDS``, not on every scrape (issue #1001).
     backup_runs_total = Counter(
         "backup_runs_total",
         "Scheduled/manual database backup runs by result (synced from the DB at scrape).",

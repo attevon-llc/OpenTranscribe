@@ -141,6 +141,10 @@ server {
         deny all;
         return 404;
     }
+    location = /metrics/queues {
+        deny all;
+        return 404;
+    }
 
     # Backend REST API
     location /api/ {

@@ -162,7 +162,7 @@ def test_readiness_happy_path(client, monkeypatch):
             return True
 
     class _FakeOS:
-        def ping(self):
+        def ping(self, **kwargs):
             return True
 
     class _FakeMinio:
@@ -178,9 +178,9 @@ def test_readiness_happy_path(client, monkeypatch):
 
     monkeypatch.setattr(main_module, "SessionLocal", lambda: _FakeSession(), raising=False)
     monkeypatch.setattr("app.db.base.SessionLocal", lambda: _FakeSession())
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: _FakeRedis())
+    monkeypatch.setattr("app.core.redis.get_probe_redis", lambda: _FakeRedis())
     monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: _FakeOS())
-    monkeypatch.setattr("app.services.minio_service.minio_client", _FakeMinio())
+    monkeypatch.setattr("app.services.minio_service.get_probe_client", lambda: _FakeMinio())
 
     resp = client.get("/health/ready")
     assert resp.status_code == 200
@@ -232,15 +232,14 @@ def test_readiness_degraded_opensearch_still_ready(client, monkeypatch):
             pass
 
     monkeypatch.setattr("app.db.base.SessionLocal", lambda: _FakeSession())
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: _FakeRedis())
+    monkeypatch.setattr("app.core.redis.get_probe_redis", lambda: _FakeRedis())
     monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: None)
 
-    def _broken_minio_exists(name):
-        raise RuntimeError("minio down")
+    class _BrokenMinio:
+        def bucket_exists(self, name):
+            raise RuntimeError("minio down")
 
-    monkeypatch.setattr(
-        "app.services.minio_service.minio_client.bucket_exists", _broken_minio_exists
-    )
+    monkeypatch.setattr("app.services.minio_service.get_probe_client", lambda: _BrokenMinio())
 
     resp = client.get("/health/ready")
     assert resp.status_code == 200

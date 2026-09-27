@@ -73,7 +73,11 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 
 **Prevention**:
 - The `TaskRecoveryService` runs automatically on a schedule and handles most stuck task scenarios
-- Stuck-task thresholds are hardcoded in `backend/app/core/task_config.py`, not an env var
+- A file waiting for a worker (for example while GPU workers are stopped or scaled to zero) stays
+  in "Processing" and is **not** a stuck task: recovery only acts on a transcription whose worker
+  stopped heartbeating or whose queue message is gone
+- Recovery thresholds are environment variables — see
+  [Task Recovery](../configuration/environment-variables.md#task-recovery)
 - Monitor the Flower dashboard regularly for long-running tasks
 
 ---

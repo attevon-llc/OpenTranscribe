@@ -109,6 +109,17 @@ indexing → WebSocket notification.
     The id being revoked had never belonged to a celery message anywhere. Don't "restore" it.
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
+  ⚠️ **A transcription's Task row is created at DISPATCH, so neither its age nor "last
+  touched before this process started" says it is dead** (issue #1020 — both failed or
+  duplicated runs that were only waiting for a GPU worker). Its liveness is
+  `core/task_liveness.py`: a queued marker (set by `dispatch.py`, re-armed when a stage
+  returns) and a heartbeat (`run_heartbeat`, wrapped around every executing stage). Only a
+  run with neither is recovered, an unreadable Redis means "unknown, do nothing", and the
+  duration budget runs from the heartbeat's start. Any code that fails a transcription on
+  recovery's behalf calls `supersede_run`, and every stage calls
+  `transcription/run_ownership.py` first, so a stale message stands down instead of
+  resurrecting its failed row. Other task types create their row when they start and keep
+  the older checks.
 - `erasure_reconciliation.py` — `gdpr.erasure_reconcile`, **utility** queue, daily 04:40.
   Finishes GDPR Art. 17 erasures that a legal hold deferred, and re-erases subjects a
   backup restore brought back. `takedown_service.release_file` calls its

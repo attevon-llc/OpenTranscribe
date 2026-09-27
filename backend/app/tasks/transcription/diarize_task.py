@@ -10,6 +10,7 @@ from app.core.constants import GPUPriority
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
 from app.core.task_cancellation import stand_down_if_requested
+from app.core.task_liveness import run_heartbeat
 from app.core.worker_shutdown import TranscriptionAbortedError
 from app.db.session_utils import session_scope
 from app.transcription.diarizer_native import DiarSidecarUnavailableError
@@ -25,6 +26,7 @@ from .context import requeue_after_abort
 from .context import retry_on_diar_sidecar_unavailable
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
+from .run_ownership import superseded_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,10 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
 
     task_id = preprocess_context["task_id"]
     file_uuid = preprocess_context["file_uuid"]
+    # issue #1020: a run recovery already replaced must not resurrect its Task row.
+    superseded = superseded_or_none(preprocess_context, stage="GPU diarization")
+    if superseded is not None:
+        return superseded
     file_id = preprocess_context["file_id"]
     user_id = preprocess_context["user_id"]
 
@@ -83,7 +89,7 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
     # inside this block -- outside it `stand_down_if_requested` has no run to ask about and
     # silently never fires. The context manager's reset is what stops celery's REUSED pool
     # thread from carrying this run's id into the next task.
-    with cancellation_scope(task_id, file_uuid):
+    with cancellation_scope(task_id, file_uuid), run_heartbeat(task_id):
         try:
             # issue #823: the cheapest place to catch a cancel that landed while this
             # message sat in the broker queue -- one Redis read, before any download,

@@ -27,6 +27,7 @@ from app.utils.websocket_notify import send_ws_event_for_file
 
 from .notifications import send_completion_notification
 from .notifications import send_progress_notification
+from .run_ownership import SUPERSEDED
 
 # How long to wait before folding the enrichment tail into the timing row. Long enough for
 # indexing, clustering, summary and redaction to finish on a normal file; the upsert merges,
@@ -89,7 +90,11 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         _cleanup_temp(gpu_result.get("file_uuid"))
         return gpu_result
 
-    if gpu_result.get("status") == "split_forwarded":
+    if gpu_result.get("status") in (SUPERSEDED, "split_forwarded"):
+        # issue #1020 (superseded): a stage found its run replaced by a newer one and stood
+        # down. Unlike the cancelled branch above this must NOT release the temp audio: it is
+        # keyed by file, and the replacement run owns it now.
+        #
         # gpu-split topology (core.py::transcribe_gpu_task): this dict is what the
         # transcribe-only leg returns to satisfy the OUTER pipeline chain's
         # unconditional third link. It carries no user_id/speaker_mapping/etc. — the
@@ -99,8 +104,8 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         # must be a no-op, not a KeyError (issue that made every --with-gpu-split job
         # fail visibly even though diarization went on to complete correctly).
         logger.debug(
-            "finalize_transcription: no-op for split_forwarded result (file_id=%s, "
-            "task_id=%s) — the real finalize runs after diarize_gpu_task",
+            "finalize_transcription: no-op for %s result (file_id=%s, task_id=%s)",
+            gpu_result.get("status"),
             gpu_result.get("file_id"),
             gpu_result.get("task_id"),
         )

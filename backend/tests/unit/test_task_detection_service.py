@@ -152,14 +152,17 @@ def test_stuck_tasks_need_both_staleness_and_an_exceeded_budget(service, db_sess
     """Staleness alone is not enough — the duration check is the second half.
 
     Catches the duration filter being dropped from ``identify_stuck_tasks``: any
-    pending task quiet for 5 minutes would be failed, which for a transcription
-    that is legitimately mid-GPU-run destroys in-flight work.
+    pending task quiet for 5 minutes would be failed, destroying in-flight work.
+    A summarization, because it creates its Task row when it starts, so its age is its
+    run time; a transcription is judged by its liveness markers instead (#1020,
+    ``test_queued_transcription_recovery.py``).
     """
     media_file = _file(db_session, normal_user)
     stale_and_over = _task(
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="in_progress",
         created_at=NOW - timedelta(seconds=4000),
         updated_at=NOW - timedelta(seconds=600),
@@ -168,6 +171,7 @@ def test_stuck_tasks_need_both_staleness_and_an_exceeded_budget(service, db_sess
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="in_progress",
         created_at=NOW - timedelta(seconds=600),
         updated_at=NOW - timedelta(seconds=600),
@@ -179,10 +183,26 @@ def test_stuck_tasks_need_both_staleness_and_an_exceeded_budget(service, db_sess
 
 
 def test_orphaned_tasks_use_the_hour_threshold(service, db_session, normal_user):
-    """Only tasks untouched for longer than ORPHANED_TASK_THRESHOLD hours count."""
+    """Only tasks untouched for longer than ORPHANED_TASK_THRESHOLD hours count.
+
+    A summarization for the same reason as the stuck-task test above: a quiet
+    transcription is usually just queued, and is orphaned only when provably dead (#1020).
+    """
     media_file = _file(db_session, normal_user)
-    old = _task(db_session, normal_user, media_file, updated_at=NOW - timedelta(hours=2))
-    recent = _task(db_session, normal_user, media_file, updated_at=NOW - timedelta(minutes=10))
+    old = _task(
+        db_session,
+        normal_user,
+        media_file,
+        task_type="summarization",
+        updated_at=NOW - timedelta(hours=2),
+    )
+    recent = _task(
+        db_session,
+        normal_user,
+        media_file,
+        task_type="summarization",
+        updated_at=NOW - timedelta(minutes=10),
+    )
 
     ids = {t.id for t in service.identify_orphaned_tasks(db_session)}
     assert old.id in ids
@@ -481,12 +501,14 @@ def test_false_positive_failures_match_the_exact_recovery_message(service, db_se
     task failure whose message merely mentions "stuck in processing" would be
     reset to pending and re-dispatched in a loop. The 5-day-old row is the control
     for the recency window that stops the sweeper resurrecting ancient failures.
+    Summarizations: transcriptions are never reset by this step (#1020).
     """
     media_file = _file(db_session, normal_user)
     recovered = _task(
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="failed",
         error_message="Task recovered after being stuck in processing",
         created_at=NOW - timedelta(hours=1),
@@ -495,6 +517,7 @@ def test_false_positive_failures_match_the_exact_recovery_message(service, db_se
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="failed",
         error_message="ffmpeg exited with code 1",
         created_at=NOW - timedelta(hours=1),
@@ -503,6 +526,7 @@ def test_false_positive_failures_match_the_exact_recovery_message(service, db_se
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="failed",
         error_message="Task recovered after being stuck in processing",
         created_at=NOW - timedelta(days=5),

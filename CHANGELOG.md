@@ -78,6 +78,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the WhisperX step falls back to `cpu`/`int8` when `USE_GPU=true` but no GPU is present.
   `Dockerfile.prod` and `Dockerfile.lite` now create `DIAR_MODELS_DIR`'s default `/models`
   owned by `appuser`, which previously could not create it (EACCES).
+- **Task recovery no longer fails or duplicates transcriptions that are waiting for a GPU
+  worker** (#1020). Recovery decided a transcription was dead from the checking process's start
+  time and its age since dispatch, so restarting a worker or the API, or simply waiting an hour,
+  failed a queued file or dispatched a second pipeline beside the first. Each run now carries a
+  queued marker and a worker heartbeat in Redis, and only a run with neither is recovered; the
+  duration budget is measured from when a worker started the run. Recovery cancels the run it
+  replaces, and every pipeline stage stands down when its run has been failed or replaced, so
+  exactly one transcription runs. Step 5.7 no longer resets transcription rows, and its reset
+  counter survives the next failure, so the stuck/reset cycle ends after two attempts. The
+  thresholds are now environment variables (`TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS`,
+  `TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS`, `TRANSCRIPTION_HEARTBEAT_TTL_SECONDS`,
+  `TASK_MAX_DURATION_TRANSCRIPTION_SECONDS`, `TASK_MAX_DURATION_DEFAULT_SECONDS`,
+  `TASK_RECOVERY_STALENESS_SECONDS`, `TASK_RECOVERY_ORPHANED_HOURS`).
 
 ## [0.5.1] - 2026-09-19
 

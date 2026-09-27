@@ -561,6 +561,13 @@ class Settings(BaseSettings):
     # resumable, so the default sits far under it. Raise it to keep more uploads on the
     # single-PUT path; it can never disable multipart for objects that need it.
     MULTIPART_THRESHOLD_MB: int = 512
+    # Whether POST /api/files — the fallback that streams a whole file THROUGH the API
+    # process instead of browser -> object storage — is accepted (issue #1008). Set false
+    # to keep every file byte out of the API: the route 404s before reading the body,
+    # /system/capabilities advertises it so the browser never falls back, and
+    # /files/prepare reports "direct upload unavailable" (503) instead of handing out
+    # a fallback. Presigned single-PUT and multipart uploads are unaffected.
+    API_MEDIATED_UPLOAD_ENABLED: bool = True
     # Presigned-URL revocation on quarantine (issue #907). Browser-facing GET presigns
     # (get_file_url, get_presigned_download_url, MinIOService.get_presigned_url) are
     # signed with a dedicated, least-privilege MinIO service-account identity instead

@@ -301,11 +301,26 @@ async def prepare_upload(
         # The application task_id is minted here so every HTTP-phase marker shares
         # the benchmark:{task_id} Redis hash with the downstream pipeline.
         if request.use_presigned:
+            from app.core.config import settings as app_settings
             from app.services.multipart_upload import build_upload_plan
 
             plan = await run_in_threadpool(
                 build_upload_plan, storage_path, request.content_type, request.file_size
             )
+            if plan is None and not app_settings.API_MEDIATED_UPLOAD_ENABLED:
+                # There is no fallback to hand the client to (issue #1008). Drop the
+                # row this call just created and ask the client to retry, rather than
+                # leaving it a PENDING row pointing at a route that will 404.
+                logger.warning(
+                    f"No browser-direct upload plan for {request.filename} and the "
+                    "API-mediated upload is disabled; asking the client to retry"
+                )
+                db.delete(db_file)
+                db.commit()
+                raise HTTPException(
+                    status_code=503,
+                    detail="Direct upload is temporarily unavailable. Please retry shortly.",
+                )
             if plan is None:
                 logger.info(
                     f"No browser-direct upload plan for {request.filename} "

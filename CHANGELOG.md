@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`API_MEDIATED_UPLOAD_ENABLED` server setting (#1008).** Default `true` (no change). Set
+  `false` to keep every file byte out of the API process: `POST /api/files` answers 404 before
+  reading the body, `/api/system/capabilities` advertises `api_mediated_upload_enabled`, the
+  browser never falls back from the presigned path to that route (a failed presigned attempt
+  is retried on the presigned path), and `/files/prepare` answers 503 instead of handing out a
+  fallback when it cannot plan a presigned upload. Presigned single-PUT and multipart uploads
+  are unchanged.
+
 ### Security
 
 - **Anonymous local-account routes did real work with local authentication disabled

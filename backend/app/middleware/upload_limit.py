@@ -19,6 +19,9 @@ A ``Content-Length`` over the ceiling is refused before a byte is read; otherwis
 bytes are counted as they arrive and the request is cut off with 413 as soon as the
 count passes the ceiling. The presigned single-PUT and multipart paths never carry
 file bytes through the API and are not governed here.
+
+With ``API_MEDIATED_UPLOAD_ENABLED`` off, ``POST /api/files`` is refused outright —
+404 before a byte is read (issue #1008).
 """
 
 from __future__ import annotations
@@ -41,10 +44,20 @@ from app.core.constants import MAX_AVATAR_SIZE
 MULTIPART_OVERHEAD_BYTES = 1024 * 1024
 
 
+_API_UPLOAD_DISABLED_DETAIL = (
+    "Uploading through the API is disabled on this server; use the direct upload flow."
+)
+
+
+def _is_api_upload_route(path: str) -> bool:
+    prefix = settings.API_PREFIX
+    return path in (f"{prefix}/files", f"{prefix}/files/")
+
+
 def _limit_for(path: str) -> tuple[int, str] | None:
     """``(max_body_bytes, detail)`` for a governed POST route, else None."""
     prefix = settings.API_PREFIX
-    if path in (f"{prefix}/files", f"{prefix}/files/"):
+    if _is_api_upload_route(path):
         ceiling = settings.MAX_UPLOAD_BYTES
         if not ceiling:
             return None
@@ -84,6 +97,11 @@ class UploadBodyLimitMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["method"] != "POST":
             await self.app(scope, receive, send)
+            return
+        if _is_api_upload_route(scope["path"]) and not settings.API_MEDIATED_UPLOAD_ENABLED:
+            await JSONResponse({"detail": _API_UPLOAD_DISABLED_DETAIL}, status_code=404)(
+                scope, receive, send
+            )
             return
         limit = _limit_for(scope["path"])
         if limit is None:

@@ -283,6 +283,13 @@ deprecated alias for `anthropic`).
   `LLM_PROVIDER` and no user config = transcription-only; `create_from_system_settings`
   returns `None` and callers must handle it. `custom` is **user-config only** — it always
   returns `None` from system settings.
+- **"Is an LLM configured?" has ONE answer: `LLMService.is_configured_for_user(db, user_id)`.**
+  DB-only, no network, and built from the same helpers the factories use
+  (`_resolve_user_llm_settings`, `_resolve_system_provider`, `_endpoint_resolves`), so it is
+  true exactly when `create_from_settings` would return a service. Never re-derive it as
+  `bool(settings.LLM_PROVIDER)`: a provider with no key or endpoint passes that check while
+  every task skips, which made the post-transcription sweep re-dispatch topic extraction for
+  every file every 10 minutes (issue #1017).
 - **`bedrock` is the one SDK-based provider** (`SDK_PROVIDERS`, `llm_bedrock.py`): boto3's
   Converse API, not an HTTP endpoint. No `api_key` — credentials resolve via boto3's standard
   chain (IAM role, profile, or environment) — and no per-configuration region: both

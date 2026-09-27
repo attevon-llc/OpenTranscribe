@@ -258,6 +258,54 @@ class SpeakerUpdate(BaseModel):
     profile_action: str | None = None  # 'update_profile' or 'create_new_profile'
 
 
+class SpeakerMetadataHint(BaseModel):
+    """A speaker name inferred from the file's title/description/author (never auto-applied)."""
+
+    name: str
+    role: str | None = None
+    confidence: float | None = None
+    source: str | None = None
+
+
+# Keys in ``speaker.attribute_confidence`` that are NOT confidence numbers. Speaker
+# identification writes them into the same JSONB bag as the voice-attribute scores;
+# each is exposed as its own response field instead.
+_ATTRIBUTE_CONFIDENCE_NON_NUMERIC_KEYS = frozenset(
+    {"metadata_hints", "alignment", "alignment_hint"}
+)
+
+
+def split_attribute_confidence(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Split the stored ``attribute_confidence`` bag into its response fields.
+
+    Every surface that serves a speaker goes through this, so the speaker list (a
+    hand-built dict) and the schema-validated surfaces cannot drift apart (#1026).
+
+    Returns:
+        ``attribute_confidence`` (numeric scores only; None when nothing was stored),
+        ``metadata_hints`` (list), ``gender_alignment`` and ``gender_alignment_hint``.
+    """
+    bag = dict(raw or {})
+    alignment = bag.get("alignment")
+    alignment_hint = bag.get("alignment_hint")
+    hints = bag.get("metadata_hints")
+    numeric = {
+        k: v
+        for k, v in bag.items()
+        if k not in _ATTRIBUTE_CONFIDENCE_NON_NUMERIC_KEYS
+        and isinstance(v, (int, float))
+        and not isinstance(v, bool)
+    }
+    return {
+        "attribute_confidence": numeric if raw else None,
+        "metadata_hints": [h for h in hints if isinstance(h, dict)]
+        if isinstance(hints, list)
+        else [],
+        "gender_alignment": alignment if isinstance(alignment, str) else None,
+        "gender_alignment_hint": alignment_hint if isinstance(alignment_hint, str) else None,
+    }
+
+
 class Speaker(SpeakerBase, UUIDBaseSchema):
     """Speaker with UUID as public identifier"""
 
@@ -281,8 +329,29 @@ class Speaker(SpeakerBase, UUIDBaseSchema):
     # AI-predicted voice attributes
     predicted_gender: str | None = None
     predicted_age_range: str | None = None
-    attribute_confidence: dict[str, float] | None = None
+    attribute_confidence: dict[str, float] | None = None  # numeric scores only
     attributes_predicted_at: datetime | None = None
+
+    # Split out of the stored attribute_confidence bag by split_attribute_confidence().
+    metadata_hints: list[SpeakerMetadataHint] = Field(default_factory=list)
+    gender_alignment: str | None = None  # "match" | "mismatch"
+    gender_alignment_hint: str | None = None  # the hint name the alignment was judged against
+
+    @model_validator(mode="before")
+    @classmethod
+    def prepare_uuid_response(cls, data: Any) -> Any:
+        """Run the base ORM->dict mapping, then split ``attribute_confidence``.
+
+        Overrides the base validator by name so it runs AFTER the ORM row has become
+        a dict; a separately named subclass validator would run first and see the row.
+        Fields already present in a dict input (a re-validated ``model_dump()``) win
+        over the split, which would otherwise reset them from the numeric-only map.
+        """
+        data = super().prepare_uuid_response(data)
+        if isinstance(data, dict) and "attribute_confidence" in data:
+            split = split_attribute_confidence(data["attribute_confidence"])
+            data = {**split, **data, "attribute_confidence": split["attribute_confidence"]}
+        return data
 
 
 # Speaker Profile schemas

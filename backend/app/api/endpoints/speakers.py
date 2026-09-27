@@ -26,6 +26,7 @@ from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import Speaker as SpeakerSchema
 from app.schemas.media import SpeakerUpdate
+from app.schemas.media import split_attribute_confidence
 from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
 from app.services.speaker_status_service import SpeakerStatusService
@@ -568,23 +569,8 @@ def _build_speaker_dict(
     segment_timestamps: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the speaker dictionary for API response."""
-    # Extract cross-reference alignment data stored in attribute_confidence JSONB
-    attr_conf: dict[str, Any] = dict(speaker.attribute_confidence or {})
-    gender_alignment = attr_conf.get("alignment")  # "match", "mismatch", or None
-    gender_alignment_hint = attr_conf.get("alignment_hint")  # e.g., "Joe Rogan"
-    metadata_hints: list[dict[str, Any]] = attr_conf.get("metadata_hints", [])
-
-    # Return only numeric confidence values; string fields are exposed separately
-    numeric_confidence: dict[str, Any] | None = (
-        {
-            k: v
-            for k, v in attr_conf.items()
-            if isinstance(v, (int, float))
-            and k not in ("alignment", "alignment_hint", "metadata_hints")
-        }
-        if attr_conf
-        else None
-    )
+    # The same split the Speaker schema applies, so this list and the detail surfaces agree.
+    attribute_fields = split_attribute_confidence(speaker.attribute_confidence)
 
     # `speaker.created_at` is nullable — a server_default fills the column only for an
     # INSERT that omits it, so a raw-SQL insert, a backfill or an explicit UPDATE can leave
@@ -613,14 +599,14 @@ def _build_speaker_dict(
         # AI-predicted speaker attributes
         "predicted_gender": speaker.predicted_gender,
         "predicted_age_range": speaker.predicted_age_range,
-        "attribute_confidence": numeric_confidence,
+        "attribute_confidence": attribute_fields["attribute_confidence"],
         "attributes_predicted_at": speaker.attributes_predicted_at.isoformat()
         if speaker.attributes_predicted_at
         else None,
         # Cross-reference alignment data from metadata hints
-        "gender_alignment": gender_alignment,
-        "gender_alignment_hint": gender_alignment_hint,
-        "metadata_hints": metadata_hints,
+        "gender_alignment": attribute_fields["gender_alignment"],
+        "gender_alignment_hint": attribute_fields["gender_alignment_hint"],
+        "metadata_hints": attribute_fields["metadata_hints"],
         # Pre-computed display flags
         **display_flags,
     }

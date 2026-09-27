@@ -388,6 +388,47 @@ when it's in effect. See [Environment Variables](../configuration/environment-va
 for the full variable reference, including presigned-URL TTL clamping
 (`PRESIGNED_URL_MAX_SECONDS`) and the multipart-upload threshold.
 
+:::warning[Quarantine and already-issued media URLs on S3]
+On the bundled MinIO backend, quarantining a file immediately revokes presigned media URLs that
+were already handed out (a restricted signing identity denies reads of quarantined objects). That
+identity is created through MinIO's admin API, which S3 does not have, so on `STORAGE_BACKEND=s3`
+an already-issued URL for a quarantined file **stays valid until it expires**. New URLs are never
+issued for a quarantined file either way.
+
+Two mitigations, which can be combined:
+
+- **Shorten the window.** `MEDIA_URL_EXPIRE_SECONDS` (default 21600 = 6 h, capped by
+  `PRESIGNED_URL_MAX_SECONDS`) is the longest an issued URL can outlive a takedown. Lowering it
+  narrows the exposure, at the cost of long recordings needing a fresh URL mid-playback.
+- **Enforce revocation with a bucket policy.** Quarantine tags the object `ot-quarantine=true`;
+  attach this Deny to the media bucket and S3 rejects reads of tagged objects whoever signed the
+  URL:
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "DenyQuarantinedReads",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::<your-media-bucket>/*",
+        "Condition": { "StringEquals": { "s3:ExistingObjectTag/ot-quarantine": "true" } }
+      }
+    ]
+  }
+  ```
+
+  Because the Deny applies to every principal, the backend itself also cannot read a quarantined
+  file's media (reprocessing, download, export) until it is released.
+
+At startup the backend reads the media bucket's policy (grant the app `s3:GetBucketPolicy` on the
+bucket) and logs one WARNING if the Deny is missing or the policy can't be read, or an INFO line
+if revocation is enforced. See `docs/abuse-and-takedown.md` in the repository for the full
+takedown design.
+:::
+
 :::note[AWS S3's 5 GiB single-PUT ceiling]
 MinIO accepts a single-PUT object up to 5 TiB; AWS S3 rejects one above 5 GiB. On
 `STORAGE_BACKEND=s3`, uploads above that size are always routed through the multipart path, so

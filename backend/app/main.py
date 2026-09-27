@@ -379,7 +379,9 @@ def _setup_minio():
 
         if storage_presign_identity.ensure_presign_identity():
             logger.info("Presign identity ready — quarantine will revoke presigned media URLs")
-        elif not native_s3 and settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
+        elif native_s3:
+            storage_presign_identity.report_native_s3_revocation_posture(minio_client)
+        elif settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
             logger.error(
                 "Presign identity NOT provisioned — presigned media URLs will be signed "
                 "with the root credential and quarantine will NOT revoke them. See the "

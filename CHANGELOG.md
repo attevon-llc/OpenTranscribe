@@ -34,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Speaker identification no longer logs an ERROR and traceback on every file when no LLM is
+  configured** (#1004). Having no provider is a deployment choice: `ai.identify_speakers` now
+  skips at INFO with `{"status": "skipped", "reason": "LLM not configured"}`, the same way
+  `ai.extract_topics` does, and still closes out its task record. ERROR is reserved for a
+  configured provider that actually fails.
+- **S3 storage backend no longer logs a misleading "ROOT MinIO credential" ERROR from every
+  process on its first presign** (#1005). On `STORAGE_BACKEND=s3` there is no MinIO admin API, so
+  quarantine cannot revoke already-issued presigned media URLs by itself. The backend now checks
+  once at startup whether the media bucket carries the quarantine Deny bucket policy and logs a
+  single backend-aware WARNING if not, naming `MEDIA_URL_EXPIRE_SECONDS` as the exposure window.
+  The production-deployment docs describe the bucket policy and the TTL trade-off.
 - **`GET /api/auth/saml/metadata` returned 500 with SAML disabled (#998).** It now returns
   404 when SAML is off, and a configuration python3-saml rejects (on any SAML route) is a
   503 with one log line instead of an unhandled 500 and traceback.

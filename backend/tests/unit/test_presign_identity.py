@@ -10,6 +10,7 @@ Python or mocked — the falsifiable live-MinIO test is
 from __future__ import annotations
 
 import base64
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -110,6 +111,15 @@ def test_quarantine_tag_value_is_exactly_lowercase_true():
 
 
 class TestPresignClientFallback:
+    @pytest.fixture(autouse=True)
+    def _minio_backend_enabled(self, monkeypatch):
+        # The ERROR is for a provisioning FAILURE, which only exists on MinIO with the
+        # feature on — pin both so these tests don't depend on the ambient config.
+        from app.services import storage_backend
+
+        monkeypatch.setattr(storage_backend, "is_native_s3", lambda: False)
+        monkeypatch.setattr(settings, "STORAGE_PRESIGN_IDENTITY_ENABLED", True)
+
     def test_returns_root_client_and_logs_error_when_identity_unavailable(
         self, monkeypatch, caplog
     ):
@@ -141,6 +151,196 @@ class TestPresignClientFallback:
         client = pid.presign_client()
 
         assert client is not root_client
+
+
+class TestExpectedFallbacksAreNotErrors:
+    """Issue #1005: native S3 and disabled-by-config are expected, not faults.
+
+    Both used to log a MinIO-worded ERROR from every process on its first presign.
+    They're reported once at startup instead; the presign path stays quiet.
+    """
+
+    def test_native_s3_presigns_with_the_storage_client_and_logs_no_error(
+        self, monkeypatch, caplog
+    ):
+        from app.services import storage_backend
+        from app.services.minio_service import minio_client as root_client
+
+        monkeypatch.setattr(storage_backend, "is_native_s3", lambda: True)
+        monkeypatch.setattr(settings, "STORAGE_PRESIGN_IDENTITY_ENABLED", True)
+
+        with caplog.at_level("DEBUG", logger="app.services.storage_presign_identity"):
+            clients = [pid.presign_client() for _ in range(3)]
+
+        assert all(c is root_client for c in clients)
+        assert [r for r in caplog.records if r.levelno >= 30] == []
+        assert not any("MinIO" in r.getMessage() for r in caplog.records)
+
+    def test_disabled_identity_logs_no_error_on_presign(self, monkeypatch, caplog):
+        from app.services import storage_backend
+
+        monkeypatch.setattr(storage_backend, "is_native_s3", lambda: False)
+        monkeypatch.setattr(settings, "STORAGE_PRESIGN_IDENTITY_ENABLED", False)
+
+        with caplog.at_level("DEBUG", logger="app.services.storage_presign_identity"):
+            pid.presign_client()
+
+        assert [r for r in caplog.records if r.levelno >= 30] == []
+
+
+def _documented_s3_policy(bucket: str) -> str:
+    """The bucket policy ``docs/abuse-and-takedown.md`` tells an S3 operator to attach."""
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Deny",
+                    "Principal": "*",
+                    "Action": "s3:GetObject",
+                    "Resource": f"arn:aws:s3:::{bucket}/*",
+                    "Condition": {
+                        "StringEquals": {
+                            f"s3:ExistingObjectTag/{STORAGE_QUARANTINE_TAG_KEY}": "true"
+                        }
+                    },
+                }
+            ],
+        }
+    )
+
+
+def _mutated_policy(bucket: str, **overrides) -> str:
+    policy = json.loads(_documented_s3_policy(bucket))
+    policy["Statement"][0].update(overrides)
+    return json.dumps(policy)
+
+
+class TestBucketPolicyDetection:
+    def test_the_documented_policy_is_recognised(self):
+        assert pid.bucket_policy_denies_quarantined_reads(_documented_s3_policy("media"), "media")
+
+    def test_it_is_recognised_alongside_unrelated_statements(self):
+        policy = json.loads(_documented_s3_policy("media"))
+        policy["Statement"].insert(
+            0,
+            {
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": "s3:*",
+                "Resource": "arn:aws:s3:::media/*",
+                "Condition": {"Bool": {"aws:SecureTransport": "false"}},
+            },
+        )
+        assert pid.bucket_policy_denies_quarantined_reads(json.dumps(policy), "media")
+
+    @pytest.mark.parametrize(
+        "policy_json",
+        [
+            None,
+            "",
+            "not json",
+            _mutated_policy("media", Effect="Allow"),
+            _mutated_policy("media", Principal={"AWS": "arn:aws:iam::123456789012:role/x"}),
+            _mutated_policy("media", Action="s3:PutObject"),
+            _mutated_policy("media", Resource="arn:aws:s3:::other-bucket/*"),
+            _mutated_policy(
+                "media",
+                Condition={
+                    "StringEquals": {f"s3:ExistingObjectTag/{STORAGE_QUARANTINE_TAG_KEY}": "TRUE"}
+                },
+            ),
+            _mutated_policy(
+                "media", Condition={"StringEquals": {"s3:ExistingObjectTag/other-tag": "true"}}
+            ),
+        ],
+        ids=[
+            "none",
+            "empty",
+            "garbage",
+            "allow",
+            "scoped-principal",
+            "wrong-action",
+            "wrong-bucket",
+            "case-mismatched-value",
+            "wrong-tag-key",
+        ],
+    )
+    def test_near_misses_are_not_counted_as_enforced(self, policy_json):
+        assert pid.bucket_policy_denies_quarantined_reads(policy_json, "media") is False
+
+
+class _PolicyClient:
+    """Storage client stand-in answering ``get_bucket_policy`` like minio-py does."""
+
+    def __init__(self, policy_json: str | None = None, error_code: str | None = None):
+        self._policy_json = policy_json
+        self._error_code = error_code
+        self.asked_for: list[str] = []
+
+    def get_bucket_policy(self, bucket_name: str) -> str:
+        from minio.error import S3Error
+
+        self.asked_for.append(bucket_name)
+        if self._error_code:
+            raise S3Error(MagicMock(), self._error_code, "msg", bucket_name, "req", "host")
+        return self._policy_json or ""
+
+
+class TestNativeS3RevocationPosture:
+    @pytest.fixture(autouse=True)
+    def _bucket(self, monkeypatch):
+        monkeypatch.setattr(settings, "MEDIA_BUCKET_NAME", "media")
+        monkeypatch.setattr(settings, "MEDIA_URL_EXPIRE_SECONDS", 1800)
+
+    def _warnings(self, caplog):
+        return [r for r in caplog.records if r.levelname == "WARNING"]
+
+    def test_attached_policy_reports_enforced_without_warning(self, caplog):
+        client = _PolicyClient(_documented_s3_policy("media"))
+
+        with caplog.at_level("INFO", logger="app.services.storage_presign_identity"):
+            enforced = pid.report_native_s3_revocation_posture(client)
+
+        assert enforced is True
+        assert client.asked_for == ["media"]
+        assert self._warnings(caplog) == []
+
+    def test_missing_policy_warns_once_naming_the_ttl_window(self, caplog):
+        client = _PolicyClient(error_code="NoSuchBucketPolicy")
+
+        with caplog.at_level("INFO", logger="app.services.storage_presign_identity"):
+            enforced = pid.report_native_s3_revocation_posture(client)
+
+        assert enforced is False
+        warnings = self._warnings(caplog)
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert "MEDIA_URL_EXPIRE_SECONDS=1800s" in message
+        assert "docs/abuse-and-takedown.md" in message
+        assert "MinIO" not in message
+        assert not any(r.levelno >= 40 for r in caplog.records)
+
+    def test_policy_without_the_deny_warns(self, caplog):
+        client = _PolicyClient(_mutated_policy("media", Effect="Allow"))
+
+        with caplog.at_level("INFO", logger="app.services.storage_presign_identity"):
+            enforced = pid.report_native_s3_revocation_posture(client)
+
+        assert enforced is False
+        assert len(self._warnings(caplog)) == 1
+
+    def test_unreadable_policy_warns_that_it_could_not_verify(self, caplog):
+        client = _PolicyClient(error_code="AccessDenied")
+
+        with caplog.at_level("INFO", logger="app.services.storage_presign_identity"):
+            enforced = pid.report_native_s3_revocation_posture(client)
+
+        assert enforced is False
+        warnings = self._warnings(caplog)
+        assert len(warnings) == 1
+        assert "could not read the bucket policy" in warnings[0].getMessage()
+        assert "AccessDenied" in warnings[0].getMessage()
 
 
 class TestEnsurePresignIdentityGating:

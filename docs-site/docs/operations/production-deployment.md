@@ -692,6 +692,8 @@ The NGINX configuration includes a comprehensive set of security headers followi
 | `X-XSS-Protection` | `0` | Disabled (CSP is the modern replacement) |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | Limit referrer information |
 | `Permissions-Policy` | `camera=(), microphone=(self), ...` | Restrict browser features |
+| `Cross-Origin-Opener-Policy` | `same-origin` | Sever opener handles to cross-origin windows (frontend nginx) |
+| `Cross-Origin-Resource-Policy` | `same-origin` | Stop other origins embedding the app's documents and assets (frontend nginx) |
 | `Content-Security-Policy` | _(see below)_ | Control resource loading |
 
 ### Content Security Policy
@@ -704,7 +706,7 @@ script-src 'self' 'unsafe-inline';
 style-src 'self' 'unsafe-inline';
 img-src 'self' data: blob:;
 font-src 'self' data:;
-connect-src 'self' ws: wss:;
+connect-src 'self';
 media-src 'self' blob:;
 worker-src 'self' blob:;
 frame-ancestors 'self';
@@ -714,6 +716,10 @@ form-action 'self';
 ```
 
 This policy allows the Svelte SPA and WebSocket connections to function while blocking external resource loading, iframes from other origins, and plugin-based content.
+
+`connect-src 'self'` covers the notifications WebSocket: under CSP Level 3, `'self'` matches `ws:`/`wss:` on the page's own host. Bare `ws:`/`wss:` sources were removed because they allowed a socket to any host ([#1028](https://github.com/attevon-llc/OpenTranscribe/issues/1028)). If you rewrite this directive with `sub_filter`, match `connect-src 'self'`, and add an explicit scheme+host rather than a bare scheme.
+
+`Cross-Origin-Embedder-Policy` is deliberately **not** sent: `require-corp` would block presigned object-storage media and thumbnails. The frontend nginx sends a single `Cache-Control` per response (`no-store, ...` for HTML, `public, max-age=31536000, no-transform` for hashed static assets).
 
 ---
 

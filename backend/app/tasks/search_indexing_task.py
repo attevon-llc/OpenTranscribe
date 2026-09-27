@@ -280,7 +280,13 @@ def index_transcript_search_task(  # noqa: C901
             full_transcript = generate_full_transcript(seg_dicts_full)
             doc_speaker_names = get_unique_speaker_names(seg_dicts_full)
             index_transcript(
-                file_id, file_uuid, user_id, full_transcript, doc_speaker_names, doc_title
+                file_id,
+                file_uuid,
+                user_id,
+                full_transcript,
+                doc_speaker_names,
+                doc_title,
+                organization_id=meta["organization_id"],
             )
         except Exception as full_doc_err:
             logger.warning(f"Full-document transcript indexing failed (non-fatal): {full_doc_err}")

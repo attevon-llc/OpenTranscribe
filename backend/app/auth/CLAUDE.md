@@ -28,13 +28,19 @@ with a password / still self-register?":
 
 - `local_enabled` does **not** hide the username/password form — LDAP authenticates through the
   same form. The login page renders it on `local_enabled || ldap_enabled`.
-- `local_enabled` gates LOGIN only — the password-reset chain is deliberately not gated by
-  it. `auth/password_reset.py` checks `auth_type == 'local'` and `is_active`, never
-  `local_enabled`. For an ordinary account that dead-ends (reset succeeds, next login still
-  refused). For an active `super_admin` the whole chain completes, and that is the point: an
+- With `local_enabled` off, the anonymous local-account ROUTES are gated
+  (`api/endpoints/auth/local_auth_gate.py`, issue #997): `verify-email` / `verify-email/resend`
+  404, `register` 403s even if the env fallback says open, and `password-reset/request` /
+  `confirm` serve **only the active `super_admin` break-glass account** — anyone else gets the
+  usual generic answer with no reset work and no audit write. The *service*
+  (`auth/password_reset.py`) is still ungated: it checks `auth_type == 'local'` and
+  `is_active`, never `local_enabled`. The break-glass chain completing is the point: an
   operator who disabled local auth while their IdP was misconfigured, and who has also lost
   the break-glass password, has no other way back into the super_admin-gated auth config
-  (issue #910; pinned by `tests/unit/test_identity_source_policy.py`).
+  (issue #910; pinned by `tests/unit/test_identity_source_policy.py` and, over HTTP, by
+  `tests/api/test_local_auth_disabled_surface.py`). `/token` and the invitation routes are
+  NOT gated: LDAP signs in through `/token`, and invitations also provision external-IdP
+  accounts.
 - The super_admin exemption is load-bearing, not a convenience: auth configuration is
   super_admin-gated, so without it a deployment that disabled local auth while its IdP was
   misconfigured would have no way back in. Enforced in

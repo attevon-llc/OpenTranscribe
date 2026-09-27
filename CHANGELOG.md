@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Anonymous local-account routes did real work with local authentication disabled
+  (#997).** With `local_enabled` off, `verify-email` / `verify-email/resend` now return 404,
+  `register` is refused even when the env fallback says open, and `password-reset/*` serve
+  only the active `super_admin` break-glass account — every other caller gets the usual
+  generic answer with no reset work and no audit write. Invitations and `/token` are
+  unchanged (they also serve external identity providers and LDAP).
+- **Audit indexing no longer costs a HEAD round trip per event (#997).** The audit index's
+  existence is checked once per monthly index per process, and the audit writer's OpenSearch
+  client uses a 2 s timeout with no retries, so a slow OpenSearch can no longer hold every
+  audited request for the library's default timeout.
+- **SAML and OIDC handlers no longer block the event loop (#997).** Their synchronous config
+  loads, user sync, lockout, audit and session work now run in the threadpool.
+
 ## [0.5.1] - 2026-09-19
 
 ### Changed

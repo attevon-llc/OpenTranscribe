@@ -4,6 +4,12 @@ Unlike the OIDC flow, ACS and SLS are **browser POST/redirect targets the IdP ta
 to directly** — there is no SPA JavaScript in that leg of the round trip, so these
 handlers finish by issuing an HTTP redirect to the SPA with the session already
 established via httpOnly cookies, not by returning JSON for a `fetch()` caller.
+
+The handlers are ``async def`` only because python3-saml needs the parsed form, which
+Starlette exposes as ``await request.form()``. Everything else they do — config load
+(~19 queries), python3-saml, the user sync, lockout (Redis), audit and session rows —
+is synchronous, so it is pushed to the threadpool with ``run_in_threadpool``; run
+inline it blocked the event loop for every other request (issue #997).
 """
 
 import json
@@ -17,6 +23,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -103,8 +110,12 @@ async def saml_metadata(request: Request, db: Session = Depends(get_db)):
     secret: entity id, ACS/SLS URLs, and (if configured) the SP's public signing
     certificate only, never the private key.
     """
-    cfg = SAMLConfig.from_db(db)
     request_data = await saml_request_data(request)
+    return await run_in_threadpool(_saml_metadata, request_data, db)
+
+
+def _saml_metadata(request_data: dict, db: Session) -> Response:
+    cfg = SAMLConfig.from_db(db)
     auth = build_auth(request_data, cfg)
     settings_obj = auth.get_settings()
     metadata = settings_obj.get_sp_metadata()
@@ -122,8 +133,12 @@ async def saml_metadata(request: Request, db: Session = Depends(get_db)):
 @limiter.limit(get_auth_rate_limit())
 async def saml_login(request: Request, response: Response, db: Session = Depends(get_db)):
     """Initiate SP-initiated SSO: redirect the browser to the IdP's SSO endpoint."""
-    cfg = _require_enabled_config(db)
+    cfg = await run_in_threadpool(_require_enabled_config, db)
     request_data = await saml_request_data(request)
+    return await run_in_threadpool(_saml_login_redirect, request_data, cfg)
+
+
+def _saml_login_redirect(request_data: dict, cfg: SAMLConfig) -> RedirectResponse:
     auth = build_auth(request_data, cfg)
     redirect_url = auth.login(return_to=_POST_LOGIN_REDIRECT)
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
@@ -140,8 +155,22 @@ async def saml_acs(request: Request, response: Response, db: Session = Depends(g
     nor the browser can distinguish the two on the wire.
     """
     client_ip, user_agent = _get_client_info(request)
-    cfg = _require_enabled_config(db)
+    cfg = await run_in_threadpool(_require_enabled_config, db)
     request_data = await saml_request_data(request)
+    return await run_in_threadpool(
+        _complete_saml_acs, request, db, cfg, request_data, client_ip, user_agent
+    )
+
+
+def _complete_saml_acs(
+    request: Request,
+    db: Session,
+    cfg: SAMLConfig,
+    request_data: dict,
+    client_ip: str,
+    user_agent: str,
+) -> Response:
+    """The synchronous remainder of :func:`saml_acs`, run in the threadpool."""
     auth = build_auth(request_data, cfg)
 
     auth.process_response()
@@ -280,8 +309,22 @@ async def saml_sls(request: Request, response: Response, db: Session = Depends(g
     local session tied to the browser's own cookies is revoked either way.
     """
     client_ip, user_agent = _get_client_info(request)
-    cfg = _require_enabled_config(db)
+    cfg = await run_in_threadpool(_require_enabled_config, db)
     request_data = await saml_request_data(request)
+    return await run_in_threadpool(
+        _complete_saml_sls, request, db, cfg, request_data, client_ip, user_agent
+    )
+
+
+def _complete_saml_sls(
+    request: Request,
+    db: Session,
+    cfg: SAMLConfig,
+    request_data: dict,
+    client_ip: str,
+    user_agent: str,
+) -> Response:
+    """The synchronous remainder of :func:`saml_sls`, run in the threadpool."""
     auth = build_auth(request_data, cfg)
 
     from app.auth.cookies import clear_auth_cookies

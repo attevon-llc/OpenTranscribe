@@ -45,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. The speaker-profile avatar upload is capped the same way. The no-op
   `app.router.default_max_upload_size` assignment is removed. Presigned single-PUT and
   multipart uploads are unaffected, so multi-GB uploads work as before.
+- **The default model download failed on CPU-only hosts** such as a `docker build` stage that
+  bakes models into an image (#1003). `scripts/download-models.py` now makes
+  `torch.mps.empty_cache()` a no-op when no MPS backend exists (the pinned pyannote fork calls
+  it whenever CUDA is absent and it raised `Cannot execute emptyCache() without MPS backend`),
+  and the WhisperX step falls back to `cpu`/`int8` when `USE_GPU=true` but no GPU is present.
+  `Dockerfile.prod` and `Dockerfile.lite` now create `DIAR_MODELS_DIR`'s default `/models`
+  owned by `appuser`, which previously could not create it (EACCES).
 
 ## [0.5.1] - 2026-09-19
 

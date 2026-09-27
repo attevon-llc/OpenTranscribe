@@ -195,11 +195,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean
 
 # Create non-root user for security
+# /models is DIAR_MODELS_DIR's default (native_provision.DEFAULT_MODELS_DIR). It sits at the
+# filesystem root, so appuser cannot create it: without this, provisioning diar-native
+# models without a bind mount (e.g. baking them into an image) fails with EACCES (#1003).
 # No video group needed (no GPU access required in lite mode)
 RUN groupadd -r appuser && \
     useradd -r -g appuser -u 1000 -m -s /bin/bash appuser && \
     mkdir -p /app /app/models /app/temp && \
     chown -R appuser:appuser /app && \
+    mkdir -p /models && \
+    chown appuser:appuser /models && \
     mkdir -p /home/appuser/.cache/huggingface \
              /home/appuser/.cache/torch \
              /home/appuser/.cache/nltk_data \

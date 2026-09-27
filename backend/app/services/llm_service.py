@@ -28,6 +28,8 @@ from app.core.constants import LLM_OUTPUT_LANGUAGES
 from app.services.llm_stream import LLMStreamEvent
 from app.services.llm_stream import apply_stream_payload
 from app.services.llm_stream import get_stream_parser
+from app.utils.llm_log_safety import describe_llm_text
+from app.utils.llm_log_safety import log_llm_text_excerpt
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
     from sqlalchemy.orm import Session
@@ -466,8 +468,12 @@ class LLMService:
         finish_reason = data.get("done_reason", "stop")
 
         if not content:
+            message = data.get("message")
+            message_keys = sorted(message) if isinstance(message, dict) else type(message).__name__
+            # Keys only: an empty-content message can still carry the model's
+            # reasoning under "thinking" (issue #1022).
             logger.error(
-                f"Ollama message field exists but content is empty. Message: {data.get('message')}"
+                f"Ollama message field exists but content is empty. Message keys: {message_keys}"
             )
             logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
 
@@ -615,7 +621,10 @@ class LLMService:
             result: dict[str, Any] = response.json()
             return result
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM response: {response.text}")
+            logger.error(
+                "Failed to parse LLM response body as JSON (%s)", describe_llm_text(response.text)
+            )
+            log_llm_text_excerpt(logger, "Unparseable LLM response body", response.text)
             raise Exception(f"Invalid JSON response: {e}") from e
 
     def _resolve_endpoint(self) -> str:
@@ -1505,8 +1514,9 @@ class LLMService:
                 return lib_repaired
 
             logger.exception(
-                f"JSON repair also failed. Response content: {response.content[:500]}..."
+                "Summary JSON repair also failed (%s)", describe_llm_text(response.content)
             )
+            log_llm_text_excerpt(logger, "Unparseable summary response", response.content)
 
             # Return minimal error structure. error_detail/metadata.error are
             # rendered back to the requesting user via media_file.summary_data
@@ -1803,7 +1813,9 @@ class LLMService:
 
         required_fields = ["speaker_label", "predicted_name", "confidence"]
         if not all(field in pred for field in required_fields):
-            logger.warning(f"Skipping prediction with missing fields: {pred}")
+            logger.warning(
+                "Skipping speaker prediction with missing fields (has: %s)", sorted(pred.keys())
+            )
             return False
 
         confidence = pred.get("confidence", 0.0)
@@ -1821,8 +1833,11 @@ class LLMService:
             # anyway, on the same "never echo raw exception text" rule as every
             # other #914 site, since a dead field is one caller-change away from
             # becoming a leak the moment something starts reading it.
-            logger.exception("Failed to parse LLM identification response as JSON")
-            logger.error(f"Raw response content: {response.content[:500]}...")
+            logger.exception(
+                "Failed to parse LLM identification response as JSON (%s)",
+                describe_llm_text(response.content),
+            )
+            log_llm_text_excerpt(logger, "Unparseable identification response", response.content)
             return {
                 "speaker_predictions": [],
                 "error": f"Invalid JSON response ({type(e).__name__})",

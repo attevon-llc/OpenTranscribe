@@ -36,6 +36,7 @@ from app.core.config import settings
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
+from tests.unit._fake_liveness_redis import install_fake_redis
 
 RECOVER_ALL = "/api/tasks/recover-stuck-tasks"
 RECOVER_TASK = "/api/tasks/system/recover-task"
@@ -79,6 +80,17 @@ def _stuck_transcription_task(db, user, media_file) -> TaskModel:
     db.add(task)
     db.commit()
     return task
+
+
+@pytest.fixture
+def dead_transcription_runs(monkeypatch):
+    """A liveness store holding no markers, so every transcription run reads as dead.
+
+    Since #1020 a transcription is stuck only on positive evidence that its run is gone --
+    no heartbeat and no queued marker -- never on its age alone, and an unreadable store
+    (the default in a bare test process) reads as "unknown", which recovery must not act on.
+    """
+    return install_fake_redis(monkeypatch)
 
 
 @contextlib.contextmanager
@@ -131,7 +143,7 @@ def lite_mode_no_asr_provider(monkeypatch):
 # POST /tasks/recover-stuck-tasks
 # ---------------------------------------------------------------------------
 def test_recover_stuck_tasks_reports_a_failed_requeue(
-    client, db_session, admin_token_headers, normal_user, failing_dispatch
+    client, db_session, admin_token_headers, normal_user, failing_dispatch, dead_transcription_runs
 ):
     """Not an exact-count assertion: ``identify_stuck_tasks`` scans deployment-wide, so
     a busy dev stack may hold other genuinely stuck tasks. What must hold regardless is
@@ -159,7 +171,7 @@ def test_recover_stuck_tasks_reports_a_failed_requeue(
 
 
 def test_recover_stuck_tasks_still_reports_success_when_the_requeue_works(
-    client, db_session, admin_token_headers, normal_user, working_dispatch
+    client, db_session, admin_token_headers, normal_user, working_dispatch, dead_transcription_runs
 ):
     """CONTROL: same fixture shape, the requeue succeeds."""
     media_file = _make_media_file(db_session, normal_user, file_status="processing")

@@ -15,6 +15,9 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from app.core.task_config import task_recovery_config
+from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
+from app.core.task_liveness import RunState
+from app.core.task_liveness import probe_runs
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
@@ -23,9 +26,14 @@ from app.utils.task_utils import update_media_file_from_task_status
 
 logger = logging.getLogger(__name__)
 
-# Capture module load time as a reliable proxy for when this Python process started.
-# This is used instead of /proc/1/stat to avoid unreliable filesystem-based detection.
+# When this Python process started. Only the task types that do NOT carry liveness markers
+# still use it (see ``_dead_task_ids``): for a transcription it was the #1020 defect, because
+# a restart of whichever worker runs the health check made every transcription still queued
+# for a GPU worker look like it predated the restart.
 _MODULE_LOAD_TIME = datetime.now(UTC)
+
+#: The message ``recover_stuck_task`` writes, and the prefix Step 5.7 matches on.
+RECOVERED_AFTER_STUCK = "Task recovered after being stuck in processing"
 
 
 @dataclass
@@ -83,10 +91,23 @@ class TaskDetectionService:
             .all()
         )
 
-        # Filter based on duration
+        # Filter based on duration. A transcription's Task row is created when it is
+        # DISPATCHED, so its age says nothing about whether it ever ran (#1020): it is stuck
+        # only when it is provably dead, or has been running past its budget.
+        runs = probe_runs(
+            t.id for t in potential_stuck_tasks if t.task_type == TRANSCRIPTION_TASK_TYPE
+        )
         stuck_tasks = []
         for task in potential_stuck_tasks:
-            if self._is_task_duration_exceeded(task, now):
+            run = runs.get(str(task.id))
+            if run is None:
+                if self._is_task_duration_exceeded(task, now):
+                    stuck_tasks.append(task)
+            elif run.state == RunState.DEAD or (
+                run.state == RunState.RUNNING
+                and run.started_at is not None
+                and self._duration_exceeded_since(task, run.started_at, now)
+            ):
                 stuck_tasks.append(task)
 
         logger.info(f"Identified {len(stuck_tasks)} stuck tasks")
@@ -138,6 +159,7 @@ class TaskDetectionService:
         )
         for task in active_tasks_all:
             active_tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
+        dead_ids = self._dead_task_ids(active_tasks_all)
 
         stuck_files = []
         for media_file in processing_files:
@@ -168,16 +190,9 @@ class TaskDetectionService:
                     f"with no active tasks"
                 )
             else:
-                # Check if tasks are truly stuck using boot-time comparison.
-                # Any task updated before this container booted is dead.
-                boot_time = _get_container_boot_time()
-                all_tasks_stale = True
-                for task in active_tasks:
-                    if task.updated_at and task.updated_at > boot_time:
-                        # Task was updated after boot - it's alive
-                        all_tasks_stale = False
-                        break
-                    # Task updated before boot = dead from previous container
+                # Stuck only when every active task is provably dead. A transcription
+                # still waiting in the broker is not (#1020).
+                all_tasks_stale = all(str(task.id) in dead_ids for task in active_tasks)
 
                 if all_tasks_stale:
                     # Before marking as stuck, check if file has completed tasks
@@ -258,7 +273,7 @@ class TaskDetectionService:
         """
         cutoff_time = datetime.now(UTC) - timedelta(hours=self.config.ORPHANED_TASK_THRESHOLD)
 
-        orphaned_tasks = (
+        candidates = (
             db.query(Task)
             .filter(
                 Task.status.in_(["pending", "in_progress"]),
@@ -267,8 +282,15 @@ class TaskDetectionService:
             .all()
         )
 
+        # A transcription quiet for an hour is usually just waiting for a GPU worker; only
+        # one that is provably dead is orphaned (#1020).
+        runs = probe_runs(t.id for t in candidates if t.task_type == TRANSCRIPTION_TASK_TYPE)
+        orphaned_tasks = [
+            t for t in candidates if str(t.id) not in runs or runs[str(t.id)].state == RunState.DEAD
+        ]
+
         logger.info(f"Identified {len(orphaned_tasks)} orphaned tasks")
-        return orphaned_tasks  # type: ignore[no-any-return]
+        return orphaned_tasks
 
     def identify_abandoned_files(self, db: Session) -> tuple[list[MediaFile], list[str]]:
         """
@@ -322,9 +344,6 @@ class TaskDetectionService:
         )
 
         # Filter to only include files with no truly active tasks.
-        # Any DB task whose last update is older than this container's boot time
-        # is guaranteed to be dead (the worker that was running it is gone).
-        boot_time = _get_container_boot_time()
         truly_abandoned = []
         stale_task_ids: list[str] = []
         skipped_with_live_tasks = 0
@@ -343,8 +362,10 @@ class TaskDetectionService:
             tasks_by_file: dict[int, list[Task]] = {}
             for task in all_active_tasks:
                 tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
+            dead_ids = self._dead_task_ids(all_active_tasks)
         else:
             tasks_by_file = {}
+            dead_ids = set()
 
         for media_file in abandoned_files:
             active_db_tasks = tasks_by_file.get(int(media_file.id), [])
@@ -353,19 +374,14 @@ class TaskDetectionService:
                 truly_abandoned.append(media_file)
                 continue
 
-            # Check if any task was updated AFTER this container booted
-            # (meaning it was created/updated by the current worker process)
-            has_post_boot_task = any(
-                task.updated_at and task.updated_at > boot_time for task in active_db_tasks
-            )
-
-            if has_post_boot_task:
+            # A task still queued or running keeps the file (#1020): only a file whose
+            # every active task is provably dead is abandoned.
+            if any(str(task.id) not in dead_ids for task in active_db_tasks):
                 skipped_with_live_tasks += 1
             else:
-                # All tasks are from before this boot - they're dead
                 logger.info(
                     f"File {media_file.id} ({media_file.filename}) has "
-                    f"{len(active_db_tasks)} pre-boot DB tasks - "
+                    f"{len(active_db_tasks)} dead DB tasks - "
                     f"marking as abandoned"
                 )
                 # Collect stale task IDs for caller to mark as failed
@@ -920,17 +936,44 @@ class TaskDetectionService:
         return results
 
     def _is_task_duration_exceeded(self, task: Task, now: datetime) -> bool:
-        """Check if a task has exceeded its maximum allowed duration."""
+        """Check if a task has exceeded its maximum allowed duration.
+
+        Measured from ``created_at``, which is when the task started for every type that
+        creates its own Task row when it runs. A transcription does not (its row is created
+        at dispatch); ``identify_stuck_tasks`` measures it from its heartbeat instead.
+        """
         if not task.created_at:
             return False
+        return self._duration_exceeded_since(task, task.created_at, now)
 
-        duration = (now - task.created_at).total_seconds()
+    def _duration_exceeded_since(self, task: Task, started_at: datetime, now: datetime) -> bool:
+        """Whether ``task`` has run past its per-type budget since ``started_at``."""
         task_durations = self.config.MAX_TASK_DURATIONS
         if task_durations is None:
             return False
         max_duration = task_durations.get(str(task.task_type), task_durations["default"])
+        return bool((now - started_at).total_seconds() > max_duration)
 
-        return bool(duration > max_duration)
+    @staticmethod
+    def _dead_task_ids(tasks: list[Task]) -> set[str]:
+        """The ids of the active tasks that are provably no longer queued or running.
+
+        A transcription is judged by its liveness markers (#1020) and is never dead when
+        they cannot be read. Other task types create their Task row when they start and
+        carry no markers, so they keep the older test: last touched before this process
+        started.
+        """
+        runs = probe_runs(t.id for t in tasks if t.task_type == TRANSCRIPTION_TASK_TYPE)
+        boot_time = _get_container_boot_time()
+        dead: set[str] = set()
+        for task in tasks:
+            run = runs.get(str(task.id))
+            if run is not None:
+                if run.state == RunState.DEAD:
+                    dead.add(str(task.id))
+            elif not (task.updated_at and task.updated_at > boot_time):
+                dead.add(str(task.id))
+        return dead
 
     def _find_processing_files_without_tasks(self, db: Session) -> list[MediaFile]:
         """Find files in PROCESSING state with no live tasks.
@@ -945,7 +988,6 @@ class TaskDetectionService:
         """
         from sqlalchemy import or_
 
-        boot_time = _get_container_boot_time()
         now = datetime.now(UTC)
         stuck_threshold = now - timedelta(minutes=5)
 
@@ -980,18 +1022,12 @@ class TaskDetectionService:
         tasks_by_file: dict[int, list] = {}
         for task in active_proc_tasks:
             tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
+        dead_ids = self._dead_task_ids(active_proc_tasks)
 
         files_without_tasks = []
         for media_file in processing_files:
             file_tasks = tasks_by_file.get(media_file.id, [])
-            if not file_tasks:
-                files_without_tasks.append(media_file)
-                continue
-
-            has_post_boot_task = any(
-                task.updated_at and task.updated_at > boot_time for task in file_tasks
-            )
-            if not has_post_boot_task:
+            if all(str(task.id) in dead_ids for task in file_tasks):
                 files_without_tasks.append(media_file)
 
         return files_without_tasks
@@ -1102,6 +1138,16 @@ class TaskDetectionService:
         but likely completed successfully. Only consider recent tasks (< 3 days old)
         to avoid retrying very old failures.
 
+        Transcriptions are excluded (#1020). Resetting a transcription's Task row to
+        pending dispatches nothing -- transcription recovery re-dispatches through
+        ``schedule_file_retry`` -- and a pending row is exactly what let a superseded
+        message, still waiting in the broker, pass its ownership check and run.
+
+        The match is a prefix: ``recover_stuck_task`` appends the attempt counter a
+        previous reset recorded, so the counter survives the next failure and
+        ``recover_false_positive_failed_tasks`` can stop after its last attempt. It used
+        to be overwritten, which reset the counter to zero and repeated forever.
+
         Args:
             db: Database session
 
@@ -1114,16 +1160,9 @@ class TaskDetectionService:
             db.query(Task)
             .filter(
                 Task.status == "failed",
-                Task.error_message == "Task recovered after being stuck in processing",
-                Task.task_type.in_(
-                    ["speaker_identification", "summarization", "topic_extraction", "transcription"]
-                ),
+                Task.error_message.startswith(RECOVERED_AFTER_STUCK, autoescape=True),
+                Task.task_type.in_(["speaker_identification", "summarization", "topic_extraction"]),
                 Task.created_at > recent_cutoff,
-            )
-            .filter(
-                # Prevent infinite recovery loop: only reset tasks that haven't
-                # been reset more than 2 times (uses retry_count or similar field)
-                ~Task.error_message.contains("recovery_attempt_"),
             )
             .all()
         )

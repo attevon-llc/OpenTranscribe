@@ -15,6 +15,8 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from app.core.task_config import task_recovery_config
+from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
+from app.core.task_liveness import supersede_run
 from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -27,6 +29,32 @@ from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
 logger = logging.getLogger(__name__)
+
+#: Kept in step with ``task_detection_service.RECOVERED_AFTER_STUCK``, which Step 5.7
+#: prefix-matches. Not imported from there: that module imports this one's siblings.
+_RECOVERED_AFTER_STUCK = "Task recovered after being stuck in processing"
+_ATTEMPT_MARKER = "recovery_attempt_"
+
+
+def _recovery_attempts(error_message: str | None) -> int:
+    """The Step 5.7 reset counter recorded in a task's error message, or 0."""
+    if not error_message or _ATTEMPT_MARKER not in error_message:
+        return 0
+    try:
+        return int(error_message.split(_ATTEMPT_MARKER)[1].split("_")[0].rstrip(")"))
+    except (ValueError, IndexError):
+        return 0
+
+
+def _retire_if_transcription(task: Task) -> None:
+    """Stop a transcription run that recovery has just failed (#1020).
+
+    Without this the original message -- still waiting in the broker, or redelivered after a
+    worker crash -- ran later beside the replacement recovery dispatches.
+    """
+    if task.task_type == TRANSCRIPTION_TASK_TYPE:
+        media_file = task.media_file if task.media_file_id is not None else None
+        supersede_run(str(task.id), str(media_file.uuid) if media_file is not None else "")
 
 
 class TaskRecoveryService:
@@ -84,12 +112,18 @@ class TaskRecoveryService:
                 f"for media file {task.media_file_id}"
             )
 
-            # Update task status to failed
+            # Carry forward a Step 5.7 reset counter: overwriting it is what made the
+            # stuck -> reset -> stuck cycle repeat forever (#1020).
+            attempts = _recovery_attempts(task.error_message)
+            message = _RECOVERED_AFTER_STUCK
+            if attempts:
+                message = f"{message} ({_ATTEMPT_MARKER}{attempts})"
+            _retire_if_transcription(task)
             update_task_status(
                 db=db,
                 task_id=str(task.id),
                 status="failed",
-                error_message="Task recovered after being stuck in processing",
+                error_message=message,
                 completed=True,
             )
 
@@ -153,6 +187,7 @@ class TaskRecoveryService:
             try:
                 logger.info(f"Marking orphaned task {task.id} as failed")
 
+                _retire_if_transcription(task)
                 task.status = "failed"  # type: ignore[assignment]
                 task.error_message = "Task interrupted by system restart"  # type: ignore[assignment]
                 task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
@@ -368,6 +403,7 @@ class TaskRecoveryService:
                 )
 
                 for task in stale_tasks:
+                    _retire_if_transcription(task)
                     update_task_status(
                         db=db,
                         task_id=str(task.id),
@@ -1068,15 +1104,9 @@ class TaskRecoveryService:
                     f"Resetting false-positive failed task {task.id} ({task.task_type}) to pending"
                 )
 
-                # Track recovery attempts to prevent infinite loop
-                current_attempts = 0
-                if task.error_message and "recovery_attempt_" in task.error_message:
-                    try:
-                        current_attempts = int(
-                            task.error_message.split("recovery_attempt_")[1].split("_")[0]
-                        )
-                    except (ValueError, IndexError):
-                        current_attempts = 0
+                # Track recovery attempts to prevent infinite loop. The counter survives the
+                # next stuck-task failure because recover_stuck_task carries it forward.
+                current_attempts = _recovery_attempts(task.error_message)
 
                 if current_attempts >= 2:
                     logger.warning(

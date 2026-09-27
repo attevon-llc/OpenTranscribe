@@ -12,6 +12,8 @@ from datetime import datetime
 from app.core.celery import celery_app
 from app.core.constants import UtilityPriority
 from app.core.task_config import task_recovery_config
+from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
+from app.core.task_liveness import supersede_run
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import Task
@@ -67,6 +69,10 @@ def startup_recovery_task(self):
             for task_id in stale_task_ids:
                 task = db.query(Task).get(task_id)
                 if task:
+                    # issue #1020: stop the dead run's message if it is ever redelivered
+                    # beside the retry dispatched below.
+                    if task.task_type == TRANSCRIPTION_TASK_TYPE:
+                        supersede_run(str(task.id))
                     task.status = "failed"  # type: ignore[assignment]
                     task.error_message = "Celery task lost after system restart"  # type: ignore[assignment]
                     task.completed_at = datetime.now(UTC)  # type: ignore[assignment]

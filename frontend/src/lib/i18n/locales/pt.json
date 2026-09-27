@@ -4868,6 +4868,7 @@
   "chat.emptyArchive": "Sem conversas arquivadas",
   "chat.emptyHistory": "Ainda não há conversas",
   "chat.errors.conversationNotFound": "Esta conversa já não existe.",
+  "chat.errors.llm_unconfigured": "Nenhum provedor LLM está configurado. Adicione um nas Configurações para usar a conversa.",
   "chat.errors.loadConversations": "Não foi possível carregar as suas conversas.",
   "chat.errors.loadMessages": "Não foi possível carregar esta conversa.",
   "chat.errors.quotaExceeded": "Atingiu a sua quota de conversa.",

@@ -74,8 +74,12 @@ reached the prompt.
 know it: the store's fold checks the code explicitly, so an unhandled one is
 parsed, ignored, and never rendered.
 
-Raw fetch bypasses the axios interceptors, so CSRF (`getCsrfToken()`) and the
-one-shot 401 refresh are handled explicitly in that module.
+Raw fetch bypasses the axios interceptors, so its auth headers come from
+`getAuthHeaders()` in `$lib/axios` — the same helper the interceptor uses (CSRF under
+local auth, a fresh external bearer under external auth; issue #1035). Never build
+auth headers by hand for a raw fetch. The one-shot 401 retry is handled in that module:
+local auth refreshes the cookie session first, external auth just retries (the retry
+mints a fresh bearer) and never calls the cookie `/auth/token/refresh` endpoint.
 
 ### `reasoning` frame (collapsible reasoning display)
 

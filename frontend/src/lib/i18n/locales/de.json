@@ -4868,6 +4868,7 @@
   "chat.emptyArchive": "Keine archivierten Unterhaltungen",
   "chat.emptyHistory": "Noch keine Unterhaltungen",
   "chat.errors.conversationNotFound": "Diese Unterhaltung existiert nicht mehr.",
+  "chat.errors.llm_unconfigured": "Es ist kein LLM-Anbieter konfiguriert. Fügen Sie in den Einstellungen einen hinzu, um den Chat zu nutzen.",
   "chat.errors.loadConversations": "Unterhaltungen konnten nicht geladen werden.",
   "chat.errors.loadMessages": "Diese Unterhaltung konnte nicht geladen werden.",
   "chat.errors.quotaExceeded": "Dein Chat-Kontingent ist aufgebraucht.",

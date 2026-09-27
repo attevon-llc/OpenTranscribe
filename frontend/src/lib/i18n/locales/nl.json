@@ -4868,6 +4868,7 @@
   "chat.emptyArchive": "Geen gearchiveerde gesprekken",
   "chat.emptyHistory": "Nog geen gesprekken",
   "chat.errors.conversationNotFound": "Dit gesprek bestaat niet meer.",
+  "chat.errors.llm_unconfigured": "Er is geen LLM-provider geconfigureerd. Voeg er een toe in Instellingen om chat te gebruiken.",
   "chat.errors.loadConversations": "Kan uw gesprekken niet laden.",
   "chat.errors.loadMessages": "Kan dit gesprek niet laden.",
   "chat.errors.quotaExceeded": "U heeft uw chatquotum bereikt.",

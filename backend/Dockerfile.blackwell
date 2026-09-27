@@ -156,7 +156,7 @@ RUN pip install --no-cache-dir --no-deps "whisperx==3.8.1"
 # Custom fork with vectorized chunking, adaptive batch size, TF32, CUDA
 # streams, and memory-safe batch indexing.
 RUN pip install --no-cache-dir --no-deps \
-    "pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@a3f38afb80d289b812e4c863e2215c595ae279d8"
+    "pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@e3924b4fc8167dd26a3b62b8a3e2e04fb87ca3c8"
 
 # ---------------------------------------------------------------------------
 # Apply Blackwell SM_121 -> SM_90 compatibility patches

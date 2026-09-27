@@ -267,6 +267,13 @@ def _validate_production_secrets():
         )
         raise ValueError("Wildcard CORS_ORIGINS is not permitted with credentialed requests")
 
+    # The default depends on ENVIRONMENT (issue #1029), so state what was resolved: an
+    # operator whose separate-origin frontend is refused can see why from the boot log.
+    logger.info(
+        "CORS allowed origins: %s (same-origin requests need no entry)",
+        settings.CORS_ORIGINS or "none",
+    )
+
     if is_production:
         logger.info("Production security validation passed")
 

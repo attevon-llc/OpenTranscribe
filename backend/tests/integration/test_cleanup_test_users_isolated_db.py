@@ -239,7 +239,7 @@ def seeded_db(throwaway_pg: dict[str, Any]) -> Iterator[dict[str, Any]]:
 
             user_ids: dict[str, int] = {}
             for email in sorted(expected_delete | expected_blocked | expected_survivors):
-                uid = conn.execute(
+                uid: int = conn.execute(
                     text('INSERT INTO "user" (email) VALUES (:email) RETURNING id'),
                     {"email": email},
                 ).scalar_one()

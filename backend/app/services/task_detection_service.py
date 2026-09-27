@@ -850,10 +850,9 @@ class TaskDetectionService:
         )
 
         recently_attempted: set[tuple[int, str]] = set()
-        for row in recently_attempted_rows:
-            recently_attempted.add((row[0], row[1]))
-        for row in recently_created_rows:
-            recently_attempted.add((row[0], row[1]))
+        for media_file_id, task_type in (*recently_attempted_rows, *recently_created_rows):
+            if media_file_id is not None:
+                recently_attempted.add((media_file_id, task_type))
 
         # Evaluate each candidate
         results: list[IncompletePostTranscriptionFile] = []

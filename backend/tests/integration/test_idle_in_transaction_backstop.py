@@ -119,7 +119,7 @@ def test_set_local_exempts_one_transaction_and_does_not_leak_to_the_next() -> No
                     "watch-source import would be terminated mid-upload."
                 )
 
-            after = conn.execute(text("SHOW idle_in_transaction_session_timeout")).scalar_one()
+            after: str = conn.execute(text("SHOW idle_in_transaction_session_timeout")).scalar_one()
             assert after == f"{_TEST_TIMEOUT_MS}ms", (
                 f"After commit the timeout is {after!r}, not the connection's "
                 f"configured {_TEST_TIMEOUT_MS}ms. SET LOCAL leaked, so the "

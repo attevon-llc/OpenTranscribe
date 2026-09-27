@@ -1712,6 +1712,18 @@ def test_topic_extraction_calls_the_llm_outside_the_session(
     assert str(stored.uuid) == result["suggestion_id"]
     assert {t["name"] for t in stored.suggested_tags} == {"budget", "hiring"}
 
+    # A run that did the work is tracked, and its row is closed (issue #1017 moved
+    # the record creation behind the provider check; this pins that it still runs).
+    task_row = (
+        db_session.query(TaskModel)
+        .filter(
+            TaskModel.media_file_id == media_file.id,
+            TaskModel.task_type == "topic_extraction",
+        )
+        .one()
+    )
+    assert task_row.status == "completed"
+
 
 def test_topic_extraction_read_phase_returns_plain_data(
     db_session, normal_user, topic_extraction_env

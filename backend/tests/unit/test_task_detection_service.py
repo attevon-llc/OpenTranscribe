@@ -44,6 +44,7 @@ from app.core.task_config import TaskRecoveryConfig
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.services.llm_service import LLMService
 from app.services.task_detection_service import TaskDetectionService
 from app.utils.error_classification import ErrorCategory
 
@@ -563,7 +564,7 @@ def test_rejecting_every_suggestion_on_a_file_does_not_re_offer_speaker_id(
     db_session.commit()
     db_session.refresh(speaker)
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         _reject_speaker_suggestion(speaker, speaker.id, db_session)
 
         results = service.identify_incomplete_post_transcription_files(db_session)
@@ -618,7 +619,7 @@ def test_skipping_every_llm_suggestion_does_not_re_offer_speaker_id(
     )
     assert result["updated_count"] == 2, f"expected both speakers skipped, got {result}"
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         results = service.identify_incomplete_post_transcription_files(db_session)
 
     ours = [r for r in results if r.media_file_id == media_file.id]
@@ -663,7 +664,7 @@ def test_a_completed_speaker_identification_task_survives_a_voice_match_clobber(
     )
     db_session.commit()
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         results = service.identify_incomplete_post_transcription_files(db_session)
 
     ours = [r for r in results if r.media_file_id == media_file.id]
@@ -700,7 +701,7 @@ def test_legacy_suggestion_source_alone_still_works_with_no_task_row(
     db_session.add(speaker)
     db_session.commit()
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         results = service.identify_incomplete_post_transcription_files(db_session)
 
     ours = [r for r in results if r.media_file_id == media_file.id]
@@ -733,7 +734,7 @@ def test_negative_control_neither_leg_present_reports_missing(service, db_sessio
     db_session.add(speaker)
     db_session.commit()
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         results = service.identify_incomplete_post_transcription_files(db_session)
 
     ours = [r for r in results if r.media_file_id == media_file.id]

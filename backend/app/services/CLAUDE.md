@@ -267,7 +267,10 @@ every difference between the two backends (issue #284 A1.11/A1.12):
   and measured least-privilege containment depends on it staying that way. MinIO-only (no
   admin API on native S3) and fails open to the root client if the identity can't be
   provisioned — see `storage_presign_identity.py`'s module docstring and
-  `docs/abuse-and-takedown.md`.
+  `docs/abuse-and-takedown.md`. On native S3 revocation needs an operator-attached bucket-policy
+  Deny; `report_native_s3_revocation_posture` checks for it once at startup and WARNs if absent
+  (exposure = `MEDIA_URL_EXPIRE_SECONDS`). `presign_client()` logs ERROR **only** for a MinIO
+  provisioning failure — never on S3 or when disabled, where it fired from every process (#1005).
 
 ## LLM features (optional)
 

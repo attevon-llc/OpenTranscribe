@@ -568,6 +568,11 @@ AWS provider chain with automatic rotation. Set `S3_USE_IAM_ROLE=false` to sign 
 drives both backends; switching `STORAGE_BACKEND` changes endpoint/credential/addressing
 construction, not the call sites.
 
+On S3, quarantining a file does not by itself revoke media URLs already issued for it: they stay
+valid for up to `MEDIA_URL_EXPIRE_SECONDS`. See
+[Production Deployment](../operations/production-deployment.md#native-aws-s3-backend-alternative-to-minio)
+for the bucket policy that enforces revocation and the TTL trade-off.
+
 ### Presigned URLs and large uploads (both backends)
 
 ```bash

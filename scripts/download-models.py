@@ -19,6 +19,55 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+
+def guard_mps_empty_cache(torch_module):
+    """Make ``torch.mps.empty_cache()`` a no-op when MPS is not available (issue #1003).
+
+    The pinned pyannote fork's ``SpeakerDiarization._gpu_empty_cache()`` falls through to
+    ``torch.mps.empty_cache()`` whenever CUDA is unavailable, checking only that the
+    attribute exists. On a CPU-only Linux host (e.g. a ``docker build`` stage baking
+    models) that call raises ``RuntimeError: Cannot execute emptyCache() without MPS
+    backend`` and aborts the diarization download. With no MPS backend there is no MPS
+    cache to release, so a no-op is exactly the correct behaviour; on a host that does
+    have MPS nothing is touched.
+
+    Args:
+        torch_module: The imported ``torch`` module.
+
+    Returns:
+        True if ``empty_cache`` was replaced, False if it was left alone.
+    """
+    mps = getattr(torch_module, 'mps', None)
+    if mps is None or not hasattr(mps, 'empty_cache'):
+        return False
+    backends_mps = getattr(torch_module.backends, 'mps', None)
+    if backends_mps is not None and backends_mps.is_available():
+        return False
+    mps.empty_cache = lambda: None
+    return True
+
+
+def resolve_whisper_device(use_gpu_env, cuda_available, compute_type):
+    """Pick the device/compute type for the WhisperX download step.
+
+    ``USE_GPU`` defaults to ``true``, so a run with no environment (a Dockerfile ``RUN``
+    that bakes models) requested ``cuda``/``float16`` on hosts without a GPU and failed.
+    CUDA is used only when requested AND present; on CPU the GPU-only ``float16``
+    becomes ``int8``, the backend's own CPU default (``hardware_detection.py``).
+
+    Args:
+        use_gpu_env: Raw value of ``USE_GPU`` (default ``'true'``).
+        cuda_available: Whether ``torch.cuda.is_available()``.
+        compute_type: Requested ``COMPUTE_TYPE``.
+
+    Returns:
+        ``(device, compute_type)``.
+    """
+    if use_gpu_env.lower() == 'true' and cuda_available:
+        return 'cuda', compute_type
+    return 'cpu', 'int8' if compute_type == 'float16' else compute_type
+
+
 # PyTorch 2.6+ compatibility fix - MUST be done BEFORE any ML library imports
 # Patch torch.load to default to weights_only=False for trusted HuggingFace models
 # This mirrors the fix in backend/app/core/celery.py (added by Wes Brown)
@@ -35,6 +84,8 @@ try:
 
     torch.load = _patched_torch_load
     print('ℹ️  PyTorch 2.6+ compatibility: Patched torch.load for weights_only=False')
+    if guard_mps_empty_cache(torch):
+        print('ℹ️  No MPS backend: torch.mps.empty_cache() made a no-op for this run')
 except ImportError:
     # torch not available yet, will be imported later
     pass
@@ -72,11 +123,15 @@ def download_whisperx_models():
     print_header('Downloading WhisperX Models')
 
     try:
+        import torch
         import whisperx
 
         model_name = os.environ.get('WHISPER_MODEL', 'large-v3-turbo')
-        device = 'cuda' if os.environ.get('USE_GPU', 'true').lower() == 'true' else 'cpu'
-        compute_type = os.environ.get('COMPUTE_TYPE', 'float16')
+        device, compute_type = resolve_whisper_device(
+            os.environ.get('USE_GPU', 'true'),
+            torch.cuda.is_available(),
+            os.environ.get('COMPUTE_TYPE', 'float16'),
+        )
 
         print_info(f'Model: {model_name}')
         print_info(f'Device: {device}')

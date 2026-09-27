@@ -33,6 +33,7 @@ from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.observability import ObservabilityMiddleware
 from app.middleware.robots import RobotsHeaderMiddleware
+from app.middleware.upload_limit import UploadBodyLimitMiddleware
 
 # Set up logging (text or structured JSON per settings.LOG_FORMAT)
 configure_logging()
@@ -1012,6 +1013,11 @@ app = FastAPI(
     default_timeout=3600,
 )
 
+# Upload size limits enforced while the body streams (issue #999). Added BEFORE CORS so
+# it runs INSIDE it (see the ordering note at ObservabilityMiddleware): its early 413
+# still carries the CORS headers a browser needs to read the error.
+app.add_middleware(UploadBodyLimitMiddleware)
+
 # Set up CORS
 app.add_middleware(
     CORSMiddleware,
@@ -1027,9 +1033,6 @@ app.add_middleware(
         "X-CSRF-Token",
     ],
 )
-
-# Configure maximum upload size (50GB)
-app.router.default_max_upload_size = 50 * 1024 * 1024 * 1024  # type: ignore[attr-defined]  # 50GB
 
 # Mark every API response as non-indexable (issue #668, finding 3). Response-header-only,
 # so its position relative to the other middleware below is not load-bearing.

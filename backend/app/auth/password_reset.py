@@ -167,6 +167,29 @@ def _audit_reset_complete(
     )
 
 
+def reset_token_owner(db: Session, raw_token: str) -> User | None:
+    """The account a live (unused, unexpired) reset token belongs to, or None.
+
+    Read-only and unaudited: it lets a caller decide whether a redemption may
+    proceed at all before :func:`confirm_password_reset` does the audited work.
+    """
+    if not raw_token:
+        return None
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    record = (
+        db.query(PasswordResetToken)
+        .filter(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > datetime.now(UTC),
+        )
+        .first()
+    )
+    if record is None:
+        return None
+    return db.query(User).filter(User.id == record.user_id).first()
+
+
 def confirm_password_reset(
     db: Session, raw_token: str, new_password: str, ip_address: str | None = None
 ) -> tuple[bool, list[str]]:

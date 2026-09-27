@@ -4,6 +4,12 @@ Unlike the OIDC flow, ACS and SLS are **browser POST/redirect targets the IdP ta
 to directly** — there is no SPA JavaScript in that leg of the round trip, so these
 handlers finish by issuing an HTTP redirect to the SPA with the session already
 established via httpOnly cookies, not by returning JSON for a `fetch()` caller.
+
+The handlers are ``async def`` only because python3-saml needs the parsed form, which
+Starlette exposes as ``await request.form()``. Everything else they do — config load
+(~19 queries), python3-saml, the user sync, lockout (Redis), audit and session rows —
+is synchronous, so it is pushed to the threadpool with ``run_in_threadpool``; run
+inline it blocked the event loop for every other request (issue #997).
 """
 
 import json
@@ -17,8 +23,11 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
+from onelogin.saml2.auth import OneLogin_Saml2_Auth
+from onelogin.saml2.errors import OneLogin_Saml2_Error
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
@@ -84,14 +93,38 @@ def _sanitize_relay_state(relay_state: str | None) -> str:
     return relay_state
 
 
-def _require_enabled_config(db: Session) -> SAMLConfig:
+def _require_enabled_config(
+    db: Session, disabled_status: int = status.HTTP_400_BAD_REQUEST
+) -> SAMLConfig:
     cfg = SAMLConfig.from_db(db)
     if not cfg.enabled:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=disabled_status,
             detail="SAML authentication is not enabled",
         )
     return cfg
+
+
+#: One answer for every way python3-saml can reject this SP's configuration. The
+#: library's message names the missing settings; that belongs in the log for the
+#: operator, not in an anonymous response.
+_MISCONFIGURED_DETAIL = "SAML authentication is not correctly configured"
+
+
+def _build_auth(request_data: dict, cfg: SAMLConfig) -> OneLogin_Saml2_Auth:
+    """:func:`build_auth`, with a rejected configuration mapped to 503.
+
+    SAML can be enabled with settings python3-saml refuses (a missing IdP URL or
+    certificate). That is an operator problem, so it is a 503 and one log line —
+    not an unhandled 500 with a traceback on every anonymous hit (issue #998).
+    """
+    try:
+        return build_auth(request_data, cfg)
+    except OneLogin_Saml2_Error as e:
+        logger.error("SAML is enabled but its configuration is invalid: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MISCONFIGURED_DETAIL
+        ) from None
 
 
 @router.get("/saml/metadata")
@@ -102,17 +135,26 @@ async def saml_metadata(request: Request, db: Session = Depends(get_db)):
     of band, to configure the SP side of the trust relationship. It carries no
     secret: entity id, ACS/SLS URLs, and (if configured) the SP's public signing
     certificate only, never the private key.
+
+    404 when SAML is disabled: there is no SP to describe (issue #998).
     """
-    cfg = SAMLConfig.from_db(db)
     request_data = await saml_request_data(request)
-    auth = build_auth(request_data, cfg)
+    return await run_in_threadpool(_saml_metadata, request_data, db)
+
+
+def _saml_metadata(request_data: dict, db: Session) -> Response:
+    cfg = _require_enabled_config(db, disabled_status=status.HTTP_404_NOT_FOUND)
+    auth = _build_auth(request_data, cfg)
     settings_obj = auth.get_settings()
-    metadata = settings_obj.get_sp_metadata()
-    errors = settings_obj.validate_metadata(metadata)
+    try:
+        metadata = settings_obj.get_sp_metadata()
+        errors = settings_obj.validate_metadata(metadata)
+    except OneLogin_Saml2_Error as e:
+        errors = [str(e)]
     if errors:
         logger.error("SAML SP metadata is invalid: %s", errors)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="SAML SP metadata could not be generated",
         )
     return Response(content=metadata, media_type="application/xml")
@@ -122,9 +164,13 @@ async def saml_metadata(request: Request, db: Session = Depends(get_db)):
 @limiter.limit(get_auth_rate_limit())
 async def saml_login(request: Request, response: Response, db: Session = Depends(get_db)):
     """Initiate SP-initiated SSO: redirect the browser to the IdP's SSO endpoint."""
-    cfg = _require_enabled_config(db)
+    cfg = await run_in_threadpool(_require_enabled_config, db)
     request_data = await saml_request_data(request)
-    auth = build_auth(request_data, cfg)
+    return await run_in_threadpool(_saml_login_redirect, request_data, cfg)
+
+
+def _saml_login_redirect(request_data: dict, cfg: SAMLConfig) -> RedirectResponse:
+    auth = _build_auth(request_data, cfg)
     redirect_url = auth.login(return_to=_POST_LOGIN_REDIRECT)
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
 
@@ -140,9 +186,23 @@ async def saml_acs(request: Request, response: Response, db: Session = Depends(g
     nor the browser can distinguish the two on the wire.
     """
     client_ip, user_agent = _get_client_info(request)
-    cfg = _require_enabled_config(db)
+    cfg = await run_in_threadpool(_require_enabled_config, db)
     request_data = await saml_request_data(request)
-    auth = build_auth(request_data, cfg)
+    return await run_in_threadpool(
+        _complete_saml_acs, request, db, cfg, request_data, client_ip, user_agent
+    )
+
+
+def _complete_saml_acs(
+    request: Request,
+    db: Session,
+    cfg: SAMLConfig,
+    request_data: dict,
+    client_ip: str,
+    user_agent: str,
+) -> Response:
+    """The synchronous remainder of :func:`saml_acs`, run in the threadpool."""
+    auth = _build_auth(request_data, cfg)
 
     auth.process_response()
     errors = auth.get_errors()
@@ -280,9 +340,23 @@ async def saml_sls(request: Request, response: Response, db: Session = Depends(g
     local session tied to the browser's own cookies is revoked either way.
     """
     client_ip, user_agent = _get_client_info(request)
-    cfg = _require_enabled_config(db)
+    cfg = await run_in_threadpool(_require_enabled_config, db)
     request_data = await saml_request_data(request)
-    auth = build_auth(request_data, cfg)
+    return await run_in_threadpool(
+        _complete_saml_sls, request, db, cfg, request_data, client_ip, user_agent
+    )
+
+
+def _complete_saml_sls(
+    request: Request,
+    db: Session,
+    cfg: SAMLConfig,
+    request_data: dict,
+    client_ip: str,
+    user_agent: str,
+) -> Response:
+    """The synchronous remainder of :func:`saml_sls`, run in the threadpool."""
+    auth = _build_auth(request_data, cfg)
 
     from app.auth.cookies import clear_auth_cookies
     from app.auth.cookies import get_access_token_from_cookie

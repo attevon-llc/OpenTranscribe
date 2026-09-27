@@ -13028,10 +13028,39 @@
             ],
             "title": "Display Name"
           },
+          "gender_alignment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender Alignment"
+          },
+          "gender_alignment_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender Alignment Hint"
+          },
           "media_file_id": {
             "format": "uuid",
             "title": "Media File Id",
             "type": "string"
+          },
+          "metadata_hints": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerMetadataHint"
+            },
+            "title": "Metadata Hints",
+            "type": "array"
           },
           "name": {
             "title": "Name",
@@ -13326,6 +13355,53 @@
           "speaker_count"
         ],
         "title": "SpeakerIdentificationResponse",
+        "type": "object"
+      },
+      "SpeakerMetadataHint": {
+        "description": "A speaker name inferred from the file's title/description/author (never auto-applied).",
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SpeakerMetadataHint",
         "type": "object"
       },
       "SpeakerTimeStats": {

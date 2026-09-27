@@ -350,7 +350,7 @@ def seeded_db(throwaway_pg: dict[str, Any]) -> Iterator[dict[str, Any]]:
                 conn.execute(text(stmt))
 
             owner_email = "tierdata-owner@example.com"
-            owner_id = conn.execute(
+            owner_id: int = conn.execute(
                 text('INSERT INTO "user" (email) VALUES (:e) RETURNING id'),
                 {"e": owner_email},
             ).scalar_one()

@@ -161,6 +161,8 @@ def get_prompts(
         )
         for row in collection_rows:
             pid = row[0]
+            if pid is None:
+                continue
             if pid not in collection_map:
                 collection_map[pid] = []
             collection_map[pid].append(schemas.LinkedCollection(uuid=row[1], name=row[2]))

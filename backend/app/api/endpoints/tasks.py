@@ -20,6 +20,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
+from sqlalchemy import Row
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -68,7 +69,7 @@ def calculate_age_seconds(timestamp):
     return (now - timestamp).total_seconds()
 
 
-def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
+def _get_user_media_files(db: Session, current_user: User) -> list[Row]:
     """Get media files based on user permissions.
 
     Projects only the columns needed for task list display, avoiding
@@ -97,7 +98,7 @@ def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
     # in the task list either — the two are the same "does this file exist for you"
     # question. Admin "see all" keeps every row (review needs the quarantined ones).
     query = exclude_quarantined(query, include_quarantined=current_user.is_admin)
-    return query.all()  # type: ignore[no-any-return]
+    return query.all()
 
 
 def _latest_task_by_file(

@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SAML and OIDC handlers no longer block the event loop (#997).** Their synchronous config
   loads, user sync, lockout, audit and session work now run in the threadpool.
 
+### Fixed
+
+- **`GET /api/auth/saml/metadata` returned 500 with SAML disabled (#998).** It now returns
+  404 when SAML is off, and a configuration python3-saml rejects (on any SAML route) is a
+  503 with one log line instead of an unhandled 500 and traceback.
+
 ## [0.5.1] - 2026-09-19
 
 ### Changed

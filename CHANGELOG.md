@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Speaker identification no longer logs an ERROR and traceback on every file when no LLM is
+  configured** (#1004). Having no provider is a deployment choice: `ai.identify_speakers` now
+  skips at INFO with `{"status": "skipped", "reason": "LLM not configured"}`, the same way
+  `ai.extract_topics` does, and still closes out its task record. ERROR is reserved for a
+  configured provider that actually fails.
+
 ## [0.5.1] - 2026-09-19
 
 ### Changed

@@ -1,12 +1,15 @@
+import json
 import logging
 import os
 from pathlib import Path
+from typing import Annotated
 from typing import ClassVar
 
 from pydantic import ValidationInfo
 from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
+from pydantic_settings import NoDecode
 from pydantic_settings import SettingsConfigDict
 
 from app.core.legacy_auth_env import oidc_bool_env
@@ -34,6 +37,9 @@ DEFAULT_CACHE_BUCKET_NAME = "processed-videos"
 # name here disables default-secret refusal, DEBUG enforcement, the Redis-password
 # requirement, and the cookie Secure flag for that value (issue #284 A0.3).
 RELAXED_ENVIRONMENTS = frozenset({"development", "dev", "testing", "test", "local"})
+
+# The Vite dev server's origins — CORS_ORIGINS' default in a relaxed environment only.
+DEV_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 
 
 def is_relaxed_environment(environment: str) -> bool:
@@ -836,16 +842,29 @@ class Settings(BaseSettings):
         """
         return self.FIPS_MODE and self.FIPS_VERSION == "140-3"
 
-    # CORS settings
-    # Note: Remove "*" in production and specify exact origins for security
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # CORS settings. The Vite dev origins are the default only in a relaxed environment:
+    # a hardened deployment that leaves CORS_ORIGINS unset resolves to [] in
+    # validate_auth_settings. The SPA is served same-origin and needs no CORS entry, while
+    # the dev default let any page on a user's localhost:5173 make credentialed requests
+    # and still never listed the app's own origin (issue #1029).
+    #
+    # NoDecode: pydantic-settings JSON-decodes a list field's env value before any
+    # validator runs, so the documented comma-separated form
+    # (`CORS_ORIGINS=https://a,https://b`) raised SettingsError at startup. The
+    # validator below parses both forms itself.
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = list(DEV_CORS_ORIGINS)
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v: str | list[str]) -> list[str] | str:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
+    def assemble_cors_origins(cls, v: str | list[str]) -> list[str]:
+        if isinstance(v, str):
+            if v.lstrip().startswith("["):
+                parsed = json.loads(v)
+                if not isinstance(parsed, list):
+                    raise ValueError(v)
+                return [str(i).strip() for i in parsed]
+            return [i.strip() for i in v.split(",") if i.strip()]
+        if isinstance(v, list):
             return v
         raise ValueError(v)
 
@@ -875,6 +894,13 @@ class Settings(BaseSettings):
             self.MFA_REQUIRE_REDIS = not is_relaxed_environment(self.ENVIRONMENT)
         if self.PKI_REVOCATION_SOFT_FAIL is None:
             self.PKI_REVOCATION_SOFT_FAIL = is_relaxed_environment(self.ENVIRONMENT)
+        # CORS_ORIGINS keeps a list type (every consumer iterates it), so "unset" is read
+        # from model_fields_set, which pydantic-settings fills from env, .env and init
+        # kwargs alike. An explicit value — including `[]` — is always honoured.
+        if "CORS_ORIGINS" not in self.model_fields_set and not is_relaxed_environment(
+            self.ENVIRONMENT
+        ):
+            self.CORS_ORIGINS = []
 
         # Same bug class, for str fields whose default is assembled from other
         # already-resolved fields instead of a bool computed from ENVIRONMENT.

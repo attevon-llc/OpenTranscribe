@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MPS backend`. The fork now releases the MPS cache only when an MPS backend exists, and the
   pin (`requirements.txt` and `Dockerfile.blackwell`) moves to that commit. Rebuild images or
   reinstall `backend/venv` to pick it up.
+- **The post-transcription sweep no longer re-dispatches topic extraction every 10 minutes
+  when `LLM_PROVIDER` is set without credentials** (#1017). Three fixes: a topic-extraction
+  run that finds no usable provider now records no task row (it used to leave one
+  `in_progress`, with `active_task_id` pointing at it, on every dispatch); `missing_topics`
+  honours the same recently-attempted cooldown as the other post-transcription checks; and
+  the sweep's "LLM configured" check is now `LLMService.is_configured_for_user`, which
+  requires what the tasks require (provider set **and** its credentials or endpoint present)
+  instead of a bare `LLM_PROVIDER` check. Summarization and speaker identification already
+  closed their rows on the no-LLM path and are unchanged.
 - **Speaker identification no longer logs an ERROR and traceback on every file when no LLM is
   configured** (#1004). Having no provider is a deployment choice: `ai.identify_speakers` now
   skips at INFO with `{"status": "skipped", "reason": "LLM not configured"}`, the same way

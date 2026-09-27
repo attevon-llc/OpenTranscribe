@@ -21,7 +21,7 @@
 fastapi==0.136.3
 uvicorn[standard]==0.53.0
 websockets==17.1
-sqlalchemy==2.0.53
+sqlalchemy==2.0.54
 alembic==1.20.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
@@ -43,7 +43,7 @@ email-validator==2.3.0
 # Observability (Prometheus metrics + structured JSON logs) — CI imports app.main
 prometheus-client==0.26.0
 python-json-logger==4.2.0
-cachetools==7.1.8
+cachetools==7.2.0
 
 # Asynchronous Tasks
 celery==5.6.3
@@ -52,7 +52,7 @@ redis==8.1.0
 # backend/tests/unit/test_flower_worker_discovery.py's is_flower_option() check (issue #609)
 # actually runs in CI instead of importorskip-ing silently, which is the exact "240 security
 # tests gated off behind stale env vars" failure mode scripts/audit-tests.py exists to prevent.
-flower==2.1.0
+flower==2.2.0
 # psycopg2 (source build), not psycopg2-binary -- see requirements.txt's comment for
 # the full reason (issue #951). Needs libpq-dev installed before this file's pip
 # install; both CI workflows that use this file do so.
@@ -88,7 +88,7 @@ faster-whisper==1.2.1
 # See requirements.txt for why transformers is capped <5.0.0.
 transformers==4.57.6
 huggingface-hub==0.36.2
-onnx==1.22.0
+onnx==1.23.0
 onnxruntime==1.30.0
 omegaconf==2.3.1
 
@@ -107,16 +107,16 @@ nltk==3.10.3  # see requirements.txt — pathsec hardening is required, not avoi
 # Cloud ASR provider SDKs (lazily imported)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see requirements.txt for the full
 # explanation. Caught by tests/unit/test_provider_sdk_compat.py.
-deepgram-sdk==7.9.0
-assemblyai==1.5.4
+deepgram-sdk==7.10.0
+assemblyai==1.5.5
 google-cloud-speech==2.40.0
 azure-cognitiveservices-speech==1.51.2
-speechmatics-batch==0.5.0
-boto3==1.43.94
-openai==3.14.0
+speechmatics-batch==1.0.0
+boto3==1.43.101
+openai==3.19.2
 requests==2.34.2
 # See requirements.txt for why — LLM summary JSON repair (llm_service.py)
-json-repair==0.63.4
+json-repair==0.63.5
 
 # Diarization metrics (cpWER) — exercised by tests/unit/test_diarization_metrics.py
 meeteval==0.4.3
@@ -133,7 +133,7 @@ detoxify==0.5.2
 # Watch sources
 watchdog==6.0.0
 smbprotocol==1.17.0
-msal==1.38.0
+msal==1.39.0
 
 # Test tooling (mirrors the test section of requirements-dev.txt)
 pytest==9.1.1

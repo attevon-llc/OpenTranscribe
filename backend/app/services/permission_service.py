@@ -376,12 +376,23 @@ class PermissionService:
         return list(user_ids)
 
     @staticmethod
-    def get_accessible_profile_ids(db: Session, user_id: int) -> set[int]:
+    def get_accessible_profile_ids(
+        db: Session, user_id: int, *, organization_id: OrgScope
+    ) -> set[int]:
         """Return profile IDs the user can access (own + shared via collections).
 
         Union of:
         - Profiles owned by the user
         - Profiles linked to speakers in files in collections shared with the user
+
+        ``organization_id`` is REQUIRED (#1027) because this set is handed to the
+        profile kNN as ``accessible_profile_ids``, which then drops its ``user_id``
+        term: without a gate here the SQL layer would admit another tenant's profile
+        and only the OpenSearch org clause would stand between it and the caller. An
+        int keeps only that org's profiles, ``None`` (personal) only org-less ones,
+        on BOTH branches — the collection-share join included. ``UNSCOPED`` is for
+        an ownership/ACL check that deliberately spans scopes, and must be spelled
+        out by the caller.
         """
         user_group_ids = (
             select(UserGroupMember.group_id)
@@ -389,11 +400,21 @@ class PermissionService:
             .scalar_subquery()
         )
 
+        org_pred = None
+        if not isinstance(organization_id, _Unscoped):
+            if organization_id is not None:
+                org_pred = SpeakerProfile.organization_id == organization_id
+            else:
+                org_pred = SpeakerProfile.organization_id.is_(None)
+
         # Own profiles
-        owned = db.query(SpeakerProfile.id).filter(SpeakerProfile.user_id == user_id).all()
+        owned_query = db.query(SpeakerProfile.id).filter(SpeakerProfile.user_id == user_id)
+        if org_pred is not None:
+            owned_query = owned_query.filter(org_pred)
+        owned = owned_query.all()
 
         # Shared profiles via collection chain
-        shared = (
+        shared_query = (
             db.query(SpeakerProfile.id)
             .join(Speaker, Speaker.profile_id == SpeakerProfile.id)
             .join(MediaFile, MediaFile.id == Speaker.media_file_id)
@@ -408,11 +429,25 @@ class PermissionService:
                     CollectionShare.target_group_id.in_(user_group_ids),
                 )
             )
-            .distinct()
-            .all()
         )
+        if org_pred is not None:
+            shared_query = shared_query.filter(org_pred)
+        shared = shared_query.distinct().all()
 
         return {row[0] for row in owned} | {row[0] for row in shared}
+
+    @staticmethod
+    def get_accessible_profile_ids_for_file(db: Session, user_id: int, file_id: int) -> set[int]:
+        """``get_accessible_profile_ids`` in the tenant scope of the file being matched.
+
+        The pipeline's speaker matching runs for one file, and its tenant is that
+        FILE's ``organization_id`` — read from the row, never from caller state — the
+        same rule ``SpeakerMatchingService`` applies to its own kNN clauses.
+        """
+        file_org = db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
+        return PermissionService.get_accessible_profile_ids(
+            db, user_id, organization_id=int(file_org) if file_org is not None else None
+        )
 
     @staticmethod
     def get_accessible_profile_ids_with_source(db: Session, user_id: int) -> list[tuple[int, bool]]:

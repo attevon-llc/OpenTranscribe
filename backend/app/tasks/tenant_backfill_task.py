@@ -7,6 +7,11 @@ search/kNN query on it. Docs indexed BEFORE that change have no
 as personal (org-less) and become invisible to org-scoped searches — and, worse,
 the per-user reindex tasks are user-scoped, so they never re-stamp org rows.
 
+The legacy whole-document ``transcripts`` index gained the same stamp later
+(#1027): its writer now stamps an org file's doc, and its readers gate on the
+field. This task stamps the docs written before that, keyed on ``file_uuid``
+exactly like the chunks.
+
 This task closes that gap with an ``update_by_query`` per org file: it reads each
 org's (organization_id -> file_uuids / file_ids / profile_ids) mapping from the
 DB and stamps the field onto the matching docs in place — no full reindex, no
@@ -39,8 +44,9 @@ returns no org rows and this task is a no-op (it logs "0 orgs" and exits).
 
 POPULATED-CLUSTER RUNBOOK
 -------------------------
-Run ONCE after deploying the 1.2 isolation change to a cluster that already holds
-indexed transcripts/voiceprints (cloud only):
+Run ONCE after deploying the 1.2 isolation change — and again after deploying
+#1027, for the ``transcripts`` index — to a cluster that already holds indexed
+transcripts/voiceprints in organizations:
 
     # in the backend container (or any celery worker host):
     python -m app.tasks.tenant_backfill_task            # synchronous, prints a summary
@@ -61,6 +67,10 @@ Verify afterwards (should return 0 once complete):
         "must_not": [{"exists": {"field": "organization_id"}}],
         "filter":   [{"terms": {"file_uuid": [<an org file's uuid>]}}]
     }}}
+
+and the same body against ``transcripts/_count``. Until it has run, an org's
+gallery transcript search misses that org's older files (the reader now requires
+the stamp); a personal scope is unaffected.
 """
 
 import logging
@@ -203,9 +213,14 @@ def _resolve_cluster_scopes(db: Any, scope: SpeakerScopeMaps, member_ids: set[in
             scope.personal_cluster_uuids.append(str(cuuid))
 
 
-def _backfill_transcript_chunks(client: Any, org_to_file_uuids: dict[int, list[str]]) -> int:
-    """Stamp organization_id on transcript-chunk docs, one update_by_query per org."""
-    index_name = settings.OPENSEARCH_CHUNKS_INDEX
+def _backfill_file_uuid_docs(
+    client: Any, index_name: str, org_to_file_uuids: dict[int, list[str]]
+) -> int:
+    """Stamp organization_id on every doc of each org file, one update_by_query per org.
+
+    Serves both file-keyed transcript indices: the chunks index (chunks AND digests)
+    and the legacy whole-document ``transcripts`` index (#1027).
+    """
     updated = 0
     if not client.indices.exists(index=index_name):
         return 0
@@ -228,7 +243,7 @@ def _backfill_transcript_chunks(client: Any, org_to_file_uuids: dict[int, list[s
             )
             updated += int(resp.get("updated", 0))
         except Exception as e:  # noqa: BLE001
-            logger.error(f"Chunk backfill failed for org {org_id}: {e}")
+            logger.error(f"{index_name} backfill failed for org {org_id}: {e}")
     return updated
 
 
@@ -442,7 +457,13 @@ def run_tenant_backfill() -> dict[str, int]:
 
     if opensearch_client is None:
         logger.warning("Tenant backfill skipped: OpenSearch client not initialized")
-        return {"orgs": 0, "chunk_docs": 0, "speaker_docs": 0, "cluster_rows": 0}
+        return {
+            "orgs": 0,
+            "chunk_docs": 0,
+            "transcript_docs": 0,
+            "speaker_docs": 0,
+            "cluster_rows": 0,
+        }
 
     org_to_file_uuids: dict[int, list[str]] = {}
 
@@ -466,7 +487,13 @@ def run_tenant_backfill() -> dict[str, int]:
     )
     if org_count == 0 and not scope.member_user_ids:
         logger.info("Tenant backfill: 0 orgs found (community edition) — nothing to do")
-        return {"orgs": 0, "chunk_docs": 0, "speaker_docs": 0, "cluster_rows": 0}
+        return {
+            "orgs": 0,
+            "chunk_docs": 0,
+            "transcript_docs": 0,
+            "speaker_docs": 0,
+            "cluster_rows": 0,
+        }
 
     if scope.mixed_cluster_count:
         logger.warning(
@@ -476,11 +503,17 @@ def run_tenant_backfill() -> dict[str, int]:
             scope.mixed_cluster_count,
         )
 
-    chunk_docs = _backfill_transcript_chunks(opensearch_client, org_to_file_uuids)
+    chunk_docs = _backfill_file_uuid_docs(
+        opensearch_client, settings.OPENSEARCH_CHUNKS_INDEX, org_to_file_uuids
+    )
+    transcript_docs = _backfill_file_uuid_docs(
+        opensearch_client, settings.OPENSEARCH_TRANSCRIPT_INDEX, org_to_file_uuids
+    )
     speaker_docs = _backfill_speaker_docs(opensearch_client, scope)
     summary = {
         "orgs": org_count,
         "chunk_docs": chunk_docs,
+        "transcript_docs": transcript_docs,
         "speaker_docs": speaker_docs,
         "cluster_rows": cluster_rows,
         "mixed_clusters": scope.mixed_cluster_count,

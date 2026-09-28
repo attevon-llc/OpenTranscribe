@@ -56,7 +56,7 @@ _ALLOWED: dict[str, str] = {
         "G5, same shape: tags are denormalised onto every document of the file, "
         "digests included, or a tag-scoped chat query silently skips them."
     ),
-    "tasks/tenant_backfill_task.py::_backfill_transcript_chunks": (
+    "tasks/tenant_backfill_task.py::_backfill_file_uuid_docs": (
         "G5: the tenant stamp keys on file_uuid and must reach every plane, or a "
         "digest stays personal-scope inside an organization."
     ),

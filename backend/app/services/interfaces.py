@@ -98,6 +98,8 @@ class SearchService(Protocol):
         title: str,
         tags: list[str] | None = None,
         embedding: list[float] | None = None,
+        *,
+        organization_id: int | None,
     ) -> None:
         """Index a transcript for full-text and optional vector search."""
         ...

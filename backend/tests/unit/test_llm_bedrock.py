@@ -118,6 +118,52 @@ def test_empty_content_is_dropped():
     assert len(turns) == 1
 
 
+# Converse (like the Anthropic Messages API) 400s with "final assistant content cannot
+# end with trailing whitespace" -- and speaker identification used to prefill "...EVIDENCE:\n"
+# (issue #1043). The rule is about the LAST turn only.
+
+
+@pytest.mark.parametrize("prefill", ["EVIDENCE:\n", "<thinking>\n", "Answer:   ", "x \n\t "])
+def test_final_assistant_prefill_is_right_stripped(prefill):
+    _system, turns = split_system_messages(
+        [{"role": "user", "content": "Q"}, {"role": "assistant", "content": prefill}]
+    )
+    assert turns[-1] == {"role": "assistant", "content": [{"text": prefill.rstrip()}]}
+
+
+def test_final_assistant_prefill_merged_from_two_messages_is_right_stripped():
+    """The strip must run after same-role merging, on the text actually sent."""
+    _system, turns = split_system_messages(
+        [
+            {"role": "user", "content": "Q"},
+            {"role": "assistant", "content": "One"},
+            {"role": "assistant", "content": "Two\n"},
+        ]
+    )
+    assert turns[-1]["content"][0]["text"] == "One\n\nTwo"
+
+
+@pytest.mark.parametrize("prefill", ["\n", "   ", " \n\t"])
+def test_whitespace_only_final_assistant_turn_is_dropped(prefill):
+    """Stripped to empty it would be an empty content block, which Converse also rejects."""
+    _system, turns = split_system_messages(
+        [{"role": "user", "content": "Q"}, {"role": "assistant", "content": prefill}]
+    )
+    assert turns == [{"role": "user", "content": [{"text": "Q"}]}]
+
+
+def test_non_final_assistant_turn_keeps_its_whitespace():
+    _system, turns = split_system_messages(
+        [
+            {"role": "user", "content": "Q1"},
+            {"role": "assistant", "content": "A1\n\n"},
+            {"role": "user", "content": "Q2 "},
+        ]
+    )
+    assert turns[1]["content"][0]["text"] == "A1\n\n"
+    assert turns[2]["content"][0]["text"] == "Q2 "
+
+
 # --------------------------------------------------------------------------
 # requestMetadata — AWS-side cost attribution
 # --------------------------------------------------------------------------

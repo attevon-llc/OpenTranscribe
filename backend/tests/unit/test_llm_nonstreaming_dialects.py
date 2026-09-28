@@ -134,6 +134,41 @@ def test_claude_payload_prefill_json_does_not_fire_with_no_user_messages():
     assert payload["messages"] == []
 
 
+# The Messages API 400s with "final assistant content cannot end with trailing
+# whitespace"; topic extraction used to prefill "<thinking>\n" on this provider (issue #1043).
+
+
+@pytest.mark.parametrize("prefill", ["<thinking>\n", "EVIDENCE:\n", "Answer:   "])
+def test_claude_payload_right_strips_a_final_assistant_prefill(prefill):
+    service = _service(LLMProvider.ANTHROPIC)
+    payload = service._prepare_claude_payload(
+        [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": prefill}]
+    )
+    assert payload["messages"][-1] == {"role": "assistant", "content": prefill.rstrip()}
+
+
+@pytest.mark.parametrize("prefill", ["\n", "   ", " \n\t"])
+def test_claude_payload_drops_a_whitespace_only_final_assistant_turn(prefill):
+    service = _service(LLMProvider.ANTHROPIC)
+    payload = service._prepare_claude_payload(
+        [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": prefill}]
+    )
+    assert payload["messages"] == [{"role": "user", "content": "Hi"}]
+
+
+def test_claude_payload_leaves_non_final_assistant_turns_untouched():
+    service = _service(LLMProvider.ANTHROPIC)
+    payload = service._prepare_claude_payload(
+        [
+            {"role": "user", "content": "Q1"},
+            {"role": "assistant", "content": "A1\n\n"},
+            {"role": "user", "content": "Q2 "},
+        ]
+    )
+    assert payload["messages"][1]["content"] == "A1\n\n"
+    assert payload["messages"][2]["content"] == "Q2 "
+
+
 # ---------------------------------------------------------------------------
 # _prepare_ollama_payload
 # ---------------------------------------------------------------------------

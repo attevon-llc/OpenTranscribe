@@ -153,6 +153,14 @@ value falls back to. They were dead code while the write path accepted a bare `d
   only per owner since `v374_add_tag_user_id`. `MediaFile` (the **list** schema) has no `tags`
   field at all, and adding one costs a per-row query. Note the OpenSearch index is a separate
   contract: search hits still carry `tags` as a `keyword` array of names.
+- **`speaker.attribute_confidence` is a mixed JSONB bag; `Speaker.attribute_confidence` is not
+  (#1026).** Voice-attribute prediction stores numbers (`gender`), but speaker identification
+  writes `metadata_hints` (a list of `{name, role, confidence, source}`) and `alignment` /
+  `alignment_hint` (strings) into the same column. The schema serves only the numeric scores and
+  exposes the rest as `metadata_hints` / `gender_alignment` / `gender_alignment_hint`, via
+  `split_attribute_confidence` — which the hand-built speaker LIST dict also calls. Typing the
+  field as the raw bag's `dict[str, float]` 500'd file detail, segments and speaker detail for
+  every file with a hint. A new key written into that column needs a line in the split.
 - **`ConnectionTestResponse` is defined twice** (`llm_settings.py:152`, `watch_source.py:293`) and
   `__init__.py` exports only the LLM one — the package-level import silently yields the wrong shape.
 - `sharing.py:24 Share.shared_by` is typed `UserBrief` but `UUIDBaseSchema` maps `shared_by` to a bare

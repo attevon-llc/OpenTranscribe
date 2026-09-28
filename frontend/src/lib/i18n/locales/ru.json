@@ -4868,6 +4868,7 @@
   "chat.emptyArchive": "Нет архивных разговоров",
   "chat.emptyHistory": "Пока нет разговоров",
   "chat.errors.conversationNotFound": "Этот разговор больше не существует.",
+  "chat.errors.llm_unconfigured": "Провайдер LLM не настроен. Добавьте его в настройках, чтобы пользоваться чатом.",
   "chat.errors.loadConversations": "Не удалось загрузить разговоры.",
   "chat.errors.loadMessages": "Не удалось загрузить этот разговор.",
   "chat.errors.quotaExceeded": "Достигнут лимит чата.",

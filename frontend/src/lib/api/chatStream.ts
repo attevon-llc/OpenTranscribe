@@ -7,11 +7,13 @@
  *  - EventSource auto-reconnects, which here would silently re-trigger a whole
  *    (billed) generation.
  *
- * Raw fetch bypasses the axios interceptors, so CSRF and the 401-refresh dance
- * are handled explicitly below.
+ * Raw fetch bypasses the axios interceptors, so auth headers come from the same
+ * `getAuthHeaders` helper the interceptor uses, and the 401 retry is handled
+ * explicitly below.
  */
 
-import axiosInstance, { getCsrfToken } from '$lib/axios';
+import axiosInstance, { getAuthHeaders } from '$lib/axios';
+import { isCloudEdition } from '$lib/edition';
 import type { ChatStreamEvent, SendMessageRequest } from '$lib/types/chat';
 
 /** Watchdog: no bytes at all for this long means the stream is wedged. */
@@ -97,7 +99,7 @@ async function postStream(url: string, body: unknown, signal: AbortSignal): Prom
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-CSRF-Token': getCsrfToken() ?? '',
+      ...(await getAuthHeaders('post')),
     },
     credentials: 'same-origin',
     body: JSON.stringify(body ?? {}),
@@ -191,11 +193,13 @@ async function streamPost(
 ): Promise<void> {
   let response = await postStream(url, body, signal);
 
-  // Raw fetch misses the axios 401-refresh interceptor; do it once by hand so a
-  // token that expired mid-session doesn't drop the user out of a conversation.
+  // Raw fetch misses the axios 401 handling; retry once by hand so a token that
+  // expired mid-session doesn't drop the user out of a conversation.
   if (response.status === 401) {
     try {
-      await axiosInstance.post('/auth/token/refresh', {});
+      // External auth has no cookie refresh endpoint: the retry itself mints a
+      // fresh bearer through getAuthHeaders. Local auth refreshes the cookie first.
+      if (!isCloudEdition) await axiosInstance.post('/auth/token/refresh', {});
       response = await postStream(url, body, signal);
     } catch {
       // Fall through: the second 401 below hands off to the normal auth flow.

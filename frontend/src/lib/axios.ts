@@ -65,8 +65,8 @@ export function isRequestCancelled(error: unknown): boolean {
   return false;
 }
 
-// Helper to read the csrf_token cookie (non-httpOnly, readable by JS)
-// Exported for use by code that bypasses axiosInstance (e.g. raw fetch)
+// Helper to read the csrf_token cookie (non-httpOnly, readable by JS).
+// Raw-fetch callers should use getAuthHeaders() rather than this directly.
 export function getCsrfToken(): string | undefined {
   return document.cookie
     .split(';')
@@ -74,35 +74,44 @@ export function getCsrfToken(): string | undefined {
     ?.split('=')[1];
 }
 
-// Request interceptor: CSRF token + (cloud) external bearer + session abort signal
+/**
+ * The auth headers a request to the API needs, for whichever edition this build is.
+ *
+ * The ONE source of these headers: the axios request interceptor below and every
+ * raw-`fetch` caller that has to bypass axios (e.g. the chat SSE stream, which
+ * must read the response body incrementally) both go through here, so the two can
+ * never drift apart again (issue #1035).
+ *
+ *  - External auth (`isCloudEdition`): a FRESH external-IdP session bearer, minted
+ *    per call. These tokens are short-lived, so they are never cached, and the
+ *    cookie `/auth/token/refresh` path is never used. No active external session
+ *    means no header; the backend then 401s as appropriate.
+ *  - Local auth: the CSRF double-submit header for mutating methods, paired with
+ *    the httpOnly auth cookies the browser attaches itself.
+ */
+export async function getAuthHeaders(method: string | undefined): Promise<Record<string, string>> {
+  if (isCloudEdition) {
+    try {
+      const { getSessionToken } = await import('$lib/cloud');
+      const sessionToken = await getSessionToken();
+      return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {};
+    } catch {
+      return {};
+    }
+  }
+
+  if (['post', 'put', 'patch', 'delete'].includes((method || '').toLowerCase())) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) return { 'X-CSRF-Token': csrfToken };
+  }
+  return {};
+}
+
+// Request interceptor: auth headers + session abort signal
 axiosInstance.interceptors.request.use(
   async (config) => {
-    if (isCloudEdition) {
-      // Cloud edition: mint a FRESH hosted-IdP session JWT per request. These
-      // tokens are short-lived (~60s), so we never cache them and never use the
-      // cookie /auth/token/refresh path (which would log users out mid-session).
-      // The backend's external verifier validates this bearer.
-      try {
-        const { getSessionToken } = await import('$lib/cloud');
-        const sessionToken = await getSessionToken();
-        if (sessionToken) {
-          config.headers['Authorization'] = `Bearer ${sessionToken}`;
-        }
-      } catch {
-        // No active external session — request proceeds unauthenticated; the
-        // backend will 401 as appropriate.
-      }
-    } else {
-      // Community edition: CSRF token for mutating requests (double-submit
-      // pattern), paired with httpOnly auth cookies. Cloud uses bearer auth and
-      // does not rely on the CSRF cookie.
-      const method = (config.method || '').toLowerCase();
-      if (['post', 'put', 'patch', 'delete'].includes(method)) {
-        const csrfToken = getCsrfToken();
-        if (csrfToken) {
-          config.headers['X-CSRF-Token'] = csrfToken;
-        }
-      }
+    for (const [name, value] of Object.entries(await getAuthHeaders(config.method))) {
+      config.headers[name] = value;
     }
 
     // Attach the session abort signal so logout can cancel this request.

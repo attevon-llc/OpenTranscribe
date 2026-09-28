@@ -4868,6 +4868,7 @@
   "chat.emptyArchive": "アーカイブされた会話はありません",
   "chat.emptyHistory": "会話はまだありません",
   "chat.errors.conversationNotFound": "この会話は存在しません。",
+  "chat.errors.llm_unconfigured": "LLMプロバイダーが設定されていません。チャットを使用するには、設定でプロバイダーを追加してください。",
   "chat.errors.loadConversations": "会話を読み込めませんでした。",
   "chat.errors.loadMessages": "この会話を読み込めませんでした。",
   "chat.errors.quotaExceeded": "チャットの上限に達しました。",

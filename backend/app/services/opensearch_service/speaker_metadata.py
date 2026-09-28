@@ -8,17 +8,22 @@ from app.core.config import settings
 from app.core.constants import get_speaker_index
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.indices import ensure_indices_exist
+from app.services.search.tenant_scope import org_filter_clauses
 
 logger = logging.getLogger(__name__)
 
 
-def find_speaker_across_media(speaker_uuid: str, user_id: int) -> list[dict[str, Any]]:
+def find_speaker_across_media(
+    speaker_uuid: str, user_id: int, *, organization_id: int | None
+) -> list[dict[str, Any]]:
     """
     Find all media files where a specific speaker appears
 
     Args:
         speaker_uuid: UUID of the speaker
         user_id: ID of the user
+        organization_id: Tenant scope (None = personal) — gates the transcript index
+            alongside ``user_id`` (#1027)
 
     Returns:
         List of media files where this speaker appears
@@ -47,7 +52,8 @@ def find_speaker_across_media(speaker_uuid: str, user_id: int) -> list[dict[str,
                     "must": [
                         {"term": {"user_id": user_id}},
                         {"term": {"speakers": speaker_name}},
-                    ]
+                    ],
+                    "filter": org_filter_clauses(organization_id),
                 }
             },
             "size": size_limit,  # Max media files returned; increase if users have very large libraries

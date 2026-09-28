@@ -2078,6 +2078,14 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         Returns:
             True if LLM is available, False otherwise
         """
+        if self.config.provider in SDK_PROVIDERS:
+            # No HTTP models endpoint and no base_url to build one from, so the probe
+            # below would always report "down" (issue #1046) while the tasks, which
+            # never call this, run fine. Construction already required what actually
+            # gates an SDK call (model ID and region, see `_get_provider_config`) --
+            # the same answer `is_configured_for_user` gives.
+            return bool(self.config.model)
+
         try:
             headers = self._get_headers()
 

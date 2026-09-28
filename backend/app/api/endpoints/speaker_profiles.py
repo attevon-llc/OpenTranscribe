@@ -16,6 +16,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import MAX_AVATAR_SIZE
+from app.core.tenancy import UNSCOPED
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -464,7 +465,10 @@ def assign_speaker_to_profile(
 
         # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+        # Ownership/share check on one named profile, not a set fed to a kNN: unscoped as before.
+        accessible_ids = PermissionService.get_accessible_profile_ids(
+            db, current_user.id, organization_id=UNSCOPED
+        )
         if profile.id not in accessible_ids:
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
@@ -539,8 +543,9 @@ def _get_embedding_suggestions(
     current_user: User,
     threshold: float,
     accessible_profile_ids: set[int] | None = None,
+    organization_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Get profile suggestions based on voice embeddings."""
+    """Get profile suggestions based on voice embeddings (``organization_id``: tenant gate)."""
     from app.core.constants import SPEAKER_CONFIDENCE_HIGH
     from app.services.opensearch_service import get_speaker_embedding
     from app.services.profile_embedding_service import ProfileEmbeddingService
@@ -562,6 +567,7 @@ def _get_embedding_suggestions(
             current_user.id,
             threshold=threshold,
             accessible_profile_ids=accessible_profile_ids,
+            organization_id=organization_id,
         )
 
         for match in profile_matches:
@@ -666,6 +672,7 @@ def get_speaker_profile_suggestions(
     threshold: float = Query(ConfidenceLevel.MEDIUM, ge=0.0, le=1.0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get profile suggestions for a speaker based on both embeddings and LLM analysis."""
     try:
@@ -692,7 +699,11 @@ def get_speaker_profile_suggestions(
             return []
 
         # Compute accessible profiles for cross-user matching
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+        # The request's tenant scope (#1027): an org request sees its org's profiles, a
+        # personal one only org-less profiles — in SQL here and in the kNN below.
+        accessible_ids = PermissionService.get_accessible_profile_ids(
+            db, current_user.id, organization_id=ctx.org_id
+        )
 
         # Get suggestions from different sources
         suggestions: list[dict[str, Any]] = []
@@ -703,6 +714,7 @@ def get_speaker_profile_suggestions(
                 current_user,
                 threshold,
                 accessible_profile_ids=accessible_ids,
+                organization_id=ctx.org_id,
             )
         )
         suggestions.extend(
@@ -734,7 +746,10 @@ def get_speaker_profile_occurrences(
     try:
         # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+        # Ownership/share check on one named profile, not a set fed to a kNN: unscoped as before.
+        accessible_ids = PermissionService.get_accessible_profile_ids(
+            db, current_user.id, organization_id=UNSCOPED
+        )
         if profile.id not in accessible_ids:
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id

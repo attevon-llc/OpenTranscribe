@@ -1,6 +1,7 @@
 """Index creation / bootstrap for the transcript and speaker indices."""
 
 import logging
+from typing import Any
 
 from app.core.config import settings
 from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
@@ -123,6 +124,35 @@ def _restore_v3_from_backup(v3_index: str) -> None:
         logger.warning(f"Reindex failure: {f.get('cause', {}).get('reason', f)}")
 
 
+def transcript_index_body() -> dict[str, Any]:
+    """Settings + mapping of the legacy whole-document ``transcripts`` index."""
+    return {
+        "settings": {
+            "index": {"number_of_shards": 1, "number_of_replicas": 0},
+            "analysis": {"analyzer": {"default": {"type": "standard"}}},
+        },
+        "mappings": {
+            "properties": {
+                "file_id": {"type": "integer"},
+                "file_uuid": {"type": "keyword"},
+                "user_id": {"type": "integer"},
+                # Tenant stamp (#1027): present only on org files, so the
+                # personal scope's ``must_not exists`` gate matches the rest.
+                "organization_id": {"type": "integer"},
+                "content": {"type": "text"},
+                "speakers": {"type": "keyword"},
+                "tags": {"type": "keyword"},
+                "upload_time": {"type": "date"},
+                "title": {"type": "text"},
+                "embedding": {
+                    "type": "knn_vector",
+                    "dimension": SENTENCE_TRANSFORMER_DIMENSION,
+                },
+            }
+        },
+    }
+
+
 def ensure_indices_exist():
     """
     Ensure the transcript and speaker indices exist, creating them if necessary.
@@ -141,28 +171,7 @@ def ensure_indices_exist():
     try:
         # Create transcript index if it doesn't exist
         if not _client.opensearch_client.indices.exists(index=settings.OPENSEARCH_TRANSCRIPT_INDEX):
-            transcript_index_config = {
-                "settings": {
-                    "index": {"number_of_shards": 1, "number_of_replicas": 0},
-                    "analysis": {"analyzer": {"default": {"type": "standard"}}},
-                },
-                "mappings": {
-                    "properties": {
-                        "file_id": {"type": "integer"},
-                        "file_uuid": {"type": "keyword"},
-                        "user_id": {"type": "integer"},
-                        "content": {"type": "text"},
-                        "speakers": {"type": "keyword"},
-                        "tags": {"type": "keyword"},
-                        "upload_time": {"type": "date"},
-                        "title": {"type": "text"},
-                        "embedding": {
-                            "type": "knn_vector",
-                            "dimension": SENTENCE_TRANSFORMER_DIMENSION,
-                        },
-                    }
-                },
-            }
+            transcript_index_config = transcript_index_body()
 
             _client.opensearch_client.indices.create(
                 index=settings.OPENSEARCH_TRANSCRIPT_INDEX, body=transcript_index_config

@@ -1007,6 +1007,9 @@ def get_collection_media(
         "status": status,
         "transcript_search": transcript_search,
         "user_id": current_user.id if not current_user.is_admin and not is_shared else None,
+        # The collection was resolved in this scope, and a file joins a collection only
+        # from the same scope, so gating the transcript index by it drops nothing.
+        "organization_id": ctx.org_id,
     }
 
     # Apply all filters

@@ -6,7 +6,6 @@ the normalized audio.wav in MinIO temp storage for the GPU worker.
 Part of the 3-stage chain: preprocess (CPU) → transcribe (GPU) → postprocess (CPU)
 """
 
-import contextlib
 import logging
 import os
 import re
@@ -31,6 +30,7 @@ from .audio_processor import get_audio_file_extension
 from .audio_processor import prepare_audio_for_transcription
 from .metadata_extractor import extract_media_metadata
 from .metadata_extractor import extract_media_metadata_from_url
+from .metadata_extractor import probe_media_duration
 from .metadata_extractor import update_media_file_metadata
 from .notifications import send_error_notification
 from .notifications import send_progress_notification
@@ -416,32 +416,41 @@ def _extract_metadata_best_effort(
         try:
             metadata: dict | None = None
             local_path_for_raw: str | None = existing_local_path
+            # ExifTool's duration is missing for some containers (Ogg/Opus) and an
+            # estimate for others (MP3), so a local file is also asked ffprobe. The
+            # presigned-URL path already IS ffprobe. Probed before the session opens.
+            probed_duration: float | None = None
 
             if existing_local_path and os.path.exists(existing_local_path):
                 metadata = extract_media_metadata(existing_local_path)
+                probed_duration = probe_media_duration(existing_local_path)
             elif presigned_url:
                 metadata = extract_media_metadata_from_url(presigned_url)
             else:
                 fallback_local = os.path.join(temp_dir, f"meta_input{file_ext}")
                 download_file_to_path(storage_path, fallback_local)
                 metadata = extract_media_metadata(fallback_local)
+                probed_duration = probe_media_duration(fallback_local)
                 local_path_for_raw = fallback_local
 
-            if metadata:
+            if metadata or probed_duration:
                 with session_scope() as db:
                     mf = get_refreshed_object(db, MediaFile, file_id)
                     if mf:
-                        update_media_file_metadata(
-                            mf, metadata, content_type, local_path_for_raw or ""
-                        )
-                        # Persist audio duration into benchmark context when known
-                        duration_val = metadata.get("Duration") or metadata.get("duration")
-                        if duration_val is not None:
-                            with contextlib.suppress(TypeError, ValueError):
-                                benchmark_timing.set_context(
-                                    task_id,
-                                    {"audio_duration_s": float(duration_val)},
-                                )
+                        if metadata:
+                            update_media_file_metadata(
+                                mf,
+                                metadata,
+                                content_type,
+                                local_path_for_raw or "",
+                                probed_duration=probed_duration,
+                            )
+                        else:
+                            mf.duration = probed_duration
+                        if mf.duration:
+                            benchmark_timing.set_context(
+                                task_id, {"audio_duration_s": float(mf.duration)}
+                            )
                         db.commit()
         except Exception as e:
             logger.warning(f"Metadata extraction failed for file {file_id} (non-fatal): {e}")

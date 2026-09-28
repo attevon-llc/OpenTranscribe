@@ -70,8 +70,9 @@ Nothing here was invented; every key exists in the pipeline or the ORM.
 - **`media_file`** holds the columns `storage.py:update_media_file_transcription_status` writes on
   completion (`status="completed"`, `duration`, `language`, `whisper_model`, `diarization_model`,
   `embedding_mode`, `asr_provider`, `asr_model`, `diarization_disabled`) plus the upload-time
-  technical metadata for the WAV. `duration` is `segments[-1]["end"]` — the same value the app
-  computes — not the container's 10.0 s.
+  technical metadata for the WAV. `duration` is the speech extent (`max(end)`), which is what
+  the app stores only when no container duration could be probed; since issue #969 a probed
+  duration (10.0 s here) is kept.
 
 ### Two things it deliberately does **not** contain
 

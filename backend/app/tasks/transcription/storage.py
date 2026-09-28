@@ -148,23 +148,22 @@ def update_media_file_transcription_status(
         logger.error(f"Media file with ID {file_id} not found when updating transcription status")
         return
 
-    # Duration from the segments, but ONLY when there are segments (issue #455).
+    # `duration` is the MEDIA length the preprocess stage probed from the container,
+    # and it is never replaced here when known (issue #969). It used to be overwritten
+    # with the transcript's speech extent — the last segment's end — which drops any
+    # trailing silence, music or applause: an 11.5 s file stored 9.0 s. That shrank the
+    # gallery badge, mis-bucketed the duration filter, inflated talk-time shares, broke
+    # youtube_metadata_backfill's match-by-duration, and under-reported the duration
+    # the completion hook hands to metered deployments.
     #
-    # This used to be `segments[-1]["end"] if segments else 0.0`, which was wrong
-    # twice. `0.0` OVERWROTE the real ffprobe duration written at
-    # metadata_extractor.py for any file that produced no segments — a silent or
-    # music-only recording, or a provider that returned nothing — and then marked
-    # it COMPLETED, with no path that recovers the value. It also broke
-    # recovery_tasks.youtube_metadata_backfill, which matches rows BY DURATION.
-    #
-    # `[-1]` also assumed the segments were sorted. Overlap marking, boundary
-    # resegmentation and the cloud-ASR adapters can all reorder them, so the
-    # stored duration could be SHORTER than the transcript it describes.
-    duration = max((segment["end"] for segment in segments), default=None)
-
-    # Update media file
-    if duration is not None:
-        media_file.duration = duration
+    # Speech extent is only a last resort for a file whose container duration could
+    # not be read. It is max(end), not `segments[-1]["end"]`, because overlap marking,
+    # boundary resegmentation and the cloud-ASR adapters can reorder segments; and a
+    # file with no segments never gets 0.0 written over it (issue #455).
+    if not media_file.duration:
+        speech_extent = max((segment["end"] for segment in segments), default=None)
+        if speech_extent is not None:
+            media_file.duration = speech_extent
     # The ONE place `media_file.language` is assigned by the pipeline, so it is the last
     # boundary before the column every redaction/chat/search reader keys on (issue #545).
     # `ASRResult` already normalizes the cloud providers' output; this also covers the local

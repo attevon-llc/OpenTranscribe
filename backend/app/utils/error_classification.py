@@ -34,6 +34,10 @@ class ErrorCategory(Enum):
 
     # Resource errors - retry with reduced resources
     OOM_ERROR = "oom"
+    # GPU memory exhausted. Its own code because the GPU-OOM backoff path
+    # (`identify_oom_error_files`) must key off a stored code, and a host-RAM OOM
+    # must not enter it (issue #959).
+    GPU_OOM = "gpu_oom"
 
     # Transient errors - retry with backoff
     NETWORK_ERROR = "network"
@@ -52,6 +56,7 @@ RETRIABLE_CATEGORIES: frozenset[ErrorCategory] = frozenset(
         ErrorCategory.WORKER_LOST,
         ErrorCategory.DUPLICATE_KEY,
         ErrorCategory.OOM_ERROR,
+        ErrorCategory.GPU_OOM,
         ErrorCategory.NETWORK_ERROR,
         ErrorCategory.TEMPORARY_SERVICE_ERROR,
         ErrorCategory.UNKNOWN,
@@ -104,11 +109,9 @@ def categorize_error(error_message: str) -> ErrorCategory:
         return ErrorCategory.WORKER_LOST
 
     # Resource errors
-    if (
-        "out of memory" in msg_lower
-        or "oom" in msg_lower
-        or ("cuda" in msg_lower and "out of memory" in msg_lower)
-    ):
+    if "cuda" in msg_lower and "out of memory" in msg_lower:
+        return ErrorCategory.GPU_OOM
+    if "out of memory" in msg_lower or "oom" in msg_lower:
         return ErrorCategory.OOM_ERROR
 
     # Temporary service errors (check before network to match HTTP status codes first)
@@ -120,6 +123,24 @@ def categorize_error(error_message: str) -> ErrorCategory:
         return ErrorCategory.NETWORK_ERROR
 
     return ErrorCategory.UNKNOWN
+
+
+def stored_category(value: str | None) -> ErrorCategory:
+    """Read the retry category a failure site persisted to ``media_file.error_category``.
+
+    Retry policy keys off this stored code, never off ``last_error_message`` (issue #959):
+    that column now holds a fixed user-facing sentence, and re-classifying prose after the
+    fact would make rewording a message silently change retry behaviour. A NULL or
+    unrecognised value is UNKNOWN — retriable, the same default ``categorize_error`` gives
+    an empty message.
+    """
+    if not value:
+        return ErrorCategory.UNKNOWN
+    try:
+        return ErrorCategory(value)
+    except ValueError:
+        logger.warning(f"Unrecognised stored error_category {value!r}; treating as unknown")
+        return ErrorCategory.UNKNOWN
 
 
 def should_retry(error_category: ErrorCategory, retry_count: int, max_retries: int = 3) -> bool:

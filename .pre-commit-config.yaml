@@ -321,6 +321,27 @@ repos:
         pass_filenames: false
         files: ^(backend/app/.*\.py|scripts/session-lifetime-allowlist\.txt|scripts/audit-session-lifetime\.py)$
 
+  # Error-disclosure gate (issues #786, #959) — every read edge that puts a stored failure
+  # column (`last_error_message`, a task's `error_message`) on the wire must go through
+  # ErrorCategorizationService, and retry policy must read the stored `error_category`, never
+  # re-derive it from stored prose. #786 hand-fixed five edges and missed two; without a gate
+  # "the tree is clean" was a count of fixed sites, not a property. Self-test first, same rule
+  # as the two audits above.
+  - repo: local
+    hooks:
+      - id: audit-error-disclosure-selftest
+        name: error-disclosure self-test (every detector must still fire)
+        entry: python3 scripts/audit-error-disclosure.py --selftest
+        language: system
+        pass_filenames: false
+        files: ^scripts/audit-error-disclosure\.py$
+      - id: audit-error-disclosure
+        name: audit error disclosure (no raw failure text on the wire)
+        entry: python3 scripts/audit-error-disclosure.py backend/app
+        language: system
+        pass_filenames: false
+        files: ^(backend/app/.*\.py|scripts/audit-error-disclosure\.py)$
+
   # Shell script linting
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.9.0.6

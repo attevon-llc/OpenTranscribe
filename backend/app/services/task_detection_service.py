@@ -22,6 +22,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.services.llm_service import LLMService
+from app.utils.error_classification import ErrorCategory
 from app.utils.task_utils import update_media_file_from_task_status
 
 logger = logging.getLogger(__name__)
@@ -469,7 +470,9 @@ class TaskDetectionService:
 
         A file is eligible if:
         1. Status is ERROR
-        2. last_error_message contains OOM signature ("cuda" + "out of memory")
+        2. The failure site stored the GPU-OOM retry category (``error_category ==
+           "gpu_oom"``). Keyed off the stored code, not ``last_error_message`` — that
+           column holds a fixed user-facing sentence, not the raw CUDA text (issue #959).
         3. Sufficient time has passed since last_recovery_attempt (exponential backoff)
 
         Args:
@@ -480,13 +483,12 @@ class TaskDetectionService:
         """
         now = datetime.now(UTC)
 
-        # Query ERROR files with OOM error messages
+        # Query ERROR files the failure site classified as GPU OOM
         oom_files = (
             db.query(MediaFile)
             .filter(
                 MediaFile.status == FileStatus.ERROR,
-                MediaFile.last_error_message.ilike("%cuda%"),
-                MediaFile.last_error_message.ilike("%out of memory%"),
+                MediaFile.error_category == ErrorCategory.GPU_OOM.value,
             )
             .all()
         )
@@ -540,7 +542,6 @@ class TaskDetectionService:
         Returns:
             List of files eligible for retry (up to batch_size)
         """
-        from app.utils.error_classification import ErrorCategory
         from app.utils.error_classification import get_retry_delay
         from app.utils.error_classification import should_retry
 

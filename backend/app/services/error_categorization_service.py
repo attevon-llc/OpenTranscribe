@@ -23,12 +23,21 @@ Error reasons include:
 ⚠️ No-raw-echo contract: every ``user_message`` and suggestion this service returns is a
 FIXED sentence chosen by category. The raw exception text is NEVER embedded in any value
 this module returns — it is a bug to add an f-string that re-inserts ``error_message`` into
-a handler's output. The raw message stays server-side (``media_file.last_error_message`` and
-the ERROR-level log), which is where `task_detection_service.py` reads it for OOM detection.
+a handler's output. The raw exception stays in the ERROR-level log and nowhere else.
 
 ``UserErrorReason`` is the USER-FACING vocabulary, distinct from
 ``app.utils.error_classification.ErrorCategory`` — that module's enum drives RETRY policy
 (is this worth retrying, and how long to wait) and is never serialized to a client.
+
+Classify ONCE, at the failure site (issue #959): a pipeline failure handler calls
+``classify_failure(raw)`` while it still holds the raw exception, persists
+``user_message`` to ``media_file.last_error_message`` / ``task.error_message`` and
+``retry_category`` to ``media_file.error_category``. Retry policy then reads the stored
+category column and never re-derives it from stored prose, so rewording a sentence here
+cannot change retry behaviour. Read edges call ``get_error_info`` / ``error_fields_for``; a
+stored fixed sentence maps back to its own reason by exact match (``_REASON_BY_MESSAGE``),
+and legacy rows that still hold raw text fall through to the pattern match.
+``scripts/audit-error-disclosure.py`` gates the read edges.
 
 All error processing is designed to be non-breaking - if categorization fails,
 the service gracefully falls back to generic error handling.
@@ -45,8 +54,13 @@ Classes:
 """
 
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
+
+from app.utils.error_classification import ErrorCategory
+from app.utils.error_classification import categorize_error as categorize_retry
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +76,15 @@ class UserErrorReason(StrEnum):
     NETWORK_ERROR = "network_error"
     PERMISSION_ERROR = "permission_error"
     UNCLASSIFIED = "unclassified"
+
+
+@dataclass(frozen=True)
+class FailureClassification:
+    """What a failure site persists instead of the raw exception (issue #959)."""
+
+    retry_category: ErrorCategory
+    reason: UserErrorReason
+    user_message: str
 
 
 class ErrorCategorizationService:
@@ -168,6 +191,10 @@ class ErrorCategorizationService:
         if len(error_message) > 10000:
             logger.warning(f"Error message truncated from {len(error_message)} to 10000 characters")
             error_message = error_message[:10000]
+
+        exact = _REASON_BY_MESSAGE.get(error_message.strip())
+        if exact is not None:
+            return exact()
 
         error_lower = error_message.lower()
 
@@ -331,8 +358,8 @@ class ErrorCategorizationService:
         Note:
             The is_retryable field helps frontends determine whether to show
             retry buttons or encourage users to fix the underlying issue first.
-            The raw error message is deliberately NOT included here — it stays
-            server-side in `media_file.last_error_message` and the ERROR log.
+            The raw error message is deliberately NOT included here — it lives
+            only in the ERROR log (issue #959).
 
         Example:
             >>> info = get_error_info("network timeout")
@@ -354,6 +381,50 @@ class ErrorCategorizationService:
                 UserErrorReason.UNCLASSIFIED,
             ],
         }
+
+    @staticmethod
+    def classify_failure(raw_error: str | None) -> FailureClassification:
+        """Classify a raw failure ONCE, at the failure site, into everything that is stored.
+
+        The single entry point for a failure handler: it yields the retry-policy category
+        (derived from the RAW text, which carries the signal) and the fixed user-facing
+        sentence that is persisted in place of the raw text. Callers log the raw exception
+        themselves and store only ``user_message`` and ``retry_category``.
+        """
+        reason, user_message, _ = ErrorCategorizationService.categorize_error(raw_error)
+        return FailureClassification(
+            retry_category=categorize_retry(raw_error or ""),
+            reason=reason,
+            user_message=user_message,
+        )
+
+    @staticmethod
+    def error_fields_for(media_file: Any) -> dict[str, Any] | None:
+        """Wire fields for a failed file, or None when the file has not failed.
+
+        The one read edge from ``media_file.last_error_message`` to a file response —
+        shared by the file-detail endpoint and ``FormattingService`` so the sanitization
+        cannot drift between them.
+        """
+        from app.models.media import FileStatus
+
+        if media_file.status != FileStatus.ERROR:
+            return None
+        stored = media_file.last_error_message
+        info = ErrorCategorizationService.get_error_info(str(stored) if stored else None)
+        return {
+            "error_reason": info["category"],
+            "error_suggestions": info["suggestions"],
+            "user_message": info["user_message"],
+            "is_retryable": info["is_retryable"],
+        }
+
+    @staticmethod
+    def user_message_for(stored_error: str | None) -> str | None:
+        """The client-safe sentence for a stored error column, or None when there is none."""
+        if not stored_error:
+            return None
+        return str(ErrorCategorizationService.get_error_info(str(stored_error))["user_message"])
 
     @staticmethod
     def should_show_enhanced_notification(error_message: str | None) -> bool:
@@ -399,3 +470,22 @@ class ErrorCategorizationService:
         )
 
         return quality_issues or speech_issues
+
+
+_FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str]]], ...] = (
+    ErrorCategorizationService._handle_file_quality_error,
+    ErrorCategorizationService._handle_no_audio_track_error,
+    ErrorCategorizationService._handle_no_speech_error,
+    ErrorCategorizationService._handle_format_error,
+    ErrorCategorizationService._handle_network_error,
+    ErrorCategorizationService._handle_permission_error,
+    ErrorCategorizationService._handle_generic_error,
+)
+
+# A persisted fixed sentence must read back as the reason it was written for. Several of
+# the sentences do not contain their own category's substring patterns (the network one
+# says "could not be retrieved", not "network"), so without this exact-match table a stored
+# FORMAT_ISSUE would read back as a generic PROCESSING_ERROR.
+_REASON_BY_MESSAGE: dict[str, Callable[[], tuple[UserErrorReason, str, list[str]]]] = {
+    handler()[1]: handler for handler in _FIXED_MESSAGE_HANDLERS
+}

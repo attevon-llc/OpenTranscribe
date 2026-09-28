@@ -210,16 +210,9 @@ class FormattingService:
         }
 
         # Add error categorization for failed files
-        if media_file.status == FileStatus.ERROR and hasattr(media_file, "last_error_message"):
-            error_info = ErrorCategorizationService.get_error_info(
-                str(media_file.last_error_message)
-                if media_file.last_error_message is not None
-                else None
-            )
-            updates["error_reason"] = error_info["category"]
-            updates["error_suggestions"] = error_info["suggestions"]
-            updates["user_message"] = error_info["user_message"]
-            updates["is_retryable"] = error_info["is_retryable"]
+        error_fields = ErrorCategorizationService.error_fields_for(media_file)
+        if error_fields is not None:
+            updates.update(error_fields)
 
         # Add speaker summary if speakers provided
         if speakers:

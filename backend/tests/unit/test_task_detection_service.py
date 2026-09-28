@@ -44,6 +44,7 @@ from app.core.task_config import TaskRecoveryConfig
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.llm_service import LLMService
 from app.services.task_detection_service import TaskDetectionService
 from app.utils.error_classification import ErrorCategory
@@ -82,6 +83,23 @@ def _file(db, user, **kwargs) -> MediaFile:
     db.commit()
     db.refresh(media_file)
     return media_file
+
+
+def _failed_file(db, user, raw_error: str, **kwargs) -> MediaFile:
+    """An ERROR file recorded exactly as a pipeline failure site records one (#959).
+
+    The raw text is classified once; the row gets the fixed sentence and the retry code,
+    never the raw text — so detection can only see what production actually stores.
+    """
+    failure = ErrorCategorizationService.classify_failure(raw_error)
+    return _file(
+        db,
+        user,
+        status=FileStatus.ERROR,
+        last_error_message=failure.user_message,
+        error_category=failure.retry_category.value,
+        **kwargs,
+    )
 
 
 def _task(db, user, media_file, **kwargs) -> Task:
@@ -215,31 +233,18 @@ def test_orphaned_tasks_use_the_hour_threshold(service, db_session, normal_user)
 def test_oom_detection_requires_both_cuda_and_out_of_memory(service, db_session, normal_user):
     """The signature is the conjunction; either word alone is a different failure.
 
-    Catches the two ``ilike`` clauses becoming an OR: a plain host-RAM
-    "out of memory" or any message merely mentioning CUDA would enter the OOM
-    backoff path and be retried on the GPU forever instead of surfacing as an
-    error the user can act on.
+    Catches the GPU-OOM code being widened: a plain host-RAM "out of memory" or
+    any message merely mentioning CUDA would enter the OOM backoff path and be
+    retried on the GPU forever instead of surfacing as an error the user can act
+    on. The conjunction now lives in the failure-site classifier
+    (``GPU_OOM``), not in an ``ilike`` over stored prose (#959).
     """
-    both = _file(
-        db_session,
-        normal_user,
-        status=FileStatus.ERROR,
-        last_error_message="CUDA out of memory. Tried to allocate 2.00 GiB",
-        retry_count=0,
+    both = _failed_file(
+        db_session, normal_user, "CUDA out of memory. Tried to allocate 2.00 GiB", retry_count=0
     )
-    memory_only = _file(
-        db_session,
-        normal_user,
-        status=FileStatus.ERROR,
-        last_error_message="Worker ran out of memory",
-        retry_count=0,
-    )
-    cuda_only = _file(
-        db_session,
-        normal_user,
-        status=FileStatus.ERROR,
-        last_error_message="CUDA driver initialization failed",
-        retry_count=0,
+    memory_only = _failed_file(db_session, normal_user, "Worker ran out of memory", retry_count=0)
+    cuda_only = _failed_file(
+        db_session, normal_user, "CUDA driver initialization failed", retry_count=0
     )
 
     ids = {f.id for f in service.identify_oom_error_files(db_session)}
@@ -258,19 +263,17 @@ def test_oom_backoff_grows_with_the_retry_count(service, db_session, normal_user
     has and starving every other queued transcription.
     """
     message = "CUDA out of memory"
-    too_soon = _file(
+    too_soon = _failed_file(
         db_session,
         normal_user,
-        status=FileStatus.ERROR,
-        last_error_message=message,
+        message,
         retry_count=1,
         last_recovery_attempt=NOW - timedelta(minutes=5),
     )
-    elapsed = _file(
+    elapsed = _failed_file(
         db_session,
         normal_user,
-        status=FileStatus.ERROR,
-        last_error_message=message,
+        message,
         retry_count=1,
         last_recovery_attempt=NOW - timedelta(minutes=25),
     )
@@ -301,11 +304,10 @@ def test_oom_detection_treats_a_null_retry_count_as_zero(service, db_session, no
     """
     from sqlalchemy import update
 
-    null_count = _file(
+    null_count = _failed_file(
         db_session,
         normal_user,
-        status=FileStatus.ERROR,
-        last_error_message="CUDA out of memory",
+        "CUDA out of memory",
         last_recovery_attempt=NOW - timedelta(minutes=30),
     )
     db_session.execute(

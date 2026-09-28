@@ -30,6 +30,7 @@ from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.services import system_settings_service
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.takedown_service import exclude_quarantined
 from app.services.task_recovery_service import task_recovery_service
@@ -280,7 +281,8 @@ def get_file_detailed_status(
                 "created_at": task.created_at,
                 "updated_at": task.updated_at,
                 "completed_at": task.completed_at,
-                "error_message": task.error_message,
+                # Never the raw exception on the wire (#786/#959).
+                "error_message": ErrorCategorizationService.user_message_for(task.error_message),
                 # Add formatted processing time
                 "formatted_processing_time": FormattingService.format_processing_time(
                     task.created_at,

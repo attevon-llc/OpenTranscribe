@@ -30,6 +30,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.youtube_processing import process_youtube_playlist_task
@@ -420,11 +421,16 @@ def _raise_duplicate_error(existing_video: MediaFile) -> None:
         HTTPException: 409 Conflict with status-specific message.
     """
     if existing_video.status == FileStatus.ERROR:
-        error_msg = existing_video.last_error_message or "processing failed"
+        # The stored column can still hold a download's raw yt-dlp text, so it goes
+        # through the same sanitizer as every other read edge (#786/#959).
+        reason = (
+            ErrorCategorizationService.user_message_for(existing_video.last_error_message)
+            or "Processing failed for this file."
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This video already exists in your library but {error_msg}. "
-            f"Please delete it first if you want to re-process it.",
+            detail=f"This video already exists in your library but could not be processed: "
+            f"{reason} Please delete it first if you want to re-process it.",
         )
 
     if existing_video.status in [FileStatus.PENDING, FileStatus.PROCESSING]:

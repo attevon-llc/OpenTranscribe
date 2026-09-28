@@ -23,7 +23,6 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.utils import benchmark_timing
 from app.utils import scratch_volume
-from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
@@ -260,7 +259,7 @@ def preprocess_for_transcription(
 
     except Exception as e:
         logger.exception(f"Preprocess failed for file {file_uuid}")
-        _mark_pipeline_error(file_uuid, task_id, f"Audio preprocessing failed: {e}")
+        _mark_pipeline_error(file_uuid, task_id, str(e))
         raise
 
 
@@ -480,19 +479,30 @@ def _dispatch_waveform_if_missing(
         logger.warning(f"Waveform dispatch from preprocess failed (non-fatal): {e}")
 
 
-def _mark_pipeline_error(file_uuid: str, task_id: str, error_msg: str) -> None:
-    """Mark file and task as failed."""
+def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> None:
+    """Mark file and task as failed.
+
+    ``raw_error`` is classified here, once, and is NOT stored (issue #959): the file and
+    task rows get the fixed user-facing sentence, ``error_category`` gets the retry code.
+    The caller has already logged the raw exception.
+    """
+    from app.services.error_categorization_service import ErrorCategorizationService
     from app.utils.uuid_helpers import get_file_by_uuid
 
+    failure = ErrorCategorizationService.classify_failure(raw_error)
     try:
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
             if media_file:
                 update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
-                media_file.last_error_message = error_msg
-                media_file.error_category = categorize_error(error_msg).value
+                media_file.last_error_message = failure.user_message
+                media_file.error_category = failure.retry_category.value
                 db.commit()
-                send_error_notification(int(media_file.user_id), int(media_file.id), error_msg)
-            update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+                send_error_notification(
+                    int(media_file.user_id), int(media_file.id), failure.user_message
+                )
+            update_task_status(
+                db, task_id, "failed", error_message=failure.user_message, completed=True
+            )
     except Exception as status_err:
         logger.error(f"Failed to update error status: {status_err}")

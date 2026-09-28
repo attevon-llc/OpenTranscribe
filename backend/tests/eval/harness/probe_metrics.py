@@ -124,7 +124,15 @@ class ProbeTurnMetrics:
         expect_refusal: Whether this turn was a negative control expected to decline.
         errored: Whether the probe recorded an error for this turn (HTTP failure,
             exception) rather than a completed answer.
-        files_consulted: Distinct files the answer actually cited.
+        files_consulted: Distinct files the answer actually cited. ⚠️ This measures the
+            MODEL's citing behaviour, not retrieval: the mock LLM always cites exactly
+            ``[1]``/``[2]``, so under ``--with-mock-llm`` it is capped at 2 whatever
+            the scope. Issue #975 was filed on exactly that misreading.
+        files_offered: Distinct files among the excerpts that actually reached the
+            prompt (the ``sources`` frame's ``offered_citations``) — what retrieval and
+            the budget delivered, independent of which ones the model chose to cite.
+            ``None`` when the record carries no ``offered_citations`` at all (a record
+            from before the probe captured them), never a 0 that reads as measured.
         chunks_used: ``msg_metadata.chunks_used`` from the persisted message, or
             ``None`` if the metadata was never read back (e.g. the turn errored).
         retrieved: ``msg_metadata.retrieved`` — the candidate pool size before
@@ -139,6 +147,7 @@ class ProbeTurnMetrics:
     expect_refusal: bool
     errored: bool
     files_consulted: int
+    files_offered: int | None
     chunks_used: int | None
     retrieved: int | None
     coverage_ratio: float | None
@@ -153,6 +162,7 @@ class ProbeTurnMetrics:
             "expect_refusal": self.expect_refusal,
             "errored": self.errored,
             "files_consulted": self.files_consulted,
+            "files_offered": self.files_offered,
             "chunks_used": self.chunks_used,
             "retrieved": self.retrieved,
             "coverage_ratio": self.coverage_ratio,
@@ -193,6 +203,12 @@ def extract_turn_metrics(record: dict[str, Any]) -> ProbeTurnMetrics:
     """
     scope_size = len(record.get("scope_file_uuids") or [])
     files_consulted = len(record.get("files_consulted_uuids") or [])
+    offered = record.get("offered_citations")
+    files_offered = (
+        None
+        if offered is None
+        else len({str(ref["file_uuid"]) for ref in offered if ref.get("file_uuid")})
+    )
     return ProbeTurnMetrics(
         query_id=str(record["label"]),
         category=str(record["category"]),
@@ -200,6 +216,7 @@ def extract_turn_metrics(record: dict[str, Any]) -> ProbeTurnMetrics:
         expect_refusal=bool(record.get("expect_refusal", False)),
         errored=record.get("error") is not None,
         files_consulted=files_consulted,
+        files_offered=files_offered,
         chunks_used=record.get("chunks_used"),
         retrieved=record.get("retrieved"),
         coverage_ratio=coverage_ratio(files_consulted, scope_size),
@@ -304,6 +321,7 @@ def render_probe_table(rows: list[dict[str, Any]]) -> str:
         "category",
         "scope",
         "files_consulted",
+        "files_offered",
         "coverage",
         "chunks_used",
         "retrieved",
@@ -324,6 +342,7 @@ def render_probe_table(rows: list[dict[str, Any]]) -> str:
                     row["category"],
                     str(row["scope_size"]),
                     str(row["files_consulted"]),
+                    "n/a" if row["files_offered"] is None else str(row["files_offered"]),
                     coverage,
                     str(row["chunks_used"]),
                     str(row["retrieved"]),

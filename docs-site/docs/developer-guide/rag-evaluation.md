@@ -2334,6 +2334,29 @@ assert_no_prose` walks the assembled artifact and refuses to serialise it if any
 appear at any depth, so a future field copy-pasted from the full-fidelity record cannot leak text
 into a committed baseline by accident.
 
+### ⚠️ `files_consulted` measures the model, `files_offered` measures retrieval (#975)
+
+`files_consulted` counts the files the **answer cited**. That is a property of the model's
+citing behaviour, not of retrieval — and under `--with-mock-llm` it is a constant: `mock-gpt`
+always cites exactly `[1]` and `[2]`, so `files_consulted` is at most 2 at any scope size.
+Issue #975 ("corpus-scale retrieval collapses to 2 files regardless of scope") was filed on
+exactly that number. `files_offered` is the distinct files among the excerpts that actually
+reached the prompt (the `sources` frame), which is what retrieval, diversity sampling and the
+excerpt budget delivered, whatever the model then chose to cite. Read that one for retrieval.
+
+Measured 2026-09-27 on an isolated stack (the 7 QMSum meetings + 34-meeting AMI distractor
+haystack, 41-file scope, shipped defaults, `mock-gpt`):
+
+| shape | files_consulted | files_offered | chunk pool (48) spans |
+|---|---|---|---|
+| multi-file series question (TS3005, 4-meeting gold) | 2 | 23, all 4 gold meetings among them | 20 files |
+| broad, scope-wide (2 phrasings) | 2 / 2 | 16 / 22 | 16 / 21 files |
+| single-meeting needle (3 questions) | 2 / 2 / 2 | 8 / 15 / 9 | 8 / 13 / 9 files |
+| absent topic | 2 | 17 | 17 files |
+
+The 48-candidate pool was **not** concentrated on one or two files for any shape, so
+`candidate_pool` is not a ceiling on file coverage at this scope; the "2" was the mock.
+
 ### Two environment gotchas, because each cost a debugging cycle the first time
 
 - **vLLM publishes on `127.0.0.1` only, on the *dev* project's Docker network.** A fresh/

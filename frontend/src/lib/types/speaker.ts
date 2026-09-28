@@ -19,7 +19,9 @@ export interface Speaker {
   } | null; // null when the speaker has been explicitly unlinked from a profile
   // AI-predicted speaker attributes
   predicted_gender?: string; // "male", "female"
-  attribute_confidence?: Record<string, number | string>; // e.g., {"gender": 0.92}
+  // Numeric scores only, e.g. {"gender": 0.92}. The backend splits the non-numeric
+  // keys it stores alongside them into the three fields below (#1026).
+  attribute_confidence?: Record<string, number> | null;
   attributes_predicted_at?: string; // ISO timestamp
   // Gender alignment with metadata hints
   gender_alignment?: string; // "match" | "mismatch" | null

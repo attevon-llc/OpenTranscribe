@@ -6,8 +6,22 @@
  * backend it has never heard of.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The edition is a build-time constant; a getter over hoisted state lets one file
+// exercise both the external-auth and the local-auth paths (issue #1035).
+const auth = vi.hoisted(() => ({
+  external: false,
+  getSessionToken: vi.fn<() => Promise<string | null>>(),
+}));
+vi.mock('$lib/edition', () => ({
+  get isCloudEdition() {
+    return auth.external;
+  },
+}));
+vi.mock('$lib/cloud', () => ({ getSessionToken: auth.getSessionToken }));
+
+import axiosInstance from '$lib/axios';
 import { createSseParser } from './chatStream';
 import type { ChatStreamEvent } from '$lib/types/chat';
 
@@ -321,5 +335,140 @@ describe('streamChatMessage', () => {
 
     expect((events[0] as { code: string }).code).toBe('quota_exceeded');
     vi.unstubAllGlobals();
+  });
+});
+
+/** A 200 response whose body is one `done` frame. */
+function okStream() {
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: new TextEncoder().encode('event: done\ndata: {"finish_reason":"stop"}\n\n'),
+          })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        cancel: vi.fn().mockResolvedValue(undefined),
+        releaseLock: vi.fn(),
+      }),
+    },
+  };
+}
+
+function unauthorized() {
+  return { ok: false, status: 401, json: async () => ({ detail: 'Not authenticated' }) };
+}
+
+async function send(): Promise<ChatStreamEvent[]> {
+  const { streamChatMessage } = await import('./chatStream');
+  const events: ChatStreamEvent[] = [];
+  await streamChatMessage(
+    'conv-1',
+    { content: 'hello' },
+    (e) => events.push(e),
+    new AbortController().signal
+  );
+  return events;
+}
+
+describe('streamChatMessage auth (issue #1035)', () => {
+  let refreshSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    auth.getSessionToken.mockReset();
+    document.cookie = 'csrf_token=test-csrf-value';
+    refreshSpy = vi.spyOn(axiosInstance, 'post').mockResolvedValue({ data: {} });
+  });
+
+  afterEach(() => {
+    auth.external = false;
+    refreshSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  describe('external auth', () => {
+    beforeEach(() => {
+      auth.external = true;
+    });
+
+    it('sends the external session bearer the axios interceptor would send', async () => {
+      auth.getSessionToken.mockResolvedValue('ext-token-1');
+      const fetchMock = vi.fn().mockResolvedValue(okStream());
+      vi.stubGlobal('fetch', fetchMock);
+
+      const events = await send();
+
+      const [, init] = fetchMock.mock.calls[0];
+      expect(init.headers['Authorization']).toBe('Bearer ext-token-1');
+      // Bearer auth does not use the cookie CSRF double-submit.
+      expect(init.headers['X-CSRF-Token']).toBeUndefined();
+      expect(events).toEqual([{ type: 'done', finish_reason: 'stop' }]);
+    });
+
+    it('on 401 retries once with a freshly minted token, never the cookie refresh', async () => {
+      auth.getSessionToken
+        .mockResolvedValueOnce('expired-token')
+        .mockResolvedValueOnce('fresh-token');
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce(okStream());
+      vi.stubGlobal('fetch', fetchMock);
+
+      const events = await send();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0][1].headers['Authorization']).toBe('Bearer expired-token');
+      expect(fetchMock.mock.calls[1][1].headers['Authorization']).toBe('Bearer fresh-token');
+      expect(refreshSpy).not.toHaveBeenCalled();
+      expect(events).toEqual([{ type: 'done', finish_reason: 'stop' }]);
+    });
+
+    it('surfaces a second 401 as an error event after exactly one retry', async () => {
+      auth.getSessionToken.mockResolvedValue('rejected-token');
+      const fetchMock = vi.fn().mockResolvedValue(unauthorized());
+      vi.stubGlobal('fetch', fetchMock);
+
+      const events = await send();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(refreshSpy).not.toHaveBeenCalled();
+      expect(events).toEqual([
+        { type: 'error', code: 'provider_error', message: 'Not authenticated' },
+      ]);
+    });
+  });
+
+  describe('local auth (control: behaviour unchanged)', () => {
+    it('sends the CSRF header and no bearer, without asking for a session token', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(okStream());
+      vi.stubGlobal('fetch', fetchMock);
+
+      await send();
+
+      const [, init] = fetchMock.mock.calls[0];
+      expect(init.headers['X-CSRF-Token']).toBe('test-csrf-value');
+      expect(init.headers['Authorization']).toBeUndefined();
+      expect(init.credentials).toBe('same-origin');
+      expect(auth.getSessionToken).not.toHaveBeenCalled();
+    });
+
+    it('on 401 refreshes the cookie session, then retries once', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce(okStream());
+      vi.stubGlobal('fetch', fetchMock);
+
+      const events = await send();
+
+      expect(refreshSpy).toHaveBeenCalledExactlyOnceWith('/auth/token/refresh', {});
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(events).toEqual([{ type: 'done', finish_reason: 'stop' }]);
+    });
   });
 });

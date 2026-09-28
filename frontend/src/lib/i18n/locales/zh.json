@@ -4868,6 +4868,7 @@
   "chat.emptyArchive": "没有已归档的对话",
   "chat.emptyHistory": "暂无对话",
   "chat.errors.conversationNotFound": "这个对话已不存在。",
+  "chat.errors.llm_unconfigured": "尚未配置任何LLM提供方。请在设置中添加一个以使用对话功能。",
   "chat.errors.loadConversations": "无法加载你的对话。",
   "chat.errors.loadMessages": "无法加载这个对话。",
   "chat.errors.quotaExceeded": "已达到对话额度上限。",

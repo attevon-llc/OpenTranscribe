@@ -4868,6 +4868,7 @@
   "chat.emptyArchive": "لا توجد محادثات مؤرشفة",
   "chat.emptyHistory": "لا توجد محادثات بعد",
   "chat.errors.conversationNotFound": "لم تعد هذه المحادثة موجودة.",
+  "chat.errors.llm_unconfigured": "لم يتم إعداد أي مزوّد للنموذج اللغوي الكبير (LLM). أضف مزوّدًا من الإعدادات لاستخدام الدردشة.",
   "chat.errors.loadConversations": "تعذر تحميل محادثاتك.",
   "chat.errors.loadMessages": "تعذر تحميل هذه المحادثة.",
   "chat.errors.quotaExceeded": "لقد بلغت الحد الأقصى المسموح به للدردشة.",

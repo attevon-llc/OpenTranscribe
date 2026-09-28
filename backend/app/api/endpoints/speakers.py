@@ -2229,7 +2229,10 @@ def _accept_speaker_profile_match(
 ) -> dict[str, Any]:
     """Handle acceptance of a speaker profile match."""
     # Verify profile exists and is accessible (own or shared)
-    accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+    # Ownership/share check on one named profile, not a set fed to a kNN: unscoped as before.
+    accessible_ids = PermissionService.get_accessible_profile_ids(
+        db, current_user.id, organization_id=UNSCOPED
+    )
     profile = (
         db.query(SpeakerProfile)
         .filter(
@@ -2417,7 +2420,10 @@ def _resolve_profile_uuid_to_id(
     from app.utils.uuid_helpers import get_speaker_profile_by_uuid
 
     profile = get_speaker_profile_by_uuid(db, profile_uuid)
-    accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+    # Ownership/share check on one named profile, not a set fed to a kNN: unscoped as before.
+    accessible_ids = PermissionService.get_accessible_profile_ids(
+        db, current_user.id, organization_id=UNSCOPED
+    )
     if profile.id not in accessible_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
     return profile.id

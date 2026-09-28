@@ -56,6 +56,8 @@ def index_transcript(
     title: str,
     tags: list[str] | None = None,
     embedding: list[float] | None = None,
+    *,
+    organization_id: int | None,
 ):
     """
     Index a transcript in OpenSearch
@@ -69,6 +71,9 @@ def index_transcript(
         title: Title of the media file (filename)
         tags: Optional list of tags associated with the file
         embedding: Optional vector embedding of the transcript (if not provided, we'd compute it)
+        organization_id: The FILE's tenant (None = personal). Required so no writer can
+            forget it (#1027): an org file's doc is stamped, a personal doc carries no
+            field at all — the shape ``tenant_scope.org_filter_clauses`` gates on.
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping indexing")
@@ -95,6 +100,8 @@ def index_transcript(
             "tags": tags or [],
             "upload_time": datetime.datetime.now(datetime.UTC).isoformat(),  # ISO-8601 format
         }
+        if organization_id is not None:
+            doc["organization_id"] = organization_id
 
         # Only include embedding if provided
         if embedding is not None:

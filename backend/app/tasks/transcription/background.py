@@ -45,7 +45,13 @@ def _index_transcript_in_search(ctx: TranscriptionContext, processed_segments: l
 
     # Legacy whole-doc index (backward compatibility)
     index_transcript(
-        ctx.file_id, file_uuid, ctx.user_id, full_transcript, speaker_names, file_title
+        ctx.file_id,
+        file_uuid,
+        ctx.user_id,
+        full_transcript,
+        speaker_names,
+        file_title,
+        organization_id=ctx.organization_id,
     )
 
     # Dispatch chunk-level search indexing as a separate tracked Celery task

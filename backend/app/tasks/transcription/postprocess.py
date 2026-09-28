@@ -532,7 +532,7 @@ def _process_native_embeddings(
         return
 
     with session_scope() as db:
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, user_id)
+        accessible_ids = PermissionService.get_accessible_profile_ids_for_file(db, user_id, file_id)
         matching_service = SpeakerMatchingService(db, embedding_service=None)
         logger.info(
             f"Starting native speaker matching for {len(db_embeddings)} speakers "

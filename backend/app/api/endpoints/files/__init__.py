@@ -333,6 +333,7 @@ def list_media_files(
         "status": status,
         "transcript_search": transcript_search,
         "user_id": effective_user_id,
+        "organization_id": org_scope,
     }
 
     # Apply all filters

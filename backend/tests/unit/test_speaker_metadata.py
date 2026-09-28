@@ -187,7 +187,9 @@ def test_find_speaker_across_media_returns_only_this_users_matching_files(indice
     )
     client.indices.refresh(index=indices.transcript_index)
 
-    results = speaker_metadata.find_speaker_across_media(speaker_uuid, user_id)
+    results = speaker_metadata.find_speaker_across_media(
+        speaker_uuid, user_id, organization_id=None
+    )
 
     assert len(results) == 1
     assert results[0]["file_id"] == 1
@@ -196,7 +198,9 @@ def test_find_speaker_across_media_returns_only_this_users_matching_files(indice
 
 
 def test_find_speaker_across_media_unknown_speaker_returns_empty(indices):
-    results = speaker_metadata.find_speaker_across_media(str(uuid_pkg.uuid4()), 42)
+    results = speaker_metadata.find_speaker_across_media(
+        str(uuid_pkg.uuid4()), 42, organization_id=None
+    )
 
     assert results == []
 

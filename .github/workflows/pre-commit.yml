@@ -221,8 +221,10 @@ jobs:
         # via auditwheel, which is how a stale, CVE-flagged pcre2 ended up baked
         # into the arm64 lite image (issue #951). Building against the system
         # libpq here means CI actually exercises the same driver the images ship.
+        # libimage-exiftool-perl: every backend image ships exiftool, and the
+        # media-duration tests (#969/#974) run real files through it.
         timeout-minutes: 10
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg libpq-dev
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libpq-dev libimage-exiftool-perl
 
       - name: Install Python dependencies (CPU wheels)
         run: |

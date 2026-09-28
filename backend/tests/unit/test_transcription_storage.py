@@ -22,13 +22,11 @@ What is pinned here, in order:
    and a segment left with nothing stores SQL ``NULL`` rather than ``[]``.
 4. **The completion state transition** — status, language, and the model-provenance
    columns.
-5. Two **characterization tests for open defects** in the duration write at L147
-   (``test_completing_with_no_segments_zeroes_the_probed_duration`` and
-   ``test_duration_comes_from_the_last_segment_not_the_latest_one``), and one in
-   ``get_unique_speaker_names`` at L200
-   (``test_unique_speaker_name_order_is_not_stable_across_processes``). Each asserts
-   today's WRONG behaviour on purpose so the defect cannot drift while it is open, and
-   each docstring says what to replace it with once a fix lands.
+5. **The duration write.** A probed media duration is never overwritten (issues #455,
+   #969); speech extent is only a fallback for an unprobed file, and then it is max(end)
+   (``test_completing_with_no_segments_keeps_the_probed_duration``,
+   ``test_unprobed_duration_falls_back_to_the_latest_segment_end``). Plus a stable-order
+   guard on ``get_unique_speaker_names``.
 
 Following the characterization-test convention of ``tests/unit/test_chunking_service.py``.
 """
@@ -371,7 +369,10 @@ def test_completion_flips_status_and_records_the_processing_provenance(db_sessio
     assert media_file.asr_provider == "deepgram"
     assert media_file.asr_model == "nova-3"
     assert media_file.diarization_disabled is False
-    assert media_file.duration == pytest.approx(42.5)
+    assert media_file.duration == pytest.approx(PROBED_DURATION), (
+        "issue #969: completion must keep the probed media duration, not replace it with "
+        "the transcript's speech extent (42.5)"
+    )
 
 
 def test_completion_does_not_clobber_a_file_quarantined_mid_transcription(db_session, media_file):
@@ -413,7 +414,7 @@ def test_completion_does_not_clobber_a_file_quarantined_mid_transcription(db_ses
     # Everything unrelated to the guard still writes normally -- this is not a
     # blanket "skip the whole function for a held file" guard.
     assert media_file.language == "en"
-    assert media_file.duration == pytest.approx(10.0)
+    assert media_file.duration == pytest.approx(PROBED_DURATION)
 
 
 def test_completion_still_completes_a_file_under_legal_hold_but_not_quarantined(
@@ -637,8 +638,11 @@ def test_completing_with_no_segments_keeps_the_probed_duration(db_session, media
     assert media_file.status == FileStatus.COMPLETED
 
 
-def test_duration_is_the_latest_segment_end(db_session, media_file):
-    """Duration is the LATEST end, not the last list element (issue #455).
+def test_unprobed_duration_falls_back_to_the_latest_segment_end(db_session, media_file):
+    """With no probed duration, the fallback is the LATEST end, not the last element.
+
+    Speech extent is only a last resort since issue #969 (a probed duration always wins);
+    when it is used it must still be max(end) (issue #455).
 
     ``segments[-1]["end"]`` assumed the list was sorted by time. Overlap marking and the
     speaker-boundary resegmentation both reorder segments, and the cloud-ASR adapters emit
@@ -651,6 +655,8 @@ def test_duration_is_the_latest_segment_end(db_session, media_file):
         _segment(20.0, 30.0, "last to end"),
         _segment(10.0, 20.0, "middle"),
     ]
+    media_file.duration = None
+    db_session.commit()
 
     update_media_file_transcription_status(db_session, media_file.id, out_of_order)
 

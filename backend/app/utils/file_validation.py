@@ -31,6 +31,9 @@ MAGIC_SIGNATURES: list[tuple[int, bytes, list[str]]] = [
     (0, b"\xff\xfa", ["audio/mpeg", "audio/mp3"]),
     (0, b"\xff\xf3", ["audio/mpeg", "audio/mp3"]),
     (0, b"\xff\xf2", ["audio/mpeg", "audio/mp3"]),
+    # Raw AAC in an ADTS stream (*.aac): 12-bit sync word, then MPEG-4 (F1) or MPEG-2 (F9)
+    (0, b"\xff\xf1", ["audio/aac", "audio/x-aac", "audio/aacp"]),
+    (0, b"\xff\xf9", ["audio/aac", "audio/x-aac", "audio/aacp"]),
     # FLAC
     (0, b"fLaC", ["audio/flac", "audio/x-flac"]),
     # AIFF

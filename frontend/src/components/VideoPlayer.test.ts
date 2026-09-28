@@ -91,3 +91,31 @@ describe('seekToTime without a constructed Plyr instance', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+/**
+ * Issue #1044: the `<source type>` hint came verbatim from `file.content_type`, so a
+ * row stored as `audio/vnd.wave` (Firefox on Linux declares WAVs that way) rendered
+ * a hint Firefox and Chromium both reject. The player never fetched the bytes and
+ * showed 00:00.
+ */
+describe('<source type> hint', () => {
+  async function sourceFor(contentType: string | undefined) {
+    const { container } = render(VideoPlayer, {
+      props: { videoUrl: 'blob:test-media', file: { content_type: contentType } },
+    });
+    await flushMicrotasks();
+    return container.querySelector('#player source') as HTMLSourceElement;
+  }
+
+  it('maps a stored audio/vnd.wave to the playable audio/wav', async () => {
+    expect((await sourceFor('audio/vnd.wave')).getAttribute('type')).toBe('audio/wav');
+  });
+
+  it('omits the hint for a type browsers reject but can still sniff (QuickTime)', async () => {
+    expect((await sourceFor('video/quicktime')).hasAttribute('type')).toBe(false);
+  });
+
+  it('omits the hint instead of claiming video/mp4 when the type is unknown', async () => {
+    expect((await sourceFor(undefined)).hasAttribute('type')).toBe(false);
+  });
+});

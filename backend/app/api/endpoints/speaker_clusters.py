@@ -23,6 +23,7 @@ from app.schemas.speaker_cluster import ClusterUnassignRequest
 from app.schemas.speaker_cluster import ReclusterRequest
 from app.schemas.speaker_cluster import SpeakerClusterUpdate
 from app.services.speaker_clustering_service import SpeakerClusteringService
+from app.utils.media_types import normalize_media_content_type
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +207,9 @@ def get_speaker_media_preview(
 
     try:
         media_presigned_url = get_file_url(
-            media_file.storage_path, expires=settings.MEDIA_URL_EXPIRE_SECONDS
+            media_file.storage_path,
+            expires=settings.MEDIA_URL_EXPIRE_SECONDS,
+            content_type=normalize_media_content_type(media_file.content_type),
         )
     except Exception as e:
         logger.warning("Failed to generate presigned URL for %s: %s", media_file.storage_path, e)

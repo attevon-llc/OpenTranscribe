@@ -7,6 +7,7 @@
   import { translateSpeakerLabel } from '$lib/i18n';
   import { formatTimeWithMillis } from '$lib/utils/formatting';
   import { applyMediaSeek, waitForMediaMetadata, HAVE_METADATA } from '$lib/utils/mediaReady';
+  import { playableSourceType } from '$lib/utils/mediaType';
   import Spinner from './ui/Spinner.svelte';
 
   export let videoUrl: string = '';
@@ -29,6 +30,10 @@
   // URL currently loaded into the media element — lets a presigned-URL refresh
   // hot-swap the credential without losing playback position (see hotSwapVideoSource).
   let activeSrc = '';
+
+  // A stored alias such as audio/vnd.wave is rejected as a hint, and the browser then
+  // never fetches the bytes (issue #1044). Without a hint it sniffs them instead.
+  $: sourceType = playableSourceType(file?.content_type);
 
 
   function handleRetry() {
@@ -414,7 +419,7 @@
         preload="metadata"
         playsinline
       >
-        <source src={videoUrl} type={file.content_type} />
+        <source src={videoUrl} type={sourceType} />
         {$t('videoPlayer.audioNotSupported')}
       </audio>
     {:else}
@@ -426,7 +431,7 @@
         preload="metadata"
         playsinline
       >
-        <source src={videoUrl} type={file?.content_type || 'video/mp4'} />
+        <source src={videoUrl} type={sourceType} />
         <!-- Always include track element so CC button appears -->
         <track kind="captions" label={$t('videoPlayer.captionsLabel')} srclang="en" default />
         {$t('videoPlayer.videoNotSupported')}

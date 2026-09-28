@@ -36,6 +36,7 @@ from app.utils.file_hash import check_duplicate_by_imohash
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
+from app.utils.media_types import normalize_media_content_type
 
 if TYPE_CHECKING:
     from app.services.watch_sources.base import BaseWatchSourceClient
@@ -70,7 +71,8 @@ def guess_media_mime(filename: str) -> str | None:
     """Best-effort audio/video MIME from a filename; None if not media."""
     guessed, _ = mimetypes.guess_type(filename)
     if guessed and guessed.startswith(("audio/", "video/")):
-        return guessed
+        # Python 3.14 names *.wav audio/vnd.wave, which browsers won't play (#1044).
+        return normalize_media_content_type(guessed)
     return _MEDIA_MIME_FALLBACK.get(Path(filename).suffix.lower())
 
 

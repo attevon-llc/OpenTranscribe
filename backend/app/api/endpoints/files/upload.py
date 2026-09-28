@@ -23,6 +23,7 @@ from app.utils.error_handlers import ErrorHandler
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
+from app.utils.media_types import normalize_media_content_type
 from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
@@ -147,7 +148,7 @@ def create_media_file_record(
             organization_id=organization_id,
             storage_path="",  # Will be updated after upload
             file_size=file_size,
-            content_type=file.content_type,
+            content_type=normalize_media_content_type(file.content_type),
             status=FileStatus.PENDING,
             is_public=False,
             duration=None,
@@ -621,6 +622,7 @@ async def process_file_upload(
     # Validate file type first
     validate_file_type(file)
     logger.info(f"Processing file - filename: {file.filename}, content_type: {file.content_type}")
+    content_type = normalize_media_content_type(file.content_type)
 
     # Duplicate short-circuit (Phase 2 PR #7, item E20): if the client sent a
     # file hash and this is a direct legacy POST (no existing_file_uuid),
@@ -668,7 +670,7 @@ async def process_file_upload(
         # 50 GB of garbage to learn the MIME is wrong.
         first_chunk, _first_bytes = await _read_first_chunk(file)
         is_valid, validation_result = validate_uploaded_file(
-            bytes(first_chunk[:64]), file.content_type, file.filename
+            bytes(first_chunk[:64]), content_type, file.filename
         )
         benchmark_timing.mark(task_id, "http_validation_end")
         if not is_valid:
@@ -718,7 +720,7 @@ async def process_file_upload(
                 file_content,
                 file_size,
                 storage_path,
-                file.content_type or "application/octet-stream",
+                content_type or "application/octet-stream",
             )
 
         # Thumbnail generation was previously inline here (3-8s FFmpeg on
@@ -769,7 +771,7 @@ async def process_file_upload(
         task_id,
         {
             "file_size_bytes": int(file_size),
-            "content_type": file.content_type or "",
+            "content_type": content_type or "",
             "http_flow": "legacy",
         },
     )

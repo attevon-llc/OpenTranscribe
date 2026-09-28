@@ -6,6 +6,7 @@ import { t } from '$stores/locale';
 import axios, { type AxiosProgressEvent, type CancelTokenSource } from 'axios';
 import type { ExtractedAudioMetadata } from '$lib/types/audioExtraction';
 import { generateId } from '$lib/utils/ids';
+import { normalizeMediaType } from '$lib/utils/mediaType';
 import { fingerprintFile } from '$lib/services/fileFingerprint';
 import {
   createStallWatchdog,
@@ -703,13 +704,17 @@ class UploadService {
     }
     const clientHashEndMs = Date.now();
 
+    // Canonical spelling (issue #1044): a single presigned PUT stores this as the
+    // object's Content-Type, and aliases such as audio/vnd.wave don't play.
+    const mediaType = normalizeMediaType(file instanceof File ? file.type : 'audio/webm') ?? '';
+
     // Step 1: Prepare the upload — try presigned direct-to-MinIO first,
     // fall back to the legacy multipart POST if the server doesn't support
     // it or anything goes wrong during the direct PUT.
     const prepareResponse = await axiosInstance.post('/files/prepare', {
       filename: upload.name,
       file_size: file.size,
-      content_type: file instanceof File ? file.type : 'audio/webm',
+      content_type: mediaType,
       file_hash: fingerprint,
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
@@ -764,7 +769,7 @@ class UploadService {
         await this.sendBody((watchdog) =>
           axios.put(uploadUrl, file, {
             headers: {
-              'Content-Type': file instanceof File ? file.type : 'audio/webm',
+              'Content-Type': mediaType,
             },
             maxContentLength: Infinity,
             maxBodyLength: Infinity,

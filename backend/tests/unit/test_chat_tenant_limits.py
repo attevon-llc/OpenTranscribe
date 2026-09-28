@@ -159,11 +159,12 @@ def test_disabling_the_capability_degrades_to_grounded_rather_than_rejecting():
     from typing import cast
 
     from app.api.endpoints.chat.common import resolve_use_context
+    from app.core.capabilities import COMMUNITY_CAPABILITIES
     from app.core.capabilities import reset_capability_resolver
     from app.core.capabilities import set_capability_resolver
 
     try:
-        set_capability_resolver(lambda _req: {"chat.ungrounded": False})
+        set_capability_resolver(lambda _req: {**COMMUNITY_CAPABILITIES, "chat.ungrounded": False})
         conv = cast(Any, SimpleNamespace(settings={"use_context": False}))
         assert resolve_use_context(conv, {"use_context_default": True}) is True
     finally:
@@ -176,11 +177,12 @@ def test_capability_does_not_disturb_grounded_chat():
     from typing import cast
 
     from app.api.endpoints.chat.common import resolve_use_context
+    from app.core.capabilities import COMMUNITY_CAPABILITIES
     from app.core.capabilities import reset_capability_resolver
     from app.core.capabilities import set_capability_resolver
 
     try:
-        set_capability_resolver(lambda _req: {"chat.ungrounded": False})
+        set_capability_resolver(lambda _req: {**COMMUNITY_CAPABILITIES, "chat.ungrounded": False})
         conv = cast(Any, SimpleNamespace(settings={"use_context": True}))
         assert resolve_use_context(conv, {"use_context_default": False}) is True
     finally:

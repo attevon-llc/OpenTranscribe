@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A partial capability-resolver result granted features instead of withholding them (#868).**
+  `get_capabilities()` merged a registered resolver's result over the community defaults, which
+  are `True` for almost every key, so a resolver that omitted a tier-gated key on some code path
+  silently granted it. The merge now fails closed: only a key the resolver returns as exactly
+  `True` is on. An omitted known key, a non-bool value, a `None`/non-dict result, or a resolver
+  that raises now denies (logged, once per distinct problem) rather than defaulting on or
+  propagating. The default community resolver's result is unchanged. `CLOUD_SEAM_VERSION` is now
+  **6**: a custom resolver that relied on omission meaning "community default" must return every
+  key it grants — start from `{**COMMUNITY_CAPABILITIES, ...}` to keep that behaviour on purpose.
 - **The CSP allowed WebSocket connections to any host (#1028).** `connect-src` was
   `'self' ws: wss:`; bare scheme sources let script open a socket to any host, and `ws:` a
   plaintext one. It is now `'self'`, which under CSP Level 3 still matches the app's own

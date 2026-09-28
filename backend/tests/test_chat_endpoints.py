@@ -895,11 +895,12 @@ def test_export_rejects_an_unknown_format(client, auth_headers):
 
 def test_disabling_the_capability_hides_the_whole_router(client, auth_headers):
     """404 (not 403): a disabled surface should not exist for this deployment."""
+    from app.core.capabilities import COMMUNITY_CAPABILITIES
     from app.core.capabilities import reset_capability_resolver
     from app.core.capabilities import set_capability_resolver
 
     def without_chat(_request):
-        return {"chat.rag": False}
+        return {**COMMUNITY_CAPABILITIES, "chat.rag": False}
 
     set_capability_resolver(without_chat)
     try:

@@ -36,6 +36,15 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
+# v6: capability resolver results fail CLOSED (issue #868). core.capabilities.
+# get_capabilities no longer merges a resolver's result over COMMUNITY_CAPABILITIES:
+# a known key the resolver omits, a non-bool value, a None/non-dict result, or a
+# resolver that raises now reads as DENIED instead of inheriting the community
+# default (True for almost every key) or propagating the exception. BREAKING for a
+# resolver that relied on omission to mean "community default" — it must return
+# every key it grants (start from {**COMMUNITY_CAPABILITIES, ...} to keep that
+# behaviour deliberately). The community resolver is unaffected.
+#
 # v5: user.platform_super_admin_link_authorized (issue #993). Additive escape hatch
 # for auth.account_linking.assert_provider_id_link_permitted's rule 1, which
 # otherwise unconditionally refuses to JIT-link/refresh an external identity onto a
@@ -78,7 +87,7 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 5
+CLOUD_SEAM_VERSION = 6
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

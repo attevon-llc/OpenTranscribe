@@ -182,7 +182,12 @@ _resolver: CapabilityResolver = _community_resolver
 
 
 def set_capability_resolver(resolver: CapabilityResolver) -> None:
-    """Replace the capability resolver (registered by the cloud layer)."""
+    """Replace the capability resolver (registered by an external edition).
+
+    The resolver must return EVERY key it means to grant, as ``True``: anything
+    it omits is denied (see ``get_capabilities``). Build on
+    ``{**COMMUNITY_CAPABILITIES, ...}`` to override only a few keys.
+    """
     global _resolver
     logger.info("Capability resolver overridden (cloud edition)")
     _resolver = resolver
@@ -197,14 +202,50 @@ def reset_capability_resolver() -> None:
 def get_capabilities(request: Request | None = None) -> dict[str, bool]:
     """Effective capability map for this deployment/request.
 
-    Unknown keys from a custom resolver are passed through; missing known
-    keys fall back to the community defaults so a partial resolver cannot
-    accidentally disable surfaces it never considered.
+    Fails CLOSED (issue #868): a capability is on only when the resolver
+    returned it as exactly ``True``. A known key the resolver omitted, a
+    non-bool value, a ``None``/non-dict result, or a resolver that raises all
+    read as *not granted*. Merging over ``COMMUNITY_CAPABILITIES`` instead
+    would silently hand a tier-gated surface to every tenant the moment a
+    resolver skipped a key on some code path. The community resolver returns
+    the full map, so its result is unchanged.
+
+    Unknown keys the resolver grants are passed through.
     """
-    resolved = _resolver(request)
-    caps = dict(COMMUNITY_CAPABILITIES)
-    caps.update(resolved)
+    denied = dict.fromkeys(COMMUNITY_CAPABILITIES, False)
+    try:
+        resolved = _resolver(request)
+    except Exception:
+        logger.exception("Capability resolver raised; denying every capability")
+        return denied
+    if not isinstance(resolved, dict):
+        logger.error(
+            "Capability resolver returned %s, not a dict; denying every capability",
+            type(resolved).__name__,
+        )
+        return denied
+
+    missing = frozenset(COMMUNITY_CAPABILITIES) - resolved.keys()
+    if missing:
+        _warn_once(f"Capability resolver omitted key(s) {sorted(missing)}; denying them")
+    non_bool = sorted(k for k, v in resolved.items() if not isinstance(v, bool))
+    if non_bool:
+        _warn_once(f"Capability resolver returned non-bool value(s) for {non_bool}; denying them")
+
+    caps = denied
+    caps.update({key: value is True for key, value in resolved.items()})
     return caps
+
+
+#: Resolver-drift warnings already logged — one line per distinct problem per
+#: process, not one per request (this runs on every gated request).
+_warned: set[str] = set()
+
+
+def _warn_once(message: str) -> None:
+    if message not in _warned:
+        _warned.add(message)
+        logger.warning(message)
 
 
 def capability_enabled(key: str, request: Request | None = None) -> bool:

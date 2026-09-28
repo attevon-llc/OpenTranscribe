@@ -62,9 +62,11 @@ def organizations_capability_on():
     under that prefix has to turn the surface on first, exactly as the cloud
     resolver does.
     """
+    from app.core.capabilities import COMMUNITY_CAPABILITIES
     from app.core.capabilities import reset_capability_resolver
     from app.core.capabilities import set_capability_resolver
 
-    set_capability_resolver(lambda _request: {"organizations": True})
+    # The full map: a resolver's omitted keys are denied (#868), not defaulted.
+    set_capability_resolver(lambda _request: {**COMMUNITY_CAPABILITIES, "organizations": True})
     yield
     reset_capability_resolver()

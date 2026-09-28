@@ -26,6 +26,7 @@ from __future__ import annotations
 import pytest
 from fastapi import status
 
+from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
 from app.models.chat import ChatConversation
@@ -91,7 +92,7 @@ def test_the_surface_is_404_when_the_chat_capability_is_off(client, user_token_h
     then confirm the feature's existence to every caller, and the SPA's 404-means-
     absent handling would start rendering an error instead of hiding the tab.
     """
-    set_capability_resolver(lambda _request: {"chat.rag": False})
+    set_capability_resolver(lambda _request: {**COMMUNITY_CAPABILITIES, "chat.rag": False})
     try:
         response = client.get(PROJECTS, headers=user_token_headers)
     finally:

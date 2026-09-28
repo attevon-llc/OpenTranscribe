@@ -93,6 +93,10 @@ should import `app.api` or `app.services` at module scope.
   async clients) are listed in its docstring.
 - `capabilities.py` — server-driven feature gating; `require_capability()` dependency,
   `set_capability_resolver()` for the cloud edition, plus the audience taxonomy.
+  ⚠️ A registered resolver's result **fails closed** (#868, `CLOUD_SEAM_VERSION` 6): only an
+  explicit `True` grants. Omitted keys, non-bool values, `None`, or a raising resolver all deny —
+  they no longer inherit the (mostly `True`) community defaults. Test doubles that override one
+  key must spread `{**COMMUNITY_CAPABILITIES, key: value}`.
 - `settings_cache.py` — in-process TTL cache in front of `SystemSettings` reads.
 - `opensearch_auth.py` — `opensearch_connection_kwargs()`, the single builder for every
   `OpenSearch(...)` client (search plane ×2, audit writer + reader, admin audit export).

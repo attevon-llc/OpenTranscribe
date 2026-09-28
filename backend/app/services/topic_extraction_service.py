@@ -574,7 +574,7 @@ IMPORTANT GUIDELINES:
 
         if llm_service.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
             # Claude: Use response prefilling to force structured output
-            messages.append({"role": "assistant", "content": "<thinking>\n"})
+            messages.append({"role": "assistant", "content": "<thinking>"})
         elif llm_service.config.provider == LLMProvider.OLLAMA:
             # Ollama: Don't use format parameter - some models (like gpt-oss) don't support it well
             # Instead rely on prompt engineering and normal JSON extraction

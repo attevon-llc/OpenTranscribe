@@ -117,6 +117,17 @@ def split_system_messages(
             continue
         turns.append({"role": role, "content": [{"text": content}]})
 
+    # A final assistant turn is a prefill, and Converse 400s the whole call when it
+    # ends in whitespace ("final assistant content cannot end with trailing
+    # whitespace") — a prefill like "EVIDENCE:\n" is natural to write. Stripped to
+    # nothing it would be an empty content block, which is rejected too (issue #1043).
+    if turns and turns[-1]["role"] == "assistant":
+        stripped = turns[-1]["content"][0]["text"].rstrip()
+        if stripped:
+            turns[-1]["content"][0]["text"] = stripped
+        else:
+            turns.pop()
+
     # Converse requires the first turn to be `user`; a leading assistant turn is
     # only reachable through a malformed history, but it would 400 the whole call.
     if turns and turns[0]["role"] == "assistant":

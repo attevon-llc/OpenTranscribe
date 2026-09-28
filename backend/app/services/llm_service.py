@@ -307,6 +307,16 @@ class LLMService:
         ):
             user_messages.append({"role": "assistant", "content": "{"})
 
+        # The Messages API rejects a final assistant (prefill) turn that ends in
+        # whitespace, and an empty one; a prefill like "<thinking>\n" is natural to write
+        # (issue #1043).
+        if user_messages and user_messages[-1]["role"] == "assistant":
+            stripped = str(user_messages[-1]["content"] or "").rstrip()
+            if stripped:
+                user_messages[-1] = {"role": "assistant", "content": stripped}
+            else:
+                user_messages.pop()
+
         payload = {
             "model": self.config.model,
             "messages": user_messages,
@@ -2027,7 +2037,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 {"role": "user", "content": user_prompt},
                 {
                     "role": "assistant",
-                    "content": "Let me identify the most relevant evidence for each speaker:\n\nRELEVANT QUOTES AND EVIDENCE:\n",
+                    "content": "Let me identify the most relevant evidence for each speaker:\n\nRELEVANT QUOTES AND EVIDENCE:",
                 },
             ]
 

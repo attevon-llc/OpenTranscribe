@@ -4976,6 +4976,7 @@
   "chat.settings.title": "Chat",
   "chat.settings.useContextDefault": "Mijn transcripten standaard gebruiken",
   "chat.setup.noLlmMessage": "Chat heeft een taalmodel nodig. Voeg een provider toe in Instellingen om te beginnen.",
+  "chat.setup.noLlmMessageManaged": "Chat heeft een taalmodel nodig en er is er nu geen beschikbaar. Neem contact op met je beheerder.",
   "chat.setup.noLlmTitle": "Verbind een AI-provider om te beginnen met chatten",
   "chat.setup.openSettings": "AI-instellingen openen",
   "chat.showActive": "Actieve tonen",

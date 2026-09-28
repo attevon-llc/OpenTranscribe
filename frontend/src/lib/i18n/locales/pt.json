@@ -4976,6 +4976,7 @@
   "chat.settings.title": "Conversa",
   "chat.settings.useContextDefault": "Usar as minhas transcrições por predefinição",
   "chat.setup.noLlmMessage": "A conversa precisa de um modelo de linguagem. Adicione um fornecedor nas definições.",
+  "chat.setup.noLlmMessageManaged": "A conversa precisa de um modelo de linguagem e nenhum está disponível de momento. Contacte o seu administrador.",
   "chat.setup.noLlmTitle": "Ligue um fornecedor de IA para conversar",
   "chat.setup.openSettings": "Abrir definições de IA",
   "chat.showActive": "Ver ativas",

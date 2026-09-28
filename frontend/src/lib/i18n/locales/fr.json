@@ -4976,6 +4976,7 @@
   "chat.settings.title": "Discussion",
   "chat.settings.useContextDefault": "Utiliser mes transcriptions par défaut",
   "chat.setup.noLlmMessage": "La discussion nécessite un modèle de langage. Ajoutez un fournisseur dans les paramètres.",
+  "chat.setup.noLlmMessageManaged": "La discussion nécessite un modèle de langage, et aucun n'est disponible pour le moment. Contactez votre administrateur.",
   "chat.setup.noLlmTitle": "Connectez un fournisseur d'IA pour discuter",
   "chat.setup.openSettings": "Ouvrir les paramètres d'IA",
   "chat.showActive": "Afficher les actives",

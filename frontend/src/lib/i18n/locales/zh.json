@@ -4976,6 +4976,7 @@
   "chat.settings.title": "对话",
   "chat.settings.useContextDefault": "默认使用我的转写内容",
   "chat.setup.noLlmMessage": "对话需要语言模型。请在设置中添加服务提供方。",
+  "chat.setup.noLlmMessageManaged": "对话需要语言模型，但目前没有可用的模型。请联系管理员。",
   "chat.setup.noLlmTitle": "连接 AI 服务后即可开始对话",
   "chat.setup.openSettings": "打开 AI 设置",
   "chat.showActive": "查看进行中",

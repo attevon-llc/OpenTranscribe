@@ -4976,6 +4976,7 @@
   "chat.settings.title": "Chat",
   "chat.settings.useContextDefault": "Standardmäßig meine Transkripte verwenden",
   "chat.setup.noLlmMessage": "Chat benötigt ein Sprachmodell. Füge in den Einstellungen einen Anbieter hinzu.",
+  "chat.setup.noLlmMessageManaged": "Chat benötigt ein Sprachmodell, derzeit ist jedoch keines verfügbar. Wende dich an deine Administration.",
   "chat.setup.noLlmTitle": "KI-Anbieter verbinden, um zu chatten",
   "chat.setup.openSettings": "KI-Einstellungen öffnen",
   "chat.showActive": "Aktive anzeigen",

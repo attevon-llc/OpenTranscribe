@@ -4976,6 +4976,7 @@
   "chat.settings.title": "Чат",
   "chat.settings.useContextDefault": "По умолчанию использовать мои расшифровки",
   "chat.setup.noLlmMessage": "Для чата нужна языковая модель. Добавьте провайдера в настройках.",
+  "chat.setup.noLlmMessageManaged": "Для чата нужна языковая модель, но сейчас она недоступна. Обратитесь к администратору.",
   "chat.setup.noLlmTitle": "Подключите ИИ-провайдера, чтобы начать чат",
   "chat.setup.openSettings": "Открыть настройки ИИ",
   "chat.showActive": "Показать активные",

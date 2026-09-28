@@ -4976,6 +4976,7 @@
   "chat.settings.title": "Chat",
   "chat.settings.useContextDefault": "Use my transcripts by default",
   "chat.setup.noLlmMessage": "Chat needs a language model. Add a provider in Settings to begin.",
+  "chat.setup.noLlmMessageManaged": "Chat needs a language model, and none is available right now. Contact your administrator.",
   "chat.setup.noLlmTitle": "Connect an AI provider to start chatting",
   "chat.setup.openSettings": "Open AI settings",
   "chat.showActive": "Show active",

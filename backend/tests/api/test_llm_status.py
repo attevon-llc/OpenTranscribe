@@ -174,3 +174,67 @@ def test_test_connection_failure(client, user_token_headers):
     data = resp.json()
     assert data["success"] is False
     assert data["message"] == "unreachable"
+
+
+# ---------------------------------------------------------------------------
+# System-level SDK provider (Bedrock) — no HTTP models endpoint to probe
+# ---------------------------------------------------------------------------
+
+
+def _bedrock_system_settings():
+    """Env-configured Bedrock: provider, model and region set; no base_url, no key."""
+    from app.core.config import settings
+
+    return (
+        patch.object(settings, "LLM_PROVIDER", "bedrock"),
+        patch.object(settings, "BEDROCK_MODEL_NAME", "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
+        patch.object(settings, "BEDROCK_REGION", "us-east-1"),
+    )
+
+
+def test_status_reports_env_bedrock_provider_available(client, user_token_headers):
+    """A system Bedrock provider is available with no user LLM settings at all.
+
+    Regression: the availability probe GETs ``{base_url}/v1/models``, and Bedrock has
+    no ``base_url``, so ``/llm/status`` answered ``available: false`` while summaries
+    run through the very same provider succeeded — and every surface gated on this
+    endpoint (chat composer, summary buttons, reprocess options) was disabled.
+    """
+    p1, p2, p3 = _bedrock_system_settings()
+    with p1, p2, p3, patch("requests.Session.get") as http_get:
+        resp = client.get(f"{_BASE}/status", headers=user_token_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["available"] is True
+    assert data["provider"] == "bedrock"
+    assert data["model"] == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    http_get.assert_not_called()
+
+
+def test_status_reports_context_window_when_available(client, user_token_headers):
+    """The resolved service's context window rides on the status payload.
+
+    Chat's token-usage panel needs it, and ``/api/llm-settings/status`` is not
+    mounted when per-user LLM settings are disabled.
+    """
+    fake_service = MagicMock()
+    fake_service.config.provider.value = "openai"
+    fake_service.config.model = "gpt-4o-mini"
+    fake_service.config.max_tokens = 128000
+
+    with (
+        patch("app.api.endpoints.llm_status.is_llm_available", return_value=True),
+        patch(
+            "app.api.endpoints.llm_status.LLMService.create_from_settings",
+            return_value=fake_service,
+        ),
+    ):
+        resp = client.get(f"{_BASE}/status", headers=user_token_headers)
+
+    assert resp.json()["context_window"] == 128000
+
+
+def test_status_context_window_null_when_unavailable(client, user_token_headers):
+    resp = client.get(f"{_BASE}/status", headers=user_token_headers)
+    assert resp.json()["context_window"] is None

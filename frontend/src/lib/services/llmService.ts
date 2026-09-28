@@ -12,6 +12,8 @@ export interface LLMStatus {
   user_id: string; // UUID
   provider?: string | null;
   model?: string | null;
+  /** The resolved model's context window in tokens; null when unavailable. */
+  context_window?: number | null;
   message: string;
 }
 

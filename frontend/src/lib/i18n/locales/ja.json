@@ -4976,6 +4976,7 @@
   "chat.settings.title": "チャット",
   "chat.settings.useContextDefault": "既定で自分の文字起こしを使う",
   "chat.setup.noLlmMessage": "チャットには言語モデルが必要です。設定でプロバイダーを追加してください。",
+  "chat.setup.noLlmMessageManaged": "チャットには言語モデルが必要ですが、現在利用できるモデルがありません。管理者に連絡してください。",
   "chat.setup.noLlmTitle": "チャットするには AI プロバイダーを接続してください",
   "chat.setup.openSettings": "AI 設定を開く",
   "chat.showActive": "アクティブを表示",

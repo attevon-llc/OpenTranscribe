@@ -60,6 +60,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An env-configured Bedrock provider was reported unavailable, disabling chat and summary
+  actions (#1046).** `GET /api/llm/status` answered `available: false` because its probe GETs
+  `{base_url}/v1/models`, and Bedrock is an SDK provider with no `base_url`. Every surface gated
+  on that status (the chat composer, "Generate summary" and retry, the LLM reprocess options, and
+  `POST /api/files/{uuid}/summarize`, which returned 503) was disabled, while background summaries
+  through the same provider succeeded. The probe now reports an SDK provider as healthy once it
+  is configured, the same verdict `is_configured_for_user` gives. `/api/llm/status` also returns
+  `context_window`, so chat's token panel no longer reads `/api/llm-settings/status`, which is
+  not mounted when `llm.user_settings` is disabled. With that capability off, the chat model
+  picker and its configurations lookup are hidden, and the no-LLM empty state tells the user to
+  contact an administrator instead of linking to a settings section that is not shown.
+
 - **A failed transcription no longer stores the raw exception, and retry policy no longer
   reads error prose (#959).** The preprocessing, transcription, diarization and rediarization
   failure handlers now classify the exception once and store only the fixed user-facing

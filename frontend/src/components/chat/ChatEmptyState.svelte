@@ -20,12 +20,18 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
 
   /** LLM availability — false shows the setup CTA instead of suggestions. */
   export let llmAvailable = true;
 
   const dispatch = createEventDispatcher<{ suggestion: string }>();
+
+  // The provider settings section only exists when users may configure one; with
+  // the capability off the provider is operator-managed and the link would open
+  // a modal without it.
+  $: userCanConfigure = isCapabilityEnabled($capabilities, 'llm.user_settings');
 
   $: suggestions = [
     $t('chat.empty.suggestion1'),
@@ -91,15 +97,19 @@
         </svg>
       </div>
       <h1>{$t('chat.setup.noLlmTitle')}</h1>
-      <p>{$t('chat.setup.noLlmMessage')}</p>
-      <button
-        type="button"
-        class="btn btn-primary"
-        on:click={openLlmSettings}
-        data-testid="chat-open-llm-settings"
-      >
-        {$t('chat.setup.openSettings')}
-      </button>
+      {#if userCanConfigure}
+        <p>{$t('chat.setup.noLlmMessage')}</p>
+        <button
+          type="button"
+          class="btn btn-primary"
+          on:click={openLlmSettings}
+          data-testid="chat-open-llm-settings"
+        >
+          {$t('chat.setup.openSettings')}
+        </button>
+      {:else}
+        <p>{$t('chat.setup.noLlmMessageManaged')}</p>
+      {/if}
     </div>
   {/if}
 </div>

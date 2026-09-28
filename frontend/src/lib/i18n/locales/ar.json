@@ -4976,6 +4976,7 @@
   "chat.settings.title": "الدردشة",
   "chat.settings.useContextDefault": "استخدام نصوصي المفرغة تلقائيًا",
   "chat.setup.noLlmMessage": "تحتاج الدردشة إلى نموذج لغوي. أضف مزوّدًا في الإعدادات للبدء.",
+  "chat.setup.noLlmMessageManaged": "تحتاج الدردشة إلى نموذج لغوي، ولا يتوفر أي نموذج حاليًا. تواصل مع المسؤول.",
   "chat.setup.noLlmTitle": "اربط مزوّد ذكاء اصطناعي لبدء الدردشة",
   "chat.setup.openSettings": "فتح إعدادات الذكاء الاصطناعي",
   "chat.showActive": "إظهار النشطة",

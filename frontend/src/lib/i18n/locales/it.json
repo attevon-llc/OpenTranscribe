@@ -4976,6 +4976,7 @@
   "chat.settings.title": "Chat",
   "chat.settings.useContextDefault": "Usa le mie trascrizioni per impostazione predefinita",
   "chat.setup.noLlmMessage": "La chat ha bisogno di un modello linguistico. Aggiungi un provider in Impostazioni per iniziare.",
+  "chat.setup.noLlmMessageManaged": "La chat ha bisogno di un modello linguistico e al momento non ce n'è uno disponibile. Contatta l'amministratore.",
   "chat.setup.noLlmTitle": "Connetti un provider IA per iniziare a chattare",
   "chat.setup.openSettings": "Apri le impostazioni IA",
   "chat.showActive": "Mostra attive",

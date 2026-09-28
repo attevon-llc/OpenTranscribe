@@ -75,10 +75,12 @@
   let isNarrow = false;
   let mediaCleanup: (() => void) | undefined;
   let pendingScope: ChatScope | null = null;
-  let contextWindow = 0;
 
   $: chatEnabled = isCapabilityEnabled($capabilities, 'chat.rag');
   $: llmAvailable = $llmStatusStore.available;
+  // From the deployment-wide status, not /llm-settings/status: that router is not
+  // mounted when llm.user_settings is disabled (issue #1046).
+  $: contextWindow = $llmStatusStore.status?.context_window ?? 0;
   $: state = $chatStore;
   $: hasMessages = state.messages.length > 0;
 
@@ -133,16 +135,6 @@
     };
     narrow.addEventListener('change', onChange);
     mediaCleanup = () => narrow.removeEventListener('change', onChange);
-    // The token panel needs the active model's window to show a ratio.
-    (async () => {
-      try {
-        const { LLMSettingsApi } = await import('$lib/api/llmSettings');
-        const status = await LLMSettingsApi.getStatus();
-        contextWindow = status.active_configuration?.max_tokens ?? 0;
-      } catch {
-        contextWindow = 0;
-      }
-    })();
 
     // A gallery hand-off ("Chat with 12") is consumed exactly once, so a later
     // navigation back to /chat doesn't silently re-apply a stale selection.

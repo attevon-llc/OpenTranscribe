@@ -60,6 +60,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A failed transcription no longer stores the raw exception, and retry policy no longer
+  reads error prose (#959).** The preprocessing, transcription, diarization and rediarization
+  failure handlers now classify the exception once and store only the fixed user-facing
+  sentence in `last_error_message` / the task's `error_message`; the raw text is logged at
+  ERROR. Automatic retries read the stored `error_category` instead of re-matching stored
+  text, so rewording a message can no longer change retry behaviour. GPU out-of-memory
+  failures get their own `gpu_oom` category, which drives the GPU-OOM retry backoff; files
+  that failed with a GPU OOM before upgrading are not picked up by that backoff
+  automatically. Two responses that still echoed the stored text were fixed: task rows in
+  `GET /api/my-files/{uuid}/status` and the 409 for re-adding a URL that previously failed.
+  A new pre-commit gate, `scripts/audit-error-disclosure.py`, fails on any new read edge that
+  skips sanitization.
+
 - **In-process diarization crashed on CPU-only hosts** (#1007). The pinned pyannote fork's
   cache-release hook called `torch.mps.empty_cache()` whenever CUDA was absent, so every
   diarization on a CPU worker without a GPU failed with `Cannot execute emptyCache() without

@@ -73,7 +73,11 @@ class TestCategorizeError:
 
     # Resource errors
     def test_cuda_oom(self):
-        assert categorize_error("CUDA out of memory") == ErrorCategory.OOM_ERROR
+        # Its own code: the GPU-OOM backoff path keys off it, and a host OOM must not (#959).
+        assert categorize_error("CUDA out of memory") == ErrorCategory.GPU_OOM
+
+    def test_host_out_of_memory_is_not_gpu_oom(self):
+        assert categorize_error("Worker ran out of memory") == ErrorCategory.OOM_ERROR
 
     def test_oom(self):
         assert categorize_error("Process killed: OOM") == ErrorCategory.OOM_ERROR

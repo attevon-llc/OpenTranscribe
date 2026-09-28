@@ -78,7 +78,6 @@ def _run_transcribe_gpu_task_raising(preprocess_context, error: Exception):
         patch.object(core_module, "_resolve_asr_provider_or_none", return_value=_FakeProvider()),
         patch.object(core_module, "_run_cloud_asr_pipeline", side_effect=error),
         patch.object(core_module, "update_task_status"),
-        patch.object(core_module, "_get_user_friendly_error_message", return_value="failed"),
         patch.object(core_module, "_handle_transcription_failure") as mock_handle_failure,
         patch("tempfile.TemporaryDirectory") as mock_tmpdir,
         patch.object(task, "retry", side_effect=_fake_retry) as mock_retry,
@@ -169,7 +168,6 @@ def _run_diarize_gpu_task_raising():
     with (
         patch.object(diarize_module, "session_scope") as mock_scope,
         patch.object(diarize_module, "send_progress_notification"),
-        patch.object(diarize_module, "_get_user_friendly_error_message", return_value="failed"),
         patch.object(diarize_module, "_handle_transcription_failure") as mock_handle_failure,
         patch("app.transcription.Engine", _RaisingEngine),
         patch("app.transcription.EngineConfig") as mock_engine_config,

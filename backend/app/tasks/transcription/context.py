@@ -19,7 +19,7 @@ from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.utils.error_classification import categorize_error
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
@@ -193,16 +193,23 @@ def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContex
 
 
 def _handle_transcription_failure(
-    ctx: TranscriptionContext, task_id: str, error_msg: str, error_type: str
+    ctx: TranscriptionContext, task_id: str, raw_error: str, error_type: str
 ) -> dict:
-    """Handle transcription failure by updating status and sending notification."""
+    """Handle transcription failure by updating status and sending notification.
+
+    ``raw_error`` is classified once, here, and never stored (issue #959): the task and file
+    rows carry the fixed user-facing sentence and ``error_category`` the retry code derived
+    from the raw text. Callers log the raw exception before calling.
+    """
+    failure = ErrorCategorizationService.classify_failure(raw_error)
+    error_msg = failure.user_message
     with session_scope() as db:
         update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
         update_media_file_status(db, ctx.file_id, FileStatus.ERROR)
         media_file = get_refreshed_object(db, MediaFile, ctx.file_id)
         if media_file:
             media_file.last_error_message = error_msg
-            media_file.error_category = categorize_error(error_msg).value
+            media_file.error_category = failure.retry_category.value
             db.commit()
 
         # Cloud-edition seam: a FAILED run must still fire the completion hook
@@ -259,45 +266,17 @@ def _validate_transcription_result(
     return None
 
 
-def _get_user_friendly_error_message(error_message: str) -> str:
-    """Convert technical error to user-friendly message."""
-    error_lower = error_message.lower()
-
-    if "libcudnn" in error_lower:
-        return (
-            "Audio processing failed due to a system library compatibility issue. "
-            "The transcription service requires updated dependencies. "
-            "Please contact support for assistance."
-        )
-    if "cuda" in error_lower and "out of memory" in error_lower:
-        return (
-            "GPU out of memory error. The audio file may be too large for available GPU resources. "
-            "Please try with a shorter audio file or contact support."
-        )
-    if "cuda" in error_lower or "gpu" in error_lower:
-        return (
-            "GPU processing error occurred during transcription. "
-            "The system may need reconfiguration. "
-            "Please try again or contact support if the issue persists."
-        )
-    if "model" in error_lower and ("download" in error_lower or "load" in error_lower):
-        return (
-            "Failed to download or load AI models. "
-            "Please check your internet connection and try again. "
-            "If the problem persists, contact support."
-        )
-    return error_message
-
-
 def _handle_outer_exception(
     ctx: TranscriptionContext | None, task_id: str, error: Exception
 ) -> dict:
     """Handle top-level exception in transcription task."""
     file_id = ctx.file_id if ctx else None
     user_id = ctx.user_id if ctx else None
-    error_msg = str(error)
 
-    logger.error(f"Error processing file {file_id}: {error_msg}")
+    logger.error(f"Error processing file {file_id}: {error}")
+    # Classified once from the raw exception; only the fixed sentence is stored (#959).
+    failure = ErrorCategorizationService.classify_failure(str(error))
+    error_msg = failure.user_message
 
     try:
         with session_scope() as db:
@@ -306,7 +285,7 @@ def _handle_outer_exception(
                 media_file = get_refreshed_object(db, MediaFile, file_id)
                 if media_file:
                     media_file.last_error_message = error_msg
-                    media_file.error_category = categorize_error(error_msg).value
+                    media_file.error_category = failure.retry_category.value
                     db.commit()
             update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
 

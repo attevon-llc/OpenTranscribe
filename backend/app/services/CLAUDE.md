@@ -14,9 +14,15 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   is the sole user-facing vocabulary (wire field `error_reason`), distinct from
   `app.utils.error_classification.ErrorCategory` (retry policy, `media_file.error_category`,
   never on the wire). No-raw-echo contract (issue #786): every `user_message` and suggestion
-  is a FIXED sentence — the raw exception never reaches a client, only the ERROR log and
-  `media_file.last_error_message`. `tasks/transcription/notifications.py::send_error_notification`
-  is the one chokepoint every failure-notification caller routes through.
+  is a FIXED sentence — the raw exception never reaches a client. Classify ONCE, at the
+  failure site (#959): a failure handler calls `ErrorCategorizationService.classify_failure(raw)`,
+  stores `user_message` in `last_error_message`/`task.error_message` and `retry_category` in
+  `error_category`; the raw text goes to the ERROR log only. Retry policy reads
+  `stored_category(media_file.error_category)` — never `categorize_error` over stored prose.
+  Read edges use `user_message_for` / `error_fields_for`; `scripts/audit-error-disclosure.py`
+  (pre-commit) fails on an un-sanitized edge or a prose re-derivation.
+  `tasks/transcription/notifications.py::send_error_notification` is the one chokepoint every
+  failure-notification caller routes through.
 - **Search / retrieval** — `search/` (transcript chunks + hybrid/neural; **has its own
   CLAUDE.md** with the critical `cosinesimil` score gotcha), `opensearch_service/` (the
   speaker/voiceprint kNN plane + file docs; a package since #284 A3.5 — `client` owns the

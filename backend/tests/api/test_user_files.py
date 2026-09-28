@@ -155,6 +155,34 @@ def test_file_detailed_status_owner(client, user_token_headers, normal_user, db_
     assert "suggestions" in body
 
 
+def test_file_detailed_status_task_rows_do_not_echo_the_raw_error(
+    client, user_token_headers, normal_user, db_session
+):
+    """#959: ``task.error_message`` was the one wire field #786's sanitizing missed."""
+    from app.models.media import Task
+
+    sentinel = "SENTINEL-/srv/internal/secret-path"
+    mf = _make_file(db_session, normal_user, file_status="error", filename="failed.wav")
+    task = Task(
+        id=f"task-959-{uuid.uuid4()}",
+        user_id=normal_user.id,
+        media_file_id=mf.id,
+        task_type="transcription",
+        status="failed",
+        error_message=f"Traceback (most recent call last): {sentinel}",
+    )
+    db_session.add(task)
+    db_session.commit()
+
+    response = client.get(f"/api/my-files/{mf.uuid}/status", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    rows = response.json()["task_details"]
+    assert [row["id"] for row in rows] == [task.id]
+    assert rows[0]["error_message"]
+    assert sentinel not in response.text
+
+
 def test_file_detailed_status_other_user_403(
     client, other_user_auth_headers, normal_user, db_session
 ):

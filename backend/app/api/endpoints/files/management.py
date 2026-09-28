@@ -179,11 +179,9 @@ def get_file_status_detail(
             else None,
             # Never put the raw exception text on the wire (issue #786) — a fixed,
             # user-facing sentence from ErrorCategorizationService, not the raw message.
-            last_error_message=ErrorCategorizationService.get_error_info(
-                str(db_file.last_error_message)
-            )["user_message"]
-            if db_file.last_error_message
-            else None,
+            last_error_message=ErrorCategorizationService.user_message_for(
+                db_file.last_error_message
+            ),
             recovery_attempts=int(db_file.recovery_attempts or 0),
             force_delete_eligible=bool(db_file.force_delete_eligible),
             actions_available=actions,

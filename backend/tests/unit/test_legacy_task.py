@@ -29,6 +29,7 @@ import pytest
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.tasks.transcription.context import TranscriptionContext
 from app.tasks.transcription.legacy_task import _download_and_extract_metadata
 from app.tasks.transcription.legacy_task import _extract_metadata_if_available
@@ -349,7 +350,12 @@ class TestTranscribeAudioTask:
         # get_file_by_uuid raises HTTPException(404) rather than returning None, so
         # this reaches the outer exception handler, not the ctx-is-None early return.
         assert result["status"] == "error"
-        assert "not found" in result["message"].lower()
+        # The outer handler returns the fixed sentence it stored, never the raw text (#959).
+        assert (
+            result["message"]
+            == (ErrorCategorizationService.get_error_info("404: File not found")["user_message"])
+        )
+        assert "not found" not in result["message"].lower()
         assert db_session.query(Task).filter(Task.id == missing_uuid).first() is None
 
     def test_happy_path_creates_task_and_delegates_to_temp_dir_processing(
@@ -442,6 +448,12 @@ class TestTranscribeAudioTask:
             result = self._run(str(media_file.uuid))
 
         assert result["status"] == "error"
-        assert "DB connection lost" in result["message"]
+        # Classified from the raw text ("connection" -> network), but the raw text itself is
+        # neither returned nor stored (#959).
+        assert (
+            result["message"]
+            == (ErrorCategorizationService.get_error_info("DB connection lost")["user_message"])
+        )
+        assert "DB connection lost" not in result["message"]
         # No task could have been created — ctx never existed.
         assert db_session.query(Task).filter(Task.media_file_id == media_file.id).first() is None

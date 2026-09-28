@@ -153,7 +153,6 @@ class TestTaskLayerTranslation:
         with (
             patch.object(core, "_handle_transcription_failure") as failed,
             patch.object(core, "_cleanup_wav_quietly"),
-            patch.object(core, "_get_user_friendly_error_message", return_value="friendly"),
         ):
             with pytest.raises(RuntimeError) as raised:
                 core._finish_failed_or_aborted(MagicMock(), "task-2", "file-uuid-2", "", boom)
@@ -177,7 +176,6 @@ class TestTaskLayerTranslation:
 
         with (
             patch.object(core, "_handle_transcription_failure"),
-            patch.object(core, "_get_user_friendly_error_message", return_value="f"),
             patch.object(core, "_cleanup_wav_quietly") as cleanup,
         ):
             with pytest.raises(Reject):
@@ -200,7 +198,6 @@ class TestTaskLayerTranslation:
 
         with (
             patch.object(core, "_handle_transcription_failure"),
-            patch.object(core, "_get_user_friendly_error_message", return_value="f"),
             patch.object(core, "_cleanup_wav_quietly") as cleanup,
         ):
             with pytest.raises(RuntimeError):
@@ -529,7 +526,6 @@ def diarize_seams():
         patch.object(dt, "update_task_status"),
         patch.object(dt, "send_progress_notification"),
         patch.object(dt, "benchmark_timing"),
-        patch.object(dt, "_get_user_friendly_error_message", return_value="friendly"),
         patch.object(dt, "_handle_transcription_failure") as failed,
     ):
         yield failed
@@ -544,7 +540,6 @@ def cpu_seams():
         patch.object(ct, "session_scope"),
         patch.object(ct, "update_task_status"),
         patch.object(ct, "benchmark_timing"),
-        patch.object(ct, "_get_user_friendly_error_message", return_value="friendly"),
         patch.object(ct, "_handle_transcription_failure") as failed,
     ):
         yield failed

@@ -25,6 +25,7 @@ from app.utils import benchmark_timing
 from app.utils.error_handlers import ErrorHandler
 from app.utils.file_hash import check_duplicate_by_fingerprint
 from app.utils.file_hash import cleanup_failed_duplicates
+from app.utils.media_types import normalize_media_content_type
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +306,10 @@ async def prepare_upload(
             from app.services.multipart_upload import build_upload_plan
 
             plan = await run_in_threadpool(
-                build_upload_plan, storage_path, request.content_type, request.file_size
+                build_upload_plan,
+                storage_path,
+                normalize_media_content_type(request.content_type),
+                request.file_size,
             )
             if plan is None and not app_settings.API_MEDIATED_UPLOAD_ENABLED:
                 # There is no fallback to hand the client to (issue #1008). Drop the

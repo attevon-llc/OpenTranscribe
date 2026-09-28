@@ -27,6 +27,12 @@ so keep heavy imports lazy.
   allowlist, plus any raw `.publish("websocket_notifications", …)` bypassing both functions
   entirely. Both return bool, never raise (`send_ws_event_for_file`'s `TypeError` on a bad
   selector is a programmer error, not a runtime failure mode).
+- `media_types.py` — `normalize_media_content_type()` is **the only place media MIME aliases
+  are folded** (`audio/vnd.wave`/`audio/x-wav` → `audio/wav`, `audio/x-flac` → `audio/flac`, …;
+  issue #1044). Every ingest path stores its result and `/stream-url` signs it as
+  `response-content-type`. Never store a browser- or `mimetypes`-supplied type raw: Firefox on
+  Linux and Python 3.14 both say `audio/vnd.wave`, and browsers won't play that label. The
+  frontend twin is `$lib/utils/mediaType.ts`; keep the alias tables in sync.
 - `uuid_helpers.py` — the hybrid-ID + permission chokepoint. `get_*_by_uuid`,
   `get_file_by_uuid_with_permission` (admin bypass → takedown 404 → public → tenant gate → owner
   → shares, in that order), `require_resource_owner`.

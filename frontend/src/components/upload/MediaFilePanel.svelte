@@ -20,7 +20,7 @@
   /** Fallback MIME types for files the browser reports with an empty `type`. */
   const extensionMap: Record<string, string> = {
     'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg', 'flac': 'audio/flac',
-    'aac': 'audio/aac', 'm4a': 'audio/m4a', 'aif': 'audio/x-aiff', 'aiff': 'audio/x-aiff',
+    'aac': 'audio/aac', 'm4a': 'audio/mp4', 'aif': 'audio/x-aiff', 'aiff': 'audio/x-aiff',
     'wma': 'audio/x-ms-wma', 'ra': 'audio/vnd.rn-realaudio', 'ram': 'audio/vnd.rn-realaudio',
     'weba': 'audio/webm', '3ga': 'audio/3gpp', '3gp': 'audio/3gpp', '3g2': 'audio/3gpp2',
     'mp4': 'video/mp4', 'webm': 'video/webm', 'ogv': 'video/ogg', 'mov': 'video/quicktime',

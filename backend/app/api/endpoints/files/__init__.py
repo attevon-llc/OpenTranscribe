@@ -48,6 +48,7 @@ from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
 from app.utils.error_handlers import ErrorHandler
+from app.utils.media_types import normalize_media_content_type
 
 from . import cancel_upload
 from . import complete_upload
@@ -575,9 +576,13 @@ def get_media_file_stream_url(
     else:
         storage_path = db_file.storage_path
         expires_seconds = settings.MEDIA_URL_EXPIRE_SECONDS
+        # Normalised on read too: rows stored before issue #1044 can hold a browser
+        # alias such as audio/vnd.wave that the player's <source type> rejects.
         content_type = (
-            str(db_file.content_type) if db_file.content_type else "application/octet-stream"
-        )
+            normalize_media_content_type(str(db_file.content_type))
+            if db_file.content_type
+            else None
+        ) or "application/octet-stream"
 
     if not storage_path:
         raise HTTPException(
@@ -599,7 +604,11 @@ def get_media_file_stream_url(
         }
 
     try:
-        presigned_url = get_file_url(str(storage_path), expires=expires_seconds)
+        presigned_url = get_file_url(
+            str(storage_path),
+            expires=expires_seconds,
+            content_type=content_type if media_type != "thumbnail" else None,
+        )
         logger.info(
             f"Generated presigned URL for {media_type} (file: {file_uuid}, expires: {expires_seconds}s)"
         )
@@ -677,7 +686,9 @@ def _resolve_ready_download(
         url = get_presigned_download_url(
             str(db_file.storage_path),
             download_filename=filename,
-            content_type=str(db_file.content_type) if db_file.content_type else None,
+            content_type=normalize_media_content_type(
+                str(db_file.content_type) if db_file.content_type else None
+            ),
         )
         return {"url": url, "filename": filename}
 

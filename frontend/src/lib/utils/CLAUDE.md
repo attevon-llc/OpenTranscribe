@@ -18,6 +18,10 @@ and domain formatting belong in the backend (thin-frontend rule).
   restart doesn't bring every client back in lockstep. Pass a deterministic `random` in tests.
 - `sanitizeHtml.ts` — DOMPurify allowlist wrappers (`sanitizeHighlightHtml`, `sanitizeToPlainText`); every `{@html}` must go through this.
 - `speakerColors.ts` — deterministic speaker color assignment (`getSpeakerColor*`).
+- `mediaType.ts` — `playableSourceType(contentType)` is the only `<source type>` hint a
+  player may render. It returns the canonical type, or `undefined` to omit the attribute,
+  because a hint the browser rejects (e.g. `audio/vnd.wave`) stops playback before any bytes
+  are fetched (issue #1044). This is the twin of backend `app/utils/media_types.py`.
 - `searchHighlight.ts`, `metadataMapper.ts`, `scrollbarCalculations.ts`, `url.ts`, `ids.ts`.
 
 ## Conventions / patterns

@@ -13,6 +13,8 @@
  *    paths under `$lib/cloud/components/` — never a submodule of the overlay.
  *  - Every call site must be gated by `isCloudEdition` (a compile-time
  *    constant), so all of this dead-code-eliminates out of community bundles.
+ *  - Component seams: `UserMenuExtras.svelte` renders inside the user dropdown; overrides
+ *    dispatch `select` when an entry is chosen so the menu closes.
  *  - This stub defines the seam contract: the managed edition must export the
  *    same symbols with compatible signatures. Change here first, mirror there.
  */

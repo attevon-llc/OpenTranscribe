@@ -695,6 +695,48 @@ def publish_hf_token_to_environment() -> bool:
     return True
 
 
+def _pool_concurrency() -> int:
+    """Best-effort prefork concurrency of this worker, from its own argv/env."""
+    import sys
+
+    argv = sys.argv
+    for i, arg in enumerate(argv):
+        if arg.startswith("--concurrency="):
+            value = arg.split("=", 1)[1]
+        elif arg in ("--concurrency", "-c") and i + 1 < len(argv):
+            value = argv[i + 1]
+        else:
+            continue
+        try:
+            return max(1, int(value))
+        except ValueError:
+            break
+    return max(1, _int_env("CELERY_WORKER_CONCURRENCY", 1))
+
+
+def _cap_torch_threads_to_cpu_quota() -> None:
+    """Divide the container CPU quota across prefork children for torch intra-op threads.
+
+    Without this every child defaults to one thread per HOST core. Cheap and I/O-free:
+    torch is only touched if something already imported it (never imported here), and an
+    explicit OMP_NUM_THREADS / TORCH_NUM_THREADS wins.
+    """
+    import sys
+
+    torch_mod = sys.modules.get("torch")
+    if torch_mod is None or os.getenv("OMP_NUM_THREADS") or os.getenv("TORCH_NUM_THREADS"):
+        return
+    from app.utils.cpu_budget import effective_cpu_count
+
+    threads = max(1, effective_cpu_count() // _pool_concurrency())
+    try:
+        torch_mod.set_num_threads(threads)
+    except Exception as exc:  # noqa: BLE001 - never block fork init
+        logger.debug("Could not cap torch threads: %s", exc)
+        return
+    logger.info("torch intra-op threads set to %d (CPU quota / pool concurrency)", threads)
+
+
 # Signal handlers for proper database connection management
 @worker_process_init.connect
 def init_worker_process(**kwargs):
@@ -735,6 +777,8 @@ def init_worker_process(**kwargs):
     from app.db.base import engine
 
     engine.dispose()
+
+    _cap_torch_threads_to_cpu_quota()
 
     logger.info(
         "Celery fork init finished (pid=%s, elapsed=%.3fs)", pid, time.monotonic() - started

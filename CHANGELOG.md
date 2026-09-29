@@ -60,6 +60,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A task whose worker was killed stayed `in_progress` forever (#1067).** After an OOM kill,
+  14 speaker-attribute and 2 speaker-clustering tasks were left with nothing running.
+  Speaker attributes were acknowledged on receipt, so the message was gone. Clustering
+  acknowledges late, but a container-level kill leaves its message in the broker until the
+  6 h visibility timeout. Tasks that are safe to run twice now heartbeat while they run, and
+  a new `system.reclaim_lost_tasks` sweep re-sends any whose heartbeat has lapsed, under the
+  same task id, within about `TASK_HEARTBEAT_TTL_SECONDS` (120 s) plus the 2-minute sweep
+  interval. After `TASK_REPLAY_MAX_ATTEMPTS` (2) re-sends the task is marked failed. The
+  health check no longer fails a task the sweep is handling. Transcription is never re-sent
+  this way. The speaker-attribute dedupe guard now records its owner and is taken over from
+  a dead one, instead of making the retry skip itself for 2 h.
 - **Speaker gender detection could OOM-kill the CPU worker on long meetings (#1066).** Each
   detection gave wav2vec2 a speaker's longest merged speaking turns whole, and in a meeting
   those run to minutes. One process peaked at 1.7 GB on a 60 s clip and 5.5 GB on 300 s, and

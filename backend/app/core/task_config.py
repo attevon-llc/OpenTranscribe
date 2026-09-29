@@ -102,6 +102,26 @@ class TaskRecoveryConfig:
         default_factory=lambda: _int_env("TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS", 604800)
     )
 
+    # Worker-loss replay for idempotent tasks (issue #1067, app/core/task_replay.py). A task
+    # in REPLAYABLE_TASKS heartbeats while it runs; once the heartbeat has lapsed the
+    # reclaim sweep re-sends it under the same task id, at most TASK_REPLAY_MAX_ATTEMPTS
+    # times. The TTL is how long a dead worker's task waits before it is re-sent. It must
+    # cover the longest stretch a process can go without scheduling its heartbeat thread.
+    TASK_HEARTBEAT_INTERVAL: int = field(
+        default_factory=lambda: _int_env("TASK_HEARTBEAT_INTERVAL_SECONDS", 30)
+    )
+    TASK_HEARTBEAT_TTL: int = field(
+        default_factory=lambda: _int_env("TASK_HEARTBEAT_TTL_SECONDS", 120)
+    )
+    TASK_REPLAY_MAX_ATTEMPTS: int = field(
+        default_factory=lambda: _int_env("TASK_REPLAY_MAX_ATTEMPTS", 2, minimum=0)
+    )
+    # A replay record older than this is dropped rather than replayed: work lost that long
+    # ago is recovered, if at all, by the file-level recovery steps, not re-run blind.
+    TASK_REPLAY_MAX_AGE: int = field(
+        default_factory=lambda: _int_env("TASK_REPLAY_MAX_AGE_SECONDS", 86400)
+    )
+
     # OOM retry configuration
     OOM_RETRY_ENABLED: bool = True  # Enable/disable OOM auto-retry
     OOM_BACKOFF_BASE_MINUTES: int = 10  # Base delay for exponential backoff (2^n * this value)
@@ -119,6 +139,14 @@ class TaskRecoveryConfig:
                 self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 3,
             )
             self.TRANSCRIPTION_HEARTBEAT_TTL = self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 3
+        if self.TASK_HEARTBEAT_TTL <= self.TASK_HEARTBEAT_INTERVAL:
+            logger.warning(
+                "TASK_HEARTBEAT_TTL_SECONDS (%d) must exceed the interval (%d); using %d",
+                self.TASK_HEARTBEAT_TTL,
+                self.TASK_HEARTBEAT_INTERVAL,
+                self.TASK_HEARTBEAT_INTERVAL * 3,
+            )
+            self.TASK_HEARTBEAT_TTL = self.TASK_HEARTBEAT_INTERVAL * 3
 
 
 # Global configuration instance

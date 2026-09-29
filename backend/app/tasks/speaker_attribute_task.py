@@ -371,7 +371,9 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
         from app.core.redis import get_redis
 
         _guard = get_redis()
-        if not _guard.set(_guard_key, "1", nx=True, ex=7200):
+        if not _guard.set(_guard_key, task_id, nx=True, ex=7200) and not _take_over_guard(
+            _guard, _guard_key, task_id
+        ):
             logger.info(
                 f"Attribute detection already in progress for {file_uuid}; skipping duplicate"
             )
@@ -395,6 +397,27 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
         if _guard is not None:
             with contextlib.suppress(Exception):  # lock expires via TTL anyway
                 _guard.delete(_guard_key)
+
+
+def _take_over_guard(client, key: str, task_id: str) -> bool:
+    """Claim a dedupe guard another run holds, if that run is this one or is dead.
+
+    The guard holds its owner's task id (issue #1067). A replay after a worker loss runs
+    under the same id, and without this it would skip itself as its own duplicate for the
+    guard's full 2 h TTL. A holder with no heartbeat is a dead run (an OOM-killed worker
+    never reaches the ``finally`` that deletes the guard). That includes a guard written
+    before owners were recorded, whose value is ``"1"``. An unreadable heartbeat keeps the
+    guard where it is.
+    """
+    from app.core.task_replay import is_alive
+
+    raw = client.get(key)
+    holder = raw.decode() if isinstance(raw, bytes) else raw
+    if holder is not None and holder != task_id and is_alive(holder) is not False:
+        return False
+    logger.info("Taking over speaker-attribute guard %s from %s", key, holder)
+    client.set(key, task_id, ex=7200)
+    return True
 
 
 def _attributes_already_predicted(file_uuid: str) -> bool:

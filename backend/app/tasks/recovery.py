@@ -175,6 +175,28 @@ def recover_user_files_task(self, user_id: int | None = None):
     return summary
 
 
+@celery_app.task(
+    name="system.reclaim_lost_tasks",
+    bind=True,
+    priority=UtilityPriority.OPERATIONAL,
+    soft_time_limit=90,
+    time_limit=110,
+)
+@with_task_lock("system.reclaim_lost_tasks", timeout=120)
+def reclaim_lost_tasks_task(self):
+    """Replay idempotent tasks whose worker died mid-run (issue #1067).
+
+    See ``app/core/task_replay.py``. Runs every two minutes; a run lost to a dead worker is
+    re-sent within about ``TASK_HEARTBEAT_TTL_SECONDS`` plus one sweep interval.
+    """
+    from app.core.task_replay import reclaim_lost_tasks
+
+    summary = reclaim_lost_tasks()
+    if summary.get("replayed") or summary.get("exhausted"):
+        logger.warning("Lost-task sweep: %s", summary)
+    return summary
+
+
 def _check_opensearch_health(summary: dict) -> None:
     """Check and repair OpenSearch indices with corrupted HNSW vector segments.
 

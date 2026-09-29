@@ -379,6 +379,7 @@ celery_app.conf.update(
         "system.startup_recovery": {"queue": CeleryQueues.UTILITY},
         "system.recover_user_files": {"queue": CeleryQueues.UTILITY},
         "system.health_check": {"queue": CeleryQueues.UTILITY},
+        "system.reclaim_lost_tasks": {"queue": CeleryQueues.UTILITY},
         "cleanup_expired_files": {"queue": CeleryQueues.UTILITY},
         "cleanup.run_periodic_cleanup": {"queue": CeleryQueues.UTILITY},
         "cleanup.deep_cleanup": {"queue": CeleryQueues.UTILITY},
@@ -423,6 +424,13 @@ celery_app.conf.update(
         "periodic-health-check": {
             "task": "system.health_check",
             "schedule": crontab(minute="*/10"),  # Run every 10 minutes
+            "options": {"queue": "utility", "priority": 3},  # UtilityPriority.OPERATIONAL
+        },
+        # Replays idempotent tasks whose worker died mid-run (issue #1067). Cheap when
+        # nothing is lost: one HGETALL of the replay records plus one MGET of heartbeats.
+        "reclaim-lost-tasks": {
+            "task": "system.reclaim_lost_tasks",
+            "schedule": crontab(minute="*/2"),
             "options": {"queue": "utility", "priority": 3},  # UtilityPriority.OPERATIONAL
         },
         "search-index-maintenance": {
@@ -603,6 +611,26 @@ def inject_request_id_header(headers=None, **kwargs):
     request_id = get_request_id()
     if request_id and headers is not None:
         headers["request_id"] = request_id
+
+
+@task_prerun.connect
+def record_replayable_task(task=None, task_id=None, args=None, kwargs=None, **_):
+    """Record an idempotent task so it can be replayed if its worker dies (issue #1067)."""
+    if task is None or task_id is None:
+        return
+    from app.core.task_replay import on_task_start
+
+    on_task_start(task, task_id, args, kwargs)
+
+
+@task_postrun.connect
+def clear_replayable_task(task=None, task_id=None, **_):
+    """The run ended, whatever its outcome, so it no longer needs replaying."""
+    if task is None or task_id is None:
+        return
+    from app.core.task_replay import on_task_end
+
+    on_task_end(task, task_id)
 
 
 @task_prerun.connect

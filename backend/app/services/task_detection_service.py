@@ -18,6 +18,7 @@ from app.core.task_config import task_recovery_config
 from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
 from app.core.task_liveness import RunState
 from app.core.task_liveness import probe_runs
+from app.core.task_replay import replay_tracked_ids
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
@@ -98,10 +99,17 @@ class TaskDetectionService:
         runs = probe_runs(
             t.id for t in potential_stuck_tasks if t.task_type == TRANSCRIPTION_TASK_TYPE
         )
+        # A task that is heartbeating, or waiting to be replayed after its worker died, is
+        # the lost-task sweep's to judge (issue #1067), not a duration budget's.
+        replay_owned = replay_tracked_ids(
+            t.id for t in potential_stuck_tasks if t.task_type != TRANSCRIPTION_TASK_TYPE
+        )
         stuck_tasks = []
         for task in potential_stuck_tasks:
             run = runs.get(str(task.id))
             if run is None:
+                if str(task.id) in replay_owned:
+                    continue
                 if self._is_task_duration_exceeded(task, now):
                     stuck_tasks.append(task)
             elif run.state == RunState.DEAD or (

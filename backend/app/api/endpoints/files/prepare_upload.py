@@ -17,6 +17,7 @@ from app.db.base import get_db
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
+from app.models.media import MediaFile
 from app.models.upload_batch import UploadBatch
 from app.schemas.media import PrepareUploadRequest
 from app.services.tag_service import on_tags_changed
@@ -148,11 +149,15 @@ def add_file_to_collections(
 def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: int) -> None:
     """Add tags to a media file, creating tags if they don't exist.
 
-    ``user_id`` owns any tag this creates. Background importers (watch sources,
-    yt-dlp playlists) must pass the **file owner**, never leave it unset — an
-    ownerless tag is a system tag and would be published to every account.
-    A same-named system tag is reused rather than forked, so applying a seeded
-    default still attaches the shared row.
+    ``user_id`` owns (or, on an organization file, is credited with) any tag
+    this creates. Background importers (watch sources, yt-dlp playlists) must
+    pass the **file owner**, never leave it unset — a tag with neither owner nor
+    tenant is a system tag and would be published to every account.
+    Tags resolve in the **file's tenant** (``MediaFile.organization_id``), read
+    here rather than taken from each caller, so no importer can land an org
+    file's tags in someone's personal vocabulary (issue #1050). A same-named
+    system tag is reused rather than forked, so applying a seeded default still
+    attaches the shared row.
 
     Resolution (normalization, normalized-exact match, SAVEPOINT-guarded insert)
     is shared with every other tag-creation path via
@@ -161,7 +166,16 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
     were typed by a person, so the fuzzy suggestion lookup is deliberately not
     consulted.
     """
-    tag_ids = [tag.id for tag in resolve_or_create_tags(db, tag_names, user_id=user_id)]
+    # Session.get, not a query: every caller has the row in the identity map
+    # already, so this costs no SELECT (#284 A2.8 pins the count).
+    media_file = db.get(MediaFile, file_id)
+    organization_id = media_file.organization_id if media_file is not None else None
+    tag_ids = [
+        tag.id
+        for tag in resolve_or_create_tags(
+            db, tag_names, user_id=user_id, organization_id=organization_id
+        )
+    ]
 
     if not tag_ids:
         db.flush()

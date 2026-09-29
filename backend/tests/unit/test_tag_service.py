@@ -219,7 +219,9 @@ def test_case_only_difference_returns_existing_tag(db_session, normal_user):
     existing = _make_tag(db_session, name)
     normalized = normalize_tag_name(name)
 
-    resolved = resolve_or_create_tag(db_session, name.upper(), user_id=normal_user.id)
+    resolved = resolve_or_create_tag(
+        db_session, name.upper(), user_id=normal_user.id, organization_id=None
+    )
 
     assert resolved.id == existing.id
     assert _count_tags(db_session, normalized) == 1
@@ -232,7 +234,9 @@ def test_separator_and_whitespace_variants_return_existing_tag(db_session, varia
     canonical = f"{base}-notes"
     existing = _make_tag(db_session, canonical)
 
-    resolved = resolve_or_create_tag(db_session, variant.format(base=base), user_id=normal_user.id)
+    resolved = resolve_or_create_tag(
+        db_session, variant.format(base=base), user_id=normal_user.id, organization_id=None
+    )
 
     assert resolved.id == existing.id
     assert _count_tags(db_session, normalize_tag_name(canonical)) == 1
@@ -242,7 +246,9 @@ def test_repeated_whitespace_returns_existing_tag(db_session, normal_user):
     base = f"team{_suffix()}"
     existing = _make_tag(db_session, f"{base} sync")
 
-    resolved = resolve_or_create_tag(db_session, f"  {base}   sync  ", user_id=normal_user.id)
+    resolved = resolve_or_create_tag(
+        db_session, f"  {base}   sync  ", user_id=normal_user.id, organization_id=None
+    )
 
     assert resolved.id == existing.id
 
@@ -253,7 +259,7 @@ def test_unmatched_name_creates_one_tag_with_normalization_stored(db_session, no
     normalized = normalize_tag_name(name)
     assert _count_tags(db_session, normalized) == 0
 
-    created = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
+    created = resolve_or_create_tag(db_session, name, user_id=normal_user.id, organization_id=None)
 
     assert created.id is not None
     assert created.name == name
@@ -268,9 +274,14 @@ def test_near_match_creates_new_tag_when_fuzzy_not_requested(db_session, normal_
     q4_name = f"q4-earnings-{suffix}"
 
     # Sanity: these two are similar enough that a fuzzy resolver would merge them.
-    assert suggest_similar_tag(db_session, q4_name, user_id=normal_user.id) is not None
+    assert (
+        suggest_similar_tag(db_session, q4_name, user_id=normal_user.id, organization_id=None)
+        is not None
+    )
 
-    resolved = resolve_or_create_tag(db_session, q4_name, user_id=normal_user.id)
+    resolved = resolve_or_create_tag(
+        db_session, q4_name, user_id=normal_user.id, organization_id=None
+    )
 
     assert resolved.id != q3.id
     assert resolved.name == q4_name
@@ -281,7 +292,9 @@ def test_suggestion_lookup_returns_near_match_when_asked(db_session, normal_user
     suffix = _suffix()
     q3 = _make_tag(db_session, f"q3-earnings-{suffix}")
 
-    suggestion = suggest_similar_tag(db_session, f"q4-earnings-{suffix}", user_id=normal_user.id)
+    suggestion = suggest_similar_tag(
+        db_session, f"q4-earnings-{suffix}", user_id=normal_user.id, organization_id=None
+    )
 
     assert suggestion is not None
     assert suggestion.id == q3.id
@@ -291,7 +304,12 @@ def test_suggestion_lookup_returns_none_for_unrelated_name(db_session, normal_us
     _make_tag(db_session, f"q3-earnings-{_suffix()}")
 
     assert (
-        suggest_similar_tag(db_session, f"zzz-unrelated-topic-{_suffix()}", user_id=normal_user.id)
+        suggest_similar_tag(
+            db_session,
+            f"zzz-unrelated-topic-{_suffix()}",
+            user_id=normal_user.id,
+            organization_id=None,
+        )
         is None
     )
 
@@ -301,7 +319,9 @@ def test_concurrent_insert_returns_winning_row_without_raising(db_session, norma
     contested = f"race-{_suffix()}"
 
     with _competing_writer(db_session, contested) as racer_id:
-        resolved = resolve_or_create_tag(db_session, contested, user_id=racer_id)
+        resolved = resolve_or_create_tag(
+            db_session, contested, user_id=racer_id, organization_id=None
+        )
 
         assert resolved.name == contested
         assert resolved.id is not None
@@ -315,7 +335,9 @@ def test_collision_leaves_callers_pending_writes_intact(db_session, normal_user)
     _make_tag(db_session, pending_name, user_id=normal_user.id)
 
     with _competing_writer(db_session, contested) as racer_id:
-        resolved = resolve_or_create_tag(db_session, contested, user_id=racer_id)
+        resolved = resolve_or_create_tag(
+            db_session, contested, user_id=racer_id, organization_id=None
+        )
 
         # The collision has to have actually happened, or "the pending write survived"
         # is true for the boring reason that nothing was ever rolled back.
@@ -333,7 +355,9 @@ def test_long_name_truncated_identically_across_paths(db_session, normal_user):
     long_name = f"retro-{_suffix()}-" + ("x" * 80)
     assert len(long_name) > MAX_TAG_NAME_LENGTH
 
-    resolved = resolve_or_create_tag(db_session, long_name, user_id=normal_user.id)
+    resolved = resolve_or_create_tag(
+        db_session, long_name, user_id=normal_user.id, organization_id=None
+    )
 
     assert len(resolved.name) == MAX_TAG_NAME_LENGTH
     assert resolved.name == clean_tag_name(long_name)
@@ -361,7 +385,7 @@ def test_empty_after_normalization_is_rejected(db_session, blank, normal_user):
     moves underneath an unrelated test.
     """
     with pytest.raises(InvalidTagNameError):
-        resolve_or_create_tag(db_session, blank, user_id=normal_user.id)
+        resolve_or_create_tag(db_session, blank, user_id=normal_user.id, organization_id=None)
 
     assert [obj for obj in db_session.new if isinstance(obj, Tag)] == []
     assert db_session.query(Tag).filter(Tag.normalized_name == "").count() == 0
@@ -387,7 +411,7 @@ def test_auto_labeling_still_resolves_through_fuzzy_path(db_session, normal_user
 
     service = AutoLabelService(db_session)
     resolved = service._get_or_create_tag_with_dedup(
-        f"q3 earnings reviews {suffix}", normal_user.id
+        f"q3 earnings reviews {suffix}", normal_user.id, organization_id=None
     )
 
     assert resolved.id == existing.id
@@ -398,7 +422,7 @@ def test_auto_labeling_creates_through_shared_service(db_session, normal_user):
     name = f"AI_Topic-{_suffix()}"
     service = AutoLabelService(db_session)
 
-    created = service._get_or_create_tag_with_dedup(name, normal_user.id)
+    created = service._get_or_create_tag_with_dedup(name, normal_user.id, organization_id=None)
 
     assert created.normalized_name == normalize_tag_name(name)
     assert _count_tags(db_session, normalize_tag_name(name)) == 1
@@ -415,13 +439,18 @@ def test_legacy_row_without_normalized_name_is_repaired_not_duplicated(db_sessio
     db_session.add(legacy)
     db_session.flush()
 
-    resolved = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
+    resolved = resolve_or_create_tag(db_session, name, user_id=normal_user.id, organization_id=None)
 
     assert resolved.id == legacy.id
     assert resolved.normalized_name == normalize_tag_name(name)
 
     # Now that it is backfilled, a case variant resolves onto the same row.
-    assert resolve_or_create_tag(db_session, name.upper(), user_id=normal_user.id).id == legacy.id
+    assert (
+        resolve_or_create_tag(
+            db_session, name.upper(), user_id=normal_user.id, organization_id=None
+        ).id
+        == legacy.id
+    )
     assert _count_tags(db_session, normalize_tag_name(name)) == 1
 
 
@@ -629,7 +658,7 @@ def test_created_tag_is_owned_by_the_acting_user(db_session, normal_user):
     """A resolver-created tag is never ownerless — that would be a system tag."""
     name = f"owned-{_suffix()}"
 
-    tag = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
+    tag = resolve_or_create_tag(db_session, name, user_id=normal_user.id, organization_id=None)
 
     assert tag.user_id == normal_user.id, "an ownerless tag is published to every account"
 
@@ -639,7 +668,7 @@ def test_resolution_does_not_cross_to_another_users_tag(db_session, normal_user,
     name = f"Interview-{_suffix()}"
     theirs = _make_tag(db_session, name, user_id=other_user.id)
 
-    mine = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
+    mine = resolve_or_create_tag(db_session, name, user_id=normal_user.id, organization_id=None)
 
     assert mine.id != theirs.id
     assert mine.user_id == normal_user.id
@@ -651,7 +680,10 @@ def test_own_tag_beats_a_same_named_system_tag(db_session, normal_user):
     _make_tag(db_session, name, user_id=None)
     owned = _make_tag(db_session, name, user_id=normal_user.id)
 
-    assert resolve_or_create_tag(db_session, name, user_id=normal_user.id).id == owned.id
+    assert (
+        resolve_or_create_tag(db_session, name, user_id=normal_user.id, organization_id=None).id
+        == owned.id
+    )
 
 
 def test_system_tag_is_reused_rather_than_forked(db_session, normal_user):
@@ -659,7 +691,7 @@ def test_system_tag_is_reused_rather_than_forked(db_session, normal_user):
     name = f"Important-{_suffix()}"
     system = _make_tag(db_session, name, user_id=None)
 
-    resolved = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
+    resolved = resolve_or_create_tag(db_session, name, user_id=normal_user.id, organization_id=None)
 
     assert resolved.id == system.id
     assert resolved.user_id is None
@@ -674,7 +706,12 @@ def test_suggestions_never_cross_accounts(db_session, normal_user, other_user):
     suffix = _suffix()
     _make_tag(db_session, f"q3-earnings-{suffix}", user_id=other_user.id)
 
-    assert suggest_similar_tag(db_session, f"q4-earnings-{suffix}", user_id=normal_user.id) is None
+    assert (
+        suggest_similar_tag(
+            db_session, f"q4-earnings-{suffix}", user_id=normal_user.id, organization_id=None
+        )
+        is None
+    )
 
 
 def test_two_users_tagging_one_shared_file_reuse_the_same_row(db_session, normal_user, other_user):
@@ -687,12 +724,14 @@ def test_two_users_tagging_one_shared_file_reuse_the_same_row(db_session, normal
     media_file = _make_file(db_session, normal_user)
     name = f"interview-{_suffix()}"
 
-    first = resolve_or_create_tag(db_session, name, user_id=normal_user.id, file_id=media_file.id)
+    first = resolve_or_create_tag(
+        db_session, name, user_id=normal_user.id, file_id=media_file.id, organization_id=None
+    )
     db_session.add(FileTag(media_file_id=media_file.id, tag_id=first.id, source="manual"))
     db_session.flush()
 
     second = resolve_or_create_tag(
-        db_session, name.upper(), user_id=other_user.id, file_id=media_file.id
+        db_session, name.upper(), user_id=other_user.id, file_id=media_file.id, organization_id=None
     )
 
     assert second.id == first.id, "second tagger forked a duplicate row onto the same file"
@@ -705,10 +744,15 @@ def test_batch_resolver_matches_the_single_resolver(db_session, normal_user):
     upload resolves differently from the same name typed on the detail page.
     """
     base = f"quarterly{_suffix()}"
-    single = resolve_or_create_tag(db_session, f"{base}-notes", user_id=normal_user.id)
+    single = resolve_or_create_tag(
+        db_session, f"{base}-notes", user_id=normal_user.id, organization_id=None
+    )
 
     batched = resolve_or_create_tags(
-        db_session, [f"{base}_NOTES", f"{base} notes", "", "   "], user_id=normal_user.id
+        db_session,
+        [f"{base}_NOTES", f"{base} notes", "", "   "],
+        user_id=normal_user.id,
+        organization_id=None,
     )
 
     assert [tag.id for tag in batched] == [single.id], "variants must collapse onto one tag"
@@ -717,7 +761,10 @@ def test_batch_resolver_matches_the_single_resolver(db_session, normal_user):
 def test_batch_resolver_owns_what_it_creates(db_session, normal_user):
     """The bulk path must not create ownerless rows either."""
     created = resolve_or_create_tags(
-        db_session, [f"alpha-{_suffix()}", f"beta-{_suffix()}"], user_id=normal_user.id
+        db_session,
+        [f"alpha-{_suffix()}", f"beta-{_suffix()}"],
+        user_id=normal_user.id,
+        organization_id=None,
     )
 
     assert len(created) == 2
@@ -752,7 +799,7 @@ def test_auto_label_creates_its_own_row_rather_than_reusing_another_users(
     other_tag = _make_tag(db_session, name, user_id=other_user.id)
 
     svc = AutoLabelService(db_session)
-    tag = svc._get_or_create_tag_with_dedup(name, normal_user.id)
+    tag = svc._get_or_create_tag_with_dedup(name, normal_user.id, organization_id=None)
 
     assert tag.user_id == normal_user.id
     assert tag.id != other_tag.id
@@ -764,12 +811,12 @@ def test_auto_label_tag_cache_is_not_shared_between_users(db_session, normal_use
     other_tag = _make_tag(db_session, name, user_id=other_user.id)
 
     svc = AutoLabelService(db_session)
-    b_tags = svc._get_all_tags_cached(other_user.id)
-    a_tags = svc._get_all_tags_cached(normal_user.id)
+    b_tags = svc._get_all_tags_cached(other_user.id, None)
+    a_tags = svc._get_all_tags_cached(normal_user.id, None)
 
     assert other_tag.id in {t.id for t in b_tags}
     assert other_tag.id not in {t.id for t in a_tags}
-    assert set(svc._tag_cache.keys()) == {other_user.id, normal_user.id}
+    assert set(svc._tag_cache.keys()) == {(other_user.id, None), (normal_user.id, None)}
 
 
 def test_auto_label_system_tags_are_visible_to_every_user(db_session, normal_user, other_user):
@@ -778,8 +825,8 @@ def test_auto_label_system_tags_are_visible_to_every_user(db_session, normal_use
     system_tag = _make_tag(db_session, name, user_id=None)
 
     svc = AutoLabelService(db_session)
-    a_tags = svc._get_all_tags_cached(normal_user.id)
-    b_tags = svc._get_all_tags_cached(other_user.id)
+    a_tags = svc._get_all_tags_cached(normal_user.id, None)
+    b_tags = svc._get_all_tags_cached(other_user.id, None)
 
     assert system_tag.id in {t.id for t in a_tags}
     assert system_tag.id in {t.id for t in b_tags}
@@ -867,7 +914,9 @@ def test_fuzzy_match_does_not_reach_another_users_near_miss(db_session, normal_u
     other_tag = _make_tag(db_session, f"Quarterly Planning {suffix}", user_id=other_user.id)
 
     svc = AutoLabelService(db_session)
-    created = svc._get_or_create_tag_with_dedup(f"Quarterly Plannning {suffix}", normal_user.id)
+    created = svc._get_or_create_tag_with_dedup(
+        f"Quarterly Plannning {suffix}", normal_user.id, organization_id=None
+    )
 
     assert created.user_id == normal_user.id
     assert created.id != other_tag.id

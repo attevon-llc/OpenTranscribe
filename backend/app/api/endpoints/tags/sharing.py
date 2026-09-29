@@ -11,6 +11,8 @@ from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _share_target
 from app.api.endpoints.tags._common import _writable_tag_ids
@@ -39,6 +41,7 @@ def list_tag_shares(
     tag_uuid: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Who this tag is shared with. Owner (or admin, for a system tag) only.
 
@@ -46,7 +49,12 @@ def list_tag_shares(
     business, not every recipient's.
     """
     tag_id = _writable_tag_ids(
-        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+        db,
+        [tag_uuid],
+        user_id=current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        is_org_admin=ctx.is_org_admin,
     )[0]
     return [_share_target(share) for share in list_shares(db, tag_id)]
 
@@ -58,6 +66,7 @@ def create_tag_share(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Share a tag with one user or one group.
 
@@ -67,7 +76,12 @@ def create_tag_share(
     deleting stay with you.
     """
     tag_id = _writable_tag_ids(
-        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+        db,
+        [tag_uuid],
+        user_id=current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        is_org_admin=ctx.is_org_admin,
     )[0]
     tag = db.query(Tag).filter(Tag.id == tag_id).one()
 
@@ -127,6 +141,7 @@ def revoke_tag_share(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Revoke one grant.
 
@@ -136,7 +151,12 @@ def revoke_tag_share(
     the picker goes away.
     """
     tag_id = _writable_tag_ids(
-        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+        db,
+        [tag_uuid],
+        user_id=current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        is_org_admin=ctx.is_org_admin,
     )[0]
     # Captured before revoke_share() deletes the row -- the audit event needs to
     # say WHO the grant was to, and that information is gone once it's gone.

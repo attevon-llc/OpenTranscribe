@@ -7,13 +7,17 @@ Resolution is **normalized-exact only**: names differing solely by case,
 hyphens, underscores, or repeated whitespace collapse onto the same tag;
 anything else is a new tag.
 
-**Scope.** Since ``v374_add_tag_user_id`` a tag is owned (``Tag.user_id``) or
-*system* (``user_id IS NULL``, the seeded shared vocabulary), and names are
-unique only per owner. Every lookup by name therefore carries
-:func:`owned_or_system` — resolving unscoped would attach a typed name to
-whichever account's row the planner returned first, which is both wrong and a
-disclosure. Creation is never ownerless: an ownerless tag is published to every
-account, correct only for the bootstrap seed in ``app/initial_data.py``.
+**Scope.** A tag belongs to a **tenant** (``v420_add_tag_organization_id``,
+issue #1050): an organization's tags are shared by every member of it, a
+personal tag belongs to its owner's personal workspace, and a *system* tag
+(``user_id IS NULL AND organization_id IS NULL``, the seeded vocabulary) is in
+every tenant. Names are unique only per tenant, so every lookup by name carries
+:func:`owned_or_system` for the request's tenant — resolving unscoped would
+attach a typed name to another tenant's row, which is both wrong and a
+disclosure. Creation is never tenantless: a tag with neither owner nor org is
+published to every account, correct only for the bootstrap seed in
+``app/initial_data.py``. Background paths resolve in the **file's** tenant
+(``MediaFile.organization_id``), never the owner's personal one.
 
 Fuzzy matching lives here too but is deliberately a *separate*, opt-in lookup
 (:func:`suggest_similar_tag`). At the 0.85 threshold ``q3-earnings`` and
@@ -40,6 +44,7 @@ import re
 from collections.abc import Iterable
 from typing import Literal
 
+from sqlalchemy import and_
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -187,6 +192,49 @@ OWNERSHIP_SHARED_WITH_ME: TagOwnership = "shared_with_me"
 TAG_OWNERSHIPS = (OWNERSHIP_MINE, OWNERSHIP_SYSTEM, OWNERSHIP_SHARED_WITH_ME)
 
 
+def is_system_tag(tag: Tag) -> bool:
+    """Whether ``tag`` is system vocabulary — no owner **and** no tenant.
+
+    ``user_id IS NULL`` alone is not enough since v420: an organization tag
+    whose creator's account is gone keeps its org and loses its ``user_id``.
+    """
+    return tag.user_id is None and tag.organization_id is None
+
+
+def system_tag() -> ColumnElement[bool]:
+    """SQL form of :func:`is_system_tag`."""
+    return and_(Tag.user_id.is_(None), Tag.organization_id.is_(None))
+
+
+def in_tenant(user_id: int, organization_id: int | None) -> ColumnElement[bool]:
+    """Tags belonging to the request's tenant, system vocabulary excluded.
+
+    Organization context: every tag of that org, whoever created it — that is
+    the point of org tags. Personal scope: the caller's own tags that belong to
+    no organization.
+    """
+    if organization_id is not None:
+        return Tag.organization_id == organization_id
+    return and_(Tag.user_id == user_id, Tag.organization_id.is_(None))
+
+
+def tag_in_tenant(tag: Tag, user_id: int, organization_id: int | None) -> bool:
+    """Python form of :func:`in_tenant`, for a row already loaded."""
+    if organization_id is not None:
+        return tag.organization_id == organization_id
+    return tag.organization_id is None and tag.user_id == user_id
+
+
+def tenant_first():
+    """ORDER BY terms putting a tenant row ahead of a same-named system row.
+
+    ``organization_id`` then ``user_id``, both ASC NULLS LAST (Postgres's
+    default for ASC): an org row beats the system row in org context, and an
+    owned row beats it in personal scope.
+    """
+    return (Tag.organization_id, Tag.user_id)
+
+
 def tag_ownership(tag: Tag, user_id: int) -> TagOwnership:
     """Classify a tag by the caller's relationship to it.
 
@@ -196,16 +244,17 @@ def tag_ownership(tag: Tag, user_id: int) -> TagOwnership:
 
     ===================  ==========================  ==================
     ``ownership``        Rule                        May mutate?
-    ===================  ==========================  ==================
+    ===================  ==========================  ======================
     ``mine``             ``Tag.user_id == user_id``  yes
-    ``system``           ``Tag.user_id IS NULL``     admin only
-    ``shared_with_me``   neither — reachable only    no (404)
-                         via an accessible file
-    ===================  ==========================  ==================
+    ``system``           no owner and no tenant      admin only
+    ``shared_with_me``   anything else visible       no (404) — except an
+                                                     org admin on an org tag
+    ===================  ==========================  ======================
 
-    ``shared_with_me`` is the population that had no name: visible because
-    someone shared the file it sits on, owned by them, and refused by
-    ``_writable_tag_ids``. Without it the UI offers a rename that can only 404.
+    ``shared_with_me`` covers a tag on a file someone shared with the caller, a
+    tag granted through ``tag_share``, and — since v420 — a colleague's tag in
+    the caller's organization. All three are visible and appliable; none is the
+    caller's to rename, so the UI does not offer a rename that can only 404.
 
     Args:
         tag: The tag row.
@@ -214,26 +263,27 @@ def tag_ownership(tag: Tag, user_id: int) -> TagOwnership:
     Returns:
         One of :data:`TAG_OWNERSHIPS`.
     """
-    if tag.user_id is None:
+    if is_system_tag(tag):
         return OWNERSHIP_SYSTEM
     if tag.user_id == user_id:
         return OWNERSHIP_MINE
     return OWNERSHIP_SHARED_WITH_ME
 
 
-def owned_or_system(user_id: int) -> ColumnElement[bool]:
-    """Predicate for the tags ``user_id`` may resolve against and write.
+def owned_or_system(user_id: int, organization_id: int | None) -> ColumnElement[bool]:
+    """Predicate for the tags a request may **resolve a name against**.
 
-    A tag is writable-scope when the caller owns it or it is a **system** tag
-    (``user_id IS NULL`` — the seeded shared vocabulary). This is the narrow
-    scope; ``GET /tags`` widens it to tags attached to an accessible file, which
-    is a read-only right (``endpoints/tags.py:_visible_to``).
+    The request's tenant (:func:`in_tenant`) plus the system vocabulary. This is
+    the narrow scope; ``GET /tags`` widens it to shared tags and to tags on an
+    accessible file, which is a read-only right (:func:`visible_to`). Which of
+    these rows a caller may *rename* is narrower still — see
+    ``endpoints/tags/_common._writable_tag_ids``.
 
-    Since ``v374_add_tag_user_id`` tag names are unique only **per owner**, so
-    every lookup by name must carry this predicate — without it a typed name
-    resolves onto whichever account's row the planner happens to return first.
+    ``organization_id`` is required, not defaulted: a caller that forgot it
+    would silently resolve an org member's typed name into their personal
+    vocabulary — the cross-tenant bug v420 exists to close.
     """
-    return or_(Tag.user_id == user_id, Tag.user_id.is_(None))
+    return or_(in_tenant(user_id, organization_id), system_tag())
 
 
 def shared_with(user_id: int):
@@ -257,10 +307,19 @@ def shared_with(user_id: int):
     )
 
 
-def visible_to(
-    db: Session, user_id: int, organization_id: OrgScope = UNSCOPED
-) -> ColumnElement[bool]:
-    """Predicate for the tags ``user_id`` is allowed to **read**.
+def _tenant_bound(organization_id: int | None) -> ColumnElement[bool]:
+    """The tenant a *widened* read arm may still reach: never another tenant's row."""
+    if organization_id is not None:
+        return Tag.organization_id == organization_id
+    return Tag.organization_id.is_(None)
+
+
+def visible_to(db: Session, user_id: int, organization_id: int | None) -> ColumnElement[bool]:
+    """Predicate for the tags ``user_id`` is allowed to **read** in a tenant.
+
+    Every arm is bounded to the request's tenant (plus system rows), so a tag
+    never surfaces in another tenant — not through a share, and not through a
+    file that legacy data left carrying another tenant's row.
 
     Wider than :func:`owned_or_system` by two arms:
 
@@ -297,14 +356,18 @@ def visible_to(
         FileTag.media_file_id.not_in(quarantined_files),
     )
     return or_(
-        owned_or_system(user_id),
-        Tag.id.in_(shared_with(user_id)),
-        Tag.id.in_(attached_to_accessible),
+        owned_or_system(user_id, organization_id),
+        and_(
+            _tenant_bound(organization_id),
+            or_(Tag.id.in_(shared_with(user_id)), Tag.id.in_(attached_to_accessible)),
+        ),
     )
 
 
-def lookup_existing_tag(db: Session, normalized: str, name: str, user_id: int) -> Tag | None:
-    """Find one of the caller's tags by normalized name, else by exact name.
+def lookup_existing_tag(
+    db: Session, normalized: str, name: str, user_id: int, organization_id: int | None
+) -> Tag | None:
+    """Find a tag of the request's tenant by normalized name, else by exact name.
 
     The fallback covers rows written before this service owned creation — the
     bootstrap seed tags ("Important", "Meeting", …) were inserted with a NULL
@@ -313,19 +376,21 @@ def lookup_existing_tag(db: Session, normalized: str, name: str, user_id: int) -
     row found that way is repaired in place (within the caller's transaction) so
     the next lookup takes the indexed fast path.
 
-    Both arms order by ``Tag.user_id``, which is ASC NULLS LAST in Postgres, so
-    the caller's own row always wins over a same-named system row; only when
-    they have none does applying a seeded default attach the shared row instead
-    of forking a private duplicate.
+    Both arms order by :func:`tenant_first`, so the tenant's own row always wins
+    over a same-named system row; only when the tenant has none does applying a
+    seeded default attach the shared row instead of forking a duplicate.
     """
-    scope = owned_or_system(user_id)
+    scope = owned_or_system(user_id, organization_id)
     tag: Tag | None = (
-        db.query(Tag).filter(Tag.normalized_name == normalized, scope).order_by(Tag.user_id).first()
+        db.query(Tag)
+        .filter(Tag.normalized_name == normalized, scope)
+        .order_by(*tenant_first())
+        .first()
     )
     if tag is not None:
         return tag
 
-    tag = db.query(Tag).filter(Tag.name == name, scope).order_by(Tag.user_id).first()
+    tag = db.query(Tag).filter(Tag.name == name, scope).order_by(*tenant_first()).first()
     if tag is not None and not tag.normalized_name:
         tag.normalized_name = normalized
         db.flush()
@@ -369,6 +434,7 @@ def suggest_similar_tag(
     name: str,
     *,
     user_id: int,
+    organization_id: int | None,
     threshold: float = FUZZY_MATCH_THRESHOLD,
     candidates: list[Tag] | None = None,
 ) -> Tag | None:
@@ -381,15 +447,18 @@ def suggest_similar_tag(
     Args:
         db: Database session.
         name: Supplied name to look for.
-        user_id: The acting user. Scans only their own vocabulary plus the
-            system one — suggesting another account's tag would disclose its
-            name, and applying it (the auto-labeler does apply automatically)
-            would attach a row the acting user does not own.
+        user_id: The acting user.
+        organization_id: The tenant to scan (``None`` = personal). Only that
+            tenant's vocabulary plus the system one — suggesting another
+            tenant's tag would disclose its name, and applying it (the
+            auto-labeler does apply automatically) would attach it across the
+            tenant boundary.
         threshold: Minimum similarity ratio.
         candidates: Optional pre-fetched tag list (e.g. an instance-level cache).
-            Callers passing a cache are responsible for having scoped it to
-            ``user_id`` — ``AutoLabelService`` keys its cache by user for this
-            reason. When omitted, the scoped set is queried.
+            Callers passing a cache are responsible for having scoped it to the
+            same tenant — ``AutoLabelService`` keys its cache by
+            ``(user_id, organization_id)`` for this reason. When omitted, the
+            scoped set is queried.
 
     Returns:
         The first similar tag, or None when nothing is close enough.
@@ -400,7 +469,7 @@ def suggest_similar_tag(
     pool = (
         candidates
         if candidates is not None
-        else db.query(Tag).filter(owned_or_system(user_id)).all()
+        else db.query(Tag).filter(owned_or_system(user_id, organization_id)).all()
     )
     for existing in pool:
         if names_are_similar(name, existing.name, threshold):
@@ -413,19 +482,22 @@ def resolve_or_create_tag(
     name: str,
     *,
     user_id: int,
+    organization_id: int | None,
     source: str = TAG_SOURCE_MANUAL,
     file_id: int | None = None,
 ) -> Tag:
-    """Resolve a supplied name to an existing tag, or create one owned by ``user_id``.
+    """Resolve a supplied name to a tag of the given tenant, or create one there.
 
     The single path from a supplied name to a ``Tag`` row. Resolution order:
 
     1. A tag already on ``file_id``, when attaching to a specific file — keeps a
        shared file from carrying the same word twice (:func:`lookup_tag_on_file`).
-    2. The caller's own tag, then a same-named **system** tag, so applying a
-       seeded default attaches the shared row rather than forking a private
-       duplicate (:func:`lookup_existing_tag`).
-    3. Otherwise a new tag, **owned by** ``user_id``.
+    2. The tenant's tag, then a same-named **system** tag, so applying a
+       seeded default attaches the shared row rather than forking a duplicate
+       (:func:`lookup_existing_tag`). In an organization the tenant's tag may be
+       a colleague's — reusing it is what makes org vocabulary shared.
+    3. Otherwise a new tag in ``organization_id`` (personal when ``None``),
+       attributed to ``user_id``.
 
     Matching is normalized-exact (see :func:`normalize_tag_name`) — a near match
     is *not* resolved here, it becomes a new tag. The insert runs inside a
@@ -436,9 +508,12 @@ def resolve_or_create_tag(
         db: Database session. Not committed — the caller owns the transaction.
         name: Supplied tag name. Trimmed and clamped to
             :data:`MAX_TAG_NAME_LENGTH`.
-        user_id: Owner for a tag this creates. **Required** — an ownerless tag
-            is a system tag, i.e. published to every account, which is only ever
-            correct for the bootstrap seed.
+        user_id: Owner (personal) or creator (organization) of a tag this
+            creates. **Required** — a tag with neither owner nor tenant is a
+            system tag, published to every account, which is only ever correct
+            for the bootstrap seed.
+        organization_id: The tenant to resolve in. For a request, the request's
+            tenant; for a background path, the file's ``organization_id``.
         source: Provenance recorded on a newly created tag.
         file_id: The file being tagged, when there is one. Enables step 1.
 
@@ -460,13 +535,19 @@ def resolve_or_create_tag(
         if on_file is not None:
             return on_file
 
-    existing = lookup_existing_tag(db, normalized, cleaned, user_id)
+    existing = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
     if existing is not None:
         return existing
 
     nested = db.begin_nested()
     try:
-        tag = Tag(name=cleaned, user_id=user_id, source=source, normalized_name=normalized)
+        tag = Tag(
+            name=cleaned,
+            user_id=user_id,
+            organization_id=organization_id,
+            source=source,
+            normalized_name=normalized,
+        )
         db.add(tag)
         db.flush()
         return tag
@@ -474,7 +555,7 @@ def resolve_or_create_tag(
         # Another writer won the race. Roll back only the SAVEPOINT — never the
         # session — so the caller's pending work is untouched, then take theirs.
         nested.rollback()
-        winner = lookup_existing_tag(db, normalized, cleaned, user_id)
+        winner = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
         if winner is not None:
             logger.debug("Lost tag-insert race for %r, using the winning row", cleaned)
             return winner
@@ -486,6 +567,7 @@ def resolve_or_create_tags(
     names: Iterable[str],
     *,
     user_id: int,
+    organization_id: int | None,
     source: str = TAG_SOURCE_MANUAL,
 ) -> list[Tag]:
     """Resolve a whole list of names in a constant number of queries.
@@ -506,7 +588,9 @@ def resolve_or_create_tags(
         db: Database session. Not committed — the caller owns the transaction.
         names: Supplied names. Blank/unusable ones are dropped, and names that
             normalize to the same form collapse to one tag.
-        user_id: Owner for any tag this creates.
+        user_id: Owner / creator for any tag this creates.
+        organization_id: The tenant to resolve in (the file's, on the import
+            paths).
         source: Provenance recorded on newly created tags.
 
     Returns:
@@ -521,12 +605,12 @@ def resolve_or_create_tags(
     if not wanted:
         return []
 
-    scope = owned_or_system(user_id)
+    scope = owned_or_system(user_id, organization_id)
     found: dict[str, Tag] = {}
 
-    # ORDER BY user_id is ASC NULLS LAST, so an owned row beats the system row.
+    # tenant_first() is ASC NULLS LAST, so a tenant row beats the system row.
     for row in (
-        db.query(Tag).filter(Tag.normalized_name.in_(list(wanted)), scope).order_by(Tag.user_id)
+        db.query(Tag).filter(Tag.normalized_name.in_(list(wanted)), scope).order_by(*tenant_first())
     ):
         found.setdefault(str(row.normalized_name), row)
 
@@ -539,7 +623,9 @@ def resolve_or_create_tags(
         # every such name cost a failed INSERT plus its recovery lookup —
         # 2N queries, which is the regression #284 A2.8 removed.
         for row in (
-            db.query(Tag).filter(Tag.name.in_(list(missing.values())), scope).order_by(Tag.user_id)
+            db.query(Tag)
+            .filter(Tag.name.in_(list(missing.values())), scope)
+            .order_by(*tenant_first())
         ):
             normalized = normalize_tag_name(str(row.name))
             if normalized in missing and normalized not in found:
@@ -553,12 +639,18 @@ def resolve_or_create_tags(
         if tag is None:
             nested = db.begin_nested()
             try:
-                tag = Tag(name=cleaned, user_id=user_id, source=source, normalized_name=normalized)
+                tag = Tag(
+                    name=cleaned,
+                    user_id=user_id,
+                    organization_id=organization_id,
+                    source=source,
+                    normalized_name=normalized,
+                )
                 db.add(tag)
                 db.flush()
             except IntegrityError:
                 nested.rollback()
-                tag = lookup_existing_tag(db, normalized, cleaned, user_id)
+                tag = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
                 if tag is None:
                     logger.warning("Could not resolve tag %r after losing its insert race", cleaned)
                     continue

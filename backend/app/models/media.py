@@ -682,14 +682,23 @@ class Comment(Base):
 
 
 class Tag(Base):
-    """A tag, owned by one user or shared as system vocabulary.
+    """A tag, belonging to one tenant or shared as system vocabulary.
 
-    ``user_id`` is NULL for **system tags** (the seeded ``Important`` /
-    ``Meeting`` / ``Interview`` / ``Personal`` set, visible to everyone) and set
-    for a user's private tags. Uniqueness is therefore per owner, not global —
-    ``name`` alone can match several rows, so never look a tag up by name
-    without an owner predicate or a join through ``file_tag`` (migration
-    ``v374_add_tag_user_id``).
+    Three kinds (migrations ``v374_add_tag_user_id`` and
+    ``v420_add_tag_organization_id``):
+
+    * **system** — ``user_id IS NULL AND organization_id IS NULL``: the seeded
+      ``Important`` / ``Meeting`` / ``Interview`` / ``Personal`` set, visible in
+      every tenant.
+    * **personal** — ``organization_id IS NULL``, ``user_id`` = the owner.
+    * **organization** — ``organization_id`` set; shared by every member of that
+      org. ``user_id`` is the creator (attribution only) and may be NULL once
+      their account is gone, which is why ``user_id IS NULL`` alone never means
+      "system".
+
+    Uniqueness is per tenant, so ``name`` alone can match several rows — never
+    look a tag up by name without a tenant predicate
+    (``tag_service.owned_or_system``) or a join through ``file_tag``.
     """
 
     __tablename__ = "tag"
@@ -701,6 +710,11 @@ class Tag(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("user.id"), nullable=True, index=True
+    )
+    # No ON DELETE, like every other org stamp: tenant erasure deletes the org's
+    # tags explicitly (gdpr_erasure_service.erase_organization).
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id"), nullable=True
     )
     source: Mapped[str | None] = mapped_column(
         String(50), nullable=True
@@ -715,8 +729,8 @@ class Tag(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=True
     )
 
-    # Two partial unique indexes rather than one composite UNIQUE: Postgres
-    # treats NULLs as distinct, so UNIQUE(user_id, name) alone would allow
+    # One partial unique index per tenant kind rather than one composite
+    # UNIQUE: Postgres treats NULLs as distinct, so a plain composite would allow
     # duplicate system tags and break the idempotent seeder.
     __table_args__ = (
         Index(
@@ -724,13 +738,25 @@ class Tag(Base):
             "user_id",
             "name",
             unique=True,
-            postgresql_where=text("user_id IS NOT NULL"),
+            postgresql_where=text("user_id IS NOT NULL AND organization_id IS NULL"),
         ),
         Index(
             "uq_tag_system_name",
             "name",
             unique=True,
-            postgresql_where=text("user_id IS NULL"),
+            postgresql_where=text("user_id IS NULL AND organization_id IS NULL"),
+        ),
+        Index(
+            "uq_tag_org_name",
+            "organization_id",
+            "name",
+            unique=True,
+            postgresql_where=text("organization_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_tag_organization_id",
+            "organization_id",
+            postgresql_where=text("organization_id IS NOT NULL"),
         ),
     )
 

@@ -511,6 +511,13 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'user' AND column_name = 'platform_super_admin_link_authorized')"
     )
 
+    # v420: tenant-owned tags (issue #1050). Keyed on uq_tag_org_name rather than on
+    # tag.organization_id: the index is created LAST, after the backfill, so a run that
+    # died mid-backfill leaves the column without it and correctly re-runs v420.
+    has_tag_org_unique = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_tag_org_name')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -553,8 +560,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
-    # v397: same as v393 plus user.platform_super_admin_link_authorized. The newest
-    # revision on this chain, so this is the top of the ladder.
+    # v420: same as v397 plus the per-tenant tag uniqueness. The newest revision on
+    # this chain, so this is the top of the ladder.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+    ):
+        return "v420_add_tag_organization_id"
+    # v397: same as v393 plus user.platform_super_admin_link_authorized.
     if (
         matches_v389
         and has_file_facts

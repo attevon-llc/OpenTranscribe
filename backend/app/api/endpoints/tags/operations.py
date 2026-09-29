@@ -46,7 +46,14 @@ def get_tag_impact(
     """
     report = preview_tag_impact(
         db,
-        _writable_tag_ids(db, tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
+        _writable_tag_ids(
+            db,
+            tag_uuids,
+            user_id=current_user.id,
+            is_admin=current_user.is_admin,
+            organization_id=ctx.org_id,
+            is_org_admin=ctx.is_org_admin,
+        ),
         user_id=current_user.id,
         organization_id=ctx.org_id,
     )
@@ -81,7 +88,12 @@ def promote_tags_endpoint(
         promote_tags_to_shared,
         db,
         _writable_tag_ids(
-            db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin
+            db,
+            payload.tag_uuids,
+            user_id=current_user.id,
+            is_admin=current_user.is_admin,
+            organization_id=ctx.org_id,
+            is_org_admin=ctx.is_org_admin,
         ),
         user_id=current_user.id,
         organization_id=ctx.org_id,
@@ -104,7 +116,12 @@ def rename_tag_endpoint(
     variant of the tag's own name is a plain rename.
     """
     tag_id = _writable_tag_ids(
-        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+        db,
+        [tag_uuid],
+        user_id=current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        is_org_admin=ctx.is_org_admin,
     )[0]
     return _apply(
         rename_tag,
@@ -127,14 +144,24 @@ def merge_tags_endpoint(
 ):
     """Fold the listed tags into the tag in the path, which survives."""
     target_id = _writable_tag_ids(
-        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+        db,
+        [tag_uuid],
+        user_id=current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        is_org_admin=ctx.is_org_admin,
     )[0]
     return _apply(
         merge_tags,
         db,
         target_id,
         _writable_tag_ids(
-            db, payload.source_uuids, user_id=current_user.id, is_admin=current_user.is_admin
+            db,
+            payload.source_uuids,
+            user_id=current_user.id,
+            is_admin=current_user.is_admin,
+            organization_id=ctx.org_id,
+            is_org_admin=ctx.is_org_admin,
         ),
         user_id=current_user.id,
         organization_id=ctx.org_id,
@@ -152,7 +179,14 @@ def delete_tags_endpoint(
     return _apply(
         delete_tags,
         db,
-        _writable_tag_ids(db, tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
+        _writable_tag_ids(
+            db,
+            tag_uuids,
+            user_id=current_user.id,
+            is_admin=current_user.is_admin,
+            organization_id=ctx.org_id,
+            is_org_admin=ctx.is_org_admin,
+        ),
         user_id=current_user.id,
         organization_id=ctx.org_id,
     )

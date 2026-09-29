@@ -322,6 +322,11 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
             db.delete(row)
             summary[key] += 1
 
+    # Organization tags are the tenant's vocabulary and sit on colleagues' files
+    # (v420): they survive, de-attributed. Personal tags go with the account.
+    db.query(Tag).filter(Tag.user_id == user_id, Tag.organization_id.is_not(None)).update(
+        {Tag.user_id: None}, synchronize_session=False
+    )
     tag_ids = [t.id for t in db.query(Tag.id).filter(Tag.user_id == user_id).all()]
     if tag_ids:
         db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)
@@ -663,6 +668,12 @@ def erase_org_member_data(
     # subquery, not a column. Rows on the member's own org files are already gone with
     # those files (MediaFile's delete-orphan cascade); what is left is what they wrote
     # on other members' org files, which no per-file pass can see.
+    # The member's organization tags are the TENANT's vocabulary, on colleagues'
+    # files (v420), so they stay — but no longer name the erased member.
+    db.query(Tag).filter(Tag.user_id == user_id, Tag.organization_id == org_id).update(
+        {Tag.user_id: None}, synchronize_session=False
+    )
+
     org_file_ids = db.query(MediaFile.id).filter(MediaFile.organization_id == org_id).subquery()
     summary["comments_deleted"] = (
         db.query(Comment)
@@ -782,6 +793,12 @@ def erase_organization(
     for coll in collections:
         db.delete(coll)
         summary["collections_deleted"] += 1
+
+    # The org's tag vocabulary (v420). tag.organization_id is a plain FK — the org
+    # row delete below fails while any remain. file_tag and tag_share rows CASCADE.
+    summary["tags_deleted"] = (
+        db.query(Tag).filter(Tag.organization_id == org_id).delete(synchronize_session=False)
+    )
     db.commit()
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(

@@ -104,7 +104,7 @@ def test_case_variants_land_in_one_cluster(db_session, normal_user):
     lower = _raw_tag(db_session, f"interview-{suffix}")
     upper = _raw_tag(db_session, f"INTERVIEW-{suffix}")
 
-    clusters = find_tag_collisions(db_session, user_id=normal_user.id)
+    clusters = find_tag_collisions(db_session, user_id=normal_user.id, organization_id=None)
 
     cluster = _cluster_for(clusters, normalize_tag_name(lower.name))
     assert {member.uuid for member in cluster.members} == {lower.uuid, upper.uuid}
@@ -121,7 +121,7 @@ def test_cluster_of_three_preselects_the_highest_usage_survivor(db_session, norm
         _attach(db_session, _make_file(db_session, normal_user), busiest)
     _attach(db_session, _make_file(db_session, normal_user), middle)
 
-    clusters = find_tag_collisions(db_session, user_id=normal_user.id)
+    clusters = find_tag_collisions(db_session, user_id=normal_user.id, organization_id=None)
     cluster = _cluster_for(clusters, normalize_tag_name(quiet.name))
 
     assert {member.uuid for member in cluster.members} == {quiet.uuid, busiest.uuid, middle.uuid}
@@ -141,8 +141,8 @@ def test_repeated_passes_return_the_same_order(db_session, normal_user):
     _raw_tag(db_session, f"q4-earnings-{suffix}")
     _raw_tag(db_session, f"Q4 Earnings {suffix}")
 
-    first = find_tag_collisions(db_session, user_id=normal_user.id)
-    second = find_tag_collisions(db_session, user_id=normal_user.id)
+    first = find_tag_collisions(db_session, user_id=normal_user.id, organization_id=None)
+    second = find_tag_collisions(db_session, user_id=normal_user.id, organization_id=None)
 
     def shape(clusters):
         return [
@@ -165,7 +165,7 @@ def test_fuzzy_near_matches_are_suggestions_not_members(db_session, normal_user)
     exact_b = _raw_tag(db_session, f"Q3 Earnings {suffix}")
     near = _raw_tag(db_session, f"q4-earnings-{suffix}")
 
-    clusters = find_tag_collisions(db_session, user_id=normal_user.id)
+    clusters = find_tag_collisions(db_session, user_id=normal_user.id, organization_id=None)
     cluster = _cluster_for(clusters, normalize_tag_name(exact_a.name))
 
     assert {member.uuid for member in cluster.members} == {exact_a.uuid, exact_b.uuid}
@@ -187,7 +187,7 @@ def test_stale_stored_normalization_is_corrected_and_clusters(db_session, normal
     partner = _raw_tag(db_session, f"RETRO {suffix}")
     expected = normalize_tag_name(stale.name)
 
-    clusters = find_tag_collisions(db_session, user_id=normal_user.id)
+    clusters = find_tag_collisions(db_session, user_id=normal_user.id, organization_id=None)
 
     db_session.refresh(stale)
     assert stale.normalized_name == expected
@@ -202,7 +202,7 @@ def test_null_stored_normalization_is_corrected_and_clusters(db_session, normal_
     partner = _raw_tag(db_session, f"STANDUP {suffix}")
     expected = normalize_tag_name(legacy.name)
 
-    clusters = find_tag_collisions(db_session, user_id=normal_user.id)
+    clusters = find_tag_collisions(db_session, user_id=normal_user.id, organization_id=None)
 
     db_session.refresh(legacy)
     assert legacy.normalized_name == expected
@@ -216,8 +216,8 @@ def test_refresh_stored_normalization_is_idempotent(db_session, normal_user):
     _raw_tag(db_session, f"idem-{suffix}", normalized=None, user_id=normal_user.id)
     _raw_tag(db_session, f"idem-two-{suffix}", normalized="wrong", user_id=normal_user.id)
 
-    first = refresh_stored_normalization(db_session, user_id=normal_user.id)
-    second = refresh_stored_normalization(db_session, user_id=normal_user.id)
+    first = refresh_stored_normalization(db_session, user_id=normal_user.id, organization_id=None)
+    second = refresh_stored_normalization(db_session, user_id=normal_user.id, organization_id=None)
 
     assert first >= 2
     assert second == 0
@@ -241,9 +241,14 @@ def test_unused_filter_and_usage_count_agree_for_inaccessible_files(
     _attach(db_session, _make_file(db_session, other_user), tag)
 
     counts = accessible_usage_counts(db_session, user_id=normal_user.id)
-    listed = {entry.uuid: entry for entry in list_tags_filtered(db_session, user_id=normal_user.id)}
-    unused = list_tags_filtered(db_session, user_id=normal_user.id, unused=True)
-    unused_rows = list_unused_tag_rows(db_session, user_id=normal_user.id)
+    listed = {
+        entry.uuid: entry
+        for entry in list_tags_filtered(db_session, user_id=normal_user.id, organization_id=None)
+    }
+    unused = list_tags_filtered(
+        db_session, user_id=normal_user.id, unused=True, organization_id=None
+    )
+    unused_rows = list_unused_tag_rows(db_session, user_id=normal_user.id, organization_id=None)
 
     assert counts.get(tag.id, 0) == 0
     assert listed[tag.uuid].usage_count == 0
@@ -256,8 +261,13 @@ def test_unused_filter_excludes_a_tag_the_caller_can_see_in_use(db_session, norm
     tag = _raw_tag(db_session, f"mine-{_suffix()}")
     _attach(db_session, _make_file(db_session, normal_user), tag)
 
-    listed = {entry.uuid: entry for entry in list_tags_filtered(db_session, user_id=normal_user.id)}
-    unused = list_tags_filtered(db_session, user_id=normal_user.id, unused=True)
+    listed = {
+        entry.uuid: entry
+        for entry in list_tags_filtered(db_session, user_id=normal_user.id, organization_id=None)
+    }
+    unused = list_tags_filtered(
+        db_session, user_id=normal_user.id, unused=True, organization_id=None
+    )
 
     assert listed[tag.uuid].usage_count == 1
     assert tag.uuid not in {entry.uuid for entry in unused}
@@ -272,7 +282,9 @@ def test_colliding_filter_narrows_to_cluster_members(db_session, normal_user):
 
     colliding = {
         entry.uuid
-        for entry in list_tags_filtered(db_session, user_id=normal_user.id, colliding=True)
+        for entry in list_tags_filtered(
+            db_session, user_id=normal_user.id, colliding=True, organization_id=None
+        )
     }
 
     assert {first.uuid, second.uuid} <= colliding
@@ -295,7 +307,7 @@ def test_filters_combine(db_session, normal_user):
     narrowed = {
         entry.uuid
         for entry in list_tags_filtered(
-            db_session, user_id=normal_user.id, unused=True, scope="mine"
+            db_session, user_id=normal_user.id, unused=True, scope="mine", organization_id=None
         )
     }
 

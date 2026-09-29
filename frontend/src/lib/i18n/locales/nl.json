@@ -1640,6 +1640,7 @@
   "fileDetail.noFileIdProvided": "Geen bestands-ID opgegeven",
   "fileDetail.invalidResponseFormat": "Ongeldig antwoordformaat",
   "fileDetail.failedToLoadFile": "Laden van bestandsgegevens mislukt. Probeer het opnieuw.",
+  "fileDetail.notFoundOrNoAccess": "Dit bestand bestaat niet of je hebt er geen toegang toe.",
   "fileDetail.failedToLoadMoreSegments": "Laden van meer segmenten mislukt",
   "fileDetail.invalidFileId": "Ongeldig bestands-ID",
   "fileDetail.loadingFile": "Bestand laden...",

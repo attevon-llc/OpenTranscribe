@@ -65,6 +65,8 @@
   let streamContentType = '';
   let playbackMode: PlaybackMode | null = null;
   let pageErrorMessage = '';
+  // 404/403: the file is missing or not visible to this user; retrying can't help.
+  let fileNotFound = false;
   let videoErrorMessage = '';
   let apiBaseUrl = '';
   let videoPlayerComponent: any = null;
@@ -333,6 +335,7 @@
     try {
       isLoading = true;
       pageErrorMessage = '';
+      fileNotFound = false;
       videoErrorMessage = '';
 
       const response = await axiosInstance.get(`/files/${targetFileId}`, {
@@ -374,7 +377,13 @@
       }
     } catch (error) {
       console.error('Error fetching file details:', error);
-      pageErrorMessage = $t('fileDetail.failedToLoadFile');
+      const status = getErrorStatus(error);
+      if (status === 404 || status === 403) {
+        fileNotFound = true;
+        pageErrorMessage = $t('fileDetail.notFoundOrNoAccess');
+      } else {
+        pageErrorMessage = $t('fileDetail.failedToLoadFile');
+      }
       isLoading = false;
     }
   }
@@ -2193,10 +2202,14 @@
   {:else if pageErrorMessage}
     <div class="error-container">
       <p class="error-message">{pageErrorMessage}</p>
-      <button
-        on:click={() => fetchFileDetails()}
-        title={$t('fileDetail.retryTooltip')}
-      >{$t('fileDetail.tryAgain')}</button>
+      {#if fileNotFound}
+        <a href="/" class="back-to-gallery-link">{$t('nav.backToGallery')}</a>
+      {:else}
+        <button
+          on:click={() => fetchFileDetails()}
+          title={$t('fileDetail.retryTooltip')}
+        >{$t('fileDetail.tryAgain')}</button>
+      {/if}
     </div>
   {:else if file}
     <div class="file-header">
@@ -2531,6 +2544,17 @@
 
   .error-container button:hover {
     background: var(--primary-hover);
+  }
+
+  .back-to-gallery-link {
+    color: var(--primary-color);
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .back-to-gallery-link:hover {
+    text-decoration: underline;
   }
 
 

@@ -1640,6 +1640,7 @@
   "fileDetail.noFileIdProvided": "No file ID provided",
   "fileDetail.invalidResponseFormat": "Invalid response format",
   "fileDetail.failedToLoadFile": "Failed to load file details. Please try again.",
+  "fileDetail.notFoundOrNoAccess": "This file doesn't exist or you don't have access to it.",
   "fileDetail.failedToLoadMoreSegments": "Failed to load more segments",
   "fileDetail.invalidFileId": "Invalid file ID",
   "fileDetail.loadingFile": "Loading File...",

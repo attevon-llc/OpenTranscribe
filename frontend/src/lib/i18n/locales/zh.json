@@ -1639,6 +1639,7 @@
   "fileDetail.noFileIdProvided": "未提供文件 ID",
   "fileDetail.invalidResponseFormat": "无效的响应格式",
   "fileDetail.failedToLoadFile": "加载文件失败",
+  "fileDetail.notFoundOrNoAccess": "该文件不存在，或您无权访问。",
   "fileDetail.failedToLoadMoreSegments": "加载更多片段失败",
   "fileDetail.invalidFileId": "无效的文件 ID",
   "fileDetail.loadingFile": "正在加载文件...",

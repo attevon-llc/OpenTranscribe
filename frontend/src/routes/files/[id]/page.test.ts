@@ -5,13 +5,10 @@
  * that single request. Real behavior found while reading the component:
  *
  * - `isLoading` starts `true` and gates a `<FileDetailSkeleton />`.
- * - `fetchFileDetails` has ONE catch-all `catch (error)` block. A 404, a 403,
- *   and a network failure all land there and all set the SAME generic
- *   `pageErrorMessage` ("Failed to load file details. Please try again.")
- *   with a retry button — there is no `error.status` branch at all in this
- *   function (`getErrorStatus` is only used later, inside speaker-save and
- *   segment-save error handling, not here). So a 403 on someone else's file
- *   cannot leak content: on any failure `file` is simply never assigned, and
+ * - `fetchFileDetails` has ONE catch-all `catch (error)` block. A 404/403 shows a
+ *   not-found state (gallery link, no retry); any other failure (5xx, network)
+ *   shows the generic `pageErrorMessage` with a retry button. On any failure
+ *   `file` is never assigned, so no content can leak, and
  *   the template's `{:else if file}` branch (which renders `FileHeader`,
  *   `TranscriptDisplay`, etc.) never executes.
  * - On success, `file` is assigned from `response.data` and the page's own
@@ -144,46 +141,54 @@ describe('files/[id]/+page — fetch/loading/error state machine', () => {
     expect(container.querySelector('.skeleton-page')).toBeNull();
   });
 
-  it('shows the generic error state (not a blank page) when the file fetch 404s', async () => {
-    const notFound = { response: { status: 404, data: { detail: 'Not found' } } };
-    mockAxios.get.mockImplementation((url: string) => {
-      if (url === '/files/file-missing') return Promise.reject(notFound);
-      return Promise.resolve({ data: {} });
-    });
+  it.each([404, 403])(
+    'shows a not-found state with a gallery link and no retry button on a %i',
+    async (status) => {
+      const denied = { response: { status, data: { detail: 'nope' } } };
+      mockAxios.get.mockImplementation((url: string) => {
+        if (url === '/files/someone-elses-file') return Promise.reject(denied);
+        return Promise.resolve({ data: {} });
+      });
 
-    const { container } = render(Page, { props: { data: { id: 'file-missing' } } });
+      const { container } = render(Page, { props: { data: { id: 'someone-elses-file' } } });
 
-    await waitFor(() => {
-      const errorEl = container.querySelector('.error-message');
-      expect(errorEl).not.toBeNull();
-      expect(errorEl?.textContent).toContain('fileDetail.failedToLoadFile');
-    });
+      await waitFor(() => {
+        expect(container.querySelector('.error-message')?.textContent).toContain(
+          'fileDetail.notFoundOrNoAccess'
+        );
+      });
 
-    // Retry button is present (the page's own recovery affordance), and the
-    // page never reached the `{:else if file}` branch.
-    expect(container.querySelector('.error-container button')).not.toBeNull();
-    expect(document.title).not.toBe('meeting-notes.mp4');
-  });
+      // Retrying cannot help, so no retry affordance; the way out is the gallery.
+      expect(container.querySelector('.error-container button')).toBeNull();
+      expect(container.querySelector('.error-container a[href="/"]')).not.toBeNull();
+      expect(container.textContent).not.toContain('fileDetail.failedToLoadFile');
+      // No filename, transcript, or any file-derived content ever reached the DOM.
+      expect(container.textContent).not.toContain('someone-elses-file');
+      expect(document.title).not.toBe('meeting-notes.mp4');
+    }
+  );
 
-  it('shows the SAME generic error state — never another user’s file content — on a 403', async () => {
-    const forbidden = { response: { status: 403, data: { detail: 'Not enough permissions' } } };
-    mockAxios.get.mockImplementation((url: string) => {
-      if (url === '/files/someone-elses-file') return Promise.reject(forbidden);
-      return Promise.resolve({ data: {} });
-    });
+  it.each([500, undefined])(
+    'keeps the generic error and retry button for a real failure (status %s)',
+    async (status) => {
+      const failure = status ? { response: { status } } : new Error('Network Error');
+      mockAxios.get.mockImplementation((url: string) => {
+        if (url === '/files/file-1') return Promise.reject(failure);
+        return Promise.resolve({ data: {} });
+      });
 
-    const { container } = render(Page, { props: { data: { id: 'someone-elses-file' } } });
+      const { container } = render(Page, { props: { data: { id: 'file-1' } } });
 
-    await waitFor(() => {
-      const errorEl = container.querySelector('.error-message');
-      expect(errorEl).not.toBeNull();
-      expect(errorEl?.textContent).toContain('fileDetail.failedToLoadFile');
-    });
+      await waitFor(() => {
+        expect(container.querySelector('.error-message')?.textContent).toContain(
+          'fileDetail.failedToLoadFile'
+        );
+      });
 
-    // No filename, transcript, or any file-derived content ever reached the DOM.
-    expect(container.textContent).not.toContain('someone-elses-file');
-    expect(document.title).not.toBe('meeting-notes.mp4');
-  });
+      expect(container.querySelector('.error-container button')).not.toBeNull();
+      expect(container.querySelector('.error-container a[href="/"]')).toBeNull();
+    }
+  );
 });
 
 describe('files/[id]/+page — deferred DOM work is cancelled on destroy', () => {

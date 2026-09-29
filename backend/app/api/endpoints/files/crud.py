@@ -896,9 +896,18 @@ def get_media_file_detail(
     """
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
-        )
+        try:
+            db_file = get_media_file_by_uuid(
+                db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+            )
+        except HTTPException as denied:
+            if denied.status_code != status.HTTP_403_FORBIDDEN:
+                raise
+            # A file the caller cannot see must answer like a missing one: 403 would
+            # confirm the UUID exists in another user's/tenant's scope.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+            ) from None
         # Expire heavy JSONB columns so they're not loaded unless explicitly accessed
         # (waveform_data fetched via /waveform, summary via /summary, metadata_raw rarely needed)
         db.expire(db_file, ["waveform_data", "metadata_raw"])

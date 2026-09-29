@@ -558,6 +558,28 @@ TASK_RECOVERY_ORPHANED_HOURS=1                # Default: 1
 An invalid value (non-numeric, or below 1) logs a warning and falls back to the default. The
 values are read when a worker starts, so restart the workers after changing them.
 
+### Tasks whose worker dies
+
+When a worker is killed mid-task (out of memory, SIGKILL, node loss), Celery can't hand the
+task to another worker. Most tasks are acknowledged as soon as a worker receives them, so the
+message is gone. A task that acknowledges late waits in the broker until the visibility
+timeout (6 h). So the tasks that are safe to run twice (speaker attributes, speaker
+clustering, analytics, waveform, thumbnail, playback rendition, search indexing, file facts,
+summary, topics, LLM speaker identification) record themselves while they run and send a
+heartbeat. A sweep every two minutes re-sends any whose heartbeat has lapsed, under the same
+task id, and gives up (marking the task failed) after a set number of re-sends, so a task
+that kills its worker every time can't loop. Transcription is never re-sent this way.
+
+```bash
+# Heartbeat refresh interval, and how long a worker may go silent before its tasks are re-sent
+TASK_HEARTBEAT_INTERVAL_SECONDS=30   # Default: 30
+TASK_HEARTBEAT_TTL_SECONDS=120       # Default: 120 (must exceed the interval)
+# How many times one task is re-sent after losing its worker before it is failed
+TASK_REPLAY_MAX_ATTEMPTS=2           # Default: 2 (0 = never re-send)
+# Records older than this are dropped instead of re-sent
+TASK_REPLAY_MAX_AGE_SECONDS=86400    # Default: 86400
+```
+
 ## Flower Monitoring Dashboard
 
 ```bash

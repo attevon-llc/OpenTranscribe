@@ -19,6 +19,7 @@ class FakeRedis:
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
         self.ttls: dict[str, int] = {}
+        self.hashes: dict[str, dict[str, str]] = {}
 
     def setex(self, key: str, ttl: int, value: str) -> bool:
         self.store[key] = str(value)
@@ -37,6 +38,40 @@ class FakeRedis:
 
     def mget(self, keys: list[str]) -> list[str | None]:
         return [self.store.get(key) for key in keys]
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    def set(self, key: str, value: str, nx: bool = False, ex: int | None = None) -> bool | None:
+        if nx and key in self.store:
+            return None
+        self.store[key] = str(value)
+        if ex is not None:
+            self.ttls[key] = int(ex)
+        return True
+
+    # --- hashes (the lost-task replay records, issue #1067) ---------------------------------
+    def hset(self, name: str, key: str, value: str) -> int:
+        self.hashes.setdefault(name, {})[key] = str(value)
+        return 1
+
+    def hget(self, name: str, key: str) -> str | None:
+        return self.hashes.get(name, {}).get(key)
+
+    def hdel(self, name: str, *keys: str) -> int:
+        bucket = self.hashes.get(name, {})
+        return sum(int(bucket.pop(key, None) is not None) for key in keys)
+
+    def hexists(self, name: str, key: str) -> bool:
+        return key in self.hashes.get(name, {})
+
+    def hgetall(self, name: str) -> dict[str, str]:
+        return dict(self.hashes.get(name, {}))
+
+    def expire(self, key: str) -> None:
+        """Test helper: the TTL of ``key`` ran out."""
+        self.store.pop(key, None)
+        self.ttls.pop(key, None)
 
     def pipeline(self) -> _FakePipeline:
         return _FakePipeline(self)
@@ -63,6 +98,13 @@ class _FakePipeline:
     def setex(self, key: str, ttl: int, value: str) -> _FakePipeline:
         self._ops.append(("setex", (key, ttl, value)))
         return self
+
+    def __getattr__(self, name: str):
+        def _record(*args):
+            self._ops.append((name, args))
+            return self
+
+        return _record
 
     def execute(self) -> list:
         return [getattr(self._redis, name)(*args) for name, args in self._ops]

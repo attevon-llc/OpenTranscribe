@@ -66,7 +66,11 @@ unmerged as of `v397`), `v397_add_platform_super_admin_link_authorized`
 `account_linking.assert_provider_id_link_permitted`'s super_admin JIT-link refusal,
 issue #993; chained off `v393` rather than `v394` specifically to avoid colliding
 with the doc-ingestion range above — see that revision's own docstring),
-`v398_add_media_playback_path` (nullable `media_file.playback_path` — the object key of
+`v420_add_tag_organization_id` (tenant-owned tags, issue #1050: `tag.organization_id`,
+per-tenant partial unique indexes, and a move/split/merge backfill; numbered v420 to stay
+clear of every range another branch had used — its detection arm keys on
+`uq_tag_org_name`, created after the backfill, not on the column),
+`v421_add_media_playback_path` (nullable `media_file.playback_path` — the object key of
 a browser-playable AAC/M4A rendition for originals no browser decodes). **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.

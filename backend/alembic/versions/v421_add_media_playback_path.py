@@ -12,8 +12,8 @@ reprocessed.
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "v398_add_media_playback_path"
-down_revision = "v397_add_platform_super_admin_link_authorized"
+revision = "v421_add_media_playback_path"
+down_revision = "v420_add_tag_organization_id"
 branch_labels = None
 depends_on = None
 

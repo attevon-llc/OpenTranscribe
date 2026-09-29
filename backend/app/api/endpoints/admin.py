@@ -455,13 +455,18 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     if prompts_deleted:
         logger.info(f"Deleted {prompts_deleted} summary prompts for user {user_id}")
 
-    # Tags owned by the user (v374). tag.user_id is a plain FK, so the rows must
-    # go before the user row or the delete fails. The file_tag pass is belt and
-    # braces rather than load-bearing: file_tag.tag_id IS ON DELETE CASCADE
-    # (verified against the live schema Aug 2026), so the database would sweep
-    # those rows anyway — including the ones hanging off ANOTHER user's file,
-    # which is the case worth naming. System tags (user_id IS NULL) are shared
-    # vocabulary and are never touched.
+    # Tags created by the user (v374). tag.user_id is a plain FK, so it must be
+    # cleared before the user row or the delete fails.
+    #   * PERSONAL tags are the user's and are deleted. The file_tag pass is belt
+    #     and braces: file_tag.tag_id IS ON DELETE CASCADE, so the database would
+    #     sweep those rows anyway — including the ones hanging off ANOTHER user's
+    #     file, which is the case worth naming.
+    #   * ORGANIZATION tags belong to the tenant (v420) and are on colleagues'
+    #     files; they survive, de-attributed (user_id → NULL, organization kept).
+    # System tags (no owner, no tenant) are shared vocabulary and never touched.
+    db.query(Tag).filter(Tag.user_id == user_id, Tag.organization_id.is_not(None)).update(
+        {Tag.user_id: None}, synchronize_session=False
+    )
     tag_ids = [t.id for t in db.query(Tag.id).filter(Tag.user_id == user_id).all()]
     if tag_ids:
         db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)

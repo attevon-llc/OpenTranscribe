@@ -41,11 +41,14 @@ def create_tag(
     tag_data: TagBase,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
+    """Create a tag in the request's tenant, or return the tenant's existing one.
+
+    In an organization the tag is the org's — every member sees and reuses it —
+    and is attributed to the caller; in personal scope it is the caller's own.
     """
-    Create a new tag owned by the current user.
-    """
-    tag = _resolve_tag(db, tag_data.name, current_user.id)
+    tag = _resolve_tag(db, tag_data.name, current_user.id, ctx.org_id)
     db.commit()
     db.refresh(tag)
     # No file carries it yet, so there is nothing to reindex — but the new row
@@ -74,8 +77,10 @@ def list_tags(
 ):
     """List the tags visible to the caller with usage counts, most used first.
 
-    Visible = system tags (``user_id IS NULL``) + the caller's own tags + tags
-    attached to a file the caller can access. Usage counts only count accessible
+    Visible = system tags + the request tenant's tags (in an organization, every
+    member's) + tags shared with the caller or attached to a file the caller can
+    access — every arm bounded to the request's tenant, so a tag never lists in
+    another tenant (issue #1050). Usage counts only count accessible
     files, so a shared tag never reveals how often its owner uses it.
 
     Filtering, counting, and clustering live in ``services/tag_collisions.py``;
@@ -150,6 +155,7 @@ def cleanup_unused_tags(
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Delete owned tags no file anywhere carries (admin only).
 
@@ -165,8 +171,9 @@ def cleanup_unused_tags(
     the caller's accessible files, so a tag still attached to a file the caller
     can no longer see survives: ``GET /tags/unused`` may therefore list a tag
     this endpoint declines to delete. That gap is deliberate — the alternative is
-    stripping a tag off another account's file. System tags (``user_id IS NULL``)
-    are exempt in both scopes; being unattached is their normal state.
+    stripping a tag off another account's file. System tags (no owner, no tenant)
+    are exempt in both scopes; being unattached is their normal state. ``mine`` is
+    the caller's tags in the request's tenant only.
 
     Args:
         scope: ``mine`` (default) or ``all_users``.
@@ -197,7 +204,10 @@ def cleanup_unused_tags(
 
     try:
         count = cleanup_unreferenced_tags(
-            db, acting_user_id=current_user.id, all_users=scope == "all_users"
+            db,
+            acting_user_id=current_user.id,
+            organization_id=ctx.org_id,
+            all_users=scope == "all_users",
         )
         if count:
             logger.info(f"Deleted {count} unused tags (scope={scope})")
@@ -240,15 +250,18 @@ def add_tag_to_file(
     vocabulary.
 
     The body is a raw ``dict`` rather than a schema, so a missing ``name`` is
-    rejected as 422 by hand. The resolved tag belongs to the **caller**, not the file
-    owner: tagging a shared file adds the word to your own vocabulary and the owner
-    still sees it because it is now attached to a file they can access.
-    ``_resolve_tag`` is race-safe and resolves normalized-exact against the caller's
-    own vocabulary plus the system one; it does **not** pass ``file_id``, so it does
+    rejected as 422 by hand. The tag is resolved in the **file's tenant**: on an
+    organization file it is the org's tag (a colleague's row is reused, not
+    duplicated); on a personal file it is the caller's own — tagging a file shared
+    with you adds the word to your personal vocabulary, and the owner still sees it
+    because it is now attached to a file they can access.
+    ``_resolve_tag`` is race-safe and resolves normalized-exact against that
+    tenant's vocabulary plus the system one; it does **not** pass ``file_id``, so it does
     not take ``resolve_or_create_tag``'s "already on this file" branch. The
     duplicate-suppression here is by tag *id* on ``FileTag``, which makes a repeat
     post by the same user idempotent (no second row, no second ``on_tags_changed``)
-    but lets two users attach same-named rows of their own to one shared file.
+    but lets two users attach same-named personal rows of their own to one shared
+    personal file (on an organization file both resolve to the org's one row).
     """
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -272,12 +285,10 @@ def add_tag_to_file(
     # Convert to proper TagBase object
     tag_base = TagBase(name=tag_data["name"])
 
-    # Atomically resolve or create the tag (race-condition safe). The tag belongs
-    # to the caller, not the file owner: tagging a file shared with you adds the
-    # word to YOUR vocabulary, and the owner still sees it because the tag is now
-    # attached to a file they can access.
-    # Note: file access already verified by get_file_by_uuid_with_permission above
-    tag = _resolve_tag(db, tag_base.name, current_user.id)
+    # Resolve in the FILE's tenant (issue #1050). The permission check above has
+    # already tenant-gated the file, so for an org file this is ctx.org_id; for a
+    # personal file shared with the caller it is the caller's personal space.
+    tag = _resolve_tag(db, tag_base.name, current_user.id, media_file.organization_id)
     logger.info(f"Using tag: {tag.id}:{tag.name} for file_id={file_id}")
 
     # Check if file already has this tag

@@ -1,10 +1,10 @@
-"""v398 migration + detection-arm consistency (``media_file.playback_path``).
+"""v421 migration + detection-arm consistency (``media_file.playback_path``).
 
-Like ``v386``-``v397``, this suite **executes** the revision's SQL rather than grepping its
+Like ``v386``-``v420``, this suite **executes** the revision's SQL rather than grepping its
 source, and executes it twice, because the startup runner stamps untracked databases by
 schema fingerprint and therefore re-runs a revision over its own partial output.
 
-``v398_add_media_playback_path`` adds one nullable ``VARCHAR`` to ``media_file``: the object
+``v421_add_media_playback_path`` adds one nullable ``VARCHAR`` to ``media_file``: the object
 key of a browser-playable rendition, for originals no browser decodes (AIFF, WMA, AVI, ...).
 """
 
@@ -20,7 +20,7 @@ from sqlalchemy import text
 #: ``ddl_exclusive`` is applied PER TEST, never to the module: every EXCLUSIVE advisory
 #: lock drains all other xdist workers (issue #431).
 
-REVISION = "v398_add_media_playback_path"
+REVISION = "v421_add_media_playback_path"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
 _COLUMN = "playback_path"
 _TABLE = "media_file"
@@ -35,7 +35,7 @@ def _revision_module():
     return module
 
 
-def test_v398_revision_chain():
+def test_v421_revision_chain():
     from alembic.script import ScriptDirectory
 
     from app.db.migrations import get_alembic_config
@@ -49,13 +49,13 @@ def test_v398_revision_chain():
     rev = scripts.get_revision(REVISION)
     heads = set(scripts.get_heads())
 
-    assert rev.down_revision == "v397_add_platform_super_admin_link_authorized"
+    assert rev.down_revision == "v420_add_tag_organization_id"
     assert len(heads) == 1, "two heads mean two branches both claimed a revision number"
     # True while it is head, and still true once a later revision revises it.
     assert REVISION in heads or any(r.down_revision == REVISION for r in scripts.walk_revisions())
 
 
-def test_v398_migration_is_vendor_neutral():
+def test_v421_migration_is_vendor_neutral():
     """CI's seam guard greps core for the managed edition's vendor nouns."""
     source = _REVISION_PATH.read_text()
     for vendor_noun in ("cl" + "erk", "str" + "ipe"):
@@ -79,7 +79,7 @@ def test_the_orm_mirrors_the_column(db_session):
     assert model.columns[_COLUMN].nullable == live[_COLUMN]
 
 
-def test_detection_arm_returns_v398_or_later_on_current_schema(db_session):
+def test_detection_arm_returns_v421_or_later_on_current_schema(db_session):
     """Step 4 of the procedure in backend/app/db/CLAUDE.md — the step that gets skipped."""
     from tests.unit._migration_detection import assert_detected_at_or_after
 
@@ -89,9 +89,9 @@ def test_detection_arm_returns_v398_or_later_on_current_schema(db_session):
 
 @pytest.mark.ddl_exclusive
 def test_detection_stamps_lower_without_the_marker(db_session):
-    """Drop the marker column and the ladder must stop matching v398.
+    """Drop the marker column and the ladder must stop matching v421.
 
-    Asserted as a *band* — at or after v397, strictly before v398 — because an exact
+    Asserted as a *band* — at or after v420, strictly before v421 — because an exact
     ``==`` on a lower revision goes red or vacuous the next time the ladder changes.
     """
     from app.db.migrations import _detect_schema_version
@@ -108,9 +108,7 @@ def test_detection_stamps_lower_without_the_marker(db_session):
     assert detected is not None, "the ladder matched no revision at all"
     order = _chain_order()
     assert (
-        order.index("v397_add_platform_super_admin_link_authorized")
-        <= order.index(detected)
-        < order.index(REVISION)
+        order.index("v420_add_tag_organization_id") <= order.index(detected) < order.index(REVISION)
     )
 
 

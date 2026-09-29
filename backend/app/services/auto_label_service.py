@@ -11,7 +11,6 @@ from datetime import UTC
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -29,8 +28,10 @@ from app.models.topic import TopicSuggestion
 from app.services.tag_service import names_are_similar
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
+from app.services.tag_service import owned_or_system
 from app.services.tag_service import resolve_or_create_tag
 from app.services.tag_service import suggest_similar_tag
+from app.services.tag_service import tenant_first
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +41,10 @@ class AutoLabelService:
 
     def __init__(self, db: Session):
         self.db = db
-        # Tags are per-owner since v374, so the fuzzy-match cache is keyed by
-        # user id exactly like the collection cache. A single flat list would
-        # match one user's suggestion against another user's vocabulary.
-        self._tag_cache: dict[int, list[Tag]] = {}
+        # Tags belong to a tenant since v420, so the fuzzy-match cache is keyed
+        # by (user id, organization id). A single flat list would match one
+        # tenant's suggestion against another tenant's vocabulary.
+        self._tag_cache: dict[tuple[int, int | None], list[Tag]] = {}
         self._collection_cache: dict[int, list[Collection]] = {}
 
     # =========================================================================
@@ -69,22 +70,18 @@ class AutoLabelService:
         """
         return names_are_similar(a, b, threshold)
 
-    @staticmethod
-    def _owned_or_system(user_id: int):
-        """Tags ``user_id`` may reuse: their own, plus the system vocabulary."""
-        return or_(Tag.user_id == user_id, Tag.user_id.is_(None))
-
-    def _get_all_tags_cached(self, user_id: int) -> list[Tag]:
-        """Return the user's visible tags, cached per instance to avoid N queries."""
-        if user_id not in self._tag_cache:
-            self._tag_cache[user_id] = (
-                self.db.query(Tag).filter(self._owned_or_system(user_id)).all()
+    def _get_all_tags_cached(self, user_id: int, organization_id: int | None) -> list[Tag]:
+        """Return the tenant's reusable tags, cached per instance to avoid N queries."""
+        key = (user_id, organization_id)
+        if key not in self._tag_cache:
+            self._tag_cache[key] = (
+                self.db.query(Tag).filter(owned_or_system(user_id, organization_id)).all()
             )
-        return self._tag_cache[user_id]
+        return self._tag_cache[key]
 
-    def _invalidate_tag_cache(self, user_id: int) -> None:
-        """Invalidate a user's tag cache after creating a new tag."""
-        self._tag_cache.pop(user_id, None)
+    def _invalidate_tag_cache(self, user_id: int, organization_id: int | None) -> None:
+        """Invalidate a tenant's tag cache after creating a new tag."""
+        self._tag_cache.pop((user_id, organization_id), None)
 
     def _get_user_collections_cached(self, user_id: int) -> list[Collection]:
         """Return user collections, using instance-level cache."""
@@ -98,12 +95,15 @@ class AutoLabelService:
         """Invalidate the collection cache for a user after creating a new collection."""
         self._collection_cache.pop(user_id, None)
 
-    def find_existing_similar_tag(self, suggested_name: str, user_id: int) -> Tag | None:
-        """Find an existing tag of ``user_id``'s that matches the suggested name.
+    def find_existing_similar_tag(
+        self, suggested_name: str, user_id: int, organization_id: int | None = None
+    ) -> Tag | None:
+        """Find an existing tag of the tenant that matches the suggested name.
 
-        Scoped to the user's own tags plus the system vocabulary — matching
-        against every tag in the deployment would both leak other users' names
-        into this user's file and re-share their row.
+        Scoped to the tenant's tags (``organization_id``; ``None`` = the user's
+        personal ones) plus the system vocabulary — matching against every tag
+        in the deployment would both leak other tenants' names into this file
+        and attach their row across the tenant boundary.
 
         1. Exact normalized_name match (uses index)
         2. Fallback: SequenceMatcher scan of cached tags
@@ -115,24 +115,26 @@ class AutoLabelService:
         """
         normalized = self.normalize_name(suggested_name)
 
-        # Fast path: exact normalized match. NULLS LAST puts an owned row first.
+        # Fast path: exact normalized match. tenant_first() puts a tenant row
+        # ahead of a same-named system row.
         tag: Tag | None = (
             self.db.query(Tag)
-            .filter(Tag.normalized_name == normalized, self._owned_or_system(user_id))
-            .order_by(Tag.user_id)
+            .filter(Tag.normalized_name == normalized, owned_or_system(user_id, organization_id))
+            .order_by(*tenant_first())
             .first()
         )
         if tag:
             return tag
 
-        # Slow path: fuzzy scan over the user-scoped tag cache. The cache is
-        # keyed by user id, so one account's suggestion can never match — and
-        # then reuse — another account's row.
+        # Slow path: fuzzy scan over the tenant-scoped tag cache. The cache is
+        # keyed by tenant, so one tenant's suggestion can never match — and
+        # then reuse — another tenant's row.
         return suggest_similar_tag(
             self.db,
             suggested_name,
             user_id=user_id,
-            candidates=self._get_all_tags_cached(user_id),
+            organization_id=organization_id,
+            candidates=self._get_all_tags_cached(user_id, organization_id),
         )
 
     def find_existing_similar_collection(
@@ -194,10 +196,14 @@ class AutoLabelService:
                     continue
 
                 try:
-                    # The tag belongs to the file owner — this runs unattended,
-                    # so there is no "current user" to attribute it to.
+                    # The tag lands in the FILE's tenant (issue #1050), credited
+                    # to the file owner — this runs unattended, so there is no
+                    # "current user" to attribute it to.
                     tag = self._get_or_create_tag_with_dedup(
-                        name, int(media_file.user_id), file_id=int(media_file.id)
+                        name,
+                        int(media_file.user_id),
+                        organization_id=media_file.organization_id,
+                        file_id=int(media_file.id),
                     )
                     if self._add_tag_to_file(media_file, tag, confidence):
                         retagged_file_ids.append(int(media_file.id))
@@ -255,14 +261,17 @@ class AutoLabelService:
         name: str,
         user_id: int,
         *,
+        organization_id: int | None,
         file_id: int | None = None,
         source: str = TAG_SOURCE_AUTO_AI,
     ) -> Tag:
-        """Get or create a tag owned by ``user_id``, fuzzy-matching to dedupe.
+        """Get or create a tag in ``organization_id``'s tenant, fuzzy-matching to dedupe.
 
-        ``user_id`` is the file owner on the background path, so an LLM-suggested
-        tag lands in that user's vocabulary rather than becoming an ownerless
-        (deployment-visible) row.
+        ``user_id`` is the file owner and ``organization_id`` the file's tenant
+        on the background path, so an LLM-suggested tag derived from an org
+        recording lands in that org's shared vocabulary — never in the owner's
+        personal one, where it would follow them into every other tenant — and
+        never becomes an ownerless (deployment-visible) row.
 
         The fuzzy hit is applied automatically because this is the auto-labeling
         path — the one path allowed to (see :meth:`find_existing_similar_tag`).
@@ -270,12 +279,19 @@ class AutoLabelService:
         length clamp, and the SAVEPOINT-guarded insert stay identical across
         every path.
         """
-        existing = self.find_existing_similar_tag(name, user_id)
+        existing = self.find_existing_similar_tag(name, user_id, organization_id)
         if existing:
             return existing
 
-        tag = resolve_or_create_tag(self.db, name, user_id=user_id, source=source, file_id=file_id)
-        self._invalidate_tag_cache(user_id)
+        tag = resolve_or_create_tag(
+            self.db,
+            name,
+            user_id=user_id,
+            organization_id=organization_id,
+            source=source,
+            file_id=file_id,
+        )
+        self._invalidate_tag_cache(user_id, organization_id)
         return tag
 
     def _get_or_create_collection_with_dedup(

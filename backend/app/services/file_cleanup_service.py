@@ -414,6 +414,11 @@ def _count_surviving(index: str, query: dict[str, Any]) -> int:
     try:
         if not client.indices.exists(index=index):
             return 0
+        # The deletes this verifies are by id, which is realtime; ``count`` reads a
+        # searcher, which keeps seeing a deleted document until the next refresh. Without
+        # this, every purge that landed inside the refresh window reported its (already
+        # deleted) voiceprints as survivors and audited a clean erasure as PARTIAL.
+        client.indices.refresh(index=index)
         return int(client.count(index=index, body={"query": query})["count"])
     except NotFoundError:
         return 0
@@ -476,7 +481,8 @@ def _cleanup_opensearch_for_file(target: dict[str, Any], file_uuid: str) -> list
 def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], None]) -> None:
     """Delete the file's speaker embeddings (biometric data) and verify.
 
-    ``remove_speaker_embedding`` already sweeps v3 + v4 + the alias, so there is
+    ``remove_speaker_embedding`` already sweeps every index in
+    ``speaker_embedding_indices()`` (v3, v4, the alias, the legacy v3 backup), so there is
     exactly one deletion path — but it swallows its own errors and returns
     ``False`` for "absent" and "failed" alike, so the surviving-document count is
     what actually proves the embeddings are gone.
@@ -492,11 +498,9 @@ def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], 
         except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
             fail("speakers", e)
 
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v4
+    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
 
-    for idx in {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}:
+    for idx in speaker_embedding_indices():
         try:
             left = _count_surviving(idx, {"ids": {"values": speaker_uuids}})
             if left:

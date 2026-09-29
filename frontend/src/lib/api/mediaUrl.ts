@@ -13,10 +13,18 @@
 
 import axiosInstance from '$lib/axios';
 
+/**
+ * What a media stream URL serves: the original, a playable copy of an audio original
+ * no browser decodes ('converted'), or the audio track of a video no browser shows
+ * ('audio_only'). Null for thumbnails.
+ */
+export type PlaybackMode = 'original' | 'converted' | 'audio_only';
+
 export interface StreamUrlResponse {
   url: string;
   expires_in: number;
   content_type: string;
+  playback?: PlaybackMode | null;
   is_public: boolean;
 }
 
@@ -26,6 +34,7 @@ interface CachedUrl {
   url: string;
   expiresAt: number;
   contentType: string;
+  playback: PlaybackMode | null;
 }
 
 // In-memory cache for presigned URLs with expiration tracking
@@ -72,13 +81,14 @@ export async function getMediaStreamUrl(
     params: { media_type: mediaType },
   });
 
-  const { url, expires_in, content_type } = response.data;
+  const { url, expires_in, content_type, playback } = response.data;
 
   // Cache with expiration timestamp
   urlCache.set(cacheKey, {
     url,
     expiresAt: now + expires_in * 1000,
     contentType: content_type,
+    playback: playback ?? null,
   });
 
   return url;

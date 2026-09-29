@@ -8,13 +8,22 @@ Learn how to upload and process media files in OpenTranscribe.
 
 ## Supported Formats
 
-### Audio
-- MP3, WAV, FLAC, M4A, OGG, WMA
-- Any format FFmpeg can decode
+Every format below is accepted and transcribed, and the original file is always kept for
+download. What differs is how the file plays in the browser:
 
-### Video
-- MP4, MOV, AVI, MKV, WebM
-- Maximum size: 4GB
+| Group | Formats | In the player |
+|---|---|---|
+| Plays in your browser | MP3, WAV, FLAC, OGG, Opus, AAC, M4A, WebM, MP4, MOV, MKV | The original plays as uploaded. |
+| Plays after automatic conversion | AIFF, WMA, ALAC (in M4A), AMR, AC-3, MP2 | Browsers can't decode these, so a playable AAC copy is made in the background while the file transcribes. |
+| Transcribed, audio-only preview | AVI, WMV, MPEG, MPEG-TS, FLV, 3GP | Browsers can't show the picture. The player plays the audio track and says the video preview is unavailable. |
+
+"Plays in your browser" was measured in Firefox and Chromium: a format counts only if both
+played it with sound and, for video, with a picture. A video in MP4, MOV or MKV whose
+*picture codec* no browser decodes (for example MPEG-4 Part 2, ProRes or Theora) also gets
+the audio-only preview.
+
+Files uploaded before playback conversion existed get their playable copy the next time
+they are reprocessed.
 
 ## Upload & Processing Workflow
 

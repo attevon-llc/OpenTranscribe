@@ -30747,7 +30747,7 @@
     },
     "/api/files/{file_uuid}/stream-url": {
       "get": {
-        "description": "Generate a short-lived presigned URL for secure media streaming.\n\nThis follows AWS/GCS best practices for secure content delivery:\n- Short expiration (5 minutes for video, 15 minutes for thumbnails)\n- Cryptographically signed by MinIO (AWS Signature V4)\n- User must be authenticated and authorized\n\nArgs:\n    file_uuid: UUID of the media file\n    media_type: Type of media to stream - \"video\", \"thumbnail\", or \"audio\"\n\nReturns:\n    url: Presigned URL for direct MinIO access\n    expires_in: Seconds until URL expires\n    content_type: MIME type of the content\n    is_public: Whether the file is public",
+        "description": "Generate a short-lived presigned URL for secure media streaming.\n\nThis follows AWS/GCS best practices for secure content delivery:\n- Short expiration (5 minutes for video, 15 minutes for thumbnails)\n- Cryptographically signed by MinIO (AWS Signature V4)\n- User must be authenticated and authorized\n\nArgs:\n    file_uuid: UUID of the media file\n    media_type: Type of media to stream - \"video\", \"thumbnail\", or \"audio\"\n\nReturns:\n    url: Presigned URL for direct MinIO access\n    expires_in: Seconds until URL expires\n    content_type: MIME type of the content\n    playback: For media, what the URL serves: \"original\", \"converted\" (a\n        browser-playable copy of an audio original), or \"audio_only\" (the audio\n        track of a video no browser decodes). None for a thumbnail.\n    is_public: Whether the file is public",
         "operationId": "get_media_file_stream_url_api_files__file_uuid__stream_url_get",
         "parameters": [
           {

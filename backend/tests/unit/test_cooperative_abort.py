@@ -245,6 +245,10 @@ _ABORT_HANDLING_EXEMPT: dict[str, str] = {
         "Clusters already-persisted speaker embeddings via OpenSearch kNN; it never loads an "
         "ASR/diarization model and runs no engine stage, so no checkpoint is reachable."
     ),
+    "app.tasks.playback_rendition::media.create_playback_rendition": (
+        "Downloads an original, runs one ffprobe and one ffmpeg AAC encode, uploads the "
+        "result; it never constructs an Engine stage, so no checkpoint is reachable."
+    ),
     "app.tasks.speaker_clustering::speaker.recluster_all": (
         "Corpus-wide variant of speaker.cluster_for_file — same embedding/OpenSearch-only call "
         "graph, no engine stage."

@@ -31,6 +31,11 @@ MAGIC_SIGNATURES: list[tuple[int, bytes, list[str]]] = [
     (0, b"\xff\xfa", ["audio/mpeg", "audio/mp3"]),
     (0, b"\xff\xf3", ["audio/mpeg", "audio/mp3"]),
     (0, b"\xff\xf2", ["audio/mpeg", "audio/mp3"]),
+    # MPEG-1/2 Audio Layer II (*.mp2): the same frame sync, with the layer bits set to II
+    (0, b"\xff\xfd", ["audio/mpeg"]),
+    (0, b"\xff\xfc", ["audio/mpeg"]),
+    (0, b"\xff\xf5", ["audio/mpeg"]),
+    (0, b"\xff\xf4", ["audio/mpeg"]),
     # Raw AAC in an ADTS stream (*.aac): 12-bit sync word, then MPEG-4 (F1) or MPEG-2 (F9)
     (0, b"\xff\xf1", ["audio/aac", "audio/x-aac", "audio/aacp"]),
     (0, b"\xff\xf9", ["audio/aac", "audio/x-aac", "audio/aacp"]),
@@ -50,6 +55,12 @@ MAGIC_SIGNATURES: list[tuple[int, bytes, list[str]]] = [
     (0, b"\x00\x00\x01\xba", ["video/mpeg", "video/x-mpeg"]),
     # 3GP/3G2
     (4, b"ftyp3g", ["video/3gpp", "video/3gpp2", "audio/3gpp", "audio/3gpp2"]),
+    # Raw Dolby Digital (*.ac3): the AC-3 sync word
+    (0, b"\x0b\x77", ["audio/ac3", "audio/vnd.dolby.dd-raw"]),
+    # Flash Video. Browsers don't play it; it transcribes, with an audio-only preview.
+    (0, b"FLV\x01", ["video/x-flv", "video/flv"]),
+    # AMR narrowband ("#!AMR\n") and wideband ("#!AMR-WB\n"), e.g. phone voice memos.
+    (0, b"#!AMR", ["audio/amr", "audio/amr-wb", "audio/3gpp"]),
     # MKV specifically (after EBML header, doctype)
     # Note: Already covered by WebM/Matroska above
 ]

@@ -47,6 +47,7 @@ from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
+from app.services.playback_rendition import resolve_playback
 from app.utils.error_handlers import ErrorHandler
 from app.utils.media_types import normalize_media_content_type
 
@@ -548,6 +549,9 @@ def get_media_file_stream_url(
         url: Presigned URL for direct MinIO access
         expires_in: Seconds until URL expires
         content_type: MIME type of the content
+        playback: For media, what the URL serves: "original", "converted" (a
+            browser-playable copy of an audio original), or "audio_only" (the audio
+            track of a video no browser decodes). None for a thumbnail.
         is_public: Whether the file is public
     """
     from app.core.config import settings
@@ -567,6 +571,7 @@ def get_media_file_stream_url(
     )
 
     # Determine storage path and expiration based on media type
+    playback: str | None = None
     if media_type == "thumbnail":
         storage_path = db_file.thumbnail_path
         expires_seconds = settings.THUMBNAIL_URL_EXPIRE_SECONDS
@@ -574,15 +579,15 @@ def get_media_file_stream_url(
             "image/webp" if storage_path and str(storage_path).endswith(".webp") else "image/jpeg"
         )
     else:
-        storage_path = db_file.storage_path
+        # A file no browser decodes plays its rendition instead (AAC/M4A); the original
+        # stays the download. resolve_playback also normalises the stored type: rows from
+        # before issue #1044 can hold an alias such as audio/vnd.wave that the player's
+        # <source type> rejects.
+        source = resolve_playback(db_file.content_type, db_file.storage_path, db_file.playback_path)
+        storage_path = source.object_name if source else None
+        content_type = source.content_type if source else "application/octet-stream"
+        playback = source.mode.value if source else None
         expires_seconds = settings.MEDIA_URL_EXPIRE_SECONDS
-        # Normalised on read too: rows stored before issue #1044 can hold a browser
-        # alias such as audio/vnd.wave that the player's <source type> rejects.
-        content_type = (
-            normalize_media_content_type(str(db_file.content_type))
-            if db_file.content_type
-            else None
-        ) or "application/octet-stream"
 
     if not storage_path:
         raise HTTPException(
@@ -600,6 +605,7 @@ def get_media_file_stream_url(
             "url": f"/api/files/{db_file.uuid}/{media_type}",
             "expires_in": expires_seconds,
             "content_type": content_type,
+            "playback": playback,
             "is_public": getattr(db_file, "is_public", False),
         }
 
@@ -617,6 +623,7 @@ def get_media_file_stream_url(
             "url": presigned_url,
             "expires_in": expires_seconds,
             "content_type": content_type,
+            "playback": playback,
             "is_public": getattr(db_file, "is_public", False),
         }
     except HTTPException:

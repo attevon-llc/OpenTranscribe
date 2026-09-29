@@ -65,7 +65,9 @@ unmerged as of `v397`), `v397_add_platform_super_admin_link_authorized`
 (`user.platform_super_admin_link_authorized` — the escape hatch for
 `account_linking.assert_provider_id_link_permitted`'s super_admin JIT-link refusal,
 issue #993; chained off `v393` rather than `v394` specifically to avoid colliding
-with the doc-ingestion range above — see that revision's own docstring). **Derive
+with the doc-ingestion range above — see that revision's own docstring),
+`v398_add_media_playback_path` (nullable `media_file.playback_path` — the object key of
+a browser-playable AAC/M4A rendition for originals no browser decodes). **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.
 

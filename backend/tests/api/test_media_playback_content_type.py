@@ -21,7 +21,7 @@ Which types browsers accept was measured, not assumed: Playwright Firefox and
 Chromium were given each fixture as ``<source type=X>`` and with no type. The results
 are recorded per case below. Formats no browser decodes (AVI, AIFF) are marked
 ``needs_transcode``. Normalising them keeps the data consistent but cannot make them
-play.
+play; a playback rendition does (``test_playback_rendition.py``).
 """
 
 from __future__ import annotations

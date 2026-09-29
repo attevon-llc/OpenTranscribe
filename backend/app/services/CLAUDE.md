@@ -50,6 +50,18 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `protected_media_providers.py` + `protected_media_plugins/`, `minio_service.py` +
   `storage_backend.py` (**see below**), `subtitle_service.py`, `formatting_service.py`.
   **Every export surface takes a required redaction config** (#85, see the gotcha below).
+- **Browser playback renditions** — `playback_rendition.py`. Every format is accepted, but
+  AIFF, WMA, ALAC, AC-3, MP2 and ADPCM audio, and AVI/WMV/MPEG/TS/FLV/3GP/MPEG-4-Part-2/
+  Theora video, don't play in Firefox or Chromium. Preprocessing probes the original and,
+  only for those, queues `media.create_playback_rendition` (`tasks/playback_rendition.py`,
+  CPU queue). That task encodes an AAC/M4A copy at `<storage_path>.playback.m4a` and
+  records it in `media_file.playback_path`. For video, the copy is the audio track only.
+  `resolve_playback` is the one place that picks what plays; `/stream-url` and the
+  speaker-preview URL both call it. The playability tables were measured with Playwright
+  in both browsers. Anything not listed gets a rendition, because an unneeded copy still
+  plays and a missing one leaves the player at 00:00. ⚠️ `playback_path` is a third media
+  object beside `storage_path`/`thumbnail_path`: purge, takedown tag/untag and the startup
+  quarantine backfill all handle it. A new path that touches those two must handle it too.
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
   system settings, usage, GDPR erasure (`gdpr_erasure_service.py` +
   `erasure_ledger_service.py` — **see below**).

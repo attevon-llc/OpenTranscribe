@@ -22,8 +22,8 @@ from app.schemas.speaker_cluster import ClusterSplitRequest
 from app.schemas.speaker_cluster import ClusterUnassignRequest
 from app.schemas.speaker_cluster import ReclusterRequest
 from app.schemas.speaker_cluster import SpeakerClusterUpdate
+from app.services.playback_rendition import resolve_playback
 from app.services.speaker_clustering_service import SpeakerClusteringService
-from app.utils.media_types import normalize_media_content_type
 
 logger = logging.getLogger(__name__)
 
@@ -205,15 +205,20 @@ def get_speaker_media_preview(
     from app.core.config import settings
     from app.services.minio_service import get_file_url
 
-    try:
-        media_presigned_url = get_file_url(
-            media_file.storage_path,
-            expires=settings.MEDIA_URL_EXPIRE_SECONDS,
-            content_type=normalize_media_content_type(media_file.content_type),
-        )
-    except Exception as e:
-        logger.warning("Failed to generate presigned URL for %s: %s", media_file.storage_path, e)
-        media_presigned_url = None
+    # The browser-playable rendition when the original has one (AIFF, WMA, AVI, ...).
+    source = resolve_playback(
+        media_file.content_type, media_file.storage_path, media_file.playback_path
+    )
+    media_presigned_url = None
+    if source is not None:
+        try:
+            media_presigned_url = get_file_url(
+                source.object_name,
+                expires=settings.MEDIA_URL_EXPIRE_SECONDS,
+                content_type=source.content_type,
+            )
+        except Exception as e:
+            logger.warning("Failed to generate presigned URL for %s: %s", source.object_name, e)
 
     # Longest transcript segment for this speaker
     from app.models.media import TranscriptSegment
@@ -239,7 +244,8 @@ def get_speaker_media_preview(
         "file_name": media_file.filename,
         # Display title (matches search results); falls back to the raw filename.
         "title": media_file.title or media_file.filename,
-        "content_type": media_file.content_type or "audio/unknown",
+        "content_type": (source.content_type if source else media_file.content_type)
+        or "audio/unknown",
         "start_time": seg_start,
         "end_time": seg_end,
         "media_url": media_presigned_url,

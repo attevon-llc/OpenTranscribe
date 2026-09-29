@@ -20,11 +20,23 @@ Out of scope (they use separate Redis databases or async clients):
 """
 
 from functools import lru_cache
+from typing import Any
 
 import redis
 
 from app.core.config import settings
 from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
+
+
+def redis_tls_kwargs() -> dict[str, Any]:
+    """``redis.Redis(host=...)`` kwargs that honour ``REDIS_USE_TLS``.
+
+    ``REDIS_URL`` already carries ``rediss://``, but clients built from
+    host/port (the db=1 cache, its pub/sub push, the YouTube limiter) do not.
+    Against a TLS-only server a plaintext PING is never answered, surfacing as
+    ``Timeout reading from socket`` and a permanently disabled cache.
+    """
+    return {"ssl": True} if settings.REDIS_USE_TLS else {}
 
 
 @lru_cache(maxsize=1)

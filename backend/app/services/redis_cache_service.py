@@ -21,6 +21,7 @@ import time
 from typing import Any
 
 from app.core.config import settings
+from app.core.redis import redis_tls_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ class RedisCacheService:
                 db=1,  # Separate DB from Celery broker (db 0)
                 decode_responses=True,
                 socket_timeout=2,
+                **redis_tls_kwargs(),
                 socket_connect_timeout=2,
                 # One attempt, no backoff. The cooldown above is this service's
                 # retry policy; redis-py's default adds sleeps on top of it.
@@ -282,6 +284,7 @@ class RedisCacheService:
                 db=0,
                 decode_responses=True,
                 socket_timeout=2,
+                **redis_tls_kwargs(),
             )
             notification = json.dumps(
                 {

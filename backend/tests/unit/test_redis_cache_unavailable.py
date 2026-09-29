@@ -102,3 +102,44 @@ def test_the_client_is_built_with_retries_disabled(monkeypatch):
     assert "retry" in captured, "the client must be constructed with an explicit retry policy"
     # One attempt, no sleeping: retries==0 is what keeps a dead Redis cheap.
     assert captured["retry"].get_retries() == 0
+
+
+def _capture_kwargs_module(captured: list[dict]):
+    class _Client:
+        def __init__(self, **kwargs):
+            captured.append(kwargs)
+
+        def ping(self):
+            return True
+
+    return type("_RedisModule", (), {"Redis": staticmethod(_Client)})
+
+
+def test_cache_client_uses_tls_when_redis_use_tls_is_set(monkeypatch):
+    """A TLS-only Redis answers a plaintext PING with silence -> 'Timeout reading from socket'."""
+    captured: list[dict] = []
+    monkeypatch.setitem(__import__("sys").modules, "redis", _capture_kwargs_module(captured))
+    monkeypatch.setattr(cache_module.settings, "REDIS_USE_TLS", True)
+
+    assert RedisCacheService().redis is not None
+    assert captured[0].get("ssl") is True
+
+
+def test_cache_client_is_plaintext_when_tls_not_set(monkeypatch):
+    captured: list[dict] = []
+    monkeypatch.setitem(__import__("sys").modules, "redis", _capture_kwargs_module(captured))
+    monkeypatch.setattr(cache_module.settings, "REDIS_USE_TLS", False)
+
+    assert RedisCacheService().redis is not None
+    assert not captured[0].get("ssl")
+
+
+def test_invalidation_push_client_uses_tls(monkeypatch):
+    captured: list[dict] = []
+    monkeypatch.setitem(__import__("sys").modules, "redis", _capture_kwargs_module(captured))
+    monkeypatch.setattr(cache_module.settings, "REDIS_USE_TLS", True)
+
+    service = RedisCacheService()
+    service._redis = object()  # skip the main connect
+    service._push_invalidation(1, "files")
+    assert captured and captured[-1].get("ssl") is True

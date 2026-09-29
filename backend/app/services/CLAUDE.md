@@ -154,6 +154,10 @@ three are needed, and dropping any one reproduces a defect that shipped.
   `requested_at`/`sla_due_at` so a restore cannot buy another month of Art. 12(3) time.
   Its limit is honest: one file on one volume. Off-host replication is deployment
   config; the audit stream is the second copy that already leaves the host.
+  `ERASURE_JOURNAL_BACKEND=object_storage` writes one object per entry to the media
+  bucket instead, for containers with no durable writable volume (read-only root fs) —
+  never "fix" an unwritable `DATA_DIR` with an ephemeral mount; the journal would die
+  with the pod.
 
 Two judgement calls worth not re-litigating blindly:
 

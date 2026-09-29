@@ -639,6 +639,22 @@ MinIO accepts a single-PUT object up to 5 TiB. AWS S3 rejects a single PUT above
 multipart path regardless of `MULTIPART_THRESHOLD_MB`.
 :::
 
+### GDPR erasure journal
+
+```bash
+ERASURE_JOURNAL_BACKEND=file                    # file | object_storage
+ERASURE_JOURNAL_OBJECT_PREFIX=gdpr/erasure-journal/  # object_storage only; key prefix in the media bucket
+```
+
+Every GDPR erasure request is also written outside the database, so restoring an older dump
+cannot silently undo it (the reconciliation sweep re-opens anything the database lost). With
+`file` (the default) that journal is `DATA_DIR/gdpr/erasure-journal.jsonl` on the data volume.
+Set `object_storage` when containers have **no durable writable volume** — a read-only root
+filesystem, or pods whose local disk does not outlive them. Each entry then becomes one object
+under the prefix in `MEDIA_BUCKET_NAME` (surrogate keys only, no personal data). Do not point
+`DATA_DIR` at an ephemeral volume instead: the journal would vanish with the pod, which is the
+failure it exists to prevent. Keep the prefix out of any bucket lifecycle expiration rule.
+
 ## Storage Encryption
 
 ```bash

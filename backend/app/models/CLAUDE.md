@@ -103,6 +103,17 @@ authority. See `backend/app/db/CLAUDE.md`.
   deletes personal tags and de-attributes org tags (`admin._delete_user_owned_records`,
   `gdpr_erasure_service._delete_owner_scoped_rows`); `erase_organization` deletes the org's
   tags, because `tag.organization_id` is a plain FK.
+- **`Collection` belongs to a TENANT** (`v422_add_collection_tenancy`, issue #1051). **personal**
+  = `organization_id IS NULL`, `user_id` = owner; **organization** = `organization_id` set,
+  shared by every member of the org (members are editors, the creator and org admins are
+  owners — `permission_service.org_collection_permission`), `user_id` = creator, NULL once
+  that account is gone (`ck_collection_owner_or_org` keeps a personal row owned). Names are
+  unique per tenant (`uq_collection_user_name` personal, `uq_collection_org_name`). Create in
+  the request's tenant (`ctx.org_id`), or on background paths the **file's** tenant; scope any
+  "the caller's collections" lookup with `PermissionService.collection_tenant_pred(user_id,
+  org_id)`, never `Collection.user_id == uid` alone; and never put a file into a collection
+  of another tenant. User deletion/erasure deletes personal collections and de-attributes
+  org ones; `erase_organization` deletes the org's.
 - **`user.oidc_subject` is an OIDC `sub`, which is unique only per ISSUER.** The UNIQUE index on
   it is sound only while exactly one provider is configured; multi-provider means keying on
   `(iss, sub)`. The old column name asserted a global identifier, which is why `v380` renamed it

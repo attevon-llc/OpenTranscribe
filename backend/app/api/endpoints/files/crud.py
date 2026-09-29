@@ -173,18 +173,38 @@ def get_file_tags(db: Session, file_id: int, user_id: int) -> list[TagSchema]:
         return []
 
 
-def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
-    """Get collections that contain a media file."""
+def get_file_collections(
+    db: Session, file_id: int, user_id: int, organization_id: OrgScope = UNSCOPED
+) -> list[dict]:
+    """Get the caller's collections, in the file's tenant, that contain a media file.
+
+    That is the caller's personal collections for a personal file and the
+    organization's collections (shared by every member, v422) for an org file.
+    ``organization_id`` is the request's tenant; ``UNSCOPED`` falls back to the
+    file's own, which is the tenant any collection holding it lives in.
+    """
+    from app.services.permission_service import PermissionService
+
     try:
-        collection_objs = (
-            db.query(Collection)
+        tenant: int | None = (
+            db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
+            if isinstance(organization_id, _Unscoped)
+            else organization_id
+        )
+        accessible = {
+            cid for cid, _perm in PermissionService.get_accessible_collection_ids(db, user_id)
+        }
+        collection_objs = [
+            col
+            for col in db.query(Collection)
             .join(CollectionMember)
             .filter(
                 CollectionMember.media_file_id == file_id,
-                Collection.user_id == user_id,
+                PermissionService.collection_tenant_pred(user_id, tenant),
             )
             .all()
-        )
+            if col.id in accessible
+        ]
 
         return [
             {
@@ -886,7 +906,9 @@ def get_media_file_detail(
 
         # Get related data
         tags = get_file_tags(db, file_id, current_user.id)
-        collections = get_file_collections(db, file_id, current_user.id)
+        collections = get_file_collections(
+            db, file_id, current_user.id, organization_id=organization_id
+        )
 
         # Get speakers and add computed status. Eager-load the linked profile so
         # add_computed_status (which reads speaker.profile) doesn't fire one lazy

@@ -144,7 +144,8 @@ def _resolve_collections(db: Session, ctx: RequestContext, collection_uuids: lis
     if not requested_ids:
         return set()
 
-    # One query for everything the caller can reach (owned + direct + group shares).
+    # One query for everything the caller can reach (owned, their orgs' collections,
+    # direct + group shares); the tenant filter above keeps it to this tenant.
     accessible = {
         cid for cid, _perm in PermissionService.get_accessible_collection_ids(db, ctx.user.id)
     }

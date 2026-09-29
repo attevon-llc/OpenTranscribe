@@ -82,18 +82,22 @@
             <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
           </svg>
         </button>
-        <button
-          class="delete-config-button"
-          title={$t('collectionsPanel.deleteCollection')}
-          on:click|stopPropagation={() => dispatch('delete', collection)}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3,6 5,6 21,6"/>
-            <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
-            <line x1="10" y1="11" x2="10" y2="17"/>
-            <line x1="14" y1="11" x2="14" y2="17"/>
-          </svg>
-        </button>
+        <!-- An organization's collections are listed to every member, but only
+             their creator or an org admin (my_permission "owner") may delete one. -->
+        {#if (collection.my_permission ?? 'owner') === 'owner'}
+          <button
+            class="delete-config-button"
+            title={$t('collectionsPanel.deleteCollection')}
+            on:click|stopPropagation={() => dispatch('delete', collection)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3,6 5,6 21,6"/>
+              <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+              <line x1="10" y1="11" x2="10" y2="17"/>
+              <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+          </button>
+        {/if}
       </div>
     {:else if viewMode === 'add' && selectedMediaIds.length > 0}
       <button

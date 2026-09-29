@@ -8,6 +8,7 @@ and resolves access via direct ownership, direct user shares, and group shares.
 import logging
 from typing import Any
 
+from sqlalchemy import and_
 from sqlalchemy import case
 from sqlalchemy import func
 from sqlalchemy import literal_column
@@ -25,6 +26,7 @@ from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
+from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
 
 logger = logging.getLogger(__name__)
@@ -34,8 +36,39 @@ PERMISSION_LEVELS = {"viewer": 1, "editor": 2, "owner": 3}
 PERMISSION_NAMES = {1: "viewer", 2: "editor", 3: "owner"}
 
 
+#: Membership role that makes a user an owner of every collection of their org.
+ORG_ADMIN_ROLE = "org:admin"
+
+
+def org_collection_permission(creator_id: int | None, user_id: int, role: str | None) -> str | None:
+    """A member's permission on one of their organization's collections (v422).
+
+    Organization collections are shared by the organization: every member is an
+    editor (view, add/remove the org's files, edit the details); the creator and
+    org admins are owners (delete, manage explicit shares). ``role`` is the
+    caller's membership role in the collection's org, ``None`` = not a member.
+    """
+    if role is None:
+        return None
+    if role == ORG_ADMIN_ROLE or (creator_id is not None and creator_id == user_id):
+        return "owner"
+    return "editor"
+
+
 class PermissionService:
     """Centralized permission checking for collections and files."""
+
+    @staticmethod
+    def collection_tenant_pred(user_id: int, organization_id: int | None):
+        """The collections that are the caller's own in one tenant (issue #1051).
+
+        In an organization that is every collection of the organization — they
+        are shared by the org; in the personal workspace it is the caller's own
+        personal collections. Explicitly shared collections are not included.
+        """
+        if organization_id is not None:
+            return Collection.organization_id == organization_id
+        return and_(Collection.user_id == user_id, Collection.organization_id.is_(None))
 
     @staticmethod
     def get_collection_permission(
@@ -48,7 +81,9 @@ class PermissionService:
         """Get highest permission level for user on a collection.
 
         Checks in order:
-        1. Direct ownership (collection.user_id == user_id) -> 'owner'
+        1. Organization collection: membership of its org -> 'owner' for the
+           creator or an org admin, 'editor' for every other member (v422).
+           Personal collection: direct ownership -> 'owner'.
         2. Direct share (CollectionShare.target_user_id == user_id)
         3. Group share (CollectionShare.target_group_id in user's groups)
 
@@ -68,8 +103,21 @@ class PermissionService:
             and collection.organization_id != organization_id
         ):
             return None
-        if collection.user_id == user_id:
-            return "owner"
+        base_perm: str | None = None
+        if collection.organization_id is not None:
+            role = (
+                db.query(OrganizationMembership.role)
+                .filter(
+                    OrganizationMembership.organization_id == collection.organization_id,
+                    OrganizationMembership.user_id == user_id,
+                )
+                .scalar()
+            )
+            base_perm = org_collection_permission(collection.user_id, user_id, role)
+        elif collection.user_id == user_id:
+            base_perm = "owner"
+        if base_perm == "owner":
+            return base_perm
 
         # Check direct user share and group shares in one query
         user_group_ids = (
@@ -98,8 +146,9 @@ class PermissionService:
             .scalar()
         )
 
-        if max_perm and max_perm > 0:
-            return PERMISSION_NAMES[max_perm]
+        best = max(max_perm or 0, PERMISSION_LEVELS.get(base_perm or "", 0))
+        if best > 0:
+            return PERMISSION_NAMES[best]
         return None
 
     @staticmethod
@@ -297,14 +346,34 @@ class PermissionService:
     def get_accessible_collection_ids(db: Session, user_id: int) -> list[tuple[int, str]]:
         """Get all collections the user can access with their permission level.
 
-        Returns list of (collection_id, permission) tuples.
+        Returns list of (collection_id, permission) tuples: the caller's personal
+        collections, every collection of each organization they belong to (v422,
+        see :func:`org_collection_permission`), and explicit shares. Not
+        tenant-gated — callers apply their own tenant predicate.
         """
-        # Owned collections
+        # Owned personal collections
         owned: list[Any] = (
             db.query(Collection.id, literal_column("'owner'").label("permission"))
-            .filter(Collection.user_id == user_id)
+            .filter(Collection.user_id == user_id, Collection.organization_id.is_(None))
             .all()
         )
+
+        # Collections of the caller's organizations
+        org_rows = (
+            db.query(Collection.id, Collection.user_id, OrganizationMembership.role)
+            .join(
+                OrganizationMembership,
+                and_(
+                    OrganizationMembership.organization_id == Collection.organization_id,
+                    OrganizationMembership.user_id == user_id,
+                ),
+            )
+            .all()
+        )
+        owned += [
+            (cid, org_collection_permission(creator_id, user_id, role))
+            for cid, creator_id, role in org_rows
+        ]
 
         # Shared collections
         user_group_ids = (

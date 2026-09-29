@@ -636,8 +636,11 @@ class TestAuditOrgAttribution:
 # --------------------------------------------------------------------------- #
 class TestEraseUser:
     def test_erase_user_removes_rows(self, two_orgs, fake_opensearch):
-        """erase_user removes the user's files, speaker, profile, collection,
-        membership, and the user row itself.
+        """erase_user removes the user's files, speaker, profile, personal
+        collection, membership, and the user row itself.
+
+        The org collection they created is the organization's (issue #1051): it
+        stays, de-attributed.
 
         Only object storage is patched. The OpenSearch work is real code against
         a fake cluster, so ``voiceprints_deleted`` is a count this code computed
@@ -645,6 +648,12 @@ class TestEraseUser:
         """
         db = two_orgs.db
         member_id = two_orgs.member_a.id
+        personal_coll = Collection(
+            uuid=uuid_pkg.uuid4(), user_id=member_id, name=f"mine_{uuid_pkg.uuid4().hex[:6]}"
+        )
+        db.add(personal_coll)
+        db.commit()
+        personal_coll_id, org_coll_id = personal_coll.id, two_orgs.coll_a.id
         expected_voiceprints = len(_speaker_indices())  # one delete_by_query each
 
         with (
@@ -685,6 +694,10 @@ class TestEraseUser:
             .count()
             == 0
         )
+        db.expire_all()
+        assert db.query(Collection).filter(Collection.id == personal_coll_id).first() is None
+        kept = db.query(Collection).filter(Collection.id == org_coll_id).one()
+        assert (kept.user_id, kept.organization_id) == (None, two_orgs.org_a.id)
 
     def test_erase_user_idempotent(self, two_orgs):
         """Erasing a non-existent user id is a no-op with zeroed counters."""
@@ -773,9 +786,12 @@ class TestOrgScopedErasure:
         assert db.query(MediaFile).filter(MediaFile.id == personal_file.id).first() is not None
         assert db.query(MediaFile).filter(MediaFile.id == other_org_file.id).first() is not None
         assert db.query(MediaFile).filter(MediaFile.id == w.file_a.id).first() is None
-        # Org-scoped profile/collection gone; the ACCOUNT survives.
+        # Org-scoped profile gone; the org's collection they created stays with the
+        # org, de-attributed (issue #1051); the ACCOUNT survives.
         assert db.query(SpeakerProfile).filter(SpeakerProfile.id == w.profile_a.id).first() is None
-        assert db.query(Collection).filter(Collection.id == w.coll_a.id).first() is None
+        db.expire_all()
+        kept = db.query(Collection).filter(Collection.id == w.coll_a.id).one()
+        assert (kept.user_id, kept.organization_id) == (None, w.org_a.id)
         assert db.query(User).filter(User.id == w.member_a.id).first() is not None
 
     def test_erase_org_member_data_removes_the_members_org_stamped_side_tables(self, two_orgs):

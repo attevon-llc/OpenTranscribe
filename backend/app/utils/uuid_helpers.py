@@ -379,11 +379,13 @@ def get_collection_by_uuid_with_permission(
             detail="You do not have permission to access this collection",
         )
 
-    # Direct ownership (fast path)
-    if collection.user_id == user_id:
+    # Direct ownership of a personal collection (fast path). An organization
+    # collection is reached through membership of its org (v422), which the
+    # PermissionService call resolves — its creator included.
+    if collection.organization_id is None and collection.user_id == user_id:
         return collection
 
-    # Check shared access via PermissionService
+    # Check org membership and shared access via PermissionService
     permission = PermissionService.get_collection_permission(db, collection.id, user_id)
     if permission is not None:
         return collection

@@ -25,6 +25,7 @@ from app.models.media import MediaFile
 from app.models.media import Tag
 from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
+from app.services.permission_service import PermissionService
 from app.services.tag_service import names_are_similar
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
@@ -45,7 +46,10 @@ class AutoLabelService:
         # by (user id, organization id). A single flat list would match one
         # tenant's suggestion against another tenant's vocabulary.
         self._tag_cache: dict[tuple[int, int | None], list[Tag]] = {}
-        self._collection_cache: dict[int, list[Collection]] = {}
+        # Collections belong to a tenant since v422: keyed the same way, so an
+        # org recording can never fuzzy-match (and join) a personal collection or
+        # another org's.
+        self._collection_cache: dict[tuple[int, int | None], list[Collection]] = {}
 
     # =========================================================================
     # Name Normalization & Fuzzy Matching
@@ -83,17 +87,29 @@ class AutoLabelService:
         """Invalidate a tenant's tag cache after creating a new tag."""
         self._tag_cache.pop((user_id, organization_id), None)
 
-    def _get_user_collections_cached(self, user_id: int) -> list[Collection]:
-        """Return user collections, using instance-level cache."""
-        if user_id not in self._collection_cache:
-            self._collection_cache[user_id] = (
-                self.db.query(Collection).filter(Collection.user_id == user_id).all()
-            )
-        return self._collection_cache[user_id]
+    def _get_user_collections_cached(
+        self, user_id: int, organization_id: int | None = None
+    ) -> list[Collection]:
+        """Return the tenant's collections, using instance-level cache.
 
-    def _invalidate_collection_cache(self, user_id: int) -> None:
-        """Invalidate the collection cache for a user after creating a new collection."""
-        self._collection_cache.pop(user_id, None)
+        ``organization_id`` set: every collection of that org (shared by its
+        members). ``None``: ``user_id``'s personal collections.
+        """
+        key = (user_id, organization_id)
+        if key not in self._collection_cache:
+            self._collection_cache[key] = (
+                self.db.query(Collection)
+                .filter(PermissionService.collection_tenant_pred(user_id, organization_id))
+                .order_by(Collection.id)
+                .all()
+            )
+        return self._collection_cache[key]
+
+    def _invalidate_collection_cache(
+        self, user_id: int, organization_id: int | None = None
+    ) -> None:
+        """Invalidate a tenant's collection cache after creating a new collection."""
+        self._collection_cache.pop((user_id, organization_id), None)
 
     def find_existing_similar_tag(
         self, suggested_name: str, user_id: int, organization_id: int | None = None
@@ -138,10 +154,15 @@ class AutoLabelService:
         )
 
     def find_existing_similar_collection(
-        self, user_id: int, suggested_name: str
+        self, user_id: int, suggested_name: str, organization_id: int | None = None
     ) -> Collection | None:
-        """Find an existing collection matching the suggested name, scoped to user."""
-        user_collections = self._get_user_collections_cached(user_id)
+        """Find an existing collection of the tenant matching the suggested name.
+
+        Scoped to one tenant (``organization_id``; ``None`` = ``user_id``'s
+        personal collections): matching across tenants put one tenant's
+        recording into another tenant's collection (issue #1051).
+        """
+        user_collections = self._get_user_collections_cached(user_id, organization_id)
         for coll in user_collections:
             if self.are_names_similar(suggested_name, coll.name):
                 return coll
@@ -226,7 +247,13 @@ class AutoLabelService:
                     continue
 
                 try:
-                    collection, _created = self._get_or_create_collection_with_dedup(name, user_id)
+                    # Like tags: the collection is the FILE's tenant's, credited to
+                    # the file owner (issue #1051).
+                    collection, _created = self._get_or_create_collection_with_dedup(
+                        name,
+                        int(media_file.user_id),
+                        organization_id=media_file.organization_id,
+                    )
                     self._add_file_to_collection(media_file, collection, confidence)
                     result["auto_applied_collections"].append(name)
                 except Exception as e:
@@ -295,9 +322,17 @@ class AutoLabelService:
         return tag
 
     def _get_or_create_collection_with_dedup(
-        self, name: str, user_id: int, source: str = TAG_SOURCE_AUTO_AI
+        self,
+        name: str,
+        user_id: int,
+        source: str = TAG_SOURCE_AUTO_AI,
+        *,
+        organization_id: int | None,
     ) -> tuple[Collection, bool]:
-        """Get or create a collection, using fuzzy matching to prevent duplicates.
+        """Get or create a collection in ``organization_id``'s tenant, fuzzy-matching.
+
+        ``organization_id`` is the file's tenant (``None`` = personal, owned by
+        ``user_id``); in an org, ``user_id`` is recorded as the creator only.
 
         Returns:
             ``(collection, created)`` — ``created`` is True only when this call
@@ -307,23 +342,28 @@ class AutoLabelService:
             EXISTING collection, and inferring from that miscounted a collision
             as a create (issue #589).
         """
-        existing = self.find_existing_similar_collection(user_id, name)
+        existing = self.find_existing_similar_collection(user_id, name, organization_id)
         if existing:
             return existing, False
 
         try:
             nested = self.db.begin_nested()
-            collection = Collection(name=name, user_id=user_id, source=source)
+            collection = Collection(
+                name=name, user_id=user_id, organization_id=organization_id, source=source
+            )
             self.db.add(collection)
             self.db.flush()
-            self._invalidate_collection_cache(user_id)
+            self._invalidate_collection_cache(user_id, organization_id)
             return collection, True
         except IntegrityError:
             nested.rollback()
-            self._invalidate_collection_cache(user_id)
+            self._invalidate_collection_cache(user_id, organization_id)
             existing_collection: Collection | None = (
                 self.db.query(Collection)
-                .filter(Collection.user_id == user_id, Collection.name == name)
+                .filter(
+                    PermissionService.collection_tenant_pred(user_id, organization_id),
+                    Collection.name == name,
+                )
                 .first()
             )
             if existing_collection:
@@ -425,8 +465,10 @@ class AutoLabelService:
         )
         suggestion_by_file = {s.media_file_id: s for s in suggestions_batch}
 
-        # Collect tag->files mapping
-        tag_files: dict[str, list[MediaFile]] = {}
+        # Collect (tenant, tag)->files mapping. Grouped per tenant (issue #1051):
+        # a batch's files normally share one, but a collection must never hold
+        # files of two tenants, so the grouping cannot assume it.
+        tag_files: dict[tuple[int | None, str], list[MediaFile]] = {}
         for mf in batch_files:
             suggestion = suggestion_by_file.get(mf.id)
             if not suggestion or not suggestion.suggested_tags:
@@ -435,16 +477,17 @@ class AutoLabelService:
                 normalized = self.normalize_name(tag_data.get("name", ""))
                 if not normalized:
                     continue
-                if normalized not in tag_files:
-                    tag_files[normalized] = []
-                if mf not in tag_files[normalized]:
-                    tag_files[normalized].append(mf)
+                key = (mf.organization_id, normalized)
+                if key not in tag_files:
+                    tag_files[key] = []
+                if mf not in tag_files[key]:
+                    tag_files[key].append(mf)
 
         # Create collections for shared topics (2+ files)
         collections_created = 0
         files_grouped = set()
 
-        for tag_name, files in tag_files.items():
+        for (organization_id, tag_name), files in tag_files.items():
             if len(files) < 2:
                 continue
 
@@ -457,7 +500,10 @@ class AutoLabelService:
             # (issue #589: a collision that hands back an EXISTING collection
             # also invalidates the cache, so that inference miscounted it).
             collection, created = self._get_or_create_collection_with_dedup(
-                collection_name, user_id, source=TAG_SOURCE_BULK_GROUP
+                collection_name,
+                user_id,
+                source=TAG_SOURCE_BULK_GROUP,
+                organization_id=organization_id,
             )
 
             for mf in files:

@@ -60,6 +60,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Speaker gender detection could OOM-kill the CPU worker on long meetings (#1066).** Each
+  detection gave wav2vec2 a speaker's longest merged speaking turns whole, and in a meeting
+  those run to minutes. One process peaked at 1.7 GB on a 60 s clip and 5.5 GB on 300 s, and
+  one 40-minute AMI meeting took 4.1 GB. Clips are now capped at
+  `SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS` (default 20 s, from the middle of the turn), both when
+  fetched and when inferred. At most `SPEAKER_ATTRIBUTE_MAX_CONCURRENCY` (default 2)
+  detections run at once per worker host; the rest re-queue themselves. A CPU worker unloads
+  the model after each detection. The same meeting now peaks at 1.6 GB and finishes in 97 s
+  instead of 258 s, with the same predicted genders.
 - **Chat showed a raw i18n key and the raw provider exception when the LLM provider failed
   (#1049).** Observed with AWS Bedrock during a transient `ServiceUnavailableException`: the
   banner read `chat.errors.provider_error` and the message read "Bedrock error: An error

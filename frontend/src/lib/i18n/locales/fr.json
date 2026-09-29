@@ -485,6 +485,7 @@
   "fileDetail.failedToGenerateSummary": "Échec de la génération du résumé. Veuillez réessayer.",
   "fileDetail.failedToGenerateSummaryGeneric": "Échec de la génération du résumé",
   "fileDetail.failedToLoadFile": "Échec du chargement du fichier",
+  "fileDetail.notFoundOrNoAccess": "Ce fichier n'existe pas ou vous n'y avez pas accès.",
   "fileDetail.failedToLoadMoreSegments": "Échec du chargement de segments supplémentaires",
   "fileDetail.failedToLoadSummary": "Échec du chargement du résumé",
   "fileDetail.failedToSaveSegment": "Échec de l'enregistrement du segment",

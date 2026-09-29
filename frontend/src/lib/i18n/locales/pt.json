@@ -1639,6 +1639,7 @@
   "fileDetail.noFileIdProvided": "Nenhum ID de arquivo fornecido",
   "fileDetail.invalidResponseFormat": "Formato de resposta inválido",
   "fileDetail.failedToLoadFile": "Falha ao carregar detalhes do arquivo. Por favor, tente novamente.",
+  "fileDetail.notFoundOrNoAccess": "Este arquivo não existe ou você não tem acesso a ele.",
   "fileDetail.failedToLoadMoreSegments": "Falha ao carregar mais segmentos",
   "fileDetail.invalidFileId": "ID de arquivo inválido",
   "fileDetail.loadingFile": "Carregando Arquivo...",

@@ -1640,6 +1640,7 @@
   "fileDetail.noFileIdProvided": "Nessun ID file fornito",
   "fileDetail.invalidResponseFormat": "Formato di risposta non valido",
   "fileDetail.failedToLoadFile": "Impossibile caricare i dettagli del file. Riprova.",
+  "fileDetail.notFoundOrNoAccess": "Questo file non esiste o non hai accesso ad esso.",
   "fileDetail.failedToLoadMoreSegments": "Impossibile caricare altri segmenti",
   "fileDetail.invalidFileId": "ID file non valido",
   "fileDetail.loadingFile": "Caricamento del file in corso...",

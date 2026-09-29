@@ -66,6 +66,16 @@ _NOT_GIVEN = _NotGiven()
 WITHHELD_SNIPPET = "[redacted — masking unavailable]"
 
 
+@dataclass(frozen=True)
+class _BackfillHighlights:
+    """What highlighting the backfilled groups on a hybrid page needs (#1079)."""
+
+    response: dict[str, Any]
+    body: dict[str, Any]
+    highlight: dict[str, Any]
+    file_uuids: frozenset[str]
+
+
 def _withhold_snippets(occurrences: list) -> None:
     """Replace every snippet with the withheld placeholder."""
     for occ in occurrences:
@@ -1980,8 +1990,12 @@ class HybridSearchService:
         pagination is handled client-side via over-fetch. For non-relevance sorts
         with a search pipeline (hybrid/RRF), over-fetch is used because the RRF
         normalization pipeline does not support mixing _score with other sort
-        criteria. For BM25-only non-relevance sorts, native sort and pagination
-        are applied server-side.
+        criteria. For BM25-only non-relevance sorts, OpenSearch sorts natively so
+        the over-fetch window holds the first files IN THAT ORDER, and the page
+        is still cut client-side like every other path. It used to be cut
+        server-side too (``from``/``size=page_size``), and the caller then paged
+        that one-page response a second time, so page 2+ was always empty and
+        ``total_pages`` was always 1 (issue #1078).
 
         Args:
             body: Search body dict (modified in place).
@@ -1995,12 +2009,14 @@ class HybridSearchService:
         Returns:
             The outer_size to use for the query.
         """
+        # Dynamic over-fetch: scale with page depth for full coverage.
+        # Page 1/20 → 200, page 5/20 → 500, capped at SEARCH_MAX_OVERFETCH.
+        min_fetch = page * page_size
+        over_fetch = min(
+            max(page_size * 10, min_fetch + page_size * 5), settings.SEARCH_MAX_OVERFETCH
+        )
         if sort_by == "relevance" or use_search_pipeline:
-            # Dynamic over-fetch: scale with page depth for full coverage.
-            # Page 1/20 → 200, page 5/20 → 500, capped at SEARCH_MAX_OVERFETCH.
-            min_fetch = page * page_size
-            over_fetch = max(page_size * 10, min_fetch + page_size * 5)
-            return min(over_fetch, settings.SEARCH_MAX_OVERFETCH)
+            return over_fetch
 
         # BM25-only: server-side sort with _score as tiebreaker is safe
         sort_map = {
@@ -2015,8 +2031,7 @@ class HybridSearchService:
             {sort_field: {"order": sort_order}},
             {"_score": {"order": "desc"}},
         ]
-        body["from"] = (page - 1) * page_size
-        return page_size
+        return over_fetch
 
     def _build_collapsed_search_body(
         self,
@@ -2150,8 +2165,16 @@ class HybridSearchService:
                     # ArrayIndexOutOfBoundsException in score-ranker-processor.
                     # total_files is computed from collapsed results instead.
                 }
+                # The fused window is sized as for page 1 on EVERY page (#1079).
+                # Its groups are the head of the result list and the BM25
+                # backfill (`_backfill_starved_groups`) is the tail; a window that
+                # grew with the page number would pull tail files into the head
+                # on deep pages and shift every boundary — measured: 5 files
+                # shown twice across 9 pages. Keyword matches past the window
+                # stay reachable through the backfill, whose BM25 order is stable
+                # as ITS window grows.
                 body["size"] = self._apply_sort_clause(
-                    body, sort_by, sort_order, page, page_size, use_search_pipeline=True
+                    body, sort_by, sort_order, 1, page_size, use_search_pipeline=True
                 )
                 return body, True
 
@@ -2699,7 +2722,7 @@ class HybridSearchService:
         sort_by: str,
         sort_order: str,
         query: str,
-    ) -> list["SearchHit"]:
+    ) -> tuple[list["SearchHit"], "_BackfillHighlights | None"]:
         """Backfill file groups starved out of the hybrid RRF rank window.
 
         Runs the plain BM25 collapse query (immune to window starvation) and
@@ -2707,6 +2730,11 @@ class HybridSearchService:
         relevance scores rescaled strictly below the lowest hybrid score —
         BM25 raw scores live on a different scale than RRF scores and must
         never outrank the hybrid-ranked results.
+
+        The BM25 query runs split (``_execute_split_bm25_collapse``, #1064), so
+        backfilled groups arrive WITHOUT highlights. The second return value is
+        what ``_hydrate_page_highlights`` needs to highlight the ones that land
+        on the displayed page (None when nothing was backfilled).
 
         Best-effort: any failure returns the hybrid groups unchanged.
         """
@@ -2720,19 +2748,18 @@ class HybridSearchService:
                 sort_by=sort_by,
                 sort_order=sort_order,
             )
-            bm25_response = client.search(
-                index=settings.OPENSEARCH_CHUNKS_INDEX,
-                body=bm25_body,
-            )
+            bm25_response, highlight = self._execute_split_bm25_collapse(client, bm25_body)
         except Exception as e:
             logger.warning(f"BM25 group backfill failed for query='{query}': {e}")
-            return grouped
+            return grouped, None
 
-        bm25_grouped, _ = self._process_collapsed_results(bm25_response, query, is_fused_rrf=False)
+        bm25_grouped, _ = self._process_collapsed_results(
+            bm25_response, query, is_fused_rrf=False, assume_keyword_match=True
+        )
         seen = {hit.file_uuid for hit in grouped}
         new_hits = [hit for hit in bm25_grouped if hit.file_uuid not in seen]
         if not new_hits:
-            return grouped
+            return grouped, None
 
         # Rescale below the hybrid floor, preserving BM25 relative order
         floor = min((hit.relevance_score for hit in grouped), default=0.0)
@@ -2743,7 +2770,12 @@ class HybridSearchService:
             f"Backfilled {len(new_hits)} file groups starved from the hybrid "
             f"window for query='{query}' (hybrid returned {len(grouped)})"
         )
-        return grouped + new_hits
+        return grouped + new_hits, _BackfillHighlights(
+            response=bm25_response,
+            body=bm25_body,
+            highlight=highlight,
+            file_uuids=frozenset(hit.file_uuid for hit in new_hits),
+        )
 
     def _process_collapsed_results(
         self,
@@ -3536,12 +3568,18 @@ class HybridSearchService:
         # file's chunks (e.g. a speaker name hitting every chunk's speaker^3
         # metadata on a labeled file) fills the window with that single file
         # and starves every other group — "Joe Rogan" returned 1 file from a
-        # 2,500-file library. When the hybrid pass returns fewer groups than a
-        # page, backfill missing groups from the BM25 collapse query (which
-        # discovers groups normally); hybrid-ranked hits keep their positions,
-        # backfilled keyword groups rank strictly below them.
-        if use_neural and not fell_back_to_bm25 and search_query and len(grouped) < page_size:
-            grouped = self._backfill_starved_groups(
+        # 2,500-file library. Backfill missing groups from the BM25 collapse
+        # query (which discovers groups normally); hybrid-ranked hits keep their
+        # positions, backfilled keyword groups rank strictly below them.
+        #
+        # ALWAYS, not only when the hybrid pass returned less than a page (the
+        # old condition, issue #1079): the window is ~200 CHUNKS, so a corpus
+        # whose files each match in several chunks yields ~40 groups — more than
+        # a page, so no backfill ran, and every other keyword-matching file was
+        # unreachable on any page (43 of 165 measured).
+        backfill: _BackfillHighlights | None = None
+        if use_neural and not fell_back_to_bm25 and search_query:
+            grouped, backfill = self._backfill_starved_groups(
                 client=client,
                 grouped=grouped,
                 search_query=search_query,
@@ -3580,6 +3618,15 @@ class HybridSearchService:
         if split_bm25:
             self._hydrate_page_highlights(
                 client, result.results, response, search_body, page_highlight, query
+            )
+        if backfill is not None:
+            self._hydrate_page_highlights(
+                client,
+                [h for h in result.results if h.file_uuid in backfill.file_uuids],
+                backfill.response,
+                backfill.body,
+                backfill.highlight,
+                query,
             )
 
         # Deferred semantic highlighting for current page

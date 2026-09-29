@@ -7,6 +7,7 @@ from opensearchpy.exceptions import NotFoundError
 
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v3
+from app.core.constants import get_speaker_index_v3_backup
 from app.core.constants import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
@@ -15,6 +16,26 @@ from app.services.opensearch_service.client import _is_alias
 from app.services.opensearch_service.client import _safe_index_exists
 
 logger = logging.getLogger(__name__)
+
+
+def speaker_embedding_indices() -> list[str]:
+    """Every index a speaker/profile embedding can live in, deduplicated, in stable order.
+
+    The alias, v3, v4, and the legacy ``speakers_v3_backup``. The backup is not
+    optional: ``indices._restore_v3_from_backup`` re-imports it into v3 whenever v3 is
+    found empty, so a voiceprint left there comes back. Deleting from or counting in an
+    absent index is a no-op for every caller, so listing it on a fresh install is safe.
+    """
+    return list(
+        dict.fromkeys(
+            (
+                get_speaker_index(),
+                get_speaker_index_v3(),
+                get_speaker_index_v4(),
+                get_speaker_index_v3_backup(),
+            )
+        )
+    )
 
 
 def merge_speaker_embeddings(
@@ -84,11 +105,9 @@ def remove_speaker_embedding(speaker_uuid: str) -> bool:
 
     success = False
 
-    # Delete from all speaker indices (v3, v4, and alias target). Each index is
-    # independent: a speaker normally lives in only one of them, so "absent" is
-    # the common case and must not stop the loop.
-    indices_to_clean = {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}
-    for idx in indices_to_clean:
+    # Each index is independent: a speaker normally lives in only one of them, so
+    # "absent" is the common case and must not stop the loop.
+    for idx in speaker_embedding_indices():
         try:
             if _safe_index_exists(idx) or _is_alias(idx):
                 _client.opensearch_client.delete(index=idx, id=str(speaker_uuid))

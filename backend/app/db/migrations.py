@@ -518,6 +518,13 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_tag_org_name')"
     )
 
+    # v421: media_file.playback_path, the browser-playable rendition of an original no
+    # browser decodes. Single ADD COLUMN, so the column is the fingerprint.
+    has_media_playback_path = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'playback_path')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -560,8 +567,20 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
-    # v420: same as v397 plus the per-tenant tag uniqueness. The newest revision on
-    # this chain, so this is the top of the ladder.
+    # v421: same as v420 plus media_file.playback_path. The newest revision on this
+    # chain, so this is the top of the ladder.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+    ):
+        return "v421_add_media_playback_path"
+    # v420: same as v397 plus the per-tenant tag uniqueness.
     if (
         matches_v389
         and has_file_facts

@@ -132,6 +132,7 @@ celery_app = Celery(
         "app.tasks.transcription.cancellation",
         "app.tasks.waveform",
         "app.tasks.waveform_generation",
+        "app.tasks.playback_rendition",
         "app.tasks.summarization",
         "app.tasks.analytics",
         "app.tasks.cleanup",
@@ -309,6 +310,7 @@ celery_app.conf.update(
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
         "media.generate_waveform": {"queue": CeleryQueues.CPU},
         "media.generate_waveform_data": {"queue": CeleryQueues.CPU},
+        "media.create_playback_rendition": {"queue": CeleryQueues.CPU},
         "analytics.analyze_transcript": {"queue": CeleryQueues.CPU},
         "detect_speaker_attributes": {"queue": CeleryQueues.CPU},
         "migrate_speaker_attributes": {"queue": CeleryQueues.CPU},

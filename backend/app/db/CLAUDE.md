@@ -69,7 +69,9 @@ with the doc-ingestion range above — see that revision's own docstring),
 `v420_add_tag_organization_id` (tenant-owned tags, issue #1050: `tag.organization_id`,
 per-tenant partial unique indexes, and a move/split/merge backfill; numbered v420 to stay
 clear of every range another branch had used — its detection arm keys on
-`uq_tag_org_name`, created after the backfill, not on the column). **Derive
+`uq_tag_org_name`, created after the backfill, not on the column),
+`v421_add_media_playback_path` (nullable `media_file.playback_path` — the object key of
+a browser-playable AAC/M4A rendition for originals no browser decodes). **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.
 

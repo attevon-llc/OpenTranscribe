@@ -1,6 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
+  import {
+    AUDIO_ONLY_PREVIEW_FORMATS,
+    BROWSER_PLAYABLE_FORMATS,
+    CONVERTED_AUDIO_FORMATS,
+    MEDIA_TYPE_BY_EXTENSION,
+    fileExtension
+  } from '$lib/utils/mediaFormats';
 
   export let file: File | null = null;
 
@@ -16,18 +23,6 @@
   let dropZoneEl: HTMLDivElement | null = null;
   let drag = false;
   let dragDropCleanup: (() => void) | null = null;
-
-  /** Fallback MIME types for files the browser reports with an empty `type`. */
-  const extensionMap: Record<string, string> = {
-    'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg', 'flac': 'audio/flac',
-    'aac': 'audio/aac', 'm4a': 'audio/mp4', 'aif': 'audio/x-aiff', 'aiff': 'audio/x-aiff',
-    'wma': 'audio/x-ms-wma', 'ra': 'audio/vnd.rn-realaudio', 'ram': 'audio/vnd.rn-realaudio',
-    'weba': 'audio/webm', '3ga': 'audio/3gpp', '3gp': 'audio/3gpp', '3g2': 'audio/3gpp2',
-    'mp4': 'video/mp4', 'webm': 'video/webm', 'ogv': 'video/ogg', 'mov': 'video/quicktime',
-    'avi': 'video/x-msvideo', 'wmv': 'video/x-ms-wmv', 'mkv': 'video/x-matroska',
-    'm4v': 'video/x-m4v', 'mpeg': 'video/mpeg', 'mpg': 'video/mpeg', 'flv': 'video/x-flv',
-    'asf': 'video/x-ms-asf'
-  };
 
   function formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 Bytes';
@@ -50,8 +45,8 @@
     let processedFile: File = selectedFile;
 
     if (!selectedFile.type) {
-      const extension = selectedFile.name.split('.').pop()?.toLowerCase() || '';
-      const mimeType = extensionMap[extension];
+      const extension = fileExtension(selectedFile.name);
+      const mimeType = MEDIA_TYPE_BY_EXTENSION[extension];
       if (extension && mimeType) {
         processedFile = new File([selectedFile], selectedFile.name, {
           type: mimeType,
@@ -177,7 +172,20 @@
     </div>
 
     <div class="supported-formats">
-      <p>{$t('uploader.supportedFormats')}</p>
+      <p class="formats-heading">{$t('uploader.formatsHeading')}</p>
+      <p data-testid="formats-playable">
+        <span class="formats-label">{$t('uploader.formatsPlayable')}</span>
+        {BROWSER_PLAYABLE_FORMATS.join(', ')}
+      </p>
+      <p data-testid="formats-converted">
+        <span class="formats-label">{$t('uploader.formatsConverted')}</span>
+        {CONVERTED_AUDIO_FORMATS.join(', ')}
+      </p>
+      <p data-testid="formats-audio-only">
+        <span class="formats-label">{$t('uploader.formatsAudioOnly')}</span>
+        {AUDIO_ONLY_PREVIEW_FORMATS.join(', ')}
+      </p>
+      <p class="formats-help">{$t('uploader.formatsHelp')}</p>
     </div>
   {:else}
     <div class="selected-file">
@@ -271,7 +279,23 @@
   .supported-formats p {
     margin: 0;
     font-size: 0.8125rem;
+    line-height: 1.5;
     color: var(--text-secondary);
+  }
+
+  .supported-formats .formats-heading {
+    font-weight: 600;
+    margin-bottom: 0.125rem;
+  }
+
+  .supported-formats .formats-label {
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .supported-formats .formats-help {
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
   }
 
   .selected-file {

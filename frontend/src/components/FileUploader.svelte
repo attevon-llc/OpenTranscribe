@@ -27,6 +27,7 @@
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { getMaxUploadBytes, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
+  import { MEDIA_TYPE_BY_EXTENSION, fileExtension } from '$lib/utils/mediaFormats';
   import { listTags } from '$lib/api/tags';
 
   // Step components
@@ -482,9 +483,7 @@
       }
       const isValidType = f.type && (f.type.startsWith('audio/') || f.type.startsWith('video/'));
       if (!isValidType) {
-        const ext = f.name.split('.').pop()?.toLowerCase() || '';
-        const validExts = ['mp3','wav','ogg','flac','aac','m4a','wma','opus','mp4','avi','mov','wmv','flv','webm','mkv','3gp','f4v'];
-        if (!validExts.includes(ext)) {
+        if (!(fileExtension(f.name) in MEDIA_TYPE_BY_EXTENSION)) {
           invalidFiles.push(`${f.name} (${$t('uploader.unsupportedFormat')})`);
           return;
         }

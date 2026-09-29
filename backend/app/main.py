@@ -316,6 +316,8 @@ def _backfill_quarantine_tags() -> None:
                 tagged += 1
             if row.thumbnail_path:
                 set_object_quarantine_tag(str(row.thumbnail_path), True)
+            if row.playback_path:
+                set_object_quarantine_tag(str(row.playback_path), True)
         logger.info(
             f"Quarantine-tag backfill: tagged {tagged}/{len(rows)} already-quarantined file(s)"
         )

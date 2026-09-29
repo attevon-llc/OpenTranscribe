@@ -48,7 +48,7 @@
   import { transcriptStore, processedTranscriptSegments, type SpeakerInfo } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
-  import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
+  import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache, type PlaybackMode } from '$lib/api/mediaUrl';
   import Spinner from '../../../components/ui/Spinner.svelte';
   import FileDetailSkeleton from '../../../components/FileDetailSkeleton.svelte';
 
@@ -62,6 +62,8 @@
   let file: any = null;
   let fileId = '';
   let videoUrl = '';
+  let streamContentType = '';
+  let playbackMode: PlaybackMode | null = null;
   let pageErrorMessage = '';
   let videoErrorMessage = '';
   let apiBaseUrl = '';
@@ -791,12 +793,19 @@
       clearMediaUrlCache(fileId);
 
       // Get presigned URL from backend (authenticated, time-limited)
-      videoUrl = await getMediaStreamUrl(fileId, 'video');
+      const url = await getMediaStreamUrl(fileId, 'video');
+
+      // What the URL serves can differ from the upload: a converted copy of audio no
+      // browser decodes, or only the audio track of a video no browser shows. Set before
+      // videoUrl so the player picks <audio> vs <video> from the right type.
+      const info = getCachedUrlInfo(fileId, 'video');
+      streamContentType = info?.contentType ?? '';
+      playbackMode = info?.playback ?? null;
+      videoUrl = url;
 
       // Set up automatic URL refresh for long videos, using the URL's real expiry
       // (MEDIA_URL_EXPIRE_SECONDS) rather than a hardcoded interval — avoids needlessly
       // re-fetching and re-setting the video src mid-playback.
-      const info = getCachedUrlInfo(fileId, 'video');
       const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
       urlRefresher = createUrlRefresher(
         fileId,
@@ -2227,6 +2236,8 @@
         <VideoPlayer
           bind:this={videoPlayerComponent}
           {videoUrl}
+          {streamContentType}
+          {playbackMode}
           {file}
           {isPlayerBuffering}
           {loadProgress}

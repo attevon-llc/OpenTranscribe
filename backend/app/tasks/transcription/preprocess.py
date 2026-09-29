@@ -165,7 +165,7 @@ def preprocess_for_transcription(
             temp_audio_path = os.path.join(temp_dir, "audio.wav")
 
             if is_video:
-                _preprocess_video(
+                media_source = _preprocess_video(
                     storage_path,
                     file_ext,
                     temp_dir,
@@ -176,7 +176,7 @@ def preprocess_for_transcription(
                     task_id,
                 )
             else:
-                _preprocess_audio(
+                media_source = _preprocess_audio(
                     storage_path,
                     file_ext,
                     temp_dir,
@@ -186,6 +186,8 @@ def preprocess_for_transcription(
                     content_type,
                     task_id,
                 )
+
+            _dispatch_playback_rendition_if_needed(file_id, file_uuid, media_source)
 
             # Upload preprocessed audio to MinIO temp for GPU worker
             send_progress_notification(user_id, file_id, 0.18, "Staging audio for transcription")
@@ -272,8 +274,11 @@ def _preprocess_video(
     user_id: int,
     content_type: str,
     task_id: str,
-) -> None:
+) -> str:
     """Extract audio + metadata from a video in parallel, with presigned-URL fallback.
+
+    Returns the source that was read (the presigned URL, or the downloaded copy), so the
+    caller can probe it for browser playability without fetching it again.
 
     Phase 2 PR #9 (item D11): FFmpeg audio extraction and ffprobe metadata
     reads are independent subprocess calls against the same source (presigned
@@ -335,7 +340,7 @@ def _preprocess_video(
                 # Wait for metadata so its wall-clock joins the preprocess
                 # window rather than racing into the next stage's markers.
                 metadata_future.result()
-            return
+            return presigned_url
         except Exception as url_err:
             logger.warning(
                 f"Parallel presigned-URL preprocess failed, falling back to download: {url_err}"
@@ -352,6 +357,7 @@ def _preprocess_video(
         metadata_future = pool.submit(_run_metadata_against, local_video_path, False)
         ffmpeg_future.result()
         metadata_future.result()
+    return temp_video_path
 
 
 def _preprocess_audio(
@@ -363,8 +369,8 @@ def _preprocess_audio(
     user_id: int,
     content_type: str,
     task_id: str,
-) -> None:
-    """Download audio file and convert to WAV."""
+) -> str:
+    """Download audio file and convert to WAV. Returns the downloaded original's path."""
     from app.services.minio_service import download_file_to_path
 
     send_progress_notification(user_id, file_id, 0.08, "Processing audio file")
@@ -390,6 +396,7 @@ def _preprocess_audio(
     # If prepare returned a different path (e.g., input was already .wav), copy it
     if result_path != temp_audio_path:
         shutil.copy2(result_path, temp_audio_path)
+    return temp_input_path
 
 
 def _extract_metadata_best_effort(
@@ -486,6 +493,35 @@ def _dispatch_waveform_if_missing(
         logger.info(f"Dispatched waveform task for file {file_id} from preprocess")
     except Exception as e:
         logger.warning(f"Waveform dispatch from preprocess failed (non-fatal): {e}")
+
+
+def _dispatch_playback_rendition_if_needed(file_id: int, file_uuid: str, source: str) -> None:
+    """Queue a browser-playable rendition when no browser can play the original.
+
+    One ffprobe of a source preprocessing already holds (tens of milliseconds). A
+    playable original stops here: no task, no encode, no stored copy. The encode itself
+    runs as ``media.create_playback_rendition`` on the CPU queue, beside the GPU stage,
+    because on a long file it takes longer than preprocessing does. Never raises: a file
+    without a rendition still transcribes, and its original stays what plays.
+    """
+    from app.services.playback_rendition import PlaybackNeed
+    from app.services.playback_rendition import classify_playback
+    from app.services.playback_rendition import probe_media
+
+    try:
+        with session_scope() as db:
+            media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            if media_file is None or media_file.playback_path:
+                return
+        need = classify_playback(probe_media(source))
+        if need is PlaybackNeed.NONE:
+            return
+        from app.tasks.playback_rendition import create_playback_rendition_task
+
+        create_playback_rendition_task.delay(file_uuid=file_uuid)
+        logger.info(f"Queued playback rendition ({need.value}) for file {file_id}")
+    except Exception as e:
+        logger.warning(f"Playback rendition dispatch failed for file {file_id} (non-fatal): {e}")
 
 
 def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> None:

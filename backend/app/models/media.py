@@ -138,6 +138,10 @@ class MediaFile(Base):
     thumbnail_path: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # Path to video thumbnail in storage
+    # A browser-playable AAC/M4A copy, for originals no browser decodes (AIFF, WMA, AVI,
+    # ...). NULL means the original plays as-is. Written by media.create_playback_rendition,
+    # served by /stream-url, deleted and quarantine-tagged together with the original.
+    playback_path: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Detailed metadata fields
     metadata_raw: Mapped[dict[str, Any] | None] = mapped_column(

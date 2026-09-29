@@ -8,9 +8,14 @@
   import { formatTimeWithMillis } from '$lib/utils/formatting';
   import { applyMediaSeek, waitForMediaMetadata, HAVE_METADATA } from '$lib/utils/mediaReady';
   import { playableSourceType } from '$lib/utils/mediaType';
+  import type { PlaybackMode } from '$lib/api/mediaUrl';
   import Spinner from './ui/Spinner.svelte';
 
   export let videoUrl: string = '';
+  // The type /stream-url reports for videoUrl. It differs from file.content_type when
+  // the URL serves a playback rendition (AAC/M4A) instead of the original.
+  export let streamContentType: string = '';
+  export let playbackMode: PlaybackMode | null = null;
   export let file: any = null;
   export let isPlayerBuffering: boolean = false;
   export let loadProgress: number = 0;
@@ -33,7 +38,9 @@
 
   // A stored alias such as audio/vnd.wave is rejected as a hint, and the browser then
   // never fetches the bytes (issue #1044). Without a hint it sniffs them instead.
-  $: sourceType = playableSourceType(file?.content_type);
+  $: servedType = streamContentType || file?.content_type;
+  $: sourceType = playableSourceType(servedType);
+  $: playsAsAudio = playbackMode === 'audio_only' || !!servedType?.startsWith('audio/');
 
 
   function handleRetry() {
@@ -202,7 +209,7 @@
       return;
     }
 
-    const isAudio = file?.content_type?.startsWith('audio/');
+    const isAudio = playsAsAudio;
     const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
     // Build controls array based on media type and platform - YouTube style layout
@@ -410,7 +417,10 @@
 
 <div class="video-player-container">
   {#if videoUrl}
-    {#if file?.content_type?.startsWith('audio/')}
+    {#if playbackMode === 'audio_only'}
+      <p class="audio-only-notice" role="status">{$t('videoPlayer.audioOnlyPreview')}</p>
+    {/if}
+    {#if playsAsAudio}
       <!-- Plyr Audio Player -->
       <!-- svelte-ignore a11y-media-has-caption -->
       <audio
@@ -1032,6 +1042,17 @@
   .error-message {
     color: var(--error-color);
     margin: 10px 0;
+    text-align: center;
+  }
+
+  .audio-only-notice {
+    margin: 0 0 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--background-color);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
     text-align: center;
   }
 

@@ -525,6 +525,12 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'media_file' AND column_name = 'playback_path')"
     )
 
+    # v422: tenant-owned collections (issue #1051). Keyed on uq_collection_org_name,
+    # created LAST (after the backfill), for the same reason as v420's marker.
+    has_collection_org_unique = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_collection_org_name')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -567,8 +573,21 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
-    # v421: same as v420 plus media_file.playback_path. The newest revision on this
-    # chain, so this is the top of the ladder.
+    # v422: same as v421 plus the per-tenant collection uniqueness. The newest
+    # revision on this chain, so this is the top of the ladder.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+    ):
+        return "v422_add_collection_tenancy"
+    # v421: same as v420 plus media_file.playback_path.
     if (
         matches_v389
         and has_file_facts

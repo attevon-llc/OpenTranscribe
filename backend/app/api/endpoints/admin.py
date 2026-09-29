@@ -413,7 +413,12 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         )
         logger.info(f"Deleted {len(sc_ids)} speaker collections for user {user_id}")
 
-    # Collections and their members
+    # Collections. ORGANIZATION collections belong to the tenant (v422) and hold
+    # colleagues' files: they survive, de-attributed (user_id -> NULL). The user's
+    # PERSONAL collections and their members go.
+    db.query(Collection).filter(
+        Collection.user_id == user_id, Collection.organization_id.is_not(None)
+    ).update({Collection.user_id: None}, synchronize_session=False)
     col_ids = [c.id for c in db.query(Collection.id).filter(Collection.user_id == user_id).all()]
     if col_ids:
         db.query(CollectionMember).filter(CollectionMember.collection_id.in_(col_ids)).delete(

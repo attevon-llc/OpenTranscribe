@@ -191,7 +191,7 @@ def _competing_collection_writer(db_session, contested: str, owner_id: int):
     Mirrors ``_competing_writer`` above, for ``Collection`` instead of ``Tag``:
     ``find_existing_similar_collection``'s pre-check misses (the racer's row does
     not exist yet), another connection commits the same ``(user_id, name)`` pair,
-    and our own INSERT then hits ``_user_collection_uc``.
+    and our own INSERT then hits ``uq_collection_user_name``.
     """
     fired = {"done": False}
     state: dict[str, int | None] = {"collection_id": None}
@@ -857,7 +857,9 @@ def test_auto_label_collection_lookup_does_not_cross_accounts(db_session, normal
     svc = AutoLabelService(db_session)
     assert svc.find_existing_similar_collection(normal_user.id, name) is None
 
-    created, was_created = svc._get_or_create_collection_with_dedup(name, normal_user.id)
+    created, was_created = svc._get_or_create_collection_with_dedup(
+        name, normal_user.id, organization_id=None
+    )
     assert created.user_id == normal_user.id
     assert created.id != other_collection.id
     assert was_created is True
@@ -880,7 +882,9 @@ def test_collection_collision_is_not_reported_as_created(db_session):
 
     try:
         with _competing_collection_writer(db_session, contested, racer_id):
-            collection, created = svc._get_or_create_collection_with_dedup(contested, racer_id)
+            collection, created = svc._get_or_create_collection_with_dedup(
+                contested, racer_id, organization_id=None
+            )
 
             assert collection.name == contested
             assert collection.user_id == racer_id
@@ -895,7 +899,7 @@ def test_collection_collision_is_not_reported_as_created(db_session):
 def test_auto_label_collection_cache_is_not_shared_between_users(
     db_session, normal_user, other_user
 ):
-    """The per-instance collection cache must be keyed per user, never a flat shared list."""
+    """The per-instance collection cache must be keyed per tenant, never a flat shared list."""
     name = f"Quarterly Reviews {_suffix()}"
     other_collection = _make_collection(db_session, name, other_user)
 
@@ -905,7 +909,7 @@ def test_auto_label_collection_cache_is_not_shared_between_users(
 
     assert other_collection.id in {c.id for c in b_collections}
     assert other_collection.id not in {c.id for c in a_collections}
-    assert set(svc._collection_cache.keys()) == {other_user.id, normal_user.id}
+    assert set(svc._collection_cache.keys()) == {(other_user.id, None), (normal_user.id, None)}
 
 
 def test_fuzzy_match_does_not_reach_another_users_near_miss(db_session, normal_user, other_user):

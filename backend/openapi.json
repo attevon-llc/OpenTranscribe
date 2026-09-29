@@ -2843,7 +2843,7 @@
         "type": "object"
       },
       "Collection": {
-        "description": "Collection with UUID as public identifier",
+        "description": "Collection with UUID as public identifier.\n\n``user_id`` is the creator's UUID; NULL for an organization collection whose\ncreator's account is gone (the collection stays with the organization).",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -2910,9 +2910,16 @@
             "type": "string"
           },
           "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
           },
           "uuid": {
             "format": "uuid",
@@ -2923,7 +2930,6 @@
         "required": [
           "uuid",
           "name",
-          "user_id",
           "created_at",
           "updated_at"
         ],
@@ -3117,9 +3123,16 @@
             "type": "string"
           },
           "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
           },
           "uuid": {
             "format": "uuid",
@@ -3130,7 +3143,6 @@
         "required": [
           "uuid",
           "name",
-          "user_id",
           "created_at",
           "updated_at"
         ],
@@ -3285,9 +3297,16 @@
             "type": "string"
           },
           "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
           },
           "uuid": {
             "format": "uuid",
@@ -3298,7 +3317,6 @@
         "required": [
           "uuid",
           "name",
-          "user_id",
           "created_at",
           "updated_at"
         ],
@@ -26227,7 +26245,7 @@
     },
     "/api/collections": {
       "get": {
-        "description": "Get collections for the current user with media count.\n\nUse ownership param to filter:\n- 'mine': Only collections owned by current user (default)\n- 'shared': Only collections shared with current user\n- 'all': Both owned and shared collections",
+        "description": "Get collections for the current user with media count.\n\nUse ownership param to filter:\n- 'mine': the tenant's own collections (default) — the caller's personal\n  collections in the personal workspace; in an organization, every\n  collection of the org (they are shared by the org, v422), with\n  ``my_permission`` ``owner`` for the creator/org admins and ``editor`` for\n  other members\n- 'shared': Only collections explicitly shared with current user\n- 'all': Both",
         "operationId": "list_collections_api_collections_get",
         "parameters": [
           {
@@ -26304,7 +26322,7 @@
         ]
       },
       "post": {
-        "description": "Create a collection owned by the caller.\n\nConsumed by the gallery's \"New collection\" dialog and by scripts organising an\nimported library. Any active user; the collection is stamped with\n``current_user.id`` and there is no way to create one for someone else.\n\nNames are unique **per owner**, not globally — a duplicate for this user is 400,\nwhile another user may hold the same name. ``default_prompt_id`` arrives as a\nprompt *uuid* and is resolved to the internal id by ``_resolve_prompt_uuid``,\nwhich accepts only an active prompt the caller owns or a system default and 404s\notherwise; the response carries the uuid back, never the internal id. A new\ncollection starts with no members and no shares.",
+        "description": "Create a collection in the request's tenant.\n\nConsumed by the gallery's \"New collection\" dialog and by scripts organising an\nimported library. Any active user; the collection is stamped with\n``current_user.id`` (its creator) and the request's tenant (``ctx.org_id``,\nissue #1051) — in an organization it is the org's collection, shared by every\nmember; in the personal workspace it is the caller's. There is no way to\ncreate one for someone else.\n\nNames are unique **per tenant**, not globally — a duplicate among the caller's\npersonal collections, or among the organization's, is 400, while another\ntenant may hold the same name. ``default_prompt_id`` arrives as a\nprompt *uuid* and is resolved to the internal id by ``_resolve_prompt_uuid``,\nwhich accepts only an active prompt the caller owns or a system default and 404s\notherwise; the response carries the uuid back, never the internal id. A new\ncollection starts with no members and no shares.",
         "operationId": "create_collection_api_collections_post",
         "requestBody": {
           "content": {
@@ -26351,7 +26369,7 @@
     },
     "/api/collections/for-files": {
       "get": {
-        "description": "Which collections a set of selected files already belongs to.\n\nThe mirror of ``GET /tags/for-files``, so the gallery's two organizing\nmodals answer the same question the same way — `file_count` against\n`selection_size` distinguishes a collection holding every selected file from\none holding a few.\n\nScoped to the caller's own collections: membership of someone else's\ncollection is not theirs to read off a selection.\n\nRegistered before ``/{collection_uuid}`` so the literal path is not\nswallowed.",
+        "description": "Which collections a set of selected files already belongs to.\n\nThe mirror of ``GET /tags/for-files``, so the gallery's two organizing\nmodals answer the same question the same way — `file_count` against\n`selection_size` distinguishes a collection holding every selected file from\none holding a few.\n\nScoped to the caller's own collections in the request's tenant — in an\norganization, the org's collections (v422); in the personal workspace, their\npersonal ones. Membership of anyone else's collection is not theirs to read\noff a selection.\n\nRegistered before ``/{collection_uuid}`` so the literal path is not\nswallowed.",
         "operationId": "list_collections_on_files_api_collections_for_files_get",
         "parameters": [
           {
@@ -26408,7 +26426,7 @@
     },
     "/api/collections/shared-with-me": {
       "get": {
-        "description": "List collections shared with the current user (not owned by them).",
+        "description": "List collections shared with the current user (not owned by them).\n\nTenant-gated like ``GET /collections``: only collections of the active tenant,\nand in an organization not the org's own collections (every member already\nhas those).",
         "operationId": "list_shared_collections_api_collections_shared_with_me_get",
         "parameters": [
           {
@@ -26474,7 +26492,7 @@
     },
     "/api/collections/{collection_uuid}": {
       "delete": {
-        "description": "Delete a collection. Only the original owner can delete. Tenant-gated (#262d).",
+        "description": "Delete a collection. Tenant-gated (#262d).\n\nPersonal collection: only its owner. Organization collection (v422): its\ncreator or an org admin — other members are editors.",
         "operationId": "delete_collection_api_collections__collection_uuid__delete",
         "parameters": [
           {

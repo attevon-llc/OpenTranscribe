@@ -6,6 +6,9 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from sqlalchemy import and_
+from sqlalchemy import or_
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -18,8 +21,10 @@ from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
+from app.models.organization import OrganizationMembership
 from app.models.upload_batch import UploadBatch
 from app.schemas.media import PrepareUploadRequest
+from app.services.permission_service import PermissionService
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tags
 from app.utils import benchmark_timing
@@ -96,9 +101,13 @@ def get_or_create_upload_batch(
 def add_file_to_collections(
     db: Session, file_id: int, user_id: int, collection_ids: list[UUID]
 ) -> None:
-    """Add a media file to the specified collections owned by the user.
+    """Add a media file to the named collections of the file's tenant.
 
-    Silently skips collections that don't exist or aren't owned by the user.
+    Only collections of the FILE's tenant qualify (issue #1051): for a personal
+    file, ``user_id``'s own personal collections; for an organization file, the
+    organization's collections, provided ``user_id`` is still a member. Anything
+    else — another tenant's collection, a stranger's — is silently skipped, so an
+    import can never put one tenant's recording into another tenant's collection.
 
     Two queries regardless of how many collections are named (issue #284 A2.8). This
     used to run a `Collection` lookup and a `CollectionMember` existence check per
@@ -112,11 +121,22 @@ def add_file_to_collections(
 
     wanted = [str(coll_uuid) for coll_uuid in collection_ids]
 
-    collections = (
-        db.query(Collection)
-        .filter(Collection.uuid.in_(wanted), Collection.user_id == user_id)
-        .all()
+    # The file's tenant is a correlated subquery, not a separate SELECT, so the
+    # lookup stays one round trip (the batching contract above).
+    file_org = select(MediaFile.organization_id).where(MediaFile.id == file_id).scalar_subquery()
+    is_member = (
+        select(OrganizationMembership.id)
+        .where(
+            OrganizationMembership.organization_id == Collection.organization_id,
+            OrganizationMembership.user_id == user_id,
+        )
+        .exists()
     )
+    same_tenant = or_(
+        and_(file_org.is_(None), PermissionService.collection_tenant_pred(user_id, None)),
+        and_(Collection.organization_id == file_org, is_member),
+    )
+    collections = db.query(Collection).filter(Collection.uuid.in_(wanted), same_tenant).all()
     by_uuid = {str(collection.uuid): collection for collection in collections}
 
     for coll_uuid in wanted:

@@ -1200,9 +1200,13 @@ class CollectionUpdate(BaseModel):
 
 
 class Collection(CollectionBase, UUIDBaseSchema):
-    """Collection with UUID as public identifier"""
+    """Collection with UUID as public identifier.
 
-    user_id: UUID
+    ``user_id`` is the creator's UUID; NULL for an organization collection whose
+    creator's account is gone (the collection stays with the organization).
+    """
+
+    user_id: UUID | None = None
     default_prompt_id: UUID | None = None
     default_prompt_name: str | None = None
     source: str | None = None

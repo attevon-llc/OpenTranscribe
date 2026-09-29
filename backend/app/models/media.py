@@ -861,6 +861,21 @@ class Analytics(Base):
 
 
 class Collection(Base):
+    """A named set of media files, belonging to one tenant.
+
+    Two kinds (migration ``v422_add_collection_tenancy``, issue #1051):
+
+    * **personal** — ``organization_id IS NULL``, ``user_id`` = the owner; seen by
+      the owner and whoever they share it with explicitly.
+    * **organization** — ``organization_id`` set; shared by every member of that
+      org (members are editors; the creator and org admins are owners).
+      ``user_id`` is the creator (attribution) and becomes NULL once their account
+      is gone — the collection stays with the tenant.
+
+    Names are unique per tenant, so never look a collection up by name without a
+    tenant predicate (``PermissionService.collection_tenant_pred``).
+    """
+
     __tablename__ = "collection"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -869,7 +884,7 @@ class Collection(Base):
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user.id"), nullable=True)
     organization_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("organization.id"), nullable=True, index=True
     )
@@ -890,11 +905,31 @@ class Collection(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Unique constraint
-    __table_args__ = (UniqueConstraint("user_id", "name", name="_user_collection_uc"),)
+    # One partial unique index per tenant kind (v422): a user may hold one name in
+    # several tenants, and an org holds each name once across all its members.
+    __table_args__ = (
+        CheckConstraint(
+            "user_id IS NOT NULL OR organization_id IS NOT NULL",
+            name="ck_collection_owner_or_org",
+        ),
+        Index(
+            "uq_collection_user_name",
+            "user_id",
+            "name",
+            unique=True,
+            postgresql_where=text("organization_id IS NULL"),
+        ),
+        Index(
+            "uq_collection_org_name",
+            "organization_id",
+            "name",
+            unique=True,
+            postgresql_where=text("organization_id IS NOT NULL"),
+        ),
+    )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="collections")
+    user: Mapped["User | None"] = relationship("User", back_populates="collections")
     collection_members: Mapped[list["CollectionMember"]] = relationship(
         "CollectionMember", back_populates="collection", cascade="all, delete-orphan"
     )

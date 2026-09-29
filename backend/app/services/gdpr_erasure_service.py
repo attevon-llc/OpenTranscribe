@@ -310,6 +310,12 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
         db.delete(profile)
         summary["speaker_profiles_deleted"] += 1
 
+    # Organization collections are the tenant's and hold colleagues' files (v422):
+    # they survive, de-attributed. Personal collections go with the account.
+    db.query(Collection).filter(
+        Collection.user_id == user_id, Collection.organization_id.is_not(None)
+    ).update({Collection.user_id: None}, synchronize_session=False)
+
     for model, key in (
         (SpeakerCollection, "speaker_collections_deleted"),
         (Collection, "collections_deleted"),
@@ -585,9 +591,11 @@ def erase_org_member_data(
     """Erase ONE member's data WITHIN ONE organization (org-admin scope).
 
     The org-admin variant of erasure: destroys only the target's rows stamped
-    with ``org_id`` — org media files, org-scoped speaker profiles/collections,
-    prompts, settings, vocabulary and watch sources, the comments and tasks they
-    authored on the tenant's files, and the (user, org) voiceprint docs. The
+    with ``org_id`` — org media files, org-scoped speaker profiles and speaker
+    collections, prompts, settings, vocabulary and watch sources, the comments and
+    tasks they authored on the tenant's files, and the (user, org) voiceprint docs.
+    The org's media collections and tags they created are the tenant's, so they
+    stay, de-attributed (v420/v422). The
     target's personal-scope data, other orgs' data, and the ``user`` row itself
     are untouched: an org admin has authority over their tenant's data, never
     over the person's account. Full account erasure remains :func:`erase_user`
@@ -640,9 +648,14 @@ def erase_org_member_data(
         db.delete(profile)
         summary["speaker_profiles_deleted"] += 1
 
+    # The member's collections in this org are the TENANT's, shared by every
+    # member and holding colleagues' files (v422): they stay, de-attributed.
+    db.query(Collection).filter(
+        Collection.user_id == user_id, Collection.organization_id == org_id
+    ).update({Collection.user_id: None}, synchronize_session=False)
+
     for model, key in (
         (SpeakerCollection, "speaker_collections_deleted"),
-        (Collection, "collections_deleted"),
         # Only this member's conversations stamped with THIS org — their
         # personal-scope chats stay, exactly like their personal files.
         (ChatConversation, "chat_conversations_deleted"),

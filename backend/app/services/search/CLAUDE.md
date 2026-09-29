@@ -210,8 +210,20 @@ speaker plane exists to let people *set*.
   to the single-request body (`tests/integration/test_keyword_search_latency_opensearch.py`
   proves this and gates the latency). Two consequences: every hit of that body counts as a
   keyword match without needing a highlight (`assume_keyword_match`), and an empty query (a
-  `match_all` browse) still takes the single-request path. The hybrid, neural, fallback,
-  backfill and two-phase bodies still use inner hits.
+  `match_all` browse) still takes the single-request path. The hybrid backfill runs split too.
+  The hybrid, neural, fallback and two-phase bodies still use inner hits.
+- **Every matching file must be reachable by paging (#1078, #1079).** Three rules, each learned
+  from a bug. `tests/integration/test_search_completeness_opensearch.py` pages through every
+  result set and fails on the first file that is missing or shown twice.
+  - Pagination is cut **client-side only**. A BM25 non-relevance sort used `from`/`size=page_size`
+    as well, so the one-page response got paged a second time and page 2+ came back empty.
+  - Hybrid **always** backfills keyword files the fused window missed, below the hybrid-ranked
+    head. The window is ~200 *chunks*, not files. It used to backfill only when the window held
+    less than one page, and then 43 of 165 keyword-matching files were reachable.
+  - The fused window is sized as for **page 1 on every page**. If it grew with the page number,
+    deep pages pulled tail files into the head and moved every page boundary, so some files
+    appeared twice and others never. The backfill's BM25 window may grow, because its order is
+    stable as it grows.
 - Relevance sorts can't mix `_score` with other sort criteria under the pipeline; non-relevance
   sorts therefore take the `_search_with_two_phase` path (hybrid aggs → BM25 collapse per page).
 - `recreate_index_for_dimension` **deletes the index**. Switching embedding model = full reindex —

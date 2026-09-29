@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Annotated
 from typing import ClassVar
+from typing import Literal
 
 from pydantic import ValidationInfo
 from pydantic import field_validator
@@ -1425,6 +1426,17 @@ class Settings(BaseSettings):
 
     # Storage paths (container paths, mounted from host via docker-compose volumes)
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/app/data"))
+
+    # Where the GDPR erasure journal (services/erasure_ledger_service) is written — the
+    # out-of-database copy of every erasure request that lets a restore of an older dump
+    # be detected and the erasure re-run. "file" (default): DATA_DIR/gdpr/ on the data
+    # volume, unchanged. "object_storage": one object per entry under
+    # ERASURE_JOURNAL_OBJECT_PREFIX in the media bucket, for deployments whose containers
+    # have no durable writable volume (read-only root filesystem, ephemeral pods) — a
+    # journal on an ephemeral path vanishes with the pod, which is the same as no journal.
+    # A typo must fail at startup, not silently fall back to a path that cannot be written.
+    ERASURE_JOURNAL_BACKEND: Literal["file", "object_storage"] = "file"
+    ERASURE_JOURNAL_OBJECT_PREFIX: str = "gdpr/erasure-journal/"
     MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
     TEMP_DIR: Path = Path(os.getenv("TEMP_DIR", "/app/temp"))
 

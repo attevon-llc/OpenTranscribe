@@ -46,13 +46,22 @@ Its limits, stated rather than implied: the journal is one file on one volume. L
 that volume, or restoring it from the same point in time as the database, loses the
 same information. Replicating it off-host is deployment configuration, not code — the
 audit stream (stdout / OpenSearch) is the second copy that already leaves the host.
+
+``ERASURE_JOURNAL_BACKEND=object_storage`` writes the journal to the media bucket
+instead (one object per entry under ``ERASURE_JOURNAL_OBJECT_PREFIX``), for deployments
+whose containers have no durable writable volume. Object storage has no append, so each
+entry is its own object, named by the entry's uuid; :func:`restore_from_journal` lists
+the prefix and fetches only entries the database does not already know. The records
+are the same surrogate-key-only dicts in both backends.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import uuid as uuid_pkg
+from collections.abc import Iterator
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -111,18 +120,51 @@ def _journal_record(entry: ErasureLedgerEntry) -> dict[str, Any]:
     }
 
 
+def _journal_backend() -> str:
+    from app.core.config import settings
+
+    return str(settings.ERASURE_JOURNAL_BACKEND)
+
+
+def journal_object_name(entry_uuid: str) -> str:
+    """Object key of one journal entry when the journal is in object storage."""
+    from app.core.config import settings
+
+    return f"{settings.ERASURE_JOURNAL_OBJECT_PREFIX.rstrip('/')}/{entry_uuid}.json"
+
+
+def _journal_storage() -> tuple[Any, str]:
+    """The object-storage client and bucket the journal uses (the media bucket)."""
+    from app.core.config import settings
+    from app.services.minio_service import minio_client
+
+    return minio_client, settings.MEDIA_BUCKET_NAME
+
+
 def _append_journal(entry: ErasureLedgerEntry) -> None:
-    """Append one line to the journal. Never raises.
+    """Append one entry to the journal. Never raises.
 
     An unwritable journal must not abort an erasure — the deletion is the legally
     binding act — but it is logged at ERROR, because an erasure with no journal line is
     one a backup restore can silently undo.
     """
+    record = _journal_record(entry)
     try:
+        if _journal_backend() == "object_storage":
+            client, bucket = _journal_storage()
+            body = json.dumps(record, separators=(",", ":")).encode("utf-8")
+            client.put_object(
+                bucket_name=bucket,
+                object_name=journal_object_name(record["uuid"]),
+                data=io.BytesIO(body),
+                length=len(body),
+                content_type="application/json",
+            )
+            return
         path = journal_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(_journal_record(entry), separators=(",", ":")) + "\n")
+            fh.write(json.dumps(record, separators=(",", ":")) + "\n")
     except Exception as e:  # noqa: BLE001
         logger.error(
             "Erasure journal append FAILED for entry %s: %s — a restore of an older "
@@ -132,42 +174,98 @@ def _append_journal(entry: ErasureLedgerEntry) -> None:
         )
 
 
+def _file_journal_records() -> Iterator[dict[str, Any]] | None:
+    """Parsed lines of the on-disk journal; None when it cannot be read at all."""
+    path = journal_path()
+    if not path.exists():
+        return iter(())
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception as e:  # noqa: BLE001
+        logger.error("Erasure journal unreadable at %s: %s", path, e)
+        return None
+
+    def _parse() -> Iterator[dict[str, Any]]:
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except ValueError:
+                logger.warning("Skipping unparseable erasure journal line")
+
+    return _parse()
+
+
+def _object_journal_records(known: set[str]) -> Iterator[dict[str, Any]] | None:
+    """Journal entries in object storage that the database does not already know.
+
+    The object key carries the entry's uuid, so an entry the database still has costs a
+    LIST line and no GET — this runs on every reconciliation tick.
+    """
+    from app.core.config import settings
+
+    client, bucket = _journal_storage()
+    prefix = settings.ERASURE_JOURNAL_OBJECT_PREFIX.rstrip("/") + "/"
+    try:
+        names = [
+            str(obj.object_name)
+            for obj in client.list_objects(bucket, prefix=prefix, recursive=True)
+            if obj.object_name and str(obj.object_name).endswith(".json")
+        ]
+    except Exception as e:  # noqa: BLE001
+        logger.error("Erasure journal unreadable at %s/%s: %s", bucket, prefix, e)
+        return None
+
+    def _fetch() -> Iterator[dict[str, Any]]:
+        for name in names:
+            if name[len(prefix) : -len(".json")] in known:
+                continue
+            response = None
+            try:
+                response = client.get_object(bucket, name)
+                yield json.loads(response.read().decode("utf-8"))
+            except Exception as e:  # noqa: BLE001 — one bad object must not stop the rest
+                logger.warning("Skipping unreadable erasure journal object %s: %s", name, e)
+            finally:
+                if response is not None:
+                    response.close()
+                    response.release_conn()
+
+    return _fetch()
+
+
 def restore_from_journal(db: Session) -> int:
     """Re-open journalled entries the database no longer has. Returns how many.
 
     The reconciliation sweep calls this first. After a restore of a dump taken *before*
     an erasure, the subject's rows are back **and** the ledger row that recorded the
     erasure is gone — the one case an in-database ledger cannot detect about itself.
-    The journal is on the data volume, not in the dump, so it still has the entry.
+    The journal is on the data volume (or in object storage), not in the dump, so it
+    still has the entry.
 
     Re-created as ``pending`` with the ORIGINAL ``uuid``, ``requested_at`` and
     ``sla_due_at``: the request was made when it was made, and a restore must not reset
     the Art. 12(3) clock. Existing rows are never touched, so this is idempotent and
     safe to run on every tick.
     """
-    path = journal_path()
-    if not path.exists():
-        return 0
-
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except Exception as e:  # noqa: BLE001
-        logger.error("Erasure journal unreadable at %s: %s", path, e)
+    object_backend = _journal_backend() == "object_storage"
+    if not object_backend and not journal_path().exists():
         return 0
 
     known = {
         str(u)
         for (u,) in db.query(ErasureLedgerEntry.uuid).all()  # one column, not whole rows
     }
+    records = _object_journal_records(known) if object_backend else _file_journal_records()
+    if records is None:
+        return 0
+
     restored = 0
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except ValueError:
-            logger.warning("Skipping unparseable erasure journal line")
+    for record in records:
+        if not isinstance(record, dict):
+            logger.warning("Skipping erasure journal entry that is not an object")
             continue
         if record.get("uuid") in known:
             continue

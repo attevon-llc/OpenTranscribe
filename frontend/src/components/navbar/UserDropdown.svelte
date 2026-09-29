@@ -11,6 +11,8 @@
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
   import { getFlowerUrl } from '$lib/utils/url';
+  import { isCloudEdition } from '$lib/edition';
+  import UserMenuExtras from '$lib/cloud/components/UserMenuExtras.svelte';
 
   /** The currently signed-in user (null when unauthenticated). */
   export let user: NavbarUser | null = null;
@@ -49,6 +51,12 @@
   /** Close the dropdown (used by the trigger setter from the parent). */
   export function close() {
     showDropdown = false;
+  }
+
+  /** An extras entry was chosen: close the menu like any built-in item. */
+  function handleExtrasSelect() {
+    showDropdown = false;
+    dispatch('itemSelected');
   }
 
   function handleSettings() {
@@ -175,6 +183,9 @@
           </svg>
           <span>{$t('nav.flowerDashboard')}</span>
         </button>
+      {/if}
+      {#if isCloudEdition}
+        <UserMenuExtras on:select={handleExtrasSelect} />
       {/if}
       <div class="dropdown-divider"></div>
       <button
@@ -351,6 +362,39 @@
   .dropdown-menu :global(a.dropdown-item:visited:hover) {
     color: var(--primary-on-surface) !important;
     text-decoration: none !important;
+  }
+
+  /* Entries contributed by child components (e.g. UserMenuExtras) live in their
+     own scope; give any `.dropdown-item` inside the menu the same look. */
+  .dropdown-menu :global(.dropdown-item) {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    color: var(--text-color);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border: none;
+    width: calc(100% - 1rem);
+    text-align: left;
+    background-color: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    box-sizing: border-box;
+    margin: 0.125rem 0.5rem;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  .dropdown-menu :global(.dropdown-item:hover) {
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    color: var(--primary-on-surface);
+  }
+
+  .dropdown-menu :global(.dropdown-item:focus-visible) {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
   }
 
   .dropdown-item svg {

@@ -201,6 +201,12 @@ celery_app.conf.update(
     # — and see backend/app/core/celery_metrics.py for why the *effective*
     # prefetch also bounds the cost of reading Redis's `unacked` hash.
     worker_prefetch_multiplier=1,
+    # Prefork child recycling for any launcher (Helm, systemd, bare `celery worker`), not
+    # just compose. 0/unset = no recycling. Explicit CLI flags override these. Prefork
+    # only; the threads pool ignores both. Memory is in KiB and recycles a child AFTER
+    # the task that pushed its RSS over the limit finishes.
+    worker_max_tasks_per_child=_int_env("CELERY_WORKER_MAX_TASKS_PER_CHILD", 0) or None,
+    worker_max_memory_per_child=_int_env("CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB", 0) or None,
     # Global task time limits (issue #284 A1.2). There were NONE, so a hung CUDA call
     # held the single GPU slot forever and no later transcription could start.
     #
@@ -763,15 +769,26 @@ def warn_inert_max_tasks_per_child(**kwargs):
     argv = " ".join(sys.argv)
     if "--pool=threads" not in argv and os.getenv("GPU_WORKER_POOL", "threads") != "threads":
         return
-    if "--max-tasks-per-child" not in argv:
-        return
 
+    memory_limit = celery_app.conf.worker_max_memory_per_child
+    if "--max-memory-per-child" in argv or memory_limit:
+        logger.warning(
+            "A max-memory-per-child limit (%s) is set but this worker uses the threads pool, "
+            "where Celery IGNORES it — there is no worker recycling on memory growth. "
+            "Set GPU_WORKER_POOL=prefork if you need recycling (models reload per task).",
+            memory_limit or "CLI flag",
+        )
+
+    configured = 0
+    if "--max-tasks-per-child" in argv:
+        try:
+            configured = int(argv.split("--max-tasks-per-child=")[1].split()[0])
+        except (IndexError, ValueError):
+            configured = 0
+    else:
+        configured = int(celery_app.conf.worker_max_tasks_per_child or 0)
     # A deliberately huge value means "never recycle" and is not a misconfiguration.
-    try:
-        configured = int(argv.split("--max-tasks-per-child=")[1].split()[0])
-    except (IndexError, ValueError):
-        return
-    if configured >= 10000:
+    if configured <= 0 or configured >= 10000:
         return
 
     logger.warning(

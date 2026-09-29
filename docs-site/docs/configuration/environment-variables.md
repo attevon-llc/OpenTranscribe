@@ -454,6 +454,8 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 # Amazon Bedrock — no API key: boto3 uses the standard AWS credential chain
 BEDROCK_REGION=            # falls back to AWS_REGION / AWS_DEFAULT_REGION
 BEDROCK_MODEL_NAME=anthropic.claude-haiku-4-5-20251001-v1:0
+BEDROCK_RETRY_MODE=adaptive  # botocore retry mode: adaptive | standard | legacy
+BEDROCK_MAX_ATTEMPTS=8       # total attempts per call, including the first
 ```
 
 ## GPU Concurrent Processing

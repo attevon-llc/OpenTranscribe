@@ -25,6 +25,7 @@ from urllib3.util.retry import Retry
 
 from app.core.config import settings
 from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.services.llm_stream import TRANSIENT_HTTP_STATUSES
 from app.services.llm_stream import LLMStreamEvent
 from app.services.llm_stream import apply_stream_payload
 from app.services.llm_stream import get_stream_parser
@@ -904,6 +905,7 @@ class LLMService:
                 yield LLMStreamEvent(
                     type="error",
                     message=f"LLM API error ({response.status_code}): {detail}",
+                    transient=response.status_code in TRANSIENT_HTTP_STATUSES,
                 )
                 return
 

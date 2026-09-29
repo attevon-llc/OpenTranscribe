@@ -15,6 +15,7 @@
   import ChatReasoning from './ChatReasoning.svelte';
   import ChatSources from './ChatSources.svelte';
   import { formatLanguageNames } from '$lib/utils/formatting';
+  import { chatErrorMessageKey } from '$lib/utils/chatErrors';
   import type { ChatMessage } from '$lib/types/chat';
 
   export let message: ChatMessage;
@@ -157,7 +158,7 @@
 
       {#if hasError}
         <p class="error-text" data-testid="chat-message-error">
-          {message.error || $t('chat.message.errorGeneric')}
+          {$t(chatErrorMessageKey(message.msg_metadata?.error_code))}
         </p>
       {/if}
 

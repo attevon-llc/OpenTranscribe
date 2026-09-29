@@ -143,6 +143,12 @@ export interface ChatMessageMetadata {
    */
   retrieval_failed?: boolean;
   /**
+   * Set on a failed turn: the `code` of its `error` frame (issue #1049). The
+   * message bubble renders the translated `chat.errors.<code>` string from this,
+   * never the raw `error` text, so a reloaded thread shows the same message.
+   */
+  error_code?: ChatErrorCode;
+  /**
    * The turn's context included recordings in a language RAG is not tuned for.
    * Transcription is multilingual; retrieval, reranking and prompting are
    * English-only, so a non-English recording is effectively invisible to the
@@ -482,6 +488,7 @@ export type ChatErrorCode =
   | 'quota_exceeded'
   | 'rate_limited'
   | 'provider_error'
+  | 'provider_unavailable'
   | 'timeout'
   | 'cancelled'
   | 'connection_interrupted'

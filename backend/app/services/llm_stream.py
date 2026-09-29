@@ -56,6 +56,12 @@ logger = logging.getLogger(__name__)
 # Those providers fall back to estimated token counts.
 USAGE_OPTION_PROVIDERS = frozenset({"openai", "vllm", "openrouter"})
 
+#: Anthropic's mid-stream ``error`` types that mean "at capacity, retry shortly".
+_ANTHROPIC_TRANSIENT_ERROR_TYPES = frozenset({"overloaded_error", "rate_limit_error"})
+
+#: HTTP statuses a provider returns for a capacity condition rather than a bad request.
+TRANSIENT_HTTP_STATUSES = frozenset({429, 502, 503, 504})
+
 
 @dataclass(frozen=True)
 class LLMStreamEvent:
@@ -76,7 +82,12 @@ class LLMStreamEvent:
             Billed *above* the uncached rate, so it must not be folded into
             ``prompt_tokens`` either.
         finish_reason: Provider stop reason, for ``done``.
-        message: Human-readable detail, for ``error``.
+        message: Human-readable detail, for ``error``. Provider prose — it is for
+            server logs only and must never be relayed to the user (issue #1049).
+        transient: ``error`` only — the provider reported a capacity condition
+            (throttling, overload, 503) that is expected to clear on its own. The
+            chat layer uses it to tell the user "try again in a moment" instead of
+            a generic failure.
     """
 
     type: str
@@ -87,6 +98,7 @@ class LLMStreamEvent:
     cache_write_tokens: int | None = None
     finish_reason: str | None = None
     message: str = ""
+    transient: bool = False
 
 
 def _loads(raw: str) -> dict | None:
@@ -290,7 +302,11 @@ def parse_anthropic_sse(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
         chunk_type = chunk.get("type")
         if chunk_type == "error":
             detail = chunk.get("error") or {}
-            yield LLMStreamEvent(type="error", message=str(detail.get("message", "provider error")))
+            yield LLMStreamEvent(
+                type="error",
+                message=str(detail.get("message", "provider error")),
+                transient=detail.get("type") in _ANTHROPIC_TRANSIENT_ERROR_TYPES,
+            )
             return
         if chunk_type == "message_start":
             usage = (chunk.get("message") or {}).get("usage") or {}

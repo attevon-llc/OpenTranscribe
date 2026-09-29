@@ -180,6 +180,18 @@ def test_anthropic_stream_surfaces_error_event():
     )
     assert events[-1].type == "error"
     assert events[-1].message == "Overloaded"
+    # Capacity, not a bad request: chat says "try again in a moment" (issue #1049).
+    assert events[-1].transient is True
+
+
+def test_anthropic_invalid_request_error_is_not_transient():
+    events = list(
+        parse_anthropic_sse(
+            ['data: {"type":"error","error":{"type":"invalid_request_error","message":"bad"}}']
+        )
+    )
+    assert events[-1].type == "error"
+    assert events[-1].transient is False
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +376,21 @@ def test_chat_completion_stream_reports_http_error_in_band():
     assert len(events) == 1
     assert events[0].type == "error"
     assert "429" in events[0].message
+    assert events[0].transient is True
+
+
+@pytest.mark.parametrize(
+    ("status", "transient"), [(503, True), (502, True), (400, False), (401, False)]
+)
+def test_chat_completion_stream_flags_capacity_statuses_as_transient(status, transient):
+    service = _service()
+    session = _transport(service)
+    session.post.return_value = _mock_response([], status=status)
+
+    events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+
+    assert [e.type for e in events] == ["error"]
+    assert events[0].transient is transient
 
 
 def test_chat_completion_stream_reports_connection_error_in_band():

@@ -219,6 +219,17 @@ describe('chat reducer — error handling preserves partial text', () => {
     expect(state().error).toBe('provider_error');
   });
 
+  it('records the frame code on the message so the bubble can translate it (#1049)', async () => {
+    await stream([
+      START,
+      { type: 'error', code: 'provider_unavailable', message: 'The AI provider is unavailable.' },
+      { type: 'done', finish_reason: 'error' },
+    ]);
+
+    expect(assistant().msg_metadata?.error_code).toBe('provider_unavailable');
+    expect(state().error).toBe('provider_unavailable');
+  });
+
   it('a done frame after an error does NOT rewrite status back to complete', async () => {
     // The server always sends `done`. If it flipped status to 'complete' the
     // error text and the Retry button would both vanish, leaving a truncated

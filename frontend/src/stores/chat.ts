@@ -400,6 +400,9 @@ function createChatStore() {
               ...m,
               status: 'error',
               error: event.message,
+              // Same place the server persists it, so live and reloaded turns
+              // render through one path (issue #1049).
+              msg_metadata: { ...(m.msg_metadata ?? {}), error_code: event.code },
               pending: false,
               reasoningStreaming: false,
               reasoningDurationMs,

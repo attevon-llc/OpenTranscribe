@@ -7,12 +7,20 @@ Non-critical: failure does not affect transcription status.
 Uses presigned URL + ffmpeg segment seeking instead of downloading
 entire files from MinIO. Segments are fetched in parallel via a thread
 pool for better throughput.
+
+Memory (issue #1066): each clip is capped to ``SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS`` around
+its midpoint, at most ``SPEAKER_ATTRIBUTE_MAX_CONCURRENCY`` detections run at once per worker
+host (an over-limit task re-queues itself), and a CPU worker drops the model once the
+detection finishes.
 """
 
 import contextlib
 import datetime
 import logging
 import os
+import random
+import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 from app.core.celery import celery_app
@@ -20,12 +28,72 @@ from app.core.config import settings
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
+from app.services.audio_segment_utils import center_window
 from app.services.audio_segment_utils import extract_audio_segment_np
 from app.services.audio_segment_utils import merge_adjacent_segments
 from app.services.audio_segment_utils import select_top_segments
+from app.utils.host_slots import host_slot
 from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
+
+_INFERENCE_SLOT_NAME = "speaker-attribute-inference"
+_DEFAULT_MAX_CONCURRENCY = 2
+# A busy host re-queues the task instead of blocking a worker slot while it waits. 90
+# deferrals at 15-45 s each ride out a backlog of well over an hour.
+_SLOT_WAIT_MAX_RETRIES = 90
+_SLOT_WAIT_COUNTDOWN_RANGE = (15.0, 45.0)
+
+
+class _InferenceSlotBusyError(Exception):
+    """Every inference slot on this host is taken; defer and try again."""
+
+
+def _max_concurrency() -> int:
+    """``SPEAKER_ATTRIBUTE_MAX_CONCURRENCY``: detections allowed at once per worker host.
+
+    Each costs ~0.7 GB for the model plus ~0.4 GB of activations at the default clip cap,
+    and every prefork child shares the container's memory limit. 0 disables the bound.
+    """
+    raw = os.environ.get("SPEAKER_ATTRIBUTE_MAX_CONCURRENCY", "").strip()
+    if not raw:
+        return _DEFAULT_MAX_CONCURRENCY
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        logger.warning("SPEAKER_ATTRIBUTE_MAX_CONCURRENCY=%r is not an integer; using default", raw)
+        return _DEFAULT_MAX_CONCURRENCY
+
+
+def _is_gpu_worker() -> bool:
+    return os.environ.get("PRELOAD_GPU_MODELS", "").lower() == "true"
+
+
+_model_users_lock = threading.Lock()
+_model_users = 0
+
+
+@contextlib.contextmanager
+def _model_in_use() -> Iterator[None]:
+    """Count this process's detections; the last one out on a CPU worker frees the model.
+
+    Counted rather than released unconditionally because a ``--pool=threads`` worker runs
+    several detections in one process against the one cached model. The release happens
+    under the lock, so a detection that has registered itself never sees its model
+    released underneath it.
+    """
+    global _model_users
+    with _model_users_lock:
+        _model_users += 1
+    try:
+        yield
+    finally:
+        with _model_users_lock:
+            _model_users -= 1
+            if _model_users == 0 and not _is_gpu_worker():
+                from app.services.speaker_attribute_service import release_cached_attribute_service
+
+                release_cached_attribute_service()
 
 
 def _is_speaker_attribute_detection_enabled(user_id: int) -> bool:
@@ -81,12 +149,17 @@ def _create_and_start_task_record(task_id: str, user_id: int, file_id: int) -> N
 
     Best-effort: a bookkeeping failure here must never block detection itself.
     """
+    from app.models.media import Task
     from app.utils.task_utils import create_task_record
     from app.utils.task_utils import update_task_status
 
     try:
         with session_scope() as db:
-            create_task_record(db, task_id, user_id, file_id, "speaker_attribute_detection")
+            # A retry (a deferral for a free inference slot, or a re-delivery) runs under
+            # the same task id, so its row already exists; re-inserting it only to hit the
+            # IntegrityError path would roll back the session.
+            if db.query(Task.id).filter(Task.id == task_id).first() is None:
+                create_task_record(db, task_id, user_id, file_id, "speaker_attribute_detection")
             update_task_status(db, task_id, "in_progress", progress=0.1)
     except Exception as exc:  # noqa: BLE001 — tracking must never block detection
         logger.warning("Could not create task record for %s: %s", task_id, exc)
@@ -253,6 +326,7 @@ def _run_gender_inference_parallel(
     priority=CPUPriority.USER_TRIGGERED,
     soft_time_limit=600,
     time_limit=660,
+    max_retries=_SLOT_WAIT_MAX_RETRIES,
 )
 def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     """Predict gender/age for all speakers in a media file.
@@ -309,6 +383,14 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
 
     try:
         return _detect_speaker_attributes(file_uuid, user_id, task_id)
+    except _InferenceSlotBusyError:
+        if self.request.retries >= self.max_retries:
+            logger.warning("No speaker-attribute inference slot for %s; giving up", file_uuid)
+            _update_attr_task(task_id, "failed", error_message="no_inference_slot")
+            _dispatch_llm_speaker_identification(file_uuid)
+            return {"status": "error", "reason": "no_inference_slot"}
+        _update_attr_task(task_id, "pending", progress=0.1)
+        raise self.retry(countdown=random.uniform(*_SLOT_WAIT_COUNTDOWN_RANGE)) from None  # noqa: S311  # nosec B311
     finally:
         if _guard is not None:
             with contextlib.suppress(Exception):  # lock expires via TTL anyway
@@ -421,6 +503,7 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
     from app.models.media import Speaker
     from app.services.minio_service import minio_client
     from app.services.speaker_attribute_service import get_cached_attribute_service
+    from app.services.speaker_attribute_service import max_clip_seconds
 
     try:
         if not _is_speaker_attribute_detection_enabled(user_id):
@@ -469,19 +552,24 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
                 merged, min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION, max_segments=5
             )
             for seg in selected:
-                work_items.append((speaker_id, seg))
+                # Fetch only the window the model will see (issue #1066).
+                work_items.append((speaker_id, center_window(seg, max_clip_seconds())))
 
-        service = get_cached_attribute_service()
-        # Passed explicitly (not relying on the parameter default) so tests can
-        # monkeypatch `_MODEL_LOAD_TIMEOUT_SECONDS` and exercise the timeout
-        # path in well under a second instead of the real 60s.
-        _load_models_with_timeout(service, timeout=_MODEL_LOAD_TIMEOUT_SECONDS)
+        with host_slot(_INFERENCE_SLOT_NAME, _max_concurrency()) as have_slot:
+            if not have_slot:
+                raise _InferenceSlotBusyError()
+            with _model_in_use():
+                service = get_cached_attribute_service()
+                # Passed explicitly (not relying on the parameter default) so tests can
+                # monkeypatch `_MODEL_LOAD_TIMEOUT_SECONDS` and exercise the timeout
+                # path in well under a second instead of the real 60s.
+                _load_models_with_timeout(service, timeout=_MODEL_LOAD_TIMEOUT_SECONDS)
 
-        speaker_probs, speaker_clip_counts = _run_gender_inference_parallel(
-            audio_source,
-            work_items,
-            service,
-        )
+                speaker_probs, speaker_clip_counts = _run_gender_inference_parallel(
+                    audio_source,
+                    work_items,
+                    service,
+                )
 
         _update_attr_task(task_id, "in_progress", progress=0.8)
 
@@ -528,6 +616,8 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
             "total_speakers": total_speakers,
         }
 
+    except _InferenceSlotBusyError:
+        raise
     except Exception as e:
         logger.error(f"Speaker attribute detection failed for {file_uuid}: {e}")
         logger.error("Full traceback:", exc_info=True)

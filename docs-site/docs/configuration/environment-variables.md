@@ -502,6 +502,23 @@ NLP_MAX_TASKS=50           # Restart after N tasks
 CLOUD_ASR_CONCURRENCY=16   # Default: 16
 ```
 
+### Speaker attribute (gender) detection memory
+
+Gender detection runs a wav2vec2 model on the CPU worker. Its memory grows with the length of
+the clip it is given. Each detection costs about 0.7 GB for the model plus about 0.4 GB of
+working memory at the default clip cap, and every CPU worker process shares one container
+memory limit. Two settings bound it:
+
+```bash
+# Longest clip (seconds, taken from the middle of a speaking turn) the model is given
+SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS=20   # Default: 20 (minimum 2)
+# Detections allowed at once per worker host/container; extra ones re-queue themselves
+SPEAKER_ATTRIBUTE_MAX_CONCURRENCY=2     # Default: 2 (0 = unbounded)
+```
+
+A CPU worker also unloads the model after each detection, so idle worker processes don't each
+keep their own copy.
+
 ## Task Recovery
 
 A periodic health check (every 10 minutes) and a startup recovery pass reclaim work whose worker

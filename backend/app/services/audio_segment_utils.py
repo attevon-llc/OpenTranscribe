@@ -73,6 +73,19 @@ def select_top_segments(
     return [s for s in sorted_segs[:max_segments] if s["end"] - s["start"] >= min_duration]
 
 
+def center_window(segment: dict[str, Any], max_duration: float) -> dict[str, Any]:
+    """Shrink a segment to at most ``max_duration`` seconds around its midpoint.
+
+    For a model with a fixed useful input length: fetching the rest of a multi-minute
+    speaking turn only to throw it away costs bandwidth and decode memory.
+    """
+    duration = segment["end"] - segment["start"]
+    if duration <= max_duration:
+        return dict(segment)
+    start = segment["start"] + (duration - max_duration) / 2
+    return {**segment, "start": start, "end": start + max_duration}
+
+
 def extract_audio_segment_np(
     audio_source: str,
     start: float,

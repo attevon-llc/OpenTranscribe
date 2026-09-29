@@ -9,6 +9,7 @@ Model card: https://huggingface.co/prithivMLmods/Common-Voice-Gender-Detection
 """
 
 import logging
+import os
 from typing import Any
 
 import numpy as np
@@ -16,6 +17,47 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "prithivMLmods/Common-Voice-Gender-Detection"
+
+SAMPLE_RATE = 16000
+
+# Longest clip the model ever sees (issue #1066). wav2vec2's activation memory grows with
+# input length, and the callers hand it whole merged speaking turns, which run to minutes
+# in a meeting: one process peaked at 1.7 GB on a 60 s clip, 3.6 GB on 180 s and 5.5 GB on
+# 300 s, and a 6 GiB CPU worker was OOM-killed by two such tasks. The model was fine-tuned
+# on Common Voice clips a few seconds long, so a 20 s window gives it plenty to classify.
+DEFAULT_MAX_CLIP_SECONDS = 20.0
+
+
+def max_clip_seconds() -> float:
+    """``SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS``, falling back to the default on garbage."""
+    raw = os.getenv("SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS", "").strip()
+    if not raw:
+        return DEFAULT_MAX_CLIP_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS=%r is not a number; using default", raw)
+        return DEFAULT_MAX_CLIP_SECONDS
+    if value < 2.0:
+        logger.warning("SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS=%s is below 2 s; using default", raw)
+        return DEFAULT_MAX_CLIP_SECONDS
+    return value
+
+
+def center_crop(
+    audio_np: np.ndarray, max_seconds: float, sample_rate: int = SAMPLE_RATE
+) -> np.ndarray:
+    """Return at most ``max_seconds`` of ``audio_np``, taken from its middle.
+
+    The middle rather than the head: a merged speaking turn starts and ends at the
+    boundaries diarization is least sure about.
+    """
+    max_samples = int(max_seconds * sample_rate)
+    if len(audio_np) <= max_samples:
+        return audio_np
+    start = (len(audio_np) - max_samples) // 2
+    return audio_np[start : start + max_samples]
+
 
 # Label mapping: model index → gender string
 GENDER_ID2LABEL = {0: "female", 1: "male"}
@@ -103,6 +145,7 @@ class SpeakerAttributeService:
 
         import torch
 
+        audio_np = center_crop(audio_np, max_clip_seconds())
         inputs = self._feature_extractor(  # type: ignore[misc]
             audio_np,
             sampling_rate=16000,
@@ -144,6 +187,36 @@ class SpeakerAttributeService:
 
 # Module-level cached instance
 _cached_service: SpeakerAttributeService | None = None
+
+
+def _return_freed_memory_to_os() -> None:
+    """Ask glibc to hand freed heap back to the kernel.
+
+    Without it, a CPU worker process keeps the high-water mark of the model and its
+    activations as RSS long after both are freed, which is what the container's memory
+    limit is measured against. No-op where glibc isn't the allocator.
+    """
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
+def release_cached_attribute_service() -> None:
+    """Drop the process-wide cached model and return its memory.
+
+    CPU workers call this after each detection (issue #1066): every prefork child that
+    has ever run the task otherwise keeps its own ~0.7 GB copy, so a pool of 8 idles at
+    ~5.6 GB. Reloading from the local HF cache costs a few seconds per task.
+    """
+    global _cached_service
+    if _cached_service is None:
+        return
+    service, _cached_service = _cached_service, None
+    service.cleanup()
+    _return_freed_memory_to_os()
 
 
 def get_cached_attribute_service(force_cpu: bool = False) -> SpeakerAttributeService:

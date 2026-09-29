@@ -576,6 +576,10 @@ def test_provider_error_is_delivered_in_band(client, auth_headers):
             body = b"".join(stream.iter_bytes()).decode()
 
     assert "event: error" in body
+    # Provider prose stays in the server log, never on the wire (issue #1049). The
+    # persisted row is pinned in tests/unit/test_chat_provider_error_frames.py —
+    # this harness's savepoint session is invisible to the turn's own persistence.
+    assert "provider exploded" not in body
 
 
 def test_missing_llm_is_a_clean_400_not_a_broken_stream(client, auth_headers):

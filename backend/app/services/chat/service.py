@@ -89,6 +89,16 @@ TITLE_MAX_CHARS = 60
 MIN_ANSWER_TOKENS = 256
 
 
+#: The only failure text a chat turn ever puts on the wire or in the database. The
+#: client renders the translated string for the frame's ``code``; these English
+#: literals are what an API consumer without i18n sees (issue #1049).
+PROVIDER_UNAVAILABLE_MESSAGE = (
+    "The AI provider is temporarily unavailable. Please try again in a moment."
+)
+PROVIDER_ERROR_MESSAGE = "The AI provider could not generate a response. Please try again."
+GENERATION_FAILED_MESSAGE = "Generation failed."
+
+
 def sse(event: str, payload: dict[str, Any]) -> str:
     """Format one SSE frame (same helper shape as the subtitle export stream)."""
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
@@ -2547,9 +2557,26 @@ class ChatService:
                     turn.cache_read_tokens = event.cache_read_tokens
                     turn.cache_write_tokens = event.cache_write_tokens
                 elif event.type == "error":
-                    turn.error = event.message
-                    turn.error_code = "provider_error"
-                    yield sse("error", {"code": "provider_error", "message": event.message})
+                    # Provider prose (quota text, request IDs, SDK retry counts) goes
+                    # to the log only; the frame, the persisted row and the API all
+                    # carry a fixed sentence plus a code the client translates
+                    # (issue #1049, same hygiene as #959).
+                    logger.warning(
+                        "LLM provider error for conversation %s (transient=%s): %s",
+                        conversation_uuid,
+                        event.transient,
+                        event.message,
+                    )
+                    if event.transient:
+                        turn.error = PROVIDER_UNAVAILABLE_MESSAGE
+                        turn.error_code = "provider_unavailable"
+                        turn.metadata["error_code"] = turn.error_code
+                        yield sse("error", {"code": "provider_unavailable", "message": turn.error})
+                    else:
+                        turn.error = PROVIDER_ERROR_MESSAGE
+                        turn.error_code = "provider_error"
+                        turn.metadata["error_code"] = turn.error_code
+                        yield sse("error", {"code": "provider_error", "message": turn.error})
                 elif event.type == "done":
                     turn.finish_reason = event.finish_reason
 
@@ -2557,6 +2584,7 @@ class ChatService:
                     cancel_event.set()
                     turn.error = "The model did not start responding in time."
                     turn.error_code = "timeout"
+                    turn.metadata["error_code"] = turn.error_code
                     yield sse("error", {"code": "timeout", "message": turn.error})
                     break
 
@@ -2581,11 +2609,12 @@ class ChatService:
             # exactly like a client disconnect: `finish_reason = "cancelled"`,
             # no extra LLM call was ever made.
             logger.info("Chat turn %s cancelled during context preparation", assistant_message_uuid)
-        except Exception as exc:  # noqa: BLE001 — surface as a frame, never a 500
+        except Exception:  # noqa: BLE001 — surface as a frame, never a 500
             logger.exception("Chat stream failed for conversation %s", conversation_uuid)
-            turn.error = str(exc)
+            turn.error = GENERATION_FAILED_MESSAGE
             turn.error_code = "provider_error"
-            yield sse("error", {"code": "provider_error", "message": "Generation failed."})
+            turn.metadata["error_code"] = turn.error_code
+            yield sse("error", {"code": "provider_error", "message": turn.error})
         else:
             reached_end = True
         finally:

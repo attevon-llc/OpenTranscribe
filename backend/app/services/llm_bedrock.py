@@ -23,6 +23,13 @@ cancelled the same way, so it drops in without ``aioboto3`` or any async plumbin
 **Credentials.** Resolved by boto3's standard chain — instance role, task role,
 profile, or environment. Bedrock is therefore the one provider with no API key to
 store, which is why ``api_key`` is not consulted anywhere below.
+
+**Retries (issue #1049).** Every client is built with botocore's retry config from
+``BEDROCK_RETRY_MODE`` / ``BEDROCK_MAX_ATTEMPTS`` (default ``adaptive`` / 8). The
+botocore default (``legacy``, 5 attempts) surfaced a short Bedrock capacity blip
+as a failed chat turn. Retries cover the ConverseStream *call*; an exception
+member arriving mid-stream is not retried, since answer text may already be on
+the wire.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.core import constants as C  # noqa: N812
+from app.core.config import settings
 from app.services.llm_stream import LLMStreamEvent
 
 logger = logging.getLogger(__name__)
@@ -44,8 +52,49 @@ logger = logging.getLogger(__name__)
 GEO_PREFIXES = ("us.", "eu.", "apac.", "jp.", "au.", "global.", "us-gov.")
 
 
+#: botocore error codes that mean "Bedrock is at capacity, retry shortly" rather
+#: than "this request is wrong". The user gets "try again in a moment" for these.
+TRANSIENT_ERROR_CODES = frozenset(
+    {
+        "ThrottlingException",
+        "ServiceUnavailableException",
+        "ModelNotReadyException",
+        "TooManyRequestsException",
+    }
+)
+
+_RETRY_MODES = ("adaptive", "standard", "legacy")
+
+
 class BedrockNotConfiguredError(RuntimeError):
     """boto3 is missing, or no region is set. Surfaced as a normal provider error."""
+
+
+def retry_config() -> dict[str, Any]:
+    """The botocore ``retries`` block every Bedrock client is built with.
+
+    An unrecognised mode or a non-positive attempt count falls back to the default
+    with a warning rather than failing every call: a typo in an optional tuning knob
+    should not take chat down.
+    """
+    mode = (settings.BEDROCK_RETRY_MODE or "").strip().lower()
+    if mode not in _RETRY_MODES:
+        logger.warning("Ignoring invalid BEDROCK_RETRY_MODE %r; using adaptive", mode)
+        mode = "adaptive"
+    attempts = settings.BEDROCK_MAX_ATTEMPTS
+    if attempts < 1:
+        logger.warning("Ignoring invalid BEDROCK_MAX_ATTEMPTS %r; using 8", attempts)
+        attempts = 8
+    return {"mode": mode, "max_attempts": attempts}
+
+
+def is_transient_error(exc: BaseException) -> bool:
+    """True when a boto3 exception is a capacity condition, not a request error."""
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    code = (response.get("Error") or {}).get("Code")
+    return code in TRANSIENT_ERROR_CODES
 
 
 def _client(region: str):
@@ -57,6 +106,7 @@ def _client(region: str):
     """
     try:
         import boto3
+        from botocore.config import Config
     except ImportError as exc:  # pragma: no cover - boto3 is a hard dependency
         raise BedrockNotConfiguredError("boto3 is not installed") from exc
 
@@ -64,7 +114,9 @@ def _client(region: str):
         raise BedrockNotConfiguredError(
             "No AWS region configured for Bedrock (set BEDROCK_REGION or AWS_REGION)"
         )
-    return boto3.client("bedrock-runtime", region_name=region)
+    return boto3.client(
+        "bedrock-runtime", region_name=region, config=Config(retries=retry_config())
+    )
 
 
 def resolve_model_id(model: str, region: str) -> str:
@@ -210,13 +262,23 @@ def translate_stream_event(
     if "throttlingException" in raw:
         message = raw["throttlingException"].get("message", "throttled")
         logger.warning("Bedrock throttled for %s: %s", model_id, message)
-        return LLMStreamEvent(type="error", message=f"Bedrock throttled: {message}"), None
+        return (
+            LLMStreamEvent(type="error", message=f"Bedrock throttled: {message}", transient=True),
+            None,
+        )
 
     for key in _STREAM_ERROR_KEYS:
         if key in raw:
             message = (raw[key] or {}).get("message", key)
             logger.error("Bedrock stream error for %s: %s", model_id, message)
-            return LLMStreamEvent(type="error", message=f"Bedrock error: {message}"), None
+            return (
+                LLMStreamEvent(
+                    type="error",
+                    message=f"Bedrock error: {message}",
+                    transient=key == "serviceUnavailableException",
+                ),
+                None,
+            )
 
     return None, None
 
@@ -364,7 +426,9 @@ def stream_converse(
         response = client.converse_stream(**request)
     except Exception as exc:  # noqa: BLE001 — surfaced in-band like every other provider
         logger.error("Bedrock ConverseStream failed for %s: %s", model_id, exc)
-        yield LLMStreamEvent(type="error", message=f"Bedrock error: {exc}")
+        yield LLMStreamEvent(
+            type="error", message=f"Bedrock error: {exc}", transient=is_transient_error(exc)
+        )
         return
 
     finish_reason: str | None = None
@@ -387,7 +451,11 @@ def stream_converse(
                 return
     except Exception as exc:  # noqa: BLE001
         logger.error("Bedrock stream interrupted for %s: %s", model_id, exc)
-        yield LLMStreamEvent(type="error", message=f"Bedrock stream interrupted: {exc}")
+        yield LLMStreamEvent(
+            type="error",
+            message=f"Bedrock stream interrupted: {exc}",
+            transient=is_transient_error(exc),
+        )
         return
 
     if not saw_usage:

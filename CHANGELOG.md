@@ -60,6 +60,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Chat showed a raw i18n key and the raw provider exception when the LLM provider failed
+  (#1049).** Observed with AWS Bedrock during a transient `ServiceUnavailableException`: the
+  banner read `chat.errors.provider_error` and the message read "Bedrock error: An error
+  occurred (ServiceUnavailableException) when calling the ConverseStream operation (reached max
+  retries: 4)...". A capacity failure (Bedrock throttling/503, HTTP 429/502/503/504, Anthropic
+  `overloaded_error`) is now the new `provider_unavailable` error code ("The AI provider is
+  temporarily unavailable. Please try again in a moment."), anything else stays
+  `provider_error` with a generic sentence, and both are translated in all 12 locales. Provider
+  text is logged server-side only — it is no longer sent in the SSE frame or stored on the
+  message row. The code is persisted in `msg_metadata.error_code` so a reloaded thread renders
+  the same message. Every `ChatErrorCode` now has a `chat.errors.*` string (`timeout`,
+  `quota_exceeded`, `rate_limited` and others were missing; the unused camelCase
+  `quotaExceeded`/`rateLimited` keys were renamed to the codes the client emits).
+- **Bedrock calls now retry through short capacity blips (#1049).** Every Bedrock client,
+  streaming included, uses botocore's `adaptive` retry mode with 8 attempts instead of the
+  default (`legacy`, 5). Configurable with `BEDROCK_RETRY_MODE` and `BEDROCK_MAX_ATTEMPTS`.
+
 - **An env-configured Bedrock provider was reported unavailable, disabling chat and summary
   actions (#1046).** `GET /api/llm/status` answered `available: false` because its probe GETs
   `{base_url}/v1/models`, and Bedrock is an SDK provider with no `base_url`. Every surface gated

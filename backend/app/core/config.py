@@ -1282,6 +1282,12 @@ class Settings(BaseSettings):
     BEDROCK_MODEL_NAME: str = os.getenv(
         "BEDROCK_MODEL_NAME", "anthropic.claude-haiku-4-5-20251001-v1:0"
     )
+    # botocore retry policy for every Bedrock client, streaming included (issue #1049).
+    # `adaptive` adds client-side rate limiting on top of `standard`'s jittered
+    # exponential backoff; 8 attempts rides out a short capacity blip
+    # (ServiceUnavailable/Throttling) that the botocore default surfaced as an error.
+    BEDROCK_RETRY_MODE: str = "adaptive"
+    BEDROCK_MAX_ATTEMPTS: int = 8
 
     # ===== ASR (Speech Recognition) Provider =====
     ASR_PROVIDER: str = os.getenv("ASR_PROVIDER", "local")

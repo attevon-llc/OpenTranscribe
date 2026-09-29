@@ -486,6 +486,7 @@
   "fileDetail.failedToGenerateSummaryGeneric": "Zusammenfassung konnte nicht erstellt werden",
   "fileDetail.failedToLoadFile": "Dateidetails konnten nicht geladen werden. Bitte versuchen Sie es erneut.",
   "fileDetail.notFoundOrNoAccess": "Diese Datei existiert nicht oder Sie haben keinen Zugriff darauf.",
+  "fileDetail.notFoundTitle": "Datei nicht gefunden | OpenTranscribe",
   "fileDetail.failedToLoadMoreSegments": "Weitere Segmente konnten nicht geladen werden",
   "fileDetail.failedToLoadSummary": "Zusammenfassung konnte nicht geladen werden.",
   "fileDetail.failedToSaveSegment": "Änderungen am Segment konnten nicht gespeichert werden",

@@ -1641,6 +1641,7 @@
   "fileDetail.invalidResponseFormat": "تنسيق الاستجابة غير صالح",
   "fileDetail.failedToLoadFile": "فشل تحميل تفاصيل الملف. يُرجى المحاولة مرة أخرى.",
   "fileDetail.notFoundOrNoAccess": "هذا الملف غير موجود أو ليس لديك صلاحية الوصول إليه.",
+  "fileDetail.notFoundTitle": "لم يتم العثور على الملف | OpenTranscribe",
   "fileDetail.failedToLoadMoreSegments": "فشل تحميل المزيد من المقاطع",
   "fileDetail.invalidFileId": "معرّف الملف غير صالح",
   "fileDetail.loadingFile": "جارٍ تحميل الملف...",

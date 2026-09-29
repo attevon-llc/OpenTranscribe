@@ -1641,6 +1641,7 @@
   "fileDetail.invalidResponseFormat": "응답 형식이 올바르지 않습니다",
   "fileDetail.failedToLoadFile": "파일 세부 정보를 불러오지 못했습니다. 다시 시도하세요.",
   "fileDetail.notFoundOrNoAccess": "이 파일이 없거나 접근 권한이 없습니다.",
+  "fileDetail.notFoundTitle": "파일을 찾을 수 없음 | OpenTranscribe",
   "fileDetail.failedToLoadMoreSegments": "추가 세그먼트를 불러오지 못했습니다",
   "fileDetail.invalidFileId": "파일 ID가 올바르지 않습니다",
   "fileDetail.loadingFile": "파일을 불러오는 중...",

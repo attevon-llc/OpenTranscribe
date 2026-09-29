@@ -2191,7 +2191,8 @@
 </script>
 
 <svelte:head>
-  <title>{file?.filename || $t('fileDetail.loadingFile')}</title>
+  <title>{file?.filename ||
+    (fileNotFound ? $t('fileDetail.notFoundTitle') : $t('fileDetail.loadingFile'))}</title>
 </svelte:head>
 
 <div class="file-detail-page">

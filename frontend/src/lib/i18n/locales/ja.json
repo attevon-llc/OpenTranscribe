@@ -1640,6 +1640,7 @@
   "fileDetail.invalidResponseFormat": "無効なレスポンス形式です",
   "fileDetail.failedToLoadFile": "ファイルの詳細の読み込みに失敗しました。再度お試しください。",
   "fileDetail.notFoundOrNoAccess": "このファイルは存在しないか、アクセス権がありません。",
+  "fileDetail.notFoundTitle": "ファイルが見つかりません | OpenTranscribe",
   "fileDetail.failedToLoadMoreSegments": "追加セグメントの読み込みに失敗しました",
   "fileDetail.invalidFileId": "無効なファイルIDです",
   "fileDetail.loadingFile": "ファイルを読み込み中...",

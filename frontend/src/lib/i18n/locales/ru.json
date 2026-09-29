@@ -1630,6 +1630,7 @@
   "fileDetail.invalidResponseFormat": "Неверный формат ответа",
   "fileDetail.failedToLoadFile": "Не удалось загрузить данные файла. Пожалуйста, попробуйте снова.",
   "fileDetail.notFoundOrNoAccess": "Этот файл не существует, или у вас нет к нему доступа.",
+  "fileDetail.notFoundTitle": "Файл не найден | OpenTranscribe",
   "fileDetail.failedToLoadMoreSegments": "Не удалось загрузить дополнительные сегменты",
   "fileDetail.invalidFileId": "Неверный ID файла",
   "fileDetail.loadingFile": "Загрузка файла...",

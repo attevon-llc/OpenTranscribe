@@ -331,7 +331,7 @@ class TestAdminFileAccess:
             f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
-        assert response.status_code == 403
+        assert response.status_code == 404
 
 
 class TestAdminSpeakerAccess:

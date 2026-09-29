@@ -192,11 +192,11 @@ def test_get_file_owner_200(client, user_token_headers, normal_user, db_session)
 
 
 def test_get_file_other_user_forbidden(client, other_user_auth_headers, normal_user, db_session):
-    """A non-owner gets 403 with the canonical permission detail."""
+    """A non-owner gets 404, not 403, so the file's existence is not disclosed."""
     media_file = _make_file(db_session, normal_user)
     response = client.get(f"/api/files/{media_file.uuid}", headers=other_user_auth_headers)
-    assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json()["detail"] == "You do not have permission to access this file"
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "File not found"
 
 
 def test_get_file_admin_can_read_any(client, admin_token_headers, normal_user, db_session):

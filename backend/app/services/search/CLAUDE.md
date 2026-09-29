@@ -199,6 +199,19 @@ speaker plane exists to let people *set*.
   cardinality aggs meet hybrid + collapse + RRF. `total_files` is derived from collapsed results.
 - RRF + collapse **strips inner-hit highlights** — hence `_detect_keyword_match_fallback` and
   `_generate_synthetic_snippet`. Don't "simplify" those away.
+- **Keyword (BM25-only) search does NOT send `collapse.inner_hits` (#1064).** OpenSearch runs
+  inner hits as one sub-search per collapsed group, and each one rewrites the fuzzy clauses and
+  sets up the highlighter again. That fixed cost multiplied by the 200-group over-fetch made
+  keyword search 0.4-2.0 s on a 2,000-chunk index, where a minimal `match` took 2-6 ms and
+  neural took ~100 ms. `profile: true` doesn't show it: the shard query and fetch come to ~60 ms,
+  and the rest of `took` is the unprofiled expand phase. `_execute_split_bm25_collapse` instead
+  sends the collapse without inner hits, then one `terms` + `top_hits` agg for the segments, and
+  `_hydrate_page_highlights` highlights **only the displayed page**. The page is byte-identical
+  to the single-request body (`tests/integration/test_keyword_search_latency_opensearch.py`
+  proves this and gates the latency). Two consequences: every hit of that body counts as a
+  keyword match without needing a highlight (`assume_keyword_match`), and an empty query (a
+  `match_all` browse) still takes the single-request path. The hybrid, neural, fallback,
+  backfill and two-phase bodies still use inner hits.
 - Relevance sorts can't mix `_score` with other sort criteria under the pipeline; non-relevance
   sorts therefore take the `_search_with_two_phase` path (hybrid aggs → BM25 collapse per page).
 - `recreate_index_for_dimension` **deletes the index**. Switching embedding model = full reindex —

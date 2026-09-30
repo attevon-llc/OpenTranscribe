@@ -26,22 +26,60 @@ def _float_env(key: str, default: float) -> float:
 
 _SKIP_CELERY = os.environ.get("SKIP_CELERY", "").lower() == "true"
 
-if not _SKIP_CELERY:
-    # PyTorch 2.6+ compatibility fix - MUST be done BEFORE any ML library imports
-    # Patch torch.load to default to weights_only=False for trusted HuggingFace models
-    # This must be at the TOP of celery.py because Celery's include= imports task modules
-    # which import pyannote/whisperx that cache torch.load at import time
-    import torch
 
-    _original_torch_load = torch.load
+def _patch_torch_load(torch_module) -> None:
+    """PyTorch 2.6+ compat: default ``weights_only=False`` for trusted HuggingFace models."""
+    original = torch_module.load
 
     def _patched_torch_load(*args, **kwargs):
         # Handle both missing weights_only AND weights_only=None (which PyTorch 2.8 treats as True)
         if kwargs.get("weights_only") is None:
             kwargs["weights_only"] = False
-        return _original_torch_load(*args, **kwargs)
+        return original(*args, **kwargs)
 
-    torch.load = _patched_torch_load
+    torch_module.load = _patched_torch_load
+
+
+class _TorchLoadPatchFinder:
+    """meta_path hook: patch ``torch.load`` the moment anything first imports torch.
+
+    Importing torch eagerly here made every process that imports the Celery app (beat,
+    Flower, download/NLP workers) pay hundreds of MB and seconds for a library it never
+    uses. Patching on first import keeps the ordering guarantee — the patch is applied
+    when torch's own import finishes, before pyannote/whisperx (which cache
+    ``torch.load`` at import time) get the module back.
+    """
+
+    @classmethod
+    def find_spec(cls, fullname, path=None, target=None):
+        if fullname != "torch":
+            return None
+        import importlib.machinery
+        import sys
+
+        if cls in sys.meta_path:
+            sys.meta_path.remove(cls)
+        spec = importlib.machinery.PathFinder.find_spec(fullname, path)
+        loader = spec.loader if spec is not None else None
+        if loader is None or not hasattr(loader, "exec_module"):
+            return spec
+        original_exec = loader.exec_module
+
+        def exec_module(module):
+            original_exec(module)
+            _patch_torch_load(module)
+
+        vars(loader)["exec_module"] = exec_module
+        return spec
+
+
+if not _SKIP_CELERY:
+    import sys as _sys
+
+    if "torch" in _sys.modules:
+        _patch_torch_load(_sys.modules["torch"])
+    else:
+        _sys.meta_path.insert(0, _TorchLoadPatchFinder)
 
     # Note: WhisperX 3.8.1 has native PyAnnote v4 support — no patches needed
 

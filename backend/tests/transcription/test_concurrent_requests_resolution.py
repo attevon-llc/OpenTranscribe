@@ -25,7 +25,23 @@ import sys
 import types
 from typing import Any
 
+import pytest
+
+from app.transcription import config as config_mod
 from app.transcription.config import TranscriptionConfig
+
+
+@pytest.fixture(autouse=True)
+def _no_host_memory_cap(monkeypatch, tmp_path):
+    """Keep the VRAM-only cases independent of the RAM of whatever host runs the suite.
+
+    Without this the A6000 case would be capped by a 16 GiB CI runner. The host-cap tests
+    below re-point these probes at files they write.
+    """
+    missing = str(tmp_path / "absent")
+    monkeypatch.setattr(config_mod, "_PROC_MEMINFO", missing)
+    monkeypatch.setattr(config_mod, "_CGROUP_V2_MEMORY_MAX", missing)
+    monkeypatch.setattr(config_mod, "_CGROUP_V1_MEMORY_LIMIT", missing)
 
 
 def _fake_torch(
@@ -157,3 +173,98 @@ def test_auto_concurrent_detection_failure_returns_one_with_debug_log(monkeypatc
         result = TranscriptionConfig._auto_concurrent()
     assert result == 1
     assert any("Auto-concurrent VRAM detection failed" in rec.message for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Host-RAM cap (issue #1073 step 1)
+# ---------------------------------------------------------------------------
+#
+# On common single-GPU shapes (4 vCPU / 16 GiB next to a 24 GB GPU) host memory binds before
+# VRAM: every concurrent task decodes its whole file into RAM. Auto concurrency is therefore
+# min(VRAM-based, host-based), with the host budget read from the cgroup limit when there is one.
+
+
+@pytest.fixture
+def host(monkeypatch, tmp_path):
+    """Point the host-memory probes at files this test controls."""
+    for name in ("GPU_HOST_BASELINE_MB", "GPU_PER_TASK_HOST_MB"):
+        monkeypatch.delenv(name, raising=False)
+    meminfo = tmp_path / "meminfo"
+    v2 = tmp_path / "memory.max"
+    v1 = tmp_path / "memory.limit_in_bytes"
+    monkeypatch.setattr(config_mod, "_PROC_MEMINFO", str(meminfo))
+    monkeypatch.setattr(config_mod, "_CGROUP_V2_MEMORY_MAX", str(v2))
+    monkeypatch.setattr(config_mod, "_CGROUP_V1_MEMORY_LIMIT", str(v1))
+
+    def _set(*, mem_total_mb: int, cgroup_v2: str | None = None, cgroup_v1: str | None = None):
+        meminfo.write_text(f"MemTotal:       {mem_total_mb * 1024} kB\nMemFree: 1 kB\n")
+        if cgroup_v2 is not None:
+            v2.write_text(cgroup_v2 + "\n")
+        if cgroup_v1 is not None:
+            v1.write_text(cgroup_v1 + "\n")
+
+    return _set
+
+
+def _gib(n: float) -> int:
+    return int(n * 1024)
+
+
+def test_host_budget_prefers_the_cgroup_limit(host):
+    host(mem_total_mb=_gib(64), cgroup_v2=str(13 * 1024**3))
+    assert TranscriptionConfig._host_memory_budget_mb() == 13 * 1024
+
+
+def test_an_unlimited_cgroup_falls_back_to_mem_total(host):
+    host(mem_total_mb=_gib(16), cgroup_v2="max")
+    assert TranscriptionConfig._host_memory_budget_mb() == _gib(16)
+
+
+def test_a_cgroup_v1_limit_is_read_too(host):
+    host(mem_total_mb=_gib(64), cgroup_v1=str(12 * 1024**3))
+    assert TranscriptionConfig._host_memory_budget_mb() == 12 * 1024
+
+
+def test_a_cgroup_limit_above_physical_ram_is_ignored(host):
+    """cgroup v1 reports ~8 EiB for "no limit"; physical RAM is the real ceiling."""
+    host(mem_total_mb=_gib(16), cgroup_v1=str(2**63 - 4096))
+    assert TranscriptionConfig._host_memory_budget_mb() == _gib(16)
+
+
+def test_vram_bound_host(monkeypatch, host):
+    """A 24 GB card on a roomy host: VRAM decides (4), as before this change."""
+    host(mem_total_mb=_gib(64))
+    monkeypatch.setitem(sys.modules, "torch", _fake_torch(available=True, total_memory_mb=24576))
+    assert TranscriptionConfig._auto_concurrent() == 4
+
+
+def test_ram_bound_host(monkeypatch, host):
+    """A 48 GB card in a 16 GiB pod: VRAM alone says 10, host memory must cap it so a
+    4-hour file fits in every slot."""
+    host(mem_total_mb=_gib(64), cgroup_v2=str(16 * 1024**3))
+    monkeypatch.setitem(sys.modules, "torch", _fake_torch(available=True, total_memory_mb=49140))
+    expected = (16 * 1024 - config_mod.DEFAULT_HOST_BASELINE_MB) // (
+        config_mod.DEFAULT_PER_TASK_HOST_MB
+    )
+    assert 1 <= expected < 10
+    assert TranscriptionConfig._auto_concurrent() == expected
+
+
+def test_host_sizing_is_env_tunable(monkeypatch, host):
+    host(mem_total_mb=_gib(64), cgroup_v2=str(16 * 1024**3))
+    monkeypatch.setenv("GPU_HOST_BASELINE_MB", "4096")
+    monkeypatch.setenv("GPU_PER_TASK_HOST_MB", "1024")
+    monkeypatch.setitem(sys.modules, "torch", _fake_torch(available=True, total_memory_mb=49140))
+    assert TranscriptionConfig._auto_concurrent() == min(10, (16384 - 4096) // 1024)
+
+
+def test_a_tiny_host_still_gets_one_slot(monkeypatch, host):
+    host(mem_total_mb=_gib(4))
+    monkeypatch.setitem(sys.modules, "torch", _fake_torch(available=True, total_memory_mb=49140))
+    assert TranscriptionConfig._auto_concurrent() == 1
+
+
+def test_unreadable_host_memory_leaves_the_vram_answer(monkeypatch, host):
+    # No files written at all: nothing to read, so no host cap.
+    monkeypatch.setitem(sys.modules, "torch", _fake_torch(available=True, total_memory_mb=24576))
+    assert TranscriptionConfig._auto_concurrent() == 4

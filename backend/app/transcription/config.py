@@ -16,6 +16,19 @@ logger = logging.getLogger(__name__)
 # These are routed to the CPU worker instead of GPU.
 LIGHTWEIGHT_MODELS = frozenset({"tiny", "tiny.en", "base", "base.en"})
 
+# Host-memory probes for the auto concurrency cap (issue #1073 step 1). Module-level so tests
+# can point them at files they control.
+_CGROUP_V2_MEMORY_MAX = "/sys/fs/cgroup/memory.max"
+_CGROUP_V1_MEMORY_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+_PROC_MEMINFO = "/proc/meminfo"
+
+#: Host RAM a GPU worker holds before any task runs (interpreter, torch, CTranslate2, PyAnnote,
+#: preloaded models). Override with GPU_HOST_BASELINE_MB.
+DEFAULT_HOST_BASELINE_MB = 4096
+#: Host RAM one concurrent task needs at the 4-hour media cap (whole-file float32 decode plus
+#: the diarization and transcript copies). Override with GPU_PER_TASK_HOST_MB.
+DEFAULT_PER_TASK_HOST_MB = 3072
+
 # Module-level guard so the CPU-mode misconfiguration warning fires at most
 # once per worker process — without this, every transcription task would
 # re-emit the same advice into the worker logs.
@@ -379,9 +392,9 @@ class TranscriptionConfig:
 
     @staticmethod
     def _auto_concurrent() -> int:
-        """Calculate max concurrent tasks from available VRAM.
+        """Max concurrent GPU tasks: ``min(VRAM-based, host-memory-based)``.
 
-        Calibrated from whitepaper benchmarks (large-v3-turbo + PyAnnote v4,
+        VRAM-based, calibrated from whitepaper benchmarks (large-v3-turbo + PyAnnote v4,
         diarization embedding batch pinned at 16):
           - Shared model baseline: ~7 GB (Whisper weights + PyAnnote pipeline)
           - Per-task VRAM overhead: ~4 GB (activation memory, CTranslate2 beam
@@ -393,7 +406,26 @@ class TranscriptionConfig:
           RTX A6000  49 GB → 10 concurrent (matches whitepaper 54.6x peak at 8)
           RTX 3090   24 GB →  4 concurrent
           RTX 3080Ti 12 GB →  1 concurrent (safe floor)
+
+        Host-memory-based (issue #1073 step 1): on common single-GPU shapes (4 vCPU and
+        16 GiB next to a 24 GB GPU) RAM binds first, because each task decodes its whole file
+        into memory. ``(host_budget - GPU_HOST_BASELINE_MB) // GPU_PER_TASK_HOST_MB``, with
+        the budget read from the cgroup limit when there is one, so every slot fits a file at
+        the 4-hour media cap.
         """
+        vram_based = TranscriptionConfig._vram_based_concurrency()
+        host_based = TranscriptionConfig._host_based_concurrency()
+        if host_based is not None and host_based < vram_based:
+            logger.info(
+                "Auto GPU concurrency capped by host memory: %d (VRAM would allow %d)",
+                host_based,
+                vram_based,
+            )
+            return host_based
+        return vram_based
+
+    @staticmethod
+    def _vram_based_concurrency() -> int:
         try:
             import torch
 
@@ -404,3 +436,57 @@ class TranscriptionConfig:
         except Exception as e:
             logger.debug(f"Auto-concurrent VRAM detection failed: {e}")
         return 1
+
+    @staticmethod
+    def _host_memory_budget_mb() -> int | None:
+        """Usable host memory in MB: the cgroup limit when set, never above MemTotal."""
+        mem_total_mb: int | None = None
+        try:
+            with open(_PROC_MEMINFO) as fh:
+                for line in fh:
+                    if line.startswith("MemTotal:"):
+                        mem_total_mb = int(line.split()[1]) // 1024
+                        break
+        except (OSError, ValueError, IndexError):
+            mem_total_mb = None
+
+        limit_mb: int | None = None
+        for path in (_CGROUP_V2_MEMORY_MAX, _CGROUP_V1_MEMORY_LIMIT):
+            try:
+                with open(path) as fh:
+                    raw = fh.read().strip()
+            except OSError:
+                continue
+            if raw.isdigit():
+                limit_mb = int(raw) // (1024**2)
+                break
+
+        candidates = [v for v in (mem_total_mb, limit_mb) if v]
+        return min(candidates) if candidates else None
+
+    @staticmethod
+    def _host_based_concurrency() -> int | None:
+        budget = TranscriptionConfig._host_memory_budget_mb()
+        if budget is None:
+            return None
+        baseline = _int_env("GPU_HOST_BASELINE_MB", DEFAULT_HOST_BASELINE_MB)
+        per_task = max(1, _int_env("GPU_PER_TASK_HOST_MB", DEFAULT_PER_TASK_HOST_MB))
+        return max(1, (budget - baseline) // per_task)
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using %d", name, raw, default)
+        return default
+
+
+if __name__ == "__main__":
+    # `python -m app.transcription.config` prints the auto GPU concurrency for this host, so
+    # a shell entrypoint can size `celery --concurrency` (and GPU_CONCURRENT_REQUESTS) from
+    # both VRAM and host memory before the worker starts.
+    print(TranscriptionConfig._auto_concurrent())

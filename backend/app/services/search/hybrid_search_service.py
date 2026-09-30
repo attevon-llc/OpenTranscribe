@@ -1792,6 +1792,20 @@ class HybridSearchService:
             }
         return fields
 
+    @staticmethod
+    def _unshingled_fields(search_fields: list[str]) -> list[str]:
+        """Drop the shingled ``content`` field when ``content.exact`` is also searched.
+
+        ``content`` indexes filler shingles (``remot control _`` for a removed stopword).
+        A fuzzy match can land on one, and the highlighter then marks its whole offset
+        range, running past the matched phrase. ``content.exact`` still carries the typo
+        tolerance; the non-fuzzy clauses keep the stemmed ``content`` field.
+        """
+        has_exact = any(f.split("^")[0] == "content.exact" for f in search_fields)
+        if not has_exact:
+            return search_fields
+        return [f for f in search_fields if f.split("^")[0] != "content"]
+
     def _build_text_query(
         self,
         query: str,
@@ -1936,7 +1950,7 @@ class HybridSearchService:
                     {
                         "multi_match": {
                             "query": query,
-                            "fields": search_fields,
+                            "fields": self._unshingled_fields(search_fields),
                             "type": "best_fields",
                             "operator": "and",
                             "fuzziness": "AUTO",

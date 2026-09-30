@@ -127,3 +127,25 @@ def user_in_tenant(db: Any, user_id: int, org_id: int | None) -> bool:
     """
     result: bool = bool(db.query(owner_in_tenant(user_id, org_id)).scalar())
     return result
+
+
+def group_members_outside_org(db: Any, group_id: int, org_id: int) -> int:
+    """How many members of group ``group_id`` are NOT members of organization ``org_id``.
+
+    Groups can span organizations, so granting an org-stamped resource to a group is
+    only in-tenant when this is zero.
+    """
+    from app.models.group import UserGroupMember
+
+    count: int = (
+        db.query(UserGroupMember.user_id)
+        .filter(
+            UserGroupMember.group_id == group_id,
+            ~exists().where(
+                OrganizationMembership.user_id == UserGroupMember.user_id,
+                OrganizationMembership.organization_id == org_id,
+            ),
+        )
+        .count()
+    )
+    return count

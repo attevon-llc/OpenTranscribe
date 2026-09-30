@@ -22,12 +22,16 @@ _CGROUP_V2_MEMORY_MAX = "/sys/fs/cgroup/memory.max"
 _CGROUP_V1_MEMORY_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
 _PROC_MEMINFO = "/proc/meminfo"
 
-#: Host RAM a GPU worker holds before any task runs (interpreter, torch, CTranslate2, PyAnnote,
-#: preloaded models). Override with GPU_HOST_BASELINE_MB.
-DEFAULT_HOST_BASELINE_MB = 4096
-#: Host RAM one concurrent task needs at the 4-hour media cap (whole-file float32 decode plus
-#: the diarization and transcript copies). Override with GPU_PER_TASK_HOST_MB.
-DEFAULT_PER_TASK_HOST_MB = 3072
+# Calibrated on an RTX 3080 Ti host (large-v3-turbo int8_float16), RSS of one process:
+#   worker with the app imported and Whisper + PyAnnote loaded: 1.3 GB steady, 2.4 GB peak
+#   4-hour file, Whisper decode (whole-file float32 decode included): +3.6 GB
+#   4-hour file, in-process PyAnnote diarization:                    +4.0 GB
+# (with the diar-native sidecar the diarization memory lives in the sidecar's process).
+#: Host RAM a GPU worker holds before any task runs. Override with GPU_HOST_BASELINE_MB.
+DEFAULT_HOST_BASELINE_MB = 2560
+#: Host RAM one concurrent task needs at the 4-hour media cap. Override with
+#: GPU_PER_TASK_HOST_MB.
+DEFAULT_PER_TASK_HOST_MB = 4096
 
 # Module-level guard so the CPU-mode misconfiguration warning fires at most
 # once per worker process — without this, every transcription task would

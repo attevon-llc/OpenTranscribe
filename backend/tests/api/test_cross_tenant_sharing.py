@@ -14,7 +14,10 @@ scope, only if the owner belongs to no organization. Community installs have no
 organizations, so every account is "personal" and instance-wide sharing is unchanged —
 that is the ``p1`` → ``p2`` row.
 
-Adding a shared resource type? Add a ``Surface`` to ``SURFACES``.
+Adding a shared resource type? Add a ``Surface`` to ``SURFACES`` (a model with an
+``is_shared`` column), an entry in ``GRANT_MODELS`` (a table granting to a user/group), or
+one in ``SHARED_SETTING_KEYS`` (a ``UserSetting`` key). The guard tests at the bottom
+fail until you do.
 """
 
 from __future__ import annotations
@@ -611,3 +614,96 @@ def test_explicit_prompt_on_summarize_scoped(world, viewer, tenant, owner, expec
         with pytest.raises(HTTPException) as exc:
             require_usable_prompt_uuid(world.db, prompt_uuid, ctx)
         assert exc.value.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Grants naming one user: the read side stays in the grantor's tenant           #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(("viewer", "tenant", "owner", "expected"), CASES)
+def test_tag_grant_stays_in_the_tags_tenant(client, world, viewer, tenant, owner, expected):
+    """A tag granted straight to a user (legacy rows included) is listed only in the
+    tag's own tenant."""
+    from app.models.media import Tag
+    from app.models.sharing import TagShare
+
+    owner_user = world.users[owner]
+    owner_org = world.org_a.id if owner == "a1" else None
+    name = f"granted-{uuid_pkg.uuid4().hex[:8]}"
+    tag = Tag(
+        name=name,
+        normalized_name=name,
+        user_id=owner_user.id,
+        organization_id=owner_org,
+        source="manual",
+    )
+    world.db.add(tag)
+    world.db.flush()
+    world.db.add(
+        TagShare(
+            tag_id=tag.id,
+            shared_by_id=owner_user.id,
+            target_type="user",
+            target_user_id=world.users[viewer].id,
+        )
+    )
+    world.db.commit()
+    with _acting_as(world.users[viewer], world.org_id(tenant)):
+        resp = client.get("/api/tags")
+    assert resp.status_code == 200, resp.text
+    assert (name in {t["name"] for t in resp.json()}) is expected
+
+
+# --------------------------------------------------------------------------- #
+# Guard: a new shareable model cannot skip this suite                           #
+# --------------------------------------------------------------------------- #
+
+#: Grant tables (a share naming one user or group) and the tenancy test proving each.
+GRANT_MODELS: dict[str, str] = {
+    "CollectionShare": "tests/api/test_collection_tenancy.py::test_shared_with_me_is_tenant_gated",
+    "TagShare": "tests/api/test_cross_tenant_sharing.py::test_tag_grant_stays_in_the_tags_tenant",
+}
+
+#: UserSetting keys that share a value with other users, and the surface covering them.
+SHARED_SETTING_KEYS: dict[str, str] = {
+    "org_context_is_shared": "org_context",
+    "org_context_use_shared_from": "org_context",
+}
+
+
+def test_every_shareable_model_is_covered():
+    """Every model with an ``is_shared`` flag is a ``Surface`` above; every grant table
+    names the tenancy test that proves it. Add yours before shipping a shared feature."""
+    from pathlib import Path
+
+    from app.db.base import Base
+
+    covered = {m for s in SURFACES for m in s.models}
+    backend = Path(__file__).resolve().parents[2]
+    uncovered = []
+    for mapper in Base.registry.mappers:
+        cls, cols = mapper.class_, set(mapper.columns.keys())
+        if "is_shared" in cols and cls not in covered:
+            uncovered.append(f"{cls.__name__}: add a Surface to SURFACES")
+        if {"target_user_id", "target_group_id"} & cols:
+            proof = GRANT_MODELS.get(cls.__name__)
+            if proof is None:
+                uncovered.append(f"{cls.__name__}: grant table without a tenancy test")
+                continue
+            path, _, test_name = proof.partition("::")
+            assert f"def {test_name}(" in (backend / path).read_text(), proof
+    assert not uncovered, uncovered
+
+
+def test_every_shared_setting_key_is_covered():
+    """UserSetting-backed sharing has no column to find; scan the code for its keys."""
+    import re
+    from pathlib import Path
+
+    app_dir = Path(__file__).resolve().parents[2] / "app"
+    pattern = re.compile(r'"([a-z_]+_(?:is_shared|use_shared_from))"')
+    keys = {k for f in app_dir.rglob("*.py") for k in pattern.findall(f.read_text())}
+    names = {s.name for s in SURFACES}
+    assert keys <= set(SHARED_SETTING_KEYS), sorted(keys - set(SHARED_SETTING_KEYS))
+    assert set(SHARED_SETTING_KEYS.values()) <= names

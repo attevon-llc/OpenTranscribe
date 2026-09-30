@@ -1070,8 +1070,11 @@ def test_index_health_is_red_everywhere_without_a_client(client, user_token_head
     )
 
 
-def test_index_health_keys_an_aliased_index_by_its_alias(client, user_token_headers):
+def test_index_health_keys_an_aliased_index_by_its_alias(client, admin_token_headers):
     """Doc counts arrive keyed by the concrete index but must be reported per alias.
+
+    Admin headers: instance-wide counts are only reported to admins (other users get
+    their own document counts — ``test_owner_listing_tenancy.py``).
 
     The speaker indices are aliases; keying the response by the concrete name would
     leave the panel looking up a key that is not there and reporting "missing" for a
@@ -1088,7 +1091,7 @@ def test_index_health_keys_an_aliased_index_by_its_alias(client, user_token_head
     )
 
     with patch("app.services.opensearch_service.opensearch_client", standin):
-        response = client.get(INDEX_HEALTH, headers=user_token_headers)
+        response = client.get(INDEX_HEALTH, headers=admin_token_headers)
 
     assert response.status_code == status.HTTP_200_OK
     body = response.json()

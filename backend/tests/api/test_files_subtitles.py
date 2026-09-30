@@ -365,7 +365,9 @@ def test_bulk_export_stream_recovers_a_completion_during_subscribe(monkeypatch):
     fake_redis = _RaceyRedis(result)
     monkeypatch.setattr("redis.asyncio.from_url", lambda *args, **kwargs: fake_redis)
 
-    response = subtitles.bulk_export_stream(job="job-334", current_user=User())
+    owner = User(id=334)
+    job = subtitles.new_bulk_job_id(owner.id)
+    response = subtitles.bulk_export_stream(job=job, current_user=owner)
     frame = asyncio.run(_first_frame(response))
 
     assert frame.startswith("event: ready"), (
@@ -373,7 +375,7 @@ def test_bulk_export_stream_recovers_a_completion_during_subscribe(monkeypatch):
         "the subscribe window was lost, so the stream would hang until the client gave up"
     )
     assert json.loads(frame.split("data: ", 1)[1]) == result
-    assert fake_redis.gets == ["bulk_export_result:job-334"] * 2, (
+    assert fake_redis.gets == [f"bulk_export_result:{job}"] * 2, (
         "the result cache must be read before AND after subscribing"
     )
-    assert fake_redis.pubsub().channel == "download_events:bulk:job-334"
+    assert fake_redis.pubsub().channel == f"download_events:bulk:{job}"

@@ -19,10 +19,13 @@ from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
 from app.core.task_liveness import RunState
 from app.core.task_liveness import probe_runs
 from app.core.task_replay import replay_tracked_ids
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.services.llm_service import LLMService
+from app.utils.db_helpers import owned_in_tenant
 from app.utils.error_classification import ErrorCategory
 from app.utils.task_utils import update_media_file_from_task_status
 
@@ -687,20 +690,31 @@ class TaskDetectionService:
 
         return youtube_files, transcription_files
 
-    def find_user_problem_files(self, db: Session, user_id: int | None = None) -> list[MediaFile]:
+    def find_user_problem_files(
+        self,
+        db: Session,
+        user_id: int | None = None,
+        *,
+        organization_id: OrgScope = UNSCOPED,
+    ) -> list[MediaFile]:
         """
         Find files that may need recovery for a specific user or all users.
 
         Args:
             db: Database session
             user_id: Optional user ID to filter by
+            organization_id: With ``user_id``, restrict to that user's files in this
+                tenant (an org id, or None for org-less files). UNSCOPED (default)
+                applies no tenant gate — the admin sweep.
 
         Returns:
             List of files that may need recovery
         """
         query = db.query(MediaFile)
         if user_id:
-            query = query.filter(MediaFile.user_id == user_id)
+            query = query.filter(
+                owned_in_tenant(MediaFile, user_id=user_id, organization_id=organization_id)
+            )
 
         problem_files = query.filter(
             MediaFile.status.in_([FileStatus.PROCESSING, FileStatus.PENDING])

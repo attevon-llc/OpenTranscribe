@@ -34,6 +34,7 @@ from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
+from app.utils.db_helpers import owned_in_tenant
 from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.time_format import format_timestamp_simple as format_timestamp
@@ -92,7 +93,12 @@ def get_media_file_by_uuid(
 
 
 def get_media_file_by_id(
-    db: Session, file_id: int, user_id: int, is_admin: bool = False
+    db: Session,
+    file_id: int,
+    user_id: int,
+    is_admin: bool = False,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> MediaFile:
     """
     Get a media file by ID and user ID (legacy - internal use only).
@@ -102,6 +108,8 @@ def get_media_file_by_id(
         file_id: File ID
         user_id: User ID
         is_admin: Whether the current user is an admin (can access any file)
+        organization_id: Active tenant (org id, or None for org-less files); a
+            non-admin's file outside it is not found. UNSCOPED = no tenant gate.
 
     Returns:
         MediaFile object
@@ -112,7 +120,9 @@ def get_media_file_by_id(
     # Admin users can access any file, regular users only their own
     query = db.query(MediaFile).filter(MediaFile.id == file_id)
     if not is_admin:
-        query = query.filter(MediaFile.user_id == user_id)
+        query = query.filter(
+            owned_in_tenant(MediaFile, user_id=user_id, organization_id=organization_id)
+        )
 
     db_file = query.first()
 

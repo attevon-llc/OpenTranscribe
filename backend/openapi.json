@@ -27678,7 +27678,7 @@
     },
     "/api/custom-vocabulary": {
       "get": {
-        "description": "List vocabulary terms visible to the current user.\n\nReturns both the user's own terms and system-wide terms (user_id IS NULL).\nOptionally filter by domain.",
+        "description": "List vocabulary terms visible to the current user.\n\nReturns the user's own terms in the active tenant and the shared terms\n(user_id IS NULL) visible there. Optionally filter by domain.",
         "operationId": "list_vocabulary_api_custom_vocabulary_get",
         "parameters": [
           {
@@ -27741,7 +27741,7 @@
         ]
       },
       "post": {
-        "description": "Create a new custom vocabulary term for the current user.",
+        "description": "Create a new custom vocabulary term for the current user in the active tenant.",
         "operationId": "create_vocabulary_term_api_custom_vocabulary_post",
         "requestBody": {
           "content": {
@@ -27790,7 +27790,7 @@
     },
     "/api/custom-vocabulary/all": {
       "delete": {
-        "description": "Delete all custom vocabulary terms for the current user (optionally filter by domain).",
+        "description": "Delete the current user's terms in the active tenant (optionally filter by domain).",
         "operationId": "delete_all_user_vocabulary_api_custom_vocabulary_all_delete",
         "parameters": [
           {
@@ -27838,7 +27838,7 @@
     },
     "/api/custom-vocabulary/bulk": {
       "post": {
-        "description": "Bulk import vocabulary terms.\n\nExpected body: { \"terms\": [ {\"term\": str, \"domain\": str, \"category\": str|null}, ... ] }\n\nDuplicate terms (same term + domain for this user) are silently skipped.\nReturns counts of created and skipped terms.",
+        "description": "Bulk import vocabulary terms into the active tenant.\n\nExpected body: { \"terms\": [ {\"term\": str, \"domain\": str, \"category\": str|null}, ... ] }\n\nDuplicate terms (same term + domain for this user) are silently skipped.\nReturns counts of created and skipped terms.",
         "operationId": "bulk_import_vocabulary_api_custom_vocabulary_bulk_post",
         "requestBody": {
           "content": {
@@ -27914,7 +27914,7 @@
     },
     "/api/custom-vocabulary/export": {
       "get": {
-        "description": "Export user's custom vocabulary terms as JSON.",
+        "description": "Export the user's custom vocabulary terms in the active tenant as JSON.",
         "operationId": "export_vocabulary_api_custom_vocabulary_export_get",
         "parameters": [
           {
@@ -28760,7 +28760,7 @@
     },
     "/api/files/bulk-export-stream": {
       "get": {
-        "description": "Server-Sent Events stream for an async bulk export.\n\nEvents: ``progress`` (status text), ``ready`` (``{url, filename, exported, skipped}``),\n``error`` (``{message}``). The reconnect-safe result cache is read both before and\nafter subscribing, so a dropped EventSource — or a job that finishes inside the\nsubscribe window (issue #334) — still delivers without polling.",
+        "description": "Server-Sent Events stream for an async bulk export.\n\nEvents: ``progress`` (status text), ``ready`` (``{url, filename, exported, skipped}``),\n``error`` (``{message}``). The reconnect-safe result cache is read both before and\nafter subscribing, so a dropped EventSource — or a job that finishes inside the\nsubscribe window (issue #334) — still delivers without polling.\n\nThe job id is signed for the user who prepared it; anyone else gets 404.",
         "operationId": "bulk_export_stream_api_files_bulk_export_stream_get",
         "parameters": [
           {
@@ -29005,7 +29005,7 @@
     },
     "/api/files/management/stuck": {
       "get": {
-        "description": "Get list of files that appear to be stuck in processing.",
+        "description": "Get list of files that appear to be stuck in processing.\n\nNon-admins see only their own files in the ACTIVE tenant.",
         "operationId": "get_stuck_files_api_files_management_stuck_get",
         "parameters": [
           {
@@ -29262,7 +29262,7 @@
     },
     "/api/files/retroactive-auto-label": {
       "post": {
-        "description": "Apply auto-labeling to existing files with pending suggestions.",
+        "description": "Apply auto-labeling to the caller's files in the active tenant with pending suggestions.",
         "operationId": "retroactive_auto_label_api_files_retroactive_auto_label_post",
         "requestBody": {
           "content": {
@@ -33143,7 +33143,7 @@
     },
     "/api/my-files/request-recovery": {
       "post": {
-        "description": "Request recovery for all of the current user's problem files.\nThis triggers the same recovery process that admins can run.",
+        "description": "Request recovery for all of the current user's problem files.\nThis triggers the same recovery process that admins can run, limited to the\ncaller's files in the ACTIVE tenant.",
         "operationId": "request_user_recovery_api_my_files_request_recovery_post",
         "responses": {
           "200": {
@@ -33172,7 +33172,7 @@
     },
     "/api/my-files/status": {
       "get": {
-        "description": "Get status summary of current user's files including any problems.\n\nReturns counts of files by status and identifies files that may need attention.",
+        "description": "Get status summary of current user's files including any problems.\n\nReturns counts of files by status and identifies files that may need attention.\nCovers the caller's own files in the ACTIVE tenant only.",
         "operationId": "get_user_file_status_api_my_files_status_get",
         "responses": {
           "200": {
@@ -34745,7 +34745,7 @@
     },
     "/api/search/index-health": {
       "get": {
-        "description": "Return health status of each OpenSearch index.\n\nTests each index with a simple match_all query (size=0) and\nreturns per-index status with doc counts.\n\nReturns:\n    Dict with per-index health: {index_name: {status, doc_count, error}}.",
+        "description": "Return health status of each OpenSearch index.\n\nTests each index with a simple match_all query (size=0) and\nreturns per-index status with doc counts. Admins get instance-wide counts;\nany other user gets the count of their OWN documents in the active tenant.\n\nReturns:\n    Dict with per-index health: {index_name: {status, doc_count, error}}.",
         "operationId": "get_index_health_api_search_index_health_get",
         "responses": {
           "200": {
@@ -35236,7 +35236,7 @@
     },
     "/api/search/reindex/status": {
       "get": {
-        "description": "Check re-indexing status and index health.\n\nReturns:\n    Dict with total_files, indexed_files, pending info, current model.",
+        "description": "Check re-indexing status and index health.\n\nFile counts cover the caller's own files in the ACTIVE tenant.\n\nReturns:\n    Dict with total_files, indexed_files, pending info, current model.",
         "operationId": "reindex_status_api_search_reindex_status_get",
         "responses": {
           "200": {
@@ -38814,7 +38814,7 @@
     },
     "/api/tasks": {
       "get": {
-        "description": "List tasks for the current user with server-side filtering and pagination.",
+        "description": "List tasks for the current user with server-side filtering and pagination.\n\nScoped to the caller's own files in the ACTIVE tenant (an org's files never\nappear in personal scope, nor another org's in org context).",
         "operationId": "list_tasks_api_tasks_get",
         "parameters": [
           {
@@ -38985,7 +38985,7 @@
     },
     "/api/tasks/progress/active": {
       "get": {
-        "description": "Get all active (running) task progress for the current user.\n\nReturns ProgressState dicts from Redis so the frontend can recover\nprogress bars after page refresh or modal close/reopen.",
+        "description": "Get all active (running) task progress for the current user.\n\nReturns ProgressState dicts from Redis so the frontend can recover\nprogress bars after page refresh or modal close/reopen. Progress is keyed\nper user, not per tenant, so the per-file detail (``failed_items``, file\nUUIDs) is narrowed to the caller's files in the ACTIVE tenant.",
         "operationId": "get_active_progress_api_tasks_progress_active_get",
         "responses": {
           "200": {
@@ -39333,7 +39333,7 @@
     },
     "/api/tasks/{task_id}": {
       "get": {
-        "description": "Get a specific task by its ID.\n\nAccepts either form of id this API issues: a real Celery task id (what the\npipeline records, and what ``POST /tasks/system/recover-task/{task_id}``\nexpects) or the legacy ``task_<media_file_id>`` form, which is still returned\nfor files that have no task row yet.",
+        "description": "Get a specific task by its ID.\n\nAccepts either form of id this API issues: a real Celery task id (what the\npipeline records, and what ``POST /tasks/system/recover-task/{task_id}``\nexpects) or the legacy ``task_<media_file_id>`` form, which is still returned\nfor files that have no task row yet. A task whose file belongs to another\ntenant than the active one is reported as not found.",
         "operationId": "get_task_api_tasks__task_id__get",
         "parameters": [
           {
@@ -39439,7 +39439,7 @@
     },
     "/api/usage/me": {
       "get": {
-        "description": "Summarize the caller's own chat LLM usage over a trailing window.\n\nCosts are **estimates**. They are computed from a rate table that a vendor can\nchange at any time, they ignore any negotiated discount, and they are omitted\nentirely for models with no known rate — an honest blank beats a confident\n$0.00. ``rates_verified_on`` is returned so a stale table is visible.\n\nAggregation happens in Python rather than SQL because the per-model breakdown\nlives in a JSONB column and the row count per user per month is small. If that\nstops being true, this becomes a grouped query over generated columns.",
+        "description": "Summarize the caller's own chat LLM usage in the active tenant over a trailing window.\n\nCosts are **estimates**. They are computed from a rate table that a vendor can\nchange at any time, they ignore any negotiated discount, and they are omitted\nentirely for models with no known rate — an honest blank beats a confident\n$0.00. ``rates_verified_on`` is returned so a stale table is visible.\n\nAggregation happens in Python rather than SQL because the per-model breakdown\nlives in a JSONB column and the row count per user per month is small. If that\nstops being true, this becomes a grouped query over generated columns.",
         "operationId": "get_my_usage_api_usage_me_get",
         "parameters": [
           {

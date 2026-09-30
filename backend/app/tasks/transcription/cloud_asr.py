@@ -171,6 +171,37 @@ def _run_parallel_cloud_asr_and_diarization(
     return merged
 
 
+def load_vocabulary_terms(db, user_id: int, file_id: int) -> list[str]:
+    """Active custom vocabulary for a file, in the file's tenant.
+
+    The owner's terms stamped with the file's organization (none = personal) plus
+    the owner-less terms visible there — never the owner's terms from another
+    tenant. Community edition: nothing is stamped, so this is the owner's terms
+    plus the system terms, as before.
+    """
+    from app.models.custom_vocabulary import CustomVocabulary
+    from app.models.media import MediaFile
+    from app.utils.db_helpers import org_stamp_is
+
+    file_org_id = db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
+    shared_stamp = CustomVocabulary.organization_id.is_(None)
+    if file_org_id is not None:
+        shared_stamp = shared_stamp | (CustomVocabulary.organization_id == file_org_id)
+    return [
+        row.term
+        for row in db.query(CustomVocabulary.term)
+        .filter(
+            (
+                (CustomVocabulary.user_id == user_id)
+                & org_stamp_is(CustomVocabulary.organization_id, file_org_id)
+            )
+            | (CustomVocabulary.user_id.is_(None) & shared_stamp),
+            CustomVocabulary.is_active.is_(True),
+        )
+        .all()
+    ]
+
+
 def _run_cloud_asr_pipeline(
     ctx: TranscriptionContext,
     audio_file_path: str,
@@ -206,18 +237,7 @@ def _run_cloud_asr_pipeline(
             provider = ASRProviderFactory.create_for_user(ctx.user_id, db)
         user_lang_settings = _get_user_language_settings(db, ctx.user_id)
 
-        # Load active custom vocabulary terms for this user
-        from app.models.custom_vocabulary import CustomVocabulary
-
-        vocab_terms: list[str] = [
-            row.term
-            for row in db.query(CustomVocabulary.term)
-            .filter(
-                (CustomVocabulary.user_id == ctx.user_id) | CustomVocabulary.user_id.is_(None),
-                CustomVocabulary.is_active.is_(True),
-            )
-            .all()
-        ]
+        vocab_terms = load_vocabulary_terms(db, ctx.user_id, ctx.file_id)
 
     logger.info(
         f"Running cloud ASR pipeline with provider '{provider.provider_name}' "

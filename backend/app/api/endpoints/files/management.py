@@ -433,9 +433,13 @@ def force_delete_file(
 def get_stuck_files(
     threshold_hours: float = Query(2.0, description="Hours threshold for stuck detection"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Get list of files that appear to be stuck in processing."""
+    """Get list of files that appear to be stuck in processing.
+
+    Non-admins see only their own files in the ACTIVE tenant.
+    """
+    current_user = ctx.user
     try:
         stuck_file_ids = check_for_stuck_files(db, threshold_hours)
 
@@ -448,7 +452,9 @@ def get_stuck_files(
                 # Use internal ID lookup for stuck files (file_id is int from check_for_stuck_files)
                 from app.api.endpoints.files.crud import get_media_file_by_id
 
-                db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+                db_file = get_media_file_by_id(
+                    db, file_id, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+                )
                 stuck_files.append(
                     {
                         "uuid": str(db_file.uuid),

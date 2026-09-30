@@ -93,6 +93,8 @@ export async function clearUserState(): Promise<void> {
     import('$lib/services/configService').then(({ resetProtectedMediaAuthConfig }) =>
       resetProtectedMediaAuthConfig()
     ),
+    // The idle guard belongs to the session that is ending (issue #1106).
+    import('$lib/auth/sessionTimeouts').then(({ stopSessionTimeouts }) => stopSessionTimeouts()),
   ]);
 
   // ── localStorage keys that hold user data ──
@@ -102,6 +104,9 @@ export async function clearUserState(): Promise<void> {
     'notifications', // Websocket notification queue
     'upload_queue', // Persisted upload queue
     'opentr:uploadPreviousValues', // Remembered upload choices
+    // First-seen time of an external session. Left behind, the NEXT session would
+    // inherit it and hit the absolute timeout at once.
+    'opentr:externalSessionFirstSeen',
   ];
   for (const key of userDataKeys) {
     try {

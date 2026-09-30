@@ -12,7 +12,7 @@
   import "../styles/search.css";
 
   // Import auth store
-  import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor } from "$stores/auth";
+  import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token } from "$stores/auth";
   import { loadCapabilities } from "$stores/capabilities";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
@@ -35,6 +35,7 @@
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
   import QuotaExceededModal from "$lib/cloud/components/QuotaExceededModal.svelte";
   import LegalGateModal from "$lib/cloud/components/LegalGateModal.svelte";
+  import IdleTimeoutDialog from "../components/IdleTimeoutDialog.svelte";
 
   /**
    * Routes reachable without a session — the ONE definition.
@@ -220,6 +221,11 @@
       {#if isCloudEdition}
         <QuotaExceededModal />
         <LegalGateModal />
+        <!-- Idle/absolute timeout for sessions held by an external identity
+             provider (#1106). Built-in sessions are timed out server-side. -->
+        {#if $token === 'external'}
+          <IdleTimeoutDialog />
+        {/if}
       {/if}
     {/if}
 

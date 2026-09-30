@@ -87,6 +87,9 @@ export interface AuthMethods {
   login_banner_enabled: boolean;
   login_banner_text: string;
   login_banner_classification: string;
+  /** Session limits in minutes (0 = off). Absent from an older backend. */
+  session_idle_timeout_minutes?: number;
+  session_absolute_timeout_minutes?: number;
 }
 
 // Define auth store interface
@@ -156,6 +159,17 @@ export const user = derived(authStore, ($store) => $store.user);
 export const isAuthenticated = derived(authStore, ($store) => $store.isAuthenticated);
 export const authReady = derived(authStore, ($store) => $store.ready);
 export const token = derived(authStore, ($store) => $store.token);
+
+/**
+ * Why the last session was ended by the app rather than by the user (issue
+ * #1106), so the login page can say so. Null for a voluntary sign-out. Cleared
+ * as soon as a new session is established.
+ */
+export type SessionEndReason = 'idle_timeout' | 'absolute_timeout';
+export const sessionEndReason = writable<SessionEndReason | null>(null);
+authStore.subscribe(($store) => {
+  if ($store.isAuthenticated && get(sessionEndReason) !== null) sessionEndReason.set(null);
+});
 
 // ---------------------------------------------------------------------------
 // Account lifecycle (FedRAMP AC-2 / AC-8 / IA-5)
@@ -749,8 +763,13 @@ async function disconnectRealtime(): Promise<void> {
   }
 }
 
-// Logout function
-export async function logout() {
+// Logout function. `reason` is set only when the app ends the session on the
+// user's behalf (idle / absolute timeout); the login page explains it.
+export async function logout(reason: SessionEndReason | null = null) {
+  // Only the two timeout reasons are meaningful. Anything else (e.g. a DOM event,
+  // when logout is wired straight to on:click) is a voluntary sign-out.
+  const endReason: SessionEndReason | null =
+    reason === 'idle_timeout' || reason === 'absolute_timeout' ? reason : null;
   // A voluntary sign-out ends any lifecycle hold. `handleAccountLifecycleError`
   // re-publishes it afterwards for `account_expired`, which must survive the
   // teardown so the login page can explain why the session ended.
@@ -785,6 +804,7 @@ export async function logout() {
     abortAllRequests('User logged out');
     await clearUserState();
     authStore.reset();
+    sessionEndReason.set(endReason);
     return;
   }
 
@@ -808,6 +828,7 @@ export async function logout() {
   await clearUserState();
 
   authStore.reset();
+  sessionEndReason.set(endReason);
 }
 
 // Get available authentication methods

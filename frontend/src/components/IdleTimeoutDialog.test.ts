@@ -122,3 +122,13 @@ describe('IdleTimeoutDialog', () => {
     expect(timeouts.endExpiredSession).toHaveBeenCalledWith('absolute');
   });
 });
+
+describe('IdleTimeoutDialog keyboard default', () => {
+  it('focuses "Stay signed in", not "Sign out now"', async () => {
+    render(IdleTimeoutDialog);
+    timeouts.sessionLock.set({ phase: 'warning', reason: 'idle', deadline: Date.now() + 90_000 });
+    await screen.findByRole('alertdialog');
+    await vi.advanceTimersByTimeAsync(50);
+    expect(document.activeElement?.textContent?.trim()).toBe('auth.sessionTimeout.staySignedIn');
+  });
+});

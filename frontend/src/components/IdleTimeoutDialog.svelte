@@ -136,7 +136,12 @@
         <p id="session-warning-message">
           {$t('auth.sessionTimeout.idleWarning', { time: remaining })}
         </p>
+        <!-- "Stay signed in" first: the focus trap focuses the first button, and it
+             is the safe default for a keyboard user. -->
         <div class="session-actions">
+          <button type="button" class="btn btn-primary" on:click={staySignedIn}>
+            {$t('auth.sessionTimeout.staySignedIn')}
+          </button>
           <button
             type="button"
             class="btn btn-secondary"
@@ -144,9 +149,6 @@
             on:click={() => signOutNow('idle')}
           >
             {$t('auth.sessionTimeout.signOutNow')}
-          </button>
-          <button type="button" class="btn btn-primary" on:click={staySignedIn}>
-            {$t('auth.sessionTimeout.staySignedIn')}
           </button>
         </div>
       {/if}

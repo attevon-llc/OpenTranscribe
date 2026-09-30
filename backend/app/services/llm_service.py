@@ -1235,6 +1235,7 @@ class LLMService:
                     # number and the fact of the failure are what the reader needs.
                     logger.exception(f"Failed to process section {idx + 1}")
                     section_summaries[idx] = {
+                        "_error": True,
                         "key_points": [
                             f"Section {idx + 1}: Processing failed ({type(e).__name__})"
                         ],

@@ -226,3 +226,111 @@ def test_the_backfill_makes_a_pre_1027_org_document_visible_to_its_org(
     assert summary["transcript_docs"] >= 1
     assert _gallery_hits(db_session, world, "org_a") == {str(media_file.uuid)}
     assert _gallery_hits(db_session, world, "personal") == set()
+
+
+# --------------------------------------------------------------------------- #
+# An index created before the tenant field existed gets it on bootstrap (#1115) #
+# --------------------------------------------------------------------------- #
+
+
+def _pre_tenant_body() -> dict:
+    from app.services.opensearch_service.indices import transcript_index_body
+
+    body = transcript_index_body()
+    del body["mappings"]["properties"]["organization_id"]
+    return body
+
+
+class _MappingClient:
+    """An ``indices`` stand-in holding one index's mapping properties."""
+
+    def __init__(self, properties: dict | None) -> None:
+        self.properties = properties
+        self.put: list[dict] = []
+        self.indices = self
+
+    def exists(self, index: str) -> bool:
+        return self.properties is not None
+
+    def get_mapping(self, index: str) -> dict:
+        return {"concrete_v1": {"mappings": {"properties": dict(self.properties or {})}}}
+
+    def put_mapping(self, index: str, body: dict) -> dict:
+        self.put.append(body)
+        assert self.properties is not None
+        self.properties.update(body["properties"])
+        return {"acknowledged": True}
+
+
+@pytest.mark.parametrize(
+    ("properties", "expected_status", "expected_puts"),
+    [
+        pytest.param({"file_uuid": {"type": "keyword"}}, "added", 1, id="pre-tenant index"),
+        pytest.param({"organization_id": {"type": "integer"}}, "present", 0, id="current"),
+        pytest.param({"organization_id": {"type": "long"}}, "present_as_long", 0, id="dynamic"),
+        pytest.param(None, "absent", 0, id="no index"),
+    ],
+)
+def test_the_tenant_mapping_is_added_to_an_existing_index_only_when_missing(
+    properties, expected_status, expected_puts
+):
+    from app.services.opensearch_service.indices import ensure_transcript_tenant_mapping
+
+    fake = _MappingClient(properties)
+
+    status = ensure_transcript_tenant_mapping(fake, "transcripts")
+
+    assert status == expected_status
+    assert len(fake.put) == expected_puts
+    if expected_puts:
+        assert fake.put[0] == {"properties": {"organization_id": {"type": "integer"}}}
+        assert ensure_transcript_tenant_mapping(fake, "transcripts") == "present"
+        assert len(fake.put) == 1, "a second bootstrap must not PUT again"
+
+
+@_needs_cluster
+@pytest.mark.xdist_group("opensearch_speaker_indices")
+def test_a_pre_tenant_index_gets_the_field_on_bootstrap_and_the_gate_then_holds(monkeypatch):
+    from app.core.config import settings
+    from app.services.opensearch_service import client as _client
+    from app.services.opensearch_service import indices
+
+    client = _client.opensearch_client
+    assert client is not None
+    index_name = f"test_transcripts_pre_tenant_{uuid_pkg.uuid4().hex[:10]}"
+    client.indices.create(index=index_name, body=_pre_tenant_body())
+    monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", index_name)
+    monkeypatch.setattr(indices, "_tenant_mapping_checked", set())
+    ensure_transcript_tenant_mapping = indices.ensure_transcript_tenant_mapping
+    try:
+        indices.ensure_indices_exist()
+        mapping = client.indices.get_mapping(index=index_name)[index_name]["mappings"]
+        assert mapping["properties"]["organization_id"] == {"type": "integer"}
+        assert ensure_transcript_tenant_mapping(client, index_name) == "present"
+
+        for doc_id, org_id in (("org-doc", 7), ("personal-doc", None)):
+            body: dict[str, object] = {"file_uuid": doc_id, "content": f"the {WORD} plan"}
+            if org_id is not None:
+                body["organization_id"] = org_id
+            client.index(index=index_name, id=doc_id, body=body)
+        client.indices.refresh(index=index_name)
+
+        def hits(org_id: int | None) -> set[str]:
+            response = client.search(
+                index=index_name,
+                body={
+                    "query": {
+                        "bool": {
+                            "must": [{"match": {"content": WORD}}],
+                            "filter": org_filter_clauses(org_id),
+                        }
+                    }
+                },
+            )
+            return {h["_id"] for h in response["hits"]["hits"]}
+
+        assert hits(7) == {"org-doc"}
+        assert hits(8) == set()
+        assert hits(None) == {"personal-doc"}
+    finally:
+        client.indices.delete(index=index_name, ignore=[404])

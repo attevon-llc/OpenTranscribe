@@ -15,13 +15,15 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from sqlalchemy import and_
+from sqlalchemy import func
 from sqlalchemy import not_
 from sqlalchemy import or_
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
@@ -30,12 +32,68 @@ from app.auth.audit import request_org_id
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.utils.pagination import paginate
+from app.utils.tenant_sharing import owner_in_tenant
+from app.utils.tenant_sharing import shared_visible_in_tenant
 from app.utils.uuid_helpers import get_prompt_by_uuid
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 MAX_USER_PROMPTS = 50
+
+
+def _shared_in_tenant(ctx: RequestContext) -> Any:
+    """Other users' shared prompts that reach the caller's active tenant.
+
+    The owner must be in that tenant, and a prompt stamped for an organization is only
+    ever shared inside that organization.
+    """
+    org_col = models.SummaryPrompt.organization_id
+    return and_(
+        models.SummaryPrompt.is_shared == True,  # noqa: E712
+        models.SummaryPrompt.user_id != ctx.user.id,
+        not_(models.SummaryPrompt.is_system_default),
+        owner_in_tenant(models.SummaryPrompt.user_id, ctx.org_id),
+        org_col.is_(None) if ctx.org_id is None else or_(org_col.is_(None), org_col == ctx.org_id),
+    )
+
+
+def _usable_by(ctx: RequestContext) -> Any:
+    """Prompts the caller may read, clone or select: system, own, or shared in-tenant."""
+    return or_(
+        models.SummaryPrompt.is_system_default,
+        shared_visible_in_tenant(
+            models.SummaryPrompt.user_id,
+            models.SummaryPrompt.is_shared,
+            ctx.user.id,
+            ctx.org_id,
+            org_col=models.SummaryPrompt.organization_id,
+        ),
+    )
+
+
+def _is_usable(db: Session, prompt: models.SummaryPrompt, ctx: RequestContext) -> bool:
+    return (
+        db.query(models.SummaryPrompt.id)
+        .filter(models.SummaryPrompt.id == prompt.id, _usable_by(ctx))
+        .first()
+        is not None
+    )
+
+
+def require_usable_prompt_uuid(db: Session, prompt_uuid: str, ctx: RequestContext) -> None:
+    """404 unless ``prompt_uuid`` names an active prompt the caller may use."""
+    found = (
+        db.query(models.SummaryPrompt.id)
+        .filter(
+            models.SummaryPrompt.uuid == prompt_uuid,
+            models.SummaryPrompt.is_active.is_(True),
+            _usable_by(ctx),
+        )
+        .first()
+    )
+    if found is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
 
 
 def _assert_under_prompt_limit(db: Session, user_id: int) -> None:
@@ -63,7 +121,7 @@ def _assert_under_prompt_limit(db: Session, user_id: int) -> None:
 @router.get("", response_model=schemas.SummaryPromptList)
 def get_prompts(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     content_type: str | None = Query(None, description="Filter by content type"),
@@ -94,6 +152,7 @@ def get_prompts(
     Raises:
         HTTPException: If database query fails
     """
+    current_user = ctx.user
     # Build filter conditions
     conditions = []
 
@@ -112,13 +171,7 @@ def get_prompts(
             )
         )
     if include_shared:
-        ownership_conditions.append(
-            and_(  # type: ignore[arg-type]
-                models.SummaryPrompt.is_shared == True,  # noqa: E712
-                models.SummaryPrompt.user_id != current_user.id,
-                not_(models.SummaryPrompt.is_system_default),
-            )
-        )
+        ownership_conditions.append(_shared_in_tenant(ctx))
 
     if ownership_conditions:
         conditions.append(or_(*ownership_conditions))
@@ -207,7 +260,7 @@ def get_prompts(
 def get_prompts_by_content_type(
     content_type: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     Get prompts organized by content type with active prompt indication.
@@ -227,6 +280,7 @@ def get_prompts_by_content_type(
     Raises:
         HTTPException: If content_type is invalid or database query fails
     """
+    current_user = ctx.user
     # Validate content type
     # "qa_panel" is the community Q&A-panel extractor seeded in initial_data (#136).
     # "speaker_identification" is deliberately ABSENT: it is a system prompt for an
@@ -286,7 +340,7 @@ def get_prompts_by_content_type(
             active_prompt_id = int(active_prompt_setting.setting_value)
             active_prompt = (
                 db.query(models.SummaryPrompt)
-                .filter(models.SummaryPrompt.id == active_prompt_id)
+                .filter(models.SummaryPrompt.id == active_prompt_id, _usable_by(ctx))
                 .first()
             )
             if active_prompt:
@@ -298,9 +352,7 @@ def get_prompts_by_content_type(
         .filter(
             and_(
                 models.SummaryPrompt.content_type == content_type,
-                models.SummaryPrompt.is_shared == True,  # noqa: E712
-                models.SummaryPrompt.user_id != current_user.id,
-                not_(models.SummaryPrompt.is_system_default),
+                _shared_in_tenant(ctx),
                 models.SummaryPrompt.is_active,
             )
         )
@@ -366,11 +418,12 @@ def create_prompt(
 @router.get("/active/current", response_model=schemas.ActivePromptResponse)
 def get_active_prompt(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     Get the user's currently active summary prompt
     """
+    current_user = ctx.user
     # Get user's active prompt setting
     active_setting = (
         db.query(models.UserSetting)
@@ -391,7 +444,7 @@ def get_active_prompt(
             active_prompt_id = int(active_setting.setting_value)
             active_prompt = (
                 db.query(models.SummaryPrompt)
-                .filter(models.SummaryPrompt.id == active_prompt_id)
+                .filter(models.SummaryPrompt.id == active_prompt_id, _usable_by(ctx))
                 .first()
             )
             if active_prompt:
@@ -459,11 +512,12 @@ def set_active_prompt(
     *,
     db: Session = Depends(get_db),
     prompt_selection: schemas.ActivePromptSelection,
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     Set the user's active summary prompt
     """
+    current_user = ctx.user
     # Convert UUID to string for query
     prompt_uuid_str = str(prompt_selection.prompt_id)
 
@@ -474,8 +528,9 @@ def set_active_prompt(
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    # Check access: system prompts are public, shared prompts are usable, others are private
-    if not prompt.is_system_default and prompt.user_id != current_user.id and not prompt.is_shared:
+    # Check access: system prompts are public, prompts shared within the caller's tenant
+    # are usable, others (incl. another tenant's shared prompts) are private
+    if not _is_usable(db, prompt, ctx):
         raise HTTPException(status_code=403, detail="Cannot use other users' private prompts")
 
     if not prompt.is_active:
@@ -517,7 +572,7 @@ def set_active_prompt(
 @router.get("/shared/library", response_model=schemas.SharedPromptLibrary)
 def get_shared_prompt_library(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
     content_type: str | None = Query(None),
     tags: str | None = Query(None, description="Comma-separated tags"),
     search: str | None = Query(None, description="Search name/description"),
@@ -526,10 +581,20 @@ def get_shared_prompt_library(
     limit: int = Query(50, ge=1, le=200),
 ) -> Any:
     """Browse shared prompts with filtering and pagination."""
+    current_user = ctx.user
+    # The library shows prompts shared within the caller's tenant, the caller's own
+    # shared prompts included.
+    shared_here = or_(
+        _shared_in_tenant(ctx),
+        and_(
+            models.SummaryPrompt.user_id == current_user.id,
+            models.SummaryPrompt.is_shared == True,  # noqa: E712
+            not_(models.SummaryPrompt.is_system_default),
+        ),
+    )
     query = db.query(models.SummaryPrompt).filter(
-        models.SummaryPrompt.is_shared == True,  # noqa: E712
+        shared_here,
         models.SummaryPrompt.is_active == True,  # noqa: E712
-        not_(models.SummaryPrompt.is_system_default),
     )
 
     if content_type:
@@ -582,17 +647,17 @@ def get_shared_prompt_library(
                 sp.shared_by_name = sharer.full_name
         prompt_list.append(sp)
 
-    # Get available tags
+    # Get available tags (from the same tenant-scoped set as the listing)
     available_tags: list[str] = []
     try:
-        tag_rows = db.execute(
-            text(
-                "SELECT DISTINCT jsonb_array_elements_text(tags) AS tag "
-                "FROM summary_prompt WHERE is_shared = TRUE AND is_active = TRUE "
-                "ORDER BY tag"
-            )
-        ).fetchall()
-        available_tags = [row[0] for row in tag_rows]
+        tag_col = func.jsonb_array_elements_text(models.SummaryPrompt.tags).label("tag")
+        tag_query = (
+            db.query(tag_col)
+            .filter(shared_here, models.SummaryPrompt.is_active == True)  # noqa: E712
+            .distinct()
+            .order_by("tag")
+        )
+        available_tags = [row[0] for row in tag_query.all()]
     except Exception:
         logger.debug("Could not fetch available tags", exc_info=True)
 
@@ -673,15 +738,16 @@ def share_prompt(
 def get_prompt(
     prompt_uuid: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     Get a specific prompt by UUID
     """
     prompt = get_prompt_by_uuid(db, prompt_uuid)
 
-    # Check access: system prompts are public, shared are accessible, others are private
-    if not prompt.is_system_default and prompt.user_id != current_user.id and not prompt.is_shared:
+    # Check access: system prompts are public, shared within the caller's tenant are
+    # accessible, others are private
+    if not _is_usable(db, prompt, ctx):
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
     return prompt
@@ -752,7 +818,7 @@ def clone_prompt(
     prompt_uuid: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Clone an accessible prompt into the current user's editable library.
 
@@ -760,10 +826,11 @@ def clone_prompt(
     prompts. The clone is private (not shared), owned by the current user, and
     counts toward the per-user prompt cap.
     """
+    current_user = ctx.user
     source = get_prompt_by_uuid(db, prompt_uuid)
 
-    # Access check mirrors the single-prompt GET: system, shared, or own only.
-    if not source.is_system_default and not source.is_shared and source.user_id != current_user.id:
+    # Access check mirrors the single-prompt GET: system, shared in-tenant, or own only.
+    if not _is_usable(db, source, ctx):
         raise HTTPException(status_code=403, detail="Cannot clone other users' private prompts")
 
     # Clones count toward the per-user cap.
@@ -787,14 +854,14 @@ def clone_prompt(
     db.commit()
     db.refresh(clone)
 
-    ctx = get_request_context(request)
+    req_meta = get_request_context(request)
     audit_logger.log(
         event_type=AuditEventType.PROMPT_CLONE,
         outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
-        source_ip=ctx["source_ip"],
-        user_agent=ctx["user_agent"],
+        source_ip=req_meta["source_ip"],
+        user_agent=req_meta["user_agent"],
         organization_id=request_org_id(request),
         details={
             "prompt_uuid": str(clone.uuid),

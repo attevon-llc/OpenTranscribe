@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.prompts import require_usable_prompt_uuid
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.user import User
@@ -97,6 +98,11 @@ async def trigger_summarization(
         min_permission="editor",
     )
     file_id = media_file.id
+
+    # An explicit prompt must be one the caller may use (system, own, or shared within
+    # the caller's tenant); the worker applies it as given.
+    if request.prompt_uuid:
+        require_usable_prompt_uuid(db, request.prompt_uuid, ctx)
 
     # Check if file has completed transcription
     if not media_file.transcript_segments:

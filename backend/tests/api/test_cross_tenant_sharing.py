@@ -29,6 +29,7 @@ import pytest
 
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from app.models.prompt import SummaryPrompt
 from app.models.prompt import UserSetting
 from app.models.user import User
 from app.models.user_asr_settings import UserASRSettings
@@ -299,6 +300,59 @@ def _org_context_worker(db, user: User, owner_id: str) -> bool:
         return _get_organization_context(db, user.id) == f"context of {owner.email}"
 
 
+# --- Summary prompts (org-stamped where the edition stamps them) ------------ #
+
+
+def _share_prompt(db, owner: User, org_id: int | None = None, tag: str = "t") -> str:
+    prompt = SummaryPrompt(
+        user_id=owner.id,
+        organization_id=org_id,
+        name=f"shared-prompt-{uuid_pkg.uuid4().hex[:6]}",
+        prompt_text="Summarize {transcript}",
+        content_type="general",
+        is_system_default=False,
+        is_active=True,
+        is_shared=True,
+        tags=[tag],
+    )
+    db.add(prompt)
+    db.commit()
+    db.refresh(prompt)
+    return str(prompt.uuid)
+
+
+def _prompt_listed(client) -> set:
+    listing = client.get(
+        "/api/prompts", params={"include_system": "false", "include_user": "false"}
+    )
+    by_type = client.get("/api/prompts/by-content-type/general")
+    assert listing.status_code == 200, listing.text
+    assert by_type.status_code == 200, by_type.text
+    a = {str(p["uuid"]) for p in listing.json()["prompts"]}
+    b = {str(p["uuid"]) for p in by_type.json()["shared_prompts"]}
+    assert a == b
+    return a
+
+
+def _prompt_use(client, prompt_uuid: str) -> bool:
+    read = client.get(f"/api/prompts/{prompt_uuid}")
+    select = client.post("/api/prompts/active/set", json={"prompt_id": prompt_uuid})
+    clone = client.post(f"/api/prompts/{prompt_uuid}/clone")
+    codes = {read.status_code, select.status_code, clone.status_code}
+    assert codes <= {200, 403}, (read.text, select.text, clone.text)
+    assert len(codes) == 1, (read.status_code, select.status_code, clone.status_code)
+    return bool(read.status_code == 200)
+
+
+def _prompt_worker(db, user: User, prompt_uuid: str) -> bool:
+    from app.utils.prompt_manager import resolve_active_prompt_record
+
+    prompt = db.query(SummaryPrompt).filter(SummaryPrompt.uuid == prompt_uuid).one()
+    _set_setting(db, user, "active_summary_prompt_id", str(prompt.id))
+    resolved = resolve_active_prompt_record(user.id, db)
+    return resolved is not None and resolved.id == prompt.id
+
+
 SURFACES: list[Surface] = [
     Surface("llm_config", (UserLLMSettings,), _share_llm, _llm_listed, _llm_use, _llm_worker),
     Surface("asr_config", (UserASRSettings,), _share_asr, _asr_listed, _asr_use, _asr_worker),
@@ -312,6 +366,14 @@ SURFACES: list[Surface] = [
         _org_context_listed,
         _org_context_use,
         _org_context_worker,
+    ),
+    Surface(
+        "summary_prompt",
+        (SummaryPrompt,),
+        _share_prompt,
+        _prompt_listed,
+        _prompt_use,
+        _prompt_worker,
     ),
 ]
 
@@ -502,3 +564,50 @@ def test_asr_provider_for_transcription_scoped(world, monkeypatch, viewer, owner
 
     provider = factory.ASRProviderFactory.create_for_user(world.users[viewer].id, world.db)
     assert provider is (from_config if expected else local_default)
+
+
+# --------------------------------------------------------------------------- #
+# Summary prompts: library, tag list, org stamp, explicit prompt on a run       #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(("viewer", "tenant", "owner", "expected"), CASES)
+def test_shared_prompt_library_scoped(client, world, viewer, tenant, owner, expected):
+    tag = f"tag-{uuid_pkg.uuid4().hex[:8]}"
+    prompt_uuid = _share_prompt(world.db, world.users[owner], tag=tag)
+    with _acting_as(world.users[viewer], world.org_id(tenant)):
+        resp = client.get("/api/prompts/shared/library")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert (prompt_uuid in {str(p["uuid"]) for p in body["prompts"]}) is expected
+    assert (tag in body["available_tags"]) is expected
+
+
+def test_prompt_stamped_for_another_org_stays_there(client, world):
+    """An owner in two organizations shares a prompt stamped for B: A never sees it."""
+    _join(world.db, world.org_b, world.users["a1"])
+    prompt_uuid = _share_prompt(world.db, world.users["a1"], org_id=world.org_b.id)
+    with _acting_as(world.users["a2"], world.org_a.id):
+        assert prompt_uuid not in _prompt_listed(client)
+        assert _prompt_use(client, prompt_uuid) is False
+    with _acting_as(world.users["b1"], world.org_b.id):
+        assert prompt_uuid in _prompt_listed(client)
+    assert _prompt_worker(world.db, world.users["a2"], prompt_uuid) is False
+    assert _prompt_worker(world.db, world.users["b1"], prompt_uuid) is True
+
+
+@pytest.mark.parametrize(("viewer", "tenant", "owner", "expected"), CASES)
+def test_explicit_prompt_on_summarize_scoped(world, viewer, tenant, owner, expected):
+    from fastapi import HTTPException
+
+    from app.api.deps_context import RequestContext
+    from app.api.endpoints.prompts import require_usable_prompt_uuid
+
+    prompt_uuid = _share_prompt(world.db, world.users[owner])
+    ctx = RequestContext(user=world.users[viewer], org_id=world.org_id(tenant))
+    if expected:
+        require_usable_prompt_uuid(world.db, prompt_uuid, ctx)
+    else:
+        with pytest.raises(HTTPException) as exc:
+            require_usable_prompt_uuid(world.db, prompt_uuid, ctx)
+        assert exc.value.status_code == 404

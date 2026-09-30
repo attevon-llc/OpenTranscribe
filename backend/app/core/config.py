@@ -304,6 +304,11 @@ class Settings(BaseSettings):
     SESSION_IDLE_TIMEOUT_MINUTES: int = 15
     # Session absolute timeout: 8 hours (force re-authentication)
     SESSION_ABSOLUTE_TIMEOUT_MINUTES: int = 480
+    # Apply SESSION_ABSOLUTE_TIMEOUT_MINUTES to tokens from a registered external
+    # identity provider, keyed on the token's auth_time (issue #1106). A verifier
+    # that supplies no auth_time is not enforced (logged), so this cannot lock
+    # everyone out. No effect when no external verifier is registered.
+    EXTERNAL_SESSION_ABSOLUTE_TIMEOUT_ENFORCED: bool = True
 
     # ===== FIPS 140-2 Password Hashing =====
     # Enable FIPS mode to use only FIPS-approved algorithms (PBKDF2-SHA256)

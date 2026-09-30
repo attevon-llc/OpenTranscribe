@@ -33,6 +33,7 @@ from app.models.watch_source import WatchSourceFile
 from app.services.imohash_service import compute_from_path
 from app.services.watch_sources.base import RemoteFileInfo
 from app.utils.file_hash import check_duplicate_by_imohash
+from app.utils.file_hash import import_tenant_predicate
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
@@ -112,6 +113,46 @@ def _get_or_create_tracking_row(
     return row
 
 
+OWNER_LEFT_ORG_MESSAGE = "Source owner is no longer a member of the source's organization"
+
+
+def owner_in_source_tenant(db: Session, source: WatchSource) -> bool:
+    """Whether the source's owner still belongs to the organization it imports into.
+
+    Always True for a personal source (and so for every source of a community
+    install, which has no organizations).
+    """
+    if source.organization_id is None:
+        return True
+    from app.models.organization import OrganizationMembership
+
+    return (
+        db.query(OrganizationMembership.id)
+        .filter(
+            OrganizationMembership.organization_id == source.organization_id,
+            OrganizationMembership.user_id == source.user_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def disable_if_owner_left_org(db: Session, source: WatchSource) -> bool:
+    """Disable an org source whose owner has left that org. Returns True if disabled.
+
+    The source keeps importing into the organization under its owner's name, so
+    once the owner is no longer a member nothing more may be imported for them.
+    """
+    if owner_in_source_tenant(db, source):
+        return False
+    source.is_enabled = False
+    source.last_scan_status = "error"
+    source.last_scan_message = OWNER_LEFT_ORG_MESSAGE
+    db.flush()
+    logger.warning("Watch source %s disabled: %s", source.id, OWNER_LEFT_ORG_MESSAGE)
+    return True
+
+
 def _mark_skipped(db: Session, row: WatchSourceFile, reason: str, media_file_id: int | None = None):
     row.status = "skipped_duplicate" if reason.startswith("duplicate") else f"skipped_{reason}"
     # Normalize: too_old → skipped_old, invalid → skipped_invalid
@@ -153,6 +194,14 @@ def ingest_prepared_file(
     """
     file_size = int(size) if size is not None else os.path.getsize(local_path)
 
+    # 0. The owner must still belong to the tenant this source imports into.
+    if disable_if_owner_left_org(db, source):
+        row.status = "error"
+        row.error_message = OWNER_LEFT_ORG_MESSAGE
+        row.processed_at = datetime.now(UTC)
+        db.commit()
+        return row
+
     # 1. Magic-byte validation.
     declared_mime = guess_media_mime(filename)
     if not declared_mime:
@@ -172,8 +221,12 @@ def ingest_prepared_file(
     imohash = compute_from_path(local_path)
     row.imohash = imohash
 
-    # 3. Three-layer dedup (other-source + cross-pipeline).
+    # 3. Three-layer dedup (other-source + cross-pipeline), within the source's
+    # tenant only: a match elsewhere would skip this import and link the row to
+    # another tenant's file.
     if imohash:
+        owner_id = int(source.user_id)
+        org_id = int(source.organization_id) if source.organization_id else None
         # Layers 1-2 span EVERY source, including this one. They used to filter
         # ``watch_source_id != source.id``, which excluded the source being scanned —
         # so one source holding the same recording under two names imported it twice
@@ -184,10 +237,14 @@ def ingest_prepared_file(
         # Oldest-first so the match is deterministic and names the ORIGINAL import.
         other = (
             db.query(WatchSourceFile)
+            .join(WatchSource, WatchSource.id == WatchSourceFile.watch_source_id)
             .filter(
                 WatchSourceFile.imohash == imohash,
                 WatchSourceFile.id != row.id,
                 WatchSourceFile.status == "imported",
+                import_tenant_predicate(
+                    db, WatchSource.organization_id, WatchSource.user_id, org_id, owner_id
+                ),
             )
             .order_by(WatchSourceFile.id)
             .first()
@@ -205,7 +262,9 @@ def ingest_prepared_file(
             _mark_skipped(db, row, reason, other.media_file_id)
             db.commit()
             return row
-        existing_media = check_duplicate_by_imohash(db, imohash)
+        existing_media = check_duplicate_by_imohash(
+            db, imohash, organization_id=org_id, owner_id=owner_id
+        )
         if existing_media:
             _mark_skipped(db, row, "duplicate_existing", existing_media.id)
             db.commit()

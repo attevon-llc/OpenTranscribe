@@ -85,6 +85,13 @@ class TestWatchImportOrgStamp:
         from app.services.watch_sources.processing import ingest_prepared_file
 
         org = _mk_org(db_session, "watch")
+        # An org source only imports while its owner is a member of that org.
+        db_session.add(
+            OrganizationMembership(
+                organization_id=org.id, user_id=normal_user.id, role="org:member"
+            )
+        )
+        db_session.commit()
         source = _mk_source(db_session, normal_user, organization_id=org.id)
         row = _mk_tracking_row(db_session, source, "sample.mp4")
 

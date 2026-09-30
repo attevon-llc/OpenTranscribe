@@ -28,8 +28,53 @@ helpers for security-sensitive equality.
 """
 
 import logging
+from typing import Any
+
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 
 logger = logging.getLogger(__name__)
+
+
+def org_stamp_is(org_col: Any, organization_id: int | None) -> Any:
+    """NULL-safe ``org_col == organization_id`` (``IS NULL`` for personal scope)."""
+    if organization_id is None:
+        return org_col.is_(None)
+    return org_col == organization_id
+
+
+def import_tenant_predicate(
+    db_session, org_col: Any, owner_col: Any, organization_id: int | None, owner_id: int
+) -> Any:
+    """SQL predicate: a row (``org_col``/``owner_col``) lives in an importer's tenant.
+
+    Content imported for tenant T may only be matched against content that already
+    lives in T; otherwise a duplicate hit would skip the import and hand the importer
+    a pointer into someone else's library.
+
+    * Org importer: rows stamped for that organization.
+    * Personal importer who belongs to no organization (every user of a community
+      install): org-less rows of any owner who also belongs to no organization, so
+      instance-wide dedup there is unchanged.
+    * Personal importer who belongs to an organization: only their own org-less rows.
+    """
+    from sqlalchemy import and_
+
+    from app.models.organization import OrganizationMembership
+    from app.utils.tenant_sharing import owner_in_tenant
+
+    if organization_id is not None:
+        return org_col == organization_id
+    has_membership = (
+        db_session.query(OrganizationMembership.id)
+        .filter(OrganizationMembership.user_id == owner_id)
+        .first()
+        is not None
+    )
+    if has_membership:
+        return and_(org_col.is_(None), owner_col == owner_id)
+    return and_(org_col.is_(None), owner_in_tenant(owner_col, None))
 
 
 def _only_live_files(query):
@@ -62,7 +107,11 @@ def _only_live_files(query):
 
 
 def check_duplicate_by_fingerprint(
-    db_session, fingerprint: str, user_id: int | None = None
+    db_session,
+    fingerprint: str,
+    user_id: int | None = None,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> str | None:
     """
     Check whether a file with this content fingerprint already exists.
@@ -83,6 +132,10 @@ def check_duplicate_by_fingerprint(
         user_id: Optional user ID to restrict the search to a specific user. The
             upload gate always passes it — without it a caller could probe another
             tenant's library by fingerprint and be handed its file UUID.
+        organization_id: The caller's active tenant (None = personal). Restricts the
+            match to files stamped for that tenant, so an upload in one organization
+            is never reported as a duplicate of the same user's file in another.
+            ``UNSCOPED`` (default) applies no tenant gate.
 
     Returns:
         The UUID of the duplicate file if found, None otherwise
@@ -103,6 +156,8 @@ def check_duplicate_by_fingerprint(
 
     if user_id is not None:
         query = query.filter(MediaFile.user_id == user_id)
+    if not isinstance(organization_id, _Unscoped):
+        query = query.filter(org_stamp_is(MediaFile.organization_id, organization_id))
 
     duplicate = _only_live_files(query).first()
 
@@ -112,7 +167,14 @@ def check_duplicate_by_fingerprint(
     return None
 
 
-def check_duplicate_by_imohash(db_session, imohash: str, exclude_file_id: int | None = None):
+def check_duplicate_by_imohash(
+    db_session,
+    imohash: str,
+    exclude_file_id: int | None = None,
+    *,
+    organization_id: OrgScope = UNSCOPED,
+    owner_id: int | None = None,
+):
     """Check whether a file with the same imohash fingerprint already exists.
 
     This is the server-side, cross-pipeline dedup layer (manual upload, URL
@@ -124,14 +186,18 @@ def check_duplicate_by_imohash(db_session, imohash: str, exclude_file_id: int | 
 
     Distinct from :func:`check_duplicate_by_fingerprint`: this one reads only the
     server-computed column (never the client-declared ``file_hash``), is
-    deliberately **cross-user** so a watch source can link content another account
-    already imported, and returns the ORM row rather than a UUID.
+    **cross-user within a tenant** so a watch source can link content another account
+    of the same tenant already imported, and returns the ORM row rather than a UUID.
 
     Args:
         db_session: SQLAlchemy database session.
         imohash: The imohash fingerprint to look up.
         exclude_file_id: Optional MediaFile id to exclude (e.g. the row being
             recomputed) from the match.
+        organization_id: Tenant of the importer (None = personal). With ``owner_id``,
+            restricts matches to that tenant — see :func:`import_tenant_predicate`.
+            ``UNSCOPED`` (default) applies no tenant gate.
+        owner_id: The importing user; required when ``organization_id`` is None.
 
     Returns:
         The matching ``MediaFile`` if found, else ``None``.
@@ -145,11 +211,25 @@ def check_duplicate_by_imohash(db_session, imohash: str, exclude_file_id: int | 
 
     if exclude_file_id is not None:
         query = query.filter(MediaFile.id != exclude_file_id)
+    if not isinstance(organization_id, _Unscoped):
+        if organization_id is None and owner_id is None:
+            raise ValueError("owner_id is required for a personal-scope imohash lookup")
+        query = query.filter(
+            import_tenant_predicate(
+                db_session,
+                MediaFile.organization_id,
+                MediaFile.user_id,
+                organization_id,
+                int(owner_id or 0),
+            )
+        )
 
     return _only_live_files(query).first()
 
 
-def cleanup_failed_duplicates(db_session, fingerprint: str, user_id: int) -> int:
+def cleanup_failed_duplicates(
+    db_session, fingerprint: str, user_id: int, *, organization_id: OrgScope = UNSCOPED
+) -> int:
     """
     Clean up any failed or incomplete files with the same content fingerprint.
     This includes:
@@ -169,6 +249,8 @@ def cleanup_failed_duplicates(db_session, fingerprint: str, user_id: int) -> int
         db_session: SQLAlchemy database session
         fingerprint: Fingerprint of the file to clean up
         user_id: User ID to restrict cleanup to specific user
+        organization_id: The caller's active tenant (None = personal); only files
+            stamped for it are cleaned. ``UNSCOPED`` (default) applies no tenant gate.
 
     Returns:
         Number of files cleaned up
@@ -187,26 +269,25 @@ def cleanup_failed_duplicates(db_session, fingerprint: str, user_id: int) -> int
         return 0
 
     # Find failed files OR incomplete pending files with the same fingerprint for this user
-    failed_files = (
-        db_session.query(MediaFile)
-        .filter(
-            or_(MediaFile.file_hash == fingerprint, MediaFile.imohash == fingerprint),
-            MediaFile.user_id == user_id,
-            or_(
-                # Failed status files
-                MediaFile.status.in_([FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED]),
-                # Incomplete PENDING files (no storage_path means upload never completed)
-                and_(
-                    MediaFile.status == FileStatus.PENDING,
-                    or_(
-                        MediaFile.storage_path.is_(None),
-                        MediaFile.storage_path == "",
-                    ),
+    query = db_session.query(MediaFile)
+    if not isinstance(organization_id, _Unscoped):
+        query = query.filter(org_stamp_is(MediaFile.organization_id, organization_id))
+    failed_files = query.filter(
+        or_(MediaFile.file_hash == fingerprint, MediaFile.imohash == fingerprint),
+        MediaFile.user_id == user_id,
+        or_(
+            # Failed status files
+            MediaFile.status.in_([FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED]),
+            # Incomplete PENDING files (no storage_path means upload never completed)
+            and_(
+                MediaFile.status == FileStatus.PENDING,
+                or_(
+                    MediaFile.storage_path.is_(None),
+                    MediaFile.storage_path == "",
                 ),
             ),
-        )
-        .all()
-    )
+        ),
+    ).all()
 
     cleanup_count = 0
     for file in failed_files:

@@ -39,6 +39,12 @@ Samba test share. Seed data: `bash scripts/setup-watch-source-test-data.sh ./wat
   `media_file.imohash`. Fingerprints come from `services/imohash_service.py` (the real `imohash`
   package; the one-time `tasks/imohash_recompute.py` backfill, gated by
   `imohash_package_recompute_complete`, regenerated all rows — **breaking** vs the old blake2b).
+  Layers 2-3 match **only inside the source's tenant** (`utils/file_hash.import_tenant_predicate`):
+  an org source matches that org's rows; a personal source matches org-less rows of owners with
+  no org membership (so community installs dedup instance-wide), or only its own owner's
+  org-less rows when that owner belongs to an org.
+- An org source whose owner is no longer a member of that org is disabled
+  (`disable_if_owner_left_org`, checked at scan planning and again per ingest).
 - One bad file never aborts a scan: `import_single_file` catches, rolls back, then writes the
   error status in a **fresh session** (`_record_error`) so the rollback can't eat it.
 - **No DB session is open during a transfer.** `scan_single` is three phases —

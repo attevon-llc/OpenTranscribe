@@ -333,8 +333,8 @@
     {
       title: $t('settings.sections.mediaOutput'),
       items: [
-        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
-        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' },
+        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio', cap: 'audio_extraction' },
+        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link', cap: 'media_sources' },
         { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye', cap: 'watch_sources' },
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic', cap: 'recording' },
         { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'exports' }

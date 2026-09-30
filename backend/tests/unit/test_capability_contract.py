@@ -36,12 +36,44 @@ CAP_ATTR_RE = re.compile(r"\bcap:\s*'([^']+)'")
 CAP_CALL_RE = re.compile(r"\b(?:capOn|orgAdminCapOn)\(\s*\w+\s*,\s*'([^']+)'\s*\)")
 
 
+FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
+
+#: `isCapabilityEnabled($capabilities, 'key')` — a gate inside any component.
+IS_ENABLED_RE = re.compile(r"\bisCapabilityEnabled\(\s*[$\w.]+\s*,\s*'([^']+)'\s*\)")
+
+#: Deployment-locked controls (issue #1109). Each is enforced server-side, and
+#: each must also be gated somewhere in the UI, or a deployment that turns it
+#: off leaves users a control the server silently ignores.
+DEPLOYMENT_LOCKED_KEYS = frozenset(
+    {
+        "url_ingest",
+        "transcription.model_choice",
+        "transcription.diarization_source",
+        "transcription.advanced",
+        "speaker_attributes.migration",
+        "media_sources",
+        "audio_extraction",
+        "admin.flower",
+    }
+)
+
+
 def _frontend_capability_keys() -> set[str]:
     """Capability keys referenced by the settings UI."""
     if not SETTINGS_MODAL.is_file():
         pytest.fail(f"SettingsModal.svelte not found at {SETTINGS_MODAL}")
     source = SETTINGS_MODAL.read_text(encoding="utf-8")
     return set(CAP_ATTR_RE.findall(source)) | set(CAP_CALL_RE.findall(source))
+
+
+def _component_capability_keys() -> set[str]:
+    """Capability keys gated through ``isCapabilityEnabled`` anywhere in the frontend."""
+    keys: set[str] = set()
+    for path in FRONTEND_SRC.rglob("*"):
+        if path.suffix not in {".svelte", ".ts"} or path.name.endswith(".test.ts"):
+            continue
+        keys.update(IS_ENABLED_RE.findall(path.read_text(encoding="utf-8")))
+    return keys
 
 
 class TestCapabilityContract:
@@ -72,3 +104,18 @@ class TestCapabilityContract:
         assert not audiences - caps, (
             f"audiences for undeclared capabilities: {sorted(audiences - caps)}"
         )
+
+    def test_component_gates_are_declared_capabilities(self):
+        """Same rule for gates outside the settings sidebar."""
+        undeclared = _component_capability_keys() - set(COMMUNITY_CAPABILITIES)
+        assert not undeclared, (
+            f"frontend components gate on undeclared capabilities: {sorted(undeclared)}"
+        )
+
+    def test_deployment_locked_keys_are_declared_and_gated_in_the_ui(self):
+        """Every deployment-locked key exists, defaults on, and has a UI gate."""
+        assert set(COMMUNITY_CAPABILITIES) >= DEPLOYMENT_LOCKED_KEYS
+        assert all(COMMUNITY_CAPABILITIES[k] is True for k in DEPLOYMENT_LOCKED_KEYS)
+        ui_keys = _frontend_capability_keys() | _component_capability_keys()
+        ungated = DEPLOYMENT_LOCKED_KEYS - ui_keys
+        assert not ungated, f"deployment-locked keys with no frontend gate: {sorted(ungated)}"

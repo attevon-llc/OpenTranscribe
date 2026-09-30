@@ -10,7 +10,8 @@
  * on its own; the other step children never mount because `skipToReview()` jumps
  * straight past them, matching how a "review with defaults" user actually flows.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { tick } from 'svelte';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -47,6 +48,7 @@ vi.mock('$stores/uploads', () => ({ uploadsStore: mockUploadsStore }));
 
 vi.mock('$lib/services/configService', () => ({
   loadProtectedMediaAuthConfig: vi.fn().mockResolvedValue(undefined),
+  getAuthConfigForHost: vi.fn().mockReturnValue(null),
 }));
 
 const mockGetAudioExtractionSettings = vi.hoisted(() => vi.fn());
@@ -91,6 +93,7 @@ vi.mock('$lib/api/asrSettings', () => ({
 vi.mock('$lib/api/tags', () => ({ listTags: vi.fn().mockResolvedValue([]) }));
 
 import FileUploader from './FileUploader.svelte';
+import { capabilities, resetCapabilities } from '$stores/capabilities';
 
 const PREVIOUS_VALUES_KEY = 'opentr:uploadPreviousValues';
 
@@ -358,5 +361,71 @@ describe('optional-step navigation (#739)', () => {
 
     await waitFor(() => expect(container.querySelector('.nav-next')).not.toBeNull());
     expect(container.querySelector('.nav-skip')).toBeNull();
+  });
+});
+
+describe('deployment-locked controls (capabilities)', () => {
+  function lock(caps: Record<string, boolean>) {
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: caps,
+      audience: {},
+      maxUploadBytes: undefined,
+      apiMediatedUploadEnabled: true,
+    });
+  }
+
+  const tabLabels = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.tab-navigation .tab-button')).map(
+      (b) => b.textContent?.trim()
+    );
+
+  afterEach(() => resetCapabilities());
+
+  it('shows the URL tab by default', async () => {
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('.tab-navigation')).not.toBeNull());
+    expect(tabLabels(container)).toContain('uploader.mediaUrl');
+  });
+
+  it('hides the URL tab when url_ingest is off', async () => {
+    lock({ url_ingest: false });
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('.tab-navigation')).not.toBeNull());
+    expect(tabLabels(container)).not.toContain('uploader.mediaUrl');
+  });
+
+  it('opens the URL tab on request by default', async () => {
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('.tab-navigation')).not.toBeNull());
+
+    window.dispatchEvent(new CustomEvent('setFileUploaderTab', { detail: { activeTab: 'url' } }));
+
+    await waitFor(() =>
+      expect(container.querySelector('.tab-button.active')?.textContent?.trim()).toBe(
+        'uploader.mediaUrl'
+      )
+    );
+  });
+
+  it('ignores a request to open the URL tab when url_ingest is off', async () => {
+    lock({ url_ingest: false });
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('.tab-navigation')).not.toBeNull());
+
+    window.dispatchEvent(new CustomEvent('setFileUploaderTab', { detail: { activeTab: 'url' } }));
+    await tick();
+    await tick();
+
+    expect(container.querySelector('#media-url')).toBeNull();
+    expect(container.querySelector('#drop-zone')).not.toBeNull();
+  });
+
+  it('does not fetch audio-extraction preferences when audio_extraction is off', async () => {
+    lock({ audio_extraction: false });
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('.tab-navigation')).not.toBeNull());
+    expect(mockGetAudioExtractionSettings).not.toHaveBeenCalled();
   });
 });

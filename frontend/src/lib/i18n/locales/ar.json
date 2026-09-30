@@ -4082,6 +4082,7 @@
   "uploader.highQuality": "جودة عالية (GPU)",
   "uploader.fastProcessing": "معالجة سريعة (CPU)",
   "uploader.fastProcessingHint": "يستخدم نموذجًا خفيفًا على المعالج (CPU) للتفريغ السريع (نحو 4 ثوانٍ لكل دقيقة). فصل المتحدثين غير متاح مع هذا الخيار.",
+  "uploader.modelManaged": "نموذج النسخ: تتم إدارته بواسطة النشر الخاص بك",
   "uploader.turboNoTranslation": "ملاحظة: هذا النموذج لا يدعم الترجمة. ستُعطَّل الترجمة لهذا الملف.",
   "fileDetail.whisperModel": "نموذج التعرف على الكلام (ASR)",
   "fileDetail.modelFallback": "بديل احتياطي",

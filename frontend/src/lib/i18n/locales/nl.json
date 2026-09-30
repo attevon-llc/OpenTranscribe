@@ -4082,6 +4082,7 @@
   "uploader.highQuality": "Hoge kwaliteit (GPU)",
   "uploader.fastProcessing": "Snelle verwerking (CPU)",
   "uploader.fastProcessingHint": "Gebruikt een lichtgewicht model op de CPU voor snelle transcriptie (~4 s per minuut). Sprekerdiarisatie is bij deze optie niet beschikbaar.",
+  "uploader.modelManaged": "Transcriptiemodel: beheerd door uw installatie",
   "uploader.turboNoTranslation": "Let op: dit model ondersteunt geen vertaling. Vertaling wordt voor dit bestand uitgeschakeld.",
   "fileDetail.whisperModel": "ASR-model",
   "fileDetail.modelFallback": "Terugval",

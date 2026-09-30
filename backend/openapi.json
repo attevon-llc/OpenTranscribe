@@ -35762,7 +35762,7 @@
     },
     "/api/speaker-clusters/stats": {
       "get": {
-        "description": "Get aggregate speaker clustering statistics.",
+        "description": "Get aggregate speaker clustering statistics for the active tenant.",
         "operationId": "get_clustering_stats_api_speaker_clusters_stats_get",
         "responses": {
           "200": {
@@ -36279,7 +36279,7 @@
     },
     "/api/speaker-profiles/collections": {
       "get": {
-        "description": "List all speaker collections for the current user.",
+        "description": "List the caller's speaker collections in the active tenant.",
         "operationId": "list_speaker_collections_api_speaker_profiles_collections_get",
         "responses": {
           "200": {
@@ -36309,7 +36309,7 @@
         ]
       },
       "post": {
-        "description": "Create a new speaker collection.",
+        "description": "Create a new speaker collection (stamped with the active tenant).",
         "operationId": "create_speaker_collection_api_speaker_profiles_collections_post",
         "parameters": [
           {
@@ -36385,7 +36385,7 @@
     },
     "/api/speaker-profiles/profiles": {
       "get": {
-        "description": "List all speaker profiles for the current user, including shared profiles.",
+        "description": "List the caller's speaker profiles in the active tenant, including shared ones.",
         "operationId": "list_speaker_profiles_api_speaker_profiles_profiles_get",
         "parameters": [
           {
@@ -36731,7 +36731,7 @@
     },
     "/api/speaker-profiles/profiles/{profile_uuid}/confirm-gender": {
       "post": {
-        "description": "Confirm or set the predicted gender for a profile and all linked speakers.",
+        "description": "Confirm the gender for a profile and the caller's own linked speakers.\n\nOnly the caller's speakers in the active tenant are rewritten: other users'\nspeakers linked to this profile (via a shared file) belong to them.",
         "operationId": "confirm_profile_gender_api_speaker_profiles_profiles__profile_uuid__confirm_gender_post",
         "parameters": [
           {
@@ -36792,7 +36792,7 @@
     },
     "/api/speaker-profiles/profiles/{profile_uuid}/occurrences": {
       "get": {
-        "description": "Get all media files where a speaker profile appears.",
+        "description": "Get all media files of the active tenant where a speaker profile appears.",
         "operationId": "get_speaker_profile_occurrences_api_speaker_profiles_profiles__profile_uuid__occurrences_get",
         "parameters": [
           {
@@ -36845,7 +36845,7 @@
     },
     "/api/speaker-profiles/speakers/{speaker_uuid}/assign-profile": {
       "post": {
-        "description": "Assign a speaker instance to a profile (own or shared).",
+        "description": "Assign a speaker instance to a profile (own or shared).\n\nLinking feeds the speaker's voiceprint into the profile's consolidated\nembedding, so it is a write on the speaker's file: editor or better, in the\nactive tenant. The profile must be reachable in the same tenant and belong to\nthe same tenant as the speaker's file.",
         "operationId": "assign_speaker_to_profile_api_speaker_profiles_speakers__speaker_uuid__assign_profile_post",
         "parameters": [
           {
@@ -37608,7 +37608,7 @@
     },
     "/api/speakers/{speaker_uuid}/cross-media": {
       "get": {
-        "description": "Get all media files where this speaker (or their profile) appears.",
+        "description": "Get all media files of the active tenant where this speaker (or their profile) appears.",
         "operationId": "get_speaker_cross_media_occurrences_api_speakers__speaker_uuid__cross_media_get",
         "parameters": [
           {
@@ -37661,7 +37661,7 @@
     },
     "/api/speakers/{speaker_uuid}/merge/{target_speaker_uuid}": {
       "post": {
-        "description": "Merge two speakers into one (target absorbs source).\n\nPostgres is updated synchronously so the response is authoritative. Everything\ndownstream — averaging the two voiceprints in OpenSearch, deleting the source\ndocument, recomputing both profiles' consolidated embeddings, clearing the MinIO\nvideo cache and refreshing analytics for both files — is handed to\n``process_speaker_merge_background`` (issue #284 A2.6). Inline, that was roughly\n2 + N OpenSearch round trips (N = members of the target profile), a numpy mean,\na MinIO listing per affected file and two analytics recomputations, all before\nthe merge could answer.",
+        "description": "Merge two speakers into one (target absorbs source).\n\nBoth speakers need editor or better in the active tenant, must belong to the\nsame tenant, and must be in the same file or have the same owner — a merge\nmoves the source's transcript segments onto the target.\n\nPostgres is updated synchronously so the response is authoritative. Everything\ndownstream — averaging the two voiceprints in OpenSearch, deleting the source\ndocument, recomputing both profiles' consolidated embeddings, clearing the MinIO\nvideo cache and refreshing analytics for both files — is handed to\n``process_speaker_merge_background`` (issue #284 A2.6). Inline, that was roughly\n2 + N OpenSearch round trips (N = members of the target profile), a numpy mean,\na MinIO listing per affected file and two analytics recomputations, all before\nthe merge could answer.",
         "operationId": "merge_speakers_api_speakers__speaker_uuid__merge__target_speaker_uuid__post",
         "parameters": [
           {
@@ -37718,7 +37718,7 @@
     },
     "/api/speakers/{speaker_uuid}/verify": {
       "post": {
-        "description": "Verify or reject speaker identification suggestions.\n\nActions:\n- 'accept': Accept suggested profile match\n- 'reject': Reject suggestion and keep unassigned\n- 'create_profile': Create new profile and assign speaker",
+        "description": "Verify or reject speaker identification suggestions.\n\nEvery action rewrites the speaker (and may feed its voiceprint into a\nprofile), so it needs editor or better on the speaker's file, in the active\ntenant; a profile must be of the speaker's tenant.\n\nActions:\n- 'accept': Accept suggested profile match\n- 'reject': Reject suggestion and keep unassigned\n- 'create_profile': Create new profile and assign speaker",
         "operationId": "verify_speaker_identification_api_speakers__speaker_uuid__verify_post",
         "parameters": [
           {

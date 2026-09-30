@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.base import SessionLocal
 from app.models import SummaryPrompt
 from app.models import UserSetting
+from app.utils.tenant_sharing import shared_usable_by
 
 # Database-only prompt management - no fallbacks needed
 
@@ -120,24 +121,34 @@ def _resolve_active_prompt_record(
     if active_setting and active_setting.setting_value:
         try:
             prompt_id = int(active_setting.setting_value)
+            # Own, system, or shared within a tenant the owner and user share. The stored
+            # pointer outlives sharing and membership changes, so it is re-checked here.
             active_prompt = (
                 db.query(SummaryPrompt)
-                .filter(and_(SummaryPrompt.id == prompt_id, SummaryPrompt.is_active))
+                .filter(
+                    SummaryPrompt.id == prompt_id,
+                    SummaryPrompt.is_active,
+                    or_(
+                        SummaryPrompt.is_system_default,
+                        shared_usable_by(
+                            SummaryPrompt.user_id,
+                            SummaryPrompt.is_shared,
+                            user_id,
+                            org_col=SummaryPrompt.organization_id,
+                        ),
+                    ),
+                )
                 .first()
             )
+            if active_prompt is None:
+                logger.warning(
+                    f"User {user_id} active prompt {prompt_id} is missing, inactive or "
+                    "not accessible; using the system default"
+                )
         except (ValueError, TypeError):
             logger.warning(f"Invalid prompt ID in user setting: {active_setting.setting_value}")
 
     if not active_prompt:
-        return get_system_default_prompt_record(db)
-
-    # Verify the user has access (own, system, or shared); else fall back.
-    if (
-        not active_prompt.is_system_default
-        and active_prompt.user_id != user_id
-        and not active_prompt.is_shared
-    ):
-        logger.warning(f"User {user_id} attempted to use inaccessible prompt {active_prompt.id}")
         return get_system_default_prompt_record(db)
 
     return active_prompt

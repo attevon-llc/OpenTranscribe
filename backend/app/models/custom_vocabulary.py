@@ -61,15 +61,15 @@ class CustomVocabulary(Base):
     user: Mapped["User | None"] = relationship("User", back_populates="custom_vocabulary")
 
     __table_args__ = (
-        # UNIQUE (COALESCE(user_id, 0), term, domain). The COALESCE is the whole
-        # point: a plain UniqueConstraint("user_id", "term", "domain") would be
-        # WRONG, because NULL != NULL in SQL and duplicate *system* terms
-        # (user_id IS NULL) would slip through. That argument is against the wrong
-        # spelling, not against declaring it at all — an Index over a text()
-        # expression states the real rule exactly, which is what is written below.
+        # UNIQUE per owner per tenant (v430). The COALESCEs are the whole point: a
+        # plain UniqueConstraint over the columns would be WRONG, because NULL != NULL
+        # in SQL, so duplicate *system* terms (user_id IS NULL) or duplicate personal
+        # terms (organization_id IS NULL) would slip through. An Index over text()
+        # expressions states the real rule exactly.
         Index(
-            "_custom_vocab_unique",
+            "uq_custom_vocab_user_tenant_term",
             text("COALESCE(user_id, 0)"),
+            text("COALESCE(organization_id, 0)"),
             "term",
             "domain",
             unique=True,

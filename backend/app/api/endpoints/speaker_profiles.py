@@ -31,6 +31,7 @@ from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
 from app.tasks.speaker_update_task import process_speaker_update_background
+from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
 from app.utils.uuid_helpers import _resource_in_tenant_scope
 from app.utils.uuid_helpers import require_profile_in_scope
@@ -227,10 +228,14 @@ def create_speaker_profile(
 ):
     """Create a new speaker profile (org-stamped from the request context, #262e)."""
     try:
-        # Check if profile with same name exists
+        # Names are unique per user per tenant (v430).
         existing = (
             db.query(SpeakerProfile)
-            .filter(SpeakerProfile.user_id == current_user.id, SpeakerProfile.name == name)
+            .filter(
+                SpeakerProfile.user_id == current_user.id,
+                SpeakerProfile.name == name,
+                org_stamp_is(SpeakerProfile.organization_id, ctx.org_id),
+            )
             .first()
         )
 
@@ -342,6 +347,7 @@ def update_speaker_profile(
                     SpeakerProfile.user_id == current_user.id,
                     SpeakerProfile.name == name,
                     SpeakerProfile.id != profile_id,
+                    org_stamp_is(SpeakerProfile.organization_id, profile.organization_id),
                 )
                 .first()
             )
@@ -1065,6 +1071,7 @@ def create_speaker_collection(
             .filter(
                 SpeakerCollection.user_id == current_user.id,
                 SpeakerCollection.name == name,
+                org_stamp_is(SpeakerCollection.organization_id, ctx.org_id),
             )
             .first()
         )

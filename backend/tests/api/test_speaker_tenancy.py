@@ -532,14 +532,69 @@ def test_profile_gender_confirm_rewrites_only_the_callers_speakers(client, db_se
 # --------------------------------------------------------------------------- #
 
 
-def test_auto_profile_does_not_link_a_same_named_profile_of_another_tenant(world):
-    from app.api.endpoints.speaker_update import auto_create_or_assign_profile
+def test_auto_profile_does_not_link_a_same_named_profile_of_another_tenant(world, monkeypatch):
+    """The speaker gets its own tenant's "Jane Roe" instead (names are per tenant)."""
+    from app.api.endpoints import speaker_update
+    from app.services import opensearch_service
+    from app.services import profile_embedding_service as pes
 
     w = world
-    _mk_profile(w.db, w.alice, None, name="Jane Roe")
-    assert auto_create_or_assign_profile(w.a_speaker, "Jane Roe", w.db) is False
+    monkeypatch.setattr(
+        pes.ProfileEmbeddingService, "add_speaker_to_profile_embedding", lambda *a, **k: True
+    )
+    monkeypatch.setattr(opensearch_service, "update_speaker_profile", lambda **_k: True)
+    personal = _mk_profile(w.db, w.alice, None, name="Jane Roe")
+    assert speaker_update.auto_create_or_assign_profile(w.a_speaker, "Jane Roe", w.db) is True
+    w.db.flush()
+    linked = w.db.get(SpeakerProfile, w.a_speaker.profile_id)
+    assert linked is not None and linked.id != personal.id
+    assert (linked.name, linked.organization_id) == ("Jane Roe", w.org_a.id)
+
+    # A second org-A speaker of that name joins the org-A profile, not a third one.
+    again = _mk_speaker(w.db, _mk_file(w.db, w.alice, w.org_a.id))
+    assert speaker_update.auto_create_or_assign_profile(again, "Jane Roe", w.db) is True
+    w.db.flush()
+    assert again.profile_id == linked.id
+
+
+@pytest.mark.parametrize("kind", ["profile", "collection"])
+def test_a_name_can_be_reused_in_another_tenant_but_not_twice_in_one(client, world, kind):
+    w = world
+    name = f"Reused {uuid_pkg.uuid4().hex[:8]}"
+    path = f"{PROF}/profiles" if kind == "profile" else f"{PROF}/collections"
+    for org_id in (w.org_a.id, w.org_b.id, None):
+        with _acting_as(w.alice, org_id):
+            first = client.post(path, params={"name": name})
+            second = client.post(path, params={"name": name})
+        assert first.status_code == 200, first.text
+        assert second.status_code == 400, second.text
+
+
+def test_a_profile_rename_is_checked_only_inside_its_tenant(client, world):
+    w = world
+    name = f"Renamed {uuid_pkg.uuid4().hex[:8]}"
+    _mk_profile(w.db, w.alice, None, name=name)
+    with _acting_as(w.alice, w.org_a.id):
+        resp = client.put(f"{PROF}/profiles/{w.a_profile.uuid}", params={"name": name})
+        assert resp.status_code == 200, resp.text
+        clash = _mk_profile(w.db, w.alice, w.org_a.id)
+        resp = client.put(f"{PROF}/profiles/{clash.uuid}", params={"name": name})
+        assert resp.status_code == 400, resp.text
+
+
+def test_create_profile_from_speaker_allows_a_name_held_in_another_tenant(client, world):
+    w = world
+    name = f"Speaker Name {uuid_pkg.uuid4().hex[:8]}"
+    _mk_profile(w.db, w.alice, None, name=name)
+    with _acting_as(w.alice, w.org_a.id):
+        resp = client.post(
+            f"{SPK}/{w.a_speaker.uuid}/verify",
+            params={"action": "create_profile", "profile_name": name},
+        )
+    assert resp.status_code == 200, resp.text
     w.db.refresh(w.a_speaker)
-    assert w.a_speaker.profile_id is None
+    linked = w.db.get(SpeakerProfile, w.a_speaker.profile_id)
+    assert (linked.name, linked.organization_id) == (name, w.org_a.id)
 
 
 def test_retroactive_matching_scores_only_same_tenant_candidates(world, monkeypatch):

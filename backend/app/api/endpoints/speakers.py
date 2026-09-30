@@ -32,6 +32,7 @@ from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.speaker_status_service import SpeakerStatusService
+from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.uuid_helpers import require_profile_in_scope
@@ -2332,12 +2333,13 @@ def _create_new_speaker_profile(
     speaker: Speaker, speaker_id: int, profile_name: str, current_user: User, db: Session
 ) -> dict[str, Any]:
     """Handle creation of a new speaker profile."""
-    # Check if profile with same name exists
+    # Names are unique per user per tenant (v430); the profile joins the file's tenant.
     existing_profile = (
         db.query(SpeakerProfile)
         .filter(
             SpeakerProfile.user_id == current_user.id,
             SpeakerProfile.name == profile_name,
+            org_stamp_is(SpeakerProfile.organization_id, speaker.media_file.organization_id),
         )
         .first()
     )

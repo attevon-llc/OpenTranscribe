@@ -210,12 +210,12 @@ def create_vocabulary_term(
             detail=f"Invalid domain '{domain}'. Supported: {', '.join(SUPPORTED_DOMAINS)}",
         )
 
-    # Duplicate check (per-user + domain). Deliberately across tenants: the unique
-    # index is (user, term, domain), so a narrower check would turn into a 500.
+    # Duplicate check: per user + domain inside the active tenant, the same rule as
+    # the unique index (v430).
     existing = (
         db.query(CustomVocabulary)
         .filter(
-            CustomVocabulary.user_id == current_user.id,
+            _own_terms(CustomVocabulary, ctx),
             CustomVocabulary.term == term_text,
             CustomVocabulary.domain == domain,
         )
@@ -294,6 +294,24 @@ def update_vocabulary_term(  # noqa: C901
 
     if "is_active" in body:
         term.is_active = bool(body["is_active"])  # type: ignore[assignment]
+
+    if "term" in body or "domain" in body:
+        vocab = _get_vocab_model()
+        with db.no_autoflush:
+            clash = (
+                db.query(vocab.id)
+                .filter(
+                    _own_terms(vocab, ctx),
+                    vocab.term == term.term,
+                    vocab.domain == term.domain,
+                    vocab.id != term.id,
+                )
+                .first()
+            )
+        if clash:
+            detail = f"Term '{term.term}' already exists in domain '{term.domain}'"
+            db.expire(term)  # drop the pending edit so nothing flushes it later
+            raise HTTPException(status_code=409, detail=detail)
 
     db.add(term)
     db.commit()
@@ -426,13 +444,13 @@ def bulk_import_vocabulary(  # noqa: C901
             "message": f"Imported {created} terms, skipped {skipped}",
         }
 
-    # Single query to fetch all existing (term, domain) pairs for this user, in every
-    # tenant — the unique index is per user, not per tenant.
+    # Single query to fetch the existing (term, domain) pairs of this user in the
+    # active tenant — the unique index is per user per tenant (v430).
     # Avoids one DB round-trip per validated term (N+1 → 1 query).
     existing_pairs: set[tuple[str, str]] = {
         (row.term, row.domain)
         for row in db.query(CustomVocabulary.term, CustomVocabulary.domain)
-        .filter(CustomVocabulary.user_id == current_user.id)
+        .filter(_own_terms(CustomVocabulary, ctx))
         .all()
     }
 

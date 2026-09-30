@@ -1,8 +1,8 @@
 """Tenant gates for per-user items shared "with everyone".
 
-Media sources, organization context, LLM and ASR provider configurations.
+Media sources, organization context, LLM and ASR provider configurations, summary prompts.
 
-These items carry no ``organization_id`` of their own: a user flips ``is_shared`` and the
+Most of these items carry no ``organization_id`` of their own: a user flips ``is_shared`` and the
 item becomes visible to other users. "Other users" means **the owner's tenant**, never the
 whole instance — the same rule ``groups._same_tenant`` and ``GET /users/search`` apply:
 
@@ -119,17 +119,14 @@ def shared_usable_by(
     return or_(owner_id_col == user_id, in_tenant)
 
 
-def user_in_org(db: Any, user_id: int, org_id: int) -> bool:
-    """Whether ``user_id`` holds a membership row in organization ``org_id``."""
-    return (
-        db.query(OrganizationMembership.id)
-        .filter(
-            OrganizationMembership.organization_id == org_id,
-            OrganizationMembership.user_id == user_id,
-        )
-        .first()
-        is not None
-    )
+def user_in_tenant(db: Any, user_id: int, org_id: int | None) -> bool:
+    """Is ``user_id`` in tenant ``org_id``? (a member of it; or, for None, of no org at all)
+
+    Row-level twin of :func:`owner_in_tenant` for share *targets*: a grant may only name a
+    user the grantor's tenant can already see (``GET /users/search`` lists exactly these).
+    """
+    result: bool = bool(db.query(owner_in_tenant(user_id, org_id)).scalar())
+    return result
 
 
 def group_members_outside_org(db: Any, group_id: int, org_id: int) -> int:

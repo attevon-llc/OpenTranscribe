@@ -24,7 +24,7 @@ from app.models.media import Tag
 from app.models.sharing import TagShare
 from app.models.user import User
 from app.utils.tenant_sharing import group_members_outside_org
-from app.utils.tenant_sharing import user_in_org
+from app.utils.tenant_sharing import user_in_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ def share_tag(
         if target_user_id == tag.user_id:
             raise TagShareError("That tag already belongs to this user")
         # An organization's tag stays inside that organization.
-        if tag.organization_id is not None and not user_in_org(
+        if tag.organization_id is not None and not user_in_tenant(
             db, target_user_id, int(tag.organization_id)
         ):
             raise TagShareError(

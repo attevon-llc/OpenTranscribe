@@ -23464,7 +23464,7 @@
     },
     "/api/asr-settings": {
       "get": {
-        "description": "List all ASR configurations belonging to the current user.",
+        "description": "List the current user's ASR configurations and those shared within their tenant.",
         "operationId": "list_asr_settings_api_asr_settings_get",
         "responses": {
           "200": {
@@ -32152,7 +32152,7 @@
     },
     "/api/llm-settings": {
       "get": {
-        "description": "Get all user's LLM configurations",
+        "description": "Get all user's LLM configurations, plus those shared within the caller's tenant",
         "operationId": "get_user_configurations_api_llm_settings_get",
         "responses": {
           "200": {
@@ -32963,7 +32963,7 @@
     },
     "/api/llm-settings/test": {
       "post": {
-        "description": "Test connection to LLM provider without saving settings.\nIf config_id is provided and no api_key, will use the stored API key from that config.\n\nRate-limited (issue #676): this handler makes a server-side outbound request to a\ncaller-supplied ``base_url`` and sits behind ``get_current_active_user``, not an\nadmin gate — see ``get_llm_outbound_rate_limit``.",
+        "description": "Test connection to LLM provider without saving settings.\nIf config_id is provided and no api_key, will use the stored API key from that config.\nOnly the caller's OWN config lends its key here: this request carries a\ncaller-chosen ``base_url``, so a shared config's key would go wherever the caller\npointed it. Users of a shared config test it with ``/test-config/{uuid}``, which\ndials the endpoint stored on the config.\n\nRate-limited (issue #676): this handler makes a server-side outbound request to a\ncaller-supplied ``base_url`` and sits behind ``get_current_active_user``, not an\nadmin gate — see ``get_llm_outbound_rate_limit``.",
         "operationId": "test_llm_connection_api_llm_settings_test_post",
         "requestBody": {
           "content": {

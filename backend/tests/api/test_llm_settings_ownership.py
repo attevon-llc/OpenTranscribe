@@ -8,9 +8,9 @@ different authenticated user read or trigger a probe against someone else's
 config" had no test.
 
 Read ``app/api/endpoints/llm_settings.py``: all four handlers resolve
-``config_uuid`` via ``get_llm_config_by_uuid`` — an UNSCOPED lookup with no
-owner filter — and only afterward call ``require_resource_owner`` (unless the
-config is ``is_shared``). That gate raises **403**, not 404, exactly like the
+``config_uuid`` via ``_get_accessible_config`` — an unscoped uuid lookup followed
+by an owner check (or, for a non-owner, "shared within the caller's tenant"; see
+``tests/api/test_cross_tenant_sharing.py``). That gate raises **403**, not 404, exactly like the
 sibling ``GET .../api-key`` route pinned in ``test_llm_settings_endpoints.py``.
 So a non-owner probing another user's config gets a 403 "Not authorized to
 access this configuration" — which does confirm the config's *existence* to a

@@ -1,4 +1,6 @@
-"""Tenant gates for per-user items shared "with everyone" (media sources, org context).
+"""Tenant gates for per-user items shared "with everyone".
+
+Media sources, organization context, LLM and ASR provider configurations.
 
 These items carry no ``organization_id`` of their own: a user flips ``is_shared`` and the
 item becomes visible to other users. "Other users" means **the owner's tenant**, never the
@@ -59,3 +61,59 @@ def owner_shares_tenant_with(owner_id_col: Any, user_id: int) -> ColumnElement[b
         ~exists().where(OrganizationMembership.user_id == user_id),
     )
     return or_(common_org, both_personal)
+
+
+def _stamp_matches(org_col: Any, org_id: int | None) -> ColumnElement[bool]:
+    """A row's own ``organization_id`` stamp (if any) must name the active tenant."""
+    unstamped: ColumnElement[bool] = org_col.is_(None)
+    if org_id is None:
+        return unstamped
+    return or_(unstamped, org_col == org_id)
+
+
+def shared_visible_in_tenant(
+    owner_id_col: Any,
+    shared_col: Any,
+    user_id: int,
+    org_id: int | None,
+    *,
+    org_col: Any = None,
+) -> ColumnElement[bool]:
+    """SQL predicate for request paths: the caller owns the row, or it is shared in-tenant.
+
+    ``org_col`` is the row's ``organization_id`` stamp where the model has one; a row
+    stamped for another organization is never visible, even if its owner belongs to
+    both.
+    """
+    in_tenant = and_(shared_col.is_(True), owner_in_tenant(owner_id_col, org_id))
+    if org_col is not None:
+        in_tenant = and_(in_tenant, _stamp_matches(org_col, org_id))
+    return or_(owner_id_col == user_id, in_tenant)
+
+
+def shared_usable_by(
+    owner_id_col: Any,
+    shared_col: Any,
+    user_id: int,
+    *,
+    org_col: Any = None,
+) -> ColumnElement[bool]:
+    """SQL predicate for worker paths: ``user_id`` owns the row, or it is shared in a common tenant.
+
+    Resolves stored pointers (an "active config" id, a "use shared" user id) at task
+    time. The pointer outlives membership changes and may predate this check, so it is
+    re-validated on every use rather than trusted.
+    """
+    in_tenant = and_(shared_col.is_(True), owner_shares_tenant_with(owner_id_col, user_id))
+    if org_col is not None:
+        in_tenant = and_(
+            in_tenant,
+            or_(
+                org_col.is_(None),
+                exists().where(
+                    OrganizationMembership.user_id == user_id,
+                    OrganizationMembership.organization_id == org_col,
+                ),
+            ),
+        )
+    return or_(owner_id_col == user_id, in_tenant)

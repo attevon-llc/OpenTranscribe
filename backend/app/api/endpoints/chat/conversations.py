@@ -62,7 +62,7 @@ def create_conversation(
     ctx: RequestContext = Depends(get_current_context),
 ) -> ConversationDetail:
     """Start a new conversation, optionally pre-scoped to files/collections/tags."""
-    llm_config_id = resolve_llm_config_id(db, ctx.user.id, body.llm_config_uuid)
+    llm_config_id = resolve_llm_config_id(db, ctx, body.llm_config_uuid)
 
     # 404s through get_owned_project if the project isn't the caller's, so a
     # conversation can never be filed into someone else's workspace.
@@ -181,9 +181,7 @@ def update_conversation(
         conversation.context = body.scope.model_dump()
     if body.llm_config_uuid is not None:
         conversation.llm_config_id = (
-            resolve_llm_config_id(db, ctx.user.id, body.llm_config_uuid)
-            if body.llm_config_uuid
-            else None
+            resolve_llm_config_id(db, ctx, body.llm_config_uuid) if body.llm_config_uuid else None
         )
     if body.project_uuid is not None:
         # "" is the explicit "move out to ungrouped" signal; a uuid moves it.

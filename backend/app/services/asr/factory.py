@@ -557,17 +557,17 @@ class ASRProviderFactory:
         )
         if setting and setting.setting_value:
             try:
-                from sqlalchemy import or_
-
                 from app.models.user_asr_settings import UserASRSettings
+                from app.utils.tenant_sharing import shared_usable_by
 
                 cfg = (
                     db.query(UserASRSettings)
                     .filter(
                         UserASRSettings.id == int(setting.setting_value),
-                        or_(
-                            UserASRSettings.user_id == user_id,
-                            UserASRSettings.is_shared == True,  # noqa: E712
+                        # Own, or shared within a tenant both belong to: the stored
+                        # pointer outlives membership changes, so it is re-checked here.
+                        shared_usable_by(
+                            UserASRSettings.user_id, UserASRSettings.is_shared, user_id
                         ),
                     )
                     .first()
@@ -849,17 +849,17 @@ class ASRProviderFactory:
         )
         if setting and setting.setting_value:
             try:
-                from sqlalchemy import or_
-
                 from app.models.user_asr_settings import UserASRSettings
+                from app.utils.tenant_sharing import shared_usable_by
 
                 cfg = (
                     db.query(UserASRSettings)
                     .filter(
                         UserASRSettings.id == int(setting.setting_value),
-                        or_(
-                            UserASRSettings.user_id == user_id,
-                            UserASRSettings.is_shared == True,  # noqa: E712
+                        # Own, or shared within a tenant both belong to: the stored
+                        # pointer outlives membership changes, so it is re-checked here.
+                        shared_usable_by(
+                            UserASRSettings.user_id, UserASRSettings.is_shared, user_id
                         ),
                     )
                     .first()

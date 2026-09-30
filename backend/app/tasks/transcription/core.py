@@ -45,6 +45,7 @@ from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
 from .context import requeue_after_abort
+from .context import requeue_if_context_poisoned
 from .context import retry_transcribe_gpu_exception
 from .cpu_task import transcribe_cpu_task
 from .diarize_task import diarize_gpu_task
@@ -353,6 +354,9 @@ def _finish_failed_or_aborted(
     """
     if isinstance(exc, TranscriptionAbortedError):
         requeue_after_abort(file_uuid, exc, stage="GPU transcription")
+    # Issue #1081: a broken CUDA context is this worker's fault, not the file's. Before the
+    # WAV cleanup, because the requeued attempt needs that WAV.
+    requeue_if_context_poisoned(task_id, file_uuid, exc, stage="GPU transcription")
     _cleanup_wav_quietly(local_wav_path)
     logger.error(f"GPU transcription failed for file {file_uuid}: {exc}")
     _handle_transcription_failure(ctx, task_id, str(exc), "gpu_processing_error")

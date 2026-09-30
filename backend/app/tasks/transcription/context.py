@@ -6,6 +6,7 @@ FAILED and notify the SPA.
 """
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import NoReturn
@@ -20,6 +21,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.transcription import cuda_health
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
@@ -145,12 +147,69 @@ def requeue_after_abort(file_uuid: str, abort: Exception, *, stage: str) -> NoRe
         Reject: always -- this function exists to convert an abort into a requeue.
     """
     logger.warning(
-        "%s for file %s stood down for worker shutdown (%s) -- requeueing",
+        "%s for file %s stood down (%s) -- requeueing",
         stage,
         file_uuid,
         abort,
     )
     raise Reject(requeue=True) from abort
+
+
+#: Redis counter of poisoned-context requeues per task, so a message that breaks every worker
+#: it lands on fails after a few attempts instead of cycling workers forever.
+_POISONED_REQUEUE_KEY = "gpu_poisoned_requeues:{task_id}"
+_POISONED_REQUEUE_TTL_S = 86_400
+
+
+def _redis_client():
+    from app.core.redis import get_redis
+
+    return get_redis()
+
+
+def _poisoned_requeue_allowed(task_id: str) -> bool:
+    """Count one more poisoned-context requeue for ``task_id``; False once past the cap.
+
+    ``GPU_POISONED_MAX_REQUEUES`` (default 2). A Redis failure allows the requeue: Redis is
+    the broker, so if it is unreachable the requeue cannot loop anyway.
+    """
+    try:
+        cap = max(0, int(os.getenv("GPU_POISONED_MAX_REQUEUES", "2")))
+    except ValueError:
+        cap = 2
+    key = _POISONED_REQUEUE_KEY.format(task_id=task_id)
+    try:
+        client = _redis_client()
+        count = int(client.incr(key))
+        client.expire(key, _POISONED_REQUEUE_TTL_S)
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        logger.warning("Could not count poisoned-context requeues for %s: %s", task_id, exc)
+        return True
+    return count <= cap
+
+
+def requeue_if_context_poisoned(
+    task_id: str, file_uuid: str, exc: Exception, *, stage: str
+) -> None:
+    """Handle a GPU failure caused by a broken CUDA context (issue #1081).
+
+    Returns normally when ``exc`` is anything else, so the caller's failure path runs.
+    Otherwise this worker is taken out of service (it exits and is restarted, see
+    ``cuda_health.mark_context_poisoned``) and the task is requeued for a healthy worker:
+    the file is not at fault. Past ``GPU_POISONED_MAX_REQUEUES`` for the same task it
+    returns, so the file fails normally instead of cycling workers forever.
+    """
+    if not cuda_health.is_context_poisoned_error(exc):
+        return
+    cuda_health.mark_context_poisoned(str(exc))
+    if not _poisoned_requeue_allowed(task_id):
+        logger.error(
+            "%s for file %s hit a broken CUDA context again; not requeueing it any more",
+            stage,
+            file_uuid,
+        )
+        return
+    requeue_after_abort(file_uuid, exc, stage=f"{stage} (broken CUDA context)")
 
 
 @dataclass

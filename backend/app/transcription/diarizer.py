@@ -15,6 +15,7 @@ from typing import NoReturn
 import numpy as np
 import torch
 
+from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarize_result import DiarizeResult
 from app.utils.pyannote_utils import build_native_embeddings
@@ -294,9 +295,17 @@ class SpeakerDiarizer:
             else:
                 stage_timing[step_name]["last"] = now
 
-        raw_output = self._run_pipeline_with_oom_retry(
-            audio_input, pipeline_kwargs, hook=timing_hook
-        )
+        # Reserve the in-process diarizer's working set from the worker's VRAM budget
+        # (issue #1081) so concurrent threads cannot all peak together; a no-op on CPU.
+        diar_device = str(self.config.diarization_device)
+        with vram_budget.admit(
+            "diarization",
+            device="cuda" if diar_device.startswith("cuda") else diar_device,
+            device_index=self.config.device_index,
+        ):
+            raw_output = self._run_pipeline_with_oom_retry(
+                audio_input, pipeline_kwargs, hook=timing_hook
+            )
 
         centroids = getattr(raw_output, "speaker_embeddings", None)
         output = raw_output

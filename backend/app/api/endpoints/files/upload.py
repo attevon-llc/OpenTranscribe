@@ -632,7 +632,11 @@ async def process_file_upload(
         from app.utils.file_hash import check_duplicate_by_fingerprint
 
         duplicate_uuid = await run_in_threadpool(
-            check_duplicate_by_fingerprint, db, client_file_hash, current_user.id
+            check_duplicate_by_fingerprint,
+            db,
+            client_file_hash,
+            current_user.id,
+            organization_id=organization_id,
         )
         if duplicate_uuid:
             logger.info(

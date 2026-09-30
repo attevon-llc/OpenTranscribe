@@ -35,6 +35,7 @@ from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.youtube_processing import process_youtube_playlist_task
 from app.tasks.youtube_processing import process_youtube_url_task
+from app.utils.file_hash import org_stamp_is
 
 logger = logging.getLogger(__name__)
 
@@ -352,38 +353,34 @@ def _extract_video_info(
     return video_id, video_title, video_info
 
 
-def _check_duplicate_video(db: Session, user_id: int, video_id: str, normalized_url: str) -> None:
-    """Check if the video already exists for this user.
+def _check_duplicate_video(
+    db: Session, user_id: int, video_id: str, normalized_url: str, organization_id: int | None
+) -> None:
+    """Check if the video already exists for this user in the active tenant.
 
     Args:
         db: Database session.
         user_id: User ID to check against.
         video_id: Video ID from the platform.
         normalized_url: Normalized media URL.
+        organization_id: The caller's active tenant (None = personal). The same
+            user's copy in another tenant is not a duplicate of this one.
 
     Raises:
         HTTPException: If a duplicate video is found (409 Conflict).
     """
-    existing_video = None
+    base = db.query(MediaFile).filter(
+        MediaFile.user_id == user_id,
+        org_stamp_is(MediaFile.organization_id, organization_id),
+    )
 
     # Check by source_url first (works for all platforms)
-    existing_video = (
-        db.query(MediaFile)
-        .filter(
-            MediaFile.user_id == user_id,
-            MediaFile.source_url == normalized_url,
-        )
-        .first()
-    )
+    existing_video = base.filter(MediaFile.source_url == normalized_url).first()
 
     # Also check by metadata_raw video_id (for backward compatibility with YouTube)
     if not existing_video:
         existing_video = (
-            db.query(MediaFile)
-            .filter(
-                MediaFile.user_id == user_id,
-                text("metadata_raw->>'video_id' = :video_id"),
-            )
+            base.filter(text("metadata_raw->>'video_id' = :video_id"))
             .params(video_id=video_id)
             .first()
         )
@@ -391,11 +388,7 @@ def _check_duplicate_video(db: Session, user_id: int, video_id: str, normalized_
     # Check by youtube_id for backward compatibility
     if not existing_video:
         existing_video = (
-            db.query(MediaFile)
-            .filter(
-                MediaFile.user_id == user_id,
-                text("metadata_raw->>'youtube_id' = :youtube_id"),
-            )
+            base.filter(text("metadata_raw->>'youtube_id' = :youtube_id"))
             .params(youtube_id=video_id)
             .first()
         )
@@ -719,7 +712,7 @@ def process_media_url(
         )
 
         # Check for duplicate video
-        _check_duplicate_video(db, current_user.id, video_id, normalized_url)
+        _check_duplicate_video(db, current_user.id, video_id, normalized_url, ctx.org_id)
 
         # Create placeholder MediaFile record
         media_file = _create_media_file_record(

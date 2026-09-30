@@ -19,9 +19,12 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import OpenTranscribeError
 from app.models.group import UserGroup
+from app.models.group import UserGroupMember
 from app.models.media import Tag
 from app.models.sharing import TagShare
 from app.models.user import User
+from app.utils.tenant_sharing import group_members_outside_org
+from app.utils.tenant_sharing import user_in_org
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +73,9 @@ def share_tag(
         The grant, existing or new.
 
     Raises:
-        TagShareError: Neither or both targets given, or the target is unknown.
+        TagShareError: Neither or both targets given, the target is unknown, the
+            sharer is not in the target group, or the target reaches outside the
+            organization an org tag belongs to.
     """
     if bool(target_user_id) == bool(target_group_id):
         raise TagShareError("A share names exactly one user or one group")
@@ -82,8 +87,34 @@ def share_tag(
         # looking like a real grant.
         if target_user_id == tag.user_id:
             raise TagShareError("That tag already belongs to this user")
-    elif db.query(UserGroup).filter(UserGroup.id == target_group_id).first() is None:
-        raise TagShareError("Unknown group")
+        # An organization's tag stays inside that organization.
+        if tag.organization_id is not None and not user_in_org(
+            db, target_user_id, int(tag.organization_id)
+        ):
+            raise TagShareError(
+                "Cannot share an organization tag with a user who is not a member "
+                "of that organization"
+            )
+    elif target_group_id is not None:
+        if db.query(UserGroup).filter(UserGroup.id == target_group_id).first() is None:
+            raise TagShareError("Unknown group")
+        is_member = (
+            db.query(UserGroupMember.id)
+            .filter(
+                UserGroupMember.group_id == target_group_id,
+                UserGroupMember.user_id == shared_by_id,
+            )
+            .first()
+        )
+        if is_member is None:
+            raise TagShareError("You must be a member of the group to share with it")
+        if tag.organization_id is not None:
+            outside = group_members_outside_org(db, int(target_group_id), int(tag.organization_id))
+            if outside:
+                raise TagShareError(
+                    "Cannot share an organization tag with this group: "
+                    f"{outside} group member(s) are not members of that organization"
+                )
 
     existing = (
         db.query(TagShare)

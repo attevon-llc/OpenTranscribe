@@ -117,3 +117,38 @@ def shared_usable_by(
             ),
         )
     return or_(owner_id_col == user_id, in_tenant)
+
+
+def user_in_org(db: Any, user_id: int, org_id: int) -> bool:
+    """Whether ``user_id`` holds a membership row in organization ``org_id``."""
+    return (
+        db.query(OrganizationMembership.id)
+        .filter(
+            OrganizationMembership.organization_id == org_id,
+            OrganizationMembership.user_id == user_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def group_members_outside_org(db: Any, group_id: int, org_id: int) -> int:
+    """How many members of group ``group_id`` are NOT members of organization ``org_id``.
+
+    Groups can span organizations, so granting an org-stamped resource to a group is
+    only in-tenant when this is zero.
+    """
+    from app.models.group import UserGroupMember
+
+    count: int = (
+        db.query(UserGroupMember.user_id)
+        .filter(
+            UserGroupMember.group_id == group_id,
+            ~exists().where(
+                OrganizationMembership.user_id == UserGroupMember.user_id,
+                OrganizationMembership.organization_id == org_id,
+            ),
+        )
+        .count()
+    )
+    return count

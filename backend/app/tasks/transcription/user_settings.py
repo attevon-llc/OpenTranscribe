@@ -77,7 +77,14 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         )
         .all()
     )
-    settings_map = {s.setting_key: s.setting_value for s in user_settings}
+    # Values the deployment has locked (issue #1109) fall back to the defaults below,
+    # including ones the user stored before the lock.
+    from app.core.locked_settings import locked_transcription_db_keys
+
+    locked_keys = locked_transcription_db_keys()
+    settings_map = {
+        s.setting_key: s.setting_value for s in user_settings if s.setting_key not in locked_keys
+    }
 
     hal_raw = settings_map.get("transcription_hallucination_silence_threshold", "")
     hal_value = float(hal_raw) if hal_raw else DEFAULT_HALLUCINATION_SILENCE_THRESHOLD

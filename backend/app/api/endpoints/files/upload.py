@@ -309,6 +309,10 @@ def dispatch_upload_pipeline(
     """
     if not whisper_model and db_file.requested_whisper_model:
         whisper_model = str(db_file.requested_whisper_model)
+    # A model stored at /prepare before the deployment locked model choice must not apply.
+    from app.core.locked_settings import effective_whisper_model
+
+    whisper_model = effective_whisper_model(whisper_model, None)
     dispatch_thumbnail_for_video(db_file, user_id)
     return start_transcription_task(
         db_file.id,

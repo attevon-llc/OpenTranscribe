@@ -55,7 +55,9 @@ api_router = APIRouter()
 
 
 # Function to include routers with proper route handling for consistent frontend-backend communication
-def include_router_with_consistency(router, prefix, tags=None, capability=None):
+def include_router_with_consistency(
+    router, prefix, tags=None, capability=None, platform_admin_bypass=True
+):
     """Include a router with consistent route handling that works both with and without trailing slashes
 
     This ensures consistent API behavior regardless of whether the frontend sends requests
@@ -69,6 +71,8 @@ def include_router_with_consistency(router, prefix, tags=None, capability=None):
             return 404 when the deployment's capability resolver disables it
             (community default: everything enabled, so no behavior change;
             platform staff bypass applies). See app.core.capabilities.
+        platform_admin_bypass: Let superusers through a disabled capability.
+            Off for deployment-locked surfaces, which no account may reach.
     """
     if tags is None:
         tags = [prefix.strip("/")]  # Default tag based on prefix
@@ -82,7 +86,9 @@ def include_router_with_consistency(router, prefix, tags=None, capability=None):
 
         from app.core.capabilities import require_capability
 
-        dependencies = [Depends(require_capability(capability))]
+        dependencies = [
+            Depends(require_capability(capability, platform_admin_bypass=platform_admin_bypass))
+        ]
 
     # Include the router with the normalized prefix
     api_router.include_router(
@@ -244,10 +250,14 @@ include_router_with_consistency(
 include_router_with_consistency(
     embedding_migration.router, prefix="/embeddings/migration", tags=["embedding-migration"]
 )
+# A platform-wide job over every file; superusers are its only callers, so the
+# capability has no admin bypass or turning it off would change nothing.
 include_router_with_consistency(
     speaker_attribute_migration.router,
     prefix="/speaker-attributes/migration",
     tags=["speaker-attribute-migration"],
+    capability="speaker_attributes.migration",
+    platform_admin_bypass=False,
 )
 include_router_with_consistency(
     combined_speaker_migration.router,

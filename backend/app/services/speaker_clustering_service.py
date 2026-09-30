@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import subqueryload
 
+from app.core import constants
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -278,6 +279,25 @@ class SpeakerClusteringService:
     # ------------------------------------------------------------------
     # Batch clustering (on-demand)
     # ------------------------------------------------------------------
+
+    def largest_recluster_partition(self, user_id: int) -> int:
+        """Size of the largest similarity matrix ``batch_recluster`` would build.
+
+        Mirrors Phase 2's input (the user's speakers without a profile) and its
+        tenant partitioning (the speaker's file organization), counted in SQL so a
+        dispatcher can route by it without loading embeddings. An upper bound: a
+        speaker with no stored embedding is counted but dropped by the service.
+        """
+        from sqlalchemy import func
+
+        counts = (
+            self.db.query(func.count(Speaker.id))
+            .join(MediaFile, MediaFile.id == Speaker.media_file_id)
+            .filter(Speaker.user_id == user_id, Speaker.profile_id.is_(None))
+            .group_by(MediaFile.organization_id)
+            .all()
+        )
+        return max((int(c) for (c,) in counts), default=0)
 
     def batch_recluster(
         self,
@@ -996,7 +1016,8 @@ class SpeakerClusteringService:
         # GPU is faster for matmul but creates a CUDA context (~1.4GB)
         # that persists in prefork worker children. For small speaker
         # counts, CPU is fast enough and avoids the context overhead.
-        use_gpu = torch.cuda.is_available() and n >= 500
+        # The threshold is shared with the dispatch router (issue #1083).
+        use_gpu = torch.cuda.is_available() and n >= constants.SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS
         device = torch.device("cuda:0" if use_gpu else "cpu")
         dtype = torch.float16 if use_gpu else torch.float32
         logger.info(

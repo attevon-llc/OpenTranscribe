@@ -7443,6 +7443,17 @@
             ],
             "title": "Author"
           },
+          "can_delete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Delete"
+          },
           "codec": {
             "anyOf": [
               {
@@ -8043,6 +8054,17 @@
               }
             ],
             "title": "Author"
+          },
+          "can_delete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Delete"
           },
           "codec": {
             "anyOf": [

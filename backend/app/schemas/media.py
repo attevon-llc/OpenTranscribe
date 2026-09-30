@@ -585,6 +585,11 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     thumbnail_path: str | None = None
     thumbnail_url: str | None = None
 
+    # Whether the caller may permanently delete this file: its owner, an org admin
+    # of its organization, or a platform admin (issue #1103). Set by the gallery
+    # list endpoint; None where a response does not compute it.
+    can_delete: bool | None = None
+
     # Technical metadata
     media_format: str | None = None
     codec: str | None = None

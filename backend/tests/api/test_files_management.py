@@ -442,22 +442,28 @@ def test_bulk_delete_force_by_admin_is_honoured(
     assert results[0]["success"] is True
 
 
+@pytest.mark.parametrize(
+    ("action", "error"),
+    # Delete has its own permission rule and reports FORBIDDEN (issue #1103);
+    # every other action goes through the generic funnel's HTTP_ERROR.
+    [("retry", "HTTP_ERROR"), ("delete", "FORBIDDEN")],
+)
 def test_bulk_action_other_user_file_is_soft_failure(
-    client, other_user_auth_headers, normal_user, db_session
+    client, other_user_auth_headers, normal_user, db_session, action, error
 ):
     """An authz failure on a single file does NOT 403 the whole request — it's
-    a per-file soft failure (success=False, error=HTTP_ERROR) with the permission
-    detail surfaced as the message."""
+    a per-file soft failure (success=False) with the permission detail surfaced
+    as the message."""
     media_file = _make_file(db_session, normal_user, file_status="completed")
     response = client.post(
         "/api/files/management/bulk-action",
         headers=other_user_auth_headers,
-        json={"file_uuids": [str(media_file.uuid)], "action": "delete"},
+        json={"file_uuids": [str(media_file.uuid)], "action": action},
     )
     assert response.status_code == status.HTTP_200_OK
     result = response.json()[0]
     assert result["success"] is False
-    assert result["error"] == "HTTP_ERROR"
+    assert result["error"] == error
     assert result["message"] == "You do not have permission to access this file"
 
 

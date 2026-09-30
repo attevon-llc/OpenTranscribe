@@ -73,7 +73,13 @@ def cancel_upload(
         # Not a pending upload owned by the caller — full delete path.
         from app.api.endpoints.files.crud import delete_media_file
 
-        delete_media_file(db, file_uuid, current_user, organization_id=ctx.org_id)
+        delete_media_file(
+            db,
+            file_uuid,
+            current_user,
+            organization_id=ctx.org_id,
+            is_org_admin=ctx.is_org_admin,
+        )
         return None
 
     file_id = db_file.id

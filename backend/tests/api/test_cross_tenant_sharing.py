@@ -14,7 +14,10 @@ scope, only if the owner belongs to no organization. Community installs have no
 organizations, so every account is "personal" and instance-wide sharing is unchanged —
 that is the ``p1`` → ``p2`` row.
 
-Adding a shared resource type? Add a ``Surface`` to ``SURFACES``.
+Adding a shared resource type? Add a ``Surface`` to ``SURFACES`` (a model with an
+``is_shared`` column), an entry in ``GRANT_MODELS`` (a table granting to a user/group), or
+one in ``SHARED_SETTING_KEYS`` (a ``UserSetting`` key). The guard tests at the bottom
+fail until you do.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ import pytest
 
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from app.models.prompt import SummaryPrompt
 from app.models.prompt import UserSetting
 from app.models.user import User
 from app.models.user_asr_settings import UserASRSettings
@@ -299,6 +303,59 @@ def _org_context_worker(db, user: User, owner_id: str) -> bool:
         return _get_organization_context(db, user.id) == f"context of {owner.email}"
 
 
+# --- Summary prompts (org-stamped where the edition stamps them) ------------ #
+
+
+def _share_prompt(db, owner: User, org_id: int | None = None, tag: str = "t") -> str:
+    prompt = SummaryPrompt(
+        user_id=owner.id,
+        organization_id=org_id,
+        name=f"shared-prompt-{uuid_pkg.uuid4().hex[:6]}",
+        prompt_text="Summarize {transcript}",
+        content_type="general",
+        is_system_default=False,
+        is_active=True,
+        is_shared=True,
+        tags=[tag],
+    )
+    db.add(prompt)
+    db.commit()
+    db.refresh(prompt)
+    return str(prompt.uuid)
+
+
+def _prompt_listed(client) -> set:
+    listing = client.get(
+        "/api/prompts", params={"include_system": "false", "include_user": "false"}
+    )
+    by_type = client.get("/api/prompts/by-content-type/general")
+    assert listing.status_code == 200, listing.text
+    assert by_type.status_code == 200, by_type.text
+    a = {str(p["uuid"]) for p in listing.json()["prompts"]}
+    b = {str(p["uuid"]) for p in by_type.json()["shared_prompts"]}
+    assert a == b
+    return a
+
+
+def _prompt_use(client, prompt_uuid: str) -> bool:
+    read = client.get(f"/api/prompts/{prompt_uuid}")
+    select = client.post("/api/prompts/active/set", json={"prompt_id": prompt_uuid})
+    clone = client.post(f"/api/prompts/{prompt_uuid}/clone")
+    codes = {read.status_code, select.status_code, clone.status_code}
+    assert codes <= {200, 403}, (read.text, select.text, clone.text)
+    assert len(codes) == 1, (read.status_code, select.status_code, clone.status_code)
+    return bool(read.status_code == 200)
+
+
+def _prompt_worker(db, user: User, prompt_uuid: str) -> bool:
+    from app.utils.prompt_manager import resolve_active_prompt_record
+
+    prompt = db.query(SummaryPrompt).filter(SummaryPrompt.uuid == prompt_uuid).one()
+    _set_setting(db, user, "active_summary_prompt_id", str(prompt.id))
+    resolved = resolve_active_prompt_record(user.id, db)
+    return resolved is not None and resolved.id == prompt.id
+
+
 SURFACES: list[Surface] = [
     Surface("llm_config", (UserLLMSettings,), _share_llm, _llm_listed, _llm_use, _llm_worker),
     Surface("asr_config", (UserASRSettings,), _share_asr, _asr_listed, _asr_use, _asr_worker),
@@ -312,6 +369,14 @@ SURFACES: list[Surface] = [
         _org_context_listed,
         _org_context_use,
         _org_context_worker,
+    ),
+    Surface(
+        "summary_prompt",
+        (SummaryPrompt,),
+        _share_prompt,
+        _prompt_listed,
+        _prompt_use,
+        _prompt_worker,
     ),
 ]
 
@@ -502,3 +567,143 @@ def test_asr_provider_for_transcription_scoped(world, monkeypatch, viewer, owner
 
     provider = factory.ASRProviderFactory.create_for_user(world.users[viewer].id, world.db)
     assert provider is (from_config if expected else local_default)
+
+
+# --------------------------------------------------------------------------- #
+# Summary prompts: library, tag list, org stamp, explicit prompt on a run       #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(("viewer", "tenant", "owner", "expected"), CASES)
+def test_shared_prompt_library_scoped(client, world, viewer, tenant, owner, expected):
+    tag = f"tag-{uuid_pkg.uuid4().hex[:8]}"
+    prompt_uuid = _share_prompt(world.db, world.users[owner], tag=tag)
+    with _acting_as(world.users[viewer], world.org_id(tenant)):
+        resp = client.get("/api/prompts/shared/library")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert (prompt_uuid in {str(p["uuid"]) for p in body["prompts"]}) is expected
+    assert (tag in body["available_tags"]) is expected
+
+
+def test_prompt_stamped_for_another_org_stays_there(client, world):
+    """An owner in two organizations shares a prompt stamped for B: A never sees it."""
+    _join(world.db, world.org_b, world.users["a1"])
+    prompt_uuid = _share_prompt(world.db, world.users["a1"], org_id=world.org_b.id)
+    with _acting_as(world.users["a2"], world.org_a.id):
+        assert prompt_uuid not in _prompt_listed(client)
+        assert _prompt_use(client, prompt_uuid) is False
+    with _acting_as(world.users["b1"], world.org_b.id):
+        assert prompt_uuid in _prompt_listed(client)
+    assert _prompt_worker(world.db, world.users["a2"], prompt_uuid) is False
+    assert _prompt_worker(world.db, world.users["b1"], prompt_uuid) is True
+
+
+@pytest.mark.parametrize(("viewer", "tenant", "owner", "expected"), CASES)
+def test_explicit_prompt_on_summarize_scoped(world, viewer, tenant, owner, expected):
+    from fastapi import HTTPException
+
+    from app.api.deps_context import RequestContext
+    from app.api.endpoints.prompts import require_usable_prompt_uuid
+
+    prompt_uuid = _share_prompt(world.db, world.users[owner])
+    ctx = RequestContext(user=world.users[viewer], org_id=world.org_id(tenant))
+    if expected:
+        require_usable_prompt_uuid(world.db, prompt_uuid, ctx)
+    else:
+        with pytest.raises(HTTPException) as exc:
+            require_usable_prompt_uuid(world.db, prompt_uuid, ctx)
+        assert exc.value.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Grants naming one user: the read side stays in the grantor's tenant           #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(("viewer", "tenant", "owner", "expected"), CASES)
+def test_tag_grant_stays_in_the_tags_tenant(client, world, viewer, tenant, owner, expected):
+    """A tag granted straight to a user (legacy rows included) is listed only in the
+    tag's own tenant."""
+    from app.models.media import Tag
+    from app.models.sharing import TagShare
+
+    owner_user = world.users[owner]
+    owner_org = world.org_a.id if owner == "a1" else None
+    name = f"granted-{uuid_pkg.uuid4().hex[:8]}"
+    tag = Tag(
+        name=name,
+        normalized_name=name,
+        user_id=owner_user.id,
+        organization_id=owner_org,
+        source="manual",
+    )
+    world.db.add(tag)
+    world.db.flush()
+    world.db.add(
+        TagShare(
+            tag_id=tag.id,
+            shared_by_id=owner_user.id,
+            target_type="user",
+            target_user_id=world.users[viewer].id,
+        )
+    )
+    world.db.commit()
+    with _acting_as(world.users[viewer], world.org_id(tenant)):
+        resp = client.get("/api/tags")
+    assert resp.status_code == 200, resp.text
+    assert (name in {t["name"] for t in resp.json()}) is expected
+
+
+# --------------------------------------------------------------------------- #
+# Guard: a new shareable model cannot skip this suite                           #
+# --------------------------------------------------------------------------- #
+
+#: Grant tables (a share naming one user or group) and the tenancy test proving each.
+GRANT_MODELS: dict[str, str] = {
+    "CollectionShare": "tests/api/test_collection_tenancy.py::test_shared_with_me_is_tenant_gated",
+    "TagShare": "tests/api/test_cross_tenant_sharing.py::test_tag_grant_stays_in_the_tags_tenant",
+}
+
+#: UserSetting keys that share a value with other users, and the surface covering them.
+SHARED_SETTING_KEYS: dict[str, str] = {
+    "org_context_is_shared": "org_context",
+    "org_context_use_shared_from": "org_context",
+}
+
+
+def test_every_shareable_model_is_covered():
+    """Every model with an ``is_shared`` flag is a ``Surface`` above; every grant table
+    names the tenancy test that proves it. Add yours before shipping a shared feature."""
+    from pathlib import Path
+
+    from app.db.base import Base
+
+    covered = {m for s in SURFACES for m in s.models}
+    backend = Path(__file__).resolve().parents[2]
+    uncovered = []
+    for mapper in Base.registry.mappers:
+        cls, cols = mapper.class_, set(mapper.columns.keys())
+        if "is_shared" in cols and cls not in covered:
+            uncovered.append(f"{cls.__name__}: add a Surface to SURFACES")
+        if {"target_user_id", "target_group_id"} & cols:
+            proof = GRANT_MODELS.get(cls.__name__)
+            if proof is None:
+                uncovered.append(f"{cls.__name__}: grant table without a tenancy test")
+                continue
+            path, _, test_name = proof.partition("::")
+            assert f"def {test_name}(" in (backend / path).read_text(), proof
+    assert not uncovered, uncovered
+
+
+def test_every_shared_setting_key_is_covered():
+    """UserSetting-backed sharing has no column to find; scan the code for its keys."""
+    import re
+    from pathlib import Path
+
+    app_dir = Path(__file__).resolve().parents[2] / "app"
+    pattern = re.compile(r'"([a-z_]+_(?:is_shared|use_shared_from))"')
+    keys = {k for f in app_dir.rglob("*.py") for k in pattern.findall(f.read_text())}
+    names = {s.name for s in SURFACES}
+    assert keys <= set(SHARED_SETTING_KEYS), sorted(keys - set(SHARED_SETTING_KEYS))
+    assert set(SHARED_SETTING_KEYS.values()) <= names

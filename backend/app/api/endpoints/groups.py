@@ -34,6 +34,7 @@ from app.schemas.group import GroupMemberUpdate
 from app.schemas.group import GroupUpdate
 from app.schemas.user import UserBrief
 from app.services.group_file_index_service import reindex_group_shared_files
+from app.utils.tenant_sharing import user_in_tenant
 from app.utils.uuid_helpers import get_by_uuid
 from app.utils.uuid_helpers import require_resource_owner
 from app.utils.websocket_notify import send_ws_event
@@ -89,19 +90,9 @@ def _same_tenant(db: Session, user_id: int, ctx: RequestContext) -> bool:
     ``organization_membership`` rather than from any token claim — the repo's rule that
     authorization reads the table, never the claim alone.
     """
-    from app.models.organization import OrganizationMembership
-
-    memberships = {
-        row[0]
-        for row in db.query(OrganizationMembership.organization_id)
-        .filter(OrganizationMembership.user_id == user_id)
-        .all()
-    }
-    if ctx.is_org_context:
-        return ctx.org_id in memberships
     # Personal scope: only accounts with no org membership at all, mirroring
     # `scope_to_context`'s personal branch and `GET /users/search`'s gate.
-    return not memberships
+    return user_in_tenant(db, user_id, ctx.org_id)
 
 
 def _get_membership(db: Session, group_id: int, user_id: int) -> UserGroupMember | None:

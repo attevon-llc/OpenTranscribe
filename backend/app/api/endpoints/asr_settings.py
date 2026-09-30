@@ -20,11 +20,12 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
 from pydantic import BaseModel
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 
 # Deployment configuration is the super_admin tier: this router
 # pins the deployment's ASR engine/model.
@@ -37,6 +38,8 @@ from app.schemas.media import VALID_LOCAL_WHISPER_MODELS
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
+from app.utils.tenant_sharing import owner_in_tenant
+from app.utils.tenant_sharing import shared_visible_in_tenant
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -258,17 +261,20 @@ def _config_to_dict(config: Any, *, owner=None, is_own: bool = True) -> dict:
 
 
 def _get_config_or_404(
-    db: Session, config_uuid: UUID, user_id: int, *, allow_shared: bool = False
+    db: Session, config_uuid: UUID, user_id: int, *, shared_in: RequestContext | None = None
 ) -> Any:
-    """Fetch UserASRSettings by UUID+user or raise 404."""
+    """Fetch UserASRSettings by UUID+user or raise 404.
+
+    With ``shared_in``, a config shared within that request's active tenant also
+    qualifies; another tenant's shared config answers like a missing one.
+    """
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     filters = [UserASRSettings.uuid == config_uuid]
-    if allow_shared:
+    if shared_in is not None:
         filters.append(
-            or_(
-                UserASRSettings.user_id == user_id,
-                UserASRSettings.is_shared == True,  # noqa: E712
+            shared_visible_in_tenant(
+                UserASRSettings.user_id, UserASRSettings.is_shared, user_id, shared_in.org_id
             )
         )
     else:
@@ -338,9 +344,10 @@ def get_local_models(
 @router.get("/status")
 def get_asr_status(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Get ASR configuration status summary for the current user."""
+    current_user = ctx.user
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     # Single query: fetch all configs + active_config_id setting in 2 queries total.
@@ -360,6 +367,7 @@ def get_asr_status(
                 .filter(
                     UserASRSettings.id == active_config_id,
                     UserASRSettings.is_shared == True,  # noqa: E712
+                    owner_in_tenant(UserASRSettings.user_id, ctx.org_id),
                 )
                 .first()
             )
@@ -419,9 +427,10 @@ def get_asr_status(
 @router.get("")
 def list_asr_settings(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
-    """List all ASR configurations belonging to the current user."""
+    """List the current user's ASR configurations and those shared within their tenant."""
+    current_user = ctx.user
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     configs = (
@@ -439,12 +448,13 @@ def list_asr_settings(
         if active:
             active_uuid = str(active.uuid)
 
-    # Fetch shared configs from other users
+    # Fetch shared configs from other users in the caller's active tenant
     shared_configs = (
         db.query(UserASRSettings)
         .filter(
             UserASRSettings.is_shared == True,  # noqa: E712
             UserASRSettings.user_id != current_user.id,
+            owner_in_tenant(UserASRSettings.user_id, ctx.org_id),
         )
         .order_by(UserASRSettings.created_at)
         .all()
@@ -470,10 +480,11 @@ def list_asr_settings(
 def get_asr_config(
     config_uuid: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Get a specific ASR configuration by UUID (API key is never returned)."""
-    config = _get_config_or_404(db, config_uuid, current_user.id, allow_shared=True)
+    current_user = ctx.user
+    config = _get_config_or_404(db, config_uuid, current_user.id, shared_in=ctx)
     return _config_to_dict(config)
 
 
@@ -690,14 +701,15 @@ def update_asr_config(  # noqa: C901
 def set_active_asr_config(
     body: schemas.SetActiveASRConfigRequest,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Set the active ASR configuration for the current user."""
+    current_user = ctx.user
     config_uuid = body.resolved_uuid()
     if not config_uuid:
         raise HTTPException(status_code=400, detail="config_uuid (or uuid) is required")
 
-    config = _get_config_or_404(db, config_uuid, current_user.id, allow_shared=True)
+    config = _get_config_or_404(db, config_uuid, current_user.id, shared_in=ctx)
     _set_active_asr_configuration(db, current_user.id, config.id)
 
     return {
@@ -822,10 +834,11 @@ def test_saved_asr_config(
     config_uuid: UUID,
     response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Test a saved ASR configuration and persist the result (test_status, test_message, last_tested)."""
-    config = _get_config_or_404(db, config_uuid, current_user.id, allow_shared=True)
+    current_user = ctx.user
+    config = _get_config_or_404(db, config_uuid, current_user.id, shared_in=ctx)
 
     # Decrypt the stored key only for error sanitization below — provider construction
     # (and its own decryption) goes through the shared factory helper so this path and

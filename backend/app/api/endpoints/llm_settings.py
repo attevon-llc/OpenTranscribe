@@ -16,11 +16,12 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.rate_limit import get_llm_outbound_rate_limit
 from app.auth.rate_limit import limiter
@@ -34,6 +35,8 @@ from app.services.llm_service import LLMService
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
+from app.utils.tenant_sharing import owner_in_tenant
+from app.utils.tenant_sharing import shared_visible_in_tenant
 from app.utils.url_validation import PinnedTarget
 from app.utils.uuid_helpers import get_llm_config_by_uuid
 from app.utils.uuid_helpers import require_resource_owner
@@ -66,6 +69,32 @@ def _enrich_with_owner(config, owner, is_own: bool) -> dict:
         "created_at": config.created_at,
         "updated_at": config.updated_at,
     }
+
+
+def _visible_to(ctx: RequestContext) -> Any:
+    """Configs the caller may see or use: their own, or shared within their active tenant."""
+    return shared_visible_in_tenant(
+        models.UserLLMSettings.user_id,
+        models.UserLLMSettings.is_shared,
+        ctx.user.id,
+        ctx.org_id,
+    )
+
+
+def _get_accessible_config(db: Session, config_uuid: UUID | str, ctx: RequestContext) -> Any:
+    """Load a config the caller owns or that is shared within the caller's tenant.
+
+    Another tenant's shared config answers exactly like another user's private one.
+    """
+    user_config = get_llm_config_by_uuid(db, config_uuid)
+    if user_config.user_id != ctx.user.id and (
+        db.query(models.UserLLMSettings.id)
+        .filter(models.UserLLMSettings.id == user_config.id, _visible_to(ctx))
+        .first()
+        is None
+    ):
+        raise HTTPException(status_code=403, detail="Not authorized to access this configuration")
+    return user_config
 
 
 def _clear_shared_active_references(
@@ -338,11 +367,12 @@ def get_supported_providers() -> Any:
 @router.get("", response_model=schemas.UserLLMConfigurationsList)
 def get_user_configurations(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
-    Get all user's LLM configurations
+    Get all user's LLM configurations, plus those shared within the caller's tenant
     """
+    current_user = ctx.user
     # Get all user configurations
     configurations = (
         db.query(models.UserLLMSettings)
@@ -368,7 +398,7 @@ def get_user_configurations(
             # Convert integer ID to UUID by finding the config
             active_config = (
                 db.query(models.UserLLMSettings)
-                .filter(models.UserLLMSettings.id == active_config_id)
+                .filter(models.UserLLMSettings.id == active_config_id, _visible_to(ctx))
                 .first()
             )
             if active_config:
@@ -380,12 +410,13 @@ def get_user_configurations(
         # Let FastAPI handle the conversion automatically
         public_configs.append(config)  # type: ignore[arg-type]
 
-    # Fetch shared configs from OTHER users
+    # Fetch shared configs from OTHER users in the caller's active tenant
     shared_configs = (
         db.query(models.UserLLMSettings)
         .filter(
             models.UserLLMSettings.is_shared == True,  # noqa: E712
             models.UserLLMSettings.user_id != current_user.id,
+            owner_in_tenant(models.UserLLMSettings.user_id, ctx.org_id),
         )
         .order_by(models.UserLLMSettings.shared_at.desc())
         .all()
@@ -432,11 +463,12 @@ def get_user_configurations(
 @router.get("/status", response_model=schemas.LLMSettingsStatus)
 def get_llm_settings_status(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     Get status information about user's LLM settings
     """
+    current_user = ctx.user
     # Get all own configurations
     total_configs = (
         db.query(models.UserLLMSettings)
@@ -460,13 +492,7 @@ def get_llm_settings_status(
             active_config_id = int(active_setting.setting_value)
             active_config = (
                 db.query(models.UserLLMSettings)
-                .filter(
-                    models.UserLLMSettings.id == active_config_id,
-                    or_(
-                        models.UserLLMSettings.user_id == current_user.id,
-                        models.UserLLMSettings.is_shared == True,  # noqa: E712
-                    ),
-                )
+                .filter(models.UserLLMSettings.id == active_config_id, _visible_to(ctx))
                 .first()
             )
         except ValueError:
@@ -488,19 +514,12 @@ def get_llm_settings_status(
 def get_user_configuration(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     Get a specific user's LLM configuration
     """
-    user_config = get_llm_config_by_uuid(db, config_uuid)
-
-    if not user_config.is_shared:
-        require_resource_owner(
-            user_config,
-            current_user,
-            forbidden_detail="Not authorized to access this configuration",
-        )
+    user_config = _get_accessible_config(db, config_uuid, ctx)
 
     # Convert to public schema (excludes API key)
     return user_config
@@ -696,7 +715,7 @@ def set_active_configuration(
     *,
     db: Session = Depends(get_db),
     request: schemas.SetActiveConfigRequest,
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     Set the active LLM configuration for the user.
@@ -709,15 +728,9 @@ def set_active_configuration(
     activating user's, and this endpoint's `_set_active_configuration` call is scoped to
     the CALLING user's own configs only (issue #620 item 8d).
     """
+    current_user = ctx.user
     # Verify the configuration exists and belongs to the user (or is shared) using UUID
-    user_config = get_llm_config_by_uuid(db, request.configuration_id)
-
-    if not user_config.is_shared:
-        require_resource_owner(
-            user_config,
-            current_user,
-            forbidden_detail="Not authorized to access this configuration",
-        )
+    user_config = _get_accessible_config(db, request.configuration_id, ctx)
 
     # Set as active using the integer ID (internal)
     _set_active_configuration(db, current_user.id, user_config.id)
@@ -844,6 +857,10 @@ def test_llm_connection(
     """
     Test connection to LLM provider without saving settings.
     If config_id is provided and no api_key, will use the stored API key from that config.
+    Only the caller's OWN config lends its key here: this request carries a
+    caller-chosen ``base_url``, so a shared config's key would go wherever the caller
+    pointed it. Users of a shared config test it with ``/test-config/{uuid}``, which
+    dials the endpoint stored on the config.
 
     Rate-limited (issue #676): this handler makes a server-side outbound request to a
     caller-supplied ``base_url`` and sits behind ``get_current_active_user``, not an
@@ -861,10 +878,7 @@ def test_llm_connection(
                     db.query(models.UserLLMSettings)
                     .filter(
                         models.UserLLMSettings.uuid == test_request.config_id,
-                        or_(
-                            models.UserLLMSettings.user_id == current_user.id,
-                            models.UserLLMSettings.is_shared == True,  # noqa: E712
-                        ),
+                        models.UserLLMSettings.user_id == current_user.id,
                     )
                     .first()
                 )
@@ -932,11 +946,12 @@ def test_llm_connection(
 def test_active_configuration(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     Test connection using current user's active LLM configuration
     """
+    current_user = ctx.user
     # Get active configuration
     active_setting = (
         db.query(models.UserSetting)
@@ -960,13 +975,7 @@ def test_active_configuration(
 
     user_config = (
         db.query(models.UserLLMSettings)
-        .filter(
-            models.UserLLMSettings.id == active_config_id,
-            or_(
-                models.UserLLMSettings.user_id == current_user.id,
-                models.UserLLMSettings.is_shared == True,  # noqa: E712
-            ),
-        )
+        .filter(models.UserLLMSettings.id == active_config_id, _visible_to(ctx))
         .first()
     )
 
@@ -1019,19 +1028,13 @@ def test_specific_configuration(
     config_uuid: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     Test connection for a specific LLM configuration
     """
-    user_config = get_llm_config_by_uuid(db, config_uuid)
-
-    if not user_config.is_shared:
-        require_resource_owner(
-            user_config,
-            current_user,
-            forbidden_detail="Not authorized to access this configuration",
-        )
+    current_user = ctx.user
+    user_config = _get_accessible_config(db, config_uuid, ctx)
 
     # Decrypt API key
     api_key = None
@@ -1092,20 +1095,14 @@ def _config_to_llm_config(db: Session, user_config: models.UserLLMSettings) -> L
 def get_reasoning_capability(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Read the recorded reasoning off-switch verdict for one configuration.
 
     Pure read — it never dials the provider. A model that has never been probed
     reports ``unknown``, which is the default everywhere and renders no control.
     """
-    user_config = get_llm_config_by_uuid(db, config_uuid)
-    if not user_config.is_shared:
-        require_resource_owner(
-            user_config,
-            current_user,
-            forbidden_detail="Not authorized to access this configuration",
-        )
+    user_config = _get_accessible_config(db, config_uuid, ctx)
 
     provider = str(user_config.provider)
     base_url = str(user_config.base_url) if user_config.base_url else None
@@ -1117,7 +1114,7 @@ def get_reasoning_capability(
 def probe_reasoning_capability(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Measure, and record, whether this model honours a "do not reason" request.
 
@@ -1132,13 +1129,7 @@ def probe_reasoning_capability(
     one of those changes and is then simply not found again — there is no stale
     answer to invalidate.
     """
-    user_config = get_llm_config_by_uuid(db, config_uuid)
-    if not user_config.is_shared:
-        require_resource_owner(
-            user_config,
-            current_user,
-            forbidden_detail="Not authorized to access this configuration",
-        )
+    user_config = _get_accessible_config(db, config_uuid, ctx)
 
     llm_config = _config_to_llm_config(db, user_config)
     result = llm_reasoning.probe(llm_config)
@@ -1174,20 +1165,14 @@ def _reasoning_capability_payload(
 def get_context_window(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Read the recorded context-window measurement for one configuration.
 
     Pure read — it never dials the provider. An unprobed model reports
     ``unknown`` and the user's declared ``max_tokens`` stands.
     """
-    user_config = get_llm_config_by_uuid(db, config_uuid)
-    if not user_config.is_shared:
-        require_resource_owner(
-            user_config,
-            current_user,
-            forbidden_detail="Not authorized to access this configuration",
-        )
+    user_config = _get_accessible_config(db, config_uuid, ctx)
     return _context_window_payload(db, user_config)
 
 
@@ -1197,7 +1182,7 @@ def get_context_window(
 def probe_context_window(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Discover, and record, the model's maximum context window (issue #533).
 
@@ -1207,13 +1192,7 @@ def probe_context_window(
     endpoint unprompted. The verdict is keyed to (provider, endpoint, model);
     editing any of the three orphans it rather than staling it.
     """
-    user_config = get_llm_config_by_uuid(db, config_uuid)
-    if not user_config.is_shared:
-        require_resource_owner(
-            user_config,
-            current_user,
-            forbidden_detail="Not authorized to access this configuration",
-        )
+    user_config = _get_accessible_config(db, config_uuid, ctx)
     llm_config = _config_to_llm_config(db, user_config)
     result = llm_context_window.probe(llm_config)
     llm_context_window.record(db, llm_config, result)
@@ -1402,17 +1381,18 @@ def _model_discovery_response(
 
 
 def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None:
-    """Retrieve and decrypt stored API key for a config (own or shared)."""
+    """Retrieve and decrypt the stored API key of one of the caller's OWN configs.
+
+    Model discovery dials a caller-supplied ``base_url``, so a shared config's key is
+    never lent here — it would go wherever the caller pointed it.
+    """
     try:
         config_uuid = uuid.UUID(config_id)
         config = (
             db.query(models.UserLLMSettings)
             .filter(
                 models.UserLLMSettings.uuid == config_uuid,
-                or_(
-                    models.UserLLMSettings.user_id == user_id,
-                    models.UserLLMSettings.is_shared == True,  # noqa: E712
-                ),
+                models.UserLLMSettings.user_id == user_id,
             )
             .first()
         )

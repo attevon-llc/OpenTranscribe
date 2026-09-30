@@ -2198,11 +2198,10 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         Returns:
             A configured service, or None if the config is missing or not theirs.
         """
-        from sqlalchemy import or_
-
         from app.db.base import SessionLocal
         from app.models.user_llm_settings import UserLLMSettings
         from app.utils.encryption import decrypt_api_key
+        from app.utils.tenant_sharing import shared_usable_by
 
         db = SessionLocal()
         try:
@@ -2210,10 +2209,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 db.query(UserLLMSettings)
                 .filter(
                     UserLLMSettings.id == config_id,
-                    or_(
-                        UserLLMSettings.user_id == user_id,
-                        UserLLMSettings.is_shared == True,  # noqa: E712
-                    ),
+                    shared_usable_by(UserLLMSettings.user_id, UserLLMSettings.is_shared, user_id),
                 )
                 .first()
             )
@@ -2261,11 +2257,10 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         counts: a dangling or foreign ``active_llm_config_id``, an undecryptable key
         or an unknown provider string all resolve to ``None`` here in both.
         """
-        from sqlalchemy import or_
-
         from app import models
         from app.models.user_llm_settings import UserLLMSettings
         from app.utils.encryption import decrypt_api_key
+        from app.utils.tenant_sharing import shared_usable_by
 
         active_config_setting = (
             db.query(models.UserSetting)
@@ -2288,15 +2283,14 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             )
             return None
 
-        # The active configuration may be the user's own or a shared one.
+        # The active configuration may be the user's own or one shared within a tenant
+        # both belong to; the stored pointer is re-validated because it outlives
+        # membership changes.
         user_settings = (
             db.query(UserLLMSettings)
             .filter(
                 UserLLMSettings.id == active_config_id,
-                or_(
-                    UserLLMSettings.user_id == user_id,
-                    UserLLMSettings.is_shared == True,  # noqa: E712
-                ),
+                shared_usable_by(UserLLMSettings.user_id, UserLLMSettings.is_shared, user_id),
             )
             .first()
         )

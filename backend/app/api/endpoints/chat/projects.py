@@ -119,7 +119,7 @@ def create_project(
         description=body.description,
         system_prompt=body.system_prompt,
         scope=body.scope.model_dump(),
-        llm_config_id=resolve_llm_config_id(db, ctx.user.id, body.llm_config_uuid),
+        llm_config_id=resolve_llm_config_id(db, ctx, body.llm_config_uuid),
     )
     db.add(project)
     db.commit()
@@ -210,7 +210,7 @@ def update_project(
     if body.scope is not None:
         project.scope = body.scope.model_dump()
     if body.llm_config_uuid is not None:
-        project.llm_config_id = resolve_llm_config_id(db, ctx.user.id, body.llm_config_uuid)
+        project.llm_config_id = resolve_llm_config_id(db, ctx, body.llm_config_uuid)
     if body.is_archived is not None:
         project.is_archived = body.is_archived
 

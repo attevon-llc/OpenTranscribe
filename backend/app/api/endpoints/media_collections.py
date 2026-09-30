@@ -22,6 +22,7 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from sqlalchemy import and_
+from sqlalchemy import exists
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy.orm import Query as OrmQuery  # fastapi.Query is already imported
@@ -49,6 +50,7 @@ from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.models.media import Speaker
+from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
 from app.models.sharing import CollectionShare
 from app.models.user import User
@@ -115,22 +117,35 @@ def _visible_media_counts(
     return {cid: cnt for cid, cnt in query.group_by(CollectionMember.collection_id).all()}
 
 
-def _get_share_target_user_ids(db: Session, share: CollectionShare) -> list[int]:
+def _get_share_target_user_ids(
+    db: Session, share: CollectionShare, collection: Collection
+) -> list[int]:
     """Return the user IDs affected by a share.
 
     For user-targeted shares this is a single-element list.
     For group-targeted shares this is all group members.
+
+    For an organization collection, only members of that organization are
+    returned: a group can outlive (or predate) a member's time in the
+    organization, and such a user must not be told about the org's collection.
     """
     if share.target_type == "user" and share.target_user_id:
-        return [int(share.target_user_id)]
-    if share.target_type == "group" and share.target_group_id:
-        return [
-            int(m.user_id)
-            for m in db.query(UserGroupMember.user_id)
-            .filter(UserGroupMember.group_id == share.target_group_id)
-            .all()
-        ]
-    return []
+        query = db.query(User.id).filter(User.id == share.target_user_id)
+    elif share.target_type == "group" and share.target_group_id:
+        query = db.query(UserGroupMember.user_id).filter(
+            UserGroupMember.group_id == share.target_group_id
+        )
+    else:
+        return []
+    if collection.organization_id is not None:
+        user_col = User.id if share.target_type == "user" else UserGroupMember.user_id
+        query = query.filter(
+            exists().where(
+                OrganizationMembership.user_id == user_col,
+                OrganizationMembership.organization_id == collection.organization_id,
+            )
+        )
+    return [int(row[0]) for row in query.all()]
 
 
 def _notify_share_event(
@@ -141,7 +156,7 @@ def _notify_share_event(
     extra_data: dict | None = None,
 ) -> None:
     """Send a WebSocket notification for a sharing event to all affected users."""
-    target_ids = _get_share_target_user_ids(db, share)
+    target_ids = _get_share_target_user_ids(db, share, collection)
     data: dict = {
         "collection_uuid": str(collection.uuid),
         "collection_name": collection.name,
@@ -1483,7 +1498,7 @@ def delete_collection_share(
         )
 
     # Capture notification/audit data before deletion -- gone from the row after.
-    target_user_ids = _get_share_target_user_ids(db, share)
+    target_user_ids = _get_share_target_user_ids(db, share, collection)
     revoked_target_user_id = share.target_user_id
     revoked_target_group_id = share.target_group_id
     revoked_permission = share.permission

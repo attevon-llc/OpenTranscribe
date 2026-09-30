@@ -193,11 +193,21 @@ def _source_to_response(
     )
 
 
-def _get_source_or_404(db: Session, source_uuid: str, current_user: User) -> WatchSource:
+def _source_in_tenant(source: WatchSource, ctx: RequestContext) -> bool:
+    """A source belongs to the tenant it was created in (NULL = personal)."""
+    return source.organization_id == ctx.org_id
+
+
+def _get_source_or_404(db: Session, source_uuid: str, ctx: RequestContext) -> WatchSource:
+    current_user = ctx.user
     source: WatchSource | None = (
         db.query(WatchSource).filter(WatchSource.uuid == source_uuid).first()
     )
     if not source:
+        raise HTTPException(status_code=404, detail="Watch source not found")
+    # Another tenant's source is indistinguishable from a missing one; the
+    # instance-admin bypass is deliberate (admins operate every tenant's sources).
+    if not current_user.is_admin and not _source_in_tenant(source, ctx):
         raise HTTPException(status_code=404, detail="Watch source not found")
     # Owner or admin may access.
     if source.user_id != current_user.id and not current_user.is_admin:
@@ -559,6 +569,7 @@ def list_watch_sources(
     scope: str = Query("own", description="'own' or 'all' (admin only)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> WatchSourcesList:
     """List watch sources — the caller's own, or all of them for an admin.
 
@@ -574,7 +585,13 @@ def list_watch_sources(
     if scope == "all" and current_user.is_admin:
         query = query.order_by(WatchSource.created_at.desc())
     else:
-        query = query.filter(WatchSource.user_id == current_user.id).order_by(
+        # Own sources in the ACTIVE tenant only (NULL-safe: personal = org-less).
+        org_filter = (
+            WatchSource.organization_id.is_(None)
+            if ctx.org_id is None
+            else WatchSource.organization_id == ctx.org_id
+        )
+        query = query.filter(WatchSource.user_id == current_user.id, org_filter).order_by(
             WatchSource.created_at.desc()
         )
     sources = query.all()
@@ -645,6 +662,7 @@ def get_watch_source(
     source_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> WatchSourceResponse:
     """One watch source with its config and last-scan summary.
 
@@ -653,7 +671,7 @@ def get_watch_source(
     answers 404 when the row is missing and 403 when it belongs to someone else).
     Credentials are represented only as ``has_s3_secret_key`` / ``has_smb_password``.
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     return _source_to_response(source, current_user)
 
 
@@ -663,6 +681,7 @@ def update_watch_source(
     data: WatchSourceUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> WatchSourceResponse:
     """Patch a watch source's configuration (owner or admin).
 
@@ -675,7 +694,7 @@ def update_watch_source(
     never received the secret for. Changes apply to the next scan; nothing here
     re-scans or re-validates the connection.
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     _apply_fields(source, data.model_dump(exclude_unset=True))
     db.commit()
     db.refresh(source)
@@ -687,6 +706,7 @@ def delete_watch_source(
     source_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
     """Delete a watch source and stop importing from it (owner or admin).
 
@@ -697,7 +717,7 @@ def delete_watch_source(
     imohash check in ``services/watch_sources/processing.py`` is a separate layer and
     still applies if the source is later re-created.
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     db.delete(source)  # cascades to tracking rows + email links
     db.commit()
     return {"success": True}
@@ -711,6 +731,7 @@ def test_watch_source(
     source_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> ConnectionTestResponse:
     """Probe a watch source's connectivity and report latency (owner or admin).
 
@@ -726,7 +747,7 @@ def test_watch_source(
 
     from app.services.watch_sources import create_client
 
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     started = time.perf_counter()
     try:
         with create_client(source) as client:
@@ -753,6 +774,7 @@ def scan_watch_source(
     source_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> ScanResponse:
     """Dispatch an out-of-band scan of one watch source (owner or admin).
 
@@ -767,7 +789,7 @@ def scan_watch_source(
     """
     from app.tasks.watch_source_tasks import scan_single
 
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     if not source.is_enabled:
         raise HTTPException(status_code=400, detail="Enable the source before scanning")
     task = scan_single.delay(source.id)
@@ -786,6 +808,7 @@ def list_source_files(
     q: str | None = Query(None, max_length=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
     """Paginated per-file import history for one watch source (owner or admin).
 
@@ -800,7 +823,7 @@ def list_source_files(
     anything skipped, errored or still in flight, and stays populated for an imported
     row. Newest first.
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     # ``selectinload`` because the serialization below reads ``r.media_file`` on every
     # row: lazily that is one query per row, and ``page_size`` goes up to 200.
     query = (
@@ -851,6 +874,7 @@ def source_file_stats(
     source_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> WatchSourceStats:
     """Import-status counts for one watch source, as one GROUP BY (owner or admin).
 
@@ -864,7 +888,7 @@ def source_file_stats(
     """
     from sqlalchemy import func
 
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     counts: dict[str, int] = {
         status: count
         for status, count in db.query(WatchSourceFile.status, func.count(WatchSourceFile.id))
@@ -891,9 +915,10 @@ def delete_source_file(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
     """Remove a tracking row (does NOT delete from the source or the gallery)."""
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     row = (
         db.query(WatchSourceFile)
         .filter(
@@ -943,6 +968,7 @@ def retry_source_files(
     data: WatchSourceFileActionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> WatchSourceFileActionResponse:
     """Re-queue tracked files for import, then dispatch ONE scan (owner or admin).
 
@@ -967,7 +993,7 @@ def retry_source_files(
     it only re-imports files still present at their ``remote_path``. Callers should
     report "queued" and watch the row's status, not assume the import happened.
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     if not source.is_enabled:
         # 409 rather than the /scan endpoint's 400: this is a conflict with the
         # source's STATE, not a malformed request, and resetting rows for a scan that
@@ -1023,6 +1049,7 @@ def bulk_delete_source_files(
     data: WatchSourceFileActionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> WatchSourceFileActionResponse:
     """Remove many tracking rows at once (owner or admin).
 
@@ -1034,7 +1061,7 @@ def bulk_delete_source_files(
     path does become a candidate again on the next scheduled scan, where content dedup
     decides what happens to it.)
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     by_uuid, results = _rows_for_action(db, source, data.file_uuids)
     for requested in data.file_uuids:
         row = by_uuid.get(requested)
@@ -1054,6 +1081,7 @@ def list_email_links(
     source_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> list[EmailLinkResponse]:
     """The email configs this source notifies, with each link's own options.
 
@@ -1066,7 +1094,7 @@ def list_email_links(
     file: ``send_notification`` classifies a whole scan by whether it recorded any
     error, so ``notify_on_error`` means "a scan in which at least one file failed".
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     links = (
         db.query(WatchSourceEmail)
         .options(selectinload(WatchSourceEmail.email_config))
@@ -1097,6 +1125,7 @@ def list_available_email_configs(
     source_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> list[EmailConfigOption]:
     """Configs this source could still be linked to (owner or admin).
 
@@ -1116,7 +1145,7 @@ def list_available_email_configs(
     to ``EmailConfigResponse``: that carries the deployment's mail hostnames and
     usernames, and every authenticated user can read this.
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     linked_ids = {
         link.email_config_id
         for link in db.query(WatchSourceEmail)
@@ -1143,6 +1172,7 @@ def link_email_config(
     data: EmailLinkCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
     """Attach an email config to a watch source, or update the existing link.
 
@@ -1155,7 +1185,7 @@ def link_email_config(
     recipients and the notify-on-success/error flags rather than 409-ing, so it is
     safe to re-run.
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     cfg = (
         db.query(EmailNotificationConfig)
         .filter(EmailNotificationConfig.uuid == data.email_config_uuid)
@@ -1195,6 +1225,7 @@ def unlink_email_config(
     config_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
     """Detach an email config from a watch source (source owner or admin).
 
@@ -1205,7 +1236,7 @@ def unlink_email_config(
     a dropped response does not 404. An unknown *config* uuid does 404, because that
     is a caller mistake rather than an already-applied delete.
     """
-    source = _get_source_or_404(db, source_uuid, current_user)
+    source = _get_source_or_404(db, source_uuid, ctx)
     cfg = (
         db.query(EmailNotificationConfig)
         .filter(EmailNotificationConfig.uuid == config_uuid)

@@ -410,24 +410,31 @@ def _get_thumbnail_with_fallback(
         return None
 
 
-def _check_existing_youtube_video(db: Session, user_id: int, video_id: str) -> MediaFile | None:
+def _check_existing_youtube_video(
+    db: Session, user_id: int, video_id: str, organization_id: int | None = None
+) -> MediaFile | None:
     """
-    Check if a YouTube video already exists in the user's library.
+    Check if a YouTube video already exists in the user's library in this tenant.
 
     Args:
         db: Database session
         user_id: User ID
         video_id: YouTube video ID
+        organization_id: Tenant the playlist is imported into (None = personal).
+            The same user's copy in another tenant is not a duplicate.
 
     Returns:
         Existing MediaFile if found, None otherwise
     """
     from sqlalchemy import text
 
+    from app.utils.file_hash import org_stamp_is
+
     result = (
         db.query(MediaFile)
         .filter(
             MediaFile.user_id == user_id,
+            org_stamp_is(MediaFile.organization_id, organization_id),
             text("metadata_raw->>'youtube_id' = :youtube_id"),
         )
         .params(youtube_id=video_id)
@@ -481,7 +488,9 @@ def _process_playlist_videos(
 
         # Check for existing video - ensure video_id is a string
         if video_id:
-            existing_video = _check_existing_youtube_video(db, user_id, str(video_id))
+            existing_video = _check_existing_youtube_video(
+                db, user_id, str(video_id), organization_id
+            )
         else:
             existing_video = None
 

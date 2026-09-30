@@ -37,6 +37,7 @@ from app.services.watch_sources import import_single_file
 from app.services.watch_sources import ingest_prepared_file
 from app.services.watch_sources.base import RemoteFileInfo
 from app.services.watch_sources.base import parse_extensions
+from app.services.watch_sources.processing import disable_if_owner_left_org
 from app.utils.task_lock import task_lock_manager
 
 logger = logging.getLogger(__name__)
@@ -196,6 +197,8 @@ def _load_scan_plan(source_id: int) -> dict | None:
     with session_scope() as db:
         source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
         if not source or not source.is_enabled:
+            return None
+        if disable_if_owner_left_org(db, source):
             return None
 
         source.last_scan_status = "running"

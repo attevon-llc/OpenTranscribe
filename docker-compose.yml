@@ -365,6 +365,11 @@ services:
         required: false
     security_opt:
       - no-new-privileges:true
+    # --concurrency (threads) and the engine slots (CTranslate2 num_workers, read from the
+    # same GPU_CONCURRENT_REQUESTS via env_file) MUST agree, or the threads queue on one
+    # Whisper worker (issue #1072). They are one variable here on purpose; a deployment that
+    # sets --concurrency some other way gets the slots matched at worker_ready. Stages that do
+    # not fit in VRAM wait for room (GPU_VRAM_* in .env.example, issue #1081).
     command: celery -A app.core.celery worker --loglevel=info -Q gpu --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcription@%h -E
     # GPU configuration is provided by docker-compose.gpu.yml overlay
     # when NVIDIA GPU is detected (automatically handled by opentr.sh)

@@ -102,49 +102,53 @@ class MediacmsProvider(ProtectedMediaProvider):
         except Exception:
             return []
 
-    def _get_user_media_sources(self, user_id: int | None = None) -> list[dict]:
-        """Load MediaCMS sources from per-user media source table.
+    @staticmethod
+    def _query_user_media_sources(db: Any, user_id: int | None) -> list[Any]:
+        """Per-user MediaCMS source rows ``user_id`` may use: own + shared in its tenant.
 
-        Returns all sources visible to the user: own + shared by others.
-        If user_id is None, returns all shared sources.
+        Own sources sort first so the user's own credentials take priority. A source
+        shared by another user is usable only when owner and user share a tenant — the
+        stored credentials are the owner's. With no user there is no tenant to share
+        within, so no per-user source is returned.
+        """
+        from sqlalchemy import and_
+        from sqlalchemy import or_
+
+        from app.models.user_media_source import UserMediaSource
+        from app.utils.tenant_sharing import owner_shares_tenant_with
+
+        if user_id is None:
+            return []
+        rows: list[Any] = (
+            db.query(UserMediaSource)
+            .filter(
+                UserMediaSource.provider_type == "mediacms",
+                UserMediaSource.is_active == True,  # noqa: E712
+                or_(
+                    UserMediaSource.user_id == user_id,
+                    and_(
+                        UserMediaSource.is_shared == True,  # noqa: E712
+                        owner_shares_tenant_with(UserMediaSource.user_id, user_id),
+                    ),
+                ),
+            )
+            .order_by((UserMediaSource.user_id == user_id).desc())
+            .all()
+        )
+        return rows
+
+    def _get_user_media_sources(self, user_id: int | None = None) -> list[dict]:
+        """Load MediaCMS sources from the per-user media source table.
+
+        See ``_query_user_media_sources`` for which rows are visible.
         """
         try:
-            from sqlalchemy import or_
-
             from app.db.base import SessionLocal
-            from app.models.user_media_source import UserMediaSource
             from app.utils.encryption import decrypt_api_key
 
             db = SessionLocal()
             try:
-                if user_id is not None:
-                    # Order: own sources first, then shared — so own credentials take priority
-                    sources = (
-                        db.query(UserMediaSource)
-                        .filter(
-                            UserMediaSource.provider_type == "mediacms",
-                            UserMediaSource.is_active == True,  # noqa: E712
-                            or_(
-                                UserMediaSource.user_id == user_id,
-                                UserMediaSource.is_shared == True,  # noqa: E712
-                            ),
-                        )
-                        .order_by(
-                            (UserMediaSource.user_id == user_id).desc(),
-                        )
-                        .all()
-                    )
-                else:
-                    # No user context — return all shared sources
-                    sources = (
-                        db.query(UserMediaSource)
-                        .filter(
-                            UserMediaSource.provider_type == "mediacms",
-                            UserMediaSource.is_active == True,  # noqa: E712
-                            UserMediaSource.is_shared == True,  # noqa: E712
-                        )
-                        .all()
-                    )
+                sources = self._query_user_media_sources(db, user_id)
 
                 result = []
                 for s in sources:
@@ -384,13 +388,14 @@ class MediacmsProvider(ProtectedMediaProvider):
 
     # --- ProtectedMediaProvider implementation ---------------------------
 
-    def get_public_auth_config(self) -> dict[str, Any]:
+    def get_public_auth_config(self, user_id: int | None = None) -> dict[str, Any]:
         """Expose public auth configuration for this provider.
 
         Returns host list with auth requirements. Hosts with stored
         credentials indicate that credentials are optional (pre-configured).
+        Per-user sources appear only for ``user_id`` (own + shared in its tenant).
         """
-        hosts = sorted(self.allowed_hosts)
+        hosts = sorted(self._get_allowed_hosts(user_id))
         if not hosts:
             return {}
 

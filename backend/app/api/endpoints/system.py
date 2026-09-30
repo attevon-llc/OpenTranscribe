@@ -246,7 +246,7 @@ def get_protected_media_auth(current_user: User = Depends(get_current_active_use
     (or other credentials) when processing media URLs.
     """
     try:
-        return get_protected_media_auth_config()
+        return get_protected_media_auth_config(user_id=current_user.id)
     except HTTPException:
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422

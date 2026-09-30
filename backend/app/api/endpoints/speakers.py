@@ -29,10 +29,13 @@ from app.schemas.media import SpeakerUpdate
 from app.schemas.media import split_attribute_confidence
 from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
+from app.services.permission_service import file_ids_in_scope
+from app.services.permission_service import org_scope_pred
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label_for_row
-from app.utils.uuid_helpers import get_speaker_by_uuid
+from app.utils.uuid_helpers import require_profile_in_scope
+from app.utils.uuid_helpers import require_speaker_access
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +81,7 @@ def create_speaker(
         current_user.id,
         is_admin=current_user.is_admin,
         organization_id=ctx.org_id,
+        min_permission="editor",
     )
 
     # Generate a UUID for the new speaker
@@ -88,6 +92,7 @@ def create_speaker(
         display_name=speaker.display_name,
         uuid=speaker_uuid,
         user_id=current_user.id,
+        organization_id=media_file.organization_id,
         media_file_id=media_file.id,  # Use internal integer ID
         verified=speaker.verified if speaker.verified is not None else False,
     )
@@ -154,7 +159,10 @@ SPEAKER_FILTER_MAX_LIMIT = 500
 
 
 def _resolve_profile_filter_id(
-    db: Session, current_user: User, profile_uuid: str | None
+    db: Session,
+    current_user: User,
+    profile_uuid: str | None,
+    organization_id: OrgScope = UNSCOPED,
 ) -> int | None:
     """Resolve a profile UUID query param to an internal id, or ``None``.
 
@@ -170,6 +178,9 @@ def _resolve_profile_filter_id(
     query = db.query(SpeakerProfile.id).filter(SpeakerProfile.uuid == profile_uuid)
     if not current_user.is_admin:
         query = query.filter(SpeakerProfile.user_id == current_user.id)
+        tenant_pred = org_scope_pred(SpeakerProfile.organization_id, organization_id)
+        if tenant_pred is not None:
+            query = query.filter(tenant_pred)
     found = query.scalar()
     return int(found) if found is not None else None
 
@@ -247,8 +258,6 @@ def _get_unique_speakers_for_filter(
     from sqlalchemy import func
     from sqlalchemy import not_
     from sqlalchemy import select
-
-    from app.services.permission_service import PermissionService
 
     # "A human gave this speaker a real name." A raw ``SPEAKER_nn`` written into
     # display_name (what an auto-label pass emits) is not one.
@@ -795,7 +804,9 @@ def list_speakers(
         # Fast path: filter mode only needs aggregated display names
         # Skip loading all speaker objects, profiles, and media files
         if for_filter:
-            resolved_profile_id = _resolve_profile_filter_id(db, current_user, profile_id)
+            resolved_profile_id = _resolve_profile_filter_id(
+                db, current_user, profile_id, organization_id=ctx.org_id
+            )
             if profile_id and resolved_profile_id is None:
                 # A profile UUID was given and did not resolve (not found, or
                 # not this caller's) — an empty result, not a 404: this is a
@@ -832,7 +843,10 @@ def list_speakers(
         else:
             from sqlalchemy import select
 
-            query = query.filter(Speaker.user_id == current_user.id)
+            query = query.filter(
+                Speaker.user_id == current_user.id,
+                Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
+            )
             quarantined_ids = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
             query = query.filter(~Speaker.media_file_id.in_(quarantined_ids))
         query = _filter_speakers_query(query, verified_only, file_id)
@@ -1261,37 +1275,19 @@ def get_speaker_cross_media_occurrences(
     speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> list[dict[str, Any]]:
     """
-    Get all media files where this speaker (or their profile) appears.
+    Get all media files of the active tenant where this speaker (or their profile) appears.
     """
     try:
-        from app.services.takedown_service import is_hidden_for
-
-        speaker = get_speaker_by_uuid(db, speaker_uuid)
-        # A quarantined file is hidden from its own owner (A2's class) — the
-        # ownership/sharing check below has no notion of quarantine at all, so
-        # without this a non-admin whose OWN file got taken down could still
-        # reach its speaker's cross-media data through this endpoint even
-        # though the file itself 404s.
-        if speaker.media_file is not None and is_hidden_for(
-            speaker.media_file, is_admin=current_user.is_admin
-        ):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
-        file_perm = (
-            "owner"
-            if current_user.is_admin
-            else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), current_user.id
-            )
-        )
-        if not file_perm:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+        # Tenant, quarantine (hidden from its own owner too) and file-access gate.
+        speaker = require_speaker_access(db, speaker_uuid, current_user, organization_id=ctx.org_id)
 
         if speaker.profile_id:
-            result = _get_profile_based_occurrences(speaker, current_user, db)
+            result = _get_profile_based_occurrences(speaker, current_user, db, ctx.org_id)
         else:
-            result = _get_display_name_based_occurrences(speaker, current_user, db)
+            result = _get_display_name_based_occurrences(speaker, current_user, db, ctx.org_id)
 
         # Sort by confidence (highest first), with same_speaker files prioritized
         result.sort(key=lambda x: (x["same_speaker"], x.get("confidence") or 0.0), reverse=True)
@@ -1313,9 +1309,14 @@ def verify_speaker_identification(
     profile_name: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
     """
     Verify or reject speaker identification suggestions.
+
+    Every action rewrites the speaker (and may feed its voiceprint into a
+    profile), so it needs editor or better on the speaker's file, in the active
+    tenant; a profile must be of the speaker's tenant.
 
     Actions:
     - 'accept': Accept suggested profile match
@@ -1323,28 +1324,12 @@ def verify_speaker_identification(
     - 'create_profile': Create new profile and assign speaker
     """
     try:
-        from app.services.takedown_service import is_hidden_for
-
-        speaker = get_speaker_by_uuid(db, speaker_uuid)
-        # A quarantined file 404s everywhere else in the product (issue #908, finding
-        # C) — without this, a non-admin who already knows/saved the speaker's UUID
-        # could still mutate a speaker on a file their own file-list no longer shows.
-        if speaker.media_file is not None and is_hidden_for(
-            speaker.media_file, is_admin=current_user.is_admin
-        ):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
-
-        file_perm = (
-            "owner"
-            if current_user.is_admin
-            else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), current_user.id
-            )
+        # Tenant, quarantine (issue #908, finding C) and editor gate.
+        speaker = require_speaker_access(
+            db, speaker_uuid, current_user, organization_id=ctx.org_id, min_permission="editor"
         )
-        if not file_perm:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-        profile_id = _resolve_profile_uuid_to_id(profile_uuid, current_user, db)
+        profile_id = _resolve_profile_uuid_to_id(profile_uuid, speaker, current_user, db, ctx)
 
         # Captured before dispatch commits: `expire_on_commit=True` means a post-commit
         # attribute read re-queries rather than reusing the value already in hand.
@@ -1389,6 +1374,7 @@ def confirm_speaker_gender(
     gender: str = Query(..., description="Gender value: 'male' or 'female'"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
     """Confirm or set the predicted gender for a speaker."""
     if gender not in ("male", "female"):
@@ -1397,26 +1383,15 @@ def confirm_speaker_gender(
             detail="Gender must be 'male' or 'female'",
         )
 
-    speaker = get_speaker_by_uuid(db, speaker_uuid)
-
-    from app.services.takedown_service import is_hidden_for
-
-    # A quarantined file 404s everywhere else in the product (issue #908, finding
-    # C) — without this, a non-admin who already knows/saved the speaker's UUID
-    # could still mutate a speaker on a file their own file-list no longer shows.
-    if speaker.media_file is not None and is_hidden_for(
-        speaker.media_file, is_admin=current_user.is_admin
-    ):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
-
-    if not current_user.is_admin and speaker.user_id != current_user.id:
-        perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), current_user.id
-        )
-        if not perm or perm == "viewer":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Requires editor permission"
-            )
+    # Tenant, quarantine (issue #908, finding C) and editor gate.
+    speaker = require_speaker_access(
+        db,
+        speaker_uuid,
+        current_user,
+        organization_id=ctx.org_id,
+        min_permission="editor",
+        forbidden_detail="Requires editor permission",
+    )
 
     speaker.predicted_gender = gender  # type: ignore[assignment]
     speaker.gender_confirmed_by_user = True  # type: ignore[assignment]
@@ -1460,8 +1435,13 @@ def merge_speakers(
     target_speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Merge two speakers into one (target absorbs source).
+
+    Both speakers need editor or better in the active tenant, must belong to the
+    same tenant, and must be in the same file or have the same owner — a merge
+    moves the source's transcript segments onto the target.
 
     Postgres is updated synchronously so the response is authoritative. Everything
     downstream — averaging the two voiceprints in OpenSearch, deleting the source
@@ -1474,22 +1454,32 @@ def merge_speakers(
     """
     from app.tasks.speaker_merge_task import process_speaker_merge_background
 
-    # Get both speakers by UUID
-    source_speaker = get_speaker_by_uuid(db, speaker_uuid)
-    target_speaker = get_speaker_by_uuid(db, target_speaker_uuid)
-
-    # Verify ownership or shared editor permission
-    if not current_user.is_admin:
-        for spk in (source_speaker, target_speaker):
-            if spk.user_id != current_user.id:
-                perm = PermissionService.get_file_permission(
-                    db, int(spk.media_file_id), current_user.id
-                )
-                if not perm or perm == "viewer":
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Requires editor permission",
-                    )
+    source_speaker = require_speaker_access(
+        db,
+        speaker_uuid,
+        current_user,
+        organization_id=ctx.org_id,
+        min_permission="editor",
+        forbidden_detail="Requires editor permission",
+    )
+    target_speaker = require_speaker_access(
+        db,
+        target_speaker_uuid,
+        current_user,
+        organization_id=ctx.org_id,
+        min_permission="editor",
+        forbidden_detail="Requires editor permission",
+    )
+    if source_speaker.media_file.organization_id != target_speaker.media_file.organization_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
+    if (
+        source_speaker.media_file_id != target_speaker.media_file_id
+        and source_speaker.user_id != target_speaker.user_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Speakers must be in the same file or have the same owner",
+        )
 
     # Store profile IDs for embedding updates
     source_profile_id = int(source_speaker.profile_id) if source_speaker.profile_id else None
@@ -1567,25 +1557,13 @@ def get_speaker(
     speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Get details of a specific speaker with computed status
     """
-    speaker = get_speaker_by_uuid(db, speaker_uuid)
-
-    from app.services.takedown_service import is_hidden_for
-
-    if speaker.media_file is not None and is_hidden_for(
-        speaker.media_file, is_admin=current_user.is_admin
-    ):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
-
-    # Verify file-level access (own or shared via collection)
-    file_perm = PermissionService.get_file_permission(
-        db, int(speaker.media_file_id), current_user.id
-    )
-    if not file_perm:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    # Tenant, quarantine and file-level access (own or shared via collection).
+    speaker = require_speaker_access(db, speaker_uuid, current_user, organization_id=ctx.org_id)
 
     # Add computed status fields
     SpeakerStatusService.add_computed_status(speaker)
@@ -1740,7 +1718,11 @@ def _clear_video_cache_for_speaker(media_file_id: int) -> None:
 
 
 def _handle_update_profile_action(
-    profile_id: int, new_name: str, current_user: User, db: Session
+    profile_id: int,
+    new_name: str,
+    current_user: User,
+    db: Session,
+    organization_id: int | None = None,
 ) -> list[tuple[str, str]] | None:
     """Handle 'update_profile' action - update profile name globally.
 
@@ -1769,9 +1751,15 @@ def _handle_update_profile_action(
     """
     from app.services.speaker_profile_rename import apply_profile_name_to_speakers
 
+    # ``organization_id`` is the tenant of the speaker's file: only a profile of
+    # that tenant is renamed through it.
     profile = (
         db.query(SpeakerProfile)
-        .filter(SpeakerProfile.id == profile_id, SpeakerProfile.user_id == current_user.id)
+        .filter(
+            SpeakerProfile.id == profile_id,
+            SpeakerProfile.user_id == current_user.id,
+            org_scope_pred(SpeakerProfile.organization_id, organization_id),
+        )
         .first()
     )
 
@@ -1848,9 +1836,9 @@ def _handle_create_new_profile_action(
         description=f"Profile for {new_name}",
         uuid=str(uuid.uuid4()),
         # Tenant stamp (issue #262e): the profile groups THIS speaker's voice,
-        # so it inherits the speaker's org (stamped by the pipeline from the
-        # file); None = personal, always None in the community edition.
-        organization_id=int(speaker.organization_id) if speaker.organization_id else None,
+        # so it inherits the org of the speaker's file; None = personal, always
+        # None in the community edition.
+        organization_id=speaker.media_file.organization_id,
     )
     db.add(new_profile)
     db.flush()  # Get the ID
@@ -1883,7 +1871,9 @@ def _handle_profile_action(
     new_name = speaker_update.display_name.strip()
 
     if profile_action == "update_profile" and old_profile_id:
-        renames = _handle_update_profile_action(old_profile_id, new_name, current_user, db)
+        renames = _handle_update_profile_action(
+            old_profile_id, new_name, current_user, db, speaker.media_file.organization_id
+        )
         if renames is not None:
             return old_profile_id, renames
     elif profile_action == "create_new_profile":
@@ -2038,6 +2028,7 @@ def update_speaker(
     response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Update a speaker's information including display name and verification status.
@@ -2048,16 +2039,14 @@ def update_speaker(
     """
     from app.tasks.speaker_tasks import process_speaker_update_background
 
-    # Find and validate speaker
-    speaker = get_speaker_by_uuid(db, speaker_uuid)
-    if not current_user.is_admin and speaker.user_id != current_user.id:
-        perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), current_user.id
-        )
-        if not perm or perm == "viewer":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Requires editor permission"
-            )
+    speaker = require_speaker_access(
+        db,
+        speaker_uuid,
+        current_user,
+        organization_id=ctx.org_id,
+        min_permission="editor",
+        forbidden_detail="Requires editor permission",
+    )
 
     speaker_id = speaker.id
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
@@ -2166,6 +2155,7 @@ def delete_speaker(
     speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> None:
     """Delete one speaker row from a media file's diarization result.
 
@@ -2183,18 +2173,14 @@ def delete_speaker(
     Postgres has already committed. A stale voiceprint left behind can still surface
     in similarity results until it is cleaned up.
     """
-    # Find the speaker by UUID
-    speaker = get_speaker_by_uuid(db, speaker_uuid)
-
-    # Verify ownership or shared editor permission
-    if not current_user.is_admin and speaker.user_id != current_user.id:
-        perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), current_user.id
-        )
-        if not perm or perm == "viewer":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Requires editor permission"
-            )
+    speaker = require_speaker_access(
+        db,
+        speaker_uuid,
+        current_user,
+        organization_id=ctx.org_id,
+        min_permission="editor",
+        forbidden_detail="Requires editor permission",
+    )
 
     # Capture UUID before DB delete
     uuid_to_clean = str(speaker.uuid)
@@ -2227,20 +2213,12 @@ def delete_speaker(
 def _accept_speaker_profile_match(
     speaker: Speaker, speaker_id: int, profile_id: int, current_user: User, db: Session
 ) -> dict[str, Any]:
-    """Handle acceptance of a speaker profile match."""
-    # Verify profile exists and is accessible (own or shared)
-    # Ownership/share check on one named profile, not a set fed to a kNN: unscoped as before.
-    accessible_ids = PermissionService.get_accessible_profile_ids(
-        db, current_user.id, organization_id=UNSCOPED
-    )
-    profile = (
-        db.query(SpeakerProfile)
-        .filter(
-            SpeakerProfile.id == profile_id,
-            SpeakerProfile.id.in_(accessible_ids),
-        )
-        .first()
-    )
+    """Handle acceptance of a speaker profile match.
+
+    ``profile_id`` was resolved by ``_resolve_profile_uuid_to_id``, which already
+    checked the caller may use it in this tenant and that it is the speaker's tenant.
+    """
+    profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
 
     if not profile:
         raise HTTPException(status_code=404, detail="Speaker profile not found")
@@ -2367,12 +2345,12 @@ def _create_new_speaker_profile(
     if existing_profile:
         raise HTTPException(status_code=400, detail="Profile with this name already exists")
 
-    # Create new profile (org-stamped from the speaker's tenant — issue #262e)
+    # Create new profile, stamped with the tenant of the speaker's file (issue #262e)
     new_profile = SpeakerProfile(
         user_id=current_user.id,
         name=profile_name,
         uuid=str(uuid.uuid4()),
-        organization_id=int(speaker.organization_id) if speaker.organization_id else None,
+        organization_id=speaker.media_file.organization_id,
     )
 
     db.add(new_profile)
@@ -2411,21 +2389,28 @@ def _create_new_speaker_profile(
 
 
 def _resolve_profile_uuid_to_id(
-    profile_uuid: str | None, current_user: User, db: Session
+    profile_uuid: str | None,
+    speaker: Speaker,
+    current_user: User,
+    db: Session,
+    ctx: RequestContext,
 ) -> int | None:
-    """Convert profile UUID to internal ID if provided, validating access."""
+    """Convert profile UUID to internal ID if provided, validating access.
+
+    The profile must be usable by the caller in the active tenant AND belong to
+    the tenant of the speaker's file, so a voiceprint never joins another tenant's
+    profile.
+    """
     if not profile_uuid:
         return None
 
-    from app.utils.uuid_helpers import get_speaker_profile_by_uuid
-
-    profile = get_speaker_profile_by_uuid(db, profile_uuid)
-    # Ownership/share check on one named profile, not a set fed to a kNN: unscoped as before.
-    accessible_ids = PermissionService.get_accessible_profile_ids(
-        db, current_user.id, organization_id=UNSCOPED
+    profile = require_profile_in_scope(
+        db, profile_uuid, current_user, organization_id=ctx.org_id, owner_only=False
     )
-    if profile.id not in accessible_ids:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    if profile.organization_id != speaker.media_file.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Speaker profile not found"
+        )
     return profile.id
 
 
@@ -2624,7 +2609,7 @@ def _build_occurrence_dict(
 
 
 def _get_profile_based_occurrences(
-    speaker: Speaker, current_user: User, db: Session
+    speaker: Speaker, current_user: User, db: Session, organization_id: OrgScope = UNSCOPED
 ) -> list[dict[str, Any]]:
     """Get cross-media occurrences for a speaker with a profile."""
     query = (
@@ -2637,6 +2622,9 @@ def _get_profile_based_occurrences(
     if not current_user.is_admin:
         query = query.filter(Speaker.user_id == current_user.id)
         query = query.filter(MediaFile.is_quarantined.is_(False))
+        tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
+        if tenant_pred is not None:
+            query = query.filter(tenant_pred)
     profile_speakers = query.all()
 
     result: list[dict[str, Any]] = []
@@ -2653,7 +2641,7 @@ def _get_profile_based_occurrences(
 
 
 def _get_display_name_based_occurrences(
-    speaker: Speaker, current_user: User, db: Session
+    speaker: Speaker, current_user: User, db: Session, organization_id: OrgScope = UNSCOPED
 ) -> list[dict[str, Any]]:
     """Get cross-media occurrences for a speaker without a profile, by display name."""
     result: list[dict[str, Any]] = []
@@ -2678,6 +2666,9 @@ def _get_display_name_based_occurrences(
     if not current_user.is_admin:
         similar_q = similar_q.filter(Speaker.user_id == current_user.id)
         similar_q = similar_q.filter(MediaFile.is_quarantined.is_(False))
+        tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
+        if tenant_pred is not None:
+            similar_q = similar_q.filter(tenant_pred)
     similar_speakers = similar_q.all()
 
     for similar_speaker in similar_speakers:

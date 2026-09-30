@@ -18,10 +18,12 @@ from typing import Any
 import numpy as np
 from sqlalchemy.orm import Session
 
+from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerMatch
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.permission_service import file_ids_in_scope
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
@@ -72,6 +74,14 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
         Exception: Logs errors but does not re-raise to avoid breaking speaker updates.
     """
     try:
+        # The tenant of the speaker's file: a voiceprint only ever joins a profile
+        # of the same tenant (None = personal; always None in the community edition).
+        speaker_org_id = (
+            db.query(MediaFile.organization_id)
+            .filter(MediaFile.id == speaker.media_file_id)
+            .scalar()
+        )
+
         # Check if a profile with this name already exists for this user
         existing_profile = (
             db.query(SpeakerProfile)
@@ -81,6 +91,15 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
             )
             .first()
         )
+
+        if existing_profile and existing_profile.organization_id != speaker_org_id:
+            # Profile names are unique per user across tenants, so the same-named
+            # profile of another tenant can be neither linked nor duplicated here.
+            logger.info(
+                f"Not auto-assigning speaker {speaker.id}: profile '{existing_profile.name}' "
+                "belongs to another tenant"
+            )
+            return False
 
         if existing_profile:
             # Assign speaker to existing profile
@@ -126,7 +145,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 name=display_name.strip(),
                 description=f"Auto-created profile for {display_name.strip()}",
                 uuid=str(uuid.uuid4()),
-                organization_id=int(speaker.organization_id) if speaker.organization_id else None,
+                organization_id=speaker_org_id,
             )
             db.add(new_profile)
             db.flush()  # Get the ID without committing
@@ -416,6 +435,7 @@ def _load_suggestion_speaker_documents(
             db.query(Speaker)
             .filter(
                 Speaker.user_id == trigger["user_id"],
+                Speaker.media_file_id.in_(file_ids_in_scope(trigger["organization_id"])),
                 Speaker.suggested_name == trigger["display_name"],
                 Speaker.confidence >= 0.5,
                 Speaker.confidence < 0.75,
@@ -534,6 +554,10 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
             if updated_speaker.display_name
             else None,
             "profile_id": int(updated_speaker.profile_id) if updated_speaker.profile_id else None,
+            # Candidates are confined to the tenant of the labeled speaker's file.
+            "organization_id": db.query(MediaFile.organization_id)
+            .filter(MediaFile.id == updated_speaker.media_file_id)
+            .scalar(),
         }
         logger.info(
             f"Starting retroactive matching for speaker {trigger['id']} "
@@ -567,6 +591,7 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
             .filter(
                 Speaker.user_id == trigger["user_id"],
                 Speaker.id != trigger["id"],
+                Speaker.media_file_id.in_(file_ids_in_scope(trigger["organization_id"])),
             )
             .all()
         ]

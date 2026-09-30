@@ -242,7 +242,7 @@ class TestGetAccessibleProfileIdsWithSource:
     def test_own_profiles_flagged_correctly(self, db_session, user_a, sharing_setup):
         """Own profiles are flagged as is_own=True."""
         result = PermissionService.get_accessible_profile_ids_with_source(
-            db_session, int(user_a.id)
+            db_session, int(user_a.id), organization_id=None
         )
         profile_map = {pid: is_own for pid, is_own in result}
         assert profile_map[int(sharing_setup["profile_a"].id)] is True
@@ -250,7 +250,7 @@ class TestGetAccessibleProfileIdsWithSource:
     def test_shared_profiles_flagged_correctly(self, db_session, user_b, sharing_setup):
         """Shared profiles are flagged as is_own=False."""
         result = PermissionService.get_accessible_profile_ids_with_source(
-            db_session, int(user_b.id)
+            db_session, int(user_b.id), organization_id=None
         )
         profile_map = {pid: is_own for pid, is_own in result}
         assert profile_map[int(sharing_setup["profile_a"].id)] is False
@@ -258,7 +258,7 @@ class TestGetAccessibleProfileIdsWithSource:
     def test_mixed_own_and_shared(self, db_session, user_b, sharing_setup, user_b_own_profile):
         """User B has both own (True) and shared (False) profiles."""
         result = PermissionService.get_accessible_profile_ids_with_source(
-            db_session, int(user_b.id)
+            db_session, int(user_b.id), organization_id=None
         )
         profile_map = {pid: is_own for pid, is_own in result}
         assert profile_map[int(user_b_own_profile.id)] is True
@@ -717,7 +717,7 @@ class TestMultipleSharingChains:
 
         # With source should also have it once
         result = PermissionService.get_accessible_profile_ids_with_source(
-            db_session, int(user_b.id)
+            db_session, int(user_b.id), organization_id=None
         )
         profile_ids = [pid for pid, _ in result]
         assert profile_ids.count(int(profile.id)) == 1

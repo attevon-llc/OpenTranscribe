@@ -14,9 +14,9 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import scope_to_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import MAX_AVATAR_SIZE
-from app.core.tenancy import UNSCOPED
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -26,14 +26,16 @@ from app.models.media import SpeakerProfile
 from app.models.user import User
 from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
+from app.services.permission_service import file_ids_in_scope
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
 from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.error_handlers import ErrorHandler
-from app.utils.uuid_helpers import get_speaker_by_uuid
-from app.utils.uuid_helpers import get_speaker_profile_by_uuid
+from app.utils.uuid_helpers import _resource_in_tenant_scope
+from app.utils.uuid_helpers import require_profile_in_scope
 from app.utils.uuid_helpers import require_resource_owner
+from app.utils.uuid_helpers import require_speaker_access
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +47,9 @@ def list_speaker_profiles(
     collection_uuid: str | None = Query(None, description="Filter by collection UUID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """List all speaker profiles for the current user, including shared profiles."""
+    """List the caller's speaker profiles in the active tenant, including shared ones."""
     try:
         # Admins see all profiles; regular users see own + shared
         is_admin = current_user.is_admin
@@ -55,7 +58,7 @@ def list_speaker_profiles(
             owned_ids: set[int] = set()  # Will compute below for is_shared flag
         else:
             accessible = PermissionService.get_accessible_profile_ids_with_source(
-                db, current_user.id
+                db, current_user.id, organization_id=ctx.org_id
             )
             if not accessible:
                 return []
@@ -68,6 +71,8 @@ def list_speaker_profiles(
             from app.utils.uuid_helpers import get_by_uuid
 
             collection = get_by_uuid(db, SpeakerCollection, collection_uuid)
+            if not _resource_in_tenant_scope(collection, ctx.org_id):
+                raise HTTPException(status_code=404, detail="SpeakerCollection not found")
             require_resource_owner(
                 collection,
                 current_user,
@@ -309,6 +314,7 @@ def update_speaker_profile(
     description: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Update a speaker profile.
 
@@ -321,10 +327,8 @@ def update_speaker_profile(
     disagreeing in whichever direction was skipped.
     """
     try:
-        profile = get_speaker_profile_by_uuid(db, profile_uuid)
-
-        require_resource_owner(
-            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        profile = require_profile_in_scope(
+            db, profile_uuid, current_user, organization_id=ctx.org_id
         )
 
         profile_id = profile.id
@@ -443,34 +447,35 @@ def assign_speaker_to_profile(
     confidence: float | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Assign a speaker instance to a profile (own or shared)."""
+    """Assign a speaker instance to a profile (own or shared).
+
+    Linking feeds the speaker's voiceprint into the profile's consolidated
+    embedding, so it is a write on the speaker's file: editor or better, in the
+    active tenant. The profile must be reachable in the same tenant and belong to
+    the same tenant as the speaker's file.
+    """
     try:
-        # Verify speaker exists and user has file-level access
-        speaker = get_speaker_by_uuid(db, speaker_uuid)
-        file_perm = (
-            "owner"
-            if current_user.is_admin
-            else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), current_user.id
-            )
+        speaker = require_speaker_access(
+            db,
+            speaker_uuid,
+            current_user,
+            organization_id=ctx.org_id,
+            min_permission="editor",
+            forbidden_detail="Not authorized to access this speaker",
         )
-        if not file_perm:
-            raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
         speaker_id = speaker.id
         # Read before the assignment writes over it — the task's re-score gate
         # compares old against new to tell an attach from a no-op.
         prior_profile_id = int(speaker.profile_id) if speaker.profile_id else None
         media_file_id = int(speaker.media_file_id)
 
-        # Verify profile exists and is accessible (own or shared)
-        profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        # Ownership/share check on one named profile, not a set fed to a kNN: unscoped as before.
-        accessible_ids = PermissionService.get_accessible_profile_ids(
-            db, current_user.id, organization_id=UNSCOPED
+        profile = require_profile_in_scope(
+            db, profile_uuid, current_user, organization_id=ctx.org_id, owner_only=False
         )
-        if profile.id not in accessible_ids:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        if profile.organization_id != speaker.media_file.organization_id:
+            raise HTTPException(status_code=404, detail="Speaker profile not found")
         profile_id = profile.id
 
         # assign_speaker_to_profile is a DB write (updates the speaker row, commits, then
@@ -676,17 +681,13 @@ def get_speaker_profile_suggestions(
 ):
     """Get profile suggestions for a speaker based on both embeddings and LLM analysis."""
     try:
-        # Verify speaker exists and user has file-level access
-        speaker = get_speaker_by_uuid(db, speaker_uuid)
-        file_perm = (
-            "owner"
-            if current_user.is_admin
-            else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), current_user.id
-            )
+        speaker = require_speaker_access(
+            db,
+            speaker_uuid,
+            current_user,
+            organization_id=ctx.org_id,
+            forbidden_detail="Not authorized to access this speaker",
         )
-        if not file_perm:
-            raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
         speaker_id = speaker.id
 
         # Check if speaker already has a profile
@@ -741,17 +742,13 @@ def get_speaker_profile_occurrences(
     profile_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Get all media files where a speaker profile appears."""
+    """Get all media files of the active tenant where a speaker profile appears."""
     try:
-        # Verify profile exists and is accessible (own or shared)
-        profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        # Ownership/share check on one named profile, not a set fed to a kNN: unscoped as before.
-        accessible_ids = PermissionService.get_accessible_profile_ids(
-            db, current_user.id, organization_id=UNSCOPED
+        profile = require_profile_in_scope(
+            db, profile_uuid, current_user, organization_id=ctx.org_id, owner_only=False
         )
-        if profile.id not in accessible_ids:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 
         # find_speaker_occurrences is a pure DB read — never construct
@@ -763,7 +760,10 @@ def get_speaker_profile_occurrences(
         # Get occurrences. A quarantined file's occurrence must 404-equivalent drop out
         # of this list for a non-admin, the same as everywhere else under `files/`.
         occurrences = matching_service.find_speaker_occurrences(
-            int(profile_id), current_user.id, include_quarantined=current_user.is_admin
+            int(profile_id),
+            current_user.id,
+            include_quarantined=current_user.is_admin,
+            organization_id=ctx.org_id,
         )
 
         return occurrences
@@ -780,12 +780,12 @@ def delete_speaker_profile(
     profile_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Delete a speaker profile."""
     try:
-        profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        require_resource_owner(
-            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        profile = require_profile_in_scope(
+            db, profile_uuid, current_user, organization_id=ctx.org_id
         )
         profile_id = profile.id
 
@@ -838,12 +838,12 @@ async def upload_profile_avatar(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Upload an avatar image for a speaker profile."""
     try:
-        profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        require_resource_owner(
-            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        profile = require_profile_in_scope(
+            db, profile_uuid, current_user, organization_id=ctx.org_id
         )
 
         # Validate content type
@@ -908,12 +908,12 @@ def delete_profile_avatar(
     profile_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Remove a speaker profile's avatar."""
     try:
-        profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        require_resource_owner(
-            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        profile = require_profile_in_scope(
+            db, profile_uuid, current_user, organization_id=ctx.org_id
         )
 
         if profile.avatar_path:
@@ -943,26 +943,32 @@ def confirm_profile_gender(
     gender: str = Query(..., description="Gender value: 'male' or 'female'"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Confirm or set the predicted gender for a profile and all linked speakers."""
+    """Confirm the gender for a profile and the caller's own linked speakers.
+
+    Only the caller's speakers in the active tenant are rewritten: other users'
+    speakers linked to this profile (via a shared file) belong to them.
+    """
     if gender not in ("male", "female"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Gender must be 'male' or 'female'",
         )
 
-    profile = get_speaker_profile_by_uuid(db, profile_uuid)
-    require_resource_owner(
-        profile, current_user, forbidden_detail="Not authorized to access this profile"
-    )
+    profile = require_profile_in_scope(db, profile_uuid, current_user, organization_id=ctx.org_id)
 
     # Update profile DB column for consistency
     profile.predicted_gender = gender  # type: ignore[assignment]
 
-    # Bulk-update all linked speakers
+    # Bulk-update the caller's linked speakers in this tenant
     updated_count = (
         db.query(Speaker)
-        .filter(Speaker.profile_id == profile.id)
+        .filter(
+            Speaker.profile_id == profile.id,
+            Speaker.user_id == current_user.id,
+            Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
+        )
         .update(
             {"predicted_gender": gender, "gender_confirmed_by_user": True},
             synchronize_session="fetch",
@@ -980,12 +986,17 @@ def confirm_profile_gender(
 
 @router.get("/collections", response_model=list[dict[str, Any]])
 def list_speaker_collections(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """List all speaker collections for the current user."""
+    """List the caller's speaker collections in the active tenant."""
     try:
+        # Speaker collections are owner-scoped: the caller's own, in this tenant.
         collections = (
-            db.query(SpeakerCollection).filter(SpeakerCollection.user_id == current_user.id).all()
+            scope_to_context(db.query(SpeakerCollection), SpeakerCollection, ctx)
+            .filter(SpeakerCollection.user_id == current_user.id)
+            .all()
         )
 
         # Batch-fetch member counts (avoids N+1 per-collection queries)
@@ -1044,8 +1055,9 @@ def create_speaker_collection(
     is_public: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Create a new speaker collection."""
+    """Create a new speaker collection (stamped with the active tenant)."""
     try:
         # Check for name conflicts
         existing = (
@@ -1065,6 +1077,7 @@ def create_speaker_collection(
             name=name,
             description=description,
             is_public=is_public,
+            organization_id=ctx.org_id,
         )
 
         db.add(collection)

@@ -20,12 +20,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import subqueryload
 
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerCluster
 from app.models.media import SpeakerClusterMember
 from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
+from app.services.permission_service import file_ids_in_scope
+from app.services.permission_service import org_scope_pred
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_labels import canonical_speaker_label_for_row
@@ -74,6 +79,20 @@ class SpeakerClusteringService:
         # they happen and dispatched once per commit — never per row, which would
         # queue one update_by_query per speaker per file (issue #432).
         self._rename_tracker = SpeakerRenameTracker()
+
+    def _scoped_cluster_query(
+        self, cluster_uuid: str, user_id: int, organization_id: OrgScope = UNSCOPED
+    ) -> Any:
+        """The caller's cluster ``cluster_uuid``, restricted to one tenant.
+
+        ``organization_id``: int = that org, None = personal clusters only,
+        ``UNSCOPED`` = no tenant gate (background/legacy callers).
+        """
+        query = self.db.query(SpeakerCluster).filter(
+            SpeakerCluster.uuid == cluster_uuid, SpeakerCluster.user_id == user_id
+        )
+        pred = org_scope_pred(SpeakerCluster.organization_id, organization_id)
+        return query.filter(pred) if pred is not None else query
 
     def _media_file_org_id(self, media_file_id: int | None) -> int | None:
         """Resolve the tenant scope of a speaker via its media file's org."""
@@ -1078,6 +1097,8 @@ class SpeakerClusteringService:
         source_uuid: str,
         target_uuid: str,
         user_id: int,
+        *,
+        organization_id: OrgScope = UNSCOPED,
     ) -> SpeakerCluster | None:
         """Merge source cluster into target. All members move to target.
 
@@ -1085,6 +1106,7 @@ class SpeakerClusteringService:
             source_uuid: UUID of the cluster to dissolve.
             target_uuid: UUID of the cluster to absorb members.
             user_id: Owner user ID.
+            organization_id: Tenant both clusters must belong to.
 
         Returns:
             The target cluster after merge, or None on error.
@@ -1092,30 +1114,27 @@ class SpeakerClusteringService:
         try:
             # Lock both clusters in consistent UUID order to prevent deadlocks
             first_uuid, second_uuid = sorted([source_uuid, target_uuid])
-            self.db.query(SpeakerCluster).filter(
-                SpeakerCluster.uuid == first_uuid,
-                SpeakerCluster.user_id == user_id,
+            self._scoped_cluster_query(
+                first_uuid, user_id, organization_id
             ).with_for_update().first()
             if first_uuid != second_uuid:
-                self.db.query(SpeakerCluster).filter(
-                    SpeakerCluster.uuid == second_uuid,
-                    SpeakerCluster.user_id == user_id,
+                self._scoped_cluster_query(
+                    second_uuid, user_id, organization_id
                 ).with_for_update().first()
 
-            source = (
-                self.db.query(SpeakerCluster)
-                .filter(SpeakerCluster.uuid == source_uuid, SpeakerCluster.user_id == user_id)
-                .first()
-            )
-            target = (
-                self.db.query(SpeakerCluster)
-                .filter(SpeakerCluster.uuid == target_uuid, SpeakerCluster.user_id == user_id)
-                .first()
-            )
+            source = self._scoped_cluster_query(source_uuid, user_id, organization_id).first()
+            target = self._scoped_cluster_query(target_uuid, user_id, organization_id).first()
 
             if not source or not target:
                 logger.warning(
                     "Cluster not found for merge: source=%s, target=%s", source_uuid, target_uuid
+                )
+                return None
+            if source.organization_id != target.organization_id:
+                logger.warning(
+                    "Refusing to merge clusters of different tenants: %s -> %s",
+                    source_uuid,
+                    target_uuid,
                 )
                 return None
 
@@ -1184,6 +1203,8 @@ class SpeakerClusteringService:
         cluster_uuid: str,
         speaker_uuids: list[str],
         user_id: int,
+        *,
+        organization_id: OrgScope = UNSCOPED,
     ) -> SpeakerCluster | None:
         """Split specified speakers into a new cluster.
 
@@ -1191,14 +1212,14 @@ class SpeakerClusteringService:
             cluster_uuid: UUID of the source cluster.
             speaker_uuids: UUIDs of speakers to move to the new cluster.
             user_id: Owner user ID.
+            organization_id: Tenant the source cluster must belong to.
 
         Returns:
             The newly created cluster, or None on error.
         """
         try:
             source = (
-                self.db.query(SpeakerCluster)
-                .filter(SpeakerCluster.uuid == cluster_uuid, SpeakerCluster.user_id == user_id)
+                self._scoped_cluster_query(cluster_uuid, user_id, organization_id)
                 .with_for_update()
                 .first()
             )
@@ -1206,10 +1227,14 @@ class SpeakerClusteringService:
                 logger.warning("Cluster %s not found", cluster_uuid)
                 return None
 
-            # Resolve speaker IDs
+            # Resolve speaker IDs — only speakers of the source cluster's tenant
             speakers_to_move = (
                 self.db.query(Speaker)
-                .filter(Speaker.uuid.in_(speaker_uuids), Speaker.user_id == user_id)
+                .filter(
+                    Speaker.uuid.in_(speaker_uuids),
+                    Speaker.user_id == user_id,
+                    Speaker.media_file_id.in_(file_ids_in_scope(source.organization_id)),
+                )
                 .all()
             )
             if not speakers_to_move:
@@ -1292,24 +1317,27 @@ class SpeakerClusteringService:
         name: str,
         user_id: int,
         description: str | None = None,
+        *,
+        organization_id: OrgScope = UNSCOPED,
     ) -> SpeakerProfile | None:
         """Convert a cluster to a SpeakerProfile and assign all members.
+
+        Refused (``None``) when the cluster's members span tenants or belong to a
+        tenant other than the cluster's: a profile never pools voiceprints across
+        tenants.
 
         Args:
             cluster_uuid: UUID of the cluster to promote.
             name: Name for the new profile.
             user_id: Owner user ID.
             description: Optional profile description.
+            organization_id: Tenant the cluster must belong to.
 
         Returns:
             The created SpeakerProfile, or None on error.
         """
         try:
-            cluster = (
-                self.db.query(SpeakerCluster)
-                .filter(SpeakerCluster.uuid == cluster_uuid, SpeakerCluster.user_id == user_id)
-                .first()
-            )
+            cluster = self._scoped_cluster_query(cluster_uuid, user_id, organization_id).first()
             if not cluster:
                 logger.warning("Cluster %s not found", cluster_uuid)
                 return None
@@ -1339,9 +1367,8 @@ class SpeakerClusteringService:
                 for s in self.db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
             }
 
-            # Tenant scope: a promoted profile inherits the members' file org
-            # only when ALL members belong to the same org; any mix (or any
-            # personal member) falls back to personal scope (None).
+            # Tenant scope: the promoted profile is of the cluster's tenant, and
+            # every member's file must be of that same tenant.
             member_file_ids = {int(s.media_file_id) for s in speakers_by_id.values()}
             member_orgs: set[int | None] = (
                 {
@@ -1354,7 +1381,14 @@ class SpeakerClusteringService:
                 if member_file_ids
                 else set()
             )
-            profile_org_id = member_orgs.pop() if len(member_orgs) == 1 else None
+            if member_orgs - {cluster.organization_id}:
+                logger.warning(
+                    "Refusing to promote cluster %s: members span tenants %s",
+                    cluster_uuid,
+                    sorted(str(o) for o in member_orgs),
+                )
+                return None
+            profile_org_id = cluster.organization_id
 
             # Create profile
             profile = SpeakerProfile(
@@ -1411,18 +1445,16 @@ class SpeakerClusteringService:
     # Outlier analysis and constraint-based unassignment
     # ------------------------------------------------------------------
 
-    def analyze_gender_outliers(self, cluster_uuid: str, user_id: int) -> dict:
+    def analyze_gender_outliers(
+        self, cluster_uuid: str, user_id: int, *, organization_id: OrgScope = UNSCOPED
+    ) -> dict:
         """Analyze minority-gender speakers for potential outliers using embedding similarity.
 
         Uses batch OpenSearch mget + numpy matrix ops for speed.
         """
         from app.services.opensearch_service import get_speaker_embeddings_batch
 
-        cluster = (
-            self.db.query(SpeakerCluster)
-            .filter(SpeakerCluster.uuid == cluster_uuid, SpeakerCluster.user_id == user_id)
-            .first()
-        )
+        cluster = self._scoped_cluster_query(cluster_uuid, user_id, organization_id).first()
         if not cluster:
             raise ValueError("Cluster not found")
 
@@ -1553,23 +1585,25 @@ class SpeakerClusteringService:
         speaker_uuids: list[str],
         user_id: int,
         blacklist: bool = True,
+        *,
+        organization_id: OrgScope = UNSCOPED,
     ) -> dict:
         """Unassign speakers from a cluster, optionally blacklisting them."""
         from app.models.media import SpeakerCannotLink
         from app.models.media import SpeakerProfileBlacklist
 
-        cluster = (
-            self.db.query(SpeakerCluster)
-            .filter(SpeakerCluster.uuid == cluster_uuid, SpeakerCluster.user_id == user_id)
-            .first()
-        )
+        cluster = self._scoped_cluster_query(cluster_uuid, user_id, organization_id).first()
         if not cluster:
             raise ValueError("Cluster not found")
 
-        # Find speaker IDs
+        # Find speaker IDs (of the cluster's tenant only)
         speakers_to_remove = (
             self.db.query(Speaker)
-            .filter(Speaker.uuid.in_(speaker_uuids), Speaker.user_id == user_id)
+            .filter(
+                Speaker.uuid.in_(speaker_uuids),
+                Speaker.user_id == user_id,
+                Speaker.media_file_id.in_(file_ids_in_scope(cluster.organization_id)),
+            )
             .all()
         )
         if not speakers_to_remove:
@@ -1664,8 +1698,9 @@ class SpeakerClusteringService:
         per_page: int = 20,
         *,
         include_quarantined: bool = False,
+        organization_id: OrgScope = UNSCOPED,
     ) -> dict[str, Any]:
-        """Get paginated list of unverified speakers across all files.
+        """Get paginated list of unverified speakers across the files of one tenant.
 
         Prioritized by: cluster size (larger first), then suggestion confidence.
 
@@ -1702,6 +1737,9 @@ class SpeakerClusteringService:
         # than actually excluding the quarantined speaker from the inbox.
         query = query.join(MediaFile, Speaker.media_file_id == MediaFile.id)
         query = exclude_quarantined(query, include_quarantined=include_quarantined)
+        tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
+        if tenant_pred is not None:
+            query = query.filter(tenant_pred)
 
         total = query.count()
         pages = max(1, math.ceil(total / per_page))
@@ -1753,8 +1791,13 @@ class SpeakerClusteringService:
         action: str = "accept",
         profile_uuid: str | None = None,
         display_name: str | None = None,
+        *,
+        organization_id: OrgScope = UNSCOPED,
     ) -> dict[str, Any]:
         """Batch verify/name multiple speakers.
+
+        ``organization_id`` confines the profile and the speakers to one tenant;
+        a speaker is only assigned to a profile of its own file's tenant.
 
         Args:
             speaker_uuids: List of speaker UUIDs to verify.
@@ -1772,11 +1815,13 @@ class SpeakerClusteringService:
 
         profile = None
         if action == "assign" and profile_uuid:
-            profile = (
-                self.db.query(SpeakerProfile)
-                .filter(SpeakerProfile.uuid == profile_uuid, SpeakerProfile.user_id == user_id)
-                .first()
+            profile_query = self.db.query(SpeakerProfile).filter(
+                SpeakerProfile.uuid == profile_uuid, SpeakerProfile.user_id == user_id
             )
+            profile_pred = org_scope_pred(SpeakerProfile.organization_id, organization_id)
+            if profile_pred is not None:
+                profile_query = profile_query.filter(profile_pred)
+            profile = profile_query.first()
             if not profile:
                 return {
                     "updated_count": 0,
@@ -1784,18 +1829,26 @@ class SpeakerClusteringService:
                     "errors": ["Profile not found"],
                 }
 
-        # Batch-fetch all speakers to avoid per-UUID queries
-        speakers_by_uuid = {
-            str(s.uuid): s
-            for s in self.db.query(Speaker)
+        # Batch-fetch all speakers (with their file's tenant) to avoid per-UUID queries
+        speaker_rows = (
+            self.db.query(Speaker, MediaFile.organization_id)
+            .join(MediaFile, Speaker.media_file_id == MediaFile.id)
             .filter(Speaker.uuid.in_([str(u) for u in speaker_uuids]))
             .all()
-        }
+        )
+        speakers_by_uuid = {str(s.uuid): s for s, _ in speaker_rows}
+        file_org_by_uuid = {str(s.uuid): org for s, org in speaker_rows}
 
         for suuid in speaker_uuids:
             try:
                 speaker = speakers_by_uuid.get(str(suuid))
-                if not speaker or int(speaker.user_id) != user_id:
+                file_org = file_org_by_uuid.get(str(suuid))
+                if (
+                    not speaker
+                    or int(speaker.user_id) != user_id
+                    or (not isinstance(organization_id, _Unscoped) and file_org != organization_id)
+                    or (profile is not None and file_org != profile.organization_id)
+                ):
                     errors.append(f"Speaker {suuid} not found")
                     failed += 1
                     continue
@@ -1886,8 +1939,10 @@ class SpeakerClusteringService:
         per_page: int = 20,
         has_label: bool | None = None,
         search: str | None = None,
+        *,
+        organization_id: OrgScope = UNSCOPED,
     ) -> dict[str, Any]:
-        """List clusters with pagination and filtering.
+        """List the caller's clusters of one tenant with pagination and filtering.
 
         Args:
             user_id: Owner user ID.
@@ -1899,12 +1954,16 @@ class SpeakerClusteringService:
         Returns:
             Dict with items, total, page, per_page, pages.
         """
+        tenant_filters = [SpeakerCluster.user_id == user_id]
+        tenant_pred = org_scope_pred(SpeakerCluster.organization_id, organization_id)
+        if tenant_pred is not None:
+            tenant_filters.append(tenant_pred)
         query = (
             self.db.query(SpeakerCluster)
             .options(
                 subqueryload(SpeakerCluster.promoted_to_profile),
             )
-            .filter(SpeakerCluster.user_id == user_id)
+            .filter(*tenant_filters)
         )
 
         if has_label is True:
@@ -1933,7 +1992,7 @@ class SpeakerClusteringService:
         # Counts for section headers (unfiltered by search/has_label)
         from sqlalchemy import func as sa_func
 
-        base_count_query = self.db.query(SpeakerCluster).filter(SpeakerCluster.user_id == user_id)
+        base_count_query = self.db.query(SpeakerCluster).filter(*tenant_filters)
         labeled_count = base_count_query.filter(
             (SpeakerCluster.label.isnot(None)) | (SpeakerCluster.promoted_to_profile_id.isnot(None))
         ).count()
@@ -1943,9 +2002,7 @@ class SpeakerClusteringService:
         ).count()
         # Most recent cluster update = last time clustering ran
         last_clustered_at = (
-            self.db.query(sa_func.max(SpeakerCluster.updated_at))
-            .filter(SpeakerCluster.user_id == user_id)
-            .scalar()
+            self.db.query(sa_func.max(SpeakerCluster.updated_at)).filter(*tenant_filters).scalar()
         )
         pages = max(1, math.ceil(total / per_page))
         offset = (page - 1) * per_page
@@ -2039,6 +2096,8 @@ class SpeakerClusteringService:
         self,
         cluster_uuid: str,
         user_id: int,
+        *,
+        organization_id: OrgScope = UNSCOPED,
     ) -> dict[str, Any] | None:
         """Get cluster detail with all members.
 
@@ -2049,7 +2108,7 @@ class SpeakerClusteringService:
         Returns:
             Cluster detail dict, or None if not found.
         """
-        cluster = (
+        detail_query = (
             self.db.query(SpeakerCluster)
             .options(
                 joinedload(SpeakerCluster.members)
@@ -2058,8 +2117,11 @@ class SpeakerClusteringService:
                 joinedload(SpeakerCluster.promoted_to_profile),
             )
             .filter(SpeakerCluster.uuid == cluster_uuid, SpeakerCluster.user_id == user_id)
-            .first()
         )
+        detail_pred = org_scope_pred(SpeakerCluster.organization_id, organization_id)
+        if detail_pred is not None:
+            detail_query = detail_query.filter(detail_pred)
+        cluster = detail_query.first()
         if not cluster:
             return None
 

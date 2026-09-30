@@ -458,3 +458,92 @@ def get_collection_by_uuid_with_sharing(
         )
 
     return collection, permission
+
+
+# Speaker-plane tenant gates
+def require_speaker_access(
+    db: Session,
+    speaker_uuid: UUID | str,
+    user: User,
+    *,
+    organization_id: OrgScope,
+    min_permission: str = "viewer",
+    forbidden_detail: str = "Not authorized",
+) -> Speaker:
+    """Load a speaker the caller may reach in the active tenant, at ``min_permission``.
+
+    A speaker has no ACL of its own: access is the caller's permission on the
+    speaker's media file, resolved through ``PermissionService.get_file_permission``
+    with the tenant gate applied. Instance admins bypass (by design).
+
+    Raises:
+        HTTPException: 404 when the speaker does not exist, its file is quarantined,
+            or the file belongs to another tenant (existence is not disclosed across
+            tenants); 403 when the caller has no access in this tenant or holds a
+            lower permission than ``min_permission``.
+    """
+    from app.services.permission_service import PERMISSION_LEVELS
+    from app.services.permission_service import PermissionService
+    from app.services.takedown_service import is_hidden_for
+
+    speaker = get_speaker_by_uuid(db, speaker_uuid)
+    if user.is_admin:
+        return speaker
+
+    media_file = speaker.media_file
+    if (
+        media_file is None
+        or is_hidden_for(media_file, is_admin=False)
+        or not _resource_in_tenant_scope(media_file, organization_id)
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
+
+    permission = PermissionService.get_file_permission(
+        db, int(speaker.media_file_id), user.id, organization_id=organization_id
+    )
+    if permission is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=forbidden_detail)
+    if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Requires {min_permission} permission",
+        )
+    return speaker
+
+
+def require_profile_in_scope(
+    db: Session,
+    profile_uuid: UUID | str,
+    user: User,
+    *,
+    organization_id: OrgScope,
+    owner_only: bool = True,
+    allow_admin: bool = False,
+) -> SpeakerProfile:
+    """Load a speaker profile of the active tenant that the caller may use.
+
+    ``owner_only`` requires the caller to own it (edit/delete/avatar); otherwise a
+    profile shared with the caller in this tenant also passes (read/link).
+
+    Raises:
+        HTTPException: 404 when missing or in another tenant; 403 when in-tenant
+            but neither owned nor (for ``owner_only=False``) shared with the caller.
+    """
+    from app.services.permission_service import PermissionService
+
+    profile = get_speaker_profile_by_uuid(db, profile_uuid)
+    if allow_admin and user.is_admin:
+        return profile
+    if not _resource_in_tenant_scope(profile, organization_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Speaker profile not found"
+        )
+    if profile.user_id == user.id:
+        return profile
+    if not owner_only and profile.id in PermissionService.get_accessible_profile_ids(
+        db, user.id, organization_id=organization_id
+    ):
+        return profile
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this profile"
+    )

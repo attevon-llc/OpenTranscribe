@@ -165,6 +165,8 @@ describe('files/[id]/+page — fetch/loading/error state machine', () => {
       // No filename, transcript, or any file-derived content ever reached the DOM.
       expect(container.textContent).not.toContain('someone-elses-file');
       expect(document.title).not.toBe('meeting-notes.mp4');
+      // Tab title must not stay on the loading placeholder (#1082).
+      expect(document.title).toBe('fileDetail.notFoundTitle');
     }
   );
 

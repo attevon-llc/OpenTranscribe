@@ -486,6 +486,7 @@
   "fileDetail.failedToGenerateSummaryGeneric": "Error al generar resumen",
   "fileDetail.failedToLoadFile": "Error al cargar detalles del archivo. Por favor intenta de nuevo.",
   "fileDetail.notFoundOrNoAccess": "Este archivo no existe o no tienes acceso a él.",
+  "fileDetail.notFoundTitle": "Archivo no encontrado | OpenTranscribe",
   "fileDetail.failedToLoadMoreSegments": "Error al cargar más segmentos",
   "fileDetail.failedToLoadSummary": "Error al cargar resumen.",
   "fileDetail.failedToSaveSegment": "Error al guardar cambios del segmento",

@@ -238,6 +238,34 @@ def validate_subtitles(
         raise HTTPException(status_code=500, detail="Failed to validate subtitles.") from e
 
 
+def _bulk_job_signature(user_id: int | None, nonce: str) -> str:
+    """HMAC binding a bulk-export job id to the user who prepared it."""
+    import hashlib
+    import hmac
+
+    from app.core.config import settings
+
+    message = f"opentranscribe/bulk-export/v1:{user_id}:{nonce}".encode()
+    return hmac.new(settings.JWT_SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()[:32]
+
+
+def new_bulk_job_id(user_id: int | None) -> str:
+    """A job id only ``user_id`` can open the result stream for (nonce + signature)."""
+    from uuid import uuid4
+
+    nonce = uuid4().hex
+    return nonce + _bulk_job_signature(user_id, nonce)
+
+
+def bulk_job_owned_by(job: str, user_id: int | None) -> bool:
+    """True when ``job`` was issued by ``new_bulk_job_id`` for ``user_id``."""
+    import hmac
+
+    if len(job) != 64 or any(c not in "0123456789abcdef" for c in job):
+        return False
+    return hmac.compare_digest(job[32:], _bulk_job_signature(user_id, job[:32]))
+
+
 class BulkExportPrepareRequest(BaseModel):
     """Request for async bulk subtitle export."""
 
@@ -299,11 +327,9 @@ def prepare_bulk_export(
             detail="No accessible completed files to export.",
         )
 
-    from uuid import uuid4
-
     from app.tasks.media_download import prepare_bulk_subtitles_task
 
-    job_id = uuid4().hex
+    job_id = new_bulk_job_id(current_user.id)
     prepare_bulk_subtitles_task.delay(
         file_specs=file_specs,
         subtitle_format=request.subtitle_format,
@@ -331,7 +357,12 @@ def bulk_export_stream(
     ``error`` (``{message}``). The reconnect-safe result cache is read both before and
     after subscribing, so a dropped EventSource — or a job that finishes inside the
     subscribe window (issue #334) — still delivers without polling.
+
+    The job id is signed for the user who prepared it; anyone else gets 404.
     """
+    if not bulk_job_owned_by(job, current_user.id):
+        raise HTTPException(status_code=404, detail="Export job not found")
+
     import asyncio
     import contextlib
     import json as _json

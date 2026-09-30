@@ -62,6 +62,7 @@ from app.services.chat.settings import apply_user_preferences
 from app.services.chat.settings import get_chat_settings
 from app.services.llm_service import LLMService
 from app.services.redaction.llm_guard import is_local_provider
+from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)
 
@@ -576,6 +577,9 @@ def cancel_message(
         .filter(
             ChatMessage.uuid == parsed,
             ChatConversation.user_id == ctx.user.id,
+            # Same tenant rule as get_owned_conversation: a conversation from
+            # another tenant is not found.
+            org_stamp_is(ChatConversation.organization_id, ctx.org_id),
         )
         .first()
     )

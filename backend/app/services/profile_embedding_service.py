@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.permission_service import file_ids_in_scope
 
 logger = logging.getLogger(__name__)
 
@@ -328,8 +329,17 @@ class ProfileEmbeddingService:
                 logger.error(f"Profile {profile_id} not found")
                 return False
 
-            # Get all speakers assigned to this profile
-            speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
+            # Get the speakers assigned to this profile whose file is of the
+            # profile's tenant — a speaker linked across tenants never shapes the
+            # voiceprint (NULL-safe: personal profile <-> personal files).
+            speakers = (
+                db.query(Speaker)
+                .filter(
+                    Speaker.profile_id == profile_id,
+                    Speaker.media_file_id.in_(file_ids_in_scope(profile.organization_id)),
+                )
+                .all()
+            )
 
             if not speakers:
                 logger.warning(f"No speakers assigned to profile {profile_id}")

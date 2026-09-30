@@ -55,6 +55,27 @@ def org_collection_permission(creator_id: int | None, user_id: int, role: str | 
     return "editor"
 
 
+def org_scope_pred(column: Any, organization_id: OrgScope) -> Any:
+    """NULL-safe tenant equality on ``column`` (``None`` for ``UNSCOPED`` = no gate).
+
+    An int keeps rows of that org, ``None`` keeps org-less (personal) rows — the
+    same default-deny rule as ``scope_to_context``. A plain ``column == None``
+    would compile to ``= NULL`` and match nothing, hence the explicit ``IS NULL``.
+    """
+    if isinstance(organization_id, _Unscoped):
+        return None
+    if organization_id is None:
+        return column.is_(None)
+    return column == organization_id
+
+
+def file_ids_in_scope(organization_id: OrgScope) -> Any:
+    """``SELECT media_file.id`` for the files of one tenant (all files if UNSCOPED)."""
+    stmt = select(MediaFile.id)
+    pred = org_scope_pred(MediaFile.organization_id, organization_id)
+    return stmt.where(pred) if pred is not None else stmt
+
+
 class PermissionService:
     """Centralized permission checking for collections and files."""
 
@@ -469,12 +490,7 @@ class PermissionService:
             .scalar_subquery()
         )
 
-        org_pred = None
-        if not isinstance(organization_id, _Unscoped):
-            if organization_id is not None:
-                org_pred = SpeakerProfile.organization_id == organization_id
-            else:
-                org_pred = SpeakerProfile.organization_id.is_(None)
+        org_pred = org_scope_pred(SpeakerProfile.organization_id, organization_id)
 
         # Own profiles
         owned_query = db.query(SpeakerProfile.id).filter(SpeakerProfile.user_id == user_id)
@@ -519,25 +535,30 @@ class PermissionService:
         )
 
     @staticmethod
-    def get_accessible_profile_ids_with_source(db: Session, user_id: int) -> list[tuple[int, bool]]:
+    def get_accessible_profile_ids_with_source(
+        db: Session, user_id: int, *, organization_id: OrgScope
+    ) -> list[tuple[int, bool]]:
         """Return (profile_id, is_own) tuples for accessible profiles.
 
-        Used by API endpoints to label shared vs owned profiles.
+        Used by API endpoints to label shared vs owned profiles. ``organization_id``
+        is REQUIRED and gates both branches exactly as in
+        :meth:`get_accessible_profile_ids` (int = that org, ``None`` = org-less
+        profiles only, ``UNSCOPED`` = no gate).
         """
         user_group_ids = (
             select(UserGroupMember.group_id)
             .where(UserGroupMember.user_id == user_id)
             .scalar_subquery()
         )
+        org_pred = org_scope_pred(SpeakerProfile.organization_id, organization_id)
 
-        owned_ids = set(
-            row[0]
-            for row in db.query(SpeakerProfile.id).filter(SpeakerProfile.user_id == user_id).all()
-        )
+        owned_query = db.query(SpeakerProfile.id).filter(SpeakerProfile.user_id == user_id)
+        if org_pred is not None:
+            owned_query = owned_query.filter(org_pred)
+        owned_ids = {row[0] for row in owned_query.all()}
 
-        shared_ids = set(
-            row[0]
-            for row in db.query(SpeakerProfile.id)
+        shared_query = (
+            db.query(SpeakerProfile.id)
             .join(Speaker, Speaker.profile_id == SpeakerProfile.id)
             .join(MediaFile, MediaFile.id == Speaker.media_file_id)
             .join(CollectionMember, CollectionMember.media_file_id == MediaFile.id)
@@ -551,9 +572,10 @@ class PermissionService:
                     CollectionShare.target_group_id.in_(user_group_ids),
                 )
             )
-            .distinct()
-            .all()
         )
+        if org_pred is not None:
+            shared_query = shared_query.filter(org_pred)
+        shared_ids = {row[0] for row in shared_query.distinct().all()}
 
         result = [(pid, True) for pid in owned_ids]
         result.extend((pid, False) for pid in shared_ids - owned_ids)

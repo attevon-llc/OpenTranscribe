@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.core.constants import SPEAKER_CONFIDENCE_HIGH
 from app.core.constants import SPEAKER_CONFIDENCE_LOW
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerCollectionMember
@@ -17,6 +19,7 @@ from app.models.media import SpeakerMatch
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import add_speaker_embedding
 from app.services.opensearch_service import find_matching_speaker
+from app.services.permission_service import org_scope_pred
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
@@ -1003,7 +1006,12 @@ class SpeakerMatchingService:
             }
 
     def find_speaker_occurrences(
-        self, profile_id: int, user_id: int, *, include_quarantined: bool = False
+        self,
+        profile_id: int,
+        user_id: int,
+        *,
+        include_quarantined: bool = False,
+        organization_id: OrgScope = UNSCOPED,
     ) -> list[dict[str, Any]]:
         """
         Find all media files where a speaker profile appears.
@@ -1012,6 +1020,8 @@ class SpeakerMatchingService:
             profile_id: Speaker profile ID
             user_id: User ID
             include_quarantined: Admin "see all" — skip the takedown exclusion below.
+            organization_id: Tenant gate on the occurrence's file (int = that org,
+                None = personal files only, ``UNSCOPED`` = no gate).
 
         Returns:
             List of media file information
@@ -1027,6 +1037,9 @@ class SpeakerMatchingService:
             .filter(Speaker.profile_id == profile_id, Speaker.user_id == user_id)
         )
         query = exclude_quarantined(query, include_quarantined=include_quarantined)
+        tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
+        if tenant_pred is not None:
+            query = query.filter(tenant_pred)
         speakers = query.all()
 
         occurrences = []

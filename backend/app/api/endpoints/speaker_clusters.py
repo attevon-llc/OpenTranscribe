@@ -11,6 +11,8 @@ from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import Speaker
@@ -22,6 +24,8 @@ from app.schemas.speaker_cluster import ClusterSplitRequest
 from app.schemas.speaker_cluster import ClusterUnassignRequest
 from app.schemas.speaker_cluster import ReclusterRequest
 from app.schemas.speaker_cluster import SpeakerClusterUpdate
+from app.services.permission_service import file_ids_in_scope
+from app.services.permission_service import org_scope_pred
 from app.services.playback_rendition import resolve_playback
 from app.services.speaker_clustering_service import SpeakerClusteringService
 
@@ -64,6 +68,7 @@ def list_clusters(
     has_label: bool | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """List speaker clusters with pagination and filtering."""
     try:
@@ -74,6 +79,7 @@ def list_clusters(
             per_page=per_page,
             has_label=has_label,
             search=search,
+            organization_id=ctx.org_id,
         )
     except HTTPException:
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
@@ -136,6 +142,7 @@ def get_unverified_inbox(
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get paginated list of unverified speakers for the inbox."""
     service = SpeakerClusteringService(db)
@@ -144,6 +151,7 @@ def get_unverified_inbox(
         page=page,
         per_page=per_page,
         include_quarantined=current_user.is_admin,
+        organization_id=ctx.org_id,
     )
 
 
@@ -152,6 +160,7 @@ def batch_verify(
     data: BatchVerifyRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Batch verify multiple speakers."""
     service = SpeakerClusteringService(db)
@@ -161,6 +170,7 @@ def batch_verify(
         action=data.action,
         profile_uuid=str(data.profile_uuid) if data.profile_uuid else None,
         display_name=data.display_name,
+        organization_id=ctx.org_id,
     )
 
 
@@ -169,6 +179,7 @@ def get_speaker_media_preview(
     speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get presigned URL and segment timestamps for speaker media preview.
 
@@ -187,6 +198,9 @@ def get_speaker_media_preview(
     media_file = speaker.media_file
     if not media_file:
         raise HTTPException(status_code=404, detail="Media file not found")
+    # The file must be of the active tenant — this route hands out a presigned URL.
+    if media_file.organization_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Speaker not found")
 
     # A quarantined file is hidden from its own owner, and this route resolves the
     # file through `speaker.media_file` rather than `get_file_by_uuid_with_permission`
@@ -256,14 +270,19 @@ def get_speaker_media_preview(
 def get_clustering_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Get aggregate speaker clustering statistics."""
+    """Get aggregate speaker clustering statistics for the active tenant."""
     user_id = current_user.id
-    total_speakers = db.query(Speaker).filter(Speaker.user_id == user_id).count()
+    speaker_filters = [
+        Speaker.user_id == user_id,
+        Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
+    ]
+    total_speakers = db.query(Speaker).filter(*speaker_filters).count()
     clustered = (
         db.query(Speaker)
         .filter(
-            Speaker.user_id == user_id,
+            *speaker_filters,
             Speaker.cluster_id.isnot(None),
         )
         .count()
@@ -272,6 +291,7 @@ def get_clustering_stats(
         db.query(SpeakerCluster)
         .filter(
             SpeakerCluster.user_id == user_id,
+            org_scope_pred(SpeakerCluster.organization_id, ctx.org_id),
         )
         .count()
     )
@@ -289,12 +309,15 @@ def analyze_outliers(
     cluster_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Analyze minority-gender speakers for potential outliers."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
     try:
-        result = service.analyze_gender_outliers(cluster_uuid, current_user.id)
+        result = service.analyze_gender_outliers(
+            cluster_uuid, current_user.id, organization_id=ctx.org_id
+        )
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -306,6 +329,7 @@ def unassign_speakers(
     request: ClusterUnassignRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Unassign speakers from a cluster with optional blacklisting."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
@@ -316,6 +340,7 @@ def unassign_speakers(
             [str(u) for u in request.speaker_uuids],
             current_user.id,
             request.blacklist,
+            organization_id=ctx.org_id,
         )
         return result
     except ValueError as e:
@@ -332,11 +357,12 @@ def get_cluster_detail(
     cluster_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get cluster detail with all members."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
-    result = service.get_cluster_detail(cluster_uuid, current_user.id)
+    result = service.get_cluster_detail(cluster_uuid, current_user.id, organization_id=ctx.org_id)
     if not result:
         raise HTTPException(status_code=404, detail="Cluster not found")
     return result
@@ -348,6 +374,7 @@ def update_cluster(
     data: SpeakerClusterUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Update cluster label and description."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
@@ -357,6 +384,7 @@ def update_cluster(
             .filter(
                 SpeakerCluster.uuid == cluster_uuid,
                 SpeakerCluster.user_id == current_user.id,
+                org_scope_pred(SpeakerCluster.organization_id, ctx.org_id),
             )
             .first()
         )
@@ -392,6 +420,7 @@ def delete_cluster(
     cluster_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Delete a speaker cluster, detaching its members rather than deleting them.
 
@@ -412,6 +441,7 @@ def delete_cluster(
             .filter(
                 SpeakerCluster.uuid == cluster_uuid,
                 SpeakerCluster.user_id == current_user.id,
+                org_scope_pred(SpeakerCluster.organization_id, ctx.org_id),
             )
             .first()
         )
@@ -446,6 +476,7 @@ def promote_cluster(
     data: ClusterPromoteRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Promote a cluster to a speaker profile."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
@@ -455,6 +486,7 @@ def promote_cluster(
         name=data.name,
         user_id=current_user.id,
         description=data.description,
+        organization_id=ctx.org_id,
     )
     if not profile:
         raise HTTPException(status_code=400, detail="Failed to promote cluster")
@@ -472,6 +504,7 @@ def merge_clusters(
     target_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Merge source cluster into target cluster."""
     if source_uuid == target_uuid:
@@ -480,7 +513,9 @@ def merge_clusters(
     _require_uuid(source_uuid, not_found_detail="Cluster not found")
     _require_uuid(target_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
-    result = service.merge_clusters(source_uuid, target_uuid, current_user.id)
+    result = service.merge_clusters(
+        source_uuid, target_uuid, current_user.id, organization_id=ctx.org_id
+    )
     if not result:
         raise HTTPException(status_code=400, detail="Failed to merge clusters")
 
@@ -497,6 +532,7 @@ def split_cluster(
     data: ClusterSplitRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Split speakers from a cluster into a new cluster."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
@@ -505,6 +541,7 @@ def split_cluster(
         cluster_uuid=cluster_uuid,
         speaker_uuids=[str(u) for u in data.speaker_uuids],
         user_id=current_user.id,
+        organization_id=ctx.org_id,
     )
     if not new_cluster:
         raise HTTPException(status_code=400, detail="Failed to split cluster")

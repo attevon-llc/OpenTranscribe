@@ -23,6 +23,8 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app import models
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.config import settings as app_settings
 from app.core.constants import AUDIO_QUALITY_OPTIONS
@@ -79,6 +81,7 @@ from app.schemas.topic import AutoLabelSettingsSchema
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
+from app.utils.tenant_sharing import owner_in_tenant
 
 router = APIRouter()
 
@@ -1059,16 +1062,17 @@ def reset_organization_context(
 @router.get("/organization-context/shared", response_model=SharedOrganizationContextList)
 def get_shared_organization_contexts(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> SharedOrganizationContextList:
-    """Get organization contexts shared by other users."""
-    # Find all users who have shared their org context
+    """Get organization contexts shared by other users in the caller's active tenant."""
+    current_user = ctx.user
     shared_settings = (
         db.query(models.UserSetting)
         .filter(
             models.UserSetting.setting_key == "org_context_is_shared",
             models.UserSetting.setting_value == "true",
             models.UserSetting.user_id != current_user.id,
+            owner_in_tenant(models.UserSetting.user_id, ctx.org_id),
         )
         .all()
     )
@@ -1126,9 +1130,10 @@ def use_shared_organization_context(
     *,
     db: Session = Depends(get_db),
     body: dict = Body(...),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Start or stop using another user's shared organization context."""
+    current_user = ctx.user
     shared_user_id = body.get("user_id")
 
     if shared_user_id is None:
@@ -1140,13 +1145,15 @@ def use_shared_organization_context(
         db.commit()
         return _build_org_context_response(db, current_user.id)
 
-    # Verify the target user's context is actually shared
+    # Verify the target user's context is shared within the caller's tenant; another
+    # tenant's context answers exactly like one that does not exist.
     is_shared = (
         db.query(models.UserSetting)
         .filter(
             models.UserSetting.user_id == int(shared_user_id),
             models.UserSetting.setting_key == "org_context_is_shared",
             models.UserSetting.setting_value == "true",
+            owner_in_tenant(models.UserSetting.user_id, ctx.org_id),
         )
         .first()
     )
@@ -1530,9 +1537,10 @@ def _media_source_to_response(
 @router.get("/media-sources", response_model=UserMediaSourcesList)
 def get_media_sources(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
-    """Get user's own media sources and shared sources from other users."""
+    """Get user's own media sources and sources shared within the caller's active tenant."""
+    current_user = ctx.user
     # Own sources
     own_sources = (
         db.query(models.UserMediaSource)
@@ -1541,7 +1549,7 @@ def get_media_sources(
         .all()
     )
 
-    # Shared sources from other active users
+    # Shared sources from other active users in the caller's tenant
     shared_sources = (
         db.query(models.UserMediaSource)
         .join(models.User, models.User.id == models.UserMediaSource.user_id)
@@ -1550,6 +1558,7 @@ def get_media_sources(
             models.UserMediaSource.is_active == True,  # noqa: E712
             models.UserMediaSource.user_id != current_user.id,
             models.User.is_active == True,  # noqa: E712
+            owner_in_tenant(models.UserMediaSource.user_id, ctx.org_id),
         )
         .order_by(models.UserMediaSource.shared_at.desc().nullslast())
         .all()

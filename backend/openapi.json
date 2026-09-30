@@ -40027,7 +40027,7 @@
     },
     "/api/user-settings/media-sources": {
       "get": {
-        "description": "Get user's own media sources and shared sources from other users.",
+        "description": "Get user's own media sources and sources shared within the caller's active tenant.",
         "operationId": "get_media_sources_api_user_settings_media_sources_get",
         "responses": {
           "200": {
@@ -40302,7 +40302,7 @@
     },
     "/api/user-settings/organization-context/shared": {
       "get": {
-        "description": "Get organization contexts shared by other users.",
+        "description": "Get organization contexts shared by other users in the caller's active tenant.",
         "operationId": "get_shared_organization_contexts_api_user_settings_organization_context_shared_get",
         "responses": {
           "200": {

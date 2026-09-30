@@ -28,6 +28,8 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.exceptions import ASRConfigurationError
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -40,6 +42,7 @@ from app.services.takedown_service import exclude_quarantined
 from app.services.task_detection_service import task_detection_service
 from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_recovery_service import task_recovery_service
+from app.utils.db_helpers import owned_in_tenant
 from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
@@ -69,7 +72,9 @@ def calculate_age_seconds(timestamp):
     return (now - timestamp).total_seconds()
 
 
-def _get_user_media_files(db: Session, current_user: User) -> list[Row]:
+def _get_user_media_files(
+    db: Session, current_user: User, organization_id: OrgScope = UNSCOPED
+) -> list[Row]:
     """Get media files based on user permissions.
 
     Projects only the columns needed for task list display, avoiding
@@ -93,7 +98,9 @@ def _get_user_media_files(db: Session, current_user: User) -> list[Row]:
     ]
     query = db.query(*columns)
     if not current_user.is_admin:
-        query = query.filter(MediaFile.user_id == current_user.id)
+        query = query.filter(
+            owned_in_tenant(MediaFile, user_id=current_user.id, organization_id=organization_id)
+        )
     # A quarantined file must 404 everywhere under `files/`, so it must not surface
     # in the task list either — the two are the same "does this file exist for you"
     # question. Admin "see all" keeps every row (review needs the quarantined ones).
@@ -102,7 +109,10 @@ def _get_user_media_files(db: Session, current_user: User) -> list[Row]:
 
 
 def _latest_task_by_file(
-    db: Session, current_user: User, file_id: int | None = None
+    db: Session,
+    current_user: User,
+    file_id: int | None = None,
+    organization_id: OrgScope = UNSCOPED,
 ) -> dict[int, Any]:
     """Map ``media_file_id`` to the task row that represents the file's current work.
 
@@ -131,7 +141,9 @@ def _latest_task_by_file(
         .order_by(TaskModel.media_file_id, TaskModel.created_at)
     )
     if not current_user.is_admin:
-        query = query.filter(MediaFile.user_id == current_user.id)
+        query = query.filter(
+            owned_in_tenant(MediaFile, user_id=current_user.id, organization_id=organization_id)
+        )
     # Same quarantine exclusion as `_get_user_media_files` — this query is joined
     # through `MediaFile` independently, so it needs its own copy of the filter.
     query = exclude_quarantined(query, include_quarantined=current_user.is_admin)
@@ -245,16 +257,47 @@ def _create_task_dict_from_media_file(
 
 @router.get("/progress/active", response_model=list[dict[str, Any]])
 def get_active_progress(
-    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get all active (running) task progress for the current user.
 
     Returns ProgressState dicts from Redis so the frontend can recover
-    progress bars after page refresh or modal close/reopen.
+    progress bars after page refresh or modal close/reopen. Progress is keyed
+    per user, not per tenant, so the per-file detail (``failed_items``, file
+    UUIDs) is narrowed to the caller's files in the ACTIVE tenant.
     """
     from app.services.progress_tracker import ProgressTracker
 
-    return ProgressTracker.get_active_tasks(current_user.id)
+    states = ProgressTracker.get_active_tasks(ctx.user.id)
+    if ctx.user.is_admin:
+        return states
+    referenced = {u for state in states for u in state.get("failed_items") or []}
+    visible: set[str] = set()
+    if referenced:
+        visible = {
+            str(row.uuid)
+            for row in db.query(MediaFile.uuid).filter(
+                MediaFile.uuid.in_(_valid_uuids(referenced)),
+                owned_in_tenant(MediaFile, user_id=ctx.user.id, organization_id=ctx.org_id),
+            )
+        }
+    for state in states:
+        state["failed_items"] = [u for u in state.get("failed_items") or [] if u in visible]
+    return states
+
+
+def _valid_uuids(values: set[str]) -> list[str]:
+    """Keep only well-formed UUID strings (``failed_items`` is free-form)."""
+    import uuid as uuid_lib
+
+    valid = []
+    for value in values:
+        try:
+            valid.append(str(uuid_lib.UUID(str(value))))
+        except ValueError:
+            continue
+    return valid
 
 
 # =============================================================================
@@ -272,18 +315,22 @@ def list_tasks(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     List tasks for the current user with server-side filtering and pagination.
+
+    Scoped to the caller's own files in the ACTIVE tenant (an org's files never
+    appear in personal scope, nor another org's in org context).
     """
+    current_user = ctx.user
     try:
         # Get media files based on user permissions
-        media_files = _get_user_media_files(db, current_user)
+        media_files = _get_user_media_files(db, current_user, ctx.org_id)
 
         # Convert media files to task dictionaries, pairing each with its real
         # task row so status/progress/task_type filters act on recorded values.
-        tasks_by_file = _latest_task_by_file(db, current_user)
+        tasks_by_file = _latest_task_by_file(db, current_user, organization_id=ctx.org_id)
         tasks = [
             _create_task_dict_from_media_file(file, current_user, tasks_by_file.get(file.id))
             for file in media_files
@@ -941,7 +988,9 @@ def _parse_task_id(task_id: str) -> int:
         raise ValueError("Invalid task ID format") from e
 
 
-def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> MediaFile:
+def _get_media_file_by_id(
+    db: Session, file_id: int, current_user: User, organization_id: OrgScope = UNSCOPED
+) -> MediaFile:
     """Get media file by ID with proper permission checking."""
     if current_user.is_admin:
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
@@ -950,7 +999,9 @@ def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> Medi
             db.query(MediaFile)
             .filter(
                 MediaFile.id == file_id,
-                MediaFile.user_id == current_user.id,
+                owned_in_tenant(
+                    MediaFile, user_id=current_user.id, organization_id=organization_id
+                ),
                 # A quarantined file must 404 on this surface too — see the matching
                 # exclusion on `_get_user_media_files`/`_latest_task_by_file` above.
                 MediaFile.is_quarantined.is_(False),
@@ -968,19 +1019,21 @@ def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> Medi
 def get_task(
     task_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get a specific task by its ID.
 
     Accepts either form of id this API issues: a real Celery task id (what the
     pipeline records, and what ``POST /tasks/system/recover-task/{task_id}``
     expects) or the legacy ``task_<media_file_id>`` form, which is still returned
-    for files that have no task row yet.
+    for files that have no task row yet. A task whose file belongs to another
+    tenant than the active one is reported as not found.
     """
+    current_user = ctx.user
     try:
         task_row = _get_task_row_by_id(db, task_id, current_user)
         if task_row is not None:
-            media_file = _get_media_file_by_id(db, task_row.media_file_id, current_user)
+            media_file = _get_media_file_by_id(db, task_row.media_file_id, current_user, ctx.org_id)
             return Task(**_create_task_dict_from_media_file(media_file, current_user, task_row))
 
         try:
@@ -991,13 +1044,13 @@ def get_task(
             ) from e
 
         # Get media file with permission checking
-        media_file = _get_media_file_by_id(db, file_id, current_user)
+        media_file = _get_media_file_by_id(db, file_id, current_user, ctx.org_id)
 
         # Prefer the file's real task row; the legacy id form only identifies the file.
         task_dict = _create_task_dict_from_media_file(
             media_file,
             current_user,
-            _latest_task_by_file(db, current_user, media_file.id).get(media_file.id),
+            _latest_task_by_file(db, current_user, media_file.id, ctx.org_id).get(media_file.id),
         )
         task_dict["id"] = task_id  # Honour the id form the caller asked with
 

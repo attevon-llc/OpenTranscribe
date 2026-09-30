@@ -14,6 +14,7 @@ from app.core.constants import UtilityPriority
 from app.core.task_config import task_recovery_config
 from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
 from app.core.task_liveness import supersede_run
+from app.core.tenancy import UNSCOPED
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import Task
@@ -125,13 +126,22 @@ def startup_recovery_task(self):
     acks_late=True,
     reject_on_worker_lost=True,
 )
-def recover_user_files_task(self, user_id: int | None = None):
+def recover_user_files_task(
+    self,
+    user_id: int | None = None,
+    tenant_scoped: bool = False,
+    organization_id: int | None = None,
+):
     """
     Task to recover files for a specific user or all users.
     Useful when a user reports missing/stuck files.
 
     Args:
         user_id: If provided, only recover files for this user. Otherwise recover all.
+        tenant_scoped: When True, only ``user_id``'s files in tenant
+            ``organization_id`` (None = org-less files) are recovered — the
+            self-service request path. False is the admin sweep (no tenant gate).
+        organization_id: The tenant, when ``tenant_scoped``.
 
     Returns:
         Dictionary with summary of recovery actions
@@ -153,7 +163,11 @@ def recover_user_files_task(self, user_id: int | None = None):
                 summary["users_processed"] = user_count
 
             # Find problem files
-            problem_files = task_detection_service.find_user_problem_files(db, user_id)
+            problem_files = task_detection_service.find_user_problem_files(
+                db,
+                user_id,
+                organization_id=organization_id if tenant_scoped else UNSCOPED,
+            )
             summary["files_checked"] = len(problem_files)
 
             # Recover the files

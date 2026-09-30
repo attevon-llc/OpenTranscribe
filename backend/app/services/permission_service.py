@@ -250,17 +250,22 @@ class PermissionService:
         collection_id: int,
         user_id: int,
         min_permission: str = "viewer",
+        *,
+        organization_id: OrgScope = UNSCOPED,
     ) -> str:
         """Check user has minimum permission on collection, raise 403 if not.
 
-        Returns the user's effective permission level.
+        Returns the user's effective permission level. ``organization_id`` is the
+        same default-deny tenant gate as ``get_collection_permission`` (UNSCOPED = none).
 
         Raises:
             HTTPException: 403 if user lacks the required permission.
         """
         from fastapi import HTTPException
 
-        permission = PermissionService.get_collection_permission(db, collection_id, user_id)
+        permission = PermissionService.get_collection_permission(
+            db, collection_id, user_id, organization_id=organization_id
+        )
         if permission is None:
             raise HTTPException(
                 status_code=403,
@@ -280,17 +285,22 @@ class PermissionService:
         file_id: int,
         user_id: int,
         min_permission: str = "viewer",
+        *,
+        organization_id: OrgScope = UNSCOPED,
     ) -> str:
         """Check user has minimum permission on file, raise 403 if not.
 
-        Returns the user's effective permission level.
+        Returns the user's effective permission level. ``organization_id`` is the
+        same default-deny tenant gate as ``get_file_permission`` (UNSCOPED = none).
 
         Raises:
             HTTPException: 403 if user lacks the required permission.
         """
         from fastapi import HTTPException
 
-        permission = PermissionService.get_file_permission(db, file_id, user_id)
+        permission = PermissionService.get_file_permission(
+            db, file_id, user_id, organization_id=organization_id
+        )
         if permission is None:
             raise HTTPException(
                 status_code=403,

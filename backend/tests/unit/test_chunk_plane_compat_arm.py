@@ -77,6 +77,11 @@ _ALLOWED: dict[str, str] = {
         "seven of the eight have no planes. Extracted from repair_indices, which "
         "held this same exemption before the session-lifetime split."
     ),
+    "api/endpoints/search.py::_scope_doc_counts_to_caller": (
+        "The non-admin twin of get_index_health's _cat/indices doc count: the "
+        "caller's own document count per index, every plane included, so it "
+        "measures the same thing the admin number does."
+    ),
     "api/endpoints/search.py::search_transcripts": (
         "Not a reader — the HTTP endpoint. It builds no OpenSearch body: the sweep "
         "matches `HybridSearchService.search(...)` on the `.search` call name and "

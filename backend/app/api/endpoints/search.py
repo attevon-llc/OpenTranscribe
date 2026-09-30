@@ -959,10 +959,12 @@ def trigger_reembed_degraded(
 
 @router.get("/reindex/status")
 def reindex_status(
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
     """
     Check re-indexing status and index health.
+
+    File counts cover the caller's own files in the ACTIVE tenant.
 
     Returns:
         Dict with total_files, indexed_files, pending info, current model.
@@ -976,7 +978,10 @@ def reindex_status(
     from app.models.media import TranscriptSegment
     from app.services.opensearch_service import opensearch_client
     from app.services.search.settings_service import get_search_embedding_settings
+    from app.services.search.tenant_scope import org_filter_clauses
+    from app.utils.db_helpers import owned_in_tenant
 
+    current_user = ctx.user
     with session_scope() as db:
         # Only count completed files that have transcript segments (indexable)
         has_segments = exists(
@@ -985,7 +990,7 @@ def reindex_status(
         total_files = (
             db.query(MediaFile)
             .filter(
-                MediaFile.user_id == current_user.id,
+                owned_in_tenant(MediaFile, user_id=current_user.id, organization_id=ctx.org_id),
                 MediaFile.status == FileStatus.COMPLETED,
                 has_segments,
             )
@@ -1005,6 +1010,7 @@ def reindex_status(
                         "bool": {
                             "filter": [
                                 {"term": {"user_id": current_user.id}},
+                                *org_filter_clauses(ctx.org_id),
                                 # G4, again: the number the admin UI shows as
                                 # "indexed files" must count files with chunks.
                                 chunk_plane_clause(),
@@ -1053,18 +1059,20 @@ def reindex_status(
 
 @router.get("/index-health")
 def get_index_health(
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
     """Return health status of each OpenSearch index.
 
     Tests each index with a simple match_all query (size=0) and
-    returns per-index status with doc counts.
+    returns per-index status with doc counts. Admins get instance-wide counts;
+    any other user gets the count of their OWN documents in the active tenant.
 
     Returns:
         Dict with per-index health: {index_name: {status, doc_count, error}}.
     """
     from app.services.opensearch_service import opensearch_client
 
+    current_user = ctx.user
     indices = [
         get_speaker_index(),
         settings.OPENSEARCH_TRANSCRIPT_INDEX,
@@ -1127,7 +1135,31 @@ def get_index_health(
                 "error": "Index does not exist or is unreachable",
             }
 
+    if not current_user.is_admin:
+        _scope_doc_counts_to_caller(opensearch_client, health, ctx)
     return health
+
+
+def _scope_doc_counts_to_caller(client: Any, health: dict[str, Any], ctx: RequestContext) -> None:
+    """Replace instance-wide doc counts with the caller's own, in the active tenant."""
+    from app.services.search.tenant_scope import org_filter_clauses
+
+    query = {
+        "query": {
+            "bool": {
+                "filter": [{"term": {"user_id": ctx.user.id}}, *org_filter_clauses(ctx.org_id)]
+            }
+        }
+    }
+    for idx, entry in health.items():
+        if entry["status"] != "green":
+            entry["doc_count"] = 0
+            continue
+        try:
+            entry["doc_count"] = int(client.count(index=idx, body=query).get("count", 0))
+        except Exception as e:
+            logger.debug("Scoped doc count failed for %s: %s", idx, e)
+            entry["doc_count"] = 0
 
 
 def _probe_index_health(indices: list[str]) -> dict[str, str]:

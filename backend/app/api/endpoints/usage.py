@@ -24,13 +24,14 @@ from fastapi import Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.endpoints.auth import get_current_active_user
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.db.base import get_db
 from app.models.usage_event import UsageEvent
-from app.models.user import User
 from app.services.chat.pricing import RATES_VERIFIED_ON
 from app.services.chat.pricing import estimate_cost_usd
 from app.services.chat.usage import EVENT_TYPE_CHAT_TOKENS
+from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,9 @@ def _model_key(meta: dict[str, Any]) -> tuple[str, str]:
 def get_my_usage(
     days: int = Query(30, ge=1, le=MAX_WINDOW_DAYS),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
-    """Summarize the caller's own chat LLM usage over a trailing window.
+    """Summarize the caller's own chat LLM usage in the active tenant over a trailing window.
 
     Costs are **estimates**. They are computed from a rate table that a vendor can
     change at any time, they ignore any negotiated discount, and they are omitted
@@ -66,7 +67,8 @@ def get_my_usage(
     events = (
         db.query(UsageEvent)
         .filter(
-            UsageEvent.user_id == current_user.id,
+            UsageEvent.user_id == ctx.user.id,
+            org_stamp_is(UsageEvent.organization_id, ctx.org_id),
             UsageEvent.event_type == EVENT_TYPE_CHAT_TOKENS,
             UsageEvent.created_at >= since,
         )
@@ -155,7 +157,7 @@ def get_my_usage(
 def get_my_daily_usage(
     days: int = Query(30, ge=1, le=MAX_WINDOW_DAYS),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
     """Daily token totals for the caller — the series behind a usage chart.
 
@@ -168,7 +170,8 @@ def get_my_daily_usage(
     rows = (
         db.query(day, func.sum(UsageEvent.quantity), func.count(UsageEvent.id))
         .filter(
-            UsageEvent.user_id == current_user.id,
+            UsageEvent.user_id == ctx.user.id,
+            org_stamp_is(UsageEvent.organization_id, ctx.org_id),
             UsageEvent.event_type == EVENT_TYPE_CHAT_TOKENS,
             UsageEvent.created_at >= since,
         )

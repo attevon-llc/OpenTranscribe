@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **An `editor` share could permanently delete another user's file (#1103).** Every delete
+  path (`DELETE /api/files/{uuid}` and the bulk `delete` action) resolved the file with the
+  editor permission, so anyone a collection was shared with as an editor could destroy the
+  files in it. Delete is now its own right: the file's owner, an organization admin of the
+  file's organization, or a platform admin. Editors keep every edit right. A refused delete
+  answers 403 (the bulk action reports a per-file `FORBIDDEN` result and carries on with the
+  rest of the batch) and is audited as `file.delete.denied`. The gallery list now carries
+  `can_delete` per file and disables **Delete** when no selected file can be deleted.
 - **A partial capability-resolver result granted features instead of withholding them (#868).**
   `get_capabilities()` merged a registered resolver's result over the community defaults, which
   are `True` for almost every key, so a resolver that omitted a tier-gated key on some code path

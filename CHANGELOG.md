@@ -79,6 +79,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An existing `transcripts` index never received the tenant field's mapping (#1115).** The
+  `organization_id` mapping added for the legacy whole-document index in #1027 was applied only
+  when the index was created, so on an upgraded deployment the field appeared through dynamic
+  mapping on the first stamped write. Backend startup now adds `organization_id: integer` to an
+  existing index that lacks it (an additive mapping change, no reindex) and logs an index whose
+  field was already mapped dynamically. After deploying, run
+  `python -m app.tasks.tenant_backfill_task` to stamp documents written before the field existed.
+
 - **Legacy speaker profiles, speaker collections and vocabulary terms had no tenant, and
   their names were unique across tenants (#1110).** Migration
   `v430_per_tenant_speaker_and_vocab_names` stamps each unstamped row with its tenant where

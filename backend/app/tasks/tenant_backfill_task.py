@@ -68,7 +68,10 @@ Verify afterwards (should return 0 once complete):
         "filter":   [{"terms": {"file_uuid": [<an org file's uuid>]}}]
     }}}
 
-and the same body against ``transcripts/_count``. Until it has run, an org's
+and the same body against ``transcripts/_count``. The ``transcripts`` index's
+``organization_id`` mapping itself is added at backend startup
+(``indices.ensure_transcript_tenant_mapping``), so deploy first, then run this.
+Until it has run, an org's
 gallery transcript search misses that org's older files (the reader now requires
 the stamp); a personal scope is unaffected.
 """

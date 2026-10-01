@@ -99,7 +99,10 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
   a required `organization_id` and stamps org files only, and its readers (the gallery's
   `apply_transcript_search_filter`, `find_speaker_across_media`) gate on it instead of relying
   only on the SQL query they are intersected with. Docs written before that carry no stamp —
-  `tasks/tenant_backfill_task.py` stamps them (its runbook covers both indices).
+  `tasks/tenant_backfill_task.py` stamps them (its runbook covers both indices). An index
+  created before the field existed gets the `organization_id: integer` mapping on bootstrap
+  (`opensearch_service/indices.py:ensure_transcript_tenant_mapping`, #1115) — additive
+  `put_mapping`, no reindex; run the backfill after that deploy.
 - Embeddings are generated **server-side** by the ingest pipeline; `_generate_query_embedding`
   returns `None` for the vector by design. There is no client-side encoder here.
 

@@ -878,9 +878,9 @@ PKI_ADMIN_DNS=CN=Admin User,O=Company,C=US
 
 ```bash
 # Password Policy (FedRAMP IA-5 / NIST SP 800-63B-4) - see Password Policy page
-PASSWORD_POLICY_PROFILE=nist          # nist | stig | custom (code default stig; new installs nist)
-PASSWORD_MAX_LENGTH=0                 # 0 = profile default
-PASSWORD_BLOCKLIST_ENABLED=           # empty = profile default
+PASSWORD_POLICY_PROFILE=standard      # basic | standard | hardened | custom (nist/stig = aliases; code default hardened; new installs standard)
+PASSWORD_MAX_LENGTH=0                 # 0 = level default
+PASSWORD_BLOCKLIST_ENABLED=           # empty = level default
 PASSWORD_BLOCKLIST_PATH=
 PASSWORD_CONTEXT_WORDS=
 PASSWORD_HIBP_ENABLED=false           # online k-anonymity lookup; fails open

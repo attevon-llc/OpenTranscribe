@@ -173,6 +173,9 @@ class AuthConfigService:
         "password_require_special": "bool",
         "password_history_count": "int",
         "password_max_age_days": "int",
+        "password_min_age_hours": "int",
+        "password_blocklist_enabled": "string",
+        "password_hibp_enabled": "bool",
         # MFA settings
         "mfa_enabled": "bool",
         "mfa_required": "bool",
@@ -311,6 +314,9 @@ class AuthConfigService:
         "PASSWORD_REQUIRE_SPECIAL": "password_require_special",
         "PASSWORD_HISTORY_COUNT": "password_history_count",
         "PASSWORD_MAX_AGE_DAYS": "password_max_age_days",
+        "PASSWORD_MIN_AGE_HOURS": "password_min_age_hours",
+        "PASSWORD_BLOCKLIST_ENABLED": "password_blocklist_enabled",
+        "PASSWORD_HIBP_ENABLED": "password_hibp_enabled",
         # MFA
         "MFA_ENABLED": "mfa_enabled",
         "MFA_REQUIRED": "mfa_required",

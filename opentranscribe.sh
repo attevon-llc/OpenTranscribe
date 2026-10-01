@@ -189,7 +189,7 @@ function show_help {
     echo "  download-models [group]"
     echo "                Fetch model assets not bundled in the images. 'diar-native'"
     echo "                provisions the native diarizer's weights; 'password-blocklist' installs the"
-    echo "                breached-password list (~1 hour, needs internet); omit for the models."
+    echo "                breached-password list (a few hours, needs internet); omit for the models."
     echo "  logs [svc]    View logs (all or specific service)"
     echo "  update        Pull latest Docker images and restart"
     echo "  update-full   Update images AND configuration files"

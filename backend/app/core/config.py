@@ -336,15 +336,17 @@ class Settings(BaseSettings):
     # ===== Password Policy (FedRAMP IA-5) =====
     # Enable password policy enforcement (disable for testing or non-FedRAMP environments)
     PASSWORD_POLICY_ENABLED: bool = os.getenv("PASSWORD_POLICY_ENABLED", "true").lower() == "true"
-    # Which rule set applies: "nist" (SP 800-63B-4: min 15 / 8 with MFA, no composition rules,
-    # no periodic expiry, blocklist on), "stig" (DoD STIG style: the individual values below,
-    # forced rotation, history 24) or "custom" (the individual PASSWORD_* values exactly as
-    # set). Code default is "stig" so an install that never set it keeps its behaviour on
-    # upgrade; .env.example ships "nist" for fresh installs. See docs-site/docs/configuration/password-policy.md.
-    PASSWORD_POLICY_PROFILE: str = "stig"  # noqa: S105 # nosec B105
-    # Upper length cap. 0 = profile default (nist: 128, never below 64; stig/custom: none).
+    # Which tier applies: "basic" (min 8, no composition, no expiry/history; light, opt-in),
+    # "standard" (NIST SP 800-63B-4: min 15 / 8 with MFA, no composition rules, no periodic
+    # expiry, blocklist on), "hardened" (DoD STIG style: the individual values below, forced
+    # rotation, history 24) or "custom" (the individual PASSWORD_* values exactly as set).
+    # "nist" and "stig" are accepted as aliases of "standard" and "hardened". Code default is
+    # "hardened" so an install that never set it keeps its behaviour on upgrade; .env.example
+    # ships "standard" for fresh installs. See docs-site/docs/configuration/password-policy.md.
+    PASSWORD_POLICY_PROFILE: str = "hardened"  # noqa: S105 # nosec B105
+    # Upper length cap. 0 = profile default (basic/standard: 128, never below 64; others: none).
     PASSWORD_MAX_LENGTH: int = 0
-    # Breached/common-password blocklist. Empty = profile default (nist on, stig/custom off);
+    # Breached/common-password blocklist. Empty = profile default (basic/standard on, hardened/custom off);
     # "true"/"false" overrides the profile.
     PASSWORD_BLOCKLIST_ENABLED: str = ""
     # Operator-supplied blocklist file (SHA-1 hashes or plaintext, one per line). Empty = the
@@ -361,6 +363,9 @@ class Settings(BaseSettings):
     PASSWORD_HIBP_TIMEOUT_SECONDS: float = 3.0
     # Minimum password length (NIST SP 800-63B recommends 8+, FedRAMP typically requires 12+)
     PASSWORD_MIN_LENGTH: int = 12
+    # Hours a password must be kept before it can be changed again (0 disables). Applies to
+    # hardened/custom only; basic/standard never enforce a minimum age.
+    PASSWORD_MIN_AGE_HOURS: int = 24
     # Require at least one uppercase letter
     PASSWORD_REQUIRE_UPPERCASE: bool = (
         os.getenv("PASSWORD_REQUIRE_UPPERCASE", "true").lower() == "true"

@@ -9,6 +9,11 @@ vi.mock('$lib/api/authConfig', () => ({
   },
 }));
 
+// The password panel asks the server what it enforces; no network in unit tests.
+vi.mock('$lib/passwordPolicy', () => ({
+  fetchPasswordPolicy: vi.fn().mockRejectedValue(new Error('offline')),
+}));
+
 vi.mock('$stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn() },
 }));
@@ -138,6 +143,7 @@ describe('Local auth tab — split save', () => {
       'mfa_enabled',
       'mfa_issuer_name',
       'mfa_required',
+      'mfa_required_for_admins',
       'mfa_token_expire_minutes',
     ]);
     expect(Object.keys(payloadFor('lockout') ?? {}).sort()).toEqual([
@@ -152,12 +158,53 @@ describe('Local auth tab — split save', () => {
       'login_banner_enabled',
       'login_banner_text',
     ]);
-    expect(Object.keys(payloadFor('password_policy') ?? {})).toHaveLength(7);
+    expect(Object.keys(payloadFor('password_policy') ?? {}).sort()).toEqual(
+      [
+        'password_blocklist_enabled',
+        'password_history_count',
+        'password_hibp_enabled',
+        'password_max_age_days',
+        'password_max_length',
+        'password_min_age_hours',
+        'password_min_length',
+        'password_policy_profile',
+        'password_require_digit',
+        'password_require_lowercase',
+        'password_require_special',
+        'password_require_uppercase',
+      ].sort()
+    );
     expect(payloadFor('password_policy')).toMatchObject({
+      // No tier stored yet: the form shows (and saves) the coded default, hardened.
+      password_policy_profile: 'hardened',
+      password_blocklist_enabled: '',
       password_min_length: 16,
       password_require_digit: true,
       password_history_count: 12,
     });
+  });
+
+  it('saves the tier picked in the password picker', async () => {
+    await renderLocalTab();
+    await fireEvent.click(screen.getByRole('radio', { name: /basic\.name/ }));
+    await save();
+
+    expect(payloadFor('password_policy')).toMatchObject({ password_policy_profile: 'basic' });
+  });
+
+  it('shows a stored `stig` as the hardened tier and saves it under its new name', async () => {
+    mockedGetAll.mockResolvedValue({
+      ...storedConfigs(),
+      password_policy: [row('password_policy_profile', 'stig', 'string')],
+    } as never);
+    await renderLocalTab();
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('radio', { name: /hardened\.name/ }) as HTMLInputElement).checked
+      ).toBe(true)
+    );
+    await save();
+    expect(payloadFor('password_policy')).toMatchObject({ password_policy_profile: 'hardened' });
   });
 
   it('never writes the dead legacy aliases back', async () => {

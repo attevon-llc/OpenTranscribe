@@ -575,8 +575,8 @@ class DynamicAuthSettings:
 
     @property
     def password_policy_profile(self) -> str:
-        """Which password rule set applies: ``nist``, ``stig`` or ``custom``."""
-        return self.get_str("password_policy_profile", "stig")
+        """Which tier applies: ``basic``, ``standard``, ``hardened`` or ``custom`` (``nist`` / ``stig`` are aliases)."""
+        return self.get_str("password_policy_profile", "hardened")
 
     @property
     def mfa_required_for_admins(self) -> bool:

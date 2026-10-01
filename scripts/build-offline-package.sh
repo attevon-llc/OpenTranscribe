@@ -318,9 +318,9 @@ download_models() {
     fi
 
     # Breached-password list. Optional (set INCLUDE_PASSWORD_BLOCKLIST=false to skip): it
-    # needs ~1 hour of API calls, and an air-gapped host cannot fetch it for itself.
+    # needs a few hours of API calls, and an air-gapped host cannot fetch it for itself.
     if [ "${INCLUDE_PASSWORD_BLOCKLIST:-true}" = "true" ]; then
-        print_info "Building the breached-password list (about an hour; resumable)..."
+        print_info "Building the breached-password list (a few hours; resumable)..."
         mkdir -p "${temp_model_cache}/password-blocklist"
         if docker run --rm \
             --user "$(id -u):$(id -g)" \

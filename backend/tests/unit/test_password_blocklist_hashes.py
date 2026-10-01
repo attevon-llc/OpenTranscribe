@@ -79,6 +79,13 @@ class TestAbsentList:
         status = blocklist_status()
         assert status["installed"] is False
         assert status["entries"] == 0
+        assert status["retrieved"] is None
+
+    def test_stale_sidecar_does_not_resurrect_a_date(self, tmp_path, monkeypatch):
+        path = tmp_path / "gone.txt"
+        path.with_name("gone.txt.meta.json").write_text(json.dumps({"retrieved": "2026-10-01"}))
+        monkeypatch.setattr(password_blocklist, "default_blocklist_path", lambda: path)
+        assert blocklist_status()["retrieved"] is None
 
     def test_single_warning_names_the_install_command(self, absent, monkeypatch, caplog):
         monkeypatch.setattr(password_blocklist, "_missing_warned", False)

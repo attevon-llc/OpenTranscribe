@@ -18,7 +18,7 @@ in the backend image), or directly::
 The walk is resumable: results are cached per 3-hex shard (256 ranges) in ``--cache-dir``
 (default: ``.range-cache`` beside the output) and finished shards are skipped on the next
 run. Only entries with a count of at least ``--min-count`` are cached, which keeps the cache
-small. Expect roughly an hour and ~30 GB of transfer. Concurrency is modest by default and
+small. Expect a few hours and roughly 35 GB of transfer. Concurrency is modest by default and
 429 / 5xx replies are retried with backoff (honouring ``Retry-After``).
 
 A ``<out>.meta.json`` sidecar records the retrieval date and the count range.

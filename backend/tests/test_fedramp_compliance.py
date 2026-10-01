@@ -108,6 +108,7 @@ class TestPasswordPolicy:
             "max_length",
             "blocklist_enabled",
             "blocklist_status",
+            "online_check_enabled",
             "require_uppercase",
             "require_lowercase",
             "require_digit",

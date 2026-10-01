@@ -704,6 +704,9 @@ class PasswordPolicy:
             "min_length_with_mfa": self.min_length_for(True),
             "max_length": self.max_length,
             "blocklist_enabled": self.blocklist_enabled,
+            "blocklist_status": password_blocklist.blocklist_status(
+                str(settings.PASSWORD_BLOCKLIST_PATH)
+            ),
             "require_uppercase": self.require_uppercase,
             "require_lowercase": self.require_lowercase,
             "require_digit": self.require_digit,

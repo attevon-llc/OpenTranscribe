@@ -238,6 +238,10 @@ services:
       # its OWN filesystem, so a model the backend downloads must land in this shared
       # path, not the backend's private cache, for OpenSearch to ever find it.
       - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models
+      # Offline breached-password list (SHA-1 hashes), installed by
+      # `./opentranscribe.sh download-models password-blocklist`. Read-only: only the
+      # downloader writes it. Absent or empty is fine - the check is then skipped.
+      - ${MODEL_CACHE_DIR:-./models}/password-blocklist:/app/models/password-blocklist:ro
       # The native diarizer's exported ONNX/PLDA set, READ-WRITE and only here. The
       # backend owns the export (app/transcription/native_provision.py, run from the
       # lifespan); the diar-native sidecar mounts this same host directory READ-ONLY at

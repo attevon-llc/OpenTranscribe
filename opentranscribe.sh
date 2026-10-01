@@ -188,7 +188,8 @@ function show_help {
     echo "  compose-files Print the resolved 'docker compose -f ...' chain"
     echo "  download-models [group]"
     echo "                Fetch model assets not bundled in the images. 'diar-native'"
-    echo "                provisions the native diarizer's weights; omit for everything."
+    echo "                provisions the native diarizer's weights; 'password-blocklist' installs the"
+    echo "                breached-password list (~1 hour, needs internet); omit for the models."
     echo "  logs [svc]    View logs (all or specific service)"
     echo "  update        Pull latest Docker images and restart"
     echo "  update-full   Update images AND configuration files"
@@ -207,6 +208,7 @@ function show_help {
     echo "  ./opentranscribe.sh logs backend"
     echo "  ./opentranscribe.sh compose-files    # which overlays did it pick?"
     echo "  ./opentranscribe.sh download-models diar-native  # provision native diarizer weights"
+    echo "  ./opentranscribe.sh download-models password-blocklist  # breached-password list"
     echo "  ./opentranscribe.sh update           # Update containers only"
     echo "  ./opentranscribe.sh update-full      # Update everything"
     echo "  ./opentranscribe.sh backup           # Dump the database to ./backups"
@@ -1820,9 +1822,18 @@ case "${1:-help}" in
             diar-native)
                 download_models_diar_native
                 ;;
+            password-blocklist)
+                if [ ! -f scripts/download-password-blocklist.sh ]; then
+                    echo -e "${RED}❌ scripts/download-password-blocklist.sh not found.${NC}"
+                    echo -e "${YELLOW}   Fix with: ./opentranscribe.sh update-full${NC}"
+                    exit 1
+                fi
+                dl_cache_dir=$(read_env_value MODEL_CACHE_DIR)
+                bash scripts/download-password-blocklist.sh "${dl_cache_dir:-./models}"
+                ;;
             *)
                 echo -e "${RED}❌ Unknown model group: '${model_group}'${NC}"
-                echo "   Known groups: diar-native"
+                echo "   Known groups: diar-native, password-blocklist"
                 echo "   Omit the group to download the full model set."
                 exit 1
                 ;;

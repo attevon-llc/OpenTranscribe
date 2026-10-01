@@ -347,7 +347,9 @@ class Settings(BaseSettings):
     # Breached/common-password blocklist. Empty = profile default (nist on, stig/custom off);
     # "true"/"false" overrides the profile.
     PASSWORD_BLOCKLIST_ENABLED: str = ""
-    # Operator-supplied blocklist file (one password per line). Empty = bundled list.
+    # Operator-supplied blocklist file (SHA-1 hashes or plaintext, one per line). Empty = the
+    # list installed by `./opentranscribe.sh download-models password-blocklist`; if none is
+    # installed the check is skipped with a startup warning.
     PASSWORD_BLOCKLIST_PATH: str = ""
     # Extra context-specific words a password may not contain (comma-separated); the product
     # name is always included.

@@ -31,6 +31,7 @@ import pytest
 from fastapi import status
 
 from app.models.media import MediaFile
+from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
 
 
 def _make_file(db_session, owner, *, file_status: str = "completed", **overrides) -> MediaFile:
@@ -443,13 +444,16 @@ def test_bulk_delete_force_by_admin_is_honoured(
 
 
 @pytest.mark.parametrize(
-    ("action", "error"),
+    ("action", "error", "message"),
     # Delete has its own permission rule and reports FORBIDDEN (issue #1103);
     # every other action goes through the generic funnel's HTTP_ERROR.
-    [("retry", "HTTP_ERROR"), ("delete", "FORBIDDEN")],
+    [
+        ("retry", "HTTP_ERROR", "You do not have permission to access this file"),
+        ("delete", "FORBIDDEN", DELETE_FORBIDDEN_DETAIL),
+    ],
 )
 def test_bulk_action_other_user_file_is_soft_failure(
-    client, other_user_auth_headers, normal_user, db_session, action, error
+    client, other_user_auth_headers, normal_user, db_session, action, error, message
 ):
     """An authz failure on a single file does NOT 403 the whole request — it's
     a per-file soft failure (success=False) with the permission detail surfaced
@@ -464,7 +468,7 @@ def test_bulk_action_other_user_file_is_soft_failure(
     result = response.json()[0]
     assert result["success"] is False
     assert result["error"] == error
-    assert result["message"] == "You do not have permission to access this file"
+    assert result["message"] == message
 
 
 def test_bulk_action_unknown_action(client, user_token_headers, normal_user, db_session):

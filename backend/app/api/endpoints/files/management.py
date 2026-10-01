@@ -26,6 +26,7 @@ from app.models.media import FileStatus
 from app.models.media import Tag
 from app.models.user import User
 from app.services import system_settings_service
+from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.tag_bulk import CHANGED_OUTCOMES
 from app.services.tag_bulk import TAG_ACTIONS
@@ -527,10 +528,11 @@ def _handle_delete_action(
     except HTTPException as e:
         if e.status_code != status.HTTP_403_FORBIDDEN:
             raise
+        # A fixed message, never the exception text (issue #914's no-echo rule).
         return BulkActionResult(
             file_uuid=file_uuid,
             success=False,
-            message=str(e.detail),
+            message=DELETE_FORBIDDEN_DETAIL,
             error="FORBIDDEN",
         )
     return BulkActionResult(

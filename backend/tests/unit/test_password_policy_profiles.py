@@ -7,6 +7,7 @@ transport for the optional online breached-password lookup.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import UTC
 from datetime import datetime
@@ -35,6 +36,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 #: Unlisted, composition-free (all lowercase) passphrase; 24 characters.
 PASSPHRASE = "marble tractor quietly up"
+
+#: Among the most-breached passwords ever; always in the installed test list.
+LISTED_CANDIDATE = "qwertyuiop"
 
 
 def _publish(**values: Any) -> None:
@@ -208,8 +212,8 @@ class TestNistNormalisation:
         assert _errors(password) == []
 
     def test_fullwidth_spelling_of_listed_password_is_blocked(self, nist):
-        fullwidth = "".join(chr(ord(c) + 0xFEE0) for c in "password1234567")
-        assert any("common" in e for e in _errors(fullwidth))
+        fullwidth = "".join(chr(ord(c) + 0xFEE0) for c in LISTED_CANDIDATE)
+        assert any("common" in e for e in _errors(fullwidth, mfa_protected=True))
 
     def test_normalize_password_is_nfkc(self):
         assert normalize_password("ﬁ") == "fi"
@@ -233,15 +237,43 @@ class TestNistNormalisation:
 
 
 def _bundled_entry(min_len: int = 10) -> str:
-    for line in password_blocklist.BUNDLED_BLOCKLIST_PATH.read_text().splitlines():
-        if len(line) >= min_len and line.isalnum() and line.isascii():
-            return line
-    raise AssertionError("no suitable entry in bundled list")
+    """A password listed in the installed list (see the autouse fixture below)."""
+    assert min_len <= len(LISTED_CANDIDATE)
+    return LISTED_CANDIDATE
+
+
+@pytest.fixture(autouse=True)
+def _installed_list(tmp_path, monkeypatch):
+    """Install a small hash list at the default location, as the downloader would."""
+    path = tmp_path / "pwned-passwords-top100k-sha1.txt"
+    digest = hashlib.sha1(LISTED_CANDIDATE.encode(), usedforsecurity=False)  # noqa: S324
+    path.write_text(digest.hexdigest().upper() + "\n")
+    monkeypatch.setattr(password_blocklist, "default_blocklist_path", lambda: path)
+    monkeypatch.setattr(settings, "PASSWORD_BLOCKLIST_PATH", "")
+    return path
 
 
 class TestBlocklist:
-    def test_bundled_list_is_substantial(self):
-        assert len(password_blocklist.load_blocklist()) > 50_000
+    def test_absent_list_is_skipped_with_one_warning(self, nist, tmp_path, monkeypatch, caplog):
+        monkeypatch.setattr(password_blocklist, "default_blocklist_path", lambda: tmp_path / "no")
+        monkeypatch.setattr(password_blocklist, "_missing_warned", False)
+        with caplog.at_level(logging.WARNING):
+            assert not any("common" in e for e in _errors(_bundled_entry(), mfa_protected=True))
+            _errors(_bundled_entry(), mfa_protected=True)
+        warnings = [r for r in caplog.records if "not installed" in r.getMessage()]
+        assert len(warnings) == 1
+        assert "download-models password-blocklist" in warnings[0].getMessage()
+        assert password_policy.get_policy_requirements()["blocklist_status"]["installed"] is False
+
+    def test_absent_list_still_applies_context_words(self, nist, tmp_path, monkeypatch):
+        monkeypatch.setattr(password_blocklist, "default_blocklist_path", lambda: tmp_path / "no")
+        assert any("application name" in e for e in _errors("my opentranscribe login"))
+
+    def test_status_reports_installed_list(self, nist):
+        status = password_policy.get_policy_requirements()["blocklist_status"]
+        assert status["installed"] is True
+        assert status["entries"] == 1
+        assert status["source"] == "default"
 
     def test_listed_password_rejected_under_nist(self, nist):
         assert any("common" in e for e in _errors(_bundled_entry(), mfa_protected=True))
@@ -296,7 +328,7 @@ class TestBlocklist:
         assert any("common" in e for e in _errors("second-banned-phrase-x"))
         assert not any("common" in e for e in _errors("first-banned-phrase-xx"))
 
-    def test_missing_operator_path_falls_back_to_bundled_and_logs(self, nist, monkeypatch, caplog):
+    def test_missing_operator_path_falls_back_to_default_and_logs(self, nist, monkeypatch, caplog):
         monkeypatch.setattr(settings, "PASSWORD_BLOCKLIST_PATH", "/nonexistent/list.txt")
         with caplog.at_level(logging.ERROR):
             assert any("common" in e for e in _errors(_bundled_entry(), mfa_protected=True))

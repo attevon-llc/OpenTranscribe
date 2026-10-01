@@ -63,25 +63,54 @@ Nothing is truncated: the hash schemes in use (PBKDF2-SHA256, bcrypt-SHA256) hav
 
 When enabled, a new password is rejected if, after NFKC + case folding, it:
 
-1. is an entry of the **offline blocklist**, or
+1. is on the **offline blocklist** (when installed), or
 2. contains a **context word** of 4+ characters: the product name, any word in
    `PASSWORD_CONTEXT_WORDS` (comma-separated, e.g. your organisation), the account's email local
    part, or a part of the account's full name.
 
 Existing weak-pattern warnings (`password123`, sequences, repeats) are unchanged.
 
-### Offline list
+### Offline list (installed on request)
 
-`backend/app/auth/data/common_passwords.txt`: the UK NCSC top-100,000 most-used passwords
-(99,835 entries), obtained from SecLists (MIT). Source and licence are recorded in
-`backend/app/auth/data/README.md`. It works on air-gapped installs and nothing leaves the host.
+OpenTranscribe does **not** ship a password list. Install one with a single command:
 
-To use a larger list, set `PASSWORD_BLOCKLIST_PATH` to a UTF-8 file with one password per line
-(for example a downloaded HIBP/rockyou-derived list, `cat`-ed together with the bundled one). It
-**replaces** the bundled list; edits are picked up by file modification time without a restart.
-An unreadable path logs an ERROR and falls back to the bundled list rather than disabling the check.
-The whole list is held in memory (about 100k entries is roughly 10 MB); keep that in mind for
-multi-million-entry files.
+```bash
+./opentranscribe.sh download-models password-blocklist
+```
+
+This builds the 100,000 most-breached passwords from Have I Been Pwned "Pwned Passwords" as
+**SHA-1 hashes only** (uppercase hex, one per line, most common first) in
+`<MODEL_CACHE_DIR>/password-blocklist/pwned-passwords-top100k-sha1.txt`, plus a small
+`.meta.json` recording the retrieval date. It walks the official k-anonymity range API
+(1,048,576 small requests, about an hour, resumable if interrupted), then keeps the top
+100,000 hashes by breach count. Re-run it to refresh. Nothing is sent but 5-character hash
+prefixes, and no plaintext password is requested or stored.
+
+*Data source and terms.* Pwned Passwords is published by Have I Been Pwned (Troy Hunt). Its
+documentation states "no licensing or attribution requirement"
+([API v3](https://haveibeenpwned.com/API/V3), [Passwords](https://haveibeenpwned.com/Passwords),
+checked 2026-10-01); we credit it anyway as a courtesy.
+
+Matching: the password is NFKC-normalised and its SHA-1 compared. Because the hashes are
+case-exact, the lowercased and case-folded forms are checked too, so `PASSWORD` is caught by the
+entry for `password`.
+
+**Air-gapped installs.** `scripts/build-offline-package.sh` builds the list into the package (set
+`INCLUDE_PASSWORD_BLOCKLIST=false` to skip it) and `install-offline-package.sh` installs it under
+`models/password-blocklist/`. Or build it on a connected machine and copy that directory.
+
+**If no list is installed** the check is skipped, one startup `WARNING` names the command above,
+and the admin Settings page shows "breached-password list not installed". The context-word check
+still applies. Nothing is fetched at runtime unless the optional online lookup below is on.
+
+**Your own list.** Set `PASSWORD_BLOCKLIST_PATH` to a file of SHA-1 hashes (40 hex characters per
+line, optionally `HASH:count`) or a legacy plaintext file (one password per line, matched
+case-insensitively); the format is detected per line. It **replaces** the default list; edits are
+picked up by file modification time without a restart. An unreadable path logs an ERROR and falls
+back to the default location. The whole list is held in memory (100k hashes is roughly 10 MB).
+
+To regenerate with different options:
+`docker compose run --rm backend python -m app.scripts.build_password_blocklist --help`.
 
 ### Optional online lookup (default OFF)
 

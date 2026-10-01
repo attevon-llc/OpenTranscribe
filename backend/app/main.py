@@ -809,6 +809,22 @@ def _provision_native_diarizer() -> None:
         logger.warning(f"diar-native provisioning could not run (non-fatal): {e}")
 
 
+def _log_password_blocklist_status() -> None:
+    """One WARNING when the breached-password check is on but no list is installed.
+
+    Never fatal: the check is skipped and the rest of the password policy still applies.
+    """
+    try:
+        from app.auth import password_blocklist
+        from app.auth.password_policy import password_policy
+
+        password_blocklist.log_startup_status(
+            password_policy.blocklist_enabled, str(settings.PASSWORD_BLOCKLIST_PATH)
+        )
+    except Exception as e:
+        logger.warning(f"Password blocklist status check failed (non-fatal): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
@@ -858,6 +874,8 @@ async def lifespan(app: FastAPI):
     _provision_native_diarizer()
 
     _register_chat_usage_hook()
+
+    _log_password_blocklist_status()
 
     # Seed initial data (admin user, default tags, system prompts)
     try:

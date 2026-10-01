@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Breached-password list is now an on-demand download built from Have I Been Pwned (#1107).** No password list is shipped in the repository. `./opentranscribe.sh download-models password-blocklist` builds the top 100,000 most-breached passwords as SHA-1 hashes only from the Pwned Passwords range API (no licensing or attribution requirement) into the model cache; the offline package includes it. If none is installed the check is skipped with one startup warning. `PASSWORD_BLOCKLIST_PATH` accepts hash files and legacy plaintext files.
 - **Deployment-locked settings via capability keys (#1109).** New capabilities, all `True` by
   default (no change for self-hosted installs), let an operator's capability resolver lock
   values the deployment owns. Each is enforced on the server, not just hidden:

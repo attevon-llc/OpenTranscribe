@@ -107,6 +107,7 @@ class TestPasswordPolicy:
             "min_length_with_mfa",
             "max_length",
             "blocklist_enabled",
+            "blocklist_status",
             "require_uppercase",
             "require_lowercase",
             "require_digit",

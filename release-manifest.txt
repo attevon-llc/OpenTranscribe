@@ -104,6 +104,9 @@ scripts/generate-ssl-cert.sh	exec
 scripts/fix-model-permissions.sh	exec
 scripts/download-models.sh	exec
 scripts/download-models.py
+# Builds the breached-password list (download-models password-blocklist). `optional`: releases
+# before it shipped have no such script; opentranscribe.sh reports it missing and says how to fix.
+scripts/download-password-blocklist.sh	optional,exec
 # Speaker-voiceprint export/import, driven by common.sh's backup_database /
 # restore_database (issue #658). `optional` because releases before it shipped have no
 # such path — but on a release that DOES have it, a missing copy means `backup` refuses

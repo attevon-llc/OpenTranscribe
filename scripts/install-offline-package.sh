@@ -358,6 +358,7 @@ install_models() {
     # export, which an air-gapped host cannot produce for itself.
     mkdir -p "$INSTALL_DIR/models/opensearch-ml"
     mkdir -p "$INSTALL_DIR/models/diar-native"
+    mkdir -p "$INSTALL_DIR/models/password-blocklist"
 
     # Copy models
     if [ -d "$model_dir/huggingface" ]; then
@@ -388,6 +389,11 @@ install_models() {
     if [ -d "$model_dir/diar-native" ]; then
         print_info "Copying native diarizer (diar-server) export..."
         cp -r "$model_dir/diar-native" "$INSTALL_DIR/models/"
+    fi
+
+    if [ -d "$model_dir/password-blocklist" ]; then
+        print_info "Copying breached-password list..."
+        cp -r "$model_dir/password-blocklist" "$INSTALL_DIR/models/"
     fi
 
     # Copy model manifest if exists

@@ -12,31 +12,11 @@ one test and reset its storage on the way out.
 
 from __future__ import annotations
 
-import pytest
 from fastapi import status
 
-from app.auth.rate_limit import limiter
 from app.core.config import settings
 
 METHODS_PATH = "/api/auth/methods"
-
-
-@pytest.fixture
-def rate_limiting_enabled():
-    was_enabled = limiter.enabled
-    limiter.enabled = True
-    try:
-        limiter.reset()
-    except Exception:
-        pass
-    try:
-        yield
-    finally:
-        limiter.enabled = was_enabled
-        try:
-            limiter.reset()
-        except Exception:
-            pass
 
 
 def test_normal_reloads_are_not_throttled(client, rate_limiting_enabled):

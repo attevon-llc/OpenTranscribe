@@ -138,3 +138,29 @@ def does_not_raise(reason: str) -> Iterator[None]:
         yield
     except BaseException as exc:  # noqa: BLE001 - re-reported as a test failure, not swallowed
         pytest.fail(f"{reason} — but it raised {type(exc).__name__}: {exc}")
+
+
+def reset_rate_limiter() -> None:
+    """Clear EVERY counter the module-level slowapi ``limiter`` holds.
+
+    ``Limiter.reset()`` only resets the primary storage (Redis). The limiter is built with
+    ``in_memory_fallback_enabled`` (see ``app.auth.rate_limit._create_limiter``), so when
+    Redis is unreachable — always the case on CI and on most host runs — every request is
+    counted in a separate in-memory fallback storage that ``reset()`` never touches. Counters
+    from one test then eat into the next test's budget on the same xdist worker (#1131/#1133
+    flake). slowapi exposes no public API for the fallback, hence the private attributes;
+    they are read defensively so a slowapi upgrade degrades to the old behaviour instead of
+    breaking every rate-limit test.
+    """
+    from app.auth.rate_limit import limiter
+
+    try:
+        limiter.reset()  # primary storage; raises when Redis is unreachable
+    except Exception:  # noqa: BLE001 - unreachable Redis is the normal case here
+        pass
+    fallback_storage = getattr(limiter, "_fallback_storage", None)
+    if fallback_storage is not None:
+        fallback_storage.reset()
+    # Start the next test on the primary storage again rather than inheriting "dead".
+    if hasattr(limiter, "_storage_dead"):
+        limiter._storage_dead = False

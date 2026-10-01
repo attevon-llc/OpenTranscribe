@@ -12,32 +12,11 @@ on for one test, reset its storage on the way out.
 
 from __future__ import annotations
 
-import pytest
 from fastapi import status
 
-from app.auth.rate_limit import limiter
 from app.core.config import settings
 
 SEARCH_PATH = "/api/users/search"
-
-
-@pytest.fixture
-def rate_limiting_enabled():
-    """Turn the real slowapi limiter on for one test, then clean up after it.
-
-    See `test_llm_settings_rate_limit.py`'s fixture of the same name for why the
-    `.reset()` call is wrapped: host runs routinely have no Redis reachable.
-    """
-    was_enabled = limiter.enabled
-    limiter.enabled = True
-    try:
-        yield
-    finally:
-        limiter.enabled = was_enabled
-        try:
-            limiter.reset()
-        except Exception:
-            pass
 
 
 def _search(client, headers, q="ab"):

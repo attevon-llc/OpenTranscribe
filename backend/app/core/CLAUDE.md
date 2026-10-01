@@ -66,6 +66,15 @@ should import `app.api` or `app.services` at module scope.
   invisible; outside it, a worker that cannot answer `inspect stats` already fails the
   healthcheck. Read `init_worker_process`'s `fork init started`/`finished` pairs when the
   `asynpool` line is missing — those come from the child.
+  ⚠️ **Redis socket settings are what let a worker survive a SILENT broker drop (issue #1144).**
+  kombu passes `socket_keepalive=None`, which turns redis-py's keepalive OFF, and on a
+  connection error `Channel.close()` drains the in-flight BRPOP with a blocking `recv()` — with
+  no `socket_timeout` that wedged the MainProcess loop forever (alive, Ready, consuming
+  nothing). `broker_transport_options` therefore sets keepalive (+ TCP_USER_TIMEOUT) and a
+  finite `socket_timeout` (`CELERY_REDIS_SOCKET_TIMEOUT`, 30 s — must stay well above kombu's
+  1 s BRPOP wait). Keep the broker's `retry_on_timeout` **False**: its one redis-py retry
+  reconnects a dead pubsub socket and re-issues `parse_response(block=True)`, which reads with
+  `timeout=None` by design and re-wedges the loop (reproduced with py-spy).
 - `enums.py` — centralized enums (`FileStatus`), imported from here instead of model modules to
   break import cycles. `ReasoningOffSwitch` lives here rather than beside its probe because
   three layers read it (the service that measures it, the Pydantic response that carries it,

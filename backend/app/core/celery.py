@@ -7,6 +7,7 @@ from app.core import privacy_env  # noqa: F401  # isort: skip
 # Skip heavy AI imports during testing - speeds up test startup significantly
 import logging
 import os
+import socket
 import ssl
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,45 @@ _redis_ssl_options = (
     else None
 )
 
+# Dead-connection detection for every Redis socket (broker AND result backend) — issue #1144.
+#
+# A worker<->Redis flow can vanish without a FIN/RST ever reaching the worker (NAT/conntrack
+# expiry, firewall or network-policy reload, idle reset). Before this, such a worker stopped
+# consuming FOREVER while the process stayed alive:
+#
+#   * kombu passes socket_keepalive=None to redis-py, which turns OFF redis-py's keepalive
+#     default. The consumer's BRPOP waits in epoll for a reply on a dead socket and nothing
+#     ever wakes it.
+#   * When some other timer did hit an RST, the consumer's reconnect path ran
+#     Channel.close(), which drains the outstanding BRPOP with a BLOCKING recv(). With
+#     socket_timeout=None that recv never returned on the half-open socket: the main loop
+#     wedged inside its own reconnect, with one "Connection to broker lost" line and then
+#     silence.
+#
+# Keepalive makes the kernel error a dead socket in ~KEEPIDLE + KEEPINTVL*KEEPCNT seconds
+# (30 + 10*3 = 60 s), which wakes epoll; TCP_USER_TIMEOUT covers the case keepalive
+# cannot (it is suspended while unacknowledged data is in flight). socket_timeout bounds
+# every blocking read, including that drain.
+#
+# socket_timeout MUST stay well above kombu's BRPOP wait (Transport.brpop_timeout = 1 s,
+# or polling_interval if one is ever set): the drain in Channel.close() may legitimately
+# wait that long, and a timeout under it would turn every idle poll into a reconnect.
+# 30 s also leaves room for a slow-but-alive managed Redis under load.
+_REDIS_SOCKET_TIMEOUT = _float_env("CELERY_REDIS_SOCKET_TIMEOUT", 30.0)
+_REDIS_CONNECT_TIMEOUT = _float_env("CELERY_REDIS_CONNECT_TIMEOUT", 10.0)
+_REDIS_HEALTH_CHECK_INTERVAL = 25  # kombu's own default, pinned so it cannot drift to 0
+_REDIS_KEEPALIVE_OPTIONS = {
+    opt: value
+    for name, value in (
+        ("TCP_KEEPIDLE", 30),
+        ("TCP_KEEPINTVL", 10),
+        ("TCP_KEEPCNT", 3),
+        ("TCP_USER_TIMEOUT", 60_000),  # milliseconds
+    )
+    # Linux names; skip any the platform lacks rather than fail at import.
+    if (opt := getattr(socket, name, None)) is not None
+}
+
 celery_app = Celery(
     "transcribe_app",
     broker=settings.CELERY_BROKER_URL,
@@ -230,6 +270,19 @@ celery_app = Celery(
 celery_app.conf.update(
     broker_use_ssl=_redis_ssl_options,
     redis_backend_use_ssl=_redis_ssl_options,
+    # Result-backend half of the dead-connection fix (see _REDIS_SOCKET_TIMEOUT). The
+    # backend client does not accept keepalive tunables, so redis-py's own keepalive
+    # defaults apply once socket_keepalive is on.
+    redis_socket_keepalive=True,
+    redis_socket_timeout=_REDIS_SOCKET_TIMEOUT,
+    redis_socket_connect_timeout=_REDIS_CONNECT_TIMEOUT,
+    redis_retry_on_timeout=True,
+    redis_backend_health_check_interval=_REDIS_HEALTH_CHECK_INTERVAL,
+    # Keep reconnecting through any broker outage. The default of 100 retries makes a
+    # worker give up and sit idle after a long one.
+    broker_connection_retry=True,
+    broker_connection_retry_on_startup=True,
+    broker_connection_max_retries=None,
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
@@ -331,6 +384,20 @@ celery_app.conf.update(
         # (tasks/recovery.py), not off redelivery, so an inflated value only delays
         # requeueing after a genuine worker loss.
         "visibility_timeout": int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600")),
+        # Dead-connection detection — see _REDIS_SOCKET_TIMEOUT above (issue #1144).
+        "socket_keepalive": True,
+        "socket_keepalive_options": _REDIS_KEEPALIVE_OPTIONS,
+        "socket_timeout": _REDIS_SOCKET_TIMEOUT,
+        "socket_connect_timeout": _REDIS_CONNECT_TIMEOUT,
+        "health_check_interval": _REDIS_HEALTH_CHECK_INTERVAL,
+        # Deliberately False for the BROKER (the result backend below sets it True).
+        # It gives every redis-py connection Retry(NoBackoff(), 1), and that one retry
+        # swallows the ConnectionError a dead fanout/pubsub socket raises: redis-py
+        # reconnects and re-issues PubSub.parse_response(block=True), which reads with
+        # timeout=None by design — so the main loop wedges again, now waiting on a
+        # healthy socket for a broadcast that may never come. Reproduced with py-spy.
+        # Letting the error reach kombu makes the consumer rebuild its connection.
+        "retry_on_timeout": False,
     },
     task_routes={
         # GPU Queue - GPU-intensive AI tasks (concurrency=1, requires GPU)

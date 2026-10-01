@@ -323,7 +323,7 @@ def update_current_user(
 
         # Policy was previously enforced only by UserCreate's validator, so a
         # self-service change could set a password the policy forbids.
-        enforce_password_policy(new_password, current_user)
+        enforce_password_policy(new_password, current_user, db)
 
         # Minimum password age (FedRAMP IA-5(1)(d)). Without it the bounded history
         # is self-defeating: nothing rate-limits this endpoint, so a user could run
@@ -641,7 +641,7 @@ def update_user(
         new_password = update_data.pop("password")
 
         # Admins are not exempt from the policy — this path skipped it entirely.
-        enforce_password_policy(new_password, user)
+        enforce_password_policy(new_password, user, db)
 
         # Check password history (FedRAMP IA-5) - admins must also comply.
         # The count in the message is the ENFORCED one — `password_policy.history_count`

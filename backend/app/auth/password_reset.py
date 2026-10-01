@@ -13,6 +13,7 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.mfa_policy import user_is_mfa_protected
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
 from app.auth.password_policy import validate_password
@@ -236,7 +237,11 @@ def confirm_password_reset(
     # deployment that enabled the policy in the admin UI while .env still said false
     # got no password validation at all — on the reset path only, while every other
     # path enforced it. The one place a weak password is most likely to be chosen.
-    result = validate_password(new_password, email=str(user.email))
+    result = validate_password(
+        new_password,
+        email=str(user.email),
+        mfa_protected=user_is_mfa_protected(db, user),
+    )
     if not result.is_valid:
         _audit_reset_complete(AuditOutcome.FAILURE, "POLICY_REJECTED", ip_address, user)
         return False, result.errors

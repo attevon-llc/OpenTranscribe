@@ -38,6 +38,7 @@ from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.constants import TOKEN_TYPE_MFA
 from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.mfa import MFAService
+from app.auth.mfa_policy import mfa_required_for_user
 from app.auth.session import get_redis_client
 from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
@@ -104,10 +105,12 @@ def _is_mfa_enabled(db: Session) -> bool:
     return auth_settings.mfa_enabled or settings.MFA_ENABLED
 
 
-def _is_mfa_required(db: Session) -> bool:
-    """Check if MFA is required via database auth_config (primary) or .env fallback."""
-    auth_settings = get_auth_settings(db)
-    return auth_settings.get_bool("mfa_required", settings.MFA_REQUIRED) and _is_mfa_enabled(db)
+def _is_mfa_required(db: Session, user: User | None = None) -> bool:
+    """Check if MFA is required via database auth_config (primary) or .env fallback.
+
+    With *user*, also honours ``MFA_REQUIRED_FOR_ADMINS`` for an administrator.
+    """
+    return mfa_required_for_user(get_auth_settings(db), user)
 
 
 def _blacklist_mfa_token(jti: str, expires_seconds: int) -> bool:

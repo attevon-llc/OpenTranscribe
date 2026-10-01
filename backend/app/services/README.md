@@ -139,7 +139,7 @@ class FileService:
 async def upload_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     file_service = FileService(db)
     return await file_service.upload_file(file, current_user)
@@ -223,19 +223,26 @@ Handles all object storage operations including file upload, download, streaming
 def upload_file(file_content: IO, file_size: int, object_name: str, content_type: str) -> None:
     """Upload file to MinIO storage."""
 
+
 def download_file(object_name: str) -> Tuple[IO, int, str]:
     """Download file from MinIO storage."""
+
 
 def upload_bytes(self, bucket_name: str, object_name: str, data: bytes, content_type: str) -> None:
     """Upload an in-memory bytes payload (e.g. a generated ZIP) to MinIO."""
 
+
 def delete_file(object_name: str) -> None:
     """Delete file from MinIO storage."""
+
 
 def get_file_url(object_name: str, expires: int = 3600) -> str:
     """Generate presigned URL for inline file access (playback/thumbnails)."""
 
-def get_presigned_download_url(object_name: str, *, download_filename: str, content_type: str) -> str:
+
+def get_presigned_download_url(
+    object_name: str, *, download_filename: str, content_type: str
+) -> str:
     """Generate presigned URL that forces an attachment download."""
 ```
 
@@ -294,7 +301,7 @@ def _generate_health_recommendations(self, db: Session) -> List[str]:
     recommendations = []
 
     # Calculate error rates and health metrics
-    error_rate = status_counts.get('error', 0) / max(sum(status_counts.values()), 1)
+    error_rate = status_counts.get("error", 0) / max(sum(status_counts.values()), 1)
     if error_rate > 0.1:  # More than 10% error rate
         recommendations.append(
             f"High error rate detected: {error_rate:.1%} of files are in error state. "
@@ -394,12 +401,16 @@ Implements intelligent speaker identification with consolidated suggestions, pri
 ```python
 class SmartSpeakerSuggestionService:
     @staticmethod
-    def get_consolidated_suggestions(db: Session, speaker_id: int, user_id: int) -> List[ConsolidatedSuggestion]:
+    def get_consolidated_suggestions(
+        db: Session, speaker_id: int, user_id: int
+    ) -> List[ConsolidatedSuggestion]:
         """Get consolidated speaker suggestions with intelligent filtering."""
         # Profile-based suggestions prioritized over individual matches
 
     @staticmethod
-    def filter_and_prioritize_suggestions(suggestions: List[Dict[str, Any]]) -> List[ConsolidatedSuggestion]:
+    def filter_and_prioritize_suggestions(
+        suggestions: List[Dict[str, Any]],
+    ) -> List[ConsolidatedSuggestion]:
         """Filter out unlabeled speakers and consolidate by name."""
         # Remove SPEAKER_XX format names and consolidate duplicates
 ```
@@ -424,7 +435,9 @@ class ProfileEmbeddingService:
         """Add speaker's voice embedding to profile's consolidated embedding."""
 
     @staticmethod
-    def calculate_profile_similarity(db: Session, speaker_embedding: List[float], user_id: int) -> List[Dict[str, Any]]:
+    def calculate_profile_similarity(
+        db: Session, speaker_embedding: List[float], user_id: int
+    ) -> List[Dict[str, Any]]:
         """Calculate similarity between speaker and all user profiles."""
 ```
 
@@ -492,7 +505,9 @@ Optimizes data retrieval and filtering for improved performance and user experie
 ```python
 class TaskFilteringService:
     @staticmethod
-    def filter_tasks_by_criteria(db: Session, user_id: int, criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def filter_tasks_by_criteria(
+        db: Session, user_id: int, criteria: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Filter tasks based on various criteria."""
 
     @staticmethod
@@ -550,16 +565,21 @@ Manages full-text search, indexing, and search analytics for transcripts and fil
 
 ### Key Operations
 ```python
-def index_transcript(file_id: int, user_id: int, full_transcript: str, speaker_names: List[str], file_title: str) -> None:
+def index_transcript(
+    file_id: int, user_id: int, full_transcript: str, speaker_names: List[str], file_title: str
+) -> None:
     """Index transcript for full-text search."""
+
 
 # NOTE: there is deliberately NO search function here (#542). The one that existed
 # had zero callers and a semantic branch this index cannot serve. Transcript SEARCH is
 # `services/search/hybrid_search_service.py` over `transcript_chunks`; the gallery's
 # keyword filter builds its own query in `api/endpoints/files/filtering.py`.
 
+
 def add_speaker_embedding(speaker_id: int, embedding_vector: List[float]) -> None:
     """Store speaker voice embedding for similarity search."""
+
 
 def search_similar_speakers(embedding_vector: List[float], user_id: int) -> List[Dict]:
     """Find similar speakers using vector search."""
@@ -570,24 +590,15 @@ def search_similar_speakers(embedding_vector: List[float], user_id: int) -> List
 def build_search_query(query: str, filters: dict) -> Dict:
     """Build complex OpenSearch query."""
     search_body = {
-        "query": {
-            "bool": {
-                "must": [
-                    {"match": {"transcript": query}}
-                ],
-                "filter": []
-            }
-        },
-        "highlight": {
-            "fields": {"transcript": {}}
-        }
+        "query": {"bool": {"must": [{"match": {"transcript": query}}], "filter": []}},
+        "highlight": {"fields": {"transcript": {}}},
     }
 
     # Add filters (date range, speakers, file types, etc.)
-    if filters.get('from_date'):
-        search_body["query"]["bool"]["filter"].append({
-            "range": {"created_at": {"gte": filters['from_date']}}
-        })
+    if filters.get("from_date"):
+        search_body["query"]["bool"]["filter"].append(
+            {"range": {"created_at": {"gte": filters["from_date"]}}}
+        )
 
     return search_body
 ```
@@ -652,7 +663,7 @@ class TestFileService:
         file_service = FileService(db_session)
 
         # Mock external dependencies
-        with patch('app.services.minio_service.upload_file'):
+        with patch("app.services.minio_service.upload_file"):
             result = await file_service.upload_file(mock_upload_file, mock_user)
 
         assert result.filename == mock_upload_file.filename
@@ -671,8 +682,8 @@ class TestFileService:
 ### Mocking External Services
 ```python
 # Mock external service calls in tests
-@patch('app.services.minio_service.upload_file')
-@patch('app.services.opensearch_service.index_transcript')
+@patch("app.services.minio_service.upload_file")
+@patch("app.services.opensearch_service.index_transcript")
 def test_complete_transcription_workflow(mock_opensearch, mock_minio, db_session):
     """Test full transcription workflow with mocked external services."""
     # Test logic without actual external API calls
@@ -684,13 +695,15 @@ def test_complete_transcription_workflow(mock_opensearch, mock_minio, db_session
 ```python
 from app.utils.error_handlers import ErrorHandler
 
+
 class FileService:
     def get_file_by_id(self, file_id: int, user: User) -> MediaFile:
         """Get file with proper error handling."""
-        file_obj = self.db.query(MediaFile).filter(
-            MediaFile.id == file_id,
-            MediaFile.user_id == user.id
-        ).first()
+        file_obj = (
+            self.db.query(MediaFile)
+            .filter(MediaFile.id == file_id, MediaFile.user_id == user.id)
+            .first()
+        )
 
         if not file_obj:
             raise ErrorHandler.not_found_error("File")
@@ -714,27 +727,28 @@ class FileService:
 class FileService:
     def get_user_files_with_stats(self, user: User) -> List[Dict]:
         """Optimized query with eager loading."""
-        return self.db.query(MediaFile)\
+        return (
+            self.db.query(MediaFile)
             .options(
                 joinedload(MediaFile.transcript_segments),
                 joinedload(MediaFile.comments),
-                selectinload(MediaFile.file_tags).joinedload(FileTag.tag)
-            )\
-            .filter(MediaFile.user_id == user.id)\
+                selectinload(MediaFile.file_tags).joinedload(FileTag.tag),
+            )
+            .filter(MediaFile.user_id == user.id)
             .all()
+        )
 ```
 
 ### Caching Strategies
 ```python
 from functools import lru_cache
 
+
 class SpeakerService:
     @lru_cache(maxsize=100)
     def get_user_speakers_cached(self, user_id: int) -> List[Speaker]:
         """Cache frequently accessed speaker data."""
-        return self.db.query(Speaker)\
-            .filter(Speaker.user_id == user_id)\
-            .all()
+        return self.db.query(Speaker).filter(Speaker.user_id == user_id).all()
 ```
 
 ## 🔧 Adding New Services
@@ -755,6 +769,7 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.utils.error_handlers import ErrorHandler
 from app.utils.uuid_helpers import require_resource_owner
+
 
 class NewService:
     """Service for handling [specific domain] operations."""

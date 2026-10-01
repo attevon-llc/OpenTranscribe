@@ -1,5 +1,6 @@
 import contextlib
 import os
+import unicodedata
 import uuid
 from datetime import UTC
 from datetime import datetime
@@ -310,6 +311,16 @@ def create_access_token(
     return jwt.encode({"alg": algorithm}, to_encode, key, algorithms=[algorithm])
 
 
+def normalize_password(password: str) -> str:
+    """NFKC-normalise a password before it is hashed or compared (SP 800-63B-4 3.1.1.2).
+
+    Identity for ASCII, so existing ASCII hashes are unaffected. Without this the same
+    visible passphrase typed on two platforms (composed vs decomposed accents,
+    full-width forms) hashes differently and the user is locked out of their own password.
+    """
+    return unicodedata.normalize("NFKC", password)
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Verify a password against a hash.
@@ -321,7 +332,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         True if password matches, False otherwise
     """
-    return pwd_context.verify(plain_password, hashed_password)  # type: ignore[no-any-return]
+    normalized = normalize_password(plain_password)
+    if pwd_context.verify(normalized, hashed_password):
+        return True
+    # Hashes written before normalisation existed were computed over the raw string.
+    return normalized != plain_password and bool(
+        pwd_context.verify(plain_password, hashed_password)
+    )
 
 
 def verify_and_update_password(
@@ -341,7 +358,11 @@ def verify_and_update_password(
     Returns:
         Tuple of (is_valid, new_hash) where new_hash is None if no upgrade needed
     """
-    is_valid, new_hash = pwd_context.verify_and_update(plain_password, hashed_password)
+    normalized = normalize_password(plain_password)
+    is_valid, new_hash = pwd_context.verify_and_update(normalized, hashed_password)
+    if not is_valid and normalized != plain_password:
+        # Hash written before normalisation existed (computed over the raw string).
+        is_valid, new_hash = pwd_context.verify_and_update(plain_password, hashed_password)
     return is_valid, new_hash
 
 
@@ -385,7 +406,7 @@ def get_password_hash(password: str) -> str:
     """
     Hash a password for storing
     """
-    return pwd_context.hash(password)  # type: ignore[no-any-return]
+    return pwd_context.hash(normalize_password(password))  # type: ignore[no-any-return]
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:

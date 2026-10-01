@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, type Component } from "svelte";
   import { goto, afterNavigate } from "$app/navigation";
   import { page } from "$app/stores";
   import { get } from 'svelte/store';
@@ -12,7 +12,7 @@
   import "../styles/search.css";
 
   // Import auth store
-  import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token } from "$stores/auth";
+  import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
   import { loadCapabilities } from "$stores/capabilities";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
@@ -22,6 +22,8 @@
   import { unregisterServiceWorkers } from "$lib/serviceWorkerCleanup";
   import { resetScrollLock } from '$lib/scrollLock';
   import { initMonitoring } from '$lib/monitoring';
+  import { runStartup } from '$lib/startup';
+  import { settingsModalStore } from '$stores/settingsModalStore';
 
   // Import components
   import Navbar from "../components/Navbar.svelte";
@@ -29,13 +31,37 @@
   import ToastContainer from "../components/ToastContainer.svelte";
   import UploadManager from "../components/UploadManager.svelte";
   import AppContent from "../components/AppContent.svelte";
-  import SettingsModal from "../components/SettingsModal.svelte";
-  import FirstRunWizard from "../components/FirstRunWizard.svelte";
   import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
-  import QuotaExceededModal from "$lib/cloud/components/QuotaExceededModal.svelte";
-  import LegalGateModal from "$lib/cloud/components/LegalGateModal.svelte";
-  import IdleTimeoutDialog from "../components/IdleTimeoutDialog.svelte";
+
+  // Heavy, conditionally shown components are loaded with a dynamic import so every visitor
+  // (the login page included) doesn't download them before first paint. Each one is fetched
+  // the moment its condition is known, never on a click, so behaviour is unchanged.
+  let SettingsModal: Component<any> | null = null;
+  let FirstRunWizard: Component<any> | null = null;
+  let QuotaExceededModal: Component<any> | null = null;
+  let LegalGateModal: Component<any> | null = null;
+  let IdleTimeoutDialog: Component<any> | null = null;
+
+  // The modal renders itself only while the store says open, and mounts already open, so a
+  // deep link or event that opens settings before the chunk lands is not lost.
+  $: if ($isAuthenticated && !lifecycleHold && $settingsModalStore.isOpen && !SettingsModal) {
+    void import("../components/SettingsModal.svelte").then((m) => (SettingsModal = m.default));
+  }
+  // The wizard only acts for the bootstrap super_admin (it checks completion on mount), and
+  // Settings can only re-open it for that same role.
+  $: if ($isAuthenticated && !lifecycleHold && $user?.role === 'super_admin' && !FirstRunWizard) {
+    void import("../components/FirstRunWizard.svelte").then((m) => (FirstRunWizard = m.default));
+  }
+  $: if (isCloudEdition && $isAuthenticated && !lifecycleHold && !QuotaExceededModal) {
+    void import("$lib/cloud/components/QuotaExceededModal.svelte").then((m) => (QuotaExceededModal = m.default));
+  }
+  $: if (isCloudEdition && $isAuthenticated && !lifecycleHold && !LegalGateModal) {
+    void import("$lib/cloud/components/LegalGateModal.svelte").then((m) => (LegalGateModal = m.default));
+  }
+  $: if (isCloudEdition && $isAuthenticated && !lifecycleHold && $token === 'external' && !IdleTimeoutDialog) {
+    void import("../components/IdleTimeoutDialog.svelte").then((m) => (IdleTimeoutDialog = m.default));
+  }
 
   /**
    * Routes reachable without a session — the ONE definition.
@@ -118,9 +144,6 @@
 
     // Async initialization — use IIFE so we can still return a sync cleanup
     (async () => {
-      // Initialize locale/i18n
-      await locale.initialize();
-
       // Initialize network connectivity monitoring
       networkStore.initialize();
 
@@ -128,19 +151,21 @@
       // Fail-open: errors leave community defaults (everything visible).
       void loadCapabilities();
 
-      // Fetch auth methods to get banner settings
-      try {
-        const authMethods = await getAuthMethods();
-        if (authMethods.login_banner_enabled) {
-          bannerEnabled = true;
-          bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || 'UNCLASSIFIED';
-        }
-      } catch (error) {
-        console.warn('[Layout] Failed to fetch auth methods for banner:', error);
+      // Locale, auth methods (banner settings) and the session check are independent, so
+      // they run concurrently instead of as three serial round trips.
+      const { authMethods, authFailed, authError } = await runStartup({
+        initLocale: () => locale.initialize(),
+        getAuthMethods,
+        initAuth,
+      });
+
+      if (authMethods?.login_banner_enabled) {
+        bannerEnabled = true;
+        bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || 'UNCLASSIFIED';
       }
 
       try {
-        await initAuth();
+        if (authFailed) throw authError;
 
         const isAuth = get(isAuthenticated);
         const currentPath = $page.url.pathname;
@@ -215,16 +240,16 @@
       <Navbar />
       <NotificationsPanel />
       <UploadManager />
-      <SettingsModal />
-      <FirstRunWizard />
+      {#if SettingsModal}<svelte:component this={SettingsModal} />{/if}
+      {#if FirstRunWizard}<svelte:component this={FirstRunWizard} />{/if}
       <ConnectionStatusBanner />
       {#if isCloudEdition}
-        <QuotaExceededModal />
-        <LegalGateModal />
+        {#if QuotaExceededModal}<svelte:component this={QuotaExceededModal} />{/if}
+        {#if LegalGateModal}<svelte:component this={LegalGateModal} />{/if}
         <!-- Idle/absolute timeout for sessions held by an external identity
              provider (#1106). Built-in sessions are timed out server-side. -->
-        {#if $token === 'external'}
-          <IdleTimeoutDialog />
+        {#if $token === 'external' && IdleTimeoutDialog}
+          <svelte:component this={IdleTimeoutDialog} />
         {/if}
       {/if}
     {/if}

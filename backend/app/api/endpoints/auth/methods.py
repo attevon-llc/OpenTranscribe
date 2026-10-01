@@ -13,6 +13,7 @@ from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.rate_limit import get_auth_methods_rate_limit
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.core.auth_settings import get_auth_settings
@@ -26,7 +27,7 @@ router = APIRouter()
 
 
 @router.get("/methods", response_model=AuthMethodsResponse)
-@limiter.limit(get_auth_rate_limit())
+@limiter.limit(get_auth_methods_rate_limit())
 def get_auth_methods(request: Request, response: Response, db: Session = Depends(get_db)):
     """
     Get available authentication methods.

@@ -382,6 +382,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_PER_MINUTE: int = 10
     # Rate limit for general API endpoints
     RATE_LIMIT_API_PER_MINUTE: int = 100
+    # Rate limit for GET /auth/methods (issue #1131). Public and read-only, but every SPA page
+    # load calls it (the root layout and the login page each do), so the credential-endpoint
+    # limit above (10/min) is exhausted by a handful of reloads. 60/min is one per second:
+    # ample for reloads and tabs behind a shared NAT, still a hard ceiling for scraping.
+    RATE_LIMIT_AUTH_METHODS_PER_MINUTE: int = 60
     # Rate limit for handlers that make a server-side outbound request to a caller-supplied
     # base_url (LLM connection-test + model-discovery, issue #676). Deliberately tighter than
     # the general API limit: a connection test is a human-scale action, and this router has

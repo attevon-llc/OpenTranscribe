@@ -481,7 +481,7 @@ class _GpuStage:
             emit(progress_callback, 0.43, "Running AI transcription", "transcribe")
             step_start = time.perf_counter()
             with profiler.step("transcription"):
-                transcript = transcriber.transcribe(audio)
+                transcript = transcriber.transcribe(audio, options=tc)
             logger.info(
                 f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
             )
@@ -811,7 +811,7 @@ class _GpuRawStage:
             emit(callback, 0.43, "Running AI transcription", "transcribe")
             step_start = time.perf_counter()
             with profiler.step("transcription"):
-                transcript = transcriber.transcribe(audio)
+                transcript = transcriber.transcribe(audio, options=tc)
             logger.info(
                 f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
             )
@@ -1028,7 +1028,7 @@ class _TranscribeOnlyStage:
         emit(callback, 0.43, "Running AI transcription", "transcribe")
         step_start = time.perf_counter()
         with profiler.step("transcription"):
-            transcript = transcriber.transcribe(audio)
+            transcript = transcriber.transcribe(audio, options=tc)
         logger.info(
             f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
         )

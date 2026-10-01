@@ -16,6 +16,7 @@ from .context import TranscriptionContext
 from .notifications import send_progress_notification
 from .user_settings import _get_user_language_settings
 from .user_settings import _get_user_transcription_settings
+from .user_settings import load_vocabulary_terms
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,21 @@ def _resolve_language_settings(
         )
 
     return resolved_lang, resolved_translate
+
+
+def _load_file_vocabulary(ctx: TranscriptionContext) -> tuple[str, ...] | None:
+    """The custom vocabulary for this file, resolved per task (issue #1117).
+
+    The owner's terms in the file's tenant plus the shared terms visible there (see
+    ``load_vocabulary_terms``). It rides on the task's ``TranscriptionConfig`` and reaches
+    the decode as faster-whisper ``hotwords``; it is never part of the model cache key.
+    """
+    with session_scope() as db:
+        terms = load_vocabulary_terms(db, ctx.user_id, ctx.file_id)
+    cleaned = tuple(t.strip() for t in terms if t and t.strip())
+    if cleaned:
+        logger.info("Custom vocabulary for file %s: %d terms", ctx.file_id, len(cleaned))
+    return cleaned or None
 
 
 def _run_transcription_pipeline(
@@ -102,6 +118,7 @@ def _run_transcription_pipeline(
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
         enable_diarization=not disable_diarization,
+        vocabulary=_load_file_vocabulary(ctx),
     )
 
     # Apply per-task model override if provided.
@@ -216,6 +233,7 @@ def _run_engine_pipeline(
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
         enable_diarization=not disable_diarization,
+        vocabulary=_load_file_vocabulary(ctx),
     )
 
     # Honour admin-pinned model (same validation as _run_transcription_pipeline)
@@ -341,6 +359,7 @@ def _run_transcribe_only_stage(
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
         enable_diarization=not disable_diarization,
+        vocabulary=_load_file_vocabulary(ctx),
     )
 
     if (

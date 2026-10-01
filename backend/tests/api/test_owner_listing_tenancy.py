@@ -31,6 +31,7 @@ from datetime import datetime
 from datetime import timedelta
 from decimal import Decimal
 
+import numpy as np
 import pytest
 
 from app.models.chat import ChatConversation
@@ -410,7 +411,7 @@ def test_custom_vocabulary_delete_and_bulk_follow_the_active_tenant(client, worl
 
 
 def test_transcription_vocabulary_comes_from_the_files_tenant(world):
-    from app.tasks.transcription.cloud_asr import load_vocabulary_terms
+    from app.tasks.transcription.user_settings import load_vocabulary_terms
 
     w = world
     w.db.add_all(
@@ -432,6 +433,63 @@ def test_transcription_vocabulary_comes_from_the_files_tenant(world):
     assert not {"personal-term", "org-b-term", "org-b-shared"} & org_terms
     assert "personal-term" in personal_terms
     assert not {"org-a-term", "org-b-term", "org-b-shared"} & personal_terms
+
+
+def test_one_cached_transcriber_decodes_each_file_with_its_own_tenants_vocabulary(
+    world, monkeypatch
+):
+    """Issue #1117: files from different tenants share one preloaded model, never terms."""
+    import contextlib
+    from unittest.mock import MagicMock
+
+    from app.tasks.transcription.user_settings import load_vocabulary_terms
+    from app.transcription import transcriber as transcriber_mod
+    from app.transcription.config import TranscriptionConfig
+    from app.transcription.transcriber import Transcriber
+
+    w = world
+    w.db.add_all(
+        [
+            CustomVocabulary(user_id=w.alice.id, organization_id=None, term="personal-term"),
+            CustomVocabulary(user_id=w.alice.id, organization_id=w.org_a.id, term="org-a-term"),
+            CustomVocabulary(user_id=w.alice.id, organization_id=w.org_b.id, term="org-b-term"),
+            CustomVocabulary(user_id=None, organization_id=w.org_a.id, term="org-a-shared"),
+            CustomVocabulary(user_id=None, organization_id=None, term="instance-term"),
+            CustomVocabulary(user_id=w.bob.id, organization_id=w.org_a.id, term="bob-term"),
+        ]
+    )
+    w.db.commit()
+    files = [
+        _mk_file(w.db, w.alice, w.org_a.id),
+        _mk_file(w.db, w.alice, w.org_b.id),
+        _mk_file(w.db, w.alice, None),
+    ]
+
+    @contextlib.contextmanager
+    def _admit(stage, *, device, batch_size=None, **_kwargs):
+        yield 0
+
+    monkeypatch.setattr(transcriber_mod.vram_budget, "admit", _admit)
+    calls: list[dict] = []
+
+    def _decode(audio, **kwargs):
+        calls.append(kwargs)
+        return iter([]), MagicMock(language="en")
+
+    shared = Transcriber(TranscriptionConfig(model_name="large-v3", device="cpu"))
+    shared._pipeline = MagicMock(transcribe=_decode)
+
+    for f in files:
+        terms = tuple(load_vocabulary_terms(w.db, w.alice.id, f.id))
+        tc = TranscriptionConfig(model_name="large-v3", device="cpu", vocabulary=terms)
+        shared.transcribe(np.zeros(16000, dtype=np.float32), options=tc)
+
+    got = [set((c["hotwords"] or "").split(", ")) - {""} for c in calls]
+    assert got == [
+        {"org-a-term", "org-a-shared", "instance-term"},
+        {"org-b-term", "instance-term"},
+        {"personal-term", "instance-term"},
+    ]
 
 
 # --------------------------------------------------------------------------- #

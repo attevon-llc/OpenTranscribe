@@ -79,6 +79,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Legacy speaker profiles, speaker collections and vocabulary terms had no tenant, and
+  their names were unique across tenants (#1110).** Migration
+  `v430_per_tenant_speaker_and_vocab_names` stamps each unstamped row with its tenant where
+  that is unambiguous (a profile from the files its speakers are in, a collection from its
+  member profiles, otherwise the owner's single organization) and leaves the rest personal.
+  Profile, speaker-collection and vocabulary-term names are now unique per user **per
+  tenant** (personal counts as one tenant), so one name can be used in two organizations
+  and a duplicate no longer reveals that the name exists elsewhere. After upgrading, run
+  `python -m app.scripts.backfill_tenant_stamps` in a backend container: it lists the rows
+  whose evidence spans tenants (left for an administrator to decide) and, with
+  `--sync-voiceprints`, copies the new stamps onto the profiles' voiceprint documents so
+  organization voice matching finds them. Community installs have no organizations:
+  nothing is stamped and the uniqueness rule is unchanged.
+
 - **A task whose worker was killed stayed `in_progress` forever (#1067).** After an OOM kill,
   14 speaker-attribute and 2 speaker-clustering tasks were left with nothing running.
   Speaker attributes were acknowledged on receipt, so the message was gone. Clustering

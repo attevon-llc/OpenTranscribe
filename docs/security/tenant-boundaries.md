@@ -72,7 +72,7 @@ Paths are relative to `backend/`. Test abbreviations: **XT** =
 | Voiceprint links (speaker → profile, verify, merge) | n/a | Editor on the speaker's file; profile in the same tenant as that file; merges within one tenant and one file or owner | `speaker_profiles.py:assign_speaker_to_profile`, `speakers.py:_resolve_profile_uuid_to_id`, `speakers.py:merge_speakers` | SP `::test_assign_profile_needs_editor_on_the_speakers_file`, `::test_assign_profile_refuses_a_profile_of_another_tenant`, `::test_merge_refuses_speakers_of_two_tenants` |
 | Profile embeddings (consolidated voiceprint) | n/a (kNN is filtered by org + accessible profile ids) | Averages only speakers whose file is in the profile's tenant | `app/services/profile_embedding_service.py:update_profile_embedding`, `_execute_knn_search` | SP `::test_profile_embedding_averages_only_speakers_of_the_profiles_tenant`; TI `TestSpeakerFilterOrgGate` |
 | Speaker clusters, inbox, media preview | Owner, in the cluster's tenant | Owner; promote/merge only single-tenant clusters | `app/services/speaker_clustering_service.py:_scoped_cluster_query`, `speaker_clusters.py` | SP `::test_cluster_routes_are_confined_to_the_clusters_tenant`, `::test_promote_refuses_a_cluster_whose_members_span_tenants` |
-| Speaker collections | Owner, in the collection's tenant | Owner; created in the active tenant | `speaker_profiles.py:list_speaker_collections`, `create_speaker_collection` | SP `::test_speaker_collections_are_stamped_and_listed_per_tenant` |
+| Speaker collections | Owner, in the collection's tenant | Owner; created in the active tenant | `speaker_profiles.py:list_speaker_collections`, `create_speaker_collection` | SP `::test_speaker_collections_are_stamped_and_listed_per_tenant`, `::test_a_name_can_be_reused_in_another_tenant_but_not_twice_in_one` |
 | Background labelling (auto profile, retroactive matching) | n/a | Only profiles/candidates in the tenant of the labelled speaker's file | `app/tasks/speaker_update.py:auto_create_or_assign_profile`, `trigger_retroactive_matching` | SP `::test_auto_profile_does_not_link_a_same_named_profile_of_another_tenant`, `::test_retroactive_matching_scores_only_same_tenant_candidates` |
 
 ### AI features
@@ -102,7 +102,9 @@ Paths are relative to `backend/`. Test abbreviations: **XT** =
 ## Known limits
 
 - Speaker profile and speaker-collection names, and custom-vocabulary terms, are unique per user
-  across tenants (database indexes). A user cannot reuse one of their own names in a second
-  tenant; changing that needs a migration.
+  **per tenant** (`v430`; the personal workspace counts as one tenant). Rows created before
+  tenant stamping were stamped by that migration where the evidence was unambiguous; the rest
+  stay personal and are listed by `python -m app.scripts.backfill_tenant_stamps` for an
+  administrator to decide.
 - The `gpu_stats_update` websocket event carries instance hardware statistics to every socket;
   it holds no tenant data and matches what `GET /system/stats` already exposes.

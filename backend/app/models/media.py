@@ -549,7 +549,17 @@ class SpeakerProfile(Base):
         Integer, ForeignKey("speaker_cluster.id", ondelete="SET NULL"), nullable=True
     )
 
-    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_speaker_profile_user_name"),)
+    # A name is unique per user per tenant (v430). COALESCE makes the personal
+    # workspace one tenant, so two personal rows of one name still collide.
+    __table_args__ = (
+        Index(
+            "uq_speaker_profile_user_tenant_name",
+            "user_id",
+            text("COALESCE(organization_id, 0)"),
+            "name",
+            unique=True,
+        ),
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="speaker_profiles")
@@ -1000,8 +1010,16 @@ class SpeakerCollection(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Unique constraint
-    __table_args__ = (UniqueConstraint("user_id", "name", name="_user_speaker_collection_uc"),)
+    # Unique per user per tenant (v430), NULL-safe like the profile index.
+    __table_args__ = (
+        Index(
+            "uq_speaker_collection_user_tenant_name",
+            "user_id",
+            text("COALESCE(organization_id, 0)"),
+            "name",
+            unique=True,
+        ),
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="speaker_collections")

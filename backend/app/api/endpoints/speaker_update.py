@@ -25,6 +25,7 @@ from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
+from app.utils.db_helpers import org_stamp_is
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -82,24 +83,18 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
             .scalar()
         )
 
-        # Check if a profile with this name already exists for this user
+        # The same-named profile of this user in the speaker's tenant, if any. Names
+        # are unique per user per tenant (v430), so another tenant's profile of that
+        # name is neither linked nor in the way of creating one here.
         existing_profile = (
             db.query(SpeakerProfile)
             .filter(
                 SpeakerProfile.user_id == speaker.user_id,
                 SpeakerProfile.name.ilike(display_name.strip()),
+                org_stamp_is(SpeakerProfile.organization_id, speaker_org_id),
             )
             .first()
         )
-
-        if existing_profile and existing_profile.organization_id != speaker_org_id:
-            # Profile names are unique per user across tenants, so the same-named
-            # profile of another tenant can be neither linked nor duplicated here.
-            logger.info(
-                f"Not auto-assigning speaker {speaker.id}: profile '{existing_profile.name}' "
-                "belongs to another tenant"
-            )
-            return False
 
         if existing_profile:
             # Assign speaker to existing profile

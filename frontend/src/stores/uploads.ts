@@ -7,6 +7,27 @@ interface UploadStoreState {
   uploads: UploadItem[];
   isExpanded: boolean;
   hasNewActivity: boolean;
+  /** The user explicitly closed the tray; auto-expand must not reopen it. */
+  userCollapsed: boolean;
+}
+
+const USER_COLLAPSED_KEY = 'upload-tray-user-collapsed';
+
+function loadUserCollapsed(): boolean {
+  try {
+    return localStorage.getItem(USER_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveUserCollapsed(value: boolean): void {
+  try {
+    if (value) localStorage.setItem(USER_COLLAPSED_KEY, '1');
+    else localStorage.removeItem(USER_COLLAPSED_KEY);
+  } catch {
+    // persistence is best-effort
+  }
 }
 
 // Create the writable store
@@ -15,6 +36,7 @@ function createUploadStore() {
     uploads: [],
     isExpanded: false,
     hasNewActivity: false,
+    userCollapsed: loadUserCollapsed(),
   };
 
   const { subscribe, set, update } = writable<UploadStoreState>(initialState);
@@ -33,10 +55,17 @@ function createUploadStore() {
         hasNewActivity = true;
       }
 
+      // Surface the tray when the first upload starts, unless the user has
+      // closed it on purpose.
+      const firstUploadStarted =
+        event.type === 'added' && state.uploads.length === 0 && uploads.length > 0;
+      const isExpanded = state.isExpanded || (firstUploadStarted && !state.userCollapsed);
+
       return {
         ...state,
         uploads,
-        hasNewActivity,
+        hasNewActivity: isExpanded && !state.isExpanded ? false : hasNewActivity,
+        isExpanded,
       };
     });
   });
@@ -52,26 +81,34 @@ function createUploadStore() {
 
     // Actions
     expand() {
+      saveUserCollapsed(false);
       update((state) => ({
         ...state,
         isExpanded: true,
         hasNewActivity: false, // Clear new activity when expanded
+        userCollapsed: false,
       }));
     },
 
     collapse() {
+      saveUserCollapsed(true);
       update((state) => ({
         ...state,
         isExpanded: false,
+        userCollapsed: true,
       }));
     },
 
     toggle() {
-      update((state) => ({
-        ...state,
-        isExpanded: !state.isExpanded,
-        hasNewActivity: state.isExpanded ? state.hasNewActivity : false, // Clear if expanding
-      }));
+      update((state) => {
+        saveUserCollapsed(state.isExpanded);
+        return {
+          ...state,
+          userCollapsed: state.isExpanded,
+          isExpanded: !state.isExpanded,
+          hasNewActivity: state.isExpanded ? state.hasNewActivity : false, // Clear if expanding
+        };
+      });
     },
 
     clearNewActivity() {
@@ -163,7 +200,8 @@ function createUploadStore() {
      */
     reset() {
       uploadService.reset();
-      set({ uploads: [], isExpanded: false, hasNewActivity: false });
+      saveUserCollapsed(false);
+      set({ uploads: [], isExpanded: false, hasNewActivity: false, userCollapsed: false });
     },
 
     // Cleanup

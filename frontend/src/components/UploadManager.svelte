@@ -37,7 +37,7 @@
 
   // Handle drag start
   function handleDragStart(event: MouseEvent) {
-    if (event.target && (event.target as HTMLElement).closest('.upload-actions, .action-btn')) {
+    if (event.target && (event.target as HTMLElement).closest('.upload-actions, .header-actions')) {
       return; // Don't drag when clicking action buttons
     }
 
@@ -76,9 +76,12 @@
     isDragging = false;
 
     // Update position
+    // The tray is anchored by right/bottom, so a pointer delta toward the
+    // top-left must GROW these offsets (it was added, which snapped the tray the
+    // wrong way on release).
     position = {
-      x: Math.max(20, Math.min(window.innerWidth - 320, position.x + dragOffset.x)),
-      y: Math.max(20, Math.min(window.innerHeight - 200, position.y + dragOffset.y))
+      x: Math.max(20, Math.min(window.innerWidth - 320, position.x - dragOffset.x)),
+      y: Math.max(20, Math.min(window.innerHeight - 200, position.y - dragOffset.y))
     };
 
     savePosition();
@@ -261,7 +264,7 @@
 <style>
   .upload-manager {
     position: fixed;
-    z-index: 9998;
+    z-index: var(--z-toast);
     font-family: var(--font-family);
     user-select: none;
     transition: transform 0.2s ease;
@@ -433,7 +436,7 @@
 
   .progress-fill {
     height: 100%;
-    background: var(--primary-color);
+    background: var(--primary-on-surface);
     transition: width 0.3s ease;
   }
 

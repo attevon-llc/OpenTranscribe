@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { PROVENANCE_SOURCE_KEYS, keyFor } from '$lib/i18n/keyMaps';
   /**
    * A derived value, WHERE IT CAME FROM, and a way to correct it.
    *
@@ -44,7 +45,7 @@
   $: unresolved = !provenance;
   $: hasValue = Boolean(value);
   $: sourceKey = provenance?.source ?? 'unresolved';
-  $: sourceLabel = $t(`provenance.source.${sourceKey}`);
+  $: sourceLabel = $t(keyFor(PROVENANCE_SOURCE_KEYS, sourceKey, PROVENANCE_SOURCE_KEYS.unresolved));
 
   function startEditing() {
     // The <input type="date"> wants YYYY-MM-DD; the stored value is a full ISO instant.
@@ -116,7 +117,7 @@
         <ul>
           {#each provenance.candidates as candidate (candidate.source + (candidate.evidence ?? ''))}
             <li>
-              <strong>{$t(`provenance.source.${candidate.source}`)}</strong>
+              <strong>{$t(keyFor(PROVENANCE_SOURCE_KEYS, candidate.source, PROVENANCE_SOURCE_KEYS.unresolved))}</strong>
               {#if candidate.date}— {format(candidate.date)}{/if}
               {#if candidate.evidence}<em>{candidate.evidence}</em>{/if}
             </li>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { WATCH_FILE_STATUS_KEYS } from '$lib/i18n/keyMaps';
   /**
    * Per-file import history for one watch source, with retry and delete-record (#489).
    *
@@ -258,7 +259,7 @@
         <option value="">{$t('settings.watchSources.files.allStatuses')}</option>
         {#each WATCH_FILE_STATUSES as status (status)}
           <option value={status}>
-            {$t(`settings.watchSources.files.status.${status}`)}
+            {$t(WATCH_FILE_STATUS_KEYS[status])}
           </option>
         {/each}
       </select>

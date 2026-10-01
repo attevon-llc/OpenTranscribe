@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { REDACTION_CATEGORY_KEYS, REDACTION_DETECTOR_KEYS, REDACTION_STYLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
@@ -155,7 +156,7 @@
           </label>
           <select id="redaction-style" class="form-select" bind:value={settings.style}>
             {#each defaults?.available_styles ?? [] as style}
-              <option value={style}>{$t(`settings.contentRedaction.styleOption.${style}`)}</option>
+              <option value={style}>{labelFor($t, REDACTION_STYLE_KEYS, style)}</option>
             {/each}
           </select>
           <!-- Live example of exactly what this style produces -->
@@ -200,7 +201,7 @@
                 checked={settings.detectors.includes(det)}
                 on:change={() => (settings.detectors = toggleInList(settings.detectors, det))}
               />
-              <span>{$t(`settings.contentRedaction.detector.${det}`)}</span>
+              <span>{labelFor($t, REDACTION_DETECTOR_KEYS, det)}</span>
             </label>
           {/each}
         </div>
@@ -223,7 +224,7 @@
                 disabled={locked}
                 on:change={() => toggleCategory(cat)}
               />
-              <span>{$t(`settings.contentRedaction.category.${cat}`)}</span>
+              <span>{labelFor($t, REDACTION_CATEGORY_KEYS, cat)}</span>
               {#if locked}
                 <span class="lock-badge" title={$t('settings.contentRedaction.requiredByAdmin')}>
                   {@html lockSvg}

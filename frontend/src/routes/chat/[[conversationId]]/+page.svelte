@@ -10,6 +10,7 @@
   changed my mind" visits from littering the history sidebar.
 -->
 <script lang="ts">
+  import { CHAT_STATE_ERROR_FALLBACK, CHAT_STATE_ERROR_KEYS, keyFor } from '$lib/i18n/keyMaps';
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { t } from '$stores/locale';
@@ -533,7 +534,7 @@
       <div class="chat-body">
         {#if state.error}
           <div class="chat-error" role="alert" data-testid="chat-error-banner">
-            <span>{$t(`chat.errors.${state.error}`)}</span>
+            <span>{$t(keyFor(CHAT_STATE_ERROR_KEYS, state.error, CHAT_STATE_ERROR_FALLBACK))}</span>
             {#if state.error === 'conversationNotFound'}
               <button type="button" class="error-action" on:click={handleNewChat}>
                 {$t('chat.newChat')}

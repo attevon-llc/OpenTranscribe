@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { QUEUE_NAME_KEYS } from '$lib/i18n/keyMaps';
   import { t } from '$stores/locale';
   import BaseModal from '../ui/BaseModal.svelte';
 
@@ -152,7 +153,7 @@
               {#each ['gpu', 'download', 'nlp', 'embedding', 'cpu'] as queueName}
                 <div class="detail-row">
                   <span class="detail-label">
-                    {$t(`settings.statistics.queue${queueName.charAt(0).toUpperCase() + queueName.slice(1)}`)}
+                    {$t(QUEUE_NAME_KEYS[queueName])}
                     <span class="detail-sublabel">{$t(queueDescriptions[queueName])}</span>
                   </span>
                   <span class="detail-value" class:highlight={stats.queues?.[queueName] > 0}>

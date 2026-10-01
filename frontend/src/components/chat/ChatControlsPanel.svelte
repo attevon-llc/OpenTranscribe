@@ -7,6 +7,7 @@
   account-wide equivalents live in Settings → Chat.
 -->
 <script lang="ts">
+  import { SEARCH_MODE_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { clickOutside } from '$lib/actions/clickOutside';
@@ -214,7 +215,7 @@
         data-testid="chat-search-mode"
       >
         {#each SEARCH_MODES as mode}
-          <option value={mode}>{$t(`chat.searchMode.${mode}`)}</option>
+          <option value={mode}>{$t(SEARCH_MODE_KEYS[mode])}</option>
         {/each}
       </select>
     </div>

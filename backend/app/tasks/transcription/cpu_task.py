@@ -28,6 +28,7 @@ from .context import _validate_transcription_result
 from .context import requeue_after_abort
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
+from .pipelines import _load_file_vocabulary
 from .pipelines import _resolve_language_settings
 from .run_ownership import superseded_or_none
 from .user_settings import _get_user_transcription_settings
@@ -66,6 +67,7 @@ def _run_cpu_transcription(
         vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
+        vocabulary=_load_file_vocabulary(ctx),
     )
 
     if whisper_model and whisper_model in LIGHTWEIGHT_MODELS:

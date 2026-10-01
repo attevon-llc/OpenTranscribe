@@ -210,6 +210,16 @@ class EngineConfig:
             "max_speakers": tc.max_speakers,
             "num_speakers": tc.num_speakers,
             "overlap_min_duration": tc.overlap_min_duration,
+            # Per-file decode settings (issue #1117). Without them the GPU stage rebuilt its
+            # config from defaults and decoded every file with default VAD/accuracy settings
+            # and no vocabulary, whatever the user had configured.
+            "vad_threshold": tc.vad_threshold,
+            "vad_min_silence_ms": tc.vad_min_silence_ms,
+            "vad_min_speech_ms": tc.vad_min_speech_ms,
+            "vad_speech_pad_ms": tc.vad_speech_pad_ms,
+            "hallucination_silence_threshold": tc.hallucination_silence_threshold,
+            "repetition_penalty": tc.repetition_penalty,
+            "vocabulary": list(tc.vocabulary) if tc.vocabulary else None,
         }
 
     @classmethod
@@ -240,6 +250,13 @@ class EngineConfig:
             num_speakers=snapshot.get("num_speakers"),
             overlap_min_duration=snapshot.get("overlap_min_duration", 0.25),
             diarizer_backend=snapshot.get("diarizer_backend", "native"),
+            vad_threshold=snapshot.get("vad_threshold", 0.5),
+            vad_min_silence_ms=snapshot.get("vad_min_silence_ms", 2000),
+            vad_min_speech_ms=snapshot.get("vad_min_speech_ms", 250),
+            vad_speech_pad_ms=snapshot.get("vad_speech_pad_ms", 400),
+            hallucination_silence_threshold=snapshot.get("hallucination_silence_threshold"),
+            repetition_penalty=snapshot.get("repetition_penalty", 1.0),
+            vocabulary=tuple(snapshot["vocabulary"]) if snapshot.get("vocabulary") else None,
         )
         engine = cls(
             transcriber_backend=snapshot.get("transcriber_backend", "faster_whisper"),

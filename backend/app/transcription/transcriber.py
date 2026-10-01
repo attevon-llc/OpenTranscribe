@@ -228,8 +228,15 @@ class Transcriber:
         elapsed = time.perf_counter() - step_start
         logger.info(f"TIMING: transcriber model loaded in {elapsed:.3f}s")
 
-    def transcribe(self, audio: np.ndarray) -> dict:
+    def transcribe(self, audio: np.ndarray, options: TranscriptionConfig | None = None) -> dict:
         """Batched transcription with word-level timestamps.
+
+        The decode options come from ``options``, the config of the task being processed:
+        language, translate, beam and batch size, VAD, accuracy settings and the custom
+        vocabulary. A worker shares one cached transcriber across tasks and threads, and
+        ``self.config`` is only the config its weights were loaded with, so a caller that
+        decodes a task must pass that task's config (issue #1117). Without ``options`` the
+        load config is used, which is right only for a transcriber built for one job.
 
         On CUDA the decode first reserves its VRAM estimate from the worker's admission
         budget (``vram_budget``), sized by the batch it is about to run. A CUDA OOM frees the
@@ -240,6 +247,7 @@ class Transcriber:
 
         Args:
             audio: Audio waveform as 16kHz mono float32 numpy array.
+            options: The task's config. Defaults to the load config.
 
         Returns:
             Dict with keys:
@@ -250,7 +258,8 @@ class Transcriber:
         if not self.is_loaded:
             raise RuntimeError("Transcriber model not loaded. Call load_model() first.")
 
-        batch_size = self.config.batch_size
+        opts = options if options is not None else self.config
+        batch_size = opts.batch_size
         halvings_left = _max_oom_halvings()
         while True:
             try:
@@ -260,7 +269,7 @@ class Transcriber:
                     batch_size=batch_size,
                     device_index=self.config.device_index,
                 ):
-                    return self._transcribe_once(audio, batch_size)
+                    return self._transcribe_once(audio, batch_size, opts)
             except Exception as exc:
                 if (
                     self.config.device != "cuda"
@@ -297,38 +306,48 @@ class Transcriber:
             self.config.device_index
         )
 
-    def _transcribe_once(self, audio: np.ndarray, batch_size: int) -> dict:
+    def _transcribe_once(
+        self, audio: np.ndarray, batch_size: int, opts: TranscriptionConfig
+    ) -> dict:
         step_start = time.perf_counter()
 
+        # Capabilities are those of the LOADED model, so the model name comes from the load
+        # config; the language and translate request come from this task.
         task, language = _resolve_task_and_language(
             self.config.model_name,
-            self.config.source_language,
-            self.config.translate_to_english,
+            opts.source_language,
+            opts.translate_to_english,
         )
+        terms = [t.strip() for t in (opts.vocabulary or ()) if t and t.strip()]
+        hotwords = ", ".join(terms) if terms else None
 
         logger.info(
             f"Transcribing: task={task}, language={language or 'auto'}, "
-            f"batch_size={batch_size}, beam_size={self.config.beam_size}"
+            f"batch_size={batch_size}, beam_size={opts.beam_size}, "
+            f"vocabulary_terms={len(terms)}"
         )
 
         assert self._pipeline is not None, "Pipeline not initialized"
         kwargs: dict = dict(
             batch_size=batch_size,
             word_timestamps=True,
-            beam_size=self.config.beam_size,
+            beam_size=opts.beam_size,
             task=task,
             language=language,
             vad_filter=True,
             vad_parameters={
-                "threshold": self.config.vad_threshold,
-                "min_silence_duration_ms": self.config.vad_min_silence_ms,
-                "min_speech_duration_ms": self.config.vad_min_speech_ms,
-                "speech_pad_ms": self.config.vad_speech_pad_ms,
+                "threshold": opts.vad_threshold,
+                "min_silence_duration_ms": opts.vad_min_silence_ms,
+                "min_speech_duration_ms": opts.vad_min_speech_ms,
+                "speech_pad_ms": opts.vad_speech_pad_ms,
             },
-            repetition_penalty=self.config.repetition_penalty,
+            repetition_penalty=opts.repetition_penalty,
+            # faster-whisper puts these in the decoder prompt (truncated to half the context);
+            # it is ignored when a prefix is set, and none is.
+            hotwords=hotwords,
         )
-        if self.config.hallucination_silence_threshold is not None:
-            kwargs["hallucination_silence_threshold"] = self.config.hallucination_silence_threshold
+        if opts.hallucination_silence_threshold is not None:
+            kwargs["hallucination_silence_threshold"] = opts.hallucination_silence_threshold
 
         segments_gen, info = self._pipeline.transcribe(audio, **kwargs)
 

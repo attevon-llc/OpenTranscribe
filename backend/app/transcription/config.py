@@ -48,7 +48,14 @@ def _parse_optional_float(value: str) -> float | None:
 
 @dataclass
 class TranscriptionConfig:
-    """Configuration for the transcription pipeline."""
+    """Configuration for the transcription pipeline.
+
+    A GPU worker loads the Whisper weights once and every task reuses them (issue #1117).
+    Only ``config_hash()``'s fields (model, compute type, device) and ``concurrent_requests``
+    are load-time; everything the decode reads (language, translate, beam size, batch size,
+    VAD, accuracy settings, vocabulary) belongs to the task and is passed per call as
+    ``Transcriber.transcribe(audio, options=tc)``.
+    """
 
     # Class-level pin: set once at worker startup, used for all subsequent tasks.
     # Prevents mid-flight model swaps when admin changes the DB setting.
@@ -91,6 +98,10 @@ class TranscriptionConfig:
 
     # Concurrent GPU model sharing (Phase 2)
     concurrent_requests: int = 1
+
+    # Custom vocabulary for this file (owner + tenant + instance-wide terms), passed to the
+    # decode as faster-whisper ``hotwords``. Resolved per task, never at preload.
+    vocabulary: tuple[str, ...] | None = None
 
     def config_hash(self) -> str:
         """Hash of model-loading-relevant config for cache invalidation.

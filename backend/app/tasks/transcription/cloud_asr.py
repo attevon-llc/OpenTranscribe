@@ -11,6 +11,7 @@ from .context import TranscriptionContext
 from .notifications import send_progress_notification
 from .user_settings import _get_user_language_settings
 from .user_settings import _get_user_transcription_settings
+from .user_settings import load_vocabulary_terms
 
 logger = logging.getLogger(__name__)
 
@@ -169,37 +170,6 @@ def _run_parallel_cloud_asr_and_diarization(
         ctx.file_id,
     )
     return merged
-
-
-def load_vocabulary_terms(db, user_id: int, file_id: int) -> list[str]:
-    """Active custom vocabulary for a file, in the file's tenant.
-
-    The owner's terms stamped with the file's organization (none = personal) plus
-    the owner-less terms visible there — never the owner's terms from another
-    tenant. Community edition: nothing is stamped, so this is the owner's terms
-    plus the system terms, as before.
-    """
-    from app.models.custom_vocabulary import CustomVocabulary
-    from app.models.media import MediaFile
-    from app.utils.db_helpers import org_stamp_is
-
-    file_org_id = db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
-    shared_stamp = CustomVocabulary.organization_id.is_(None)
-    if file_org_id is not None:
-        shared_stamp = shared_stamp | (CustomVocabulary.organization_id == file_org_id)
-    return [
-        row.term
-        for row in db.query(CustomVocabulary.term)
-        .filter(
-            (
-                (CustomVocabulary.user_id == user_id)
-                & org_stamp_is(CustomVocabulary.organization_id, file_org_id)
-            )
-            | (CustomVocabulary.user_id.is_(None) & shared_stamp),
-            CustomVocabulary.is_active.is_(True),
-        )
-        .all()
-    ]
 
 
 def _run_cloud_asr_pipeline(

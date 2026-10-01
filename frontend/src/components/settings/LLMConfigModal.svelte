@@ -599,8 +599,8 @@
 
           <!-- Model Selection -->
           <div class="form-group">
-            <label for="model-name">
-              {$t('llm.modelName')}
+            <div class="form-label-row">
+              <label for="model-name">{$t('llm.modelName')}</label>
               {#if formData.provider === 'ollama'}
                 <button
                   type="button"
@@ -677,7 +677,7 @@
                   {$t('llm.discoverModels')}
                 </button>
               {/if}
-            </label>
+            </div>
             <input
               type="text"
               id="model-name"
@@ -968,6 +968,17 @@
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .form-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  .form-label-row label {
+    margin-bottom: 0;
   }
 
   .discover-models-btn {

@@ -490,7 +490,7 @@ This script is **not needed** for fresh installations. The containers will autom
 ### Related Documentation
 
 - [CLAUDE.md - Security Features](../CLAUDE.md#security-features) - Non-root container documentation
-- [Issue #91](https://github.com/davidamacey/transcribe-app/issues/91) - Non-root user implementation
+- [Issue #91](https://github.com/attevon-llc/OpenTranscribe/issues/91) - Non-root user implementation
 
 ---
 

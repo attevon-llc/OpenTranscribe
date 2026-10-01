@@ -274,6 +274,16 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
     SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/sentence-transformers \
     DEPLOYMENT_MODE=lite
 
+# No third-party telemetry or update checks from a running container: pyannote's OTLP
+# metrics to otel.pyannote.ai, huggingface_hub telemetry, DO_NOT_TRACK for any library
+# honoring it, and deno's daily dl.deno.land release check. Evidence per switch:
+# app/core/privacy_env.py (the in-code backstop); guarded by
+# tests/unit/test_telemetry_disabled.py.
+ENV PYANNOTE_METRICS_ENABLED=false \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    DO_NOT_TRACK=1 \
+    DENO_NO_UPDATE_CHECK=1
+
 # Copy application code
 COPY --chown=appuser:appuser . .
 

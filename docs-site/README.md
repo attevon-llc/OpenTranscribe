@@ -289,5 +289,5 @@ See [CONTRIBUTING.md](../docs/CONTRIBUTING.md) for guidelines on contributing to
 
 ## Support
 
-- **GitHub Issues**: [Report documentation issues](https://github.com/davidamacey/OpenTranscribe/issues)
-- **GitHub Discussions**: [Ask questions](https://github.com/davidamacey/OpenTranscribe/discussions)
+- **GitHub Issues**: [Report documentation issues](https://github.com/attevon-llc/OpenTranscribe/issues)
+- **GitHub Discussions**: [Ask questions](https://github.com/attevon-llc/OpenTranscribe/discussions)

@@ -78,6 +78,9 @@ services:
       AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com}
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      # No phone-home: version check and the anonymous startup analytics ping.
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
     ports:
       # Loopback-only, matching the base file's convention: this is a dev IdP with
       # a scripted bootstrap admin password.

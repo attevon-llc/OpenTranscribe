@@ -15,6 +15,7 @@ from typing import NoReturn
 import numpy as np
 import torch
 
+from app.core import privacy_env  # noqa: F401  -- telemetry opt-outs before pyannote loads
 from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarize_result import DiarizeResult

@@ -317,25 +317,25 @@
         <div class="config-method">
           <h4>{$t('settings.authentication.method.ldap')}</h4>
           <code>LDAP_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/LDAP_AUTH.md" target="_blank" rel="noopener noreferrer">LDAP_AUTH.md</a></p>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/attevon-llc/OpenTranscribe/blob/master/docs/LDAP_AUTH.md" target="_blank" rel="noopener noreferrer">LDAP_AUTH.md</a></p>
         </div>
 
         <div class="config-method">
           <h4>{$t('settings.authentication.method.oidc')}</h4>
           <code>OIDC_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/OIDC_SETUP.md" target="_blank" rel="noopener noreferrer">OIDC_SETUP.md</a></p>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/attevon-llc/OpenTranscribe/blob/master/docs/OIDC_SETUP.md" target="_blank" rel="noopener noreferrer">OIDC_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
           <h4>{$t('settings.authentication.method.pki')}</h4>
           <code>PKI_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/PKI_SETUP.md" target="_blank" rel="noopener noreferrer">PKI_SETUP.md</a></p>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/attevon-llc/OpenTranscribe/blob/master/docs/PKI_SETUP.md" target="_blank" rel="noopener noreferrer">PKI_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
           <h4>{$t('settings.authentication.method.mfa')}</h4>
           <code>MFA_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/example_env.txt" target="_blank" rel="noopener noreferrer">example_env.txt</a></p>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/attevon-llc/OpenTranscribe/blob/master/.env.example" target="_blank" rel="noopener noreferrer">.env.example</a></p>
         </div>
       </div>
 

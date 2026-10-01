@@ -37,9 +37,9 @@ git push origin master
 
 ### Step 2: Verify GitHub Pages Deployment (3 minutes)
 
-1. Go to: https://github.com/davidamacey/OpenTranscribe/actions
+1. Go to: https://github.com/attevon-llc/OpenTranscribe/actions
 2. Wait for **"Deploy Documentation"** workflow to complete (green checkmark)
-3. Go to: https://github.com/davidamacey/OpenTranscribe/settings/pages
+3. Go to: https://github.com/attevon-llc/OpenTranscribe/settings/pages
 4. Verify it says: **"Your site is published"**
 
 ### Step 3: Configure DNS in Squarespace (5 minutes)
@@ -136,7 +136,7 @@ https://docs.opentranscribe.io
 ### Issue: "404 - There isn't a GitHub Pages site here"
 
 **Solution:**
-1. Go to https://github.com/davidamacey/OpenTranscribe/settings/pages
+1. Go to https://github.com/attevon-llc/OpenTranscribe/settings/pages
 2. Verify it says "Your site is published"
 3. Check that CNAME file exists:
    ```bash
@@ -153,7 +153,7 @@ https://docs.opentranscribe.io
 **Solution:** Wait 10-60 minutes after DNS propagates. GitHub automatically provisions SSL certificate from Let's Encrypt.
 
 **Check Status:**
-1. Go to https://github.com/davidamacey/OpenTranscribe/settings/pages
+1. Go to https://github.com/attevon-llc/OpenTranscribe/settings/pages
 2. Look for "HTTPS" status
 3. Should show checkmark when ready
 

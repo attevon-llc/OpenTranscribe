@@ -1,3 +1,9 @@
+# Telemetry opt-outs must be in os.environ before anything can import pyannote or
+# huggingface_hub (both read them at import). Keep this the first import.
+from app.core import privacy_env  # noqa: F401  # isort: skip
+
+# isort: split
+
 # Skip heavy AI imports during testing - speeds up test startup significantly
 import logging
 import os

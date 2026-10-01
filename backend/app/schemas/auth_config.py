@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import ValidationError
+from pydantic import field_validator
 
 
 class AuthConfigBase(BaseModel):
@@ -317,13 +318,22 @@ class ProxyAuthConfig(_CategoryConfig):
 
 
 class PasswordPolicyConfig(_CategoryConfig):
-    """Password policy configuration."""
+    """Password policy configuration.
+
+    ``password_policy_profile`` picks the tier. ``basic`` and ``standard`` fix the rules
+    (the composition, expiry, history and minimum-age values below are then ignored);
+    ``hardened`` and ``custom`` use the values below. The bounds here are what an admin
+    can save from the UI; an operator can still set a lower minimum with the matching
+    environment variable.
+    """
 
     password_policy_enabled: bool = True
-    #: ``nist`` (SP 800-63B-4), ``stig`` (DoD STIG style) or ``custom`` (the individual
-    #: values below). ``stig`` is the coded default so an upgrade changes nothing.
-    password_policy_profile: Literal["nist", "stig", "custom"] = "stig"  # noqa: S105 # nosec B105
-    #: 0 = profile default (nist: 128, never below 64; others: no cap).
+    #: ``basic`` (light, opt-in), ``standard`` (NIST SP 800-63B-4), ``hardened`` (DoD STIG
+    #: style) or ``custom`` (the individual values below). ``hardened`` is the coded default
+    #: so an upgrade changes nothing. ``nist`` / ``stig`` are accepted and stored as
+    #: ``standard`` / ``hardened``.
+    password_policy_profile: Literal["basic", "standard", "hardened", "custom"] = "hardened"  # noqa: S105 # nosec B105
+    #: 0 = profile default (basic/standard: 128, never below 64; others: no cap).
     password_max_length: int = Field(default=0, ge=0, le=1024)
     password_min_length: int = Field(default=12, ge=8, le=128)
     password_require_uppercase: bool = True
@@ -334,6 +344,32 @@ class PasswordPolicyConfig(_CategoryConfig):
     password_history_count: int = Field(default=24, ge=0, le=100)
     #: 0 means passwords never expire.
     password_max_age_days: int = Field(default=60, ge=0, le=3650)
+    #: Hours a password must be kept before it may be changed again; 0 disables.
+    password_min_age_hours: int = Field(default=24, ge=0, le=8760)
+    #: ""  = tier default (on for basic/standard, off otherwise); "true" / "false" override.
+    password_blocklist_enabled: Literal["", "true", "false"] = ""
+    #: Optional online k-anonymity breach lookup. Off by default; only 5 hash characters
+    #: leave the host and it fails open.
+    password_hibp_enabled: bool = False
+
+    @field_validator("password_policy_profile", mode="before")
+    @classmethod
+    def _canonical_profile(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            return {"nist": "standard", "stig": "hardened"}.get(lowered, lowered)
+        return value
+
+    @field_validator("password_blocklist_enabled", mode="before")
+    @classmethod
+    def _tri_state(cls, value: Any) -> Any:
+        if value is None:
+            return ""
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
 
 
 class MFAConfig(_CategoryConfig):
@@ -451,6 +487,7 @@ def coded_default(config_key: str, fallback: Any = None) -> Any:
 CROSS_FIELD_KEYS: dict[str, tuple[str, ...]] = {
     "local": ("local_enabled", "allow_registration"),
     "pki": ("pki_enabled", "pki_verify_revocation", "pki_ca_cert_path"),
+    "password_policy": ("password_min_length", "password_max_length"),
 }
 
 
@@ -470,6 +507,10 @@ def _check_cross_field_rules(
     """
     if category == "pki":
         _check_pki_cross_field_rules(merged, incoming_keys)
+        return
+
+    if category == "password_policy":
+        _check_password_length_rules(merged)
         return
 
     if category != "local":
@@ -495,6 +536,21 @@ def _check_cross_field_rules(
         "disabled: self-registration creates local-password accounts that could never sign in. "
         "Enable local_enabled first, or leave self-registration off."
     )
+
+
+def _check_password_length_rules(merged: dict[str, Any]) -> None:
+    """A maximum length below the minimum would reject every password.
+
+    Raises:
+        ValueError: ``password_max_length`` is set (non-zero) and below ``password_min_length``.
+    """
+    maximum = merged.get("password_max_length", coded_default("password_max_length"))
+    minimum = merged.get("password_min_length", coded_default("password_min_length"))
+    if maximum and maximum < minimum:
+        raise ValueError(
+            f"password_max_length ({maximum}) cannot be below password_min_length ({minimum}): "
+            "no password could satisfy both. Use 0 for no maximum."
+        )
 
 
 def _check_pki_cross_field_rules(merged: dict[str, Any], incoming_keys: frozenset[str]) -> None:

@@ -9,6 +9,19 @@ export interface PasswordPolicy {
   require_digit: boolean;
   require_special: boolean;
   blocklist_enabled?: boolean;
+  /** Whether a breached-password list is installed; the check is skipped without one. */
+  blocklist_status?: {
+    installed: boolean;
+    entries: number;
+    source: 'default' | 'custom';
+    retrieved: string | null;
+  };
+  online_check_enabled?: boolean;
+  max_length?: number;
+  min_length_with_mfa?: number;
+  history_count?: number;
+  max_age_days?: number;
+  min_age_hours?: number;
 }
 
 export interface PasswordRequirement {
@@ -16,7 +29,7 @@ export interface PasswordRequirement {
   params?: Record<string, number>;
 }
 
-/** What the DoD-style profile enforces; shown if the policy cannot be fetched. */
+/** What the hardened (DoD-style) tier enforces; shown if the policy cannot be fetched. */
 export const FALLBACK_PASSWORD_POLICY: PasswordPolicy = {
   min_length: 12,
   require_uppercase: true,
@@ -42,6 +55,13 @@ export function loadPasswordPolicy(): Promise<PasswordPolicy> {
   return cached;
 }
 
+/** The policy as the server enforces it right now, bypassing the once-per-page cache. */
+export async function fetchPasswordPolicy(): Promise<PasswordPolicy> {
+  const { data } = await axiosInstance.get<PasswordPolicy>('/auth/password-policy');
+  cached = Promise.resolve(data);
+  return data;
+}
+
 /** i18n keys (and params) for the requirement bullets the active policy enforces. */
 export function buildPasswordRequirements(policy: PasswordPolicy): PasswordRequirement[] {
   const items: PasswordRequirement[] = [
@@ -57,6 +77,8 @@ export function buildPasswordRequirements(policy: PasswordPolicy): PasswordRequi
     policy.require_digit ||
     policy.require_special;
   if (!composition) items.push({ key: 'auth.passwordReqAnyCharacters' });
-  if (policy.blocklist_enabled) items.push({ key: 'auth.passwordReqNotBreached' });
+  // Without an installed list the check is skipped, so do not promise it.
+  if (policy.blocklist_enabled && policy.blocklist_status?.installed !== false)
+    items.push({ key: 'auth.passwordReqNotBreached' });
   return items;
 }

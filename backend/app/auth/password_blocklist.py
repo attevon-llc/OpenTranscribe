@@ -174,6 +174,8 @@ def blocklist_status(configured_path: str = "") -> dict[str, object]:
         "source": "custom" if configured else "default",
         "retrieved": None,
     }
+    if not entries:
+        return status
     try:
         meta = json.loads(path.with_name(path.name + ".meta.json").read_text(encoding="utf-8"))
         status["retrieved"] = str(meta.get("retrieved") or "") or None

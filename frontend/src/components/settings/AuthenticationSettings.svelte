@@ -22,6 +22,7 @@
   let loading = false;
   let configs: Record<string, any> = {};
   let hasUnsavedChanges = false;
+  let policyRefresh = 0;
   let backendNotReady = false; // Backend is fully implemented
 
   /**
@@ -57,11 +58,17 @@
       'password_require_digit',
       'password_require_special',
       'password_max_age_days',
-      'password_history_count'
+      'password_history_count',
+      'password_policy_profile',
+      'password_max_length',
+      'password_min_age_hours',
+      'password_blocklist_enabled',
+      'password_hibp_enabled'
     ],
     mfa: [
       'mfa_enabled',
       'mfa_required',
+      'mfa_required_for_admins',
       'mfa_issuer_name',
       'mfa_backup_code_count',
       'mfa_token_expire_minutes'
@@ -253,6 +260,7 @@
     }
 
     await loadConfigs();
+    policyRefresh += 1;
   }
 
   /**
@@ -355,6 +363,7 @@
         {#if activeTab === 'local'}
           <LocalAuthSettings
             config={localTabConfig}
+            refreshKey={policyRefresh}
             on:save={(e) => handleLocalSave(e.detail)}
             on:change={handleChange}
           />

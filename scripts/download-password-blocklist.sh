@@ -8,7 +8,7 @@
 # Usage: ./scripts/download-password-blocklist.sh [model_cache_dir]
 #        ./opentranscribe.sh download-models password-blocklist
 #
-# Takes about an hour (1,048,576 small requests to the official k-anonymity range API,
+# Takes a few hours (1,048,576 small requests to the official k-anonymity range API,
 # resumable if interrupted) and needs internet access. Re-run it any time to refresh the
 # list. Air-gapped hosts: build it on a connected machine and copy the directory, or use
 # the offline package, which includes it.
@@ -59,9 +59,16 @@ echo "[INFO] Image:  $DOWNLOADER_IMAGE"
 echo "[INFO] Target: $TARGET"
 echo "[INFO] Source: Have I Been Pwned Pwned Passwords range API (no licensing or attribution requirement)"
 
-# Run as the invoking user so the files are owned by whoever runs the install, not root.
+# Run as the invoking user so the files are owned by whoever runs the install. Docker creates
+# the bind-mount source as root when the stack started first; fall back to root then (the
+# files are world-readable and mounted read-only by the backend, so ownership does not matter).
+RUN_AS="$(id -u):$(id -g)"
+if [ ! -w "$TARGET" ]; then
+    echo "[WARNING] $TARGET is not writable by you (created by Docker as root?); running the download as root"
+    RUN_AS="0:0"
+fi
 docker run --rm \
-    --user "$(id -u):$(id -g)" \
+    --user "$RUN_AS" \
     -e MODELS_DIR=/app/models \
     -v "$TARGET:/app/models/password-blocklist" \
     "$DOWNLOADER_IMAGE" \

@@ -2,51 +2,71 @@
 sidebar_position: 6
 ---
 
-# Password policy profiles
+# Password policy levels
 
-OpenTranscribe ships three password rule sets, selected with `PASSWORD_POLICY_PROFILE`
-(or Settings -> Authentication -> Password Policy):
+OpenTranscribe has four password levels, chosen in **Settings -> Authentication -> Local**
+(a four-card picker that previews the exact rules before you save) or with
+`PASSWORD_POLICY_PROFILE`:
 
-| Profile | Intent |
-| --- | --- |
-| `nist` | NIST SP 800-63B-4: long passphrases, no composition rules, no forced rotation, breached-password screening |
-| `stig` | DoD STIG / FedRAMP style: 12 characters, complexity, 60-day rotation, history of 24 |
-| `custom` | Exactly the individual `PASSWORD_*` values you set |
+| Level | For | Rules |
+| --- | --- | --- |
+| `basic` | Local development, small teams | 8 characters, no composition rules, no expiry, history or minimum age |
+| `standard` | Most installs (recommended) | NIST SP 800-63B-4: long passphrases, no composition rules, no forced rotation, breached-password screening |
+| `hardened` | Government, DoD, air-gapped | DoD STIG / FedRAMP style: 12 characters, complexity, 60-day rotation, history of 24 |
+| `custom` | Anything else | Exactly the individual `PASSWORD_*` values you set |
 
-## Which profile do I get?
+`nist` and `stig` still work everywhere as aliases of `standard` and `hardened`.
+
+**Trade-off.** Lighter levels are easier on users but accept weaker passwords. `standard` follows
+current NIST guidance: length plus a breached-password check protects better than complexity rules
+and scheduled changes, which push people toward predictable patterns. `hardened` keeps complexity,
+expiry and history for compliance regimes that still require them. `basic` is opt-in only and is
+not recommended for anything exposed to the internet.
+
+## Which level do I get?
 
 * **Fresh installs** (`.env` created from `.env.example` by `setup-opentranscribe.sh`) get
-  `PASSWORD_POLICY_PROFILE=nist`.
-* **Existing installs** have no such line in their `.env`, so the code default `stig` applies and
-  nothing changes on upgrade. To move to NIST, add `PASSWORD_POLICY_PROFILE=nist` to `.env` and
-  restart (or set it in the admin UI). Existing passwords keep working; existing expiry dates
-  stop being enforced; new passwords are checked against the new rules.
+  `PASSWORD_POLICY_PROFILE=standard`.
+* **Existing installs** have no such line in their `.env`, so the code default `hardened` applies and
+  nothing changes on upgrade. To move to `standard`, pick it in the admin UI or add
+  `PASSWORD_POLICY_PROFILE=standard` to `.env` and restart. Existing passwords keep working; existing
+  expiry dates stop being enforced; new passwords are checked against the new rules.
 * Some DoD/agency customers mandate the STIG values. Those deployments should set
-  `PASSWORD_POLICY_PROFILE=stig` explicitly so the choice is recorded.
+  `PASSWORD_POLICY_PROFILE=hardened` explicitly so the choice is recorded.
 
 Precedence is unchanged: admin UI (`auth_config` table) > `.env` > coded default.
 
 ## Settings
 
-| Setting | `nist` | `stig` | `custom` |
-| --- | --- | --- | --- |
-| Minimum length | 15; 8 if the account is MFA-protected | `PASSWORD_MIN_LENGTH` (12) | `PASSWORD_MIN_LENGTH` |
-| Maximum length (`PASSWORD_MAX_LENGTH`, 0 = default) | 128, a configured value is raised to at least 64 | none | as configured |
-| Composition (`PASSWORD_REQUIRE_*`) | never | upper, lower, digit, special | as configured |
-| Unicode / spaces | all accepted, NFKC-normalised | accepted | accepted |
-| Expiry (`PASSWORD_MAX_AGE_DAYS`) | never (change on evidence of compromise: admin reset, `must_change_password`) | 60 days | as configured |
-| History (`PASSWORD_HISTORY_COUNT`), minimum age | off | 24 / 24 h | as configured |
-| Blocklist + context words | on | off | off |
-| Account lockout | unchanged: `ACCOUNT_LOCKOUT_*` | unchanged | unchanged |
+| Setting | `basic` | `standard` | `hardened` | `custom` |
+| --- | --- | --- | --- | --- |
+| Minimum length | 8 | 15; 8 if the account is MFA-protected | `PASSWORD_MIN_LENGTH` (12) | `PASSWORD_MIN_LENGTH` |
+| Maximum length (`PASSWORD_MAX_LENGTH`, 0 = default) | 128, a configured value is raised to at least 64 | same as `basic` | none | as configured |
+| Composition (`PASSWORD_REQUIRE_*`) | never | never | upper, lower, digit, special | as configured |
+| Unicode / spaces | all accepted, NFKC-normalised | same | accepted | accepted |
+| Expiry (`PASSWORD_MAX_AGE_DAYS`) | never | never (change on evidence of compromise: admin reset, `must_change_password`) | 60 days | as configured |
+| History (`PASSWORD_HISTORY_COUNT`), minimum age (`password_min_age_hours`) | off | off | 24 / 24 h | as configured |
+| Blocklist + context words | on if a list is installed | on | off | off |
+| Account lockout | unchanged: `ACCOUNT_LOCKOUT_*` | unchanged | unchanged | unchanged |
 
-`PASSWORD_BLOCKLIST_ENABLED=true|false` overrides the profile default in any profile.
+`PASSWORD_BLOCKLIST_ENABLED=true|false` overrides the level default in any level.
 `PASSWORD_POLICY_ENABLED=false` still disables the whole policy.
 
-An unrecognised `PASSWORD_POLICY_PROFILE` value is logged and treated as `stig`.
+An unrecognised `PASSWORD_POLICY_PROFILE` value is logged and treated as `hardened`.
+
+### In the admin UI
+
+Under `basic` and `standard` the individual fields are hidden, because the level fixes those rules.
+`hardened` shows its values read-only; choose `custom` to edit them. In `custom` the server enforces
+bounds on save (minimum length 8-128, history 0-100, expiry 0-3650 days, minimum age 0-8760 hours,
+and a maximum length that is not below the minimum); an operator can still set a lower minimum with
+`PASSWORD_MIN_LENGTH`. The page also controls the breached-password check (level default / on / off),
+shows whether the list is installed, and has the optional online lookup switch and
+**Require MFA for administrators**. Every change is written to the audit log.
 
 ### "MFA-protected" (the 8-character floor)
 
-Under `nist` the minimum is 8 instead of 15 when the account has TOTP enrolled, or MFA is
+Under `standard` the minimum is 8 instead of 15 when the account has TOTP enrolled, or MFA is
 mandatory for it (`MFA_REQUIRED`, or `MFA_REQUIRED_FOR_ADMINS` for an admin). This is applied on
 password change and reset and on admin-set passwords. New registrations and invitation
 acceptance use 15, because the account has no second factor yet.
@@ -82,7 +102,7 @@ This builds the 100,000 most-breached passwords from Have I Been Pwned "Pwned Pa
 **SHA-1 hashes only** (uppercase hex, one per line, most common first) in
 `<MODEL_CACHE_DIR>/password-blocklist/pwned-passwords-top100k-sha1.txt`, plus a small
 `.meta.json` recording the retrieval date. It walks the official k-anonymity range API
-(1,048,576 small requests, about an hour, resumable if interrupted), then keeps the top
+(1,048,576 small requests; expect a few hours and roughly 35 GB of transfer, resumable if interrupted), then keeps the top
 100,000 hashes by breach count. Re-run it to refresh. Nothing is sent but 5-character hash
 prefixes, and no plaintext password is requested or stored.
 
@@ -143,16 +163,16 @@ WebAuthn / passkeys (phishing-resistant, AAL2/AAL3) are a planned follow-up and 
 
 | Requirement | Where |
 | --- | --- |
-| Min 15 characters single-factor; 8 with MFA | `nist` profile, `min_length_for()` |
+| Min 15 characters single-factor; 8 with MFA | `standard` level, `min_length_for()` |
 | Accept at least 64 characters; no truncation | `PASSWORD_MAX_LENGTH` floor 64 (default 128); no hash truncation |
 | Accept all printing ASCII, space, Unicode; normalise | no character-class filter; NFKC |
-| SHALL NOT impose composition rules | `PASSWORD_REQUIRE_*` ignored under `nist` |
-| SHALL NOT require periodic change; change on compromise | `PASSWORD_MAX_AGE_DAYS` ignored under `nist`; admin reset / `must_change_password` |
+| SHALL NOT impose composition rules | `PASSWORD_REQUIRE_*` ignored under `standard` |
+| SHALL NOT require periodic change; change on compromise | `PASSWORD_MAX_AGE_DAYS` ignored under `standard`; admin reset / `must_change_password` |
 | SHALL check against a blocklist (breached, dictionary, context words) | offline list, context words, optional range lookup |
 | Rate-limit failed attempts | `ACCOUNT_LOCKOUT_*` |
 | Multi-factor for privileged accounts | `MFA_REQUIRED_FOR_ADMINS` |
 
-### DISA STIG / FedRAMP IA-5 (`stig` profile)
+### DISA STIG / FedRAMP IA-5 (`hardened` level)
 
 | Control | Setting |
 | --- | --- |

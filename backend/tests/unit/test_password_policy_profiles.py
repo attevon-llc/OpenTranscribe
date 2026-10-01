@@ -46,6 +46,10 @@ def _publish(**values: Any) -> None:
         publish_process_auth_setting(key, value)
 
 
+def _tier() -> str:
+    return password_policy.profile
+
+
 def _errors(password: str, **kwargs: Any) -> list[str]:
     return validate_password(password, **kwargs).errors
 
@@ -57,45 +61,69 @@ def _no_ambient_overrides():
         password_policy_enabled=True,
         password_blocklist_enabled=None,
         password_max_length=0,
+        password_hibp_enabled=None,
     )
 
 
 @pytest.fixture
 def nist():
-    _publish(password_policy_profile="nist")
+    """The ``standard`` tier (NIST SP 800-63B-4)."""
+    _publish(password_policy_profile="standard")
 
 
 @pytest.fixture
 def stig():
-    _publish(password_policy_profile="stig")
+    """The ``hardened`` tier (DISA STIG style)."""
+    _publish(password_policy_profile="hardened")
+
+
+@pytest.fixture
+def basic():
+    _publish(password_policy_profile="basic")
 
 
 # --------------------------------------------------------------------------- default
 
 
 class TestDefaultProfile:
-    def test_code_default_is_stig_so_existing_installs_are_unchanged(self):
-        assert Settings.model_fields["PASSWORD_POLICY_PROFILE"].default == "stig"
+    def test_code_default_is_hardened_so_existing_installs_are_unchanged(self):
+        assert Settings.model_fields["PASSWORD_POLICY_PROFILE"].default == "hardened"
 
-    def test_env_example_opts_new_installs_into_nist(self):
+    def test_env_example_opts_new_installs_into_standard(self):
         text = (REPO_ROOT / ".env.example").read_text()
-        assert "\nPASSWORD_POLICY_PROFILE=nist" in text
+        assert "\nPASSWORD_POLICY_PROFILE=standard" in text
 
-    def test_unset_profile_behaves_as_stig(self, monkeypatch):
-        monkeypatch.setattr(settings, "PASSWORD_POLICY_PROFILE", "stig")
-        assert password_policy.profile == "stig"
+    def test_unset_profile_behaves_as_hardened(self, monkeypatch):
+        monkeypatch.setattr(settings, "PASSWORD_POLICY_PROFILE", "hardened")
+        assert _tier() == "hardened"
         assert password_policy.min_length == 12
         assert password_policy.max_age_days == 60
 
-    def test_unknown_profile_falls_back_to_stig_and_says_so(self, caplog):
+    def test_unknown_profile_falls_back_to_hardened_and_says_so(self, caplog):
         _publish(password_policy_profile="nsit")
         with caplog.at_level(logging.WARNING):
-            assert password_policy.profile == "stig"
+            assert _tier() == "hardened"
         assert "nsit" in caplog.text
 
     def test_profile_name_is_case_and_whitespace_insensitive(self):
-        _publish(password_policy_profile=" NIST ")
-        assert password_policy.profile == "nist"
+        _publish(password_policy_profile=" STANDARD ")
+        assert _tier() == "standard"
+
+    @pytest.mark.parametrize(
+        ("alias", "tier"), [("nist", "standard"), ("NIST", "standard"), ("stig", "hardened")]
+    )
+    def test_old_names_are_aliases(self, alias, tier):
+        _publish(password_policy_profile=alias)
+        assert _tier() == tier
+        assert password_policy.get_policy_requirements()["profile"] == tier
+
+    def test_alias_has_the_rules_of_its_tier(self):
+        _publish(password_policy_profile="nist")
+        assert password_policy.min_length == 15
+        assert not password_policy.require_uppercase
+        _publish(password_policy_profile="stig")
+        assert password_policy.min_length == 12
+        assert password_policy.require_uppercase
 
 
 # ---------------------------------------------------------------------------- stig
@@ -197,7 +225,7 @@ class TestNistNoCompositionOrExpiry:
 
     def test_requirements_report_the_profile(self, nist):
         reqs = password_policy.get_policy_requirements()
-        assert reqs["profile"] == "nist"
+        assert reqs["profile"] == "standard"
         assert reqs["min_length"] == 15
         assert reqs["max_length"] == 128
         assert reqs["max_age_days"] == 0
@@ -251,6 +279,68 @@ def _installed_list(tmp_path, monkeypatch):
     monkeypatch.setattr(password_blocklist, "default_blocklist_path", lambda: path)
     monkeypatch.setattr(settings, "PASSWORD_BLOCKLIST_PATH", "")
     return path
+
+
+class TestBasicProfile:
+    def test_rules(self, basic):
+        assert password_policy.min_length == 8
+        assert password_policy.min_length_for(True) == 8
+        assert not any(
+            (
+                password_policy.require_uppercase,
+                password_policy.require_lowercase,
+                password_policy.require_digit,
+                password_policy.require_special,
+            )
+        )
+        assert password_policy.history_count == 0
+        assert password_policy.max_age_days == 0
+        assert password_policy.min_age_hours == 0
+
+    def test_individual_values_are_ignored(self, basic):
+        _publish(
+            password_min_length=20,
+            password_require_special=True,
+            password_history_count=24,
+            password_max_age_days=30,
+            password_min_age_hours=48,
+        )
+        assert password_policy.min_length == 8
+        assert not password_policy.require_special
+        assert password_policy.history_count == 0
+        assert password_policy.max_age_days == 0
+        assert password_policy.min_age_hours == 0
+
+    def test_eight_lowercase_characters_pass_and_seven_fail(self, basic):
+        assert _errors("tractors") == []
+        assert any("at least 8" in e for e in _errors("tractor"))
+
+    def test_blocklist_is_on_by_default_but_never_required(self, basic, tmp_path, monkeypatch):
+        assert password_policy.blocklist_enabled is True
+        assert any("common" in e for e in _errors(LISTED_CANDIDATE))
+        monkeypatch.setattr(password_blocklist, "default_blocklist_path", lambda: tmp_path / "no")
+        assert _errors(LISTED_CANDIDATE) == []
+
+    def test_blocklist_can_be_switched_off(self, basic):
+        _publish(password_blocklist_enabled="false")
+        assert password_policy.blocklist_enabled is False
+
+    def test_requirements_report_the_tier(self, basic):
+        reqs = password_policy.get_policy_requirements()
+        assert reqs["profile"] == "basic"
+        assert reqs["min_length"] == 8
+        assert reqs["max_age_days"] == 0
+
+
+class TestOnlineCheckSwitch:
+    def test_admin_setting_turns_it_on_and_off(self, nist, monkeypatch):
+        assert password_policy.online_check_enabled is False
+        _publish(password_hibp_enabled=True)
+        assert password_policy.online_check_enabled is True
+        assert password_policy.get_policy_requirements()["online_check_enabled"] is True
+        _publish(password_hibp_enabled=False)
+        monkeypatch.setattr(settings, "PASSWORD_HIBP_ENABLED", True)
+        assert password_policy.online_check_enabled is False  # the admin setting wins
 
 
 class TestBlocklist:

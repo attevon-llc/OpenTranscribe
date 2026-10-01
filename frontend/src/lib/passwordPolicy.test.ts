@@ -6,7 +6,7 @@ import {
 } from './passwordPolicy';
 
 const nist: PasswordPolicy = {
-  profile: 'nist',
+  profile: 'standard',
   min_length: 15,
   require_uppercase: false,
   require_lowercase: false,
@@ -45,5 +45,24 @@ describe('buildPasswordRequirements', () => {
     const keys = buildPasswordRequirements({ ...nist, require_digit: true }).map((r) => r.key);
     expect(keys).toContain('auth.passwordReqNumber');
     expect(keys).not.toContain('auth.passwordReqAnyCharacters');
+  });
+});
+
+describe('buildPasswordRequirements and the breached-password list', () => {
+  it('promises the breached-password check only when a list is installed', () => {
+    const installed = {
+      installed: true,
+      entries: 100000,
+      source: 'default' as const,
+      retrieved: null,
+    };
+    const keys = (status: typeof installed | undefined) =>
+      buildPasswordRequirements({ ...nist, blocklist_status: status }).map((r) => r.key);
+    expect(keys(installed)).toContain('auth.passwordReqNotBreached');
+    expect(keys({ ...installed, installed: false, entries: 0 })).not.toContain(
+      'auth.passwordReqNotBreached'
+    );
+    // An older server that does not report the status keeps the previous behaviour.
+    expect(keys(undefined)).toContain('auth.passwordReqNotBreached');
   });
 });

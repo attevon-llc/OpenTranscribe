@@ -35,15 +35,31 @@ logger = logging.getLogger(__name__)
 SPECIAL_CHARACTERS = r"""!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~"""
 SPECIAL_CHARS_DISPLAY = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~"
 
-PROFILE_NIST = "nist"
-PROFILE_STIG = "stig"
+#: The four tiers an admin can pick. ``basic`` is a light opt-in preset, ``standard`` is
+#: NIST SP 800-63B-4, ``hardened`` is DISA STIG style (the individual values, forced
+#: rotation, history), ``custom`` is exactly the individual values as set.
+PROFILE_BASIC = "basic"
+PROFILE_STANDARD = "standard"
+PROFILE_HARDENED = "hardened"
 PROFILE_CUSTOM = "custom"
-VALID_PROFILES = (PROFILE_NIST, PROFILE_STIG, PROFILE_CUSTOM)
+VALID_PROFILES = (PROFILE_BASIC, PROFILE_STANDARD, PROFILE_HARDENED, PROFILE_CUSTOM)
+#: Earlier spellings, still accepted from ``.env`` and from rows already in ``auth_config``.
+PROFILE_ALIASES = {"nist": PROFILE_STANDARD, "stig": PROFILE_HARDENED}
+
+
+def canonical_profile(value: object) -> str | None:
+    """Map a profile spelling (case/whitespace-insensitive, aliases included) to its tier."""
+    name = str(value).strip().lower()
+    name = PROFILE_ALIASES.get(name, name)
+    return name if name in VALID_PROFILES else None
+
 
 #: NIST SP 800-63B-4 section 3.1.1.2: 15 when the password is the only factor, 8 when it
 #: is used together with MFA; verifiers SHALL accept at least 64 characters.
 NIST_MIN_LENGTH = 15
 NIST_MIN_LENGTH_WITH_MFA = 8
+#: ``basic`` asks for 8 characters whether or not MFA is on.
+BASIC_MIN_LENGTH = 8
 NIST_MIN_ACCEPTED_MAX_LENGTH = 64
 NIST_DEFAULT_MAX_LENGTH = 128
 
@@ -112,11 +128,8 @@ class PasswordPolicy:
         password_require_special, password_history_count, password_max_age_days,
         password_min_age_hours.
 
-    ``password_min_age_hours`` resolves through the same layered accessor but is
-    **not yet registered** in ``AuthConfigService.CONFIG_TYPES`` / the
-    ``PasswordPolicyConfig`` schema / the admin panel, so today it is settable only
-    by writing the ``auth_config`` row directly. Registering it there is the
-    remaining wiring, not a second implementation.
+    The tier (``password_policy_profile``) decides which of these apply; see
+    ``docs-site/docs/configuration/password-policy.md``.
     """
 
     # Common password patterns to avoid (compiled for performance)
@@ -136,51 +149,56 @@ class PasswordPolicy:
 
     @property
     def profile(self) -> str:
-        """The active rule set: ``nist``, ``stig`` or ``custom``.
+        """The active tier: ``basic``, ``standard``, ``hardened`` or ``custom``.
 
-        An unrecognised value (a typo) resolves to ``stig`` - the strictest rule set -
+        ``nist`` and ``stig`` are accepted as aliases of ``standard`` and ``hardened``.
+        An unrecognised value (a typo) resolves to ``hardened`` - the strictest rule set -
         and is logged, rather than raising: a bad setting must not turn every
         registration into a 500, and it must not silently weaken the policy either.
         """
         raw = get_process_auth_settings().password_policy_profile
-        value = str(raw).strip().lower()
-        if value in VALID_PROFILES:
+        value = canonical_profile(raw)
+        if value is not None:
             return value
         logger.warning(
-            "Unknown PASSWORD_POLICY_PROFILE %r (expected one of %s); using %r",
+            "Unknown PASSWORD_POLICY_PROFILE %r (expected one of %s, or the aliases %s); using %r",
             raw,
             ", ".join(VALID_PROFILES),
-            PROFILE_STIG,
+            ", ".join(PROFILE_ALIASES),
+            PROFILE_HARDENED,
         )
-        return PROFILE_STIG
+        return PROFILE_HARDENED
 
     @property
-    def is_nist(self) -> bool:
-        """True under the NIST SP 800-63B-4 profile."""
-        return self.profile == PROFILE_NIST
+    def is_preset(self) -> bool:
+        """True under the ``basic`` and ``standard`` presets: fixed rules, no composition,
+        no expiry, history or minimum age, whatever the individual settings say."""
+        return self.profile in (PROFILE_BASIC, PROFILE_STANDARD)
 
     @property
     def min_length(self) -> int:
-        """Minimum accepted password length (single-factor case under ``nist``)."""
-        if self.is_nist:
+        """Minimum accepted password length (single-factor case under the presets)."""
+        if self.profile == PROFILE_BASIC:
+            return BASIC_MIN_LENGTH
+        if self.profile == PROFILE_STANDARD:
             return NIST_MIN_LENGTH
         return get_process_auth_settings().password_min_length
 
     def min_length_for(self, mfa_protected: bool = False) -> int:
         """Minimum length for a user who is (or is not) protected by MFA.
 
-        Only the ``nist`` profile distinguishes the two cases (15 vs 8); ``stig`` and
-        ``custom`` use the configured ``PASSWORD_MIN_LENGTH`` for everybody.
+        Only ``standard`` distinguishes the two cases (15 vs 8); ``basic`` is 8 for everybody,
+        ``hardened`` and ``custom`` use the configured ``PASSWORD_MIN_LENGTH``.
         """
-        if self.is_nist and mfa_protected:
+        if self.profile == PROFILE_STANDARD and mfa_protected:
             return NIST_MIN_LENGTH_WITH_MFA
         return self.min_length
 
     @property
     def max_length(self) -> int:
-        """Longest accepted password; 0 = no cap. Under ``nist`` never below 64."""
+        """Longest accepted password; 0 = no cap. Under the presets never below 64."""
         configured = get_process_auth_settings().get_int("password_max_length", 0)
-        if self.is_nist:
+        if self.is_preset:
             return (
                 max(configured, NIST_MIN_ACCEPTED_MAX_LENGTH)
                 if configured > 0
@@ -190,35 +208,35 @@ class PasswordPolicy:
 
     @property
     def require_uppercase(self) -> bool:
-        """Whether an upper-case letter is required (never under ``nist``)."""
-        return not self.is_nist and get_process_auth_settings().password_require_uppercase
+        """Whether an upper-case letter is required (never under the presets)."""
+        return not self.is_preset and get_process_auth_settings().password_require_uppercase
 
     @property
     def require_lowercase(self) -> bool:
-        """Whether a lower-case letter is required (never under ``nist``)."""
-        return not self.is_nist and get_process_auth_settings().password_require_lowercase
+        """Whether a lower-case letter is required (never under the presets)."""
+        return not self.is_preset and get_process_auth_settings().password_require_lowercase
 
     @property
     def require_digit(self) -> bool:
-        """Whether a digit is required (never under ``nist``)."""
-        return not self.is_nist and get_process_auth_settings().password_require_digit
+        """Whether a digit is required (never under the presets)."""
+        return not self.is_preset and get_process_auth_settings().password_require_digit
 
     @property
     def require_special(self) -> bool:
-        """Whether a special character is required (never under ``nist``)."""
-        return not self.is_nist and get_process_auth_settings().password_require_special
+        """Whether a special character is required (never under the presets)."""
+        return not self.is_preset and get_process_auth_settings().password_require_special
 
     @property
     def history_count(self) -> int:
         """How many previous passwords may not be reused. 0 disables the check."""
-        if self.is_nist:
+        if self.is_preset:
             return 0
         return get_process_auth_settings().password_history_count
 
     @property
     def max_age_days(self) -> int:
-        """Days before a password expires. 0 disables expiry (always, under ``nist``)."""
-        if self.is_nist:
+        """Days before a password expires. 0 disables expiry (always, under the presets)."""
+        if self.is_preset:
             return 0
         return get_process_auth_settings().password_max_age_days
 
@@ -226,13 +244,21 @@ class PasswordPolicy:
     def blocklist_enabled(self) -> bool:
         """Whether new passwords are screened against the breached/common list.
 
-        Profile default: on for ``nist`` (required by SP 800-63B-4), off for ``stig``
-        and ``custom`` (unchanged behaviour). ``PASSWORD_BLOCKLIST_ENABLED`` overrides.
+        Profile default: on for ``standard`` (required by SP 800-63B-4) and ``basic`` (used
+        when a list is installed, never required), off for ``hardened`` and ``custom``
+        (unchanged behaviour). ``PASSWORD_BLOCKLIST_ENABLED`` overrides.
         """
         override = str(get_process_auth_settings().get("password_blocklist_enabled", "")).strip()
         if override:
             return override.lower() in ("true", "1", "yes", "on")
-        return self.is_nist
+        return self.is_preset
+
+    @property
+    def online_check_enabled(self) -> bool:
+        """Whether the optional online k-anonymity breach lookup is on (default off)."""
+        return get_process_auth_settings().get_bool(
+            "password_hibp_enabled", bool(settings.PASSWORD_HIBP_ENABLED)
+        )
 
     @property
     def context_words(self) -> list[str]:
@@ -245,7 +271,7 @@ class PasswordPolicy:
     def min_age_hours(self) -> int:
         """Hours a password must be kept before it may be changed again. 0 disables.
 
-        Always 0 under the ``nist`` profile (no history to protect, and a lockout on
+        Always 0 under the presets (no history to protect, and a lockout on
         voluntary changes is the opposite of the "change on evidence of compromise" rule).
 
         The other bookend of :attr:`max_age_days`. Read through the same layered
@@ -253,7 +279,7 @@ class PasswordPolicy:
         ``DynamicAuthSettings`` property, because ``get_int`` resolves an unknown
         key the same way — DB ``auth_config`` > ``.env`` > this default.
         """
-        if self.is_nist:
+        if self.is_preset:
             return 0
         return get_process_auth_settings().get_int(
             "password_min_age_hours", DEFAULT_PASSWORD_MIN_AGE_HOURS
@@ -398,7 +424,7 @@ class PasswordPolicy:
 
     def _check_online_breach(self, password: str) -> list[str]:
         """Optional HIBP-style k-anonymity lookup. Fails open (logged) on any error."""
-        if not settings.PASSWORD_HIBP_ENABLED:
+        if not self.online_check_enabled:
             return []
         count = password_blocklist.pwned_count(
             password,
@@ -427,7 +453,7 @@ class PasswordPolicy:
             email: Optional email to check password doesn't contain
             full_name: Optional full name to check password doesn't contain
             mfa_protected: The account is protected by MFA (enrolled, or MFA is required
-                of it). Only the ``nist`` profile reads this: it lowers the minimum from
+                of it). Only the ``standard`` profile reads this: it lowers the minimum from
                 15 to 8 characters.
 
         Returns:
@@ -442,7 +468,7 @@ class PasswordPolicy:
             result.add_error("Password cannot be empty")
             return result
 
-        if self.is_nist:
+        if self.is_preset:
             # Length is counted in code points after NFKC, and the same form is hashed
             # (core.security.get_password_hash), so what was validated is what is stored.
             password = unicodedata.normalize("NFKC", password)
@@ -704,6 +730,7 @@ class PasswordPolicy:
             "min_length_with_mfa": self.min_length_for(True),
             "max_length": self.max_length,
             "blocklist_enabled": self.blocklist_enabled,
+            "online_check_enabled": self.online_check_enabled,
             "blocklist_status": password_blocklist.blocklist_status(
                 str(settings.PASSWORD_BLOCKLIST_PATH)
             ),
@@ -737,7 +764,7 @@ def validate_password(
         password: The plaintext password to validate
         email: Optional email to check password doesn't contain
         full_name: Optional full name to check password doesn't contain
-        mfa_protected: Account is MFA-protected (lowers the ``nist`` minimum to 8)
+        mfa_protected: Account is MFA-protected (lowers the ``standard`` minimum to 8)
 
     Returns:
         PasswordValidationResult with validation status and any errors

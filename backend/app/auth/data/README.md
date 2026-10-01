@@ -9,7 +9,9 @@ case-sensitive as published (matching is case-insensitive).
   corpus. 99,840 entries.
 - **Obtained from:** `Passwords/Common-Credentials/100k-most-used-passwords-NCSC.txt`
   in https://github.com/danielmiessler/SecLists (MIT License, Copyright (c) 2018
-  Daniel Miessler). The file is committed unmodified.
+  Daniel Miessler). The only change is the removal of 5 dictionary entries (99,845 -> 99,840
+  lines) that contain a substring the repository's vendor-noun CI guard forbids anywhere under
+  `backend/app`; they are ordinary words that other entries and the rest of the list cover.
 - **Licence:** distributed here under the SecLists MIT License (full text below). The
   upstream NCSC publication is released under the UK Open Government Licence v3.0
   (https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). The list

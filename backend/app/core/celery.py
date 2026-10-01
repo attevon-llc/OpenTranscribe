@@ -881,6 +881,57 @@ def warn_inert_max_tasks_per_child(**kwargs):
     )
 
 
+def _pool_is_threads() -> bool:
+    """Whether this worker runs celery's threads pool, from its argv (or GPU_WORKER_POOL)."""
+    import sys
+
+    argv = sys.argv
+    for i, arg in enumerate(argv):
+        if arg.startswith("--pool="):
+            return arg.split("=", 1)[1] == "threads"
+        if arg in ("--pool", "-P") and i + 1 < len(argv):
+            return argv[i + 1] == "threads"
+    return os.getenv("GPU_WORKER_POOL", "threads") == "threads"
+
+
+def reconcile_gpu_concurrent_requests() -> None:
+    """Keep a GPU worker's engine slots in step with its thread count (issue #1072).
+
+    ``celery --pool=threads --concurrency=N`` runs N transcriptions at once in this process;
+    ``GPU_CONCURRENT_REQUESTS`` sets CTranslate2's ``num_workers`` and switches the stage
+    logic between single-request and concurrent behaviour. Left at 1 with N > 1, all N
+    threads queue on one CTranslate2 worker (Whisper is serialised) while every stage acts
+    as if it had the card to itself.
+
+    Unset on a GPU threads worker -> default it to the pool concurrency. Set and different
+    -> one WARNING naming both; the operator's value is kept. Prefork is left alone: each
+    child there loads its own models, so engine slots are per process by construction.
+    """
+    if os.environ.get("PRELOAD_GPU_MODELS", "").lower() != "true" or not _pool_is_threads():
+        return
+    threads = _pool_concurrency()
+    configured = os.environ.get("GPU_CONCURRENT_REQUESTS", "").strip()
+    if not configured:
+        os.environ["GPU_CONCURRENT_REQUESTS"] = str(threads)
+        logger.info(
+            "GPU_CONCURRENT_REQUESTS unset; matched to the worker's thread concurrency (%d)",
+            threads,
+        )
+        return
+    from app.transcription.config import TranscriptionConfig
+
+    slots = TranscriptionConfig._resolve_concurrent_requests()
+    if slots != threads:
+        logger.warning(
+            "GPU_CONCURRENT_REQUESTS=%s gives %d engine slot(s) but this worker runs "
+            "--concurrency=%d threads. Set them to the same value: fewer slots than threads "
+            "serialises Whisper, more slots than threads loads CTranslate2 workers nothing uses.",
+            configured,
+            slots,
+            threads,
+        )
+
+
 # Wall-clock bound on the CPU-lightweight Whisper warm-up (issue #631). Matched to
 # celery-cpu-worker's `start_period: 120s` in docker-compose.yml, which is both the
 # allowance the deployment declares for this load AND the window in which a frozen
@@ -916,13 +967,20 @@ def preload_models(**kwargs):
         if is_gpu_worker:
             from app.transcription.config import TranscriptionConfig
 
+            # Before the config is built: it reads GPU_CONCURRENT_REQUESTS, which sets
+            # CTranslate2's num_workers at load time (issue #1072).
+            reconcile_gpu_concurrent_requests()
             config = TranscriptionConfig.from_environment()
             if config.device == "cuda":
                 import torch
 
+                from app.transcription import vram_budget
                 from app.transcription.model_manager import ModelManager
 
                 ModelManager.get_instance().ensure_models_loaded(config)
+                # Measure the card now that the models are resident, so their footprint
+                # (and anything else sharing the GPU) is outside the admission budget.
+                vram_budget.configure_from_device(config.device_index)
 
                 # Enable TF32 AFTER model loading. PyAnnote's fix_reproducibility()
                 # disables TF32 during Pipeline.from_pretrained(). Re-enabling here

@@ -129,9 +129,6 @@ def _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb: int)
         hw.log_vram_usage("after transcriber release")
         profiler.snapshot("diarizer_only_warm")
 
-    if tc.concurrent_requests > 1:
-        _wait_for_vram(2000, "diarization")
-
 
 def _run_diarize(
     diarizer,
@@ -438,9 +435,6 @@ class _GpuStage:
 
         audio_thread = threading.Thread(target=_load_audio, name="audio-load", daemon=True)
         audio_thread.start()
-
-        if tc.concurrent_requests > 1:
-            _wait_for_vram(1500, "transcriber_load")
 
         with profiler.step("model_load_transcriber"):
             transcriber = manager.get_transcriber(tc)
@@ -780,9 +774,6 @@ class _GpuRawStage:
                 "Stage 1 must write the WAV before Stage 2 runs."
             )
 
-        if tc.concurrent_requests > 1:
-            _wait_for_vram(1500, "transcriber_load")
-
         with profiler.step("model_load_transcriber"):
             transcriber = manager.get_transcriber(tc)
 
@@ -1029,9 +1020,6 @@ class _TranscribeOnlyStage:
                 "Stage 1 must write the WAV before Stage 2a runs."
             )
 
-        if tc.concurrent_requests > 1:
-            _wait_for_vram(1500, "transcriber_load")
-
         with profiler.step("model_load_transcriber"):
             transcriber = manager.get_transcriber(tc)
 
@@ -1130,9 +1118,6 @@ class _DiarizerOnlyStage:
             # constructs an _AsyncDiarization (it IS the diarization leg).
             stand_down_if_requested("_DiarizerOnlyStage.run before diarization")
 
-            if tc.concurrent_requests > 1:
-                _wait_for_vram(2000, "diarization")
-
             emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
             step_start = time.perf_counter()
             with profiler.step("diarization"):
@@ -1191,30 +1176,6 @@ class _DiarizerOnlyStage:
             diarization_provider=diar_provider,
             diarization_model=diar_model,
         )
-
-
-def _wait_for_vram(min_free_mb: int, stage: str, timeout: int = 120) -> None:
-    """Block until the GPU has enough free VRAM. Mirrors TranscriptionPipeline._wait_for_vram."""
-    try:
-        import torch
-
-        if not torch.cuda.is_available():
-            return
-        deadline = time.perf_counter() + timeout
-        while time.perf_counter() < deadline:
-            free_mb = torch.cuda.mem_get_info(0)[0] / (1024**2)
-            if free_mb >= min_free_mb:
-                return
-            logger.info(
-                f"VRAM gate [{stage}]: {free_mb:.0f}MB free < {min_free_mb}MB required, waiting..."
-            )
-            time.sleep(2)
-        free_mb = torch.cuda.mem_get_info(0)[0] / (1024**2)
-        logger.warning(
-            f"VRAM gate [{stage}]: timeout after {timeout}s, proceeding with {free_mb:.0f}MB free"
-        )
-    except Exception as e:
-        logger.debug(f"VRAM gate check skipped: {e}")
 
 
 def _get_total_vram_mb() -> int:

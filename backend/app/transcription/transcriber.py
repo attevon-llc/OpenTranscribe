@@ -7,11 +7,14 @@ word_timestamps off in its batched pipeline.
 """
 
 import logging
+import os
 import time
 from typing import Any
 
 import numpy as np
 
+from app.transcription import cuda_health
+from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
 
 logger = logging.getLogger(__name__)
@@ -160,6 +163,18 @@ def _interpolate_low_confidence_words(words: list[dict], seg_start: float, seg_e
             words[j]["end"] = left_time + (offset + 1) * step
 
 
+#: Per-process count of OOM backoffs by stage, for the log line (issue #1081).
+_OOM_BACKOFFS: dict[str, int] = {}
+
+
+def _max_oom_halvings() -> int:
+    raw = os.getenv("GPU_OOM_MAX_HALVINGS", "2").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 2
+
+
 class Transcriber:
     """Faster-whisper BatchedInferencePipeline with native word timestamps."""
 
@@ -216,6 +231,13 @@ class Transcriber:
     def transcribe(self, audio: np.ndarray) -> dict:
         """Batched transcription with word-level timestamps.
 
+        On CUDA the decode first reserves its VRAM estimate from the worker's admission
+        budget (``vram_budget``), sized by the batch it is about to run. A CUDA OOM frees the
+        cached allocator memory, halves the batch and retries, at most
+        ``GPU_OOM_MAX_HALVINGS`` (default 2) times, before the error propagates (issue
+        #1081). The halved batch applies to this call only: the cached transcriber is
+        shared by every thread, so its configured batch size is left alone.
+
         Args:
             audio: Audio waveform as 16kHz mono float32 numpy array.
 
@@ -228,6 +250,54 @@ class Transcriber:
         if not self.is_loaded:
             raise RuntimeError("Transcriber model not loaded. Call load_model() first.")
 
+        batch_size = self.config.batch_size
+        halvings_left = _max_oom_halvings()
+        while True:
+            try:
+                with vram_budget.admit(
+                    "asr",
+                    device=self.config.device,
+                    batch_size=batch_size,
+                    device_index=self.config.device_index,
+                ):
+                    return self._transcribe_once(audio, batch_size)
+            except Exception as exc:
+                if (
+                    self.config.device != "cuda"
+                    or halvings_left <= 0
+                    or batch_size <= 1
+                    or not self._is_memory_pressure(exc)
+                ):
+                    raise
+                smaller = max(1, batch_size // 2)
+                halvings_left -= 1
+                _OOM_BACKOFFS["asr"] = _OOM_BACKOFFS.get("asr", 0) + 1
+                logger.warning(
+                    "CUDA OOM in Whisper decode; freeing cached VRAM and retrying with "
+                    "batch_size %d -> %d (%d halving(s) left, %d OOM backoffs this process)",
+                    batch_size,
+                    smaller,
+                    halvings_left,
+                    _OOM_BACKOFFS["asr"],
+                )
+                cuda_health.free_cached_vram()
+                batch_size = smaller
+
+    def _is_memory_pressure(self, exc: BaseException) -> bool:
+        """An OOM, or a context-looking CUDA error while the context is in fact healthy.
+
+        CTranslate2 reports some decodes that collide with an OOM as ``cudaErrorInvalidDevice``
+        (see ``cuda_health.cuda_context_healthy``). Backing those off like an OOM recovers
+        them; a genuinely broken context fails the probe and propagates, so the task layer
+        can take the worker out of service.
+        """
+        if cuda_health.is_cuda_oom(exc):
+            return True
+        return cuda_health.is_context_poisoned_error(exc) and cuda_health.cuda_context_healthy(
+            self.config.device_index
+        )
+
+    def _transcribe_once(self, audio: np.ndarray, batch_size: int) -> dict:
         step_start = time.perf_counter()
 
         task, language = _resolve_task_and_language(
@@ -238,12 +308,12 @@ class Transcriber:
 
         logger.info(
             f"Transcribing: task={task}, language={language or 'auto'}, "
-            f"batch_size={self.config.batch_size}, beam_size={self.config.beam_size}"
+            f"batch_size={batch_size}, beam_size={self.config.beam_size}"
         )
 
         assert self._pipeline is not None, "Pipeline not initialized"
         kwargs: dict = dict(
-            batch_size=self.config.batch_size,
+            batch_size=batch_size,
             word_timestamps=True,
             beam_size=self.config.beam_size,
             task=task,

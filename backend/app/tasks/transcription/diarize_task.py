@@ -22,6 +22,7 @@ from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
 from .context import requeue_after_abort
+from .context import requeue_if_context_poisoned
 from .context import retry_on_diar_sidecar_unavailable
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
@@ -194,6 +195,9 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
             # already returned and will not rewrite it).
             requeue_after_abort(file_uuid, abort, stage="GPU diarization")
         except Exception as e:
+            # Issue #1081: a broken CUDA context requeues (and keeps the WAV) instead of
+            # failing the file; anything else falls through to the failure path below.
+            requeue_if_context_poisoned(task_id, file_uuid, e, stage="GPU diarization")
             logger.error(f"Diarize GPU task failed for file {file_uuid}: {e}")
             # Best-effort cleanup on failure — WAV is no longer needed
             try:

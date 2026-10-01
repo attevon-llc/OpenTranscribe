@@ -334,6 +334,12 @@ class AuthMethodsResponse(BaseModel):
     login_banner_enabled: bool
     login_banner_text: str
     login_banner_classification: str
+    #: Session limits, from the same layered config the built-in session
+    #: enforcement reads (admin UI > ``.env`` > default). The SPA's idle guard
+    #: applies them to sessions owned by an external identity provider, which have
+    #: no server-side session row to time out (issue #1106). ``0`` disables.
+    session_idle_timeout_minutes: int = 0
+    session_absolute_timeout_minutes: int = 0
 
     @computed_field  # type: ignore[prop-decorator]
     @property

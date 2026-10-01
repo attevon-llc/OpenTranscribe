@@ -68,6 +68,7 @@ vi.mock('$stores/auth', async () => {
     changeOwnPassword: mockChangeOwnPassword,
     acknowledgeBanner: mockAcknowledgeBanner,
     logout: mockLogout,
+    sessionEndReason: writable(null),
   };
 });
 
@@ -398,5 +399,29 @@ describe('login/+page — auth-method branches', () => {
     });
     expect(container.querySelector('.auth-form')).toBeNull();
     expect(container.querySelector('.external-auth-buttons')).toBeNull();
+  });
+});
+
+describe('login/+page — why the last session ended (#1106)', () => {
+  afterEach(async () => {
+    const { sessionEndReason } = await import('$stores/auth');
+    (sessionEndReason as unknown as { set: (v: unknown) => void }).set(null);
+  });
+
+  it.each([
+    ['idle_timeout', 'auth.sessionTimeout.endedIdle'],
+    ['absolute_timeout', 'auth.sessionTimeout.endedAbsolute'],
+  ])('explains a %s sign-out', async (reason, key) => {
+    const { sessionEndReason } = await import('$stores/auth');
+    (sessionEndReason as unknown as { set: (v: unknown) => void }).set(reason);
+
+    const { container } = await renderLogin();
+
+    expect(container.querySelector('.session-ended-notice')?.textContent?.trim()).toBe(key);
+  });
+
+  it('says nothing after a voluntary sign-out', async () => {
+    const { container } = await renderLogin();
+    expect(container.querySelector('.session-ended-notice')).toBeNull();
   });
 });

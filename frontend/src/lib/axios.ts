@@ -182,6 +182,17 @@ axiosInstance.interceptors.response.use(
     // external session is gone (or the token was rejected) — bounce to login
     // rather than attempting the cookie /auth/token/refresh flow.
     if (isCloudEdition) {
+      // The server refused the session as older than the absolute timeout (#1106).
+      // The provider's own session is still live, so a bare redirect to /login
+      // would sign straight back in: end it through the timeout path instead.
+      if (
+        error.response?.status === 401 &&
+        error.response?.data?.detail?.code === 'session_expired'
+      ) {
+        const { expireSessionNow } = await import('$lib/auth/sessionTimeouts');
+        expireSessionNow('absolute');
+        return Promise.reject(error);
+      }
       if (
         error.response?.status === 401 &&
         typeof window !== 'undefined' &&

@@ -367,6 +367,11 @@ someone else's product.
   activity clock continuously, so the control would read as satisfied and never fire. The
   error is bounded by the access-token lifetime. True per-request idle timeout needs an
   explicit non-activity denylist and is its own change.
+- **Registry (external-IdP) sessions have no row, so the timeouts live elsewhere** (#1106).
+  Idle is enforced by the SPA (`frontend/src/lib/auth/idleGuard.ts`, fed by
+  `/auth/methods`); absolute is also enforced here by `external_session.py` on the token's
+  `auth_time` (never `iat`) at all three verifier call sites, BEFORE JIT sync. No `auth_time`
+  from the verifier means not enforced (one warning), not refused.
 - **PKI header trust fails closed.** With `PKI_ENABLED` and no `PKI_TRUSTED_PROXIES`, header-
   sourced authentication is refused outright (and `main.py` refuses to start when hardened).
   A DN header is only trusted from a configured proxy or alongside a validated certificate —

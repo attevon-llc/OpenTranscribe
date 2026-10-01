@@ -27,6 +27,7 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.constants import TOKEN_TYPE_ACCESS
+from app.auth.provider_registry import ExternalIdentity
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.core.config import settings
@@ -494,6 +495,36 @@ def _get_client_info(request: Request | None) -> tuple[str, str]:
     return client_ip, user_agent
 
 
+def _enforce_external_absolute_timeout(request: Request, identity: ExternalIdentity) -> None:
+    """401 ``session_expired`` when an external session outlived the absolute timeout.
+
+    See ``app.auth.external_session`` (issue #1106).
+    """
+    from app.auth.external_session import ERROR_CODE_SESSION_EXPIRED
+    from app.auth.external_session import external_session_expired
+
+    if not external_session_expired(identity):
+        return
+
+    client_ip, user_agent = _get_client_info(request)
+    audit_logger.log(
+        event_type=AuditEventType.AUTH_SESSION_EXPIRED,
+        outcome=AuditOutcome.FAILURE,
+        username=identity.email,
+        source_ip=client_ip,
+        user_agent=user_agent,
+        details={"provider": identity.provider, "reason": "absolute_timeout"},
+    )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={
+            "code": ERROR_CODE_SESSION_EXPIRED,
+            "message": "Your session has expired. Sign in again.",
+        },
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 def _authenticate_external_token(request: Request, token: str, db: Session) -> User | None:
     """Resolve a bearer token via the external-verifier seam (cloud edition).
 
@@ -515,6 +546,9 @@ def _authenticate_external_token(request: Request, token: str, db: Session) -> U
     external_identity = verify_external_token(token, request)
     if external_identity is None:
         return None
+
+    # Before JIT sync, so an expired session writes nothing.
+    _enforce_external_absolute_timeout(request, external_identity)
 
     try:
         external_user = sync_external_user_to_db(db, external_identity)
@@ -781,12 +815,15 @@ def get_optional_current_user(
     from app.auth.provider_registry import has_verifiers
 
     if has_verifiers():
+        from app.auth.external_session import external_session_expired
         from app.auth.external_sync import sync_external_user_to_db
         from app.auth.provider_registry import verify_external_token
 
         try:
             external_identity = verify_external_token(token, request)
             if external_identity is not None:
+                if external_session_expired(external_identity):
+                    return None
                 external_user = sync_external_user_to_db(db, external_identity)
                 if not external_user.is_active:
                     return None

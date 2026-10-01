@@ -102,6 +102,8 @@ def get_auth_methods(request: Request, response: Response, db: Session = Depends
         login_banner_classification=(
             auth_settings.login_banner_classification if login_banner_enabled else "UNCLASSIFIED"
         ),
+        session_idle_timeout_minutes=auth_settings.session_idle_timeout_minutes,
+        session_absolute_timeout_minutes=auth_settings.session_absolute_timeout_minutes,
     )
 
 

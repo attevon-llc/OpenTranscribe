@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithOIDC, handleOIDCCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, type AuthMethods } from "$stores/auth";
+  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithOIDC, handleOIDCCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, sessionEndReason, type AuthMethods } from "$stores/auth";
   import { resendEmailVerification } from '$lib/api/invitations';
   import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
@@ -801,6 +801,13 @@
       {#if !lifecyclePanel && !emailNotVerified}
         <h1>{$t('auth.login')}</h1>
         <p>{$t('auth.signInToAccount')}</p>
+        {#if $sessionEndReason}
+          <p class="session-ended-notice" role="status">
+            {$sessionEndReason === 'absolute_timeout'
+              ? $t('auth.sessionTimeout.endedAbsolute')
+              : $t('auth.sessionTimeout.endedIdle')}
+          </p>
+        {/if}
       {/if}
     </div>
     {#if lifecyclePanel}
@@ -900,7 +907,7 @@
             <button type="button" class="text-button" on:click={() => window.location.reload()}>
               {$t('auth.pendingApproval.checkAgain')}
             </button>
-            <button type="button" class="text-button cancel-button" on:click={logout}>
+            <button type="button" class="text-button cancel-button" on:click={() => logout()}>
               {$t('nav.logout')}
             </button>
           </div>
@@ -1310,6 +1317,14 @@
   .auth-header p {
     color: var(--text-light);
     font-size: 0.9rem;
+  }
+
+  .auth-header p.session-ended-notice {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
   }
 
   .auth-form {

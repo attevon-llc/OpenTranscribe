@@ -51,6 +51,11 @@ const EXEMPT: Record<string, string> = {
     'goes through axiosInstance without its own signal, so abortAllRequests() cancels them ' +
     'before clearUserState() runs. No response body is retained here.',
 
+  'lib/auth/idleGuard':
+    'Pure factory: every timer, listener and channel lives on the instance ' +
+    'createIdleGuard() returns, and the only instance is held by ' +
+    'lib/auth/sessionTimeouts, which IS registered (stopSessionTimeouts). The ' +
+    'detector matched the `clearInterval(tick)` call inside the factory, not module state.',
   'lib/chat/revealPacer':
     'RevealPacer is a CLASS with instance state only — there is no module-level ' +
     'instance. Each ChatTracePanel constructs its own and it is discarded with the ' +

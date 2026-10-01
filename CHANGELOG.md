@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **An `editor` share could permanently delete another user's file (#1103).** Every delete
+  path (`DELETE /api/files/{uuid}` and the bulk `delete` action) resolved the file with the
+  editor permission, so anyone a collection was shared with as an editor could destroy the
+  files in it. Delete is now its own right: the file's owner, an organization admin of the
+  file's organization, or a platform admin. Editors keep every edit right. A refused delete
+  answers 403 (the bulk action reports a per-file `FORBIDDEN` result and carries on with the
+  rest of the batch) and is audited as `file.delete.denied`. The gallery list now carries
+  `can_delete` per file and disables **Delete** when no selected file can be deleted.
 - **`url_ingest: False` did not disable URL import (#1109).** The capability was declared but
   read by nothing: `POST /api/files/process-url` and `GET /api/files/youtube/quota` stayed
   reachable and the upload dialog always offered the URL tab. Both routes now return 404 when

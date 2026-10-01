@@ -26,6 +26,7 @@ from app.models.media import FileStatus
 from app.models.media import Tag
 from app.models.user import User
 from app.services import system_settings_service
+from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.tag_bulk import CHANGED_OUTCOMES
 from app.services.tag_bulk import TAG_ACTIONS
@@ -500,6 +501,7 @@ def _handle_delete_action(
     force: bool,
     is_admin: bool,
     organization_id: OrgScope = UNSCOPED,
+    is_org_admin: bool = False,
 ) -> BulkActionResult:
     """Handle delete action for bulk operations.
 
@@ -509,10 +511,30 @@ def _handle_delete_action(
     body's `force` flag straight through with no such check, so any owner could
     set `force=true` on a bulk delete and cancel a live task + purge a file mid
     processing -- exactly what `/force` exists to restrict to admins.
+
+    A delete the caller has no right to (issue #1103: not the owner, not an org
+    admin of the file's organization, not a platform admin) is reported as a
+    per-file ``FORBIDDEN`` result so the rest of the batch still runs.
     """
-    delete_media_file(
-        db, file_uuid, current_user, force=force and is_admin, organization_id=organization_id
-    )
+    try:
+        delete_media_file(
+            db,
+            file_uuid,
+            current_user,
+            force=force and is_admin,
+            organization_id=organization_id,
+            is_org_admin=is_org_admin,
+        )
+    except HTTPException as e:
+        if e.status_code != status.HTTP_403_FORBIDDEN:
+            raise
+        # A fixed message, never the exception text (issue #914's no-echo rule).
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=DELETE_FORBIDDEN_DETAIL,
+            error="FORBIDDEN",
+        )
     return BulkActionResult(
         file_uuid=file_uuid,
         success=True,
@@ -958,8 +980,17 @@ def _process_single_file_action(
     num_speakers: int | None = None,
     organization_id: OrgScope = UNSCOPED,
     tag: Tag | None = None,
+    is_org_admin: bool = False,
 ) -> BulkActionResult:
     """Process a single file action, returning the result."""
+    if action == "delete":
+        # Delete resolves the file under its own rule (services/delete_permissions),
+        # not the "editor" pre-check below: an editor share must NOT pass, and an
+        # org admin with no share on a member's file must (issue #1103).
+        return _handle_delete_action(
+            db, file_uuid, current_user, force, is_admin, organization_id, is_org_admin
+        )
+
     db_file = get_media_file_by_uuid(
         db,
         file_uuid,
@@ -971,9 +1002,6 @@ def _process_single_file_action(
     file_id = db_file.id
 
     action_handlers = {
-        "delete": lambda: _handle_delete_action(
-            db, file_uuid, current_user, force, is_admin, organization_id
-        ),
         "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count, is_admin),
         "cancel": lambda: _handle_cancel_action(db, file_uuid, file_id),
         "recover": lambda: _handle_recover_action(db, file_uuid, file_id),
@@ -1050,6 +1078,7 @@ def bulk_file_action(
                     num_speakers=request.num_speakers,
                     organization_id=ctx.org_id,
                     tag=tag,
+                    is_org_admin=ctx.is_org_admin,
                 )
                 results.append(result)
             except HTTPException as e:

@@ -65,7 +65,8 @@ Create groups to organize team members for easier sharing:
 3. Search for users or groups to share with
 4. Set permission level:
    - **Viewer** -- Can view files and transcripts in the collection
-   - **Editor** -- Can also edit transcripts, speakers, and summaries
+   - **Editor** -- Can also edit transcripts, speakers, and summaries. Editors cannot delete
+     files: only a file's owner, an organization admin, or a platform admin can do that
 5. Confirm sharing
 
 Shared collections appear in recipients' collection lists. **Speaker profiles** associated with files in the collection are automatically shared with recipients, enabling cross-collection speaker recognition.

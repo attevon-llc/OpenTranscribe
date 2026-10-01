@@ -1125,6 +1125,7 @@ def delete_media_file(
     force: bool = False,
     *,
     organization_id: OrgScope = UNSCOPED,
+    is_org_admin: bool = False,
 ) -> None:
     """
     Delete a media file and all associated data with safety checks.
@@ -1135,18 +1136,22 @@ def delete_media_file(
         current_user: Current user
         force: Force deletion even if processing is active (admin only)
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
+        is_org_admin: Caller is ``org:admin`` of ``organization_id``
+            (``ctx.is_org_admin``); lets an org admin delete members' files.
     """
+    from app.services.delete_permissions import get_deletable_file
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import is_file_safe_to_delete
 
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(
+    # Delete is its own right, not "editor" (issue #1103): owner, org admin of
+    # the file's organization, or platform admin.
+    db_file = get_deletable_file(
         db,
         file_uuid,
-        current_user.id,
-        is_admin=is_admin,
+        current_user,
         organization_id=organization_id,
-        min_permission="editor",
+        is_org_admin=is_org_admin,
     )
     file_id = db_file.id  # Get internal ID for task operations
 

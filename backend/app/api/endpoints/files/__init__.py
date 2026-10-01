@@ -48,6 +48,7 @@ from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
+from app.services.delete_permissions import can_delete_file
 from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
 from app.utils.error_handlers import ErrorHandler
@@ -388,6 +389,9 @@ def list_media_files(
         # Use the FormattingService method which handles formatting correctly
         # Pass speakers for speaker_summary in list view
         formatted_file = FormattingService.format_media_file(file, file.speakers)
+        formatted_file.can_delete = can_delete_file(
+            current_user, file, organization_id=org_scope, is_org_admin=ctx.is_org_admin
+        )
         formatted_files.append(formatted_file)
 
     # Calculate pagination metadata

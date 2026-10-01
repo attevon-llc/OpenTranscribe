@@ -89,6 +89,9 @@ class AuditEventType(StrEnum):
     ADMIN_FILE_QUARANTINE = "admin.file.quarantine"
     ADMIN_FILE_RELEASE = "admin.file.release"
 
+    # A permanent delete refused by services/delete_permissions.py (issue #1103)
+    FILE_DELETE_DENIED = "file.delete.denied"
+
     # Prompt sharing events
     PROMPT_SHARE = "prompt.share"
     PROMPT_UNSHARE = "prompt.unshare"

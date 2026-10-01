@@ -193,3 +193,30 @@ describe('GalleryActionButtons — actions that need a selection are disabled wi
     expect(screen.getByTitle('Permanently delete the selected files')).not.toBeDisabled();
   });
 });
+
+describe('GalleryActionButtons — Delete follows can_delete (issue #1103)', () => {
+  const NOT_ALLOWED = "Only a file's owner or an organization admin can delete these files";
+
+  it('disables Delete when no selected file is deletable by the caller', async () => {
+    // An editor share no longer grants delete; the server refuses it, so the
+    // toolbar must not offer it.
+    select(['a']);
+    render(GalleryActionButtons, {
+      props: { files: [{ uuid: 'a', status: 'completed', can_delete: false }] as never },
+    });
+    expect(screen.getByTitle(NOT_ALLOWED)).toBeDisabled();
+  });
+
+  it('keeps Delete enabled when at least one selected file is deletable', async () => {
+    select(['a', 'b']);
+    render(GalleryActionButtons, {
+      props: {
+        files: [
+          { uuid: 'a', status: 'completed', can_delete: false },
+          { uuid: 'b', status: 'completed', can_delete: true },
+        ] as never,
+      },
+    });
+    expect(screen.getByTitle('Permanently delete the selected files')).not.toBeDisabled();
+  });
+});

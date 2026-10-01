@@ -97,6 +97,10 @@ should import `app.api` or `app.services` at module scope.
   explicit `True` grants. Omitted keys, non-bool values, `None`, or a raising resolver all deny —
   they no longer inherit the (mostly `True`) community defaults. Test doubles that override one
   key must spread `{**COMMUNITY_CAPABILITIES, key: value}`.
+  Deployment-locked user settings (#1109) go through `locked_settings.py`
+  (`effective_whisper_model`, `locked_transcription_fields`): enforce them wherever the value is
+  USED (endpoint and task), with no platform-admin bypass. Task-time reads pass no request, so
+  those keys must resolve per deployment, not per tier.
 - `settings_cache.py` — in-process TTL cache in front of `SystemSettings` reads.
 - `opensearch_auth.py` — `opensearch_connection_kwargs()`, the single builder for every
   `OpenSearch(...)` client (search plane ×2, audit writer + reader, admin audit export).

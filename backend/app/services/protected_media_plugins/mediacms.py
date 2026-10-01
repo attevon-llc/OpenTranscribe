@@ -119,6 +119,12 @@ class MediacmsProvider(ProtectedMediaProvider):
 
         if user_id is None:
             return []
+        from app.core.capabilities import capability_enabled
+
+        if not capability_enabled("media_sources"):
+            # Per-user sources are a surface this deployment has turned off (issue #1109);
+            # operator-configured sources still apply.
+            return []
         rows: list[Any] = (
             db.query(UserMediaSource)
             .filter(

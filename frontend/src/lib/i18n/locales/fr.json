@@ -4073,6 +4073,7 @@
   "uploader.highQuality": "Haute qualité (GPU)",
   "uploader.fastProcessing": "Traitement rapide (CPU)",
   "uploader.fastProcessingHint": "Utilise un modèle léger sur CPU pour une transcription rapide (~4s par minute). La diarisation des locuteurs n'est pas disponible avec cette option.",
+  "uploader.modelManaged": "Modèle de transcription : géré par votre déploiement",
   "uploader.turboNoTranslation": "Remarque : Ce modele ne prend pas en charge la traduction. La traduction sera desactivee pour ce fichier.",
   "fileDetail.whisperModel": "Modele ASR",
   "fileDetail.modelFallback": "Repli",

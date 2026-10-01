@@ -4073,6 +4073,7 @@
   "uploader.highQuality": "高品質（GPU）",
   "uploader.fastProcessing": "高速処理（CPU）",
   "uploader.fastProcessingHint": "CPUの軽量モデルを使用して高速文字起こし（1分あたり約4秒）。このオプションでは話者ダイアライゼーションは利用できません。",
+  "uploader.modelManaged": "文字起こしモデル: デプロイメントで管理されています",
   "uploader.turboNoTranslation": "注意: このモデルは翻訳をサポートしていません。このファイルの翻訳は無効になります。",
   "fileDetail.whisperModel": "ASRモデル",
   "fileDetail.modelFallback": "フォールバック",

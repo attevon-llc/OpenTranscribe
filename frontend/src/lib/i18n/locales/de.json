@@ -4073,6 +4073,7 @@
   "uploader.highQuality": "Hohe Qualität (GPU)",
   "uploader.fastProcessing": "Schnelle Verarbeitung (CPU)",
   "uploader.fastProcessingHint": "Verwendet ein leichtgewichtiges Modell auf der CPU für schnelle Transkription (~4s pro Minute). Sprechererkennung ist mit dieser Option nicht verfügbar.",
+  "uploader.modelManaged": "Transkriptionsmodell: von Ihrer Bereitstellung verwaltet",
   "uploader.turboNoTranslation": "Hinweis: Dieses Modell unterstuetzt keine Uebersetzung. Die Uebersetzung wird fuer diese Datei deaktiviert.",
   "fileDetail.whisperModel": "ASR-Modell",
   "fileDetail.modelFallback": "Fallback",

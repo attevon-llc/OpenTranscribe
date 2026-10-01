@@ -22,12 +22,14 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from pydantic import BaseModel
 from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
+from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -160,6 +162,7 @@ def _fingerprint_object(task_id: str | None, storage_path: str, size: int) -> st
 @router.post("/complete", response_model=dict[str, Any])
 def complete_upload(
     request: CompleteUploadRequest,
+    http_request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
@@ -336,6 +339,8 @@ def complete_upload(
     whisper_model: str | None = request.whisper_model
     if not whisper_model and db_file.requested_whisper_model:
         whisper_model = str(db_file.requested_whisper_model)
+    # Also drops a model stored at /prepare before the deployment locked model choice.
+    whisper_model = effective_whisper_model(whisper_model, http_request)
     db.commit()
 
     # Fire the thumbnail + transcription pipeline via the shared dispatch tail

@@ -353,6 +353,37 @@ def test_custom_vocabulary_is_listed_exported_and_edited_in_its_tenant(
     assert updated.status_code == (200 if visible else 404), updated.text
 
 
+def test_custom_vocabulary_term_is_unique_per_tenant_not_per_user(client, world):
+    """One user may hold a term in two tenants (create and bulk); a duplicate inside
+    one tenant is refused, including a rename onto an existing term."""
+    w = world
+    term_text = f"reuse-{uuid_pkg.uuid4().hex[:8]}"
+    other_text = f"{term_text}-other"
+    with _acting_as(w.alice, w.org_a.id):
+        assert client.post("/api/custom-vocabulary", json={"term": term_text}).status_code == 201
+        dup = client.post("/api/custom-vocabulary", json={"term": term_text})
+        other = client.post("/api/custom-vocabulary", json={"term": other_text})
+        renamed = client.put(
+            f"/api/custom-vocabulary/{other.json()['id']}", json={"term": term_text}
+        )
+    with _acting_as(w.alice, None):
+        personal = client.post("/api/custom-vocabulary", json={"term": term_text})
+    with _acting_as(w.alice, w.org_b.id):
+        bulk = client.post("/api/custom-vocabulary/bulk", json={"terms": [{"term": term_text}] * 2})
+
+    assert dup.status_code == 409, dup.text
+    assert renamed.status_code == 409, renamed.text
+    assert personal.status_code == 201, personal.text
+    assert (bulk.json()["created"], bulk.json()["skipped"]) == (1, 1), bulk.text
+    stamps = [
+        r[0]
+        for r in w.db.query(CustomVocabulary.organization_id).filter(
+            CustomVocabulary.user_id == w.alice.id, CustomVocabulary.term == term_text
+        )
+    ]
+    assert sorted(stamps, key=str) == sorted([w.org_a.id, w.org_b.id, None], key=str)
+
+
 def test_custom_vocabulary_delete_and_bulk_follow_the_active_tenant(client, world):
     w = world
     with _acting_as(w.alice, w.org_a.id):

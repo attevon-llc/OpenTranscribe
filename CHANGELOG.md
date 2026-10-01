@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deployment-locked settings via capability keys (#1109).** New capabilities, all `True` by
+  default (no change for self-hosted installs), let an operator's capability resolver lock
+  values the deployment owns. Each is enforced on the server, not just hidden:
+  `transcription.model_choice` (a client `whisper_model` on prepare/complete/reprocess is
+  ignored, so a request can no longer route a file to CPU transcription),
+  `transcription.diarization_source` and `transcription.advanced` (writes are ignored, reads
+  report the default, and the transcription task ignores values stored before the lock),
+  `speaker_attributes.migration`, `media_sources` and `audio_extraction` (their routes return
+  404; per-user media sources are not used for downloads), and `admin.flower` (the Flower
+  `auth_request` probe denies). The UI hides each control, and the upload and reprocess model
+  pickers show "managed by your deployment" instead. None of these has a platform-admin
+  bypass, and the task-time checks run without a request, so a resolver should answer them
+  per deployment rather than per tier.
+
 - **`API_MEDIATED_UPLOAD_ENABLED` server setting (#1008).** Default `true` (no change). Set
   `false` to keep every file byte out of the API process: `POST /api/files` answers 404 before
   reading the body, `/api/system/capabilities` advertises `api_mediated_upload_enabled`, the
@@ -27,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answers 403 (the bulk action reports a per-file `FORBIDDEN` result and carries on with the
   rest of the batch) and is audited as `file.delete.denied`. The gallery list now carries
   `can_delete` per file and disables **Delete** when no selected file can be deleted.
+- **`url_ingest: False` did not disable URL import (#1109).** The capability was declared but
+  read by nothing: `POST /api/files/process-url` and `GET /api/files/youtube/quota` stayed
+  reachable and the upload dialog always offered the URL tab. Both routes now return 404 when
+  the capability is off (for every account, including platform admins), and the URL tab is
+  hidden.
 - **A partial capability-resolver result granted features instead of withholding them (#868).**
   `get_capabilities()` merged a registered resolver's result over the community defaults, which
   are `True` for almost every key, so a resolver that omitted a tier-gated key on some code path
@@ -67,6 +86,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loads, user sync, lockout, audit and session work now run in the threadpool.
 
 ### Fixed
+
+- **Legacy speaker profiles, speaker collections and vocabulary terms had no tenant, and
+  their names were unique across tenants (#1110).** Migration
+  `v430_per_tenant_speaker_and_vocab_names` stamps each unstamped row with its tenant where
+  that is unambiguous (a profile from the files its speakers are in, a collection from its
+  member profiles, otherwise the owner's single organization) and leaves the rest personal.
+  Profile, speaker-collection and vocabulary-term names are now unique per user **per
+  tenant** (personal counts as one tenant), so one name can be used in two organizations
+  and a duplicate no longer reveals that the name exists elsewhere. After upgrading, run
+  `python -m app.scripts.backfill_tenant_stamps` in a backend container: it lists the rows
+  whose evidence spans tenants (left for an administrator to decide) and, with
+  `--sync-voiceprints`, copies the new stamps onto the profiles' voiceprint documents so
+  organization voice matching finds them. Community installs have no organizations:
+  nothing is stamped and the uniqueness rule is unchanged.
 
 - **A task whose worker was killed stayed `in_progress` forever (#1067).** After an OOM kill,
   14 speaker-attribute and 2 speaker-clustering tasks were left with nothing running.

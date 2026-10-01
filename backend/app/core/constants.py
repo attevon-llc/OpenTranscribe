@@ -113,6 +113,33 @@ def gpu_preferred_queue(deployment_mode: str | None = None) -> str:
     return CeleryQueues.CPU if mode.strip().lower() == "lite" else CeleryQueues.GPU
 
 
+# Speaker re-clustering runs its similarity matrix on CUDA only once a tenant
+# partition has at least this many speakers (benchmarked: larger sets are faster on
+# the GPU; smaller ones pay a ~1.4 GB CUDA context for nothing). Read by BOTH
+# SpeakerClusteringService._compute_similarity_groups (device choice) and
+# speaker_clustering_queue() (queue choice) so the two cannot drift (issue #1083).
+# Both read it as a module attribute at call time, never via `from ... import`.
+SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS = 500
+
+
+def speaker_clustering_queue(largest_partition: int, deployment_mode: str | None = None) -> str:
+    """Queue for a speaker re-cluster whose largest tenant partition has this many speakers.
+
+    Below the GPU threshold the clustering math runs on CPU wherever it lands, so
+    publishing it to ``gpu`` only added latency and, on a deployment whose GPU
+    workers scale to zero, forced a GPU cold start for an interactive click
+    (issue #1083). At or above it the work is routed like any other GPU-preferred
+    task (``gpu`` in a full deployment, ``cpu`` in lite).
+
+    The dispatcher passes the queue explicitly; the static ``task_routes`` entry
+    (``GPU_PREFERRED_TASKS`` in ``core/celery.py``) is only the fallback for a
+    publisher that does not.
+    """
+    if largest_partition >= SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS:
+        return gpu_preferred_queue(deployment_mode)
+    return CeleryQueues.CPU
+
+
 def gpu_split_enabled() -> bool:
     """Whether THIS process's environment ASKS FOR the gpu-split topology.
 

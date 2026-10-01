@@ -99,14 +99,25 @@ def trigger_recluster(
 ):
     """Trigger full re-clustering of all speakers."""
     try:
-        from app.tasks.speaker_clustering import recluster_all_speakers
+        from app.core import constants
+        from app.tasks import speaker_clustering
 
         threshold = data.threshold if data and data.threshold is not None else None
         user_id = current_user.id
-        task = recluster_all_speakers.delay(user_id, threshold)
+        # Route by work size, not statically to `gpu` (issue #1083): below the
+        # shared threshold the clustering math runs on CPU wherever it lands, so a
+        # `gpu` publish would only wait for (or cold-start) a GPU worker.
+        largest = SpeakerClusteringService(db).largest_recluster_partition(user_id)
+        queue = constants.speaker_clustering_queue(largest)
+        task = speaker_clustering.recluster_all_speakers.apply_async(
+            args=[user_id, threshold], queue=queue
+        )
+        logger.info(
+            "Recluster for user %s published to %s (largest partition %d)", user_id, queue, largest
+        )
 
         # Send immediate "queued" notification so the UI shows status while
-        # the task waits for the GPU worker to pick it up.
+        # the task waits for a worker to pick it up.
         try:
             from app.tasks.speaker_clustering import _send_clustering_progress
 
@@ -114,7 +125,11 @@ def trigger_recluster(
                 user_id,
                 step=0,
                 total_steps=0,
-                message="Queued — waiting for GPU...",
+                message=(
+                    "Queued — waiting for GPU..."
+                    if queue == constants.CeleryQueues.GPU
+                    else "Queued..."
+                ),
                 progress=0.0,
                 running=True,
             )

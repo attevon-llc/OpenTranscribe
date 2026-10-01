@@ -75,7 +75,13 @@ a browser-playable AAC/M4A rendition for originals no browser decodes),
 `v422_add_collection_tenancy` (tenant-owned collections, issue #1051: nullable
 `collection.user_id` + `ck_collection_owner_or_org`, per-tenant partial unique indexes
 replacing `UNIQUE (user_id, name)`, and a move/split/merge backfill by member-file tenant;
-detection arm keys on `uq_collection_org_name`). **Derive
+detection arm keys on `uq_collection_org_name`),
+`v430_per_tenant_speaker_and_vocab_names` (issue #1110: stamps legacy speaker profiles,
+speaker collections and vocabulary terms with their tenant where unambiguous, and makes their
+unique names per user per tenant via `COALESCE(organization_id, 0)` expression indexes;
+numbered v430 to stay clear of parallel branches; its stamping SQL is re-used by
+`app/services/tenant_stamp_backfill.py`, so keep `STAMP_STATEMENTS`/`AMBIGUOUS_REPORT_SQL`
+stable; detection arm keys on `uq_speaker_profile_user_tenant_name`, created last). **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.
 

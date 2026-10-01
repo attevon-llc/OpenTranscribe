@@ -4084,6 +4084,7 @@
   "uploader.highQuality": "고품질(GPU)",
   "uploader.fastProcessing": "빠른 처리(CPU)",
   "uploader.fastProcessingHint": "CPU에서 경량 모델을 사용해 빠르게 전사합니다(분당 약 4초). 이 옵션에서는 화자 분리를 사용할 수 없습니다.",
+  "uploader.modelManaged": "전사 모델: 배포 환경에서 관리됨",
   "uploader.turboNoTranslation": "참고: 이 모델은 번역을 지원하지 않습니다. 이 파일에서는 번역이 비활성화됩니다.",
   "fileDetail.whisperModel": "ASR 모델",
   "fileDetail.modelFallback": "대체",

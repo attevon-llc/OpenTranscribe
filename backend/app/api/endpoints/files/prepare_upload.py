@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from sqlalchemy import and_
 from sqlalchemy import or_
 from sqlalchemy import select
@@ -16,6 +17,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.files.upload import create_media_file_record
 from app.core.constants import TAG_SOURCE_MANUAL
+from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -219,6 +221,7 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
 @router.post("/prepare", response_model=dict[str, Any])
 async def prepare_upload(
     request: PrepareUploadRequest,
+    http_request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ):
@@ -232,6 +235,10 @@ async def prepare_upload(
     upload bytes directly to MinIO, bypassing the API container entirely.
     """
     current_user = ctx.user
+    # The capability resolver may query the database; keep it off the event loop.
+    requested_whisper_model = await run_in_threadpool(
+        effective_whisper_model, request.whisper_model, http_request
+    )
     try:
         # If file hash is provided, check for duplicates
         duplicate_id: str | None = None
@@ -297,9 +304,9 @@ async def prepare_upload(
         storage_path = get_safe_storage_filename(request.filename, current_user.id, db_file.id)
         db_file.storage_path = storage_path  # type: ignore[assignment]
 
-        # Store the user's requested whisper model (if any)
-        if request.whisper_model:
-            db_file.requested_whisper_model = request.whisper_model  # type: ignore[assignment]
+        # Store the user's requested whisper model (if any, and if the deployment lets them pick)
+        if requested_whisper_model:
+            db_file.requested_whisper_model = requested_whisper_model  # type: ignore[assignment]
 
         db.flush()
 

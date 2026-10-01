@@ -34,6 +34,8 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
+from app.core.capabilities import require_capability
+from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -137,7 +139,14 @@ router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
 router.include_router(transcript_export_router, prefix="", tags=["files"])
 router.include_router(waveform_router, prefix="", tags=["waveform"])
-router.include_router(url_processing_router, prefix="", tags=["url-processing"])
+# URL import is a deployment decision (legal exposure, egress), so no account
+# bypasses it when the capability is off.
+router.include_router(
+    url_processing_router,
+    prefix="",
+    tags=["url-processing"],
+    dependencies=[Depends(require_capability("url_ingest", platform_admin_bypass=False))],
+)
 router.include_router(segments_router, prefix="", tags=["files"])
 router.include_router(summary_status_router, prefix="", tags=["summary"])
 
@@ -1125,6 +1134,7 @@ def update_transcript_segment(
 @router.post("/{file_uuid}/reprocess", response_model=MediaFileSchema)
 def reprocess_media_file(
     file_uuid: str,
+    http_request: Request,
     reprocess_request: ReprocessRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -1136,7 +1146,9 @@ def reprocess_media_file(
     max_speakers = reprocess_request.max_speakers if reprocess_request else None
     num_speakers = reprocess_request.num_speakers if reprocess_request else None
     stages: list[str] = list(reprocess_request.stages) if reprocess_request else []
-    whisper_model = reprocess_request.whisper_model if reprocess_request else None
+    whisper_model = effective_whisper_model(
+        reprocess_request.whisper_model if reprocess_request else None, http_request
+    )
 
     return process_file_reprocess(
         file_uuid,

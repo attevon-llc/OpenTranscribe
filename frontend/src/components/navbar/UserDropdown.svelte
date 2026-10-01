@@ -11,6 +11,7 @@
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
   import { getFlowerUrl } from '$lib/utils/url';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { isCloudEdition } from '$lib/edition';
   import UserMenuExtras from '$lib/cloud/components/UserMenuExtras.svelte';
 
@@ -20,6 +21,8 @@
   // Flower exposes task arguments (file/user IDs) and worker topology, so the
   // entry is admin-only. Cosmetic only — nginx auth_request is the real gate.
   $: isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  // A deployment may not run Flower at all; its auth probe then denies everyone.
+  $: flowerEnabled = isCapabilityEnabled($capabilities, 'admin.flower');
 
   const dispatch = createEventDispatcher<{
     open: void;
@@ -171,7 +174,7 @@
         <span>{$t('nav.documentation')}</span>
       </a>
 
-      {#if isAdmin}
+      {#if isAdmin && flowerEnabled}
         <button
           class="dropdown-item"
           on:click={handleFlower}

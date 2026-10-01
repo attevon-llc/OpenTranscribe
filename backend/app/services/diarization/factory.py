@@ -81,6 +81,11 @@ class DiarizationProviderFactory:
             .first()
         )
         source = source_setting.setting_value if source_setting else DEFAULT_DIARIZATION_SOURCE
+        from app.core.locked_settings import locked_transcription_fields
+
+        if "diarization_source" in locked_transcription_fields():
+            # The deployment owns the diarization source (issue #1109).
+            source = DEFAULT_DIARIZATION_SOURCE
 
         if source in ("provider", "off", "local"):
             return None

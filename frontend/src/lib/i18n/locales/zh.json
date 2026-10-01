@@ -4071,6 +4071,7 @@
   "uploader.highQuality": "高质量（GPU）",
   "uploader.fastProcessing": "快速处理（CPU）",
   "uploader.fastProcessingHint": "使用轻量级CPU模型进行快速转录（约每分钟4秒）。此选项不支持说话人分离。",
+  "uploader.modelManaged": "转录模型：由您的部署管理",
   "uploader.turboNoTranslation": "注意：此模型不支持翻译。此文件的翻译将被禁用。",
   "fileDetail.whisperModel": "ASR 模型",
   "fileDetail.modelFallback": "回退",

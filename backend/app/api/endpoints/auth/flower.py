@@ -58,13 +58,23 @@ def flower_authz(
         HTTPException: 401 when the caller is authenticated but not admitted —
             not an admin/super_admin, or blocked by the account-lifecycle gate
             (deactivated, expired, unapproved, rejected, ``must_change_password``,
-            banner unacknowledged). Both checks are invoked **in the body rather
+            banner unacknowledged), or the deployment turned the
+            ``admin.flower`` capability off. Both checks are invoked **in the body rather
             than as dependencies** because they raise 403; nginx's
             ``auth_request`` treats only 401 as "not authenticated" and forwards
             403 verbatim, so every denial is normalized to 401 here. That is why
             this route is waived in ``tests/unit/test_lifecycle_gate_coverage.py``
             — it enforces the gate, just not through the dependency tree.
     """
+    from app.core.capabilities import capability_enabled
+
+    if not capability_enabled("admin.flower", request):
+        # The deployment does not expose Flower (issue #1109) — for any account.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
         get_current_admin_user(get_current_active_user(request, current_user, db))
     except HTTPException as exc:

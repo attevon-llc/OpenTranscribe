@@ -5,6 +5,8 @@
   export let selectedWhisperModel: string | null = null;
   export let adminDefaultModel = 'large-v3-turbo';
   export let skipSummary = false;
+  /** False when the deployment owns the model choice: render it read-only. */
+  export let modelChoiceEnabled = true;
 
   const dispatch = createEventDispatcher<{
     change: { selectedWhisperModel: string | null; skipSummary: boolean };
@@ -18,6 +20,7 @@
 <div class="step-model">
   <p class="step-hint">{$t('uploader.modelHint')}</p>
 
+  {#if modelChoiceEnabled}
   <div class="field">
     <label for="whisper-model-select">
       {$t('uploader.whisperModel')}
@@ -35,6 +38,9 @@
       <p class="model-note">{$t('uploader.fastProcessingHint')}</p>
     {/if}
   </div>
+  {:else}
+  <p class="model-managed" data-testid="model-managed">{$t('uploader.modelManaged')}</p>
+  {/if}
 
   <!-- AI Summary -->
   <div class="section">
@@ -66,6 +72,7 @@
   }
   .model-select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
 
+  .model-managed { margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
   .model-note { margin: 0; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3; }
 
   /* Section */

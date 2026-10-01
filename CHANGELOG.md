@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deployment-locked settings via capability keys (#1109).** New capabilities, all `True` by
+  default (no change for self-hosted installs), let an operator's capability resolver lock
+  values the deployment owns. Each is enforced on the server, not just hidden:
+  `transcription.model_choice` (a client `whisper_model` on prepare/complete/reprocess is
+  ignored, so a request can no longer route a file to CPU transcription),
+  `transcription.diarization_source` and `transcription.advanced` (writes are ignored, reads
+  report the default, and the transcription task ignores values stored before the lock),
+  `speaker_attributes.migration`, `media_sources` and `audio_extraction` (their routes return
+  404; per-user media sources are not used for downloads), and `admin.flower` (the Flower
+  `auth_request` probe denies). The UI hides each control, and the upload and reprocess model
+  pickers show "managed by your deployment" instead. None of these has a platform-admin
+  bypass, and the task-time checks run without a request, so a resolver should answer them
+  per deployment rather than per tier.
+
 - **`API_MEDIATED_UPLOAD_ENABLED` server setting (#1008).** Default `true` (no change). Set
   `false` to keep every file byte out of the API process: `POST /api/files` answers 404 before
   reading the body, `/api/system/capabilities` advertises `api_mediated_upload_enabled`, the
@@ -19,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`url_ingest: False` did not disable URL import (#1109).** The capability was declared but
+  read by nothing: `POST /api/files/process-url` and `GET /api/files/youtube/quota` stayed
+  reachable and the upload dialog always offered the URL tab. Both routes now return 404 when
+  the capability is off (for every account, including platform admins), and the URL tab is
+  hidden.
 - **A partial capability-resolver result granted features instead of withholding them (#868).**
   `get_capabilities()` merged a registered resolver's result over the community defaults, which
   are `True` for almost every key, so a resolver that omitted a tier-gated key on some code path

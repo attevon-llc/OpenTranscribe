@@ -4082,6 +4082,7 @@
   "uploader.highQuality": "Alta qualità (GPU)",
   "uploader.fastProcessing": "Elaborazione veloce (CPU)",
   "uploader.fastProcessingHint": "Usa un modello leggero su CPU per una trascrizione veloce (~4s al minuto). La diarizzazione dei parlanti non è disponibile con questa opzione.",
+  "uploader.modelManaged": "Modello di trascrizione: gestito dalla tua installazione",
   "uploader.turboNoTranslation": "Nota: questo modello non supporta la traduzione. La traduzione verrà disabilitata per questo file.",
   "fileDetail.whisperModel": "Modello ASR",
   "fileDetail.modelFallback": "Ripiego",

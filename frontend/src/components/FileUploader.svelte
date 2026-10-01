@@ -11,6 +11,7 @@
   import { isOnline } from '$stores/network';
   import { t } from '$stores/locale';
   import { isCloudEdition } from '$lib/edition';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { usageStore, isOverLimit, showQuotaExceeded } from '$lib/cloud';
   import { get } from 'svelte/store';
 
@@ -97,6 +98,13 @@
 
   // ── Tab & Media State ──
   let activeTab: 'file' | 'url' | 'record' = 'file';
+
+  // Deployment-owned controls (the server enforces both; this only hides them).
+  $: urlIngestEnabled = isCapabilityEnabled($capabilities, 'url_ingest');
+  $: modelChoiceEnabled = isCapabilityEnabled($capabilities, 'transcription.model_choice');
+  $: if (!urlIngestEnabled && activeTab === 'url') switchTab('file');
+  $: if (!modelChoiceEnabled && selectedWhisperModel !== null) selectedWhisperModel = null;
+
   let file: FileWithSize | null = null;
   let mediaUrl = '';
   let error = '';
@@ -180,10 +188,16 @@
     loadRecordingSettings();
 
     (async () => {
+      const defaults = { auto_extract_enabled: true, extraction_threshold_mb: 100, remember_choice: false, show_modal: true };
+      // Off = the deployment owns these preferences and the endpoint does not exist.
+      if (!isCapabilityEnabled(get(capabilities), 'audio_extraction')) {
+        audioExtractionSettings = defaults;
+        return;
+      }
       try {
         audioExtractionSettings = await getAudioExtractionSettings();
       } catch {
-        audioExtractionSettings = { auto_extract_enabled: true, extraction_threshold_mb: 100, remember_choice: false, show_modal: true };
+        audioExtractionSettings = defaults;
       }
     })();
 
@@ -234,6 +248,7 @@
     handleSetTabEvent = (event: Event) => {
       const customEvent = event as CustomEvent;
       if (customEvent.detail?.activeTab) {
+        if (customEvent.detail.activeTab === 'url' && !urlIngestEnabled) return;
         activeTab = customEvent.detail.activeTab;
         if (currentStepIndex !== 0) { currentStepIndex = 0; }
       }
@@ -798,6 +813,7 @@
               </svg>
               {$t('uploader.uploadFile')}
             </button>
+            {#if urlIngestEnabled}
             <button class="tab-button" class:active={activeTab === 'url'} on:click={() => switchTab('url')}>
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
@@ -805,6 +821,7 @@
               </svg>
               {$t('uploader.mediaUrl')}
             </button>
+            {/if}
             <button
               class="tab-button"
               class:active={activeTab === 'record'}
@@ -920,6 +937,7 @@
           <UploadStepModel
             bind:selectedWhisperModel
             {adminDefaultModel}
+            {modelChoiceEnabled}
             bind:skipSummary
           />
 

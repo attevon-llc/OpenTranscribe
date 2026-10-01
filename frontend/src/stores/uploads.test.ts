@@ -391,6 +391,7 @@ describe('uploadsStore', () => {
         uploads: [upload],
         isExpanded: true,
         hasNewActivity: true,
+        userCollapsed: false,
       });
 
       uploadsStore.reset();
@@ -400,6 +401,7 @@ describe('uploadsStore', () => {
         uploads: [],
         isExpanded: false,
         hasNewActivity: false,
+        userCollapsed: false,
       });
     });
 

@@ -17,13 +17,15 @@
   // Get status color
   function getStatusColor(status: string): string {
     switch (status) {
-      case 'completed': return '#10b981';
-      case 'failed': return '#ef4444';
-      case 'cancelled': return '#6b7280';
+      case 'completed': return 'var(--success-color)';
+      case 'failed': return 'var(--error-color)';
+      case 'cancelled': return 'var(--text-secondary)';
+      // The fill sits on --border-color; --primary-on-surface is the blue that
+      // keeps >=3:1 against it in both themes (--primary-color does not in dark).
       case 'uploading':
       case 'processing':
-      case 'preparing': return '#3b82f6';
-      default: return '#f59e0b';
+      case 'preparing': return 'var(--primary-on-surface)';
+      default: return 'var(--warning-color)';
     }
   }
 
@@ -92,7 +94,7 @@
     <div class="upload-actions">
       {#if upload.status === 'failed'}
         <button
-          class="action-btn retry-btn"
+          class="upload-action-btn upload-retry-btn"
           on:click={handleRetry}
           title={$t('upload.retryUpload')}
         >
@@ -102,7 +104,7 @@
 
       {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing'}
         <button
-          class="action-btn cancel-btn"
+          class="upload-action-btn upload-cancel-btn"
           on:click={handleCancel}
           title={$t('upload.cancelUpload')}
         >
@@ -110,7 +112,7 @@
         </button>
       {:else}
         <button
-          class="action-btn remove-btn"
+          class="upload-action-btn upload-remove-btn"
           on:click={handleRemove}
           title={$t('upload.removeFromList')}
         >
@@ -216,7 +218,7 @@
     gap: 4px;
   }
 
-  .action-btn {
+  .upload-action-btn {
     background: none;
     border: none;
     padding: 4px 6px;
@@ -228,17 +230,17 @@
     transition: all 0.2s ease;
   }
 
-  .action-btn:hover {
+  .upload-action-btn:hover {
     background: var(--hover-color);
   }
 
-  .retry-btn:hover {
+  .upload-retry-btn:hover {
     color: #10b981;
     background: rgba(16, 185, 129, 0.1);
   }
 
-  .cancel-btn:hover,
-  .remove-btn:hover {
+  .upload-cancel-btn:hover,
+  .upload-remove-btn:hover {
     color: #ef4444;
     background: rgba(239, 68, 68, 0.1);
   }
@@ -300,11 +302,11 @@
     background: rgba(245, 158, 11, 0.18);
   }
 
-  :global([data-theme='dark']) .action-btn {
+  :global([data-theme='dark']) .upload-action-btn {
     color: var(--text-secondary);
   }
 
-  :global([data-theme='dark']) .action-btn:hover {
+  :global([data-theme='dark']) .upload-action-btn:hover {
     background: var(--hover-color);
   }
 

@@ -521,6 +521,15 @@ services:
     # transcription tasks cannot head-of-line-block postprocess.
     command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility,cpu-transcribe --concurrency=${CPU_WORKER_CONCURRENCY:-8} --max-tasks-per-child=20 --hostname cpu-processor@%h -E
     volumes:
+      # Hugging Face + torch caches. THIS WORKER RUNS `detect_speaker_attributes` (cpu
+      # queue), which loads the wav2vec2 gender model. Without this mount the model can
+      # only come from a runtime download into the container's own throwaway layer; on an
+      # offline / air-gapped stack (HF_HUB_OFFLINE=1) it cannot load at all and attribute
+      # detection fails on every file. The model is fetched by scripts/download-models.py
+      # (group `speaker-attributes`) and shipped in the offline bundle.
+      # Guarded by backend/tests/unit/test_compose_speaker_attribute_model_mounts.py.
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       # Sentence tokenizer corpora. THIS WORKER CHUNKS TRANSCRIPTS (issue #436) —
       # without the mount, punkt is absent and every chunk it writes is cut by the
       # regex fallback, which splits on abbreviations punkt keeps intact. The two

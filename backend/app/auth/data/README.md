@@ -6,10 +6,10 @@ case-sensitive as published (matching is case-insensitive).
 
 - **Content:** the 100,000 most-used passwords from the UK National Cyber Security
   Centre (NCSC) "PwnedPasswordsTop100k" analysis of the public Have I Been Pwned
-  corpus. 99,840 entries.
+  corpus. 99,835 entries.
 - **Obtained from:** `Passwords/Common-Credentials/100k-most-used-passwords-NCSC.txt`
   in https://github.com/danielmiessler/SecLists (MIT License, Copyright (c) 2018
-  Daniel Miessler). The only change is the removal of 5 dictionary entries (99,845 -> 99,840
+  Daniel Miessler). The only change is the removal of 5 dictionary entries (99,840 -> 99,835
   lines) that contain a substring the repository's vendor-noun CI guard forbids anywhere under
   `backend/app`; they are ordinary words that other entries and the rest of the list cover.
 - **Licence:** distributed here under the SecLists MIT License (full text below). The

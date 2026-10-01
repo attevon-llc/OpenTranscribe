@@ -73,7 +73,7 @@ Existing weak-pattern warnings (`password123`, sequences, repeats) are unchanged
 ### Offline list
 
 `backend/app/auth/data/common_passwords.txt`: the UK NCSC top-100,000 most-used passwords
-(99,840 entries), obtained from SecLists (MIT). Source and licence are recorded in
+(99,835 entries), obtained from SecLists (MIT). Source and licence are recorded in
 `backend/app/auth/data/README.md`. It works on air-gapped installs and nothing leaves the host.
 
 To use a larger list, set `PASSWORD_BLOCKLIST_PATH` to a UTF-8 file with one password per line

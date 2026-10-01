@@ -105,6 +105,11 @@ services:
       context: ./backend
       dockerfile: Dockerfile.blackwell
     image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
+    volumes:
+      # This image runs as `user`, so the base file's /home/appuser cache mounts are
+      # invisible to it. detect_speaker_attributes (cpu queue) needs the gender model.
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/user/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/user/.cache/torch
     deploy:
       resources:
         reservations:

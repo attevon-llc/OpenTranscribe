@@ -696,6 +696,16 @@
             "default": false,
             "title": "Proxy Enabled",
             "type": "boolean"
+          },
+          "session_absolute_timeout_minutes": {
+            "default": 0,
+            "title": "Session Absolute Timeout Minutes",
+            "type": "integer"
+          },
+          "session_idle_timeout_minutes": {
+            "default": 0,
+            "title": "Session Idle Timeout Minutes",
+            "type": "integer"
           }
         },
         "required": [

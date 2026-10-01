@@ -7,6 +7,12 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { isCloudEdition } from '$lib/edition';
+  import {
+    loadPasswordPolicy,
+    buildPasswordRequirements,
+    FALLBACK_PASSWORD_POLICY,
+    type PasswordPolicy,
+  } from '$lib/passwordPolicy';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
   import ActiveSessionsPanel from '$components/settings/ActiveSessionsPanel.svelte';
@@ -32,6 +38,12 @@
   let profileChanged = false;
   let profileLoading = false;
 
+  // Requirements come from the server's active policy profile, not a hardcoded minimum.
+  let passwordPolicy: PasswordPolicy = FALLBACK_PASSWORD_POLICY;
+  $: passwordRequirements = buildPasswordRequirements(passwordPolicy);
+  // The toast truncates to one line, which hid the policy reason; show it in full inline.
+  let passwordError = '';
+
   // Password section
   let currentPassword = '';
   let newPassword = '';
@@ -47,6 +59,7 @@
       fullName = $authStore.user.full_name || '';
       email = $authStore.user.email || '';
     }
+    loadPasswordPolicy().then((policy) => (passwordPolicy = policy));
   });
 
   // Reactive user data update when authStore changes
@@ -99,6 +112,7 @@
   // Password functions
   async function updatePassword() {
     passwordLoading = true;
+    passwordError = '';
 
     // Validation
     if (!currentPassword || !newPassword || !confirmPassword) {
@@ -139,6 +153,7 @@
     } catch (err: unknown) {
       console.error('Error updating password:', err);
       const message = getErrorMessage(err, $t('settings.toast.passwordUpdateFailed'));
+      passwordError = message;
       toastStore.error(message);
     } finally {
       passwordLoading = false;
@@ -278,7 +293,9 @@
             class="form-control"
             bind:value={newPassword}
           />
-          <small class="form-text">{$t('auth.passwordMinLength')}</small>
+          <small class="form-text" data-testid="password-requirements"
+            >{passwordRequirements.map((r) => $t(r.key, r.params)).join(' · ')}</small
+          >
         </div>
 
         <div class="form-group">
@@ -316,6 +333,10 @@
           />
         </div>
 
+        {#if passwordError}
+          <p class="form-text password-error" role="alert">{passwordError}</p>
+        {/if}
+
         <div class="form-actions">
           <button
             type="submit"
@@ -348,6 +369,11 @@
 </div>
 
 <style>
+  .form-text.password-error {
+    color: var(--error-color);
+    margin: 0 0 0.75rem 0;
+  }
+
   .section-title {
     font-size: 1.125rem;
     font-weight: 600;

@@ -100,7 +100,7 @@ and the online lookup an additional one. The lookup only runs once every other c
 ## MFA for administrators
 
 `MFA_REQUIRED_FOR_ADMINS` (default `false`): when `true` and `MFA_ENABLED=true`, any user with role
-`admin` must enrol TOTP at next login and verify it on every login, even if `MFA_REQUIRED=false`.
+`admin` or `super_admin` must enrol TOTP at next login and verify it on every login, even if `MFA_REQUIRED=false`.
 **Recommended `true`** for every deployment that enables MFA; it defaults to `false` only so an
 upgrade cannot lock an admin out before they have enrolled. It has no effect while `MFA_ENABLED=false`.
 Users authenticated by an external IdP (OIDC/PKI/SAML) are subject to the same IdP-owns-the-second-factor

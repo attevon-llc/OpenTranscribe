@@ -1,4 +1,4 @@
-"""Who must use MFA: everyone (``mfa_required``) or administrators only.
+"""Who must use MFA: everyone (``mfa_required``) or administrators (admin and super_admin) only.
 
 Kept free of request/DB types so the login gate, the MFA status endpoint and the
 password policy (which lowers the NIST minimum length for MFA-protected users) all
@@ -10,9 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.auth.roles import ELEVATED_ROLES
 from app.core.config import settings
-
-ADMIN_ROLE = "admin"
 
 
 def user_is_mfa_protected(db: Any, user: Any) -> bool:
@@ -49,5 +48,5 @@ def mfa_required_for_user(auth_settings: Any, user: Any | None = None) -> bool:
     if user is not None and auth_settings.get_bool(
         "mfa_required_for_admins", settings.MFA_REQUIRED_FOR_ADMINS
     ):
-        return str(getattr(user, "role", "")) == ADMIN_ROLE
+        return str(getattr(user, "role", "")) in ELEVATED_ROLES
     return False

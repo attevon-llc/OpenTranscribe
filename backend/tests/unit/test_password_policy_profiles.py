@@ -455,6 +455,7 @@ class TestMfaRequiredForAdmins:
         _publish(mfa_enabled=True, mfa_required=False, mfa_required_for_admins=True)
         s = get_process_auth_settings()
         assert mfa_required_for_user(s, self._user("admin"))
+        assert mfa_required_for_user(s, self._user("super_admin"))
         assert not mfa_required_for_user(s, self._user("user"))
         assert not mfa_required_for_user(s, self._user("manager"))
 

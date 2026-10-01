@@ -202,6 +202,11 @@ ENV GIT_SHA=${GIT_SHA}
 ARG BUILD_TIME=unknown
 ENV BUILD_TIME=${BUILD_TIME}
 
+# Remove pip from the runtime image: nothing runs it after the build, and its vendored
+# urllib3/requests lag the app's pinned versions and trip every vulnerability scan.
+# Must stay after the last `pip install` above.
+RUN python -m pip uninstall -y pip
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

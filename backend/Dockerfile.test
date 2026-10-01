@@ -66,7 +66,10 @@ COPY --chown=appuser:appuser requirements-test.txt /tmp/requirements-test.txt
 # beside) the app dependencies, so pytest resolves `app.*`, fastapi, torch and
 # pyannote from one tree. Pure-Python wheels only — no compiler needed, which is why
 # the runtime stage can stay toolchain-free.
-RUN pip install --user --no-cache-dir --no-warn-script-location -r /tmp/requirements-test.txt \
+# The prod image deliberately ships no pip, so bootstrap one into appuser's user site
+# first (ensurepip is in the stdlib). This image is local-only and never published.
+RUN python -m ensurepip --user \
+    && python -m pip install --user --no-cache-dir --no-warn-script-location -r /tmp/requirements-test.txt \
     && rm /tmp/requirements-test.txt
 
 # Marker other tooling (and a human reading `docker inspect`) can key off, so a test

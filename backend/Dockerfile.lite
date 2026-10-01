@@ -324,6 +324,19 @@ RUN mkdir -p /scratch/opentranscribe && \
 RUN mkdir -p /scratch/opentranscribe/engine /scratch/opentranscribe/diar && \
     chown appuser:appuser /scratch/opentranscribe/engine /scratch/opentranscribe/diar
 
+# Remove pip from the runtime image. Nothing runs pip after the build, and pip vendors
+# its own urllib3/requests that lag the app's pinned versions, so every vulnerability
+# scan flags the vendored copy. Two copies exist: the base image's (/usr/local) and the
+# one the builder stage upgraded into the copied-over user site. Done as root, then back
+# to the app user below. The explicit globs avoid matching unrelated pip-* packages.
+USER root
+RUN rm -rf /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.* \
+        /usr/local/lib/python3.13/site-packages/pip \
+        /usr/local/lib/python3.13/site-packages/pip-[0-9]*.dist-info \
+        /home/appuser/.local/bin/pip /home/appuser/.local/bin/pip3 /home/appuser/.local/bin/pip3.* \
+        /home/appuser/.local/lib/python3.13/site-packages/pip \
+        /home/appuser/.local/lib/python3.13/site-packages/pip-[0-9]*.dist-info
+
 # Switch to non-root user
 USER appuser
 

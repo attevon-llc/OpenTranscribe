@@ -16,6 +16,8 @@
   export let messages: ChatMessageType[] = [];
   export let status: StreamStatus = 'idle';
   export let streamingMessageId: string | null = null;
+  /** Holds Regenerate/Retry while a rate-limit wait is running. */
+  export let retryBlocked = false;
 
   const dispatch = createEventDispatcher<{
     regenerate: void;
@@ -70,6 +72,7 @@
       <ChatMessage
         {message}
         isLast={message.uuid === lastAssistantId}
+        {retryBlocked}
         streaming={message.uuid === streamingMessageId && status === 'streaming'}
         on:regenerate={() => dispatch('regenerate')}
         on:retry={() => dispatch('retry')}

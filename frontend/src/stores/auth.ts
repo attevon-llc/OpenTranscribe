@@ -4,6 +4,7 @@ import { t } from '$stores/locale';
 import { clearUserState } from '$lib/session/clearUserState';
 import { isCloudEdition } from '$lib/edition';
 import { loadCapabilities } from '$stores/capabilities';
+import { retryAfterFromHeaders } from '$lib/utils/retryAfter';
 
 /**
  * Minimal shape of an axios error used for status- and detail-based message
@@ -12,6 +13,7 @@ import { loadCapabilities } from '$stores/capabilities';
 interface AuthRequestError {
   response?: {
     status?: number;
+    headers?: unknown;
     data?: { detail?: unknown; message?: unknown };
   };
   request?: unknown;
@@ -518,6 +520,8 @@ export async function login(
   // 403 — `assert_email_verified_for_local_login` — so the STATUS identifies it
   // and no substring match on the localised message is needed.
   email_not_verified?: boolean;
+  /** Seconds from the 429 `Retry-After` header; null when absent or unparseable. */
+  retry_after?: number | null;
   // The account carries `must_change_password`. The session is real, but every
   // route except `PUT /users/me` and logout will answer 403 until it clears.
   must_change_password?: boolean;
@@ -602,6 +606,7 @@ export async function login(
 
     // Extract meaningful error message from backend response
     let errorMessage = get(t)('auth.error.loginFailedCheckCredentials');
+    let retryAfter: number | null = null;
 
     if (err.response) {
       // Server responded with an error status
@@ -615,7 +620,11 @@ export async function login(
             (err.response.data?.detail as string) || get(t)('auth.error.invalidRequest');
           break;
         case 429:
-          errorMessage = get(t)('auth.error.tooManyLoginAttempts');
+          retryAfter = retryAfterFromHeaders(err.response.headers);
+          errorMessage =
+            retryAfter !== null
+              ? get(t)('auth.error.tooManyLoginAttemptsWait', { seconds: retryAfter })
+              : get(t)('auth.error.tooManyLoginAttempts');
           break;
         case 500:
         case 502:
@@ -641,6 +650,7 @@ export async function login(
       message: errorMessage,
       status: err.response?.status,
       email_not_verified: err.response?.status === 403,
+      retry_after: retryAfter,
     };
   }
 }

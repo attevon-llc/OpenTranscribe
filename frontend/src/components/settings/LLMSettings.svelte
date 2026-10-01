@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CONTEXT_WINDOW_RELATION_KEYS, CONTEXT_WINDOW_STATUS_KEYS, REASONING_OFF_SWITCH_KEYS, keyFor } from '$lib/i18n/keyMaps';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse, type UserLLMConfigurationsList } from '../../lib/api/llmSettings';
@@ -288,7 +289,7 @@
 
     try {
       const result = await LLMSettingsApi.probeReasoningCapability(config.uuid);
-      const message = $t(`settings.llmProvider.reasoningOffSwitch.${result.off_switch}`);
+      const message = $t(keyFor(REASONING_OFF_SWITCH_KEYS, result.off_switch, REASONING_OFF_SWITCH_KEYS.unknown));
 
       if (result.off_switch === 'works') {
         toastStore.success(`${config.name}: ${message}`, 8000);
@@ -322,7 +323,7 @@
           window: result.context_window ?? 0,
           configured: result.configured_max_tokens ?? 0
         };
-        const message = $t(`settings.llmProvider.contextWindow.measured_${result.relation}`, params);
+        const message = $t(CONTEXT_WINDOW_RELATION_KEYS[result.relation], params);
         if (result.relation === 'match') {
           toastStore.success(`${config.name}: ${message}`, 8000);
         } else {
@@ -331,7 +332,7 @@
           toastStore.warning(`${config.name}: ${message}`, 10000);
         }
       } else {
-        const message = $t(`settings.llmProvider.contextWindow.${result.status}`);
+        const message = $t(keyFor(CONTEXT_WINDOW_STATUS_KEYS, result.status, CONTEXT_WINDOW_STATUS_KEYS.unknown));
         toastStore.info(`${config.name}: ${message}`, 8000);
       }
     } catch (err: unknown) {

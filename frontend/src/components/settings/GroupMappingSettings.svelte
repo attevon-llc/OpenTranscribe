@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { GROUP_MAPPING_ROLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -179,7 +180,7 @@
               <td>
                 {#if mapping.grants_role}
                   <Badge variant={mapping.grants_role === 'admin' ? 'warning' : 'info'}>
-                    {$t(`settings.groupMappings.role.${mapping.grants_role}`)}
+                    {labelFor($t, GROUP_MAPPING_ROLE_KEYS, mapping.grants_role)}
                   </Badge>
                 {:else}
                   <span class="muted">{$t('settings.groupMappings.noRole')}</span>

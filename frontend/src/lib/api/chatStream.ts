@@ -12,6 +12,7 @@
  * explicitly below.
  */
 
+import { parseRetryAfter } from '$lib/utils/retryAfter';
 import axiosInstance, { getAuthHeaders } from '$lib/axios';
 import { isCloudEdition } from '$lib/edition';
 import type { ChatStreamEvent, SendMessageRequest } from '$lib/types/chat';
@@ -178,7 +179,15 @@ async function errorFromResponse(response: Response): Promise<ChatStreamEvent> {
   }
 
   if (response.status === 402) return { type: 'error', code: 'quota_exceeded', message };
-  if (response.status === 429) return { type: 'error', code: 'rate_limited', message };
+  if (response.status === 429) {
+    const retryAfter = parseRetryAfter(response.headers?.get?.('Retry-After'));
+    return {
+      type: 'error',
+      code: 'rate_limited',
+      message,
+      ...(retryAfter !== null && { retryAfter }),
+    };
+  }
   if (response.status === 400 && /llm/i.test(message)) {
     return { type: 'error', code: 'llm_unconfigured', message };
   }

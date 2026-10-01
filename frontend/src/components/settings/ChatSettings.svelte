@@ -7,6 +7,7 @@
   while "always use my transcripts" is an account-level habit.
 -->
 <script lang="ts">
+  import { SEARCH_MODE_KEYS } from '$lib/i18n/keyMaps';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
@@ -96,7 +97,7 @@
         data-testid="chat-settings-search-mode"
       >
         {#each SEARCH_MODES as mode}
-          <option value={mode}>{$t(`chat.searchMode.${mode}`)}</option>
+          <option value={mode}>{$t(SEARCH_MODE_KEYS[mode])}</option>
         {/each}
       </select>
     </div>

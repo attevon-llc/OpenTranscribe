@@ -313,6 +313,36 @@ describe('streamChatMessage', () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    ['30', { retryAfter: 30 }],
+    [null, {}],
+    ['soon', {}],
+  ])('carries Retry-After %j from a 429 onto the error event (#788)', async (header, extra) => {
+    const { streamChatMessage } = await import('./chatStream');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        headers: new Headers(header === null ? {} : { 'Retry-After': header }),
+        json: async () => ({ detail: 'Hourly chat limit reached.' }),
+      })
+    );
+
+    const events: ChatStreamEvent[] = [];
+    await streamChatMessage(
+      'conv-1',
+      { content: 'hi' },
+      (e) => events.push(e),
+      new AbortController().signal
+    );
+
+    expect(events).toEqual([
+      { type: 'error', code: 'rate_limited', message: 'Hourly chat limit reached.', ...extra },
+    ]);
+    vi.unstubAllGlobals();
+  });
+
   it('maps a 402 to quota_exceeded', async () => {
     const { streamChatMessage } = await import('./chatStream');
 

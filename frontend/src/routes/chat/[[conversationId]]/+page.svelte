@@ -12,6 +12,7 @@
 <script lang="ts">
   import { CHAT_STATE_ERROR_FALLBACK, CHAT_STATE_ERROR_KEYS, keyFor } from '$lib/i18n/keyMaps';
   import { onDestroy, onMount } from 'svelte';
+  import { createRetryCountdown } from '$lib/utils/retryAfter';
   import { goto } from '$app/navigation';
   import { t } from '$stores/locale';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
@@ -83,6 +84,16 @@
   // mounted when llm.user_settings is disabled (issue #1046).
   $: contextWindow = $llmStatusStore.status?.context_window ?? 0;
   $: state = $chatStore;
+
+  // A 429's Retry-After holds sending (the draft is kept) and Retry/Regenerate (#788).
+  const rateCountdown = createRetryCountdown();
+  const rateRemaining = rateCountdown.remaining;
+  // Keyed on the deadline alone so unrelated store updates (every stream chunk)
+  // do not restart the timer.
+  $: rateLimitedUntil = state.rateLimitedUntil;
+  $: rateCountdown.start(
+    rateLimitedUntil ? Math.ceil((rateLimitedUntil - Date.now()) / 1000) : null
+  );
   $: hasMessages = state.messages.length > 0;
 
   // The panel always tracks the LATEST assistant turn, matching every other live
@@ -153,6 +164,7 @@
   });
 
   onDestroy(() => {
+    rateCountdown.stop();
     mediaCleanup?.();
     // Leaving the page must not leave a stream running in the background.
     if (state.streamStatus === 'streaming') chatStore.stopGeneration();
@@ -534,7 +546,13 @@
       <div class="chat-body">
         {#if state.error}
           <div class="chat-error" role="alert" data-testid="chat-error-banner">
-            <span>{$t(keyFor(CHAT_STATE_ERROR_KEYS, state.error, CHAT_STATE_ERROR_FALLBACK))}</span>
+            <span>
+              {#if state.error === 'rate_limited' && $rateRemaining > 0}
+                {$t('chat.errors.rate_limitedWait', { seconds: $rateRemaining })}
+              {:else}
+                {$t(keyFor(CHAT_STATE_ERROR_KEYS, state.error, CHAT_STATE_ERROR_FALLBACK))}
+              {/if}
+            </span>
             {#if state.error === 'conversationNotFound'}
               <button type="button" class="error-action" on:click={handleNewChat}>
                 {$t('chat.newChat')}
@@ -548,6 +566,7 @@
             messages={state.messages}
             status={state.streamStatus}
             streamingMessageId={state.streamingMessageId}
+            retryBlocked={$rateRemaining > 0}
             on:regenerate={() => chatStore.regenerate()}
             on:retry={() => chatStore.regenerate()}
             on:edit={(e) => chatStore.editMessage(e.detail.uuid, e.detail.content)}
@@ -573,6 +592,7 @@
           bind:value={composerValue}
           status={state.streamStatus}
           disabled={!llmAvailable}
+          blockedFor={$rateRemaining}
           on:send={handleSend}
           on:stop={() => chatStore.stopGeneration()}
         />

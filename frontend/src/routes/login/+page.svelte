@@ -12,6 +12,7 @@
   import LoginBanner from '$components/LoginBanner.svelte';
   import MfaEnrollment from '$components/mfa/MfaEnrollment.svelte';
   import Spinner from '../../components/ui/Spinner.svelte';
+  import { createRetryCountdown } from '$lib/utils/retryAfter';
 
   // Cloud edition: the hosted sign-in component mounts into this node; an
   // auth-state listener hydrates our local user store once a session exists.
@@ -27,6 +28,9 @@
   let email = "";
   let password = "";
   let loading = false;
+  // A 429 carries Retry-After; hold the submit button for that long (#788).
+  const retryCountdown = createRetryCountdown();
+  const retryRemaining = retryCountdown.remaining;
   let oidcLoading = false;
   let pkiLoading = false;
   let formSubmitted = false;
@@ -344,6 +348,7 @@
 
   // Tear down the hosted component + listener on unmount (cloud only).
   onDestroy(() => {
+    retryCountdown.stop();
     if (externalUnmount) externalUnmount();
     if (externalUnlisten) externalUnlisten();
   });
@@ -460,6 +465,7 @@
         setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
         console.error('Login.svelte: Login failed:', result.message);
+        if (result.status === 429) retryCountdown.start(result.retry_after);
         toastStore.error(result.message || $t('auth.loginFailed'));
 
         // Steer focus from the HTTP status, never from the message text: the
@@ -1187,10 +1193,12 @@
       <button
         type="submit"
         class="auth-button"
-        disabled={loading}
+        disabled={loading || $retryRemaining > 0}
       >
         {#if loading}
           <Spinner size="small" color="white" /> {$t('auth.signingIn')}
+        {:else if $retryRemaining > 0}
+          {$t('auth.retryIn', { seconds: $retryRemaining })}
         {:else}
           {$t('auth.signIn')}
         {/if}

@@ -22,6 +22,7 @@
   /** True for the newest assistant message (gets the regenerate affordance). */
   export let isLast = false;
   export let streaming = false;
+  export let retryBlocked = false;
 
   const dispatch = createEventDispatcher<{
     regenerate: void;
@@ -237,6 +238,7 @@
           type="button"
           class="action-btn"
           on:click={() => dispatch('regenerate')}
+          disabled={retryBlocked}
           title={$t('chat.message.regenerate')}
           aria-label={$t('chat.message.regenerate')}
           data-testid="chat-regenerate"
@@ -261,6 +263,7 @@
           type="button"
           class="action-btn"
           on:click={() => dispatch('retry')}
+          disabled={retryBlocked}
           data-testid="chat-retry"
         >
           {$t('chat.message.retry')}

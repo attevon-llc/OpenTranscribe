@@ -559,7 +559,13 @@ export type ChatStreamEvent =
        */
       trace_truncated?: boolean;
     }
-  | { type: 'error'; code: ChatErrorCode; message: string };
+  | {
+      type: 'error';
+      code: ChatErrorCode;
+      message: string;
+      /** Seconds from a 429's `Retry-After` header; absent when missing or unparseable. */
+      retryAfter?: number;
+    };
 
 /** Where the composer/thread is in the send lifecycle. */
 export type StreamStatus =

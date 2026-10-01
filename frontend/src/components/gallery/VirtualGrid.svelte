@@ -142,6 +142,15 @@
   $: visibleStartIndex = visibleStartRow * columnsPerRow;
   $: visibleEndIndex = Math.min(items.length, visibleEndRow * columnsPerRow);
   $: visibleItems = items.slice(visibleStartIndex, visibleEndIndex);
+  // role="row" groups: visibleStartIndex is always row-aligned, so chunking by
+  // columnsPerRow reproduces the visual rows.
+  $: visibleRowGroups = Array.from(
+    { length: Math.ceil(visibleItems.length / columnsPerRow) },
+    (_, r) => ({
+      rowIndex: visibleStartRow + r,
+      files: visibleItems.slice(r * columnsPerRow, (r + 1) * columnsPerRow),
+    })
+  );
   $: topSpacerHeight = visibleStartRow * ROW_HEIGHT;
   $: bottomSpacerHeight = Math.max(0, (totalRows - visibleEndRow) * ROW_HEIGHT);
 
@@ -209,12 +218,12 @@
 
     <!-- Visible items in CSS grid -->
     <div class="file-grid">
-      {#each visibleItems as file, i (file.uuid)}
-        {@const globalIndex = visibleStartIndex + i}
+      {#each visibleRowGroups as rowGroup (rowGroup.rowIndex)}
+        <div class="grid-row" role="row" aria-rowindex={rowGroup.rowIndex + 1}>
+      {#each rowGroup.files as file (file.uuid)}
         <div
           class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''} {navigatingTo === file.uuid ? 'navigating' : ''}"
           role="gridcell"
-          aria-rowindex={Math.floor(globalIndex / columnsPerRow) + 1}
         >
           {#if isSelecting}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -330,6 +339,8 @@
           </a>
         </div>
       {/each}
+        </div>
+      {/each}
     </div>
 
     <!-- Bottom spacer -->
@@ -347,6 +358,11 @@
     contain: layout style;
     padding-top: 0.5rem;
     margin-top: -0.5rem;
+  }
+
+  /* Row wrappers exist for ARIA only; the cards still lay out in .file-grid. */
+  .grid-row {
+    display: contents;
   }
 
   .file-grid {

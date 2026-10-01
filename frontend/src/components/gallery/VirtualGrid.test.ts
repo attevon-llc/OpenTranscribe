@@ -209,3 +209,29 @@ describe('interaction', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ARIA grid structure (issue #967)', () => {
+  it('nests every gridcell inside a row inside the grid, with row indexes on the rows', async () => {
+    const scrollContainer = scrollContainerWithHeight(2000);
+    const { container } = render(VirtualGrid, { props: { items: manyFiles(7), scrollContainer } });
+    setWrapperWidth(container, 900);
+    await tick();
+    await tick();
+
+    const grid = container.querySelector('[role="grid"]') as HTMLElement;
+    const cells = grid.querySelectorAll('[role="gridcell"]');
+    expect(cells).toHaveLength(7);
+    for (const cell of cells) {
+      expect(cell.parentElement?.getAttribute('role')).toBe('row');
+      expect(cell.hasAttribute('aria-rowindex')).toBe(false);
+    }
+    const rows = Array.from(grid.querySelectorAll('[role="row"]'));
+    const cols = columnsFor(900);
+    expect(rows).toHaveLength(Math.ceil(7 / cols));
+    expect(rows.map((r) => r.getAttribute('aria-rowindex'))).toEqual(
+      rows.map((_, i) => String(i + 1))
+    );
+    // the grid must have no direct gridcell children (aria-required-children)
+    expect(grid.querySelectorAll(':scope > [role="gridcell"]')).toHaveLength(0);
+  });
+});

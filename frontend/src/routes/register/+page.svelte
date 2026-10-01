@@ -4,6 +4,7 @@
   import { register, login, getAuthMethods } from "$stores/auth";
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { loadPasswordPolicy, buildPasswordRequirements, FALLBACK_PASSWORD_POLICY, type PasswordPolicy } from '$lib/passwordPolicy';
   import Spinner from '$components/ui/Spinner.svelte';
 
   // Import logo asset for proper Vite processing
@@ -13,6 +14,14 @@
   // form: without this the user fills every field and the backend answers 403.
   let registrationAllowed = false;
   let checkingRegistration = true;
+
+  // Requirement bullets come from the server's active policy (nist / stig / custom), not a
+  // hardcoded list: under nist there are no composition rules and the minimum is 15.
+  let passwordPolicy: PasswordPolicy = FALLBACK_PASSWORD_POLICY;
+  $: passwordRequirements = buildPasswordRequirements(passwordPolicy);
+  onMount(() => {
+    loadPasswordPolicy().then((p) => (passwordPolicy = p));
+  });
 
   onMount(() => {
     (async () => {
@@ -64,8 +73,12 @@
   }
 
   // Handle form submission
+  // The toast truncates to one line, which hid the policy reason; show it in full here too.
+  let formError = '';
+
   async function handleSubmit() {
     loading = true;
+    formError = '';
 
     if (!validateForm()) {
       loading = false;
@@ -87,7 +100,8 @@
           toastStore.error($t('auth.registrationSuccessLoginFailed'));
         }
       } else {
-        toastStore.error(result.message || $t('auth.registrationFailed'));
+        formError = (result.message || $t('auth.registrationFailed')).replace(/^Value error,\s*/, '');
+        toastStore.error(formError);
       }
     } catch (err) {
       console.error("Registration error:", err);
@@ -158,11 +172,9 @@
               <div class="tooltip-content">
                 <strong>{$t('auth.passwordRequirements')}</strong>
                 <ul>
-                  <li>{$t('auth.passwordReqLength')}</li>
-                  <li>{$t('auth.passwordReqUppercase')}</li>
-                  <li>{$t('auth.passwordReqLowercase')}</li>
-                  <li>{$t('auth.passwordReqNumber')}</li>
-                  <li>{$t('auth.passwordReqSpecial')}</li>
+                  {#each passwordRequirements as req (req.key)}
+                    <li>{$t(req.key, req.params)}</li>
+                  {/each}
                 </ul>
               </div>
             </div>
@@ -256,6 +268,10 @@
         {/if}
       </div>
 
+      {#if formError}
+        <p class="form-error" role="alert">{formError}</p>
+      {/if}
+
       <button
         type="submit"
         class="auth-button"
@@ -347,6 +363,13 @@
   .form-group input:focus {
     outline: none;
     border-color: var(--primary-color);
+  }
+
+  .form-error {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--error-color);
   }
 
   .auth-button {

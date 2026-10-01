@@ -46,6 +46,10 @@ const EXEMPT: Record<string, string> = {
     'sessionAbortController / isRefreshing / refreshQueue are reset by abortAllRequests(), ' +
     'which logout() calls before clearUserState() precisely so in-flight responses cannot ' +
     'repopulate a store afterwards.',
+  'lib/passwordPolicy':
+    'Caches the deployment-wide password policy (GET /auth/password-policy, served to ' +
+    'unauthenticated visitors on the register page). It is identical for every user, so ' +
+    'the previous user cannot leak anything through it.',
   'lib/prefetch':
     'inflight / failedCache only hold file UUIDs and timestamps, and every prefetch request ' +
     'goes through axiosInstance without its own signal, so abortAllRequests() cancels them ' +

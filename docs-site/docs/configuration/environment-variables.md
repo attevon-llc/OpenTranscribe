@@ -877,7 +877,16 @@ PKI_ADMIN_DNS=CN=Admin User,O=Company,C=US
 ### Security Features
 
 ```bash
-# Password Policy (FedRAMP IA-5)
+# Password Policy (FedRAMP IA-5 / NIST SP 800-63B-4) - see Password Policy page
+PASSWORD_POLICY_PROFILE=nist          # nist | stig | custom (code default stig; new installs nist)
+PASSWORD_MAX_LENGTH=0                 # 0 = profile default
+PASSWORD_BLOCKLIST_ENABLED=           # empty = profile default
+PASSWORD_BLOCKLIST_PATH=
+PASSWORD_CONTEXT_WORDS=
+PASSWORD_HIBP_ENABLED=false           # online k-anonymity lookup; fails open
+PASSWORD_HIBP_URL=https://api.pwnedpasswords.com/range
+PASSWORD_HIBP_TIMEOUT_SECONDS=3
+MFA_REQUIRED_FOR_ADMINS=false         # recommended true when MFA_ENABLED=true
 PASSWORD_POLICY_ENABLED=true
 PASSWORD_MIN_LENGTH=12
 PASSWORD_REQUIRE_UPPERCASE=true

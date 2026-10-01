@@ -37,6 +37,7 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.constants import TOKEN_TYPE_ACCESS
+from app.auth.mfa_policy import user_is_mfa_protected
 from app.auth.password_policy import validate_password
 from app.auth.token_service import token_service
 from app.auth.utils import local_fallback_permitted_for
@@ -47,13 +48,19 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 
-def enforce_password_policy(password: str, user: User) -> None:
+def enforce_password_policy(password: str, user: User, db: Session | None = None) -> None:
     """Raise 400 unless *password* satisfies the configured policy.
 
     The policy rejects passwords containing the account's own email local-part or
-    name parts, so the user is passed in rather than just the password.
+    name parts, so the user is passed in rather than just the password. With *db* the
+    ``nist`` profile's 8-character floor for MFA-protected users can apply.
     """
-    result = validate_password(password, email=str(user.email), full_name=user.full_name)
+    result = validate_password(
+        password,
+        email=str(user.email),
+        full_name=user.full_name,
+        mfa_protected=user_is_mfa_protected(db, user) if db is not None else False,
+    )
     if not result.is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -6,6 +6,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { loadPasswordPolicy, buildPasswordRequirements, FALLBACK_PASSWORD_POLICY, type PasswordPolicy } from '$lib/passwordPolicy';
   import { browser } from '$app/environment';
   import { isCloudEdition } from '$lib/edition';
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
@@ -138,6 +139,14 @@
   let passwordValid = true;
 
   // Focus the email field on mount and fetch auth methods
+  // Requirement bullets come from the server's active policy (nist / stig / custom), not a
+  // hardcoded list: under nist there are no composition rules and the minimum is 15.
+  let passwordPolicy: PasswordPolicy = FALLBACK_PASSWORD_POLICY;
+  $: passwordRequirements = buildPasswordRequirements(passwordPolicy);
+  onMount(() => {
+    loadPasswordPolicy().then((p) => (passwordPolicy = p));
+  });
+
   onMount(() => {
     let handleVisibilityChange: (() => void) | undefined;
     let handlePageShow: (() => void) | undefined;
@@ -868,11 +877,9 @@
             <div class="password-policy">
               <strong>{$t('auth.passwordRequirements')}</strong>
               <ul>
-                <li>{$t('auth.passwordReqLength')}</li>
-                <li>{$t('auth.passwordReqUppercase')}</li>
-                <li>{$t('auth.passwordReqLowercase')}</li>
-                <li>{$t('auth.passwordReqNumber')}</li>
-                <li>{$t('auth.passwordReqSpecial')}</li>
+                {#each passwordRequirements as req (req.key)}
+                  <li>{$t(req.key, req.params)}</li>
+                {/each}
               </ul>
             </div>
 

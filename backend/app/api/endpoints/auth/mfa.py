@@ -71,7 +71,7 @@ def get_mfa_status(
     return MFAStatusResponse(
         mfa_enabled=bool(user_mfa.totp_enabled) if user_mfa else False,
         mfa_configured=bool(user_mfa.totp_enabled) if user_mfa else False,
-        mfa_required=_is_mfa_required(db),
+        mfa_required=_is_mfa_required(db, current_user),
         can_setup_mfa=mfa_enabled and _user_can_setup_mfa(current_user),
     )
 

@@ -70,6 +70,13 @@ EXTERNALLY_CONSUMED: set[str] = {
     "PASSWORD_REQUIRE_LOWERCASE",
     "PASSWORD_REQUIRE_SPECIAL",
     "PASSWORD_REQUIRE_UPPERCASE",
+    # Same mechanism, new for the password-policy profiles (issue #1107): read by
+    # `get_process_auth_settings().get("password_<x>")` -> `getattr(settings, key.upper())`
+    # in app/auth/password_policy.py, so the attribute name is built at runtime.
+    "PASSWORD_BLOCKLIST_ENABLED",
+    "PASSWORD_CONTEXT_WORDS",
+    "PASSWORD_MAX_LENGTH",
+    "PASSWORD_POLICY_PROFILE",
     # Read via `settings.watch_temp_dir` (services/watch_sources/processing.py,
     # tasks/watch_source_tasks.py) — a lowercase config.py PROPERTY that internally reads
     # `self.WATCH_TEMP_DIR`. The scanner records the attribute name it sees on the call

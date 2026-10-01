@@ -1558,7 +1558,7 @@ def admin_reset_user_password(
         raise HTTPException(status_code=404, detail="User not found")
 
     assert_password_auth_possible(user)
-    enforce_password_policy(request_body.new_password, user)
+    enforce_password_policy(request_body.new_password, user, db)
 
     if not check_password_against_history(db, user.id, request_body.new_password):
         raise HTTPException(

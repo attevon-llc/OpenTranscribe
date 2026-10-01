@@ -336,6 +336,27 @@ class Settings(BaseSettings):
     # ===== Password Policy (FedRAMP IA-5) =====
     # Enable password policy enforcement (disable for testing or non-FedRAMP environments)
     PASSWORD_POLICY_ENABLED: bool = os.getenv("PASSWORD_POLICY_ENABLED", "true").lower() == "true"
+    # Which rule set applies: "nist" (SP 800-63B-4: min 15 / 8 with MFA, no composition rules,
+    # no periodic expiry, blocklist on), "stig" (DoD STIG style: the individual values below,
+    # forced rotation, history 24) or "custom" (the individual PASSWORD_* values exactly as
+    # set). Code default is "stig" so an install that never set it keeps its behaviour on
+    # upgrade; .env.example ships "nist" for fresh installs. See docs-site/docs/configuration/password-policy.md.
+    PASSWORD_POLICY_PROFILE: str = "stig"  # noqa: S105 # nosec B105
+    # Upper length cap. 0 = profile default (nist: 128, never below 64; stig/custom: none).
+    PASSWORD_MAX_LENGTH: int = 0
+    # Breached/common-password blocklist. Empty = profile default (nist on, stig/custom off);
+    # "true"/"false" overrides the profile.
+    PASSWORD_BLOCKLIST_ENABLED: str = ""
+    # Operator-supplied blocklist file (one password per line). Empty = bundled list.
+    PASSWORD_BLOCKLIST_PATH: str = ""
+    # Extra context-specific words a password may not contain (comma-separated); the product
+    # name is always included.
+    PASSWORD_CONTEXT_WORDS: str = ""
+    # Optional online k-anonymity range lookup (HIBP-style). OFF by default: air-gapped
+    # installs must never make an outbound call. Fails OPEN (logged) on timeout/error.
+    PASSWORD_HIBP_ENABLED: bool = False
+    PASSWORD_HIBP_URL: str = "https://api.pwnedpasswords.com/range"  # noqa: S105 # nosec B105
+    PASSWORD_HIBP_TIMEOUT_SECONDS: float = 3.0
     # Minimum password length (NIST SP 800-63B recommends 8+, FedRAMP typically requires 12+)
     PASSWORD_MIN_LENGTH: int = 12
     # Require at least one uppercase letter
@@ -1148,6 +1169,10 @@ class Settings(BaseSettings):
     MFA_ENABLED: bool = os.getenv("MFA_ENABLED", "false").lower() == "true"
     # When MFA_REQUIRED is true, users must set up MFA on first login
     MFA_REQUIRED: bool = os.getenv("MFA_REQUIRED", "false").lower() == "true"
+    # Require admins (role "admin") to enrol and use MFA even when MFA_REQUIRED is false.
+    # Recommended true wherever MFA_ENABLED is true; defaults false so an upgrade cannot lock
+    # an existing admin out before they have enrolled. Has no effect while MFA_ENABLED is false.
+    MFA_REQUIRED_FOR_ADMINS: bool = False
     # Issuer name shown in authenticator apps
     MFA_ISSUER_NAME: str = os.getenv("MFA_ISSUER_NAME", "OpenTranscribe")
     # Number of backup codes to generate (one-time use)

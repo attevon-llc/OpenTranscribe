@@ -50,6 +50,10 @@ BOOTSTRAP_EXEMPT = {
     "PKI_ENABLED": "read by main.py's pre-DB boot guard; hardened start refuses on empty trust list",
     "PKI_TRUSTED_PROXIES": "the empty-list fail-closed check itself, evaluated before any DB session",
     "PROXY_ENABLED": "read by main.py's pre-DB boot guard; hardened start refuses on empty trust list",
+    "PASSWORD_POLICY_PROFILE": (
+        "the install-time default: the code default is stig so upgrades are unchanged, and the "
+        "shipped template line is the only thing that gives a FRESH install nist (issue #1107)"
+    ),
     "PROXY_TRUSTED_PROXIES": "the empty-list fail-closed check itself, evaluated before any DB session",
 }
 

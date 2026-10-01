@@ -320,6 +320,11 @@ class PasswordPolicyConfig(_CategoryConfig):
     """Password policy configuration."""
 
     password_policy_enabled: bool = True
+    #: ``nist`` (SP 800-63B-4), ``stig`` (DoD STIG style) or ``custom`` (the individual
+    #: values below). ``stig`` is the coded default so an upgrade changes nothing.
+    password_policy_profile: Literal["nist", "stig", "custom"] = "stig"  # noqa: S105 # nosec B105
+    #: 0 = profile default (nist: 128, never below 64; others: no cap).
+    password_max_length: int = Field(default=0, ge=0, le=1024)
     password_min_length: int = Field(default=12, ge=8, le=128)
     password_require_uppercase: bool = True
     password_require_lowercase: bool = True
@@ -336,6 +341,8 @@ class MFAConfig(_CategoryConfig):
 
     mfa_enabled: bool = False
     mfa_required: bool = False
+    #: Administrators must use MFA even when ``mfa_required`` is false.
+    mfa_required_for_admins: bool = False
     mfa_issuer_name: str = "OpenTranscribe"
     mfa_backup_code_count: int = Field(default=10, ge=1, le=50)
     mfa_token_expire_minutes: int = Field(default=5, ge=1, le=60)

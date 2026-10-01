@@ -574,6 +574,16 @@ class DynamicAuthSettings:
         return self.get_bool("password_policy_enabled", True)
 
     @property
+    def password_policy_profile(self) -> str:
+        """Which password rule set applies: ``nist``, ``stig`` or ``custom``."""
+        return self.get_str("password_policy_profile", "stig")
+
+    @property
+    def mfa_required_for_admins(self) -> bool:
+        """Whether administrators must use MFA even when it is optional for others."""
+        return self.get_bool("mfa_required_for_admins", False)
+
+    @property
     def password_min_length(self) -> int:
         """Get minimum password length."""
         return self.get_int("password_min_length", 12)

@@ -337,7 +337,7 @@
         { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link', cap: 'media_sources' },
         { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye', cap: 'watch_sources' },
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic', cap: 'recording' },
-        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'exports' }
+        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'url_ingest' }
       ]
     }
   ]

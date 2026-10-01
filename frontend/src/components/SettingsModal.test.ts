@@ -160,6 +160,37 @@ describe('privilege-gated sidebar sections', () => {
     // present, disabled, and carrying a lock icon (checked in the test above).
     expect(navItem(container, 'settings.asrProvider.title')).toBeNull();
   });
+
+  // Issue #1141: the URL Import Quality entry was gated on `exports`, so it showed
+  // whenever exports were on even with URL import off (and vanished with exports off
+  // while URL import was on). FileUploader gates URL import on `url_ingest`.
+  describe('URL Import Quality tab', () => {
+    function withCaps(caps: Record<string, boolean>) {
+      capabilities.set({
+        edition: 'community',
+        loaded: true,
+        capabilities: caps,
+        audience: {},
+        maxUploadBytes: undefined,
+      });
+    }
+
+    it('is absent when url_ingest is disabled, even with exports enabled', async () => {
+      withCaps({ url_ingest: false, exports: true });
+      const { container } = openModal();
+      await waitForOpen(container);
+
+      expect(navItem(container, 'settings.download.title')).toBeNull();
+    });
+
+    it('is present when url_ingest is enabled, even with exports disabled', async () => {
+      withCaps({ url_ingest: true, exports: false });
+      const { container } = openModal();
+      await waitForOpen(container);
+
+      expect(navItem(container, 'settings.download.title')).not.toBeNull();
+    });
+  });
 });
 
 describe('pending-approval badge', () => {

@@ -193,13 +193,14 @@ def requeue_if_context_poisoned(
 ) -> None:
     """Handle a GPU failure caused by a broken CUDA context (issue #1081).
 
-    Returns normally when ``exc`` is anything else, so the caller's failure path runs.
+    Returns normally when ``exc`` is anything else, or when its message looks fatal but a
+    probe shows the context still works, so the caller's failure path runs.
     Otherwise this worker is taken out of service (it exits and is restarted, see
     ``cuda_health.mark_context_poisoned``) and the task is requeued for a healthy worker:
     the file is not at fault. Past ``GPU_POISONED_MAX_REQUEUES`` for the same task it
     returns, so the file fails normally instead of cycling workers forever.
     """
-    if not cuda_health.is_context_poisoned_error(exc):
+    if not cuda_health.is_context_poisoned_error(exc) or cuda_health.cuda_context_healthy():
         return
     cuda_health.mark_context_poisoned(str(exc))
     if not _poisoned_requeue_allowed(task_id):

@@ -266,7 +266,7 @@ class Transcriber:
                     self.config.device != "cuda"
                     or halvings_left <= 0
                     or batch_size <= 1
-                    or not cuda_health.is_cuda_oom(exc)
+                    or not self._is_memory_pressure(exc)
                 ):
                     raise
                 smaller = max(1, batch_size // 2)
@@ -282,6 +282,20 @@ class Transcriber:
                 )
                 cuda_health.free_cached_vram()
                 batch_size = smaller
+
+    def _is_memory_pressure(self, exc: BaseException) -> bool:
+        """An OOM, or a context-looking CUDA error while the context is in fact healthy.
+
+        CTranslate2 reports some decodes that collide with an OOM as ``cudaErrorInvalidDevice``
+        (see ``cuda_health.cuda_context_healthy``). Backing those off like an OOM recovers
+        them; a genuinely broken context fails the probe and propagates, so the task layer
+        can take the worker out of service.
+        """
+        if cuda_health.is_cuda_oom(exc):
+            return True
+        return cuda_health.is_context_poisoned_error(exc) and cuda_health.cuda_context_healthy(
+            self.config.device_index
+        )
 
     def _transcribe_once(self, audio: np.ndarray, batch_size: int) -> dict:
         step_start = time.perf_counter()

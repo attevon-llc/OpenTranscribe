@@ -96,6 +96,38 @@ def free_cached_vram() -> None:
         logger.debug("empty_cache skipped: %s", exc)
 
 
+def cuda_context_healthy(device_index: int = 0) -> bool:
+    """Whether a trivial CUDA op still works in this process.
+
+    A poisoning-looking message is not always a broken context. Measured on an RTX 3080 Ti
+    at six concurrent decodes: CTranslate2 reported ``parallel_for failed:
+    cudaErrorInvalidDevice: invalid device ordinal`` for decodes that collided with an OOM,
+    and later tasks in the SAME process then completed normally. A genuinely sticky error
+    (illegal address, device-side assert) fails every later CUDA call, so a probe tells the
+    two apart. Two attempts, because the first CUDA call after a non-sticky error can still
+    report it once. Returns True when it cannot tell (no torch, no CUDA): never take a worker
+    out of service on a guess.
+    """
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return True
+    except Exception:  # noqa: BLE001
+        return True
+    last: Exception | None = None
+    for _ in range(2):
+        try:
+            probe = torch.ones(1, device=f"cuda:{device_index}")
+            float((probe + 1).sum().item())
+            torch.cuda.synchronize(device_index)
+            return True
+        except Exception as exc:  # noqa: BLE001 - the probe's failure IS the answer
+            last = exc
+    logger.error("CUDA context probe failed: %s", last)
+    return False
+
+
 def context_poisoned() -> bool:
     return _POISONED.is_set()
 

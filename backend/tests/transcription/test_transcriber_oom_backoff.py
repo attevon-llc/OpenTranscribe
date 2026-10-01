@@ -110,10 +110,55 @@ def test_the_halving_limit_is_env_tunable(cuda_transcriber, monkeypatch):
     assert t._pipeline.batch_sizes == [16]
 
 
-def test_a_non_oom_error_is_not_retried(cuda_transcriber):
+def test_a_non_cuda_error_is_not_retried(cuda_transcriber):
     t, _, freed = cuda_transcriber
-    t._pipeline = _Pipeline(oom_at=set(), error=RuntimeError("cudaErrorInvalidDevice"))
-    with pytest.raises(RuntimeError, match="cudaErrorInvalidDevice"):
+    t._pipeline = _Pipeline(oom_at=set(), error=RuntimeError("unsupported audio"))
+    with pytest.raises(RuntimeError, match="unsupported audio"):
+        t.transcribe([0.0] * 16000)
+    assert t._pipeline.batch_sizes == [16]
+    assert freed == []
+
+
+INVALID_ORDINAL = "parallel_for failed: cudaErrorInvalidDevice: invalid device ordinal"
+
+
+class _FailsOnceWith(_Pipeline):
+    def __init__(self, message: str):
+        super().__init__(oom_at=set())
+        self.message = message
+
+    def transcribe(self, audio, **kwargs):
+        if not self.batch_sizes:
+            self.batch_sizes.append(kwargs["batch_size"])
+
+            def _boom():
+                raise RuntimeError(self.message)
+                yield  # pragma: no cover - makes this a generator
+
+            return _boom(), MagicMock(language="en")
+        return super().transcribe(audio, **kwargs)
+
+
+def test_a_context_looking_error_on_a_healthy_context_backs_off_like_an_oom(
+    cuda_transcriber, monkeypatch
+):
+    """Measured on the dev GPU at six concurrent decodes: CTranslate2 reports some decodes
+    that collide with an OOM as `invalid device ordinal`, and later work in the same process
+    succeeds. With the context probe healthy, that is memory pressure, not a dead worker."""
+    t, _, freed = cuda_transcriber
+    monkeypatch.setattr(transcriber_mod.cuda_health, "cuda_context_healthy", lambda *_: True)
+    t._pipeline = _FailsOnceWith(INVALID_ORDINAL)
+    result = t.transcribe([0.0] * 16000)
+    assert t._pipeline.batch_sizes == [16, 8]
+    assert len(result["segments"]) == 1
+    assert freed == [True]
+
+
+def test_a_context_looking_error_on_a_broken_context_propagates(cuda_transcriber, monkeypatch):
+    t, _, freed = cuda_transcriber
+    monkeypatch.setattr(transcriber_mod.cuda_health, "cuda_context_healthy", lambda *_: False)
+    t._pipeline = _FailsOnceWith(INVALID_ORDINAL)
+    with pytest.raises(RuntimeError, match="invalid device ordinal"):
         t.transcribe([0.0] * 16000)
     assert t._pipeline.batch_sizes == [16]
     assert freed == []

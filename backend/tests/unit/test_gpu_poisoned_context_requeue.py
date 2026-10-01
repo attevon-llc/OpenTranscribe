@@ -37,6 +37,7 @@ def test_a_poisoned_context_requeues_and_marks_the_worker(core, context):
         patch.object(core, "_handle_transcription_failure") as failed,
         patch.object(core, "_cleanup_wav_quietly") as cleanup,
         patch.object(context, "_poisoned_requeue_allowed", return_value=True),
+        patch.object(context.cuda_health, "cuda_context_healthy", return_value=False),
         patch.object(context.cuda_health, "mark_context_poisoned") as mark,
     ):
         with pytest.raises(Reject) as raised:
@@ -71,6 +72,7 @@ def test_past_the_requeue_cap_the_file_fails_but_the_worker_still_exits(core, co
         patch.object(core, "_handle_transcription_failure") as failed,
         patch.object(core, "_cleanup_wav_quietly"),
         patch.object(context, "_poisoned_requeue_allowed", return_value=False),
+        patch.object(context.cuda_health, "cuda_context_healthy", return_value=False),
         patch.object(context.cuda_health, "mark_context_poisoned") as mark,
     ):
         with pytest.raises(RuntimeError):
@@ -78,6 +80,23 @@ def test_past_the_requeue_cap_the_file_fails_but_the_worker_still_exits(core, co
 
     failed.assert_called_once()
     mark.assert_called_once()
+
+
+def test_a_fatal_looking_message_on_a_healthy_context_is_an_ordinary_failure(core, context):
+    """The probe is what decides. Taking a healthy worker out of service would requeue every
+    in-flight task on it for nothing."""
+    with (
+        patch.object(core, "_handle_transcription_failure") as failed,
+        patch.object(core, "_cleanup_wav_quietly"),
+        patch.object(context.cuda_health, "cuda_context_healthy", return_value=True),
+        patch.object(context.cuda_health, "mark_context_poisoned") as mark,
+    ):
+        with pytest.raises(RuntimeError) as raised:
+            core._finish_failed_or_aborted(MagicMock(), "task-4", "file-4", "", POISONED)
+
+    assert raised.value is POISONED
+    failed.assert_called_once()
+    mark.assert_not_called()
 
 
 def test_the_requeue_cap_counts_per_task(context, monkeypatch):

@@ -10,6 +10,7 @@ is unusable, so the worker must stop taking work and let its supervisor restart 
 from __future__ import annotations
 
 import signal
+import sys
 
 import pytest
 
@@ -96,3 +97,53 @@ class TestPoisonedExit:
         assert not cuda_health.context_poisoned()
         assert sent == []
         assert not ws.shutdown_requested()
+
+
+class _ProbeTorch:
+    """Stub torch whose tensor ops fail the first ``fail_times`` calls."""
+
+    def __init__(self, fail_times: int):
+        self.calls = 0
+        self.fail_times = fail_times
+
+        class _Cuda:
+            @staticmethod
+            def is_available() -> bool:
+                return True
+
+            @staticmethod
+            def synchronize(_index: int = 0) -> None:
+                return None
+
+        class _T:
+            def __add__(self, _other):
+                return self
+
+            def sum(self):
+                return self
+
+            def item(self) -> float:
+                return 2.0
+
+        self.cuda = _Cuda()
+        self._T = _T
+
+    def ones(self, *_a, **_k):
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            raise RuntimeError("CUDA error: an illegal memory access was encountered")
+        return self._T()
+
+
+class TestContextProbe:
+    def test_a_working_context_is_healthy(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "torch", _ProbeTorch(fail_times=0))
+        assert cuda_health.cuda_context_healthy()
+
+    def test_one_stale_error_is_forgiven(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "torch", _ProbeTorch(fail_times=1))
+        assert cuda_health.cuda_context_healthy()
+
+    def test_a_sticky_error_is_unhealthy(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "torch", _ProbeTorch(fail_times=99))
+        assert not cuda_health.cuda_context_healthy()

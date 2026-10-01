@@ -136,4 +136,4 @@ Ensure the Blackwell overlay is being loaded (check for "Blackwell GPU overlay e
 
 ## Credits
 
-Blackwell/DGX Spark support was contributed by Alex Baur ([@snmabaur](https://github.com/snmabaur)) from the Swiss National Museum ([PR #154](https://github.com/davidamacey/OpenTranscribe/pull/154)).
+Blackwell/DGX Spark support was contributed by Alex Baur ([@snmabaur](https://github.com/snmabaur)) from the Swiss National Museum ([PR #154](https://github.com/attevon-llc/OpenTranscribe/pull/154)).

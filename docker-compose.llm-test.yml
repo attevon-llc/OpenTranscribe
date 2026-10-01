@@ -81,6 +81,10 @@ services:
       # Standard var name huggingface_hub reads inside the container, sourced from
       # the project's existing HUGGINGFACE_TOKEN .env convention (see header).
       HUGGING_FACE_HUB_TOKEN: "${HUGGINGFACE_TOKEN:-}"
+      # vLLM reports anonymous usage stats to stats.vllm.ai unless opted out.
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
       # No CUDA_VISIBLE_DEVICES here: the `deploy.reservations.devices` block below
       # already restricts the container to one physical GPU, which then appears as
       # device 0 *inside* the container (matching docker-compose.gpu.yml's pattern).

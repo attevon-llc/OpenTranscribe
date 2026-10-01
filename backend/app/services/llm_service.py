@@ -307,7 +307,8 @@ class LLMService:
                 headers["anthropic-version"] = "2023-06-01"
         elif self.config.provider == LLMProvider.OPENROUTER and self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
-            headers["HTTP-Referer"] = "https://opentranscribe.ai"
+            if settings.OPENROUTER_HTTP_REFERER:
+                headers["HTTP-Referer"] = settings.OPENROUTER_HTTP_REFERER
             headers["X-Title"] = "OpenTranscribe"
         elif self.config.provider == LLMProvider.CUSTOM and self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"

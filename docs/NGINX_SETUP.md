@@ -31,7 +31,7 @@ Modern browsers enforce strict security policies. The `getUserMedia()` API (used
 1. `localhost` connections (development exception)
 2. HTTPS connections (production requirement)
 
-If you try to use microphone recording over HTTP from another device or IP address, browsers will block it. This is documented in [GitHub Issue #72](https://github.com/davidamacey/OpenTranscribe/issues/72).
+If you try to use microphone recording over HTTP from another device or IP address, browsers will block it. This is documented in [GitHub Issue #72](https://github.com/attevon-llc/OpenTranscribe/issues/72).
 
 ---
 

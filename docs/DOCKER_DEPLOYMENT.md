@@ -49,7 +49,7 @@ This guide explains how Docker images are built and published for OpenTranscribe
 2. **GitHub Actions automatically builds:**
    - Frontend: AMD64 + ARM64 ✅
    - Backend: AMD64 only ✅
-   - Check progress: https://github.com/davidamacey/OpenTranscribe/actions
+   - Check progress: https://github.com/attevon-llc/OpenTranscribe/actions
 
 3. **If GitHub Actions fails or you need ARM64 backend:**
    ```bash
@@ -175,7 +175,7 @@ docker login
 
 ## Future Improvements
 
-See [Issue #81](https://github.com/davidamacey/OpenTranscribe/issues/81) for planned enhancements:
+See [Issue #81](https://github.com/attevon-llc/OpenTranscribe/issues/81) for planned enhancements:
 
 - [ ] Self-hosted GitHub Actions runner (solves disk space issue)
 - [ ] Backend image size optimization (13.8GB → <10GB)

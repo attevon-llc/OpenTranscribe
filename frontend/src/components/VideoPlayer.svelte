@@ -248,6 +248,9 @@
       controls,
       settings,
       iconUrl: '/plyr.svg',
+      // Plyr's default points at cdn.plyr.io and is requested by the browser whenever a
+      // player is destroyed or its source changes; serve it locally so no third party is hit.
+      blankVideo: '/plyr-blank.mp4',
       keyboard: { global: true },
       tooltips: { controls: true },
       captions: {

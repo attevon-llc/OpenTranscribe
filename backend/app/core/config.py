@@ -1306,6 +1306,12 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-haiku-4.5")
     OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    # OpenRouter app attribution (sent only when OpenRouter is the configured provider).
+    # Defaults to the public project repo so no install identifies itself by accident;
+    # set to an empty string to omit the header entirely.
+    OPENROUTER_HTTP_REFERER: str = os.getenv(
+        "OPENROUTER_HTTP_REFERER", "https://github.com/attevon-llc/OpenTranscribe"
+    )
 
     # ===== Amazon Bedrock =====
     # AWS-native LLM access via the Converse API. There is deliberately NO API-key

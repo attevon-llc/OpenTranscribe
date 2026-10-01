@@ -6,7 +6,7 @@
 **Copy and paste this single command on any operating system:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 **That's it!** The script will:
@@ -22,25 +22,25 @@ curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/s
 ### ✅ **Linux (All Distributions)**
 ```bash
 # Ubuntu, Debian, CentOS, Fedora, Arch, etc.
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ### ✅ **macOS (Intel & Apple Silicon)**
 ```bash
 # Works on both Intel Macs and Apple Silicon (M1/M2)
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ### ✅ **Windows (WSL2)**
 ```bash
 # In WSL2 terminal
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ### ✅ **Windows (Git Bash/Cygwin)**
 ```bash
 # In Git Bash or Cygwin terminal
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ## 🧮 CPU-Only Installation (Opt-Out of GPU)
@@ -53,10 +53,10 @@ WSL-capable Windows driver) — pass `--cpu` to skip GPU detection entirely:
 
 ```bash
 # Piped install: forward --cpu with `bash -s --`
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
 
 # Or via env var (useful in CI / unattended installs)
-OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 
 # Or after downloading the script
 ./setup-opentranscribe.sh --cpu
@@ -266,7 +266,7 @@ All services are available through the NGINX reverse proxy:
 ### **Issue: Permission Denied**
 ```bash
 # If you get permission denied, run with explicit bash:
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh -o setup.sh
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh -o setup.sh
 chmod +x setup.sh
 ./setup.sh
 ```
@@ -274,10 +274,10 @@ chmod +x setup.sh
 ### **Issue: No curl Command**
 ```bash
 # On older systems without curl, use wget:
-wget -qO- https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+wget -qO- https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 
 # Or download manually:
-wget https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh
+wget https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh
 bash setup-opentranscribe.sh
 ```
 
@@ -286,7 +286,7 @@ bash setup-opentranscribe.sh
 # Set proxy environment variables:
 export http_proxy=http://proxy.company.com:8080
 export https_proxy=http://proxy.company.com:8080
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ### **Issue: Docker Not Running**
@@ -347,14 +347,14 @@ wsl --set-default-version 2
 ### **Issue: Slow Internet/Timeouts**
 ```bash
 # Increase timeout and retry:
-curl -fsSL --max-time 300 --retry 3 https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL --max-time 300 --retry 3 https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ### **Issue: Different Architecture**
 ```bash
 # For ARM64 systems (Raspberry Pi, etc.):
 export TARGETPLATFORM=linux/arm64
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ## 🔄 Manual Installation (Alternative)
@@ -364,7 +364,7 @@ If the one-line installation doesn't work, you can install manually:
 ```bash
 # 1. Create directory and download
 mkdir opentranscribe && cd opentranscribe
-curl -O https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh
+curl -O https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh
 chmod +x setup-opentranscribe.sh
 
 # 2. Run setup
@@ -396,20 +396,20 @@ If you encounter any issues:
 **Custom Installation Directory:**
 ```bash
 export PROJECT_DIR="my-transcribe-app"
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 **Force Specific Hardware:**
 ```bash
 export TORCH_DEVICE=cpu  # Force CPU mode
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 **Skip Interactive Prompts:**
 ```bash
 export HUGGINGFACE_TOKEN=your_token_here
 export WHISPER_MODEL=base
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ## 🔄 Updating OpenTranscribe

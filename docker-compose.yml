@@ -79,6 +79,11 @@ services:
       # Generate with: echo "opentranscribe-key:$(openssl rand -base64 32)"
       - MINIO_KMS_SECRET_KEY=${MINIO_KMS_SECRET_KEY:-}
       - MINIO_KMS_AUTO_ENCRYPTION=${MINIO_KMS_AUTO_ENCRYPTION:-off}
+      # No phone-home: MinIO resolves dl.min.io for an update check on EVERY server start
+      # unless MINIO_UPDATE=off (verified by DNS logging). Callhome is already off unless a
+      # SUBNET license is registered; set explicitly so the intent is visible.
+      - MINIO_UPDATE=${MINIO_UPDATE:-off}
+      - MINIO_CALLHOME_ENABLE=${MINIO_CALLHOME_ENABLE:-off}
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -275,6 +280,12 @@ services:
       # overlay would publish the wildcard binding as well (issue #343).
       - "${BACKEND_BIND_HOST:-0.0.0.0}:${BACKEND_PORT:-5174}:8080"
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (hardcoded for service-to-service communication)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -387,6 +398,12 @@ services:
       # Shared scratch — reads the preprocessed WAV that the CPU worker staged
       - pipeline_scratch:/scratch/opentranscribe
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -447,6 +464,12 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -536,6 +559,12 @@ services:
       - app_data:/app/data
       - audit_fallback_logs:/var/log/opentranscribe
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - PRELOAD_CPU_WHISPER=true
       # ffmpeg preprocess threading (opt-in CPU-contention control; default off).
       # Default 0 = ffmpeg auto/unbounded (no change). On low-core/co-tenant
@@ -605,6 +634,12 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Only this worker preloads the redaction models (Presidio+GLiNER, toxicity).
       - PRELOAD_REDACTION_MODELS=true
       - REDACTION_CONCURRENCY=${REDACTION_CONCURRENCY:-2}
@@ -670,6 +705,12 @@ services:
       # Shared scratch — cloud-ASR speaker embedding reads the temp WAV
       - pipeline_scratch:/scratch/opentranscribe
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -712,6 +753,12 @@ services:
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -770,6 +817,12 @@ services:
       # Shared scratch — so embedding worker can use the temp WAV if needed
       - pipeline_scratch:/scratch/opentranscribe
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -811,6 +864,12 @@ services:
       - no-new-privileges:true
     command: celery -A app.core.celery beat --loglevel=info
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -892,6 +951,12 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - pipeline_scratch:/scratch/opentranscribe
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - MINIO_HOST=minio
@@ -960,6 +1025,12 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - pipeline_scratch:/scratch/opentranscribe
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - MINIO_HOST=minio
@@ -1028,6 +1099,12 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as other workers)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -1124,6 +1201,12 @@ services:
       # the host port is for local access. Keeps the basic-auth UI off 0.0.0.0.
       - "127.0.0.1:${FLOWER_PORT:-5175}:5555"
     environment:
+      # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
+      # per-switch evidence). A self-hosted install must not report to anyone on its own.
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - CELERY_BROKER_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
       - FLOWER_USER=${FLOWER_USER:-admin}
       - FLOWER_PASSWORD=${FLOWER_PASSWORD:-flower}

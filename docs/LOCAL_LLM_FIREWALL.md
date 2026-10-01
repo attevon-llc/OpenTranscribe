@@ -255,4 +255,4 @@ Restart OpenTranscribe to apply the new configuration:
 
 ## Related Issues
 
-- [GitHub Issue #100](https://github.com/davidamacey/OpenTranscribe/issues/100) - vLLM summaries not working
+- [GitHub Issue #100](https://github.com/attevon-llc/OpenTranscribe/issues/100) - vLLM summaries not working

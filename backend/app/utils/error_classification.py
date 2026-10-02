@@ -7,9 +7,13 @@ and prevent wasting retries on permanent failures like private/removed videos.
 
 import logging
 import random
+import re
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+# "oom" only as its own token ("OOM", "oom-killer", "OOMKilled"), never inside "boom"/"zoom".
+_OOM_WORD = re.compile(r"\boom")
 
 
 class ErrorCategory(Enum):
@@ -147,7 +151,7 @@ def categorize_error(error_message: str) -> ErrorCategory:
     # Resource errors
     if "cuda" in msg_lower and "out of memory" in msg_lower:
         return ErrorCategory.GPU_OOM
-    if "out of memory" in msg_lower or "oom" in msg_lower:
+    if "out of memory" in msg_lower or _OOM_WORD.search(msg_lower):
         return ErrorCategory.OOM_ERROR
 
     # Temporary service errors (check before network to match HTTP status codes first)

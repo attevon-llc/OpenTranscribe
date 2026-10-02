@@ -16,13 +16,12 @@ import time
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.core.constants import resolve_engine_shared_volume_path
+from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
-from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.utils import benchmark_timing
 from app.utils import scratch_volume
-from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
 from .audio_processor import extract_audio_from_video
@@ -32,7 +31,6 @@ from .metadata_extractor import extract_media_metadata
 from .metadata_extractor import extract_media_metadata_from_url
 from .metadata_extractor import probe_media_duration
 from .metadata_extractor import update_media_file_metadata
-from .notifications import send_error_notification
 from .notifications import send_progress_notification
 from .run_ownership import superseded_result
 
@@ -126,14 +124,47 @@ def preprocess_for_transcription(
 
     Returns context dict consumed by the GPU transcription task via Celery chain.
     """
-    from app.services.minio_service import upload_temp_audio
-    from app.utils.uuid_helpers import get_file_by_uuid
-
     # issue #1020: a run recovery already replaced must not preprocess (and overwrite the
     # temp audio of) the file a second time. Its payload makes every later stage stand down.
     superseded = superseded_result(task_id, file_uuid, stage="Preprocess")
     if superseded is not None:
         return superseded
+
+    # The run's lease, held for the whole stage like every other pipeline stage: without it a
+    # worker killed mid-preprocess left the run reading as "queued" and its message stranded
+    # in the broker for the visibility timeout (app/core/broker_orphans.py).
+    with run_heartbeat(task_id):
+        return _run_preprocess(
+            file_uuid,
+            task_id,
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            downstream_tasks,
+            source_language,
+            translate_to_english,
+            disable_diarization,
+            diarization_source,
+            whisper_model,
+        )
+
+
+def _run_preprocess(
+    file_uuid: str,
+    task_id: str,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    downstream_tasks: list[str] | None,
+    source_language: str | None,
+    translate_to_english: bool | None,
+    disable_diarization: bool | None,
+    diarization_source: str | None,
+    whisper_model: str | None,
+) -> dict:
+    """The preprocess stage body (see ``preprocess_for_transcription``)."""
+    from app.services.minio_service import upload_temp_audio
+    from app.utils.uuid_helpers import get_file_by_uuid
 
     step_start = time.perf_counter()
 
@@ -525,29 +556,27 @@ def _dispatch_playback_rendition_if_needed(file_id: int, file_uuid: str, source:
 
 
 def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> None:
-    """Mark file and task as failed.
+    """Fail or requeue the run through the one retry policy (``services/transcription_retry``).
 
     ``raw_error`` is classified here, once, and is NOT stored (issue #959): the file and
     task rows get the fixed user-facing sentence, ``error_category`` gets the retry code.
     The caller has already logged the raw exception.
     """
     from app.services.error_categorization_service import ErrorCategorizationService
+    from app.services.transcription_retry import finish_failed_run
     from app.utils.uuid_helpers import get_file_by_uuid
 
     failure = ErrorCategorizationService.classify_failure(raw_error)
     try:
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
-            if media_file:
-                update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
-                media_file.last_error_message = failure.user_message
-                media_file.error_category = failure.retry_category.value
-                db.commit()
-                send_error_notification(
-                    int(media_file.user_id), int(media_file.id), failure.user_message
+            file_id = int(media_file.id) if media_file else None
+        if file_id is None:
+            with session_scope() as db:
+                update_task_status(
+                    db, task_id, "failed", error_message=failure.user_message, completed=True
                 )
-            update_task_status(
-                db, task_id, "failed", error_message=failure.user_message, completed=True
-            )
+            return
+        finish_failed_run(task_id, file_id, failure)
     except Exception as status_err:
         logger.error(f"Failed to update error status: {status_err}")

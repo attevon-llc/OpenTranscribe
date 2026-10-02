@@ -31,6 +31,7 @@ from fastapi import HTTPException
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.services.error_categorization_service import INPUT_ERROR_REASONS
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.error_categorization_service import UserErrorReason
 from app.utils.error_classification import ErrorCategory
@@ -84,17 +85,42 @@ def _bridged_scope(db_session):
 # ---------------------------------------------------------------------------
 
 
+def _route_retry_policy(monkeypatch, db_session) -> tuple[list[str], list[int]]:
+    """Point the retry policy's sessions at the test session; record notices and retries."""
+    from app.services.task_recovery_service import TaskRecoveryService
+
+    notified: list[str] = []
+    retried: list[int] = []
+    monkeypatch.setattr(
+        "app.services.transcription_retry.session_scope", lambda: _bridged_scope(db_session)
+    )
+    monkeypatch.setattr(
+        "app.tasks.transcription.notifications.send_error_notification",
+        lambda _u, _f, msg: notified.append(msg),
+    )
+    monkeypatch.setattr(
+        "app.tasks.transcription.notifications.send_progress_notification",
+        lambda *_a, **_kw: None,
+    )
+
+    def _record_retry(_self, file_id, countdown=None):
+        retried.append(file_id)
+        return True
+
+    monkeypatch.setattr(TaskRecoveryService, "schedule_file_retry", _record_retry)
+    return notified, retried
+
+
 @pytest.mark.unit
 def test_preprocess_failure_stores_no_raw_exception(db_session, normal_user, monkeypatch):
+    """A GPU OOM is TRANSIENT, so the run is retired and the file requeued -- and nothing on
+    the way stores the raw text."""
     from app.tasks.transcription import preprocess
 
     media_file = _media_file(db_session, normal_user)
     task = _task(db_session, normal_user, media_file)
-    notified: list[str] = []
     monkeypatch.setattr(preprocess, "session_scope", lambda: _bridged_scope(db_session))
-    monkeypatch.setattr(
-        preprocess, "send_error_notification", lambda _u, _f, msg: notified.append(msg)
-    )
+    notified, retried = _route_retry_policy(monkeypatch, db_session)
 
     preprocess._mark_pipeline_error(str(media_file.uuid), task.id, RAW_GPU_OOM)
 
@@ -103,14 +129,41 @@ def test_preprocess_failure_stores_no_raw_exception(db_session, normal_user, mon
     stored_task = db_session.query(Task).filter(Task.id == task.id).one()
     fixed = ErrorCategorizationService.get_error_info(RAW_GPU_OOM)["user_message"]
 
-    assert stored.status == FileStatus.ERROR
-    assert stored.last_error_message == fixed
+    assert stored.status == FileStatus.PENDING
+    assert retried == [media_file.id]
     assert stored_task.error_message == fixed
     assert SENTINEL not in (stored.last_error_message or "")
     assert SENTINEL not in (stored_task.error_message or "")
     # The fixed sentence says nothing about CUDA; the retry code still knows it was a GPU OOM
     # because it was derived from the raw text before the raw text was dropped.
     assert stored.error_category == ErrorCategory.GPU_OOM.value
+    assert notified == []
+
+
+@pytest.mark.unit
+def test_a_permanent_preprocess_failure_stores_no_raw_exception(
+    db_session, normal_user, monkeypatch
+):
+    from app.tasks.transcription import preprocess
+
+    media_file = _media_file(db_session, normal_user)
+    task = _task(db_session, normal_user, media_file)
+    monkeypatch.setattr(preprocess, "session_scope", lambda: _bridged_scope(db_session))
+    notified, retried = _route_retry_policy(monkeypatch, db_session)
+
+    preprocess._mark_pipeline_error(str(media_file.uuid), task.id, RAW_CORRUPT)
+
+    db_session.expire_all()
+    stored = db_session.query(MediaFile).filter(MediaFile.id == media_file.id).one()
+    stored_task = db_session.query(Task).filter(Task.id == task.id).one()
+    fixed = ErrorCategorizationService.get_error_info(RAW_CORRUPT)["user_message"]
+
+    assert stored.status == FileStatus.ERROR
+    assert stored.last_error_message == fixed
+    assert stored_task.error_message == fixed
+    assert SENTINEL not in (stored.last_error_message or "")
+    assert stored.error_category == ErrorCategory.INVALID_MEDIA.value
+    assert retried == []
     assert notified == [fixed]
 
 
@@ -123,7 +176,7 @@ def test_transcription_failure_handler_stores_no_raw_exception(
     media_file = _media_file(db_session, normal_user)
     task = _task(db_session, normal_user, media_file)
     monkeypatch.setattr(transcription_context, "session_scope", lambda: _bridged_scope(db_session))
-    monkeypatch.setattr(transcription_context, "send_error_notification", lambda *a, **kw: None)
+    _route_retry_policy(monkeypatch, db_session)
     ctx = transcription_context.TranscriptionContext(
         task_id=task.id,
         file_id=media_file.id,
@@ -281,7 +334,12 @@ def test_classify_failure_is_the_read_edge_classification_plus_the_retry_code(re
 
     assert failure.reason.value == info["category"]
     assert failure.user_message == info["user_message"]
-    assert failure.retry_category == categorize_error(raw)
+    # An unusable input is PERMANENT whatever the raw text's own retry signal; every other
+    # reason keeps the code derived from the raw text.
+    if reason in INPUT_ERROR_REASONS:
+        assert failure.retry_category == ErrorCategory.INVALID_MEDIA
+    else:
+        assert failure.retry_category == categorize_error(raw)
 
 
 # ---------------------------------------------------------------------------

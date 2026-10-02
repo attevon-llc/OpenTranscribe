@@ -15,6 +15,15 @@ branch release the file's temp audio, which the replacement run is using.
 The test is the run's own Task row, not ``MediaFile.active_task_id``. ``create_task_record``
 points ``active_task_id`` at *any* task created for the file (a summarization, a speaker
 embedding), so comparing against it would stand down a perfectly current transcription.
+
+It also stands down a second DELIVERY of the stage message that is executing right now: two
+copies of one message can exist when the broker-side reaper (``app/core/broker_orphans.py``)
+puts a message back on its queue while the worker that held it turns out to be alive after
+all, or when the visibility timeout redelivers a long run. The run's lease
+(``core/task_liveness.py``) records which message holds it; a copy that finds its own
+message id there, or finds its message already completed in the result backend, is a
+duplicate and does nothing. Run-level fencing by ``task_id`` keeps every other duplicate
+(a replaced run, a failed run) harmless.
 """
 
 from __future__ import annotations
@@ -48,7 +57,70 @@ def _superseded_reason(task_id: str) -> tuple[str | None, int | None]:
         return None, None
 
 
+def _duplicate_delivery_reason(task_id: str) -> str | None:
+    """Why this delivery is a copy of a stage that is running or already finished, or None.
+
+    Fails open (None) on any error, like the rest of this module: a missed duplicate costs
+    compute, a wrongly dropped stage strands a file.
+    """
+    from app.core.task_liveness import RunState
+    from app.core.task_liveness import _current_stage_id
+    from app.core.task_liveness import probe_runs
+
+    stage_id = _current_stage_id()
+    if not stage_id:
+        return None
+    run = probe_runs([task_id]).get(task_id)
+    if run is not None and run.state == RunState.RUNNING and run.owner == stage_id:
+        return "another delivery of this stage is still executing"
+    try:
+        from celery.result import AsyncResult
+
+        from app.core.celery import celery_app
+
+        if AsyncResult(stage_id, app=celery_app).state == "SUCCESS":
+            return "this stage already completed"
+    except Exception as e:  # noqa: BLE001 - see docstring
+        logger.debug("Could not read the result of stage %s: %s", stage_id, e)
+    return None
+
+
+def replaced_by_newer_run(task_id: str) -> bool:
+    """Whether a newer transcription of the same file has replaced run ``task_id``.
+
+    For the failure paths: a run whose failure the retry policy answered with a new run must
+    leave the file (status, temp audio) to that run. Fails closed (False) on any error, so an
+    unreadable database keeps the old behaviour of handling the failure.
+    """
+    try:
+        with session_scope() as db:
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if task is None or task.media_file_id is None or task.created_at is None:
+                return False
+            newer = (
+                db.query(Task.id)
+                .filter(
+                    Task.media_file_id == task.media_file_id,
+                    Task.task_type == "transcription",
+                    Task.id != task_id,
+                    Task.created_at > task.created_at,
+                )
+                .first()
+            )
+            return newer is not None
+    except Exception as e:  # noqa: BLE001 - see docstring
+        logger.warning("Could not check whether run %s was replaced: %s", task_id, e)
+        return False
+
+
 def _read_superseded_reason(task_id: str) -> tuple[str | None, int | None]:
+    reason, file_id = _read_db_superseded_reason(task_id)
+    if reason is None:
+        reason = _duplicate_delivery_reason(task_id)
+    return reason, file_id
+
+
+def _read_db_superseded_reason(task_id: str) -> tuple[str | None, int | None]:
     with session_scope() as db:
         task = db.query(Task).filter(Task.id == task_id).first()
         if task is None:

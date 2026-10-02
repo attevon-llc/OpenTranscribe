@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fallback when it cannot plan a presigned upload. Presigned single-PUT and multipart uploads
   are unchanged.
 
+### Changed
+
+- `celery_queue_reserved` excludes orphaned transcription stages; new gauges
+  `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`,
+  `transcription_runs_without_lease` and `transcription_files_infra_requeued` are for alerting.
+- Transcription lease defaults: `TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS` 30 -> 15 and
+  `TRANSCRIPTION_HEARTBEAT_TTL_SECONDS` 300 -> 90. New: `BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS`,
+  `BROKER_ORPHAN_STALE_SECONDS`, `TRANSCRIPTION_MAX_INFRA_REQUEUES`,
+  `TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD`, `CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT`,
+  `CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE`. `CELERY_VISIBILITY_TIMEOUT` stays at 6 h on purpose.
+
 ### Security
 
 - **An `editor` share could permanently delete another user's file (#1103).** Every delete
@@ -89,6 +100,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A file is never stranded or failed because its worker died.** A worker killed while it held
+  a transcription stage (out of memory, SIGKILL at the end of a stop grace period, node loss, a
+  container restart) left that stage in the broker's unacked set for the 6 h visibility
+  timeout, kept counting it in `celery_queue_reserved` (holding autoscaled GPU capacity up with
+  nothing to run), and recovery then marked the file ERROR instead of retrying it — in a load
+  test with workers restarted under load, 84 of 418 files ended that way. An orphan reaper now
+  puts the exact interrupted stage back at the head of its queue within about 2.5 minutes, and
+  re-dispatches the file when the message itself is gone. Every pipeline stage holds a lease
+  while it runs; a second delivery of a running or finished stage stands down.
+- **Two failure classes with one retry policy.** Unusable input (corrupt or undecodable media,
+  no audio, no speech, empty or too short, unsupported format, DRM) fails at once and is never
+  retried. Infrastructure failures (out of memory, lost connection, timeout, worker lost) and
+  unclassified ones are requeued within minutes with backoff and jitter, ahead of files
+  submitted after them, until the admin retry limit — and only then fail, with a reason that
+  says they were interrupted and retried. Worker losses use their own per-file cap
+  (`TRANSCRIPTION_MAX_INFRA_REQUEUES`) and never spend the retry limit.
+- **A stage that stands down for a graceful shutdown keeps its place in line.** It used to be
+  requeued at the back of its queue, behind everything submitted while it ran.
 - **An existing `transcripts` index never received the tenant field's mapping (#1115).** The
   `organization_id` mapping added for the legacy whole-document index in #1027 was applied only
   when the index was created, so on an upgraded deployment the field appeared through dynamic

@@ -22,7 +22,6 @@ from celery import chain
 
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
-from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
@@ -234,20 +233,32 @@ def _dispatch_gpu_split_diarize_chain(
         return False
 
     from .dispatch import on_pipeline_error
+    from .dispatch import stage_priorities
     from .postprocess import finalize_transcription
 
+    # A retried run keeps its retry priority on this second leg too.
+    cpu_priority, gpu_priority = stage_priorities(retry=_running_at_retry_priority())
     diarize_chain = chain(
         diarize_gpu_task.s(transcript_data, preprocess_context).set(
-            queue=_resolve_gpu_diarize_queue(), priority=GPUPriority.USER_IMPORT
+            queue=_resolve_gpu_diarize_queue(), priority=gpu_priority
         ),
-        finalize_transcription.s().set(
-            queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL
-        ),
+        finalize_transcription.s().set(queue=CeleryQueues.CPU, priority=cpu_priority),
     )
     diarize_chain.apply_async(
         link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue=CeleryQueues.UTILITY)],
     )
     return True
+
+
+def _running_at_retry_priority() -> bool:
+    """Whether the GPU stage executing now was published at the retry priority."""
+    try:
+        from celery import current_task
+
+        delivery = getattr(current_task.request, "delivery_info", None) or {}
+        return delivery.get("priority") == GPUPriority.TRANSCRIPTION_RETRY
+    except Exception:  # noqa: BLE001 - outside a worker: a fresh run
+        return False
 
 
 def _resolve_asr_provider_or_none(user_id: int):

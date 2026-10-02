@@ -86,20 +86,44 @@ class TaskRecoveryConfig:
         default_factory=lambda: _int_env("TASK_RECOVERY_ORPHANED_HOURS", 1)
     )
 
-    # How often a running transcription stage refreshes its liveness heartbeat, and how long
-    # one heartbeat stays valid. A run whose heartbeat has lapsed is treated as dead, so the
-    # TTL must cover the longest stretch a worker can go without getting the GIL back.
+    # How often a running transcription stage refreshes its lease (heartbeat), and how long
+    # one refresh stays valid. A run whose lease has lapsed is treated as dead, so the TTL must
+    # cover the longest stretch a worker can go without scheduling its heartbeat thread (six
+    # missed beats at the defaults). This TTL is the detection latency for a killed worker.
     TRANSCRIPTION_HEARTBEAT_INTERVAL: int = field(
-        default_factory=lambda: _int_env("TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS", 30)
+        default_factory=lambda: _int_env("TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS", 15)
     )
     TRANSCRIPTION_HEARTBEAT_TTL: int = field(
-        default_factory=lambda: _int_env("TRANSCRIPTION_HEARTBEAT_TTL_SECONDS", 300)
+        default_factory=lambda: _int_env("TRANSCRIPTION_HEARTBEAT_TTL_SECONDS", 90)
+    )
+
+    # Infrastructure requeues per file (a dead worker's stage put back on its queue, or a dead
+    # run re-dispatched). Counted separately from MediaFile.retry_count so worker loss does
+    # not spend the file's error-retry budget; past this cap the file fails as interrupted
+    # instead of cycling workers forever (a file that OOM-kills every worker it reaches).
+    TRANSCRIPTION_MAX_INFRA_REQUEUES: int = field(
+        default_factory=lambda: _int_env("TRANSCRIPTION_MAX_INFRA_REQUEUES", 5)
     )
 
     # How long a transcription may wait in the broker before recovery treats its message as
     # lost. Waiting for a worker is normal and never fails a file before this (#1020).
     TRANSCRIPTION_QUEUE_MAX_WAIT: int = field(
         default_factory=lambda: _int_env("TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS", 604800)
+    )
+
+    # Broker-level recovery of transcription stages held by a dead worker
+    # (app/core/broker_orphans.py). A stage message in kombu's ``unacked`` hash whose run
+    # has no live heartbeat and that was delivered longer ago than BROKER_ORPHAN_STALE is
+    # orphaned: it is excluded from ``celery_queue_reserved`` and put back at the FRONT of
+    # its queue by a sweep that runs every BROKER_ORPHAN_SWEEP_INTERVAL. Detection latency
+    # is therefore about TRANSCRIPTION_HEARTBEAT_TTL + one sweep interval (~2.5 min by
+    # default), not CELERY_VISIBILITY_TIMEOUT (6 h). The stale age only guards a delivery that
+    # has not started yet (no lease is expected before its first beat).
+    BROKER_ORPHAN_STALE: int = field(
+        default_factory=lambda: _int_env("BROKER_ORPHAN_STALE_SECONDS", 120)
+    )
+    BROKER_ORPHAN_SWEEP_INTERVAL: int = field(
+        default_factory=lambda: _int_env("BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS", 60)
     )
 
     # Worker-loss replay for idempotent tasks (issue #1067, app/core/task_replay.py). A task
@@ -139,6 +163,16 @@ class TaskRecoveryConfig:
                 self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 3,
             )
             self.TRANSCRIPTION_HEARTBEAT_TTL = self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 3
+        if self.BROKER_ORPHAN_STALE < self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 2:
+            # A delivery younger than two beats may simply not have sent its first one yet.
+            logger.warning(
+                "BROKER_ORPHAN_STALE_SECONDS (%d) must be at least twice the heartbeat "
+                "interval (%d); using %d",
+                self.BROKER_ORPHAN_STALE,
+                self.TRANSCRIPTION_HEARTBEAT_INTERVAL,
+                self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 2,
+            )
+            self.BROKER_ORPHAN_STALE = self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 2
         if self.TASK_HEARTBEAT_TTL <= self.TASK_HEARTBEAT_INTERVAL:
             logger.warning(
                 "TASK_HEARTBEAT_TTL_SECONDS (%d) must exceed the interval (%d); using %d",

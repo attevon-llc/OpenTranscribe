@@ -34,7 +34,11 @@ _CONTEXT = "app.tasks.transcription.context"
 _SESSION_SCOPE = f"{_CPU_TASK}.session_scope"
 _CONTEXT_SESSION_SCOPE = f"{_CONTEXT}.session_scope"
 _SEND_PROGRESS = f"{_CPU_TASK}.send_progress_notification"
-_CONTEXT_SEND_ERROR = f"{_CONTEXT}.send_error_notification"
+# The failure path runs through the one retry policy (services/transcription_retry.py),
+# which opens its own sessions and sends the error notification itself.
+_RETRY_POLICY_SESSION_SCOPE = "app.services.transcription_retry.session_scope"
+_SEND_ERROR = "app.tasks.transcription.notifications.send_error_notification"
+_SCHEDULE_RETRY = "app.services.task_recovery_service.TaskRecoveryService.schedule_file_retry"
 _DOWNLOAD_TEMP_AUDIO = "app.services.minio_service.download_temp_audio"
 _PROCESS_AND_SAVE = f"{_CPU_TASK}._process_and_save_critical"
 
@@ -50,13 +54,16 @@ def cpu_task_seams(db_session):
     with (
         patch(_SESSION_SCOPE, lambda: _yield_session(db_session)),
         patch(_CONTEXT_SESSION_SCOPE, lambda: _yield_session(db_session)),
+        patch(_RETRY_POLICY_SESSION_SCOPE, lambda: _yield_session(db_session)),
         patch(_SEND_PROGRESS) as send_progress,
-        patch(_CONTEXT_SEND_ERROR) as send_error,
+        patch(_SEND_ERROR) as send_error,
+        patch(_SCHEDULE_RETRY, return_value=True) as schedule_retry,
         patch(_DOWNLOAD_TEMP_AUDIO) as download_temp_audio,
     ):
         yield {
             "send_progress": send_progress,
             "send_error": send_error,
+            "schedule_retry": schedule_retry,
             "download_temp_audio": download_temp_audio,
         }
 
@@ -282,11 +289,12 @@ class TestTranscribeCpuTask:
         assert task.status == "in_progress"
         cpu_task_seams["send_error"].assert_not_called()
 
-    def test_download_failure_after_retries_exhausted_marks_file_error(
+    def test_download_failure_after_retries_exhausted_requeues_the_file(
         self, db_session, cpu_task_seams, make_media_file, make_task, normal_user
     ):
-        """Once retries are exhausted this IS the final failure — Celery will not
-        attempt again — so it must still be reported like any other terminal error."""
+        """Once Celery's own retries are exhausted the run is over, but a lost connection is
+        TRANSIENT: the retry policy retires this run and requeues the file (a new run at retry
+        priority) instead of reporting an error the user can do nothing about."""
         media_file = make_media_file()
         task_id = str(uuid_pkg.uuid4())
         make_task(media_file, task_id)
@@ -301,12 +309,14 @@ class TestTranscribeCpuTask:
             transcribe_cpu_task.pop_request()
 
         db_session.refresh(media_file)
-        assert media_file.status == FileStatus.ERROR
+        assert media_file.status == FileStatus.PENDING
+        assert media_file.retry_count == 1
         task = db_session.query(Task).filter(Task.id == task_id).one()
         assert task.status == "failed"
-        cpu_task_seams["send_error"].assert_called_once()
+        cpu_task_seams["schedule_retry"].assert_called_once()
+        cpu_task_seams["send_error"].assert_not_called()
 
-    def test_finalize_failure_marks_file_error_and_reraises(
+    def test_finalize_failure_requeues_the_file_and_reraises(
         self, db_session, cpu_task_seams, make_media_file, make_task, normal_user
     ):
         media_file = make_media_file()
@@ -323,8 +333,10 @@ class TestTranscribeCpuTask:
         ):
             transcribe_cpu_task.run(preprocess_context)
 
+        # An unclassified exception is TRANSIENT: the run is retired and the file requeued.
         db_session.refresh(media_file)
-        assert media_file.status == FileStatus.ERROR
+        assert media_file.status == FileStatus.PENDING
         task = db_session.query(Task).filter(Task.id == task_id).one()
         assert task.status == "failed"
         assert task.error_message
+        cpu_task_seams["schedule_retry"].assert_called_once()

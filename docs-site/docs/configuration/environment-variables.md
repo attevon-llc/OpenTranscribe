@@ -529,20 +529,69 @@ Each transcription run carries two markers in Redis:
 
 - a **queued** marker, set when the pipeline is published and whenever a stage hands the run back
   to the queue;
-- a **heartbeat**, refreshed by a worker while it is executing a stage.
+- a **lease** (heartbeat), refreshed by a worker while it is executing a stage, which also records
+  which broker message holds it.
 
 A run is treated as dead only when it has neither — its worker stopped heartbeating, or its
 message is gone from the queue. When recovery does retry a file, it cancels the old run, and a
 stage that picks up a run which has since been replaced exits without doing any work. If Redis
 cannot be read, recovery leaves transcriptions alone.
 
+### When a worker dies mid-transcription
+
+A worker killed while it holds a stage (out of memory, SIGKILL at the end of a container's stop
+grace period, node loss, container restart) used to leave that stage's message in the broker's
+*unacked* set until the 6 h visibility timeout, and recovery then marked the file **failed**. Now
+an **orphan reaper** runs every minute:
+
+- If the stage's message is still in the broker, it is put back at the **head** of its queue (so
+  the file keeps its place ahead of newer submissions) and removed from the unacked set, so it is
+  never redelivered as a duplicate later. The file stays in processing throughout.
+- If the message is gone too (a cold shutdown's cancel drops it on Redis), a replacement run is
+  dispatched at retry priority.
+
+A worker loss is noticed within one lease TTL plus one sweep — about 2.5 minutes by default.
+Infrastructure requeues are counted per file, separately from the admin retry limit, and a file
+that keeps killing workers fails with *"interrupted ... after several automatic retries"* once
+`TRANSCRIPTION_MAX_INFRA_REQUEUES` is spent.
+
+```bash
+TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS=15   # Default: 15 — lease refresh
+TRANSCRIPTION_HEARTBEAT_TTL_SECONDS=90        # Default: 90 — detection latency for a dead worker
+BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS=60       # Default: 60 — how often the reaper runs
+BROKER_ORPHAN_STALE_SECONDS=120               # Default: 120 — grace for a delivery not yet started
+TRANSCRIPTION_MAX_INFRA_REQUEUES=5            # Default: 5 — worker losses per file before it fails
+TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD=3 # Default: 3 — for the poison-file alert gauge
+```
+
+**Keep `CELERY_VISIBILITY_TIMEOUT` at 6 h.** Redis has no per-message lease, so that one value
+applies to every late-acknowledged task however long it legitimately runs; lowering it re-runs
+live work. Recovery no longer depends on it.
+
+### Failures: permanent vs transient
+
+Every processing failure is sorted into one of two classes:
+
+- **Permanent** — the input is unusable: corrupt or undecodable media, no audio track, no
+  speech, an empty or too-short file, an unsupported format, DRM/encrypted content. The file
+  fails at once with that reason and is never retried automatically.
+- **Transient** — the infrastructure failed (out of memory, a lost connection, a timeout, a
+  worker that died) or the cause is unknown. The file is put back in the queue within minutes,
+  with exponential backoff and jitter, **ahead of files submitted after it**, until the admin's
+  *max retries* setting (Settings → Transcription) is used up. Only then does it fail, with a
+  reason that says it was interrupted and retried.
+
+Celery's own shutdown settings: `CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT` (default 30) and
+`CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE` (default true) apply to a **cold** shutdown (SIGQUIT) only;
+a plain SIGTERM is a warm shutdown that waits for running tasks without limit, so give worker
+containers a stop grace period longer than your longest stage. Prefer the warm shutdown: on the
+Redis broker a cold shutdown's cancel acknowledges (drops) the running stage's message, and the
+file then waits for the reaper to re-dispatch it.
+
 ```bash
 # Longest a transcription may wait in the queue before its message is treated as lost
 TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS=604800   # Default: 7 days
 
-# Heartbeat refresh interval, and how long one heartbeat is trusted (must exceed the interval)
-TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS=30   # Default: 30
-TRANSCRIPTION_HEARTBEAT_TTL_SECONDS=300       # Default: 300
 
 # Longest a transcription may RUN, measured from when a worker started it (not from upload)
 TASK_MAX_DURATION_TRANSCRIPTION_SECONDS=3600  # Default: 3600

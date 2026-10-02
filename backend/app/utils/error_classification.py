@@ -6,6 +6,7 @@ and prevent wasting retries on permanent failures like private/removed videos.
 """
 
 import logging
+import random
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,15 @@ class ErrorCategory(Enum):
     PRIVATE_OR_REMOVED = "private_removed"
     USER_CANCELLED = "user_cancelled"
     FILE_TOO_LARGE = "file_too_large"
+    # The input itself is unusable: corrupt or undecodable media, no audio track, no
+    # speech, an unsupported format. Running it again produces the same failure, so it
+    # fails fast and is never retried automatically. Set by
+    # ``ErrorCategorizationService.classify_failure`` from the user-facing reason.
+    INVALID_MEDIA = "invalid_media"
+    # A transient failure that outlasted every automatic retry (the error-retry budget, or the
+    # infrastructure-requeue cap). Terminal for the automatic paths; the user's own Retry
+    # button still works, because a manual retry clears the category.
+    RETRIES_EXHAUSTED = "retries_exhausted"
 
     # Auth/Rate limit hybrid - retry with very long backoff
     AUTH_OR_RATE_LIMIT = "auth_or_rate_limit"
@@ -62,6 +72,32 @@ RETRIABLE_CATEGORIES: frozenset[ErrorCategory] = frozenset(
         ErrorCategory.UNKNOWN,
     }
 )
+
+
+#: Retriable categories whose cause is the infrastructure (a worker, a GPU, the network),
+#: never the input. A classification that lands here outranks an input-shaped user reason:
+#: "connection reset while decoding" is a lost connection, not a corrupt file.
+INFRASTRUCTURE_CATEGORIES: frozenset[ErrorCategory] = frozenset(
+    {
+        ErrorCategory.SYSTEM_ERROR,
+        ErrorCategory.WORKER_LOST,
+        ErrorCategory.OOM_ERROR,
+        ErrorCategory.GPU_OOM,
+        ErrorCategory.NETWORK_ERROR,
+        ErrorCategory.TEMPORARY_SERVICE_ERROR,
+    }
+)
+
+
+def is_transient(error_category: ErrorCategory) -> bool:
+    """Whether a failure of this category is worth running again unchanged.
+
+    The two-class rule every automatic retry follows: a TRANSIENT failure (the
+    infrastructure failed, or the cause is unknown) is requeued within minutes up to the
+    retry limit; a PERMANENT one (the input is unusable, the content is gone, the user
+    cancelled) fails at once with its reason and is never retried.
+    """
+    return error_category in RETRIABLE_CATEGORIES
 
 
 def categorize_error(error_message: str) -> ErrorCategory:
@@ -186,3 +222,29 @@ def get_retry_delay(error_category: ErrorCategory, retry_count: int) -> int:
 
     # Immediate retry for system errors (task will be queued anyway)
     return 0
+
+
+#: Exponential-backoff parameters for an automatic transcription retry, per category:
+#: ``(first delay, ceiling)`` in seconds. Short on purpose — a requeued file should be
+#: running again within minutes — but long enough that a GPU still full from the run that
+#: just ran out of memory, or a dependency that just dropped a connection, has time to recover.
+_BACKOFF_SECONDS: dict[ErrorCategory, tuple[int, int]] = {
+    ErrorCategory.NETWORK_ERROR: (30, 300),
+    ErrorCategory.TEMPORARY_SERVICE_ERROR: (30, 300),
+    ErrorCategory.GPU_OOM: (60, 600),
+    ErrorCategory.OOM_ERROR: (60, 600),
+}
+_DEFAULT_BACKOFF_SECONDS = (15, 240)
+
+
+def transient_retry_delay(error_category: ErrorCategory, retry_count: int) -> int:
+    """Seconds to wait before automatic retry number ``retry_count + 1``.
+
+    Exponential backoff with "equal jitter": half the delay is fixed and half random, so
+    files that failed together (one OOM, one dropped connection) do not all come back at the
+    same instant and fail together again.
+    """
+    base, ceiling = _BACKOFF_SECONDS.get(error_category, _DEFAULT_BACKOFF_SECONDS)
+    delay = min(base * (2 ** max(0, retry_count)), ceiling)
+    half = delay / 2
+    return int(half + random.uniform(0, half))  # noqa: S311  # nosec B311 - jitter, not crypto

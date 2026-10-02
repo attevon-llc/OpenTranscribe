@@ -108,6 +108,7 @@ from kombu import Queue  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.core.constants import CeleryQueues  # noqa: E402
 from app.core.constants import gpu_preferred_queue  # noqa: E402
+from app.core.task_config import task_recovery_config  # noqa: E402
 
 # Speaker/diarization work that PREFERS a GPU but produces a correct result on CPU
 # (issue #865). All eight were pinned to 'gpu' — a queue `docker-compose.lite.yml`
@@ -350,15 +351,39 @@ celery_app.conf.update(
     # `init_worker_process`'s own "fork init started/finished" pairs, which are emitted
     # regardless of the hub.
     worker_proc_alive_timeout=_float_env("CELERY_PROC_ALIVE_TIMEOUT", 30.0),
+    # --- Worker-loss and shutdown behaviour (see app/core/broker_orphans.py) -------------
+    # Soft shutdown (Celery 5.5+): on a COLD shutdown (SIGQUIT, or SIGTERM when the worker
+    # runs with REMAP_SIGTERM=SIGQUIT) wait this long for running tasks, then cancel the rest
+    # so kombu returns their unacked messages to the HEAD of their queues before the process
+    # exits, instead of leaving them to the visibility timeout. It does nothing on a warm
+    # shutdown (plain SIGTERM), which waits for running tasks with no limit; there a SIGKILL
+    # at the end of the container's stop grace period is answered by the orphan reaper.
+    worker_soft_shutdown_timeout=_float_env("CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT", 30.0),
+    # Also wait (and so also requeue cleanly) when the worker holds only reserved or
+    # ETA-scheduled messages and runs nothing.
+    worker_enable_soft_shutdown_on_idle=os.getenv(
+        "CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE", "true"
+    ).lower()
+    in ("1", "true", "yes"),
+    # Explicitly OFF. On Redis an unacked message survives a dropped connection in the
+    # broker's `unacked` hash and the worker can still ack it after reconnecting; turning
+    # this on would kill every running transcription on a transient broker blip and leave
+    # its message unacked -- creating the orphan it is meant to prevent.
+    worker_cancel_long_running_tasks_on_connection_loss=False,
+    # A REDELIVERED acks_late message whose task already succeeded (per the result backend)
+    # is acked and skipped instead of run again. The stage ownership check
+    # (tasks/transcription/run_ownership.py) covers the rest of the duplicate cases.
+    worker_deduplicate_successful_tasks=True,
     worker_send_task_events=True,  # Enable real-time task events for Flower
     task_send_sent_event=True,  # Fire event when task is dispatched to queue
     result_expires=86400,  # Expire results after 24h (prevent Redis bloat)
     # Enable Redis priority queues: lower number = higher priority (runs first).
     # Priorities are PER-QUEUE — GPUPriority.X is independent of CPUPriority.X.
     # Named constants defined in app.core.constants: GPUPriority, CPUPriority, etc.
-    # GPU queue:  0=speaker-reassign  1=embed-extract  3=transcription  4=rediarize
-    #             5=recluster  7=admin-migration-batches
-    # CPU queue:  2=pipeline-critical  4=user-triggered  5=system  6=admin  8=maintenance
+    # GPU queue:  0=speaker-reassign  1=embed-extract  2=transcription-retry
+    #             3=transcription  4=rediarize  5=recluster  7=admin-migration-batches
+    # CPU queue:  1=pipeline-retry  2=pipeline-critical  4=user-triggered  5=system
+    #             6=admin  8=maintenance
     # NLP queue:  3=user-triggered  5=auto-pipeline  7=admin-batch  9=background
     # Download:   3=single-url  6=playlist
     # Embedding:  2=pipeline-critical
@@ -380,9 +405,15 @@ celery_app.conf.update(
         # makes that reachable with an ordinary file, not just a pathological one.
         #
         # 21600 (6h) covers the longest supported job with headroom. Do NOT set it
-        # absurdly high "to be safe": crash recovery keys off DB status
-        # (tasks/recovery.py), not off redelivery, so an inflated value only delays
-        # requeueing after a genuine worker loss.
+        # absurdly high "to be safe" -- and do NOT lower it to speed up recovery
+        # either. Redis has no per-message lease (nothing like SQS's
+        # ChangeMessageVisibility), so this one value applies to every acks_late task
+        # however long it legitimately runs, counted from DELIVERY: lowering it below
+        # the longest run plus its time held in a worker re-runs live work. Worker
+        # loss is recovered in minutes WITHOUT it: transcription stages hold an app
+        # lease and the orphan reaper (app/core/broker_orphans.py) returns a dead
+        # holder's message to the head of its queue as soon as the lease lapses. This
+        # timeout is only the backstop for acks_late tasks that hold no lease.
         "visibility_timeout": int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600")),
         # Dead-connection detection — see _REDIS_SOCKET_TIMEOUT above (issue #1144).
         "socket_keepalive": True,
@@ -497,6 +528,7 @@ celery_app.conf.update(
         "system.recover_user_files": {"queue": CeleryQueues.UTILITY},
         "system.health_check": {"queue": CeleryQueues.UTILITY},
         "system.reclaim_lost_tasks": {"queue": CeleryQueues.UTILITY},
+        "system.reclaim_orphaned_deliveries": {"queue": CeleryQueues.UTILITY},
         "cleanup_expired_files": {"queue": CeleryQueues.UTILITY},
         "cleanup.run_periodic_cleanup": {"queue": CeleryQueues.UTILITY},
         "cleanup.deep_cleanup": {"queue": CeleryQueues.UTILITY},
@@ -541,6 +573,13 @@ celery_app.conf.update(
         "periodic-health-check": {
             "task": "system.health_check",
             "schedule": crontab(minute="*/10"),  # Run every 10 minutes
+            "options": {"queue": "utility", "priority": 3},  # UtilityPriority.OPERATIONAL
+        },
+        # Requeues transcription stages a dead worker took with it (app/core/broker_orphans.py).
+        # A plain interval, not a crontab, so it can run more often than once a minute.
+        "reclaim-orphaned-deliveries": {
+            "task": "system.reclaim_orphaned_deliveries",
+            "schedule": float(task_recovery_config.BROKER_ORPHAN_SWEEP_INTERVAL),
             "options": {"queue": "utility", "priority": 3},  # UtilityPriority.OPERATIONAL
         },
         # Replays idempotent tasks whose worker died mid-run (issue #1067). Cheap when

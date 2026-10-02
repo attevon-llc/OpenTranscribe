@@ -102,7 +102,9 @@ def test_the_outer_exception_handler_stores_no_raw_message(
         file_size=2048,
         status=FileStatus.PROCESSING,
         is_public=False,
-        retry_count=0,
+        # Out of automatic retries, so the unclassified failure is final and its fixed
+        # sentence is what gets stored (with retries left it would be requeued instead).
+        retry_count=3,
         user_id=normal_user.id,
     )
     db_session.add(media_file)
@@ -119,8 +121,12 @@ def test_the_outer_exception_handler_stores_no_raw_message(
         content_type=str(media_file.content_type),
     )
 
-    raw_error = RuntimeError(f"boom: {SENTINEL}")
-    monkeypatch.setattr(transcription_context, "send_error_notification", lambda *a, **kw: None)
+    # Not "boom": the retry classifier substring-matches "oom", which would make this an
+    # out-of-memory failure, stored with the interrupted-and-retried sentence instead.
+    raw_error = RuntimeError(f"kaput: {SENTINEL}")
+    monkeypatch.setattr(
+        "app.tasks.transcription.notifications.send_error_notification", lambda *a, **kw: None
+    )
 
     # `context.py` imports `session_scope` by name (`from ... import session_scope`), so it
     # must be patched on `transcription_context` itself, not on `app.db.session_utils` — the
@@ -133,6 +139,8 @@ def test_the_outer_exception_handler_stores_no_raw_message(
         db_session.commit()
 
     monkeypatch.setattr(transcription_context, "session_scope", _test_session_scope)
+    # The failure itself is handled by the one retry policy, which opens its own sessions.
+    monkeypatch.setattr("app.services.transcription_retry.session_scope", _test_session_scope)
 
     with caplog.at_level(logging.ERROR):
         transcription_context._handle_outer_exception(ctx, "nonexistent-task-id", raw_error)

@@ -18,6 +18,8 @@ Error reasons include:
 - NETWORK_ERROR: Connectivity, download, or URL access issues
 - PERMISSION_ERROR: Access control, DRM, or authentication failures
 - PROCESSING_ERROR: Generic server-side processing failures
+- INTERRUPTED: Server-side interruptions (a worker lost, out of memory) that outlasted
+  every automatic retry
 - UNCLASSIFIED: Unclassified errors with fallback handling
 
 ⚠️ No-raw-echo contract: every ``user_message`` and suggestion this service returns is a
@@ -59,6 +61,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from app.utils.error_classification import INFRASTRUCTURE_CATEGORIES
 from app.utils.error_classification import ErrorCategory
 from app.utils.error_classification import categorize_error as categorize_retry
 
@@ -73,9 +76,38 @@ class UserErrorReason(StrEnum):
     NO_SPEECH = "no_speech"
     FORMAT_ISSUE = "format_issue"
     PROCESSING_ERROR = "processing_error"
+    INTERRUPTED = "interrupted"
     NETWORK_ERROR = "network_error"
     PERMISSION_ERROR = "permission_error"
     UNCLASSIFIED = "unclassified"
+
+
+#: User-facing reasons that say the INPUT is unusable. Running the same file again cannot
+#: succeed, so ``classify_failure`` gives them the permanent ``INVALID_MEDIA`` retry
+#: category unless the raw text carries an infrastructure signal (see
+#: ``INFRASTRUCTURE_CATEGORIES``). PERMISSION_ERROR is deliberately absent: "access denied"
+#: is as often our own object store as a DRM-locked upload.
+INPUT_ERROR_REASONS: frozenset[UserErrorReason] = frozenset(
+    {
+        UserErrorReason.FILE_QUALITY,
+        UserErrorReason.NO_AUDIO_TRACK,
+        UserErrorReason.NO_SPEECH,
+        UserErrorReason.FORMAT_ISSUE,
+    }
+)
+
+
+#: The PERMISSION_ERROR sub-cases that are a property of the upload itself.
+_PROTECTED_INPUT_PATTERNS = ("drm", "encrypted", "password-protected", "password protected")
+
+
+def _is_input_failure(reason: UserErrorReason, raw_error: str | None) -> bool:
+    if reason in INPUT_ERROR_REASONS:
+        return True
+    if reason == UserErrorReason.PERMISSION_ERROR and raw_error:
+        lowered = raw_error.lower()
+        return any(pattern in lowered for pattern in _PROTECTED_INPUT_PATTERNS)
+    return False
 
 
 @dataclass(frozen=True)
@@ -108,6 +140,9 @@ class ErrorCategorizationService:
         "file damaged",
         "unreadable",
         "malformed",
+        # audio_processor.py / transcription/audio.py: an empty upload, a clip too short
+        "is empty and contains no content",
+        "too short to contain meaningful content",
     ]
 
     NO_SPEECH_PATTERNS = [
@@ -323,6 +358,19 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
+    def _handle_interrupted_error() -> tuple[UserErrorReason, str, list[str]]:
+        """Handle a server-side interruption that outlasted every automatic retry."""
+        return (
+            UserErrorReason.INTERRUPTED,
+            "Processing was interrupted by a temporary server problem and still could not "
+            "finish after several automatic retries.",
+            [
+                'Use the "Retry" button to try processing again',
+                "If it keeps failing, ask your administrator to check the processing workers",
+            ],
+        )
+
+    @staticmethod
     def _handle_generic_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle generic processing errors."""
         return (
@@ -378,6 +426,7 @@ class ErrorCategorizationService:
             in [
                 UserErrorReason.NETWORK_ERROR,
                 UserErrorReason.PROCESSING_ERROR,
+                UserErrorReason.INTERRUPTED,
                 UserErrorReason.UNCLASSIFIED,
             ],
         }
@@ -392,11 +441,19 @@ class ErrorCategorizationService:
         themselves and store only ``user_message`` and ``retry_category``.
         """
         reason, user_message, _ = ErrorCategorizationService.categorize_error(raw_error)
+        retry_category = categorize_retry(raw_error or "")
+        if _is_input_failure(reason, raw_error) and retry_category not in INFRASTRUCTURE_CATEGORIES:
+            retry_category = ErrorCategory.INVALID_MEDIA
         return FailureClassification(
-            retry_category=categorize_retry(raw_error or ""),
+            retry_category=retry_category,
             reason=reason,
             user_message=user_message,
         )
+
+    @staticmethod
+    def interrupted_message() -> str:
+        """The fixed sentence stored when transient retries are exhausted."""
+        return ErrorCategorizationService._handle_interrupted_error()[1]
 
     @staticmethod
     def error_fields_for(media_file: Any) -> dict[str, Any] | None:
@@ -479,6 +536,7 @@ _FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str
     ErrorCategorizationService._handle_format_error,
     ErrorCategorizationService._handle_network_error,
     ErrorCategorizationService._handle_permission_error,
+    ErrorCategorizationService._handle_interrupted_error,
     ErrorCategorizationService._handle_generic_error,
 )
 

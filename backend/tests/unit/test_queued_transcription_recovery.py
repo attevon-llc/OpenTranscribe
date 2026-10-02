@@ -296,14 +296,52 @@ def test_recovering_a_stuck_transcription_cancels_the_superseded_run(
     task = _transcription(
         db_session, normal_user, media_file, age=timedelta(hours=2), quiet_for=timedelta(hours=1)
     )
-    fake_redis.mark_queued(task.id)
 
-    with patch.object(TaskRecoveryService, "schedule_file_retry", return_value=True):
+    with (
+        patch.object(TaskRecoveryService, "schedule_file_retry", return_value=True),
+        patch("app.core.broker_orphans.discard_run_deliveries", return_value=0),
+    ):
         assert recovery.recover_stuck_task(db_session, task) is True
 
     assert CANCEL_KEY.format(task_id=task.id) in fake_redis.store
-    # Retired, not still advertised as waiting.
+    # Retired, not still advertised as waiting or running.
     assert f"transcription_queued:{task.id}" not in fake_redis.store
+
+
+def test_the_admin_path_retires_a_transcription_even_while_it_reads_as_queued(
+    recovery, db_session, normal_user, fake_redis
+):
+    """``requeue=False`` (the admin recover endpoints, which dispatch the replacement
+    themselves) retires the run unconditionally and cancels it, as before."""
+    media_file = _file(db_session, normal_user)
+    task = _transcription(
+        db_session, normal_user, media_file, age=timedelta(hours=2), quiet_for=timedelta(hours=1)
+    )
+    fake_redis.mark_queued(task.id)
+
+    assert recovery.recover_stuck_task(db_session, task, requeue=False) is True
+
+    assert CANCEL_KEY.format(task_id=task.id) in fake_redis.store
+    assert f"transcription_queued:{task.id}" not in fake_redis.store
+
+
+def test_the_health_check_leaves_a_run_the_reaper_just_requeued(
+    recovery, db_session, normal_user, fake_redis
+):
+    """Detection saw the run dead; by the time recovery acts the broker reaper has put its
+    stage back on the queue (QUEUED). Recovering it now would dispatch a second pipeline."""
+    media_file = _file(db_session, normal_user)
+    task = _transcription(
+        db_session, normal_user, media_file, age=timedelta(hours=2), quiet_for=timedelta(hours=1)
+    )
+    fake_redis.mark_queued(task.id)
+
+    with patch.object(TaskRecoveryService, "schedule_file_retry", return_value=True) as retry:
+        assert recovery.recover_stuck_task(db_session, task) is False
+
+    retry.assert_not_called()
+    db_session.refresh(task)
+    assert task.status == "in_progress"
 
 
 def test_recovering_an_orphaned_transcription_cancels_its_run(

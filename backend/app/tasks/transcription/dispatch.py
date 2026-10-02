@@ -152,6 +152,18 @@ def _resolve_gpu_queue(user_id: int, db) -> str:
     return CeleryQueues.GPU
 
 
+def stage_priorities(*, retry: bool) -> tuple[int, int]:
+    """``(cpu_priority, gpu_priority)`` for a pipeline's stages.
+
+    A retry outranks a fresh submission on every queue it touches, which is what keeps a
+    requeued file in front of work submitted after it (kombu's Redis transport serves the
+    lower priority number first).
+    """
+    if retry:
+        return CPUPriority.PIPELINE_RETRY, GPUPriority.TRANSCRIPTION_RETRY
+    return CPUPriority.PIPELINE_CRITICAL, GPUPriority.USER_IMPORT
+
+
 def _mark_dispatch_failed(file_uuid: str, task_id: str, message: str) -> None:
     """Record a failed pipeline publish on the file and its task row.
 
@@ -202,6 +214,8 @@ def dispatch_transcription_pipeline(
     diarization_source: str | None = None,
     whisper_model: str | None = None,
     task_id: str | None = None,
+    retry: bool = False,
+    countdown: int | None = None,
 ) -> str:
     """Build and dispatch a 3-stage transcription chain.
 
@@ -224,6 +238,11 @@ def dispatch_transcription_pipeline(
             (e.g., from the HTTP upload handler) it is reused so HTTP-phase
             benchmark markers share the ``benchmark:{task_id}`` Redis hash
             with the pipeline markers. When None, a fresh UUID is generated.
+        retry: An automatic retry of a run the infrastructure interrupted. Every stage
+            is published at the retry priority (``CPUPriority.PIPELINE_RETRY`` /
+            ``GPUPriority.TRANSCRIPTION_RETRY``) so the file goes ahead of submissions
+            that arrived after it rather than to the back of the queue.
+        countdown: Seconds to hold the first stage before it runs (retry backoff).
     """
     from .core import transcribe_cpu_task
     from .core import transcribe_gpu_task
@@ -309,16 +328,20 @@ def dispatch_transcription_pipeline(
         update_media_file_status(db, file_id, FileStatus.PROCESSING)
         update_task_status(db, task_id, "in_progress", progress=0.0)
 
+    cpu_priority, gpu_priority = stage_priorities(retry=retry)
+
     # Build the 3-stage chain — route lightweight models to CPU
     if use_cpu:
         logger.info(f"Routing file {file_uuid} to CPU transcription (model={whisper_model})")
         transcribe_task = transcribe_cpu_task.s().set(
-            queue=CeleryQueues.CPU_TRANSCRIBE, priority=CPUPriority.PIPELINE_CRITICAL
+            queue=CeleryQueues.CPU_TRANSCRIBE, priority=cpu_priority
         )
     else:
-        transcribe_task = transcribe_gpu_task.s().set(
-            queue=gpu_queue, priority=GPUPriority.USER_IMPORT
-        )
+        transcribe_task = transcribe_gpu_task.s().set(queue=gpu_queue, priority=gpu_priority)
+
+    first_stage_options: dict = {"queue": CeleryQueues.CPU, "priority": cpu_priority}
+    if countdown:
+        first_stage_options["countdown"] = countdown
 
     pipeline = chain(
         preprocess_for_transcription.s(
@@ -333,11 +356,9 @@ def dispatch_transcription_pipeline(
             disable_diarization=True if use_cpu else disable_diarization,
             diarization_source="off" if use_cpu else diarization_source,
             whisper_model=whisper_model,
-        ).set(queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL),
+        ).set(**first_stage_options),
         transcribe_task,
-        finalize_transcription.s().set(
-            queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL
-        ),
+        finalize_transcription.s().set(queue=CeleryQueues.CPU, priority=cpu_priority),
     )
 
     # Record dispatch timestamp + queue depth snapshot for inter-stage gap
@@ -366,7 +387,8 @@ def dispatch_transcription_pipeline(
 
     route = "cpu-transcribe" if use_cpu else gpu_queue
     logger.info(
-        f"Dispatched transcription pipeline for file {file_uuid} (task_id={task_id}, route={route})"
+        f"Dispatched transcription pipeline for file {file_uuid} (task_id={task_id}, "
+        f"route={route}{', retry' if retry else ''})"
     )
 
     return task_id
@@ -514,6 +536,20 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
     from .notifications import send_error_notification
 
     logger.warning(f"Pipeline error handler triggered for file {file_uuid}")
+
+    # A failure that the retry policy already answered with a NEW run must not touch the file:
+    # the temp audio is keyed by file and the replacement run is using it, and marking the file
+    # ERROR here would overwrite the replacement's PROCESSING status.
+    from .run_ownership import replaced_by_newer_run
+
+    if replaced_by_newer_run(task_id):
+        logger.info(
+            "Pipeline error for file %s belongs to run %s, which a newer run has replaced "
+            "-- leaving the file to it",
+            file_uuid,
+            task_id,
+        )
+        return
 
     # Clean up temp audio
     with contextlib.suppress(Exception):

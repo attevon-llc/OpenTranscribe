@@ -16,16 +16,12 @@ from celery.exceptions import Reject
 from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
 from app.core.constants import DIAR_SIDECAR_RETRY_BASE
 from app.core.constants import DIAR_SIDECAR_RETRY_MAX
-from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
-from app.models.media import MediaFile
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.transcription import cuda_health
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
-
-from .notifications import send_error_notification
 
 if TYPE_CHECKING:
     from app.transcription.diarizer_native import DiarSidecarUnavailableError
@@ -135,6 +131,14 @@ def requeue_after_abort(file_uuid: str, abort: Exception, *, stage: str) -> NoRe
     ``acks_late=True``, rejecting on first delivery: DELIVERY #1, DELIVERY #2, second
     completed. ``Reject(requeue=True)`` does redeliver on the Redis transport.
 
+    Position matters too. kombu answers ``Reject(requeue=True)`` with an LPUSH -- the BACK of
+    the queue -- so a file interrupted by a deploy waited behind everything submitted while it
+    ran. The message is therefore first moved to the HEAD of its priority list with kombu's
+    own ``restore_by_tag`` (``core/broker_orphans.requeue_own_delivery_to_front``) and the
+    stage raises ``Reject(requeue=False)``, whose kombu reject is then a no-op on the moved
+    entry. If the message cannot be found, the plain ``Reject(requeue=True)`` still applies:
+    a late place in line is better than a lost transcription.
+
     Args:
         file_uuid: The file whose stage stood down, for the log line.
         abort: The ``TranscriptionAbortedError`` that reached the task layer; chained onto the
@@ -152,7 +156,18 @@ def requeue_after_abort(file_uuid: str, abort: Exception, *, stage: str) -> NoRe
         file_uuid,
         abort,
     )
+    if _requeue_at_front():
+        raise Reject(requeue=False) from abort
     raise Reject(requeue=True) from abort
+
+
+def _requeue_at_front() -> bool:
+    """Move the executing stage's own message to the head of its queue (see the caller)."""
+    from app.core.broker_orphans import requeue_own_delivery_to_front
+    from app.core.task_liveness import _current_stage_id
+
+    stage_id = _current_stage_id()
+    return bool(stage_id) and requeue_own_delivery_to_front(str(stage_id))
 
 
 #: Redis counter of poisoned-context requeues per task, so a message that breaks every worker
@@ -255,48 +270,38 @@ def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContex
 def _handle_transcription_failure(
     ctx: TranscriptionContext, task_id: str, raw_error: str, error_type: str
 ) -> dict:
-    """Handle transcription failure by updating status and sending notification.
+    """Handle a stage failure through the one retry policy (``services/transcription_retry``).
 
     ``raw_error`` is classified once, here, and never stored (issue #959): the task and file
     rows carry the fixed user-facing sentence and ``error_category`` the retry code derived
     from the raw text. Callers log the raw exception before calling.
+
+    A PERMANENT failure (the input is unusable) marks the file ERROR and notifies at once. A
+    TRANSIENT one (infrastructure, or unclassified) dispatches a replacement run at retry
+    priority after a short backoff, and only marks the file ERROR once the retry budget is
+    spent. The policy also fires the completion hook (success=False) either way, so a quota
+    reservation taken at dispatch is released.
+
+    Returns:
+        The chain payload for the rest of this run: ``{"status": "error", ...}`` when the file
+        failed, or a superseded marker when a replacement run now owns the file -- the next
+        stage then stands down without touching the temp audio that run is using.
     """
+    from app.services.transcription_retry import RunOutcome
+    from app.services.transcription_retry import finish_failed_run
+
+    from .run_ownership import SUPERSEDED
+
     failure = ErrorCategorizationService.classify_failure(raw_error)
-    error_msg = failure.user_message
-    with session_scope() as db:
-        update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
-        update_media_file_status(db, ctx.file_id, FileStatus.ERROR)
-        media_file = get_refreshed_object(db, MediaFile, ctx.file_id)
-        if media_file:
-            media_file.last_error_message = error_msg
-            media_file.error_category = failure.retry_category.value
-            db.commit()
-
-        # Cloud-edition seam: a FAILED run must still fire the completion hook
-        # (success=False) so the quota layer releases the reservation taken at
-        # dispatch — otherwise crashed jobs permanently consume quota headroom.
-        # No-op in community; failures contained by the hook registry.
-        try:
-            from .hooks import CompletionContext
-            from .hooks import fire_transcription_complete
-
-            fire_transcription_complete(
-                CompletionContext(
-                    file_id=ctx.file_id,
-                    file_uuid=str(ctx.file_uuid),
-                    user_id=ctx.user_id,
-                    organization_id=media_file.organization_id if media_file else None,
-                    audio_duration_s=0.0,
-                    run_id=task_id,
-                    provider="local",
-                    success=False,
-                )
-            )
-        except Exception:  # pragma: no cover — hook layer already contains
-            logger.exception("Failure-path completion hook raised (contained)")
-
-    send_error_notification(ctx.user_id, ctx.file_id, error_msg)
-    return {"status": "error", "message": error_msg, "error_type": error_type}
+    outcome = finish_failed_run(task_id, ctx.file_id, failure)
+    if outcome == RunOutcome.RETRIED:
+        return {
+            "status": SUPERSEDED,
+            "file_uuid": ctx.file_uuid,
+            "file_id": ctx.file_id,
+            "task_id": task_id,
+        }
+    return {"status": "error", "message": failure.user_message, "error_type": error_type}
 
 
 def _validate_transcription_result(
@@ -329,29 +334,17 @@ def _validate_transcription_result(
 def _handle_outer_exception(
     ctx: TranscriptionContext | None, task_id: str, error: Exception
 ) -> dict:
-    """Handle top-level exception in transcription task."""
-    file_id = ctx.file_id if ctx else None
-    user_id = ctx.user_id if ctx else None
-
-    logger.error(f"Error processing file {file_id}: {error}")
+    """Handle top-level exception in transcription task (through the one retry policy)."""
+    logger.error(f"Error processing file {ctx.file_id if ctx else None}: {error}")
+    if ctx is not None:
+        return _handle_transcription_failure(ctx, task_id, str(error), "processing_error")
     # Classified once from the raw exception; only the fixed sentence is stored (#959).
     failure = ErrorCategorizationService.classify_failure(str(error))
-    error_msg = failure.user_message
-
     try:
         with session_scope() as db:
-            if file_id:
-                update_media_file_status(db, file_id, FileStatus.ERROR)
-                media_file = get_refreshed_object(db, MediaFile, file_id)
-                if media_file:
-                    media_file.last_error_message = error_msg
-                    media_file.error_category = failure.retry_category.value
-                    db.commit()
-            update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
-
-        if user_id and file_id:
-            send_error_notification(user_id, file_id, error_msg)
+            update_task_status(
+                db, task_id, "failed", error_message=failure.user_message, completed=True
+            )
     except Exception as update_err:
         logger.error(f"Error updating task status: {update_err}")
-
-    return {"status": "error", "message": error_msg}
+    return {"status": "error", "message": failure.user_message}

@@ -19,7 +19,7 @@ The backend instruments every HTTP request and database query and exposes them i
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /metrics` | Prometheus exposition format. Request latency/RPS/errors by route template, **DB queries per request** (the duplicate-call / N+1 detector), DB query latency, in-flight requests, cache hit/miss counters, Celery queue depth, and product counters (signups, uploads). Backup and media-mirror gauges are read from the database at most once a minute, not on every scrape. |
-| `GET /metrics/queues` | Only `celery_queue_depth` and `celery_queue_reserved`, in the same Prometheus text format — one Redis round trip, no database access. Point autoscalers that poll every few seconds here instead of at `/metrics`, whose full page renders every HTTP histogram series. Internal-only, like `/metrics`. |
+| `GET /metrics/queues` | Only the per-queue Celery gauges (`celery_queue_depth`, `celery_queue_reserved`, `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`), in the same Prometheus text format — one Redis round trip (plus one read of run leases when a transcription stage is in flight), no database access. Point autoscalers that poll every few seconds here instead of at `/metrics`, whose full page renders every HTTP histogram series. Internal-only, like `/metrics`. |
 | `GET /health/ready` | Readiness probe for load balancers / Kubernetes. Checks Postgres + Redis (critical → 503 if down) and OpenSearch + MinIO (degraded-but-ready). Returns `{"status": "ready", "checks": {...}}`. The Redis, OpenSearch and object-storage checks are each bounded at 2 s (one attempt), and the migration head is computed once per process, so a probe stays cheap and cannot hang on one slow dependency. The original `GET /health` (static 200) is unchanged and still drives the Docker healthcheck. |
 
 Key metric names (stable; dashboards are built against these):
@@ -34,6 +34,10 @@ Key metric names (stable; dashboards are built against these):
 | `cache_operations_total` | Counter | `cache` (`redis`/`settings`), `result` (`hit`/`miss`) |
 | `celery_queue_depth` | Gauge | `queue` |
 | `celery_queue_reserved` | Gauge | `queue` |
+| `celery_queue_orphaned` | Gauge | `queue` |
+| `celery_queue_oldest_unacked_age_seconds` | Gauge | `queue` |
+| `transcription_runs_without_lease` | Gauge | — |
+| `transcription_files_infra_requeued` | Gauge | — |
 | `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`external`) |
 | `files_uploaded_total` | Counter | `source` (`upload`/`url`/`watch`) |
 
@@ -84,7 +88,24 @@ Two dashboards are auto-provisioned into the **OpenTranscribe** folder:
   (tasks a worker has picked up and not yet acknowledged — prefetched, or RUNNING under
   `acks_late=True`) is exposed on `/metrics` but has no panel of its own yet. Autoscale on
   `celery_queue_depth + celery_queue_reserved` — depth alone trends to zero as the fleet
-  saturates. `GET /metrics/queues` serves exactly those two gauges for an autoscaler.
+  saturates. `GET /metrics/queues` serves the queue gauges for an autoscaler.
+
+### Worker-loss metrics (alert on these, never scale on them)
+
+`celery_queue_reserved` counts only work a live worker holds. A transcription stage left
+unacknowledged by a worker that died (no live lease) is reported in **`celery_queue_orphaned`**
+instead — it used to count as reserved for up to the 6 h visibility timeout, keeping autoscaled
+GPU capacity up with nothing to run. The orphan reaper puts it back on its queue (where it counts
+as depth) within about a minute, so:
+
+| Alert | Expression | Meaning |
+|---|---|---|
+| Orphans not being reaped | `max(celery_queue_orphaned) > 0` for 5 min | the `system.reclaim_orphaned_deliveries` beat task is not running |
+| Lost runs | `transcription_runs_without_lease > 0` for 5 min | in-flight transcriptions neither running nor queued; recovery should clear them within minutes |
+| Stuck delivery | `celery_queue_oldest_unacked_age_seconds` above your longest expected stage | a held message is older than any legitimate run |
+| Poison input | `transcription_files_infra_requeued > 0` | a file has lost its worker `TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD` times |
+
+Recovery behaviour and its settings: [Environment variables → Task Recovery](../configuration/environment-variables.md#task-recovery).
 - **Signups / uploads rate** product counters (API-process events).
 
 **OpenTranscribe — Product & Usage** (`product.json`, mixed datasources):

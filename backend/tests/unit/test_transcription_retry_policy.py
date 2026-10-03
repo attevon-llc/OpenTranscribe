@@ -482,3 +482,67 @@ def test_the_pipeline_errback_leaves_a_replaced_run_alone(
     stored = _reload(db_session, MediaFile, media_file.id)
     assert stored.status == FileStatus.PROCESSING
     assert cleaned == []  # the replacement run's temp audio is untouched
+
+
+# =============================================================================
+# A run the user is cancelling is never requeued or re-dispatched
+# =============================================================================
+def test_a_cancelled_runs_status_is_cancelled_not_current(
+    db_session, normal_user, policy_db, fake_redis
+):
+    """Its Task row is still ``in_progress``: only the file's cancel state says otherwise."""
+    from app.services.transcription_retry import run_status
+
+    media_file = _file(db_session, normal_user)
+    run = _run(db_session, normal_user, media_file)
+    assert run_status(run.id) == "current"  # control: the same run before the cancel
+
+    media_file.active_task_id = run.id
+    media_file.cancellation_requested = True
+    media_file.status = FileStatus.CANCELLING
+    db_session.commit()
+
+    assert run_status(run.id) == "cancelled"
+
+
+def test_a_cancel_aimed_at_another_task_of_the_file_does_not_cancel_this_run(
+    db_session, normal_user, policy_db, fake_redis
+):
+    """``active_task_id`` can name any task of the file; a cancel armed against a different
+    one says nothing about this run, which stays current (and recoverable)."""
+    from app.services.transcription_retry import run_status
+
+    media_file = _file(db_session, normal_user)
+    run = _run(db_session, normal_user, media_file)
+    media_file.active_task_id = f"rp-other-{uuid.uuid4()}"
+    media_file.cancellation_requested = True
+    media_file.status = FileStatus.CANCELLING
+    db_session.commit()
+
+    assert run_status(run.id) == "current"
+    # ...while this run's OWN cancellation flag is enough on its own.
+    fake_redis.setex(f"transcription_cancel:{run.id}", 60, media_file.uuid)
+    assert run_status(run.id) == "cancelled"
+
+
+def test_the_health_check_never_redispatches_a_dead_run_of_a_cancelled_file(
+    db_session, normal_user, fake_redis, notifications, dispatched, monkeypatch
+):
+    """A replacement run carries no cancellation flag, so it would transcribe the file the
+    user stopped. ``reconcile_cancellation`` resolves the file instead."""
+    from app.services.transcription_retry import recover_lost_run
+
+    monkeypatch.setattr(
+        "app.services.transcription_retry.session_scope", lambda: _bridged_scope(db_session)
+    )
+    media_file, run = _stuck_dead_run(db_session, normal_user)
+    media_file.active_task_id = run.id
+    media_file.cancellation_requested = True
+    media_file.status = FileStatus.CANCELLING
+    db_session.commit()
+
+    assert recover_lost_run(db_session, run) is None
+
+    assert dispatched == []
+    assert _reload(db_session, Task, run.id).status == "in_progress"
+    assert _reload(db_session, MediaFile, media_file.id).status == FileStatus.CANCELLING

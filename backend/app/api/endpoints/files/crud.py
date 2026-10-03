@@ -26,6 +26,7 @@ from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
+from app.schemas.media import Speaker as SpeakerResponseSchema
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
@@ -826,7 +827,10 @@ def _build_media_file_response(
     response = MediaFileDetail.model_validate(db_file)
     response.tags = tags
     response.collections = collections  # type: ignore[assignment]
-    response.speakers = speakers  # type: ignore[assignment]
+    # Validated into the response schema here, while the instances are loaded: that is
+    # what maps the internal user/file ids to UUIDs. Assigning the ORM rows directly
+    # left serialization to whatever the instance held at response time.
+    response.speakers = [SpeakerResponseSchema.model_validate(s) for s in speakers]
 
     # Set lightweight summary indicator and strip heavy JSONB from response
     response.has_summary = bool(
@@ -929,6 +933,11 @@ def get_media_file_detail(
             db, file_id, current_user.id, organization_id=organization_id
         )
 
+        # Get analytics (compute on-demand if needed). First, because computing them is
+        # the read path's one legitimate write and commits — which expires every loaded
+        # instance, including the speakers decorated below (#1152).
+        analytics = _get_or_compute_analytics(db, file_id, db_file.status)
+
         # Get speakers and add computed status. Eager-load the linked profile so
         # add_computed_status (which reads speaker.profile) doesn't fire one lazy
         # SELECT per speaker.
@@ -940,9 +949,6 @@ def get_media_file_detail(
         )
         for speaker in speakers:
             SpeakerStatusService.add_computed_status(speaker)
-
-        # Get analytics (compute on-demand if needed)
-        analytics = _get_or_compute_analytics(db, file_id, db_file.status)
 
         # Get transcript segments with pagination
         transcript_segments, total_segments = _get_transcript_segments(
@@ -1015,7 +1021,6 @@ def get_media_file_detail(
         # Set caller's permission on the response
         response.my_permission = my_permission
 
-        db.commit()
         return response
 
     except HTTPException:

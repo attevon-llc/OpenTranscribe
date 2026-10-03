@@ -25,6 +25,7 @@ from .cancellation import finish_cancelled
 from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import is_cancelled
 from .context import requeue_after_abort
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
@@ -239,5 +240,7 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
             requeue_after_abort(file_uuid, abort, stage="CPU transcription")
         except Exception as e:
             logger.error(f"CPU transcription failed for file {file_uuid}: {e}")
-            _handle_transcription_failure(ctx, task_id, str(e), "cpu_processing_error")
+            outcome = _handle_transcription_failure(ctx, task_id, str(e), "cpu_processing_error")
+            if is_cancelled(outcome):
+                return outcome  # issue #1163: cancelled mid-stage -- ack, do not fail
             raise

@@ -292,7 +292,11 @@ def _run_preprocess(
 
     except Exception as e:
         logger.exception(f"Preprocess failed for file {file_uuid}")
-        _mark_pipeline_error(file_uuid, task_id, str(e))
+        cancelled = _mark_pipeline_error(file_uuid, task_id, str(e))
+        if cancelled is not None:
+            # issue #1163: the run was being cancelled, so this is a cancellation, not a
+            # failure. Return (ack) the payload; the next stages forward it to finalize.
+            return cancelled
         raise
 
 
@@ -555,16 +559,23 @@ def _dispatch_playback_rendition_if_needed(file_id: int, file_uuid: str, source:
         logger.warning(f"Playback rendition dispatch failed for file {file_id} (non-fatal): {e}")
 
 
-def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> None:
+def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> dict | None:
     """Fail or requeue the run through the one retry policy (``services/transcription_retry``).
 
     ``raw_error`` is classified here, once, and is NOT stored (issue #959): the file and
     task rows get the fixed user-facing sentence, ``error_category`` gets the retry code.
     The caller has already logged the raw exception.
+
+    Returns:
+        The cancelled chain payload when the run was being cancelled (the policy recorded it
+        as cancelled, issue #1163), else None.
     """
     from app.services.error_categorization_service import ErrorCategorizationService
+    from app.services.transcription_retry import RunOutcome
     from app.services.transcription_retry import finish_failed_run
     from app.utils.uuid_helpers import get_file_by_uuid
+
+    from .context import cancelled_payload
 
     failure = ErrorCategorizationService.classify_failure(raw_error)
     try:
@@ -576,7 +587,9 @@ def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> None:
                 update_task_status(
                     db, task_id, "failed", error_message=failure.user_message, completed=True
                 )
-            return
-        finish_failed_run(task_id, file_id, failure)
+            return None
+        if finish_failed_run(task_id, file_id, failure) == RunOutcome.CANCELLED:
+            return cancelled_payload(file_uuid, file_id, task_id)
     except Exception as status_err:
         logger.error(f"Failed to update error status: {status_err}")
+    return None

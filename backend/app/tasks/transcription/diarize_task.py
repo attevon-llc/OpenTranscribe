@@ -21,6 +21,7 @@ from .cancellation import finish_cancelled
 from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import is_cancelled
 from .context import requeue_after_abort
 from .context import requeue_if_context_poisoned
 from .context import retry_on_diar_sidecar_unavailable
@@ -207,5 +208,7 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
                     cleanup_shared_volume_wav(transcript.local_wav_path)
             except Exception as _cleanup_err:  # nosec B110
                 logger.debug("WAV cleanup on diarize error skipped: %s", _cleanup_err)
-            _handle_transcription_failure(ctx, task_id, str(e), "gpu_processing_error")
+            outcome = _handle_transcription_failure(ctx, task_id, str(e), "gpu_processing_error")
+            if is_cancelled(outcome):
+                return outcome  # issue #1163: cancelled mid-stage -- ack, do not fail
             raise

@@ -88,6 +88,40 @@ def _run_completed(task_id: str) -> bool:
         return False
 
 
+def _record_postprocess_failure(gpu_result: dict, error: Exception) -> dict:
+    """Record a postprocess failure on the run's Task row; return the chain payload.
+
+    A run whose cancellation was requested is recorded as cancelled instead (issue #1163): a
+    user who stopped the file must not see it reported as a failure.
+    """
+    from app.services.transcription_retry import finish_cancelled_run
+    from app.services.transcription_retry import run_cancel_requested
+
+    task_id = gpu_result["task_id"]
+    file_id = gpu_result["file_id"]
+    if run_cancel_requested(task_id, file_id):
+        return finish_cancelled_run(
+            task_id, file_id, gpu_result["file_uuid"], gpu_result["user_id"]
+        )
+    try:
+        with session_scope() as db:
+            update_task_status(
+                db,
+                task_id,
+                "failed",
+                error_message=f"Post-processing error: {error}",
+                completed=True,
+            )
+    except Exception as task_err:
+        logger.debug(f"Failed to mark task as failed: {task_err}")
+    return {
+        "status": "error",
+        "file_id": file_id,
+        "error": str(error),
+        "segment_count": gpu_result.get("segment_count", 0),
+    }
+
+
 def _finalize(gpu_result: dict) -> dict:
     """CPU postprocessing: speaker matching → mark COMPLETED → background enrichment.
 
@@ -319,25 +353,8 @@ def _finalize(gpu_result: dict) -> dict:
 
     except Exception as e:
         logger.error(f"Postprocess failed for file {file_id}: {e}")
-        try:
-            with session_scope() as db:
-                update_task_status(
-                    db,
-                    task_id,
-                    "failed",
-                    error_message=f"Post-processing error: {e}",
-                    completed=True,
-                )
-        except Exception as task_err:
-            logger.debug(f"Failed to mark task as failed: {task_err}")
         # Don't re-raise — segments are already saved by GPU task
-
-        return {
-            "status": "error",
-            "file_id": file_id,
-            "error": str(e),
-            "segment_count": gpu_result.get("segment_count", 0),
-        }
+        return _record_postprocess_failure(gpu_result, e)
 
     finally:
         if defer_temp_cleanup:

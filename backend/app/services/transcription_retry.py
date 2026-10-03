@@ -66,6 +66,7 @@ class RunOutcome(StrEnum):
 
     RETRIED = "retried"  # a new run was dispatched at retry priority
     FAILED = "failed"  # the file is in ERROR with its reason
+    CANCELLED = "cancelled"  # its cancel was requested: recorded as cancelled (issue #1163)
 
 
 def _error_budget_allows(db, media_file: MediaFile, category: ErrorCategory) -> bool:
@@ -208,9 +209,15 @@ def finish_failed_run(task_id: str, file_id: int, failure: FailureClassification
         file_id: Its file.
         failure: ``ErrorCategorizationService.classify_failure`` of the raw exception.
 
+    A run whose cancellation was requested is not failed, whatever it raised (issue #1163): a
+    stage torn down mid-read or mid-inference raises its own error before it reaches a
+    cancellation checkpoint, and that must neither be retried (the user stopped the file) nor
+    reported as a failure. It is recorded as cancelled instead.
+
     Returns:
         ``RETRIED`` when a replacement run was dispatched (the stage must then leave the file
-        and its temp audio to that run), ``FAILED`` when the file is now in ERROR.
+        and its temp audio to that run), ``FAILED`` when the file is now in ERROR,
+        ``CANCELLED`` when the run was being cancelled and is now recorded as cancelled.
     """
     with session_scope() as db:
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
@@ -219,7 +226,46 @@ def finish_failed_run(task_id: str, file_id: int, failure: FailureClassification
                 db, task_id, "failed", error_message=failure.user_message, completed=True
             )
             return RunOutcome.FAILED
-        return _finish(db, media_file, task_id, failure.retry_category, failure.user_message)
+        if _cancel_requested(media_file, task_id):
+            file_uuid, user_id = str(media_file.uuid), int(media_file.user_id)
+        else:
+            return _finish(db, media_file, task_id, failure.retry_category, failure.user_message)
+    # Outside the policy's session: the cancellation path opens its own.
+    finish_cancelled_run(task_id, file_id, file_uuid, user_id)
+    return RunOutcome.CANCELLED
+
+
+def finish_cancelled_run(task_id: str, file_id: int, file_uuid: str, user_id: int) -> dict:
+    """Record a run that ended while being cancelled as cancelled (never as a failure)."""
+    from app.tasks.transcription.cancellation import finalize_cancelled_run
+
+    logger.info(
+        "Run %s of file %s raised after its cancellation was requested; recording it as "
+        "cancelled, not failed",
+        task_id,
+        file_id,
+    )
+    return finalize_cancelled_run(task_id, file_id, file_uuid, user_id)
+
+
+def run_cancel_requested(task_id: str, file_id: int | None) -> bool:
+    """Whether run ``task_id`` was asked to stop (its flag, or its file's cancel state).
+
+    For the failure paths outside this module (``on_pipeline_error``, postprocess) that must
+    tell a cancelled run from a failed one. False when the database cannot be read: the caller
+    then handles the failure as before.
+    """
+    try:
+        with session_scope() as db:
+            media_file = (
+                db.query(MediaFile).filter(MediaFile.id == file_id).first()
+                if file_id is not None
+                else None
+            )
+            return _cancel_requested(media_file, task_id)
+    except Exception as e:  # noqa: BLE001 - see docstring
+        logger.warning("Could not read the cancel state of run %s: %s", task_id, e)
+        return False
 
 
 def _finish(

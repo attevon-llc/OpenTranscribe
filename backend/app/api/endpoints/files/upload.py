@@ -695,10 +695,10 @@ async def process_file_upload(
         spooled_upload = file_content
         benchmark_timing.mark(task_id, "http_read_complete")
 
-        # Cloud-edition seam: enforce the tenant's per-tier max upload size now
-        # that the true byte count is known (the content-length header is
-        # advisory). No-op in community. The cleanup path below 413s out.
-        validate_file_size_for_tenant(file_size, organization_id)
+        # Enforce the max upload size now that the true byte count is known (the
+        # content-length header is advisory). A registered resolver may block, so
+        # it runs off the event loop (#1169). The cleanup path below 413s out.
+        await run_in_threadpool(validate_file_size_for_tenant, file_size, organization_id)
 
         # Update file hash
         _update_file_hash(db_file, client_file_hash, file.filename or "unknown")

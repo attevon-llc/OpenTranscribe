@@ -124,6 +124,13 @@ class RedactionFloor:
 # (community edition is ALWAYS None here), in which case a community resolver
 # returns None and the global value applies.
 RetentionResolver = Callable[[int | None], int | None]
+# Called from request handlers (``/files/prepare``, ``/files/complete``) and from
+# pipeline dispatch. Core always calls it from a worker thread, never on the event
+# loop, so a resolver MAY do blocking I/O — but it runs while the request already
+# holds a pooled DB connection and a threadpool slot, so it must be fast and bounded:
+# put a timeout on any network call, and prefer a short-lived cache to a query per
+# upload. A resolver must never be awaited or called directly from an ``async def``
+# handler; wrap the caller in ``run_in_threadpool`` instead (#1169).
 UploadLimitsResolver = Callable[[int | None], TenantUploadLimits | None]
 # Reports the SMALLEST per-org retention override currently in effect (days),
 # or None when no override is shorter than the global value. The cleanup task
@@ -201,7 +208,12 @@ def set_retention_resolver(
 
 
 def set_upload_limits_resolver(resolver: UploadLimitsResolver) -> None:
-    """Replace the upload-limits resolver (registered by the cloud layer)."""
+    """Replace the upload-limits resolver (registered by the cloud layer).
+
+    See ``UploadLimitsResolver`` for the threading contract: the resolver is always
+    called off the event loop, and must be fast and bounded because the request
+    holding it also holds a DB connection.
+    """
     global _upload_limits_resolver
     logger.info("Upload-limits resolver overridden (cloud edition)")
     _upload_limits_resolver = resolver

@@ -833,6 +833,12 @@ def _log_password_blocklist_status() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
+    # First, and in test mode too: the thread limiter belongs to this event loop, and
+    # every request it serves depends on its size relative to the DB pool (#1169).
+    from app.core.threadpool import configure_api_threadpool
+
+    configure_api_threadpool()
+
     if os.environ.get("TESTING", "").lower() == "true":
         logger.info("Test mode: skipping startup tasks")
         yield

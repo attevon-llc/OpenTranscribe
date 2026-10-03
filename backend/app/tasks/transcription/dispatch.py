@@ -37,6 +37,9 @@ from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
+from .hooks import DispatchBlockedError
+from .hooks import QuotaExceededError
+
 logger = logging.getLogger(__name__)
 
 # TTL cache for the "is anything actually consuming gpu-transcribe" check below.
@@ -201,6 +204,66 @@ def _mark_dispatch_failed(file_uuid: str, task_id: str, message: str) -> None:
         send_error_notification(user_id, file_id, truncated)
 
 
+def _run_pre_dispatch_gate(db, media_file: MediaFile, file_uuid: str, task_id: str) -> None:
+    """Checks every dispatch path runs before it creates a task record.
+
+    Shared by :func:`dispatch_transcription_pipeline` and
+    :func:`dispatch_batch_transcription` so a registered gate cannot be bypassed by
+    dispatching as a batch (#1169).
+
+    1. The per-organization duration ceiling from the upload-limits resolver (``None``
+       when no resolver is registered). Enforced here, the earliest point where the true
+       duration is known; upload-time checks only see bytes. The global URL-ingest cap
+       is enforced separately at ingest.
+    2. Registered before-dispatch hooks (none by default).
+
+    Raises:
+        ValueError: The media is longer than the organization's ceiling; the file has
+            been marked ERROR.
+        QuotaExceededError: A hook refused because the account is over quota.
+        DispatchBlockedError: A hook refused for any other deliberate reason.
+    """
+    from decimal import Decimal
+
+    from app.core.tenant_limits import resolve_upload_limits
+
+    from .hooks import DispatchContext
+    from .hooks import fire_before_dispatch
+
+    # est_audio_hours stays None when the duration is genuinely unknown (metadata
+    # extraction hasn't populated it yet). Coercing unknown to 0 would let a quota
+    # hook wave every such job through; only a positive, known duration becomes a
+    # concrete estimate, and the hook decides what to do with None.
+    duration_s = media_file.duration
+
+    limits = resolve_upload_limits(media_file.organization_id)
+    if (
+        limits is not None
+        and limits.max_duration_seconds is not None
+        and duration_s
+        and duration_s > limits.max_duration_seconds
+    ):
+        update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
+        raise ValueError(
+            f"Media duration {duration_s:.0f}s exceeds the plan limit of "
+            f"{limits.max_duration_seconds}s"
+        )
+
+    est_audio_hours = (
+        Decimal(str(duration_s)) / Decimal(3600) if duration_s and duration_s > 0 else None
+    )
+    fire_before_dispatch(
+        DispatchContext(
+            file_id=int(media_file.id),
+            file_uuid=file_uuid,
+            user_id=int(media_file.user_id),
+            organization_id=media_file.organization_id,
+            est_audio_hours=est_audio_hours,
+            task_id=task_id,
+        )
+    )
+
+
 def dispatch_transcription_pipeline(
     file_uuid: str,
     min_speakers: int | None = None,
@@ -262,55 +325,10 @@ def dispatch_transcription_pipeline(
         file_id = int(media_file.id)
         user_id = int(media_file.user_id)
 
-        # Cloud-edition seam: quota reservation hook (no-op in community).
-        # QuotaExceededError (HTTP 402) and DispatchBlockedError (403 by default,
-        # a hook's non-quota refusal) propagate BEFORE the task record is
-        # created, so a blocked job leaves no trace and nothing dispatches.
-        from decimal import Decimal
-
-        from .hooks import DispatchContext
-        from .hooks import fire_before_dispatch
-
-        # Pass est_audio_hours=None through when the duration is genuinely
-        # unknown (metadata extraction hasn't populated it yet). We must NOT
-        # coerce unknown->0 here: a 0 silently "always passes" the quota gate,
-        # which is the unknown-duration bypass the cloud enforcer needs to
-        # decide on (it blocks pessimistically when the org is at/over limit).
-        # Only a positive, known duration becomes a concrete estimate.
-        duration_s = media_file.duration
-
-        # Per-tenant duration ceiling (cloud seam; community resolver -> None).
-        # Enforced here — the earliest point where the true duration is known
-        # (upload-time checks can only see bytes). Global 4h URL-ingest cap is
-        # enforced separately at ingest.
-        from app.core.tenant_limits import resolve_upload_limits
-
-        limits = resolve_upload_limits(media_file.organization_id)
-        if (
-            limits is not None
-            and limits.max_duration_seconds is not None
-            and duration_s
-            and duration_s > limits.max_duration_seconds
-        ):
-            update_media_file_status(db, file_id, FileStatus.ERROR)
-            raise ValueError(
-                f"Media duration {duration_s:.0f}s exceeds the plan limit of "
-                f"{limits.max_duration_seconds}s"
-            )
-
-        est_audio_hours = (
-            Decimal(str(duration_s)) / Decimal(3600) if duration_s and duration_s > 0 else None
-        )
-        fire_before_dispatch(
-            DispatchContext(
-                file_id=file_id,
-                file_uuid=file_uuid,
-                user_id=user_id,
-                organization_id=media_file.organization_id,
-                est_audio_hours=est_audio_hours,
-                task_id=task_id,
-            )
-        )
+        # Pre-dispatch gate (duration ceiling + before-dispatch hooks). A refusal
+        # propagates BEFORE the task record is created, so a blocked job leaves no
+        # trace and nothing dispatches.
+        _run_pre_dispatch_gate(db, media_file, file_uuid, task_id)
 
         # Auto-resolve queue from user's ASR provider if not specified
         if not use_cpu and gpu_queue is None:
@@ -431,6 +449,14 @@ def dispatch_batch_transcription(
 
                 file_id = int(media_file.id)
                 owner_id = int(media_file.user_id)
+
+                try:
+                    _run_pre_dispatch_gate(db, media_file, file_uuid, task_id)
+                except (QuotaExceededError, DispatchBlockedError) as e:
+                    # A deliberate refusal: skip this file exactly as the single-file
+                    # path would (no task record, status untouched), keep the batch going.
+                    logger.warning(f"Dispatch of {file_uuid} refused by a hook: {e.detail}")
+                    continue
 
                 resolved_queue = gpu_queue
                 if not use_cpu and resolved_queue is None:

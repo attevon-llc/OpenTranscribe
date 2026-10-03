@@ -41,6 +41,10 @@ EPICS: dict[str, tuple[str, str]] = {
     'search-infra': ('Search Infrastructure', 'Indexing, reindex correctness, index drift'),
     'compliance': ('Security & Compliance', 'Hardening, data protection, certification'),
     'platform-ops': ('Platform & Operations', 'Build, deploy, workers, GPU tuning, governance'),
+    'data-safety': (
+        'Data Safety',
+        'Recoverable delete, per-user hide, ownership transfer, delayed erase',
+    ),
     'document-ingestion': ('Document Ingestion', 'Documents as first-class library items'),
     'speaker-persona': ('Speaker Intelligence', 'Voiceprints, personas, cross-file identity'),
     'llm-providers': ('LLM Providers', 'Provider integrations and configuration'),

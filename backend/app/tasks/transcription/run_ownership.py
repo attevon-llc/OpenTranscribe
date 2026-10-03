@@ -169,9 +169,12 @@ def superseded_result(task_id: str, file_uuid: str, *, stage: str) -> dict | Non
 def superseded_or_none(context: dict, *, stage: str) -> dict | None:
     """:func:`superseded_result` for a stage that receives the previous stage's payload.
 
-    A payload that is already a superseded marker is passed straight through: the stage
-    before this one stood down, and its payload lacks the keys a real run carries.
+    A payload that is already a superseded or cancelled marker is passed straight through:
+    the stage before this one stood down, and its payload lacks the keys a real run carries.
+    A cancelled one must reach ``finalize_transcription`` as cancelled, which releases the
+    temp audio; re-checked here it would read as superseded (its Task row is terminal) and
+    keep it.
     """
-    if context.get("status") == SUPERSEDED:
+    if context.get("status") in (SUPERSEDED, "cancelled"):
         return context
     return superseded_result(context["task_id"], context["file_uuid"], stage=stage)

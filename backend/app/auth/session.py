@@ -24,6 +24,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from typing import Any
@@ -183,7 +184,7 @@ def _record_degradation(control: str, fallback: str) -> None:
         logger.debug("Could not record security degradation metric", exc_info=True)
 
 
-def _get_store():
+def _get_store(*, clock: Callable[[], float] | None = None):
     """Get the storage backend (Redis, or the in-memory fallback while it is down).
 
     Two problems this replaces, both on an **unauthenticated** endpoint:
@@ -198,6 +199,9 @@ def _get_store():
 
     The re-probe policy is ``lockout.REDIS_REPROBE_SECONDS``, imported rather than
     re-declared so the two controls cannot drift apart.
+
+    Args:
+        clock: Monotonic clock for the re-probe decision; ``time.monotonic`` when None.
 
     Returns:
         The Redis client when reachable, otherwise the shared ``InMemoryStore``.
@@ -219,7 +223,10 @@ def _get_store():
             _last_redis_probe = time.monotonic()
         elif _redis_client is None:
             # On the fallback — retry Redis, but not on every call.
-            now = time.monotonic()
+            # `clock` is a per-call seam (issue #1160). Patching `time.monotonic` instead is
+            # process-wide: any other thread calling in that window reads the fake clock
+            # and spends the probe, which made the boundary test flaky.
+            now = (clock or time.monotonic)()
             if now - _last_redis_probe >= REDIS_REPROBE_SECONDS:
                 _last_redis_probe = now
                 recovered = get_redis_client()

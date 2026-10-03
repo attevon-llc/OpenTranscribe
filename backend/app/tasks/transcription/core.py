@@ -16,7 +16,6 @@ import logging
 import os
 import tempfile
 import time
-from typing import NoReturn
 
 from celery import chain
 
@@ -43,6 +42,7 @@ from .cloud_asr import _run_cloud_asr_pipeline
 from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import is_cancelled
 from .context import requeue_after_abort
 from .context import requeue_if_context_poisoned
 from .context import retry_transcribe_gpu_exception
@@ -331,7 +331,7 @@ def _cleanup_wav_quietly(local_wav_path: str) -> None:
 
 def _finish_failed_or_aborted(
     ctx, task_id: str, file_uuid: str, local_wav_path: str, exc: Exception
-) -> NoReturn:
+) -> dict:
     """Terminal handler for ``transcribe_gpu_task``: distinguish ABORT from FAILURE (#809).
 
     One handler rather than two ``except`` clauses because the task body sits at the C901
@@ -359,6 +359,13 @@ def _finish_failed_or_aborted(
        during a shutdown, so unlinking the WAV here could pull the file out from under a live
        reader. The two changes are interlocked and must not be split.
 
+    A failure of a run whose cancellation was requested is not a failure (issue #1163): the
+    failure policy records it as cancelled, and this RETURNS the cancelled payload instead of
+    re-raising, so the message is acked and no ``on_pipeline_error`` runs.
+
+    Returns:
+        The cancelled chain payload, only when the run was being cancelled.
+
     Raises:
         Reject: on abort, to requeue.
         Exception: the original exception, on a real failure.
@@ -370,7 +377,9 @@ def _finish_failed_or_aborted(
     requeue_if_context_poisoned(task_id, file_uuid, exc, stage="GPU transcription")
     _cleanup_wav_quietly(local_wav_path)
     logger.error(f"GPU transcription failed for file {file_uuid}: {exc}")
-    _handle_transcription_failure(ctx, task_id, str(exc), "gpu_processing_error")
+    outcome = _handle_transcription_failure(ctx, task_id, str(exc), "gpu_processing_error")
+    if is_cancelled(outcome):
+        return outcome
     raise exc
 
 
@@ -622,8 +631,9 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
 
         except TranscriptionCancelledError as cancelled:
             # issue #823: MUST sit before `except Exception` below, and it is deliberately NOT
-            # folded into _finish_failed_or_aborted's isinstance dispatch — that helper is
-            # `-> NoReturn`, and a cancel is the one outcome here that RETURNS. Returning is
+            # folded into _finish_failed_or_aborted's isinstance dispatch — that helper raises
+            # for everything but a cancel that landed mid-failure (#1163), and a cancel is the
+            # outcome here that RETURNS. Returning is
             # what acks the message under acks_late, i.e. what stops the job coming back; the
             # user asked it to stop, unlike #809's shutdown abort which must requeue.
             #
@@ -646,6 +656,6 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             # `autoretry_for` policy below — worth this comment, not a fix here).
             retry_transcribe_gpu_exception(self, exc, file_uuid)
         except Exception as e:
-            _finish_failed_or_aborted(
+            return _finish_failed_or_aborted(
                 ctx, task_id, file_uuid, locals().get("local_wav_path", ""), e
             )

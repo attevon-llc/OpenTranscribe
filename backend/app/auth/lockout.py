@@ -16,6 +16,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from dataclasses import dataclass
 from datetime import UTC
@@ -162,7 +163,7 @@ _last_redis_probe: float = 0.0
 REDIS_REPROBE_SECONDS = 30.0
 
 
-def _get_store():
+def _get_store(*, clock: Callable[[], float] | None = None):
     """Get the storage backend (Redis, or the in-memory fallback while it is down).
 
     Re-probes Redis instead of latching (issue #284 A1.16). The fallback used to be
@@ -174,6 +175,9 @@ def _get_store():
 
     Probing is rate-limited to one attempt per ``REDIS_REPROBE_SECONDS`` so a hard Redis
     outage doesn't add a connection attempt to every single login.
+
+    Args:
+        clock: Monotonic clock for the re-probe decision; ``time.monotonic`` when None.
     """
     global _redis_client, _in_memory_store, _store_initialized, _last_redis_probe
 
@@ -190,7 +194,10 @@ def _get_store():
             _last_redis_probe = time.monotonic()
         elif _redis_client is None:
             # On the fallback — retry Redis, but not on every call.
-            now = time.monotonic()
+            # `clock` is a per-call seam (issue #1160). Patching `time.monotonic` instead is
+            # process-wide: any other thread calling in that window reads the fake clock
+            # and spends the probe, which made the boundary test flaky.
+            now = (clock or time.monotonic)()
             if now - _last_redis_probe >= REDIS_REPROBE_SECONDS:
                 _last_redis_probe = now
                 recovered = _get_redis_client()

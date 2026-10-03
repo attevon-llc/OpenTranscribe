@@ -17,11 +17,18 @@ added, migrate to ``prometheus_client.multiprocess`` with a
 ``PROMETHEUS_MULTIPROC_DIR`` — a plain in-process registry would then under-
 report (each worker scraped independently).
 
-Worker-process trap: Celery workers have their own registries that are never
-scraped. A counter incremented inside a task is invisible. Product counters
-here (``user_signups_total``, ``files_uploaded_total``) are incremented at
+Worker-process trap: Celery workers have their own registries, and this
+module's ``/metrics`` endpoint (the API process) never sees them. A counter
+incremented inside a task is invisible HERE. Product counters here
+(``user_signups_total``, ``files_uploaded_total``) are incremented at
 API-process call sites only; worker-side product events are dashboarded from
-the database instead.
+the database instead. Per-task outcome counts and run times
+(``celery_task_total``, ``celery_task_runtime_seconds``) are the worker's own,
+recorded by ``app.core.worker_metrics`` and served by each worker on
+``WORKER_METRICS_PORT`` (off by default). A worker with that port set runs
+``prometheus_client`` in multiprocess mode, so a collector from this module
+that a task updates is served on the worker's port as well -- but only there,
+and only when it is enabled; do not build an API-side alert on it.
 
 Test-reimport guard: importing this module twice in one process (some pytest
 collection orders) would raise ``Duplicated timeseries``. Collectors are built

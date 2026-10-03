@@ -90,6 +90,17 @@ Two dashboards are auto-provisioned into the **OpenTranscribe** folder:
   `celery_queue_depth + celery_queue_reserved` — depth alone trends to zero as the fleet
   saturates. `GET /metrics/queues` serves the queue gauges for an autoscaler.
 
+### Per-task worker metrics
+
+The backend's `/metrics` sees queues, not tasks. Set `WORKER_METRICS_PORT` and every Celery worker
+serves `celery_task_total{task, outcome}` and `celery_task_runtime_seconds{task}` on that port (see
+[Environment variables → Worker Task Metrics](../configuration/environment-variables.md#worker-task-metrics)).
+The bundled Prometheus does not scrape the workers; add a job per worker service, for example
+`celery-cpu-worker:9808`. Useful queries:
+
+- failure ratio per task: `sum by (task) (rate(celery_task_total{outcome="failure"}[15m])) / sum by (task) (rate(celery_task_total[15m]))`
+- p95 run time per task: `histogram_quantile(0.95, sum by (task, le) (rate(celery_task_runtime_seconds_bucket[1h])))`
+
 ### Worker-loss metrics (alert on these, never scale on them)
 
 `celery_queue_reserved` counts only work a live worker holds. A transcription stage left

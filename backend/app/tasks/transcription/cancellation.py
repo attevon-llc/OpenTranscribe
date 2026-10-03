@@ -155,32 +155,61 @@ def finish_cancelled(
         file_uuid,
         cancelled,
     )
+    return finalize_cancelled_run(task_id, ctx.file_id, file_uuid, ctx.user_id)
 
+
+def finalize_cancelled_run(task_id: str, file_id: int, file_uuid: str, user_id: int) -> dict:
+    """Record run ``task_id`` as cancelled by its user: the terminal half of a cancellation.
+
+    Shared by the two ways a cancelled run can end (issue #1163): the cooperative checkpoint
+    firing (:func:`finish_cancelled`), and the stage raising something else after the cancel
+    was armed (``transcription_retry.finish_failed_run``, ``dispatch.on_pipeline_error``,
+    ``postprocess``'s failure branch). A run whose cancel was requested is a cancellation no
+    matter which exception ended it: a storage fetch torn down mid-read or a model error must
+    not be reported to the user as a failure of their file, nor counted as one.
+
+    **Status convention.** The run's ``Task`` row is written ``status="failed"`` with
+    ``error_message`` :data:`CANCELLED_BY_USER`, as every cancel has been since before #823:
+    there is no ``cancelled`` task status, and the Tasks UI, ``run_ownership`` and the
+    recovery sweeps all treat ``failed`` as terminal. A cancelled run is told apart from a
+    failed one by the file (``CANCELLED``, no ``error_category``, no ``last_error_message``)
+    and by that message -- and by no error notification having been sent.
+
+    Idempotent: a file already ``CANCELLED``/``COMPLETED``/``ERROR`` or owned by a newer run
+    is left alone (see :func:`_owns_the_file`), so this can run after a checkpoint, a failure
+    handler and the chain's ``link_error`` for the same run without repeating anything.
+
+    Returns:
+        The chain payload ``finalize_transcription`` recognises as "stop here".
+    """
     write_status = False
     with session_scope() as db:
         task = db.query(Task).filter(Task.id == task_id).first()
         if task is not None:
             task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
             task.error_message = CANCELLED_BY_USER  # type: ignore[assignment]
-            # The confirmed-stop timestamp: this row is written only once the checkpoint has
-            # actually fired, so "when did it really stop" is answerable rather than inferred.
+            # The confirmed-stop timestamp: this row is written only once the run has
+            # actually stopped, so "when did it really stop" is answerable rather than inferred.
             task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
             task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
 
-        media_file = get_refreshed_object(db, MediaFile, ctx.file_id)
+        media_file = get_refreshed_object(db, MediaFile, file_id)
         if media_file is not None:
             write_status = _owns_the_file(media_file, task_id)
             if write_status:
                 media_file.active_task_id = None
                 media_file.task_started_at = None
                 media_file.cancellation_requested = False
+                # A transient failure retried earlier in this run left its category behind;
+                # a cancelled file carries none.
+                media_file.error_category = None  # type: ignore[assignment]
         db.commit()
 
         if media_file is not None and write_status:
             # Through update_media_file_status, not a direct assignment: it carries the
             # quarantine/legal-hold gate (issue #824), and a cancelled file may well be one
             # that was quarantined mid-processing.
-            update_media_file_status(db, ctx.file_id, FileStatus.CANCELLED)
+            update_media_file_status(db, file_id, FileStatus.CANCELLED)
 
         # Cloud-edition seam, identical to the failure path's: a run that ends without
         # producing a transcript must still fire the completion hook (success=False) so the
@@ -191,9 +220,9 @@ def finish_cancelled(
 
             fire_transcription_complete(
                 CompletionContext(
-                    file_id=ctx.file_id,
+                    file_id=file_id,
                     file_uuid=str(file_uuid),
-                    user_id=ctx.user_id,
+                    user_id=user_id,
                     organization_id=media_file.organization_id if media_file else None,
                     audio_duration_s=0.0,
                     run_id=task_id,
@@ -210,7 +239,7 @@ def finish_cancelled(
         from .notifications import send_notification_via_redis
 
         send_notification_via_redis(
-            ctx.user_id, ctx.file_id, FileStatus.CANCELLED, "Processing cancelled", 0
+            user_id, file_id, FileStatus.CANCELLED, "Processing cancelled", 0
         )
 
     clear_cancel(task_id)
@@ -218,7 +247,7 @@ def finish_cancelled(
     return {
         "status": "cancelled",
         "file_uuid": file_uuid,
-        "file_id": ctx.file_id,
+        "file_id": file_id,
         "task_id": task_id,
     }
 

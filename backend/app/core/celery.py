@@ -10,6 +10,12 @@ import os
 import socket
 import ssl
 
+from app.core import worker_metrics
+
+# Issue #1161: before anything imports prometheus_client, so a worker with WORKER_METRICS_PORT
+# set builds every collector in multiprocess mode and its prefork children inherit that.
+worker_metrics.configure()
+
 logger = logging.getLogger(__name__)
 
 
@@ -1318,6 +1324,10 @@ def release_gpu_resources_on_worker_shutdown(**kwargs):
     from app.core.worker_shutdown import release_worker_resources
 
     release_worker_resources()
+
+
+# Issue #1161: per-task counters and run times, served on WORKER_METRICS_PORT when set.
+worker_metrics.connect_signals()
 
 
 @worker_process_shutdown.connect

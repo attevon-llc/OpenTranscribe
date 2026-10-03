@@ -9,6 +9,7 @@ import os
 import time
 from typing import Any
 
+from app.core import stage_timing
 from app.core.constants import get_speaker_index_v4
 from app.db.session_utils import session_scope
 from app.services.speaker_matching_service import SpeakerMatchingService
@@ -62,6 +63,7 @@ def _wait_for_migration_lock_to_clear() -> None:
         )
 
 
+@stage_timing.stage("speaker_embedding")
 def _process_speaker_embeddings(
     ctx: TranscriptionContext, audio_file_path: str, processed_segments: list, speaker_mapping: dict
 ) -> None:
@@ -146,6 +148,7 @@ def _process_speaker_embeddings(
     )
 
 
+@stage_timing.stage("speaker_embedding")
 def _process_speaker_embeddings_native(
     ctx: TranscriptionContext,
     native_embeddings: dict,

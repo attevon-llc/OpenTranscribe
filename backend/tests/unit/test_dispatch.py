@@ -687,6 +687,77 @@ class TestDispatchBatchTranscription:
         assert db_session.query(Task).filter(Task.id == result["task_ids"][0]).one() is not None
 
 
+@pytest.fixture
+def dispatch_hooks():
+    """Registered before-dispatch hooks, cleared on both sides of the test."""
+    from app.tasks.transcription import hooks
+
+    hooks.clear_hooks()
+    yield hooks
+    hooks.clear_hooks()
+
+
+class TestDispatchBatchFiresBeforeDispatch:
+    """The batch path fires the same pre-dispatch gate as the single-file path (#1169).
+
+    Before this, a registered before-dispatch hook was simply skipped for batch dispatch,
+    so a refusal (over quota, blocked account) could be bypassed by dispatching as a batch.
+    """
+
+    @staticmethod
+    def _dispatch(file_uuids: list[str]) -> dict:
+        from app.tasks.transcription.dispatch import dispatch_batch_transcription
+
+        return dispatch_batch_transcription(file_uuids, gpu_queue="gpu")
+
+    def test_hook_sees_every_file_with_its_own_task_id(
+        self, db_session, dispatch_seams, make_media_file, dispatch_hooks
+    ):
+        seen: list = []
+        dispatch_hooks.register_before_dispatch(seen.append)
+        first, second = make_media_file(FileStatus.PENDING), make_media_file(FileStatus.PENDING)
+
+        result = self._dispatch([str(first.uuid), str(second.uuid)])
+
+        assert [ctx.file_uuid for ctx in seen] == [str(first.uuid), str(second.uuid)]
+        assert [ctx.task_id for ctx in seen] == result["task_ids"]
+        assert [ctx.file_id for ctx in seen] == [first.id, second.id]
+
+    def test_refused_file_is_skipped_without_a_task_record(
+        self, db_session, dispatch_seams, make_media_file, dispatch_hooks
+    ):
+        refused, allowed = make_media_file(FileStatus.PENDING), make_media_file(FileStatus.PENDING)
+
+        def _refuse_one(ctx):
+            if ctx.file_uuid == str(refused.uuid):
+                raise dispatch_hooks.DispatchBlockedError("blocked")
+
+        dispatch_hooks.register_before_dispatch(_refuse_one)
+
+        result = self._dispatch([str(refused.uuid), str(allowed.uuid)])
+
+        assert len(result["task_ids"]) == 1
+        assert db_session.query(Task).filter(Task.media_file_id == refused.id).count() == 0
+        db_session.refresh(refused)
+        db_session.refresh(allowed)
+        assert refused.status == FileStatus.PENDING  # untouched, as on the single-file path
+        assert allowed.status == FileStatus.PROCESSING
+
+    def test_quota_refusal_of_every_file_dispatches_nothing(
+        self, db_session, dispatch_seams, make_media_file, dispatch_hooks
+    ):
+        def _over_quota(_ctx):
+            raise dispatch_hooks.QuotaExceededError()
+
+        dispatch_hooks.register_before_dispatch(_over_quota)
+        media_file = make_media_file(FileStatus.PENDING)
+
+        result = self._dispatch([str(media_file.uuid)])
+
+        assert result == {"batch_id": None, "task_ids": []}
+        dispatch_seams.group.assert_not_called()
+
+
 class TestDispatchTranscriptionPipelineAsrRefusal:
     """``dispatch_transcription_pipeline()`` — the single-file caller of
     ``_resolve_gpu_queue()`` — must surface a deliberate ASR refusal as a real file

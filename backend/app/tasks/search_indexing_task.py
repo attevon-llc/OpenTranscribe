@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Any
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import EmbeddingPriority
 from app.core.constants import UtilityPriority
@@ -108,6 +109,7 @@ def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[
     max_retries=3,
     default_retry_delay=30,
 )
+@stage_timing.stage("search_indexing")
 def index_transcript_search_task(  # noqa: C901
     self,
     file_id: int,

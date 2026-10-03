@@ -19,9 +19,11 @@ import time
 
 from celery import chain
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import GPUPriority
+from app.core.constants import engine_shared_volume_enabled
 from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
 from app.core.task_cancellation import TranscriptionCancelledError
@@ -294,7 +296,12 @@ def _log_shared_wav_fallback_reason(local_wav_path: str | None, file_id: int) ->
     indistinguishable from the two entirely expected reasons. That silence is what let the
     fast path stay off on real installs without anyone noticing.
     """
-    if not local_wav_path:
+    if not engine_shared_volume_enabled():
+        # Handoff deliberately off (multi-node, #1151): the download is the normal path.
+        logger.debug(
+            "GPU task: shared-volume handoff disabled; MinIO download for file %d", file_id
+        )
+    elif not local_wav_path:
         logger.info(
             "GPU task: no shared-volume WAV recorded by preprocess for file %d — "
             "falling back to MinIO download",
@@ -575,15 +582,16 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                             "whisper_model override '%s' ignored for cloud ASR provider",
                             whisper_model,
                         )
-                    result = _run_cloud_asr_pipeline(
-                        ctx,
-                        local_audio_path,
-                        preprocess_context.get("min_speakers"),
-                        preprocess_context.get("max_speakers"),
-                        preprocess_context.get("num_speakers"),
-                        provider=provider,
-                        diarization_source=diarization_source,
-                    )
+                    with stage_timing.stage("asr"):
+                        result = _run_cloud_asr_pipeline(
+                            ctx,
+                            local_audio_path,
+                            preprocess_context.get("min_speakers"),
+                            preprocess_context.get("max_speakers"),
+                            preprocess_context.get("num_speakers"),
+                            provider=provider,
+                            diarization_source=diarization_source,
+                        )
                 else:
                     result = _run_transcription_pipeline(
                         ctx,

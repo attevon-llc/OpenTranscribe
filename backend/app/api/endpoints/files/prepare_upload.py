@@ -27,6 +27,7 @@ from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.organization import OrganizationMembership
 from app.models.upload_batch import UploadBatch
+from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
 from app.services.permission_service import PermissionService
 from app.services.tag_service import on_tags_changed
@@ -228,6 +229,87 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
     on_tags_changed(db, [file_id], user_id=user_id)
 
 
+def create_prepared_record(
+    db: Session,
+    request: PrepareUploadRequest,
+    current_user: User,
+    organization_id: int | None,
+    requested_whisper_model: str | None,
+) -> tuple[MediaFile, int, str, str]:
+    """Create and commit the prepared ``MediaFile`` row with its batch/collection/tag links.
+
+    Synchronous on purpose: ``prepare_upload`` runs it in the threadpool. It is a dozen
+    round trips, and inline on the event loop a burst of concurrent prepares serialised
+    them there, stalling every other request on the process (#1169).
+
+    Returns:
+        ``(db_file, file_id, file_uuid, storage_path)`` — the ids are read here, after the
+        commit, so the caller never triggers a refresh on the event loop.
+    """
+    # Create file metadata object with information needed for the record
+    file_metadata = FileMetadata(
+        request.filename,
+        request.content_type,
+        extracted_from_video=request.extracted_from_video,
+    )
+    file_metadata.file_hash = request.file_hash
+
+    # Create the database record
+    db_file = create_media_file_record(
+        db,
+        file_metadata,  # type: ignore[arg-type]
+        current_user,
+        request.file_size,
+        organization_id,
+    )
+
+    # Generate and set storage_path immediately for duplicate detection
+    # This allows future uploads with the same file to recognize it as a duplicate
+    from app.utils.filename import get_safe_storage_filename
+
+    storage_path = get_safe_storage_filename(request.filename, current_user.id, db_file.id)
+    db_file.storage_path = storage_path  # type: ignore[assignment]
+
+    # Store the user's requested whisper model (if any, and if the deployment lets them pick)
+    if requested_whisper_model:
+        db_file.requested_whisper_model = requested_whisper_model  # type: ignore[assignment]
+
+    db.flush()
+
+    # If this is extracted audio, store the video metadata in metadata_important
+    if request.extracted_from_video:
+        db_file.metadata_important = request.extracted_from_video  # type: ignore[assignment]
+        db.commit()
+        logger.info(f"Stored extracted video metadata for {request.filename}")
+
+    # Link file to upload batch if a batch UUID was provided
+    if request.upload_batch_id:
+        batch = get_or_create_upload_batch(
+            db, request.upload_batch_id, current_user.id, source="multi_upload"
+        )
+        db_file.upload_batch_id = batch.id  # type: ignore[assignment]
+        increment_upload_batch_file_count(db, batch.id)  # type: ignore[arg-type]
+        db.flush()
+        logger.info(f"Linked file {db_file.id} to upload batch {request.upload_batch_id}")
+
+    # Assign to collections if specified
+    if request.collection_ids:
+        add_file_to_collections(db, db_file.id, current_user.id, request.collection_ids)
+
+    # Apply tags if specified
+    if request.tag_names:
+        add_tags_to_file(db, db_file.id, request.tag_names, current_user.id)
+
+    # Commit all assignments (batch, collections, tags)
+    db.commit()
+    return db_file, int(db_file.id), str(db_file.uuid), storage_path
+
+
+def _discard_prepared_record(db: Session, db_file: MediaFile) -> None:
+    db.delete(db_file)
+    db.commit()
+
+
 @router.post("/prepare", response_model=dict[str, Any])
 async def prepare_upload(
     request: PrepareUploadRequest,
@@ -284,70 +366,24 @@ async def prepare_upload(
                 f"({request.file_size} bytes) - duplicate detection skipped"
             )
 
-        # Cloud-edition seam: enforce the tenant's per-tier max upload size
-        # before minting a record / presigned URL. No-op in community.
+        # Enforce the max upload size (global ceiling, or a tighter one from a
+        # registered upload-limits resolver) before minting a record / presigned
+        # URL. A resolver may do blocking I/O, so it runs in the threadpool: inline
+        # it would stall every request on this process for as long as it blocks.
         from app.api.endpoints.files.upload import validate_file_size_for_tenant
 
-        validate_file_size_for_tenant(request.file_size, ctx.org_id)
+        await run_in_threadpool(validate_file_size_for_tenant, request.file_size, ctx.org_id)
 
-        # Create file metadata object with information needed for the record
-        file_metadata = FileMetadata(
-            request.filename,
-            request.content_type,
-            extracted_from_video=request.extracted_from_video,
-        )
-        file_metadata.file_hash = request.file_hash
-
-        # Create the database record
-        db_file = create_media_file_record(
+        db_file, file_id, file_uuid, storage_path = await run_in_threadpool(
+            create_prepared_record,
             db,
-            file_metadata,  # type: ignore[arg-type]
+            request,
             current_user,
-            request.file_size,
             ctx.org_id,
+            requested_whisper_model,
         )
 
-        # Generate and set storage_path immediately for duplicate detection
-        # This allows future uploads with the same file to recognize it as a duplicate
-        from app.utils.filename import get_safe_storage_filename
-
-        storage_path = get_safe_storage_filename(request.filename, current_user.id, db_file.id)
-        db_file.storage_path = storage_path  # type: ignore[assignment]
-
-        # Store the user's requested whisper model (if any, and if the deployment lets them pick)
-        if requested_whisper_model:
-            db_file.requested_whisper_model = requested_whisper_model  # type: ignore[assignment]
-
-        db.flush()
-
-        # If this is extracted audio, store the video metadata in metadata_important
-        if request.extracted_from_video:
-            db_file.metadata_important = request.extracted_from_video  # type: ignore[assignment]
-            db.commit()
-            logger.info(f"Stored extracted video metadata for {request.filename}")
-
-        # Link file to upload batch if a batch UUID was provided
-        if request.upload_batch_id:
-            batch = get_or_create_upload_batch(
-                db, request.upload_batch_id, current_user.id, source="multi_upload"
-            )
-            db_file.upload_batch_id = batch.id  # type: ignore[assignment]
-            increment_upload_batch_file_count(db, batch.id)  # type: ignore[arg-type]
-            db.flush()
-            logger.info(f"Linked file {db_file.id} to upload batch {request.upload_batch_id}")
-
-        # Assign to collections if specified
-        if request.collection_ids:
-            add_file_to_collections(db, db_file.id, current_user.id, request.collection_ids)
-
-        # Apply tags if specified
-        if request.tag_names:
-            add_tags_to_file(db, db_file.id, request.tag_names, current_user.id)
-
-        # Commit all assignments (batch, collections, tags)
-        db.commit()
-
-        response: dict[str, Any] = {"file_id": str(db_file.uuid), "is_duplicate": 0}
+        response: dict[str, Any] = {"file_id": file_uuid, "is_duplicate": 0}
 
         # Optional: set the browser up to write bytes straight to object storage,
         # bypassing the API container. The backend picks the transport — one
@@ -378,8 +414,7 @@ async def prepare_upload(
                     f"No browser-direct upload plan for {request.filename} and the "
                     "API-mediated upload is disabled; asking the client to retry"
                 )
-                db.delete(db_file)
-                db.commit()
+                await run_in_threadpool(_discard_prepared_record, db, db_file)
                 raise HTTPException(
                     status_code=503,
                     detail="Direct upload is temporarily unavailable. Please retry shortly.",
@@ -404,7 +439,7 @@ async def prepare_upload(
                 response["task_id"] = task_id
                 response["storage_path"] = storage_path
 
-        logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
+        logger.info(f"Prepared upload for file {request.filename} (ID: {file_id})")
         return response
 
     except HTTPException:

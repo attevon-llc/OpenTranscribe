@@ -26,7 +26,7 @@ never changes the other.
   `DiarizeResult.metadata`, so `DiarizeResult` is **not** a pure DTO. Note its hardcoded
   `model_name="pyannote/speaker-diarization-community-1"` reports the *weights*, which both
   engines share — it is not a claim about which engine ran.
-- `pyannote_provider.py` — pyannote.ai cloud diarization (`precision-2`). Distinct from
+- `pyannote_provider.py` — pyannote.ai cloud diarization (`precision-3`; `precision-2` is retired and mapped to it). Distinct from
   `../asr/pyannote_provider.py`, which hits the *STT-orchestration* endpoint. Don't confuse them.
 
 ## How it connects

@@ -43,13 +43,15 @@ class DiarizationProviderFactory:
             return None
 
         if source == "pyannote":
+            from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
+
             from .pyannote_provider import PyAnnoteCloudDiarizationProvider
 
             if not api_key:
                 raise ValueError("pyannote.ai diarization requires an API key")
             provider: DiarizationProvider = PyAnnoteCloudDiarizationProvider(
                 api_key=api_key,
-                model_name=model_name or "precision-2",
+                model_name=model_name or PYANNOTE_DEFAULT_DIARIZATION_MODEL,
             )
             return provider
 
@@ -111,11 +113,13 @@ class DiarizationProviderFactory:
                 )
                 return None
 
+            from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
+
             from .pyannote_provider import PyAnnoteCloudDiarizationProvider
 
             provider: DiarizationProvider = PyAnnoteCloudDiarizationProvider(
                 api_key=decrypt_value(config.api_key) or "",
-                model_name=config.model_name or "precision-2",
+                model_name=config.model_name or PYANNOTE_DEFAULT_DIARIZATION_MODEL,
             )
             return provider
 

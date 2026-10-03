@@ -16,6 +16,7 @@ import time
 
 import numpy as np
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
@@ -64,8 +65,15 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
     task_id = gpu_result.get("task_id")
     if not task_id or gpu_result.get("status") in _NO_WORK_STATUSES:
         return _finalize(gpu_result)
-    with run_heartbeat(str(task_id)):
+    with (
+        run_heartbeat(str(task_id)),
+        stage_timing.stage(
+            "postprocess", task_id=task_id, file_id=gpu_result.get("file_id")
+        ) as run,
+    ):
         result = _finalize(gpu_result)
+        if result.get("status") != "success":
+            run.fail()
     if result.get("status") == "success" and _run_completed(str(task_id)):
         clear_run_markers(str(task_id))
         clear_infra_requeues(str(gpu_result.get("file_uuid") or ""))

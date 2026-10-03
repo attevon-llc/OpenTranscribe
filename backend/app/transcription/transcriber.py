@@ -13,6 +13,7 @@ from typing import Any
 
 import numpy as np
 
+from app.core import stage_timing
 from app.transcription import cuda_health
 from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
@@ -173,6 +174,73 @@ def _max_oom_halvings() -> int:
         return max(0, int(raw))
     except ValueError:
         return 2
+
+
+def _collect_segments(segments_gen, audio_duration: float) -> tuple[list[dict], int]:
+    """Consume faster-whisper's segment generator (this is where decoding runs).
+
+    Converts each segment to a dict with validated word timestamps. ``audio_duration`` is
+    in seconds (16 kHz samples / 16000).
+    """
+    segments: list[dict] = []
+    total_words = 0
+    # Cooperative stand-down checkpoint (issues #809 + #823), resolved ONCE rather than
+    # per iteration — this is the decode hot loop. Imported here rather than at module
+    # scope because transcriber.py is imported by CPU-only workers too, and this
+    # keeps the shutdown machinery off their import path.
+    from app.core.task_cancellation import stand_down_if_requested
+
+    for seg in segments_gen:
+        # The only unbounded loop in the hot path, so checking here bounds stand-down
+        # latency to a single decode batch rather than to the whole file. This is also
+        # the ONLY checkpoint the CPU leg reaches once it is under way
+        # (transcribe_cpu_task runs the legacy TranscriptionPipeline, not the engine
+        # stages), so #823's cancel depends on it for that leg.
+        #
+        # The per-task cancel half polls Redis at most once every
+        # CANCEL_POLL_INTERVAL_S, not once per segment — see that constant's rationale.
+        stand_down_if_requested("transcriber.transcribe segment loop")
+
+        seg_start = max(float(seg.start), 0.0)
+        seg_end = min(float(seg.end), audio_duration)
+        if seg_end <= seg_start:
+            continue  # Skip invalid segments
+
+        words = []
+        if seg.words:
+            for w in seg.words:
+                word_start = max(float(w.start), seg_start)
+                word_end = min(float(w.end), seg_end)
+                if word_end <= word_start:
+                    word_end = min(word_start + 0.01, seg_end)
+                words.append(
+                    {
+                        "word": w.word,
+                        "start": word_start,
+                        "end": word_end,
+                        "probability": float(w.probability),
+                    }
+                )
+
+            # Timestamp sanity: enforce monotonicity and cap implausible durations
+            _validate_word_timestamps(words, seg_start, seg_end)
+
+            # Interpolate timestamps for low-confidence words (probability < 0.3)
+            # whose cross-attention DTW timestamps are unreliable
+            _interpolate_low_confidence_words(words, seg_start, seg_end)
+
+            total_words += len(words)
+
+        segments.append(
+            {
+                "text": seg.text.strip(),
+                "start": seg_start,
+                "end": seg_end,
+                "words": words,
+            }
+        )
+
+    return segments, total_words
 
 
 class Transcriber:
@@ -349,67 +417,13 @@ class Transcriber:
         if opts.hallucination_silence_threshold is not None:
             kwargs["hallucination_silence_threshold"] = opts.hallucination_silence_threshold
 
-        segments_gen, info = self._pipeline.transcribe(audio, **kwargs)
+        # faster-whisper's batched pipeline runs VAD and feature extraction here, before it
+        # returns; decoding happens as the generator below is consumed (#1134 stages).
+        with stage_timing.stage("vad"):
+            segments_gen, info = self._pipeline.transcribe(audio, **kwargs)
 
-        # Convert generator to list of dicts with timestamp validation
-        audio_duration = len(audio) / 16000  # 16kHz sample rate
-        segments = []
-        total_words = 0
-        # Cooperative stand-down checkpoint (issues #809 + #823), resolved ONCE rather than
-        # per iteration — this is the decode hot loop. Imported here rather than at module
-        # scope because transcriber.py is imported by CPU-only workers too, and this
-        # keeps the shutdown machinery off their import path.
-        from app.core.task_cancellation import stand_down_if_requested
-
-        for seg in segments_gen:
-            # The only unbounded loop in the hot path, so checking here bounds stand-down
-            # latency to a single decode batch rather than to the whole file. This is also
-            # the ONLY checkpoint the CPU leg reaches once it is under way
-            # (transcribe_cpu_task runs the legacy TranscriptionPipeline, not the engine
-            # stages), so #823's cancel depends on it for that leg.
-            #
-            # The per-task cancel half polls Redis at most once every
-            # CANCEL_POLL_INTERVAL_S, not once per segment — see that constant's rationale.
-            stand_down_if_requested("transcriber.transcribe segment loop")
-
-            seg_start = max(float(seg.start), 0.0)
-            seg_end = min(float(seg.end), audio_duration)
-            if seg_end <= seg_start:
-                continue  # Skip invalid segments
-
-            words = []
-            if seg.words:
-                for w in seg.words:
-                    word_start = max(float(w.start), seg_start)
-                    word_end = min(float(w.end), seg_end)
-                    if word_end <= word_start:
-                        word_end = min(word_start + 0.01, seg_end)
-                    words.append(
-                        {
-                            "word": w.word,
-                            "start": word_start,
-                            "end": word_end,
-                            "probability": float(w.probability),
-                        }
-                    )
-
-                # Timestamp sanity: enforce monotonicity and cap implausible durations
-                _validate_word_timestamps(words, seg_start, seg_end)
-
-                # Interpolate timestamps for low-confidence words (probability < 0.3)
-                # whose cross-attention DTW timestamps are unreliable
-                _interpolate_low_confidence_words(words, seg_start, seg_end)
-
-                total_words += len(words)
-
-            segments.append(
-                {
-                    "text": seg.text.strip(),
-                    "start": seg_start,
-                    "end": seg_end,
-                    "words": words,
-                }
-            )
+        with stage_timing.stage("asr"):
+            segments, total_words = _collect_segments(segments_gen, len(audio) / 16000)
 
         # CrisperWhisper's verbatim tokenizer emits comma-prefixed, punctuation-glued
         # word tokens with no internal spacing. Reshape them into the standard

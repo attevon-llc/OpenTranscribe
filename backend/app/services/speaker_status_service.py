@@ -17,12 +17,23 @@ and reduce frontend complexity.
 
 import logging
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models.media import Speaker
 from app.utils.speaker_labels import canonical_speaker_label
 
 logger = logging.getLogger(__name__)
+
+# Mapped ``Speaker`` columns that hold a computed status. Only
+# ``update_speaker_status_in_db`` writes them; reads decorate without dirtying.
+_PERSISTED_STATUS_FIELDS = (
+    "computed_status",
+    "status_text",
+    "status_color",
+    "resolved_display_name",
+)
 
 
 class SpeakerStatusService:
@@ -282,17 +293,26 @@ class SpeakerStatusService:
     @staticmethod
     def add_computed_status(speaker: Speaker) -> None:
         """
-        Add computed status fields to a speaker object in-place.
+        Add computed status fields to a speaker object in-place, for the response only.
+
+        The four status fields are mapped columns, but here they are response
+        decoration: they are set with ``set_committed_value``, so the session does not
+        see a change and never flushes an ``UPDATE speaker``. Assigning them normally
+        made every read that later committed write each speaker row, and a read polling
+        a file mid-processing then deadlocked with the worker writing the same rows
+        (#1152). ``update_speaker_status_in_db`` is the path that persists them.
 
         Args:
             speaker: Speaker object to enhance
         """
         status_info = SpeakerStatusService.compute_speaker_status(speaker)
 
-        # Add computed fields to the speaker object
-        speaker.computed_status = status_info["computed_status"]  # type: ignore[assignment]
-        speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
-        speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
-        speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
+        mapped = sa_inspect(speaker, raiseerr=False) is not None
+        for field in _PERSISTED_STATUS_FIELDS:
+            if mapped:
+                set_committed_value(speaker, field, status_info[field])
+            else:  # a plain object standing in for a row: nothing to dirty
+                setattr(speaker, field, status_info[field])
+        # Not columns at all: plain response attributes.
         speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment,attr-defined]
         speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment,attr-defined]

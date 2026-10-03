@@ -17,6 +17,8 @@ from collections.abc import Callable
 
 import httpx
 
+from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
+
 from .base import DiarizationProvider
 from .types import DiarizeConfig
 from .types import DiarizeResult
@@ -37,6 +39,22 @@ _POLL_MAX_ATTEMPTS = 150  # 150 * 2s = 5 minutes
 _TERMINAL_STATUSES = frozenset({"succeeded", "failed", "canceled"})
 
 
+# Retired model ids -> their replacement. A setting saved while a retired model was the
+# default would otherwise fail every job once the vendor stops accepting it.
+_RETIRED_MODELS = {"precision-2": PYANNOTE_DEFAULT_DIARIZATION_MODEL}
+
+
+def current_pyannote_model(model_name: str | None) -> str:
+    """The model id to send: the configured one, the default, or a retired id's successor."""
+    if not model_name:
+        return PYANNOTE_DEFAULT_DIARIZATION_MODEL
+    replacement = _RETIRED_MODELS.get(model_name)
+    if replacement is not None:
+        logger.warning("pyannote.ai model '%s' is retired; using '%s'", model_name, replacement)
+        return replacement
+    return model_name
+
+
 class PyAnnoteCloudDiarizationProvider(DiarizationProvider):
     """pyannote.ai cloud diarization provider.
 
@@ -48,9 +66,9 @@ class PyAnnoteCloudDiarizationProvider(DiarizationProvider):
     5. Parse ``output.diarization`` into ``DiarizeSegment`` list
     """
 
-    def __init__(self, api_key: str, model_name: str = "precision-2") -> None:
+    def __init__(self, api_key: str, model_name: str = PYANNOTE_DEFAULT_DIARIZATION_MODEL) -> None:
         self._api_key = api_key
-        self._model_name = model_name
+        self._model_name = current_pyannote_model(model_name)
 
     @property
     def provider_name(self) -> str:
@@ -129,7 +147,7 @@ class PyAnnoteCloudDiarizationProvider(DiarizationProvider):
         if not api_key:
             raise RuntimeError("pyannote.ai API key is required for cloud diarization")
 
-        model = config.model_name or self._model_name
+        model = current_pyannote_model(config.model_name) if config.model_name else self._model_name
         filename = os.path.basename(audio_path)
         t_start = time.time()
 
@@ -291,7 +309,7 @@ class PyAnnoteCloudDiarizationProvider(DiarizationProvider):
 
         Args:
             object_key: The ``media://...`` key of the uploaded audio.
-            model: Diarization model name (e.g. ``precision-2``).
+            model: Diarization model name (e.g. ``precision-3``).
             config: Diarization config with speaker count hints.
             api_key: Bearer token.
 

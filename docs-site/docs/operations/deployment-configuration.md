@@ -116,6 +116,30 @@ MinIO — correct, but much slower. This mount is now present on the default GPU
 worker, the scaled GPU worker, and both GPU-split workers across the dev, prod,
 and offline overlays.
 
+### Multi-node deployments: turn the handoff off
+
+When the CPU and GPU workers run on different hosts (separate nodes in an orchestrator), no
+directory can be shared between them, so the handoff can only fail: on a read-only root
+filesystem the write fails for every file, and on a writable one the WAV lands in a directory
+nothing on that host ever cleans up while the GPU worker reports the path as missing. Turn it
+off so both sides go straight to object storage:
+
+```bash
+PIPELINE_SCRATCH_SHARED=false        # workers do not share a filesystem
+ENGINE_SHARED_VOLUME_ENABLED=false   # optional: unset, it follows PIPELINE_SCRATCH_SHARED
+```
+
+| `ENGINE_SHARED_VOLUME_ENABLED` | `PIPELINE_SCRATCH_SHARED` | Engine WAV handoff |
+|---|---|---|
+| unset | unset / `true` | on (default) |
+| unset | `false` | off |
+| `false` | any | off |
+| `true` | any | on |
+
+With the handoff off, preprocessing writes nothing to `ENGINE_SHARED_VOLUME_PATH`, logs one
+INFO line per worker process saying so, and the GPU task downloads the WAV from object storage
+without logging a fallback warning.
+
 :::warning[Scratch volume permissions]
 The `pipeline_scratch` volume is root-owned when first created, but workers run as
 UID 1000. `./opentr.sh` chowns it to `1000:999` (the container `appuser`) on startup; if you create the

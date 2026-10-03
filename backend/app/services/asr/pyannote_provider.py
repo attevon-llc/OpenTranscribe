@@ -13,6 +13,8 @@ import os
 import time
 from collections.abc import Callable
 
+from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
+
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
 from .errors import http_status_of
@@ -34,10 +36,11 @@ _POLL_TIMEOUT = 300.0  # 5 minutes max
 # Map user-facing model_name → (diarization model, transcription model).
 # Transcription model ids are pyannote.ai's transcriptionConfig.model enum values (verified
 # against the live API's 400 validation message — the published docs' "nvidia-" prefix is
-# WRONG). Diarization model is precision-2 (the only model that supports transcription).
+# WRONG). Diarization model is precision-3: transcription is supported by precision-2 and
+# precision-3 only, and pyannoteAI deprecates precision-2 on 2026-10-17 (#1153).
 _MODEL_MAP: dict[str, tuple[str, str]] = {
-    "parakeet": ("precision-2", "parakeet-tdt-0.6b-v3"),
-    "whisper-large-v3-turbo": ("precision-2", "faster-whisper-large-v3-turbo"),
+    "parakeet": (PYANNOTE_DEFAULT_DIARIZATION_MODEL, "parakeet-tdt-0.6b-v3"),
+    "whisper-large-v3-turbo": (PYANNOTE_DEFAULT_DIARIZATION_MODEL, "faster-whisper-large-v3-turbo"),
 }
 
 

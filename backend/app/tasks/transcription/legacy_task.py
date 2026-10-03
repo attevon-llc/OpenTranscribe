@@ -8,6 +8,7 @@ import logging
 import os
 import tempfile
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import GPUPriority
 from app.core.exceptions import ASRConfigurationError
@@ -173,15 +174,16 @@ def _process_file_in_temp_dir(
 
         # Cloud pipeline — errors propagate so the task is marked FAILED, not silently
         # re-attempted on local GPU.
-        result = _run_cloud_asr_pipeline(
-            ctx,
-            audio_file_path,
-            min_speakers,
-            max_speakers,
-            num_speakers,
-            provider=provider,
-            diarization_source=diarization_source,
-        )
+        with stage_timing.stage("asr"):
+            result = _run_cloud_asr_pipeline(
+                ctx,
+                audio_file_path,
+                min_speakers,
+                max_speakers,
+                num_speakers,
+                provider=provider,
+                diarization_source=diarization_source,
+            )
         # Validate transcription result
         validation_error = _validate_transcription_result(result, ctx, ctx.task_id)
         if validation_error:

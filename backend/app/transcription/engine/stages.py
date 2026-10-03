@@ -29,6 +29,7 @@ import numpy as np
 # stand-down triggers — worker shutdown (#809, requeue) and a user cancel of THIS file (#823,
 # stop for good) — so a checkpoint cannot accidentally honour only one of them. That is why
 # #823 extended these call sites instead of adding a second set beside them.
+from app.core import stage_timing
 from app.core.task_cancellation import stand_down_if_requested
 from app.core.worker_shutdown import shutdown_requested
 
@@ -203,7 +204,7 @@ def _collect_diarization(
     overlapped = None
     provider: str | None = None
     model: str | None = None
-    with profiler.step("diarization"):
+    with stage_timing.stage("diarization"), profiler.step("diarization"):
         if async_diarization is not None:
             overlapped = async_diarization.result()
         if overlapped is not None:
@@ -626,7 +627,7 @@ class _GpuStage:
         # Step 6: Assign speakers
         emit(progress_callback, 0.65, "Assigning speakers to transcript", "finalize")
         step_start = time.perf_counter()
-        with profiler.step("speaker_assignment"):
+        with stage_timing.stage("speaker_assignment"), profiler.step("speaker_assignment"):
             from app.transcription.speaker_assigner import assign_speakers
 
             result = assign_speakers(diarize_df, transcript)
@@ -948,7 +949,8 @@ class _FinalizeStage:
             emit(callback, 0.65, "Assigning speakers to transcript", "finalize")
             from app.transcription.speaker_assigner import assign_speakers
 
-            result = assign_speakers(diarize_df, transcript)
+            with stage_timing.stage("speaker_assignment"):
+                result = assign_speakers(diarize_df, transcript)
 
             if raw.overlap_info.get("count", 0) > 0:
                 result["overlap_info"] = raw.overlap_info
@@ -1120,7 +1122,7 @@ class _DiarizerOnlyStage:
 
             emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
             step_start = time.perf_counter()
-            with profiler.step("diarization"):
+            with stage_timing.stage("diarization"), profiler.step("diarization"):
                 diarizer = manager.get_diarizer(tc)
                 diarize_df, overlap_info, native_embeddings = _run_diarize(
                     diarizer, audio, transcript.local_wav_path

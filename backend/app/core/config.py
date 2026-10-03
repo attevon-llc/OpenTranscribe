@@ -735,6 +735,14 @@ class Settings(BaseSettings):
     # their own engines, so these sizes mainly control API concurrency.
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 40
+    # Worker threads for the API's sync handlers, sync dependencies and
+    # run_in_threadpool calls (Starlette's default is 40). 0 = size it to the DB
+    # pool capacity (DB_POOL_SIZE + DB_MAX_OVERFLOW, never below 40). A request
+    # holds its pooled connection from authentication until it ends, so with fewer
+    # threads than connections a burst can leave every thread blocked waiting for a
+    # connection while the requests holding them wait for a thread (#1169). See
+    # app/core/threadpool.py.
+    API_THREADPOOL_SIZE: int = 0
 
     # Server-side backstop for the "transaction held open across slow work"
     # bug class (issue #440). Postgres terminates a backend that has an OPEN
@@ -757,6 +765,7 @@ class Settings(BaseSettings):
     @field_validator(
         "DB_POOL_SIZE",
         "DB_MAX_OVERFLOW",
+        "API_THREADPOOL_SIZE",
         "SEARCH_BULK_BATCH_SIZE",
         "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS",
     )
@@ -776,6 +785,7 @@ class Settings(BaseSettings):
         floors = {
             "DB_POOL_SIZE": 1,
             "DB_MAX_OVERFLOW": 0,
+            "API_THREADPOOL_SIZE": 0,
             "SEARCH_BULK_BATCH_SIZE": 1,
             "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS": 0,
         }

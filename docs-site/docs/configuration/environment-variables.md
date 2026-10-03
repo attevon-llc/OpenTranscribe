@@ -660,6 +660,8 @@ Each Celery worker can serve per-task Prometheus metrics at `http://<worker>:<po
 |---|---|---|
 | `celery_task_total` | `task`, `outcome` | Tasks that ended in this worker. `outcome` is `success`, `failure`, `retry` or `revoked` |
 | `celery_task_runtime_seconds` | `task` | Histogram of run time, start to end, whatever the outcome (buckets 0.5 s to 2 h) |
+| `pipeline_stage_duration_seconds` | `stage` | Histogram of one pipeline stage's wall time (buckets 50 ms to 2 h); see Monitoring → Per-stage pipeline timing |
+| `pipeline_stage_total` | `stage`, `outcome` | Pipeline stage runs; `outcome` is `success` or `failure` |
 
 - `task` is the registered task name (for example `transcription.gpu_transcribe`). A name the
   worker has not registered is counted as `other`, so the label set is bounded by the task list.
@@ -809,6 +811,31 @@ POSTGRES_SSLMODE=prefer  # disable/allow/prefer/require/verify-ca/verify-full
 ```
 
 Database initialization is handled entirely by Alembic migrations on backend startup. No external SQL init file is needed.
+
+### API connection pool and threadpool
+
+```bash
+DB_POOL_SIZE=20          # API process SQLAlchemy pool
+DB_MAX_OVERFLOW=40       # extra connections above the pool under load
+API_THREADPOOL_SIZE=0    # 0 = match DB_POOL_SIZE + DB_MAX_OVERFLOW (never below 40)
+```
+
+The API runs synchronous handlers, synchronous dependencies and `run_in_threadpool` calls on
+one thread pool. A request holds its pooled database connection from authentication until the
+response is sent, including while it waits for a thread for its next step. With `C` connections
+(`DB_POOL_SIZE + DB_MAX_OVERFLOW`) and `T` threads, a burst of `C + T` or more concurrent requests
+can leave every connection with a request waiting for a thread and every thread with a request
+waiting for a connection, until the pool timeout (30 s) fails the waiters.
+
+The default therefore sizes the thread pool to the pool capacity, so one API process handles up
+to twice its pool capacity of concurrent requests (120 with the defaults) without reaching that
+state. To serve more, raise the pool (and `PG_MAX_CONNECTIONS`, which must stay above the sum of
+every service's pool) or run more API processes; setting `API_THREADPOOL_SIZE` below the pool
+capacity logs a warning at startup.
+
+Hooks registered by a deployment (for example an upload-limits resolver) run on this thread
+pool, never on the event loop, but they run while the request holds a connection: keep them
+fast, and put a timeout on any network call they make.
 
 ## Ports
 

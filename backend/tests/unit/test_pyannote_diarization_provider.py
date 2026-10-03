@@ -45,7 +45,7 @@ from app.services.diarization.pyannote_provider import PyAnnoteCloudDiarizationP
 from app.services.diarization.types import DiarizeConfig
 
 
-def _provider(model_name: str = "precision-2", api_key: str = "test-key"):
+def _provider(model_name: str = "precision-3", api_key: str = "test-key"):
     return PyAnnoteCloudDiarizationProvider(api_key=api_key, model_name=model_name)
 
 
@@ -133,7 +133,7 @@ def test_happy_path_succeeds_on_first_poll(tmp_path):
     result, job_capture = _run_diarize(tmp_path)
 
     assert result.provider_name == "pyannote"
-    assert result.model_name == "precision-2"
+    assert result.model_name == "precision-3"
     assert result.num_speakers == 2
     assert len(result.segments) == 2
     seg0, seg1 = result.segments
@@ -435,7 +435,7 @@ def test_missing_file_raises_file_not_found():
 
 def test_no_api_key_on_provider_or_config_raises(tmp_path):
     audio_path = _make_audio_file(tmp_path)
-    provider = PyAnnoteCloudDiarizationProvider(api_key="", model_name="precision-2")
+    provider = PyAnnoteCloudDiarizationProvider(api_key="", model_name="precision-3")
     config = DiarizeConfig(api_key=None)
     with pytest.raises(RuntimeError, match="API key is required"):
         provider.diarize(audio_path, config)
@@ -445,7 +445,7 @@ def test_no_api_key_on_provider_or_config_raises(tmp_path):
 
 
 def test_validate_connection_no_key():
-    provider = PyAnnoteCloudDiarizationProvider(api_key="", model_name="precision-2")
+    provider = PyAnnoteCloudDiarizationProvider(api_key="", model_name="precision-3")
     ok, message, ms = provider.validate_connection()
     assert ok is False
     assert "API key is required" in message
@@ -519,3 +519,39 @@ def test_validate_connection_delegates_sanitization_to_shared_helper():
     with patch("httpx.get", side_effect=boom):
         _, message, _ = provider.validate_connection()
     assert "sk-shared-helper-secret" not in message
+
+
+# ── pyannoteAI model default (#1153) ─────────────────────────────────────────────────
+# pyannoteAI deprecates precision-2 on 2026-10-17; precision-3 replaces it.
+
+
+def test_default_model_is_precision_3():
+    from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
+
+    assert PYANNOTE_DEFAULT_DIARIZATION_MODEL == "precision-3"
+    assert PyAnnoteCloudDiarizationProvider(api_key="k")._model_name == "precision-3"
+
+
+@pytest.mark.parametrize("stored", [None, ""])
+def test_factory_default_is_precision_3(stored):
+    from app.services.diarization.factory import DiarizationProviderFactory
+
+    provider = DiarizationProviderFactory.create_for_source(
+        "pyannote", api_key="k", model_name=stored
+    )
+    assert isinstance(provider, PyAnnoteCloudDiarizationProvider)
+    assert provider._model_name == "precision-3"
+
+
+def test_retired_precision_2_is_upgraded():
+    """A setting saved while precision-2 was the default must keep working after retirement."""
+    assert _provider("precision-2")._model_name == "precision-3"
+
+
+def test_other_models_stay_configurable():
+    assert _provider("community-1")._model_name == "community-1"
+
+
+def test_job_requests_precision_3_by_default(tmp_path):
+    _result, job_capture = _run_diarize(tmp_path)
+    assert job_capture["body"]["model"] == "precision-3"

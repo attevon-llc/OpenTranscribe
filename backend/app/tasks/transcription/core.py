@@ -19,6 +19,7 @@ import time
 
 from celery import chain
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import GPUPriority
@@ -581,15 +582,16 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                             "whisper_model override '%s' ignored for cloud ASR provider",
                             whisper_model,
                         )
-                    result = _run_cloud_asr_pipeline(
-                        ctx,
-                        local_audio_path,
-                        preprocess_context.get("min_speakers"),
-                        preprocess_context.get("max_speakers"),
-                        preprocess_context.get("num_speakers"),
-                        provider=provider,
-                        diarization_source=diarization_source,
-                    )
+                    with stage_timing.stage("asr"):
+                        result = _run_cloud_asr_pipeline(
+                            ctx,
+                            local_audio_path,
+                            preprocess_context.get("min_speakers"),
+                            preprocess_context.get("max_speakers"),
+                            preprocess_context.get("num_speakers"),
+                            provider=provider,
+                            diarization_source=diarization_source,
+                        )
                 else:
                     result = _run_transcription_pipeline(
                         ctx,

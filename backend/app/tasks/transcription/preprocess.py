@@ -13,6 +13,7 @@ import shutil
 import tempfile
 import time
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.core.constants import engine_shared_volume_enabled
@@ -154,7 +155,7 @@ def preprocess_for_transcription(
     # The run's lease, held for the whole stage like every other pipeline stage: without it a
     # worker killed mid-preprocess left the run reading as "queued" and its message stranded
     # in the broker for the visibility timeout (app/core/broker_orphans.py).
-    with run_heartbeat(task_id):
+    with run_heartbeat(task_id), stage_timing.stage("preprocess", task_id=task_id):
         return _run_preprocess(
             file_uuid,
             task_id,

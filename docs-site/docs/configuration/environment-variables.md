@@ -660,6 +660,8 @@ Each Celery worker can serve per-task Prometheus metrics at `http://<worker>:<po
 |---|---|---|
 | `celery_task_total` | `task`, `outcome` | Tasks that ended in this worker. `outcome` is `success`, `failure`, `retry` or `revoked` |
 | `celery_task_runtime_seconds` | `task` | Histogram of run time, start to end, whatever the outcome (buckets 0.5 s to 2 h) |
+| `pipeline_stage_duration_seconds` | `stage` | Histogram of one pipeline stage's wall time (buckets 50 ms to 2 h); see Monitoring → Per-stage pipeline timing |
+| `pipeline_stage_total` | `stage`, `outcome` | Pipeline stage runs; `outcome` is `success` or `failure` |
 
 - `task` is the registered task name (for example `transcription.gpu_transcribe`). A name the
   worker has not registered is counted as `other`, so the label set is bounded by the task list.

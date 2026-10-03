@@ -101,6 +101,51 @@ The bundled Prometheus does not scrape the workers; add a job per worker service
 - failure ratio per task: `sum by (task) (rate(celery_task_total{outcome="failure"}[15m])) / sum by (task) (rate(celery_task_total[15m]))`
 - p95 run time per task: `histogram_quantile(0.95, sum by (task, le) (rate(celery_task_runtime_seconds_bucket[1h])))`
 
+### Per-stage pipeline timing
+
+Each processing-pipeline stage records one observation per run, whether it succeeds or fails,
+in two places.
+
+**Logs.** One line per stage run, carrying the same `TIMING:` marker as the free-text timing
+lines, so `grep "TIMING:"` picks it up:
+
+```text
+TIMING: stage=asr outcome=success seconds=12.345 task_id=<task id> file_id=<file id>
+```
+
+`task_id` and `file_id` are `-` where the stage cannot see them. They appear in logs only.
+
+**Metrics.** Served by every worker with `WORKER_METRICS_PORT` set, next to the per-task
+metrics above:
+
+| Metric | Type | Labels |
+|---|---|---|
+| `pipeline_stage_duration_seconds` | histogram (50 ms to 2 h) | `stage` |
+| `pipeline_stage_total` | counter | `stage`, `outcome` (`success`, `failure`) |
+
+`stage` is always one of the values below, or `other` for a name the code does not know, so the
+label set is fixed. No file, user or task id is ever a label.
+
+| `stage` | Runs on | What it covers |
+|---|---|---|
+| `preprocess` | CPU worker | fetch the media, extract 16 kHz audio, stage it for the GPU task |
+| `vad` | GPU (or CPU) worker | voice-activity detection and feature extraction before the first decoded batch |
+| `asr` | GPU (or CPU) worker | Whisper decoding, or the cloud ASR provider call |
+| `diarization` | GPU worker | speaker diarization; when it overlaps with ASR, the time still spent waiting for it |
+| `speaker_assignment` | GPU worker | assigning diarized speakers to transcript words |
+| `finalize` | GPU worker | resegment/merge and writing segments and speakers to the database |
+| `speaker_embedding` | GPU worker | speaker embedding extraction and profile matching (one observation per attempt) |
+| `postprocess` | CPU worker | completion, speaker matching, downstream dispatch |
+| `search_indexing` | embedding worker | chunk-level search indexing |
+
+There is no separate alignment stage: word timestamps come from the decoder itself. A
+`postprocess` run whose result reports an error counts as `failure` even though it did not
+raise. Useful queries:
+
+- p95 per stage: `histogram_quantile(0.95, sum by (stage, le) (rate(pipeline_stage_duration_seconds_bucket[1h])))`
+- share of pipeline time per stage: `sum by (stage) (rate(pipeline_stage_duration_seconds_sum[1h]))`
+- failure ratio per stage: `sum by (stage) (rate(pipeline_stage_total{outcome="failure"}[15m])) / sum by (stage) (rate(pipeline_stage_total[15m]))`
+
 ### Worker-loss metrics (alert on these, never scale on them)
 
 `celery_queue_reserved` counts only work a live worker holds. A transcription stage left

@@ -278,11 +278,36 @@ def recover_overrun_run(db, task: Task) -> RunOutcome | None:
     )
 
 
+def _cancel_requested(media_file: MediaFile | None, run_id: str) -> bool:
+    """Whether run ``run_id`` was asked to stop and no worker has confirmed it yet.
+
+    The run's Task row stays ``in_progress`` until a worker confirms the stop or
+    ``reconcile_cancellation`` resolves it, so the row alone reads such a run as current.
+    Scoped to this run: its own cancellation flag, or the file's cancel state while the file
+    still points at this run (the same ownership rule ``finish_cancelled`` applies), so an
+    earlier cancel never reads onto a later run of the same file.
+    """
+    from app.core.task_cancellation import cancel_requested
+
+    if cancel_requested(run_id):
+        return True
+    if media_file is None:
+        return False
+    cancelling = bool(media_file.cancellation_requested) or media_file.status in (
+        FileStatus.CANCELLING,
+        FileStatus.CANCELLED,
+    )
+    active = media_file.active_task_id
+    return cancelling and (active is None or str(active) == run_id)
+
+
 def run_status(run_id: str) -> str:
-    """``"current"``, ``"finished"`` (terminal, or replaced by a newer run) or ``"unknown"``.
+    """``"current"``, ``"finished"`` (terminal, or replaced by a newer run), ``"cancelled"``
+    (its file is being cancelled) or ``"unknown"``.
 
     ``unknown`` covers a missing Task row and an unreadable database alike: the broker reaper
-    leaves such a message alone rather than act on a guess.
+    leaves such a message alone rather than act on a guess. ``cancelled`` must never be run
+    again: the user asked it to stop.
     """
     try:
         with session_scope() as db:
@@ -291,6 +316,13 @@ def run_status(run_id: str) -> str:
                 return "unknown"
             if task.status not in ("pending", "in_progress"):
                 return "finished"
+            media_file = (
+                db.query(MediaFile).filter(MediaFile.id == task.media_file_id).first()
+                if task.media_file_id is not None
+                else None
+            )
+            if _cancel_requested(media_file, run_id):
+                return "cancelled"
             if task.media_file_id is not None and task.created_at is not None:
                 newer = (
                     db.query(Task.id)
@@ -353,9 +385,10 @@ def recover_lost_run(db, task: Task) -> RunOutcome | None:
     that exact stage back; this covers the rest. Spends the infrastructure-requeue budget, not
     the error budget, and dispatches without backoff: nothing about the file was wrong.
 
-    Returns None when there is nothing to recover: the task has no file, or another recovery
-    pass already ended the run (the row is re-read under a lock, so the reaper and the health
-    check can never both dispatch a replacement for the same run).
+    Returns None when there is nothing to recover: the task has no file, the run is being
+    cancelled, or another recovery pass already ended the run (the row is re-read under a
+    lock, so the reaper and the health check can never both dispatch a replacement for the
+    same run).
     """
     current = db.query(Task).filter(Task.id == task.id).with_for_update().first()
     if current is None or current.status not in ("pending", "in_progress"):
@@ -364,6 +397,10 @@ def recover_lost_run(db, task: Task) -> RunOutcome | None:
         return None
     media_file = db.query(MediaFile).filter(MediaFile.id == task.media_file_id).first()
     if media_file is None:
+        return None
+    if _cancel_requested(media_file, str(task.id)):
+        # A replacement run would carry no cancellation flag and transcribe a file the user
+        # stopped. The worker is gone, so ``reconcile_cancellation`` resolves it to CANCELLED.
         return None
     from app.core.broker_orphans import discard_run_deliveries
 

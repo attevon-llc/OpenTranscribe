@@ -108,6 +108,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redaction status stayed in progress and the summary and topic tasks waiting on it deferred
   until they gave up. Both are now replayed. A test now fails if the per-file pipeline
   dispatches a task that is neither replayable nor excluded for a stated reason.
+- **A cancelled file is no longer run again after its worker dies.** When the worker holding a
+  stage of a file in `CANCELLING` died, the orphan reaper read the run as current, spent one of
+  the file's infrastructure requeues and put the stage back at the head of its queue; if the
+  stage's message was gone too, the lost-run recovery dispatched a brand-new run with no
+  cancellation flag, so the cancelled file was transcribed after all. Both now leave the run to
+  `reconcile_cancellation`, and the stage's delivery is dropped.
+- **Non-transcription tasks held by a dead worker no longer wait out the 6 h visibility
+  timeout.** The orphan reaper only considered transcription stages, so a utility, CPU or
+  enrichment task (or a countdown task a worker was holding until its time) stayed in the
+  unacked set, counted as reserved work, until it was redelivered six hours later. It is now
+  put back at the head of its queue once no live worker has reported holding it for
+  `BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` (600) after delivery or its ETA, at most
+  `BROKER_ORPHAN_MAX_REQUEUES` (5) times per message. A task the worker-loss replay sweep
+  already tracks is left to that sweep.
 - **A file is never stranded or failed because its worker died.** A worker killed while it held
   a transcription stage (out of memory, SIGKILL at the end of a stop grace period, node loss, a
   container restart) left that stage in the broker's unacked set for the 6 h visibility

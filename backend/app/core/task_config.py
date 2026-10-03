@@ -125,6 +125,17 @@ class TaskRecoveryConfig:
     BROKER_ORPHAN_SWEEP_INTERVAL: int = field(
         default_factory=lambda: _int_env("BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS", 60)
     )
+    # Every OTHER ``unacked`` delivery (not a transcription stage) has no run lease, so the
+    # only evidence that its worker is gone is that no live worker reports holding it. This is
+    # how long after delivery (or after its ETA) that evidence is trusted: the margin for a
+    # live worker that misses one inspect broadcast. Each message is put back at most
+    # BROKER_ORPHAN_MAX_REQUEUES times, so one that kills every worker it reaches stops.
+    BROKER_ORPHAN_UNTRACKED_STALE: int = field(
+        default_factory=lambda: _int_env("BROKER_ORPHAN_UNTRACKED_STALE_SECONDS", 600)
+    )
+    BROKER_ORPHAN_MAX_REQUEUES: int = field(
+        default_factory=lambda: _int_env("BROKER_ORPHAN_MAX_REQUEUES", 5)
+    )
 
     # Worker-loss replay for idempotent tasks (issue #1067, app/core/task_replay.py). A task
     # in REPLAYABLE_TASKS heartbeats while it runs; once the heartbeat has lapsed the

@@ -48,6 +48,21 @@ data loses the queue with it. The second half finds every in-flight transcriptio
 lease and nothing queued (``services/transcription_retry.recover_lost_runs``) and dispatches
 a replacement at retry priority, under the same infrastructure-requeue cap.
 
+A stage of a file the user is cancelling is never put back: its Task row is still
+``in_progress`` (only the worker's confirmation or ``reconcile_cancellation`` ends it), so it
+reads as a current run, but running it again is exactly what the user asked not to happen. Its
+delivery is discarded and ``reconcile_cancellation`` resolves the file.
+
+Every OTHER ``unacked`` delivery (a utility, CPU or enrichment task, or an ETA task a worker
+was holding until its time came) has no lease to consult, and used to wait out the six-hour
+visibility timeout -- counted as reserved work all along, and then redelivered. Without a
+lease the reaper judges it by the live workers alone: once it is older than
+``BROKER_ORPHAN_UNTRACKED_STALE_SECONDS`` (from delivery, or from its ETA), no live worker
+reports holding it, and ``task_replay`` has no heartbeat for it, it is put back at the front of
+its queue the same way, at most ``BROKER_ORPHAN_MAX_REQUEUES`` times per message. A task
+``task_replay`` already recorded is left to that sweep, which re-sends it under the same id;
+restoring the delivery as well would run it twice, so the delivery is discarded instead.
+
 Duplicates stay harmless even if a judgement here is wrong: a stage re-checks ownership at
 pickup (``tasks/transcription/run_ownership.py``) and stands down when its run was replaced or
 finished, when another delivery of the same message still holds the lease, or when the
@@ -209,6 +224,17 @@ def is_orphaned(delivery: UnackedDelivery, run: Any, now: float, stale: float) -
     if age is None or age < stale:
         return False
     return not (delivery.eta is not None and delivery.eta > now - stale)
+
+
+def is_untracked_candidate(delivery: UnackedDelivery, now: float, stale: float) -> bool:
+    """A delivery no lease speaks for, old enough to be judged by the live workers alone.
+
+    Measured from its ETA when it has one: a worker holds an ETA task in memory from delivery
+    until its time comes, which is not a sign of anything.
+    """
+    if delivery.is_stage or delivery.delivered_at is None or not delivery.stage_id:
+        return False
+    return now - max(delivery.delivered_at, delivery.eta or 0.0) >= stale
 
 
 def classify(
@@ -384,8 +410,9 @@ def _requeue_or_fail(delivery: UnackedDelivery, client: Any, connection: Any) ->
     status = transcription_retry.run_status(run_id)
     if status == "unknown":
         return "skipped"
-    if status == "finished":
-        # A late copy of a run that already ended (or was replaced): never redeliver it.
+    if status in ("finished", "cancelled"):
+        # A late copy of a run that already ended (or was replaced), or of a file the user is
+        # cancelling: never redeliver it. ``reconcile_cancellation`` resolves the latter.
         discard_delivery(client, delivery.tag)
         return "discarded"
     allowed, count = transcription_retry.allow_infra_requeue(delivery.file_uuid or run_id)
@@ -411,12 +438,61 @@ def _requeue_or_fail(delivery: UnackedDelivery, client: Any, connection: Any) ->
     return "requeued"
 
 
+UNTRACKED_REQUEUES_KEY = "broker_orphan_requeues:{task_id}"
+
+
+def _count_untracked_requeue(client: Any, task_id: str) -> int:
+    key = UNTRACKED_REQUEUES_KEY.format(task_id=task_id)
+    pipe = client.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, 86400)
+    return int(pipe.execute()[0])
+
+
+def _reclaim_untracked(delivery: UnackedDelivery, client: Any, connection: Any) -> str | None:
+    """Act on one untracked delivery no live worker holds. None when it is not an orphan."""
+    from app.core import task_replay
+
+    task_id = delivery.stage_id or ""
+    alive = task_replay.is_alive(task_id)
+    if alive is None:
+        return "skipped"
+    if alive:
+        return None  # heartbeating: a live worker runs it, whatever inspect said
+    if task_id in task_replay.replay_tracked_ids([task_id]):
+        # task_replay re-sends it under this id; restoring this copy too would run it twice.
+        discard_delivery(client, delivery.tag)
+        return "discarded"
+    count = _count_untracked_requeue(client, task_id)
+    if count > task_recovery_config.BROKER_ORPHAN_MAX_REQUEUES:
+        discard_delivery(client, delivery.tag)
+        logger.error(
+            "Dropped %s (%s) from %s: its worker was lost %d times",
+            delivery.task_name,
+            task_id,
+            delivery.queue,
+            count - 1,
+        )
+        return "exhausted"
+    if not restore_to_front(delivery.tag, connection=connection):
+        return "skipped"
+    logger.warning(
+        "Requeued %s (%s) at the front of %s: no live worker holds it (requeue %d of %d)",
+        delivery.task_name,
+        task_id,
+        delivery.queue,
+        count,
+        task_recovery_config.BROKER_ORPHAN_MAX_REQUEUES,
+    )
+    return "requeued"
+
+
 def reclaim_orphaned_deliveries(
     connection: Any = None,
     held_ids: set[str] | None = None,
     now: float | None = None,
 ) -> dict[str, int]:
-    """Requeue (or, past the cap, fail) every orphaned transcription stage. Counts by outcome.
+    """Requeue (or, past the cap, fail) every orphaned delivery. Counts by outcome.
 
     Args:
         connection: A kombu connection to the broker; defaults to the app's.
@@ -440,7 +516,13 @@ def reclaim_orphaned_deliveries(
         deliveries = read_unacked(client)
         summary["unacked"] = len(deliveries)
         _held, orphaned = classify(deliveries, now=now)
-        if orphaned:
+        clock = time.time() if now is None else now
+        untracked = [
+            d
+            for d in deliveries
+            if is_untracked_candidate(d, clock, task_recovery_config.BROKER_ORPHAN_UNTRACKED_STALE)
+        ]
+        if orphaned or untracked:
             live = held_by_live_workers() if held_ids is None else held_ids
             if live is None:
                 summary["error"] = 1
@@ -450,6 +532,13 @@ def reclaim_orphaned_deliveries(
                     continue
                 summary["orphaned"] += 1
                 summary[_requeue_or_fail(delivery, client, conn)] += 1
+            for delivery in untracked:
+                if delivery.stage_id in live:
+                    continue
+                outcome = _reclaim_untracked(delivery, client, conn)
+                if outcome is not None:
+                    summary["orphaned"] += 1
+                    summary[outcome] += 1
         # Runs whose worker AND message are gone: nothing to put back, so re-dispatch.
         from app.services.transcription_retry import recover_lost_runs
 

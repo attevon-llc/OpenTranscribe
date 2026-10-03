@@ -41,7 +41,7 @@ class UserDiarizationSettings(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
     provider: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., "pyannote"
-    model_name: Mapped[str] = mapped_column(String(100), nullable=False)  # e.g., "precision-2"
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)  # e.g., "precision-3"
     api_key: Mapped[str | None] = mapped_column(Text, nullable=True)  # AES-256-GCM encrypted
     base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 

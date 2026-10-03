@@ -131,13 +131,14 @@ def _progress_recorder():
 def test_model_resolution_uses_correct_pyannote_ids():
     # Transcription model ids are the live API's transcriptionConfig.model enum values
     # (verified against the API — NO "nvidia-" prefix despite the docs); diarization must
-    # be precision-2 (the only model that supports transcription).
+    # be precision-3 (pyannoteAI retires precision-2 on 2026-10-17, #1153; both support
+    # transcription, community-1 does not).
     assert _provider("parakeet")._resolve_models() == (
-        "precision-2",
+        "precision-3",
         "parakeet-tdt-0.6b-v3",
     )
     assert _provider("whisper-large-v3-turbo")._resolve_models() == (
-        "precision-2",
+        "precision-3",
         "faster-whisper-large-v3-turbo",
     )
     # Unknown model falls back to parakeet.
@@ -413,7 +414,7 @@ def test_job_body_omits_speaker_hints_at_library_defaults(tmp_path):
     assert "minSpeakers" not in body
     assert "maxSpeakers" not in body
     # Base fields are always present regardless of the speaker-hint branch taken.
-    assert body["model"] == "precision-2"
+    assert body["model"] == "precision-3"
     assert body["transcriptionConfig"] == {"model": "parakeet-tdt-0.6b-v3"}
     assert body["transcription"] is True
     assert body["confidence"] is True

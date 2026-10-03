@@ -1494,6 +1494,11 @@ DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS = False  # chat.rag.overview_after_excerpts
 # two cases — the exact per-job re-serialization cost this shared-volume path exists to avoid.
 ENGINE_SHARED_VOLUME_DEFAULT = "/scratch/opentranscribe/engine"
 
+# pyannoteAI's diarization model for its cloud diarization and STT-orchestration APIs.
+# precision-2 is deprecated by the vendor on 2026-10-17 (#1153); precision-3 replaces it
+# and, like precision-2, supports transcription (community-1 does not).
+PYANNOTE_DEFAULT_DIARIZATION_MODEL = "precision-3"
+
 
 def engine_shared_volume_enabled() -> bool:
     """Whether preprocess hands the WAV to the GPU task through the shared volume (#1151).

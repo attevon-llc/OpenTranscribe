@@ -59,12 +59,19 @@ CLAIM_KEY = "task_replay_claim:{task_id}"
 #: Tasks that are safe to run again after their worker died. Each is keyed by a file (or
 #: a file plus fixed arguments) and overwrites its own output, so a second run reaches the
 #: same end state. The cost of a duplicate is compute (or one LLM call), never data.
+#: Every task the per-file pipeline dispatches is either here or excluded with a reason in
+#: ``tests/unit/test_lost_task_replay.py`` (``_NOT_REPLAYED_ON_PURPOSE``).
 REPLAYABLE_TASKS: frozenset[str] = frozenset(
     {
         "detect_speaker_attributes",
         "speaker.cluster_for_file",
         "analytics.analyze_transcript",
+        # The pipeline's per-file waveform (dispatched by preprocess) and the bulk backfill.
+        "media.generate_waveform",
         "media.generate_waveform_data",
+        # Redaction spans, recomputed per segment; a lost run left the file's redaction status
+        # in progress, so the LLM tasks that wait for it deferred until they gave up.
+        "redaction.detect",
         "media.create_playback_rendition",
         "generate_thumbnail",
         "index_transcript_search",

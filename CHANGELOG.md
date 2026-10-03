@@ -100,6 +100,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
+  worker-loss replay allowlist named the bulk waveform backfill task
+  (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches
+  (`media.generate_waveform`), and did not include `redaction.detect`. Both are acked on
+  receipt, so a worker killed mid-run lost them for good: the file kept no waveform, or its
+  redaction status stayed in progress and the summary and topic tasks waiting on it deferred
+  until they gave up. Both are now replayed. A test now fails if the per-file pipeline
+  dispatches a task that is neither replayable nor excluded for a stated reason.
 - **A cancelled file is no longer run again after its worker dies.** When the worker holding a
   stage of a file in `CANCELLING` died, the orphan reaper read the run as current, spent one of
   the file's infrastructure requeues and put the stage back at the head of its queue; if the

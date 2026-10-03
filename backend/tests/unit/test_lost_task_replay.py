@@ -344,3 +344,80 @@ def test_the_celery_signals_are_wired(fake_redis):
 
     task_postrun.send(sender=task, task_id="sig", task=task, args=["f", 1], kwargs={})
     assert fake_redis.hget(tr.REPLAY_HASH, "sig") is None
+
+
+# --- what the per-file pipeline dispatches must be covered -------------------------------
+
+#: Tasks the per-file pipeline dispatches that are deliberately NOT replayable, each with why.
+#: A task in neither this map nor ``REPLAYABLE_TASKS`` is a run that silently vanishes when its
+#: worker dies mid-run (an early ack drops the message; nothing re-sends it).
+_NOT_REPLAYED_ON_PURPOSE = {
+    # GPU work: a replay is a second GPU run, and the allowlist admits no GPU task.
+    "rediarize": "GPU queue",
+    # Updates speaker profiles and closes the pipeline run (firing its completion hook), so a
+    # second run is not known to reach the same end state. Its loss is still recovered: the
+    # pipeline run it was closing reads as lost and is re-dispatched.
+    "extract_speaker_embeddings": "not idempotent; pipeline run recovery covers its loss",
+    # A short fan-out of other dispatches; a replay would dispatch the LLM tasks twice.
+    "transcription.enrich_and_dispatch": "fan-out only; replay would double-dispatch",
+    # Benchmark bookkeeping only.
+    "pipeline_timing.flush_tail": "benchmark markers only",
+}
+
+_PIPELINE_DISPATCH_MODULES = (
+    "app/tasks/transcription/preprocess.py",
+    "app/tasks/transcription/postprocess.py",
+    "app/tasks/transcription/background.py",
+    "app/tasks/transcription/downstream.py",
+    "app/tasks/ingest_artifacts_task.py",
+)
+
+
+def _pipeline_dispatched_task_names() -> set[str]:
+    """Registered names of every task ``<task>.delay(...)``/``.apply_async(...)``'d by the
+    per-file pipeline modules, resolved through the Celery registry."""
+    import ast
+    from pathlib import Path
+
+    celery_app.loader.import_default_modules()
+    by_function = {getattr(t, "__name__", None): name for name, t in celery_app.tasks.items()}
+    backend = Path(__file__).resolve().parents[2]
+    names: set[str] = set()
+    for module in _PIPELINE_DISPATCH_MODULES:
+        tree = ast.parse((backend / module).read_text())
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in ("delay", "apply_async")
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in by_function
+            ):
+                names.add(by_function[node.func.value.id])
+    return names
+
+
+def test_every_task_the_pipeline_dispatches_is_replayable_or_excluded_for_a_reason():
+    """The pipeline's own waveform task was missing: the allowlist named the bulk backfill
+    task (``media.generate_waveform_data``) instead, so a waveform run lost with its worker
+    was never re-sent and the file kept no waveform."""
+    dispatched = _pipeline_dispatched_task_names()
+    # Guard against a scan that matches nothing and passes vacuously.
+    assert {"media.generate_waveform", "detect_speaker_attributes", "rediarize"} <= dispatched
+
+    uncovered = sorted(
+        name
+        for name in dispatched
+        if not tr.is_replayable(name) and name not in _NOT_REPLAYED_ON_PURPOSE
+    )
+    assert uncovered == []
+    assert not set(_NOT_REPLAYED_ON_PURPOSE) & tr.REPLAYABLE_TASKS
+
+
+@pytest.mark.parametrize("name", ["media.generate_waveform", "redaction.detect"])
+def test_the_pipelines_waveform_and_redaction_runs_are_recorded_for_replay(fake_redis, name):
+    tr.on_task_start(_task(name), "t-pipe", [11, "file-uuid"], {})
+
+    record = json.loads(fake_redis.hget(tr.REPLAY_HASH, "t-pipe"))
+    assert record["name"] == name
+    assert record["args"] == [11, "file-uuid"]

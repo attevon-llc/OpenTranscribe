@@ -10,6 +10,8 @@ from fastapi import Request
 from sqlalchemy import and_
 from sqlalchemy import or_
 from sqlalchemy import select
+from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -70,6 +72,7 @@ def get_or_create_upload_batch(
 
     Uses the client-provided UUID as the batch identifier. If a batch with
     that UUID already exists for this user, returns it. Otherwise creates a new one.
+    Raises HTTP 409 if the UUID belongs to a different user.
 
     Args:
         db: Database session
@@ -80,24 +83,31 @@ def get_or_create_upload_batch(
     Returns:
         UploadBatch record
     """
-    batch = (
-        db.query(UploadBatch)
-        .filter(UploadBatch.uuid == batch_uuid, UploadBatch.user_id == user_id)
-        .first()
-    )
-    if batch:
-        return batch  # type: ignore[return-value, no-any-return]
-
-    batch = UploadBatch(
-        uuid=batch_uuid,
-        user_id=user_id,
-        source=source,
-        file_count=0,
-    )
-    db.add(batch)
-    db.flush()
-    logger.info(f"Created upload batch {batch_uuid} for user {user_id}")
+    # Atomic: parallel prepare requests of one multi-file upload share this uuid, so a
+    # read-then-insert would let two requests both miss and the loser hit the unique index.
+    # A concurrent uncommitted insert makes this statement wait for it, then do nothing.
+    inserted = db.execute(
+        pg_insert(UploadBatch)
+        .values(uuid=batch_uuid, user_id=user_id, source=source, file_count=0)
+        .on_conflict_do_nothing(index_elements=[UploadBatch.uuid])
+        .returning(UploadBatch.id)
+    ).first()
+    batch = db.query(UploadBatch).filter(UploadBatch.uuid == batch_uuid).one()
+    if batch.user_id != user_id:
+        # Never link a file to a batch another user owns.
+        raise HTTPException(status_code=409, detail="Upload batch id is already in use")
+    if inserted is not None:
+        logger.info(f"Created upload batch {batch_uuid} for user {user_id}")
     return batch  # type: ignore[return-value, no-any-return]
+
+
+def increment_upload_batch_file_count(db: Session, batch_id: int) -> None:
+    """Atomically bump ``file_count`` (no read-modify-write, safe under concurrency)."""
+    db.execute(
+        update(UploadBatch)
+        .where(UploadBatch.id == batch_id)
+        .values(file_count=UploadBatch.file_count + 1)
+    )
 
 
 def add_file_to_collections(
@@ -322,7 +332,7 @@ async def prepare_upload(
                 db, request.upload_batch_id, current_user.id, source="multi_upload"
             )
             db_file.upload_batch_id = batch.id  # type: ignore[assignment]
-            batch.file_count = (batch.file_count or 0) + 1  # type: ignore[assignment]
+            increment_upload_batch_file_count(db, batch.id)  # type: ignore[arg-type]
             db.flush()
             logger.info(f"Linked file {db_file.id} to upload batch {request.upload_batch_id}")
 

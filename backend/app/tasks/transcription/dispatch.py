@@ -559,6 +559,21 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
     # error-mode completions from successful ones (Phase 2 PR #8, G27).
     benchmark_timing.mark(task_id, "pipeline_error_end")
 
+    # Issue #1163: an exception that ended a run whose cancellation was requested is a
+    # cancellation. Marking the file ERROR here is what turned user cancels into "Transcription
+    # pipeline failed unexpectedly" and an error notification.
+    cancelled_run = _cancelled_run_owner(file_uuid, task_id)
+    if cancelled_run is not None:
+        from app.services.transcription_retry import finish_cancelled_run
+
+        file_id, user_id = cancelled_run
+        logger.info(
+            "Pipeline error for file %s ended a cancelled run; recording it cancelled", file_uuid
+        )
+        finish_cancelled_run(task_id, file_id, file_uuid, user_id)
+        _flush_error_timing(task_id, file_id, user_id)
+        return
+
     # Track the captured file id for the error-path timing flush below —
     # avoids running the flush inside the closed session_scope.
     flushed_file_id: int | None = None
@@ -597,6 +612,7 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
             if media_file and media_file.status not in (
                 FileStatus.ERROR,
                 FileStatus.COMPLETED,
+                FileStatus.CANCELLED,
             ):
                 update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
 
@@ -621,6 +637,25 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
         logger.error(f"Error in pipeline error handler: {e}")
     finally:
         _flush_error_timing(task_id, flushed_file_id, flushed_user_id)
+
+
+def _cancelled_run_owner(file_uuid: str, task_id: str) -> tuple[int, int] | None:
+    """``(file_id, user_id)`` when run ``task_id`` was being cancelled, else None.
+
+    None also when the file or the cancel state cannot be read: the error handler then
+    proceeds as it always has.
+    """
+    from app.services.transcription_retry import run_cancel_requested
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    try:
+        with session_scope() as db:
+            media_file = get_file_by_uuid(db, file_uuid)
+            ids = (int(media_file.id), int(media_file.user_id))
+    except Exception as e:  # noqa: BLE001 - see docstring
+        logger.debug("Could not read file %s for the cancel check: %s", file_uuid, e)
+        return None
+    return ids if run_cancel_requested(task_id, ids[0]) else None
 
 
 def _flush_error_timing(task_id: str, file_id: int | None, user_id: int | None) -> None:

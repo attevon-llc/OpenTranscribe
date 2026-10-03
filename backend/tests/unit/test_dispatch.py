@@ -395,6 +395,9 @@ def dispatch_seams(db_session):
         patch(_LOG_OOM) as log_oom,
     ):
         group.return_value.apply_async.return_value.id = _BATCH_ID
+        # No run's cancellation flag is armed: on_pipeline_error reads it (issue #1163), and a
+        # bare MagicMock's truthy `exists()` would read every run as cancelled.
+        get_redis.return_value.exists.return_value = 0
         yield SimpleNamespace(
             cleanup_temp=cleanup_temp,
             send_error=send_error,

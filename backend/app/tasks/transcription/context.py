@@ -267,6 +267,16 @@ def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContex
         return ctx
 
 
+def cancelled_payload(file_uuid: str, file_id: int, task_id: str) -> dict:
+    """The chain payload of a run recorded as cancelled (see ``finalize_cancelled_run``)."""
+    return {"status": "cancelled", "file_uuid": file_uuid, "file_id": file_id, "task_id": task_id}
+
+
+def is_cancelled(payload: object) -> bool:
+    """Whether a stage's failure handling recorded the run as cancelled (issue #1163)."""
+    return isinstance(payload, dict) and payload.get("status") == "cancelled"
+
+
 def _handle_transcription_failure(
     ctx: TranscriptionContext, task_id: str, raw_error: str, error_type: str
 ) -> dict:
@@ -282,10 +292,16 @@ def _handle_transcription_failure(
     spent. The policy also fires the completion hook (success=False) either way, so a quota
     reservation taken at dispatch is released.
 
+    A run whose cancellation was requested is recorded as cancelled instead (issue #1163),
+    and the caller must RETURN the ``{"status": "cancelled", ...}`` payload rather than
+    re-raise: returning acks the message and lets ``finalize_transcription`` release the temp
+    audio, and Celery records no failure for a stage the user stopped.
+
     Returns:
         The chain payload for the rest of this run: ``{"status": "error", ...}`` when the file
-        failed, or a superseded marker when a replacement run now owns the file -- the next
-        stage then stands down without touching the temp audio that run is using.
+        failed, ``{"status": "cancelled", ...}`` when the run was being cancelled, or a
+        superseded marker when a replacement run now owns the file -- the next stage then
+        stands down without touching the temp audio that run is using.
     """
     from app.services.transcription_retry import RunOutcome
     from app.services.transcription_retry import finish_failed_run
@@ -294,6 +310,8 @@ def _handle_transcription_failure(
 
     failure = ErrorCategorizationService.classify_failure(raw_error)
     outcome = finish_failed_run(task_id, ctx.file_id, failure)
+    if outcome == RunOutcome.CANCELLED:
+        return cancelled_payload(ctx.file_uuid, ctx.file_id, task_id)
     if outcome == RunOutcome.RETRIED:
         return {
             "status": SUPERSEDED,

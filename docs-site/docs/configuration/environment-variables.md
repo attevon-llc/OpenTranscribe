@@ -555,11 +555,20 @@ Infrastructure requeues are counted per file, separately from the admin retry li
 that keeps killing workers fails with *"interrupted ... after several automatic retries"* once
 `TRANSCRIPTION_MAX_INFRA_REQUEUES` is spent.
 
+A stage of a file that is being cancelled is never put back; its delivery is dropped and the
+cancellation backstop resolves the file. Every other late-acknowledged task (utility, CPU and
+enrichment tasks, and countdown tasks a worker was holding until their time) has no lease, so
+the reaper puts it back once no live worker has reported holding it for
+`BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` after delivery or after its ETA. A task the
+worker-loss replay sweep already tracks is left to that sweep.
+
 ```bash
 TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS=15   # Default: 15 — lease refresh
 TRANSCRIPTION_HEARTBEAT_TTL_SECONDS=90        # Default: 90 — detection latency for a dead worker
 BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS=60       # Default: 60 — how often the reaper runs
 BROKER_ORPHAN_STALE_SECONDS=120               # Default: 120 — grace for a delivery not yet started
+BROKER_ORPHAN_UNTRACKED_STALE_SECONDS=600     # Default: 600 — grace for a non-transcription delivery
+BROKER_ORPHAN_MAX_REQUEUES=5                  # Default: 5 — worker losses per non-transcription message
 TRANSCRIPTION_MAX_INFRA_REQUEUES=5            # Default: 5 — worker losses per file before it fails
 TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD=3 # Default: 3 — for the poison-file alert gauge
 ```

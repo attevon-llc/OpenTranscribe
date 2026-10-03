@@ -65,3 +65,19 @@ def stage(self, file_uuid: str, task_id: str) -> str:
             client.blpop([RELEASE_KEY.format(task_id=task_id)], timeout=600)
     client.rpush(DONE_KEY, task_id)
     return task_id
+
+
+@app.task(
+    name="orphan_test.untracked",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
+def untracked(self, job_id: str) -> str:
+    """An ``acks_late`` task that is NOT a transcription stage, so it holds no run lease."""
+    client = redis.from_url(BROKER_URL)
+    client.rpush(STARTED_KEY, job_id)
+    if client.exists(BLOCK_KEY.format(task_id=job_id)):
+        client.blpop([RELEASE_KEY.format(task_id=job_id)], timeout=600)
+    client.rpush(DONE_KEY, job_id)
+    return job_id

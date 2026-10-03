@@ -184,6 +184,14 @@ should import `app.api` or `app.services` at module scope.
   older than `BROKER_ORPHAN_STALE_SECONDS`/its ETA, and not reported by `inspect` as held by a
   live worker. Don't "fix" slow recovery by lowering `CELERY_VISIBILITY_TIMEOUT`: Redis has no
   per-message lease, so a lower value re-runs every long live task.
+  ⚠️ A run whose file is being cancelled (`CANCELLING`/`cancellation_requested`) still has an
+  `in_progress` Task row, so `transcription_retry.run_status` reports it as `"cancelled"`, not
+  `"current"`: the reaper discards its delivery and `recover_lost_run` never re-dispatches it
+  (a replacement run carries no cancel flag). `reconcile_cancellation` resolves the file.
+  Non-stage deliveries have no lease: they are restored only after
+  `BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` past delivery/ETA with no live holder and no
+  `task_replay` heartbeat, capped by `BROKER_ORPHAN_MAX_REQUEUES`; a `task_replay`-recorded one
+  is discarded, since that sweep re-sends it under the same id.
 - `task_liveness.run_heartbeat` hands the run back as **queued** only on a normal return, a
   Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — verified: celery's
   cold-shutdown cancel ACKS a running `acks_late` task on Redis, and a "queued" marker there

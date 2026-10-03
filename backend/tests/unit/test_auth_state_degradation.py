@@ -18,6 +18,7 @@ Three defects, all on unauthenticated paths:
 
 from __future__ import annotations
 
+import threading
 from typing import cast
 from unittest.mock import patch
 
@@ -29,6 +30,7 @@ from starlette.requests import Request
 from app.auth import lockout as lockout_module
 from app.auth import rate_limit as rate_limit_module
 from app.auth import session as session_module
+from app.auth.lockout import REDIS_REPROBE_SECONDS
 
 #: Issue #810. The snapshot/restore isolation fixture used to live here; it is now shared via
 #: `tests/fixtures/auth_state_isolation.py` so `test_session_survivor_mutants.py` (which shares
@@ -170,6 +172,43 @@ class TestOidcStateStoreDoesNotUseKeys:
         assert store._cleanup_oldest_states(count=5) == 1
 
 
+def _reprobe_boundary_survives_a_concurrent_caller(module, *, probe_name):
+    """The boundary re-probe belongs to the caller whose clock reached the boundary.
+
+    Issue #1160: the boundary tests used to freeze ``time.monotonic`` itself. That patch is
+    process-wide, so a call from any OTHER thread inside the window read the frozen clock,
+    found the probe due, spent it on a still-down Redis and stamped ``_last_redis_probe`` with
+    the frozen value. The test's own call then measured an interval of zero and got the
+    fallback store (``assert <InMemoryLockoutStore> is <_RecordingRedis>`` in CI). That
+    interleaving is forced here: a second thread calls ``_get_store()`` on its own (real)
+    clock between the fallback and the boundary call. Under the old process-wide patch this
+    fails every time; with the clock injected into one call, the other caller is still well
+    inside the interval and must leave the probe alone.
+
+    Returns ``(first store, probes spent by the two fallback-era calls, boundary store,
+    the recovered client)`` so the asserting stays in the calling test.
+    """
+    module._redis_client = None
+    module._in_memory_store = None
+    module._store_initialized = False
+    module._last_redis_probe = 0.0
+    recovered = _RecordingRedis([])
+    still_down = _CountingProbe(result=None)
+
+    with patch.object(module, probe_name, still_down):
+        first = module._get_store()
+        frozen = module._last_redis_probe + REDIS_REPROBE_SECONDS
+        other = threading.Thread(target=module._get_store)
+        other.start()
+        other.join(timeout=5)
+        if other.is_alive():  # pragma: no cover - a hang is a failure, not a pass
+            raise AssertionError("the concurrent _get_store() call did not return")
+
+    with patch.object(module, probe_name, return_value=recovered):
+        at_boundary = module._get_store(clock=lambda: frozen)
+    return first, still_down.calls, at_boundary, recovered
+
+
 @pytest.mark.unit
 class TestOidcStoreDegradation:
     def _reset(self):
@@ -267,20 +306,32 @@ class TestOidcStoreDegradation:
         with patch.object(session_module, "get_redis_client", return_value=None):
             assert isinstance(session_module._get_store(), session_module.InMemoryStore)
 
-        # The clock must be PATCHED, not merely rewound. Setting
+        # The clock must be FROZEN, not merely rewound. Setting
         # `_last_redis_probe = time.monotonic() - REDIS_REPROBE_SECONDS` and letting the
         # code read the real clock puts `now` a few microseconds PAST the boundary, so `>`
         # is satisfied too and the `>=`-vs-`>` distinction goes untested — which is how the
         # mutant survived the first version of this test.
+        #
+        # Injected into THIS call only (issue #1160), never patched onto `time.monotonic`:
+        # that patch is process-wide, so any other thread reaching `_get_store()` inside the
+        # window read the frozen clock, spent the boundary probe, and this call then saw an
+        # interval of zero. See `_reprobe_boundary_survives_a_concurrent_caller`.
         frozen = session_module._last_redis_probe + REDIS_REPROBE_SECONDS
-        with (
-            patch.object(session_module.time, "monotonic", return_value=frozen),
-            patch.object(session_module, "get_redis_client", return_value=recovered),
-        ):
-            assert session_module._get_store() is recovered, (
+        with patch.object(session_module, "get_redis_client", return_value=recovered):
+            assert session_module._get_store(clock=lambda: frozen) is recovered, (
                 "no re-probe at exactly REDIS_REPROBE_SECONDS — the comparison is `>` "
                 "rather than `>=`, so every re-probe is one full interval late"
             )
+
+    def test_the_boundary_probe_survives_a_concurrent_caller(self):
+        """Issue #1160's mechanism, made deterministic: another thread calls in between."""
+        first, probes, at_boundary, recovered = _reprobe_boundary_survives_a_concurrent_caller(
+            session_module, probe_name="get_redis_client"
+        )
+
+        assert isinstance(first, session_module.InMemoryStore)
+        assert probes == 1, "the concurrent caller re-probed inside the interval"
+        assert at_boundary is recovered
 
     def test_the_first_fallback_call_returns_a_real_store(self):
         """Not None. The fallback is on the login path, so None is a 500 at the door.
@@ -512,12 +563,20 @@ class TestLockoutStoreDegradation:
         with patch.object(lockout_module, "_get_redis_client", return_value=None):
             assert isinstance(lockout_module._get_store(), lockout_module.InMemoryLockoutStore)
 
+        # Frozen for this call only; see the session twin for why not `time.monotonic`.
         frozen = lockout_module._last_redis_probe + lockout_module.REDIS_REPROBE_SECONDS
-        with (
-            patch.object(lockout_module.time, "monotonic", return_value=frozen),
-            patch.object(lockout_module, "_get_redis_client", return_value=recovered),
-        ):
-            assert lockout_module._get_store() is recovered
+        with patch.object(lockout_module, "_get_redis_client", return_value=recovered):
+            assert lockout_module._get_store(clock=lambda: frozen) is recovered
+
+    def test_the_boundary_probe_survives_a_concurrent_caller(self):
+        """Issue #1160's mechanism, made deterministic: another thread calls in between."""
+        first, probes, at_boundary, recovered = _reprobe_boundary_survives_a_concurrent_caller(
+            lockout_module, probe_name="_get_redis_client"
+        )
+
+        assert isinstance(first, lockout_module.InMemoryLockoutStore)
+        assert probes == 1, "the concurrent caller re-probed inside the interval"
+        assert at_boundary is recovered
 
     def test_a_recovered_redis_is_adopted_and_the_fallback_dropped(self):
         """``if recovered is not None`` must not invert.

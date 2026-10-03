@@ -15,6 +15,7 @@ import time
 
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
+from app.core.constants import engine_shared_volume_enabled
 from app.core.constants import resolve_engine_shared_volume_path
 from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import get_refreshed_object
@@ -35,6 +36,22 @@ from .notifications import send_progress_notification
 from .run_ownership import superseded_result
 
 logger = logging.getLogger(__name__)
+
+
+# Per process: the disabled handoff is a deployment fact, not a per-file event.
+_handoff_disabled_logged = False
+
+
+def _log_handoff_disabled_once() -> None:
+    global _handoff_disabled_logged
+    if _handoff_disabled_logged:
+        return
+    _handoff_disabled_logged = True
+    logger.info(
+        "Engine shared-volume WAV handoff is off (ENGINE_SHARED_VOLUME_ENABLED=false, or "
+        "PIPELINE_SCRATCH_SHARED=false with it unset); GPU tasks will download audio from "
+        "object storage"
+    )
 
 
 def stage_engine_shared_volume_wav(file_uuid: str, task_id: str, temp_audio_path: str) -> str:
@@ -61,8 +78,12 @@ def stage_engine_shared_volume_wav(file_uuid: str, task_id: str, temp_audio_path
     touchpoints), so the two lifetimes stay independent exactly as before this change; on
     tmpfs the shared inode means the handoff costs one WAV, not two.
 
-    Returns the destination path, or "" on any failure (caller falls back to MinIO).
+    Returns the destination path, or "" when the handoff is disabled
+    (``engine_shared_volume_enabled``, #1151) or on any failure (caller falls back to MinIO).
     """
+    if not engine_shared_volume_enabled():
+        _log_handoff_disabled_once()
+        return ""
     try:
         # resolve_* not a bare env read: a stale .env value naming the removed
         # transcription-temp volume would be recreated container-local here, silently

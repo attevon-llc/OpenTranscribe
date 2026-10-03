@@ -1495,6 +1495,22 @@ DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS = False  # chat.rag.overview_after_excerpts
 ENGINE_SHARED_VOLUME_DEFAULT = "/scratch/opentranscribe/engine"
 
 
+def engine_shared_volume_enabled() -> bool:
+    """Whether preprocess hands the WAV to the GPU task through the shared volume (#1151).
+
+    ``ENGINE_SHARED_VOLUME_ENABLED`` decides when set. Unset, it follows
+    ``PIPELINE_SCRATCH_SHARED``: a deployment that has declared its workers do not share a
+    filesystem cannot share this directory either. Both default to on, so a single-host
+    deployment keeps the fast path. Off, the GPU task always downloads the WAV from object
+    storage — the right behaviour when preprocess and GPU workers run on different nodes,
+    where a written WAV is never readable by the GPU worker and never cleaned up by anyone.
+    """
+    explicit = _os.environ.get("ENGINE_SHARED_VOLUME_ENABLED", "").strip().lower()
+    if explicit:
+        return explicit != "false"
+    return _os.environ.get("PIPELINE_SCRATCH_SHARED", "true").strip().lower() != "false"
+
+
 def resolve_engine_shared_volume_path() -> str:
     """The handoff directory, ignoring a configured path that no longer exists.
 

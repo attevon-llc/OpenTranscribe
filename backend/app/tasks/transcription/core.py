@@ -22,6 +22,7 @@ from celery import chain
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import GPUPriority
+from app.core.constants import engine_shared_volume_enabled
 from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
 from app.core.task_cancellation import TranscriptionCancelledError
@@ -294,7 +295,12 @@ def _log_shared_wav_fallback_reason(local_wav_path: str | None, file_id: int) ->
     indistinguishable from the two entirely expected reasons. That silence is what let the
     fast path stay off on real installs without anyone noticing.
     """
-    if not local_wav_path:
+    if not engine_shared_volume_enabled():
+        # Handoff deliberately off (multi-node, #1151): the download is the normal path.
+        logger.debug(
+            "GPU task: shared-volume handoff disabled; MinIO download for file %d", file_id
+        )
+    elif not local_wav_path:
         logger.info(
             "GPU task: no shared-volume WAV recorded by preprocess for file %d — "
             "falling back to MinIO download",

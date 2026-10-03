@@ -1228,3 +1228,10 @@ class SpeakerProfileBlacklist(Base):
     __table_args__ = (
         UniqueConstraint("speaker_id", "profile_id", name="uq_speaker_profile_blacklist"),
     )
+
+
+# Issue #1162: clear a file's infrastructure-requeue count on every terminal status write.
+# Registered here so every process that can write a MediaFile status has it.
+from app.core.infra_requeue_reset import register as _register_infra_requeue_reset  # noqa: E402
+
+_register_infra_requeue_reset()

@@ -187,6 +187,30 @@ def update_queue_depths() -> None:
         celery_queue_oldest_unacked_age_seconds.labels(queue=name).set(counts["oldest_unacked_age"])
 
 
+def _count_in_flight(file_uuids: list[str]) -> int:
+    """How many of ``file_uuids`` are not in a terminal status (issue #1162).
+
+    The requeue counter is cleared when a file's status becomes terminal; this is the second
+    line of defence, for entries written before that clear existed or by a path it missed.
+    A uuid with no file row (deleted since) is not in flight either.
+    """
+    if not file_uuids:
+        return 0
+    from app.core.infra_requeue_reset import TERMINAL_FILE_STATUSES
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+
+    with session_scope() as db:
+        return int(
+            db.query(MediaFile.id)
+            .filter(
+                MediaFile.uuid.in_(file_uuids),
+                MediaFile.status.notin_(TERMINAL_FILE_STATUSES),
+            )
+            .count()
+        )
+
+
 def update_transcription_lease_metrics() -> None:
     """Refresh the two transcription-recovery alert gauges (full ``/metrics`` page only).
 
@@ -200,7 +224,7 @@ def update_transcription_lease_metrics() -> None:
     try:
         from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
         from app.core.task_liveness import RunState
-        from app.core.task_liveness import count_files_requeued_at_least
+        from app.core.task_liveness import files_requeued_at_least
         from app.core.task_liveness import probe_runs
         from app.db.session_utils import session_scope
         from app.models.media import Task
@@ -218,8 +242,8 @@ def update_transcription_lease_metrics() -> None:
             dead = sum(1 for run in runs.values() if run.state == RunState.DEAD)
             transcription_runs_without_lease.set(dead)
         threshold = max(1, int(os.getenv("TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD", "3")))
-        requeued = count_files_requeued_at_least(threshold)
+        requeued = files_requeued_at_least(threshold)
         if requeued is not None:
-            transcription_files_infra_requeued.set(requeued)
+            transcription_files_infra_requeued.set(_count_in_flight(requeued))
     except Exception as exc:  # noqa: BLE001 — scrape must never fail on a backing store
         logger.debug("Transcription lease metrics skipped: %s", exc)

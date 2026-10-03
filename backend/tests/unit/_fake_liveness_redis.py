@@ -86,6 +86,15 @@ class FakeRedis:
         top = float("inf") if high == "+inf" else float(high)
         return sum(1 for score in self.zsets.get(name, {}).values() if low <= score <= top)
 
+    def zrangebyscore(self, name: str, low: float, high: float | str) -> list[str]:
+        top = float("inf") if high == "+inf" else float(high)
+        bucket = self.zsets.get(name, {})
+        return [
+            m
+            for m, score in sorted(bucket.items(), key=lambda item: item[1])
+            if low <= score <= top
+        ]
+
     def expire(self, key: str) -> None:
         """Test helper: the TTL of ``key`` ran out."""
         self.store.pop(key, None)

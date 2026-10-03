@@ -345,12 +345,17 @@ def clear_infra_requeues(file_uuid: str) -> None:
         logger.warning("Could not clear the infrastructure requeues of %s: %s", file_uuid, e)
 
 
-def count_files_requeued_at_least(threshold: int) -> int | None:
-    """Files with at least ``threshold`` infrastructure requeues; None when Redis is unreadable."""
+def files_requeued_at_least(threshold: int) -> list[str] | None:
+    """Uuids of files with at least ``threshold`` infrastructure requeues; None when unreadable.
+
+    The members, not a bare count, so the gauge can drop files whose run already ended (issue
+    #1162): an entry that outlived its run must not hold the poison-loop alert up.
+    """
     from app.core.redis import get_redis
 
     try:
-        return int(get_redis().zcount(INFRA_REQUEUES_KEY, threshold, "+inf"))
+        members = get_redis().zrangebyscore(INFRA_REQUEUES_KEY, threshold, "+inf")
     except Exception as e:
-        logger.warning("Could not count requeued files: %s", e)
+        logger.warning("Could not list requeued files: %s", e)
         return None
+    return [m.decode() if isinstance(m, bytes) else str(m) for m in members]

@@ -648,6 +648,39 @@ FLOWER_URL_PREFIX=flower  # URL prefix (must match nginx proxy_pass path)
 
 Flower provides industry-standard Celery task monitoring with persistent task history, queue visibility, and worker status. Access at `http://localhost:5175/flower` (or via NGINX at `/flower/`).
 
+## Worker Task Metrics
+
+```bash
+WORKER_METRICS_PORT=          # Default: unset (off). A TCP port, e.g. 9808, to turn it on
+```
+
+Each Celery worker can serve per-task Prometheus metrics at `http://<worker>:<port>/metrics`:
+
+| Metric | Labels | Meaning |
+|---|---|---|
+| `celery_task_total` | `task`, `outcome` | Tasks that ended in this worker. `outcome` is `success`, `failure`, `retry` or `revoked` |
+| `celery_task_runtime_seconds` | `task` | Histogram of run time, start to end, whatever the outcome (buckets 0.5 s to 2 h) |
+
+- `task` is the registered task name (for example `transcription.gpu_transcribe`). A name the
+  worker has not registered is counted as `other`, so the label set is bounded by the task list.
+  No file, user or task ids are ever used as labels.
+- A task whose worker died and that was put back on its queue is not counted: it has not ended.
+  A task that failed because its worker process died is counted as `failure`.
+- Unset, empty or invalid means off: nothing is recorded and no port is opened. `.env` is shared by
+  every service, but only `celery ... worker` processes read the variable, so the API, beat and
+  Flower are unaffected. Each worker container has its own network namespace, so the same port
+  works for all of them; the port is not published to the host, so scrape it from the compose
+  network (for example `celery-cpu-worker:9808`).
+- **Prefork workers.** Tasks run in forked child processes, which cannot share one port. A worker
+  with this variable set runs `prometheus_client` in multiprocess mode: every process writes its
+  samples to a file in `PROMETHEUS_MULTIPROC_DIR` and the worker's main process serves them all,
+  including the counts of children already recycled by `--max-tasks-per-child`. The directory is a
+  fresh temporary one by default, emptied at startup and removed at shutdown; set
+  `PROMETHEUS_MULTIPROC_DIR` only to choose where it lives (one directory per worker). Threads and
+  solo pools (the GPU and redaction workers) use the same mechanism with a single process.
+- Because multiprocess mode applies to the whole worker process, other collectors a worker updates
+  (for example `db_query_duration_seconds`) are served on the same port.
+
 ## Object Storage
 
 OpenTranscribe stores uploaded media in an S3-compatible bucket. `STORAGE_BACKEND=minio` (the

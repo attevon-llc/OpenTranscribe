@@ -20,6 +20,9 @@ from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.core.constants import gpu_preferred_queue
+from app.core.task_liveness import clear_infra_requeues
+from app.core.task_liveness import clear_run_markers
+from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import session_scope
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
@@ -50,6 +53,42 @@ logger = logging.getLogger(__name__)
     retry_jitter=True,
 )
 def finalize_transcription(self, gpu_result: dict) -> dict:
+    """Stage 3 of the pipeline: :func:`_finalize`, run under the run's lease.
+
+    Like every other stage it holds the run lease while it works, so a worker killed here is
+    noticed within one lease TTL (``app/core/broker_orphans.py``) instead of leaving the run
+    reading as "queued". Once the run is COMPLETED its liveness markers are dropped: nothing
+    of it is queued or running any more. A run still waiting on an asynchronous embedding
+    task stays handed back to the broker, as before.
+    """
+    task_id = gpu_result.get("task_id")
+    if not task_id or gpu_result.get("status") in _NO_WORK_STATUSES:
+        return _finalize(gpu_result)
+    with run_heartbeat(str(task_id)):
+        result = _finalize(gpu_result)
+    if result.get("status") == "success" and _run_completed(str(task_id)):
+        clear_run_markers(str(task_id))
+        clear_infra_requeues(str(gpu_result.get("file_uuid") or ""))
+    return result
+
+
+#: Payload statuses for which finalize only cleans up (no real work, so no lease).
+_NO_WORK_STATUSES = frozenset({"error", "cancelled", SUPERSEDED, "split_forwarded"})
+
+
+def _run_completed(task_id: str) -> bool:
+    try:
+        from app.models.media import Task
+
+        with session_scope() as db:
+            row = db.query(Task.status).filter(Task.id == task_id).first()
+            return row is not None and row[0] == "completed"
+    except Exception as e:  # noqa: BLE001 - only decides whether to drop two Redis keys early
+        logger.debug("Could not read the status of run %s: %s", task_id, e)
+        return False
+
+
+def _finalize(gpu_result: dict) -> dict:
     """CPU postprocessing: speaker matching → mark COMPLETED → background enrichment.
 
     Stage 3 of the 3-stage pipeline chain. Receives result from GPU task.

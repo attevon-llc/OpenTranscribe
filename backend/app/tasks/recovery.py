@@ -211,6 +211,31 @@ def reclaim_lost_tasks_task(self):
     return summary
 
 
+@celery_app.task(
+    name="system.reclaim_orphaned_deliveries",
+    bind=True,
+    priority=UtilityPriority.OPERATIONAL,
+    soft_time_limit=50,
+    time_limit=60,
+)
+@with_task_lock("system.reclaim_orphaned_deliveries", timeout=60)
+def reclaim_orphaned_deliveries_task(self):
+    """Requeue transcription stages that a dead worker took with it.
+
+    See ``app/core/broker_orphans.py``. Runs every ``BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS``;
+    a stage held by a killed worker is back at the front of its queue within about
+    ``TRANSCRIPTION_HEARTBEAT_TTL_SECONDS`` plus one sweep, instead of the six-hour
+    visibility timeout. Cheap when nothing is lost: one HGETALL/ZRANGE of the broker's
+    unacked set plus one MGET of run leases.
+    """
+    from app.core.broker_orphans import reclaim_orphaned_deliveries
+
+    summary = reclaim_orphaned_deliveries()
+    if summary.get("requeued") or summary.get("exhausted") or summary.get("discarded"):
+        logger.warning("Orphaned-delivery sweep: %s", summary)
+    return summary
+
+
 def _check_opensearch_health(summary: dict) -> None:
     """Check and repair OpenSearch indices with corrupted HNSW vector segments.
 

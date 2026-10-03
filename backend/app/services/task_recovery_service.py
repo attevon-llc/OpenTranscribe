@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.core.task_config import task_recovery_config
 from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
+from app.core.task_liveness import RunState
+from app.core.task_liveness import probe_runs
 from app.core.task_liveness import supersede_run
 from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
@@ -95,13 +97,17 @@ class TaskRecoveryService:
 
         return segment_count
 
-    def recover_stuck_task(self, db: Session, task: Task) -> bool:
+    def recover_stuck_task(self, db: Session, task: Task, requeue: bool = True) -> bool:
         """
         Attempt to recover a stuck task.
 
         Args:
             db: Database session
             task: The stuck task to recover
+            requeue: For a transcription, apply the retry policy (requeue the file, or fail it
+                once its budget is spent). False only for a caller that dispatches the
+                replacement itself (the admin recover endpoints); the run is then just
+                retired.
 
         Returns:
             bool: True if recovery was successful, False otherwise
@@ -111,6 +117,9 @@ class TaskRecoveryService:
                 f"Recovering stuck task {task.id} of type {task.task_type} "
                 f"for media file {task.media_file_id}"
             )
+
+            if requeue and task.task_type == TRANSCRIPTION_TASK_TYPE:
+                return self._recover_stuck_transcription(db, task)
 
             # Carry forward a Step 5.7 reset counter: overwriting it is what made the
             # stuck -> reset -> stuck cycle repeat forever (#1020).
@@ -142,6 +151,29 @@ class TaskRecoveryService:
         except Exception as e:
             logger.error(f"Error recovering stuck task {task.id}: {str(e)}")
             return False
+
+    @staticmethod
+    def _recover_stuck_transcription(db: Session, task: Task) -> bool:
+        """Requeue (or, past its budget, fail) a transcription the detector found stuck.
+
+        Never the generic path below: failing the Task row there ran the file-status
+        aggregate, which turned the file ERROR before the retry branch could see it was still
+        PROCESSING -- every file whose worker died ended in ERROR with no retry.
+        """
+        from app.services.transcription_retry import recover_lost_run
+        from app.services.transcription_retry import recover_overrun_run
+
+        # Re-read the lease now: the broker reaper may have put the stage back on its queue
+        # (QUEUED) since detection, and an unreadable Redis means "conclude nothing".
+        run = probe_runs([str(task.id)]).get(str(task.id))
+        state = run.state if run is not None else RunState.UNKNOWN
+        if state == RunState.RUNNING:
+            outcome = recover_overrun_run(db, task)  # alive, but past its duration budget
+        elif state == RunState.DEAD:
+            outcome = recover_lost_run(db, task)
+        else:
+            return False
+        return outcome is not None
 
     def fix_inconsistent_media_file(self, db: Session, media_file: MediaFile) -> bool:
         """
@@ -272,16 +304,19 @@ class TaskRecoveryService:
         finally:
             db.close()
 
-    def schedule_file_retry(self, media_file_id: int) -> bool:
+    def schedule_file_retry(self, media_file_id: int, countdown: int | None = None) -> bool:
         """
         Schedule a retry for a file, dispatching the appropriate task type.
 
         For files that failed during YouTube download (have source_url but no
         storage_path), dispatches process_youtube_url_task. For files that have
-        been downloaded, dispatches the 3-stage transcription pipeline.
+        been downloaded, dispatches the 3-stage transcription pipeline at RETRY
+        priority, so an automatically retried file runs ahead of submissions that
+        arrived after it.
 
         Args:
             media_file_id: ID of the media file to retry
+            countdown: Seconds to hold the retry before it starts (backoff)
 
         Returns:
             bool: True if retry was scheduled successfully
@@ -313,7 +348,9 @@ class TaskRecoveryService:
                 else:
                     from app.tasks.transcription import dispatch_transcription_pipeline
 
-                    task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+                    task_id = dispatch_transcription_pipeline(
+                        file_uuid=file_uuid, retry=True, countdown=countdown
+                    )
 
             # Validate dispatch succeeded
             if not task_id:

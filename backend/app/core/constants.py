@@ -175,6 +175,10 @@ class GPUPriority:
 
     INTERACTIVE = 0  # User action awaiting instant feedback (~5s), e.g. speaker drag
     NEAR_REALTIME = 1  # User action with response in <30s, e.g. manual embedding re-extract
+    # An automatic retry of a transcription interrupted by the infrastructure (worker lost,
+    # OOM, a lost connection). Ahead of USER_IMPORT so a requeued file keeps its place in
+    # front of submissions that arrived after it, instead of going to the back of the line.
+    TRANSCRIPTION_RETRY = 2
     USER_IMPORT = 3  # User-submitted transcription/import (~5-60min)
     USER_REDIARIZ = 4  # User-triggered re-diarization of an existing file (~5-30min)
     USER_RECLUSTER = 5  # User-triggered full speaker re-clustering (~5-15min)
@@ -184,6 +188,9 @@ class GPUPriority:
 class CPUPriority:
     """CPU queue (concurrency=8). Controls ordering when all workers are busy."""
 
+    # The CPU stages of an automatically retried transcription; see
+    # GPUPriority.TRANSCRIPTION_RETRY for why a retry runs ahead of new submissions.
+    PIPELINE_RETRY = 1
     PIPELINE_CRITICAL = 2  # Completes the import pipeline the user is watching
     #                        e.g. waveform, thumbnail, post-transcription clustering
     USER_TRIGGERED = 4  # Explicit user action outside the import pipeline

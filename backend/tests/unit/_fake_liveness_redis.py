@@ -20,6 +20,7 @@ class FakeRedis:
         self.store: dict[str, str] = {}
         self.ttls: dict[str, int] = {}
         self.hashes: dict[str, dict[str, str]] = {}
+        self.zsets: dict[str, dict[str, float]] = {}
 
     def setex(self, key: str, ttl: int, value: str) -> bool:
         self.store[key] = str(value)
@@ -67,6 +68,23 @@ class FakeRedis:
 
     def hgetall(self, name: str) -> dict[str, str]:
         return dict(self.hashes.get(name, {}))
+
+    # --- sorted sets (the per-file infrastructure-requeue counter) ---------------------------
+    def zincrby(self, name: str, amount: float, member: str) -> float:
+        bucket = self.zsets.setdefault(name, {})
+        bucket[member] = bucket.get(member, 0.0) + amount
+        return bucket[member]
+
+    def zscore(self, name: str, member: str) -> float | None:
+        return self.zsets.get(name, {}).get(member)
+
+    def zrem(self, name: str, *members: str) -> int:
+        bucket = self.zsets.get(name, {})
+        return sum(int(bucket.pop(m, None) is not None) for m in members)
+
+    def zcount(self, name: str, low: float, high: float | str) -> int:
+        top = float("inf") if high == "+inf" else float(high)
+        return sum(1 for score in self.zsets.get(name, {}).values() if low <= score <= top)
 
     def expire(self, key: str) -> None:
         """Test helper: the TTL of ``key`` ran out."""

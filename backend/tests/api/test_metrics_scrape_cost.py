@@ -13,6 +13,7 @@ histogram series in the process.
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 from kombu.transport.redis import Channel
@@ -69,15 +70,26 @@ class _FakePipeline:
         self.commands.append(("llen", key))
         return self
 
-    def hvals(self, key):
-        self.commands.append(("hvals", key))
+    def hgetall(self, key):
+        self.commands.append(("hgetall", key))
+        return self
+
+    def zrange(self, key, start, end, withscores=False):
+        self.commands.append(("zrange", key))
         return self
 
     def execute(self):
-        return [
-            self._llen_map.get(key, 0) if cmd == "llen" else self._unacked
-            for cmd, key in self.commands
-        ]
+        # LLEN -> int, HGETALL -> {tag: entry}, ZRANGE -> [(tag, delivery time)].
+        unacked = {f"tag-{i}": value for i, value in enumerate(self._unacked)}
+        results: list = []
+        for cmd, key in self.commands:
+            if cmd == "llen":
+                results.append(self._llen_map.get(key, 0))
+            elif cmd == "hgetall":
+                results.append(unacked)
+            else:
+                results.append([(tag, time.time()) for tag in unacked])
+        return results
 
 
 class _FakeBroker:
@@ -125,7 +137,12 @@ def test_queue_endpoint_is_one_redis_round_trip_and_no_db(client, monkeypatch, s
         for fam in text_string_to_metric_families(resp.text)
         for s in fam.samples
     }
-    assert {name for name, _ in samples} == {"celery_queue_depth", "celery_queue_reserved"}
+    assert {name for name, _ in samples} == {
+        "celery_queue_depth",
+        "celery_queue_reserved",
+        "celery_queue_orphaned",
+        "celery_queue_oldest_unacked_age_seconds",
+    }
     assert samples[("celery_queue_depth", "gpu")] == 7
     assert samples[("celery_queue_reserved", "gpu")] == 1
     assert samples[("celery_queue_reserved", "cpu")] == 1

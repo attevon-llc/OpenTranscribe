@@ -22,6 +22,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import time
 from pathlib import Path
 
 from kombu.transport.redis import Channel
@@ -40,25 +41,33 @@ class _FakePipeline:
     def __init__(self, llen_map: dict[str, int], unacked_values: list):
         self.commands: list[tuple[str, str]] = []
         self._llen_map = llen_map
-        self._unacked_values = unacked_values
+        # kombu's unacked hash is tag -> entry, and its index scores each tag by delivery
+        # time; every entry here was "delivered" just now (a live holder).
+        self._unacked = {f"tag-{i}": value for i, value in enumerate(unacked_values)}
 
     def llen(self, key):
         self.commands.append(("llen", key))
         return self
 
-    def hvals(self, key):
-        self.commands.append(("hvals", key))
+    def hgetall(self, key):
+        self.commands.append(("hgetall", key))
         return self
 
-    def execute(self) -> list[int | list]:
+    def zrange(self, key, start, end, withscores=False):
+        self.commands.append(("zrange", key))
+        return self
+
+    def execute(self) -> list[int | list | dict]:
         # A real redis-py pipeline's execute() is genuinely heterogeneous: each
-        # command answers with its own type (LLEN -> int, HVALS -> list).
-        results: list[int | list] = []
+        # command answers with its own type (LLEN -> int, HGETALL -> dict, ZRANGE -> list).
+        results: list[int | list | dict] = []
         for cmd, key in self.commands:
             if cmd == "llen":
                 results.append(self._llen_map.get(key, 0))
+            elif cmd == "hgetall":
+                results.append(dict(self._unacked))
             else:
-                results.append(self._unacked_values)
+                results.append([(tag, time.time()) for tag in self._unacked])
         return results
 
 
@@ -130,7 +139,8 @@ def test_the_snapshot_is_one_round_trip():
 
     assert len(fake.pipelines) == 1
     pipe = fake.pipelines[0]
-    assert len(pipe.commands) == len(CeleryQueues.ALL) * 10 + 1
+    # Ten LLENs per queue, plus the unacked hash and its delivery-time index.
+    assert len(pipe.commands) == len(CeleryQueues.ALL) * 10 + 2
 
 
 def test_a_corrupt_unacked_entry_does_not_break_the_snapshot():
@@ -145,7 +155,10 @@ def test_a_corrupt_unacked_entry_does_not_break_the_snapshot():
 def test_a_broker_error_reports_all_zero():
     snapshot = queue_snapshot(_BrokenClient())
 
-    assert snapshot == {name: {"pending": 0, "reserved": 0} for name in CeleryQueues.ALL}
+    assert snapshot == {
+        name: {"pending": 0, "reserved": 0, "orphaned": 0, "oldest_unacked_age": 0}
+        for name in CeleryQueues.ALL
+    }
 
 
 def test_reserved_attribution_is_skipped_above_the_cap():

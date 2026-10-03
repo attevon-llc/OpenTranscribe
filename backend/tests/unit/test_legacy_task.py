@@ -40,7 +40,11 @@ _LEGACY = "app.tasks.transcription.legacy_task"
 _CONTEXT = "app.tasks.transcription.context"
 _SESSION_SCOPE = f"{_LEGACY}.session_scope"
 _CONTEXT_SESSION_SCOPE = f"{_CONTEXT}.session_scope"
-_CONTEXT_SEND_ERROR = f"{_CONTEXT}.send_error_notification"
+# The failure path runs through the one retry policy (services/transcription_retry.py),
+# which opens its own sessions and sends the error notification itself.
+_RETRY_POLICY_SESSION_SCOPE = "app.services.transcription_retry.session_scope"
+_SEND_ERROR = "app.tasks.transcription.notifications.send_error_notification"
+_SCHEDULE_RETRY = "app.services.task_recovery_service.TaskRecoveryService.schedule_file_retry"
 _EXTRACT_MEDIA_METADATA = f"{_LEGACY}.extract_media_metadata"
 _DOWNLOAD_FILE = f"{_LEGACY}.download_file"
 _DOWNLOAD_FILE_TO_PATH = "app.services.minio_service.download_file_to_path"
@@ -67,12 +71,15 @@ def legacy_seams(db_session):
     with (
         patch(_SESSION_SCOPE, lambda: _yield_session(db_session)),
         patch(_CONTEXT_SESSION_SCOPE, lambda: _yield_session(db_session)),
-        patch(_CONTEXT_SEND_ERROR) as send_error,
+        patch(_RETRY_POLICY_SESSION_SCOPE, lambda: _yield_session(db_session)),
+        patch(_SEND_ERROR) as send_error,
+        patch(_SCHEDULE_RETRY, return_value=True) as schedule_retry,
         patch(_SEND_PROCESSING) as send_processing,
         patch(_SEND_PROGRESS) as send_progress,
     ):
         yield {
             "send_error": send_error,
+            "schedule_retry": schedule_retry,
             "send_processing": send_processing,
             "send_progress": send_progress,
         }
@@ -407,7 +414,10 @@ class TestTranscribeAudioTask:
     def test_permission_error_is_classified_as_gated_model_access(
         self, db_session, legacy_seams, make_media_file
     ):
+        """Out of automatic retries, a model-access failure is reported with its own type."""
         media_file = make_media_file()
+        media_file.retry_count = 3  # the default admin limit: nothing left to retry with
+        db_session.commit()
 
         with (
             patch(_DOWNLOAD_FILE, return_value=(io.BytesIO(b"data"), 4, "audio/mpeg")),
@@ -421,11 +431,14 @@ class TestTranscribeAudioTask:
         task = db_session.query(Task).filter(Task.media_file_id == media_file.id).one()
         assert task.status == "failed"
         legacy_seams["send_error"].assert_called_once()
+        legacy_seams["schedule_retry"].assert_not_called()
 
     def test_generic_exception_is_classified_as_processing_error(
         self, db_session, legacy_seams, make_media_file
     ):
         media_file = make_media_file()
+        media_file.retry_count = 3
+        db_session.commit()
 
         with (
             patch(_DOWNLOAD_FILE, return_value=(io.BytesIO(b"data"), 4, "audio/mpeg")),
@@ -436,6 +449,24 @@ class TestTranscribeAudioTask:
         assert result["error_type"] == "processing_error"
         db_session.refresh(media_file)
         assert media_file.status == FileStatus.ERROR
+
+    def test_an_unclassified_exception_with_retries_left_requeues_the_file(
+        self, db_session, legacy_seams, make_media_file
+    ):
+        media_file = make_media_file()
+
+        with (
+            patch(_DOWNLOAD_FILE, return_value=(io.BytesIO(b"data"), 4, "audio/mpeg")),
+            patch(_PROCESS_FILE_IN_TEMP_DIR, side_effect=RuntimeError("ffmpeg exploded")),
+        ):
+            result = self._run(str(media_file.uuid))
+
+        assert result["status"] == "superseded"
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.PENDING
+        assert media_file.retry_count == 1
+        legacy_seams["schedule_retry"].assert_called_once()
+        legacy_seams["send_error"].assert_not_called()
 
     def test_context_creation_failure_hits_outer_exception_handler(
         self, db_session, legacy_seams, make_media_file

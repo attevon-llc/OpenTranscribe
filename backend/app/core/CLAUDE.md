@@ -172,6 +172,22 @@ should import `app.api` or `app.services` at module scope.
   up and not yet acknowledged (prefetched, or RUNNING under `acks_late=True`). Autoscale on
   `celery_queue_depth + celery_queue_reserved`, which is exactly what the admin Statistics UI
   now displays via `stats_helpers.get_queue_depths`.
+  ⚠️ `reserved` **excludes orphans**: a transcription-stage `unacked` entry whose run holds no
+  lease (a worker killed while holding it) is counted in `orphaned` instead — before, it stayed
+  "reserved" for the whole 6 h visibility timeout and kept autoscaled GPUs up for nothing.
+  Other `acks_late` tasks have no lease to check and still count as reserved.
+- `broker_orphans.py` — the orphan reaper (beat `system.reclaim_orphaned_deliveries`, every
+  `BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS`). Restores a dead worker's stage to the **head** of its
+  queue with kombu's own `QoS.restore_by_tag(leftmost=False)` (so it is also gone from
+  `unacked` and can never come back as a 6 h duplicate), and re-dispatches runs whose message
+  is gone too. Never act on an `unacked` entry without the three checks it makes: no live lease,
+  older than `BROKER_ORPHAN_STALE_SECONDS`/its ETA, and not reported by `inspect` as held by a
+  live worker. Don't "fix" slow recovery by lowering `CELERY_VISIBILITY_TIMEOUT`: Redis has no
+  per-message lease, so a lower value re-runs every long live task.
+- `task_liveness.run_heartbeat` hands the run back as **queued** only on a normal return, a
+  Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — verified: celery's
+  cold-shutdown cancel ACKS a running `acks_late` task on Redis, and a "queued" marker there
+  hid the lost run for `TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS` (a week).
 - `db_metrics` per-request counting stores a **mutable dict** in a ContextVar: `BaseHTTPMiddleware`
   runs `call_next` in a child task, so re-`set()`ing the var would not propagate back.
 - `FileStatus` is `(str, enum.Enum)` and deliberately **not** `StrEnum` — `str(FileStatus.X) ==

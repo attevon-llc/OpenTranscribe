@@ -82,6 +82,15 @@ class TestCategorizeError:
     def test_oom(self):
         assert categorize_error("Process killed: OOM") == ErrorCategory.OOM_ERROR
 
+    def test_oom_killer_and_oomkilled(self):
+        assert categorize_error("oom-killer invoked") == ErrorCategory.OOM_ERROR
+        assert categorize_error("container OOMKilled") == ErrorCategory.OOM_ERROR
+
+    def test_oom_inside_a_word_is_not_oom(self):
+        # A bare substring match classified "boom"/"room"/"zoom" as out-of-memory.
+        assert categorize_error("boom") == ErrorCategory.UNKNOWN
+        assert categorize_error("no room left in the zoom recording") == ErrorCategory.UNKNOWN
+
     # Network errors
     def test_connection_timeout(self):
         assert categorize_error("Connection timeout after 30s") == ErrorCategory.NETWORK_ERROR

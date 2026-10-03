@@ -515,7 +515,9 @@ def recover_all_stuck_tasks(
         retried_count = 0
         retry_failures: list[dict[str, str]] = []
         for task in stuck_tasks:
-            if not task_recovery_service.recover_stuck_task(db, task):
+            # requeue=False: this endpoint dispatches the replacement itself, inline, so it
+            # can report a failed dispatch (issue #906).
+            if not task_recovery_service.recover_stuck_task(db, task, requeue=False):
                 continue
             recovered_count += 1
             if task.task_type != "transcription" or not task.media_file_id:
@@ -719,7 +721,9 @@ def recover_task(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
         # Attempt recovery
-        success = task_recovery_service.recover_stuck_task(db, task)
+        # requeue=False: the replacement is dispatched inline below, so the response can
+        # report a failed dispatch (issue #906).
+        success = task_recovery_service.recover_stuck_task(db, task, requeue=False)
 
         retry_scheduled = False
         dispatch_error: str | None = None

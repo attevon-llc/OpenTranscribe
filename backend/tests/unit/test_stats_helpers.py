@@ -52,6 +52,7 @@ coverage that does not need a database at all.
 
 from __future__ import annotations
 
+import time
 import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
@@ -784,19 +785,27 @@ class _FakeQueueDepthsPipeline:
         self.commands.append(("llen", key))
         return self
 
-    def hvals(self, key):
-        self.commands.append(("hvals", key))
+    def hgetall(self, key):
+        self.commands.append(("hgetall", key))
         return self
 
-    def execute(self) -> list[int | list]:
-        # A real redis-py pipeline's execute() is genuinely heterogeneous: each
-        # command answers with its own type (LLEN -> int, HVALS -> list).
-        results: list[int | list] = []
+    def zrange(self, key, start, end, withscores=False):
+        self.commands.append(("zrange", key))
+        return self
+
+    def execute(self) -> list[int | list | dict]:
+        # A real redis-py pipeline's execute() is genuinely heterogeneous: each command
+        # answers with its own type (LLEN -> int, HGETALL -> dict, ZRANGE -> list of
+        # (tag, delivery time) pairs). Every entry here was delivered just now.
+        unacked = {f"tag-{i}": value for i, value in enumerate(self._unacked_values)}
+        results: list[int | list | dict] = []
         for cmd, key in self.commands:
             if cmd == "llen":
                 results.append(self._llen_map.get(key, 0))
+            elif cmd == "hgetall":
+                results.append(unacked)
             else:
-                results.append(self._unacked_values)
+                results.append([(tag, time.time()) for tag in unacked])
         return results
 
 

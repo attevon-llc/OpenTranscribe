@@ -89,6 +89,10 @@ cache_operations_total: Counter
 security_state_degraded_total: Counter
 celery_queue_depth: Gauge
 celery_queue_reserved: Gauge
+celery_queue_orphaned: Gauge
+celery_queue_oldest_unacked_age_seconds: Gauge
+transcription_runs_without_lease: Gauge
+transcription_files_infra_requeued: Gauge
 user_signups_total: Counter
 files_uploaded_total: Counter
 backup_runs_total: Counter
@@ -112,6 +116,10 @@ def _register() -> None:
     global security_state_degraded_total
     global celery_queue_depth
     global celery_queue_reserved
+    global celery_queue_orphaned
+    global celery_queue_oldest_unacked_age_seconds
+    global transcription_runs_without_lease
+    global transcription_files_infra_requeued
     global user_signups_total
     global files_uploaded_total
     global backup_runs_total
@@ -176,8 +184,33 @@ def _register() -> None:
         "Tasks delivered to a worker and not yet acknowledged, per Celery queue "
         "(prefetched, plus RUNNING acks_late tasks). Autoscale on "
         "celery_queue_depth + celery_queue_reserved: depth alone trends to zero "
-        "as the fleet saturates.",
+        "as the fleet saturates. Excludes orphans (see celery_queue_orphaned).",
         ["queue"],
+    )
+    celery_queue_orphaned = Gauge(
+        "celery_queue_orphaned",
+        "Transcription-stage messages still unacknowledged although their run holds no "
+        "lease: a dead worker took them. The orphan reaper requeues them within about a "
+        "minute, so a value that stays above zero means the reaper is not running. Alert "
+        "on it; never scale on it.",
+        ["queue"],
+    )
+    celery_queue_oldest_unacked_age_seconds = Gauge(
+        "celery_queue_oldest_unacked_age_seconds",
+        "Age of the oldest unacknowledged message per queue (live or orphaned). Compare "
+        "with the longest expected task duration.",
+        ["queue"],
+    )
+    transcription_runs_without_lease = Gauge(
+        "transcription_runs_without_lease",
+        "Transcriptions in a non-terminal state that are neither running (no live lease) "
+        "nor waiting in the broker. Should be zero; recovery requeues them within minutes.",
+    )
+    transcription_files_infra_requeued = Gauge(
+        "transcription_files_infra_requeued",
+        "Files whose run has been requeued by infrastructure recovery (dead worker) at "
+        "least TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD times: candidates for a poison "
+        "input that kills every worker it reaches.",
     )
     user_signups_total = Counter(
         "user_signups_total",
